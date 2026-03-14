@@ -7,6 +7,15 @@ import {
   createDoableTools,
   type ByokProviderConfig,
 } from "../ai/providers/copilot.js";
+import {
+  createProject,
+  isProjectScaffolded,
+} from "../projects/file-manager.js";
+import {
+  startDevServer,
+  isRunning as isDevServerRunning,
+  getDevServerUrl,
+} from "../projects/dev-server.js";
 
 export const chatRoutes = new Hono();
 
@@ -35,15 +44,45 @@ chatRoutes.post(
     const { content, mode, model, provider } = c.req.valid("json");
 
     try {
+      // Auto-scaffold the project if it hasn't been created yet
+      if (!isProjectScaffolded(projectId)) {
+        try {
+          console.log(`[Chat] Auto-scaffolding project ${projectId}`);
+          await createProject(projectId);
+        } catch (err) {
+          console.warn(`[Chat] Scaffold failed (may already exist):`, err);
+        }
+      }
+
+      // Auto-start the dev server if not running
+      if (!isDevServerRunning(projectId) && isProjectScaffolded(projectId)) {
+        try {
+          console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
+          await startDevServer(projectId);
+        } catch (err) {
+          console.warn(`[Chat] Dev server start failed:`, err);
+        }
+      }
+
       const engine = await getCopilotEngine();
 
       // Get or create session for this project
       let sessionId = projectSessions.get(projectId);
       if (!sessionId) {
+        const previewUrl = getDevServerUrl(projectId);
         const systemPrompt =
           mode === "plan"
             ? "You are Doable's Plan Mode AI. Analyze requests, break them into steps, and produce structured plans. Do NOT write code directly — only plan and reason."
-            : "You are Doable's Agent Mode AI. You autonomously generate production-ready code, create and edit files, install packages, and deploy apps. Work step by step, creating complete, working implementations.";
+            : `You are Doable's Agent Mode AI. You autonomously generate production-ready code, create and edit files, install packages, and deploy apps. Work step by step, creating complete, working implementations.
+
+The project is a Vite + React + TypeScript app with Tailwind CSS v4. The project files are on the server filesystem and changes are hot-reloaded via Vite.${previewUrl ? `\n\nThe live preview is available at: ${previewUrl}` : ""}
+
+IMPORTANT RULES:
+- Use Tailwind CSS classes for styling (v4 — just \`@import "tailwindcss"\` in CSS, no config needed).
+- Write complete file contents when creating or editing files.
+- Always use TypeScript (.tsx for React components, .ts for utilities).
+- Prefer function components with hooks.
+- Import styles and components using relative paths.`;
 
         sessionId = await engine.createSession({
           projectId,

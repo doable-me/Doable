@@ -17,6 +17,7 @@ import { contextRoutes } from "./routes/context.js";
 import { templateRoutes } from "./routes/templates.js";
 import { versionRoutes } from "./routes/versions.js";
 import { githubRoutes } from "./routes/github.js";
+import { projectFileRoutes } from "./routes/project-files.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 
 const app = new Hono();
@@ -40,6 +41,8 @@ app.use("*", rateLimiter({ windowMs: 60_000, max: 100 }));
 // ─── Routes ─────────────────────────────────────────────────
 app.route("/health", healthRoutes);
 app.route("/auth", authRoutes);
+// Project file routes (no auth — filesystem-backed, powers live preview)
+app.route("/", projectFileRoutes);
 // Chat & editor routes BEFORE project routes (projectRoutes has wildcard auth middleware)
 app.route("/", chatRoutes);
 app.route("/", editorRoutes);

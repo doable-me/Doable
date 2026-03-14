@@ -327,12 +327,219 @@ export class CopilotEngine {
 
 // ─── Doable Tool Definitions ────────────────────────────
 
+import {
+  readFile,
+  writeFile,
+  listFiles,
+  getProjectPath,
+} from "../../projects/file-manager.js";
+
 /**
  * Create Doable-specific tools for the Copilot agent.
- * These extend the built-in Copilot tools with Doable platform features.
+ * These provide real filesystem operations so the AI can
+ * create, edit, and read files in the project directory.
+ * Vite hot-reloads changes automatically.
  */
 export function createDoableTools(projectId: string): Tool[] {
   return [
+    defineTool(
+      "create_file",
+      "Create a new file in the project with the given content. Creates parent directories as needed. Use this for new files.",
+      {
+        type: "object" as const,
+        properties: {
+          path: {
+            type: "string" as const,
+            description:
+              "Relative path from the project root (e.g. 'src/components/Button.tsx')",
+          },
+          content: {
+            type: "string" as const,
+            description: "The full file content to write",
+          },
+        },
+        required: ["path", "content"] as const,
+      },
+      async (args) => {
+        const { path, content } = args as { path: string; content: string };
+        await writeFile(projectId, path, content);
+        return {
+          success: true,
+          path,
+          size: Buffer.byteLength(content, "utf-8"),
+          message: `Created ${path}`,
+        };
+      },
+    ),
+
+    defineTool(
+      "edit_file",
+      "Replace the entire content of an existing file. Read the file first to understand what to change, then write the complete updated content.",
+      {
+        type: "object" as const,
+        properties: {
+          path: {
+            type: "string" as const,
+            description: "Relative path from the project root",
+          },
+          content: {
+            type: "string" as const,
+            description: "The complete new file content",
+          },
+        },
+        required: ["path", "content"] as const,
+      },
+      async (args) => {
+        const { path, content } = args as { path: string; content: string };
+        await writeFile(projectId, path, content);
+        return {
+          success: true,
+          path,
+          size: Buffer.byteLength(content, "utf-8"),
+          message: `Updated ${path}`,
+        };
+      },
+    ),
+
+    defineTool(
+      "read_file",
+      "Read the contents of a file in the project. Returns the full file content.",
+      {
+        type: "object" as const,
+        properties: {
+          path: {
+            type: "string" as const,
+            description: "Relative path from the project root",
+          },
+        },
+        required: ["path"] as const,
+      },
+      async (args) => {
+        const { path } = args as { path: string };
+        try {
+          const content = await readFile(projectId, path);
+          return {
+            success: true,
+            path,
+            content,
+            lines: content.split("\n").length,
+          };
+        } catch (err) {
+          return {
+            success: false,
+            error:
+              err instanceof Error ? err.message : `File not found: ${path}`,
+          };
+        }
+      },
+    ),
+
+    defineTool(
+      "list_files",
+      "List all files in the project directory (excluding node_modules, .git, dist). Returns relative paths.",
+      {
+        type: "object" as const,
+        properties: {
+          directory: {
+            type: "string" as const,
+            description:
+              "Subdirectory to list (default: project root). Use '.' for root.",
+          },
+        },
+      },
+      async (args) => {
+        const dir =
+          (args as { directory?: string }).directory ?? ".";
+        const files = await listFiles(projectId, dir);
+        return {
+          success: true,
+          count: files.length,
+          files,
+        };
+      },
+    ),
+
+    defineTool(
+      "install_package",
+      "Install npm packages in the project using pnpm.",
+      {
+        type: "object" as const,
+        properties: {
+          packages: {
+            type: "string" as const,
+            description:
+              "Space-separated package names to install (e.g. 'react-router-dom lucide-react')",
+          },
+          dev: {
+            type: "boolean" as const,
+            description: "Install as dev dependency (default: false)",
+          },
+        },
+        required: ["packages"] as const,
+      },
+      async (args) => {
+        const { packages, dev } = args as {
+          packages: string;
+          dev?: boolean;
+        };
+        const { spawn: spawnCmd } = await import("node:child_process");
+        const projectPath = getProjectPath(projectId);
+        const pkgList = packages.split(/\s+/).filter(Boolean);
+        const pnpmArgs = [
+          "add",
+          ...(dev ? ["-D"] : []),
+          ...pkgList,
+        ];
+
+        return new Promise((resolve) => {
+          const child = spawnCmd("pnpm", pnpmArgs, {
+            cwd: projectPath,
+            shell: true,
+            stdio: "pipe",
+            env: { ...process.env, FORCE_COLOR: "0" },
+          });
+
+          let output = "";
+          child.stdout?.on("data", (d: Buffer) => {
+            output += d.toString();
+          });
+          child.stderr?.on("data", (d: Buffer) => {
+            output += d.toString();
+          });
+
+          child.on("close", (code) => {
+            resolve({
+              success: code === 0,
+              packages: pkgList,
+              dev: dev ?? false,
+              message:
+                code === 0
+                  ? `Installed ${pkgList.join(", ")}`
+                  : `Install failed with code ${code}`,
+              output: output.slice(-500),
+            });
+          });
+
+          child.on("error", (err) => {
+            resolve({
+              success: false,
+              error: err.message,
+              message: `Failed to run pnpm: ${err.message}`,
+            });
+          });
+
+          // Timeout
+          setTimeout(() => {
+            child.kill("SIGTERM");
+            resolve({
+              success: false,
+              message: "pnpm install timed out",
+            });
+          }, 120_000);
+        });
+      },
+    ),
+
     defineTool(
       "deploy_preview",
       "Deploy the current project to a preview URL for testing",
@@ -351,32 +558,6 @@ export function createDoableTools(projectId: string): Tool[] {
           success: true,
           url: `https://preview-${projectId}.doable.dev`,
           message: "Preview deployed successfully",
-        };
-      },
-    ),
-    defineTool(
-      "install_package",
-      "Install an npm package in the project",
-      {
-        type: "object" as const,
-        properties: {
-          name: {
-            type: "string" as const,
-            description: "Package name to install",
-          },
-          dev: {
-            type: "boolean" as const,
-            description: "Install as dev dependency",
-          },
-        },
-        required: ["name"] as const,
-      },
-      async (args) => {
-        // TODO: Wire up to package installation
-        return {
-          success: true,
-          package: (args as Record<string, unknown>).name,
-          message: `Installed ${(args as Record<string, unknown>).name}`,
         };
       },
     ),

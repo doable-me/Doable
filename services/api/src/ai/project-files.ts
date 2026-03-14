@@ -13,6 +13,7 @@ const FORBIDDEN_PATHS = [
   ".env",
   ".env.local",
   ".env.production",
+  "dist",
 ];
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB

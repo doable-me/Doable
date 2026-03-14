@@ -25,6 +25,7 @@ import {
   Check,
   Loader2,
   AlertCircle,
+  RotateCcw,
 } from "lucide-react";
 
 // ─── Constants ──────────────────────────────────────────────
@@ -47,164 +48,123 @@ interface ChatMsg {
 interface FileTreeNode {
   name: string;
   type: "file" | "folder";
+  path: string;
   children?: FileTreeNode[];
 }
 
-// ─── Mock Data (kept for preview & file tree) ───────────────
-const MOCK_FILE_TREE: FileTreeNode[] = [
-  {
-    name: "src",
-    type: "folder",
-    children: [
-      { name: "App.tsx", type: "file" },
-      { name: "index.tsx", type: "file" },
-      { name: "index.css", type: "file" },
-      {
-        name: "components",
-        type: "folder",
-        children: [
-          { name: "TodoList.tsx", type: "file" },
-          { name: "TodoItem.tsx", type: "file" },
-          { name: "AddTodo.tsx", type: "file" },
-          { name: "DarkModeToggle.tsx", type: "file" },
-          { name: "PriorityBadge.tsx", type: "file" },
-        ],
-      },
-      {
-        name: "hooks",
-        type: "folder",
-        children: [
-          { name: "useTodos.ts", type: "file" },
-          { name: "useDarkMode.ts", type: "file" },
-        ],
-      },
-      {
-        name: "types",
-        type: "folder",
-        children: [{ name: "index.ts", type: "file" }],
-      },
-    ],
-  },
-  { name: "package.json", type: "file" },
-  { name: "tsconfig.json", type: "file" },
-  { name: "tailwind.config.js", type: "file" },
-];
+type ScaffoldStatus =
+  | "idle"
+  | "scaffolding"
+  | "starting"
+  | "ready"
+  | "error";
 
-const PREVIEW_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0f; color: #e5e5e5; min-height: 100vh; }
-  .container { max-width: 600px; margin: 0 auto; padding: 32px 20px; }
-  h1 { font-size: 24px; font-weight: 700; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; }
-  .toggle { background: #1e1e2e; border: 1px solid #2a2a3e; border-radius: 20px; padding: 6px 16px; color: #a0a0b0; cursor: pointer; font-size: 13px; }
-  .toggle:hover { background: #2a2a3e; }
-  .add-form { display: flex; gap: 8px; margin-bottom: 20px; }
-  .add-input { flex: 1; background: #12121a; border: 1px solid #2a2a3e; border-radius: 10px; padding: 12px 16px; color: #e5e5e5; font-size: 14px; outline: none; }
-  .add-input:focus { border-color: #7c3aed; }
-  .add-input::placeholder { color: #555; }
-  .priority-select { background: #12121a; border: 1px solid #2a2a3e; border-radius: 10px; padding: 12px; color: #e5e5e5; font-size: 13px; outline: none; cursor: pointer; }
-  .add-btn { background: #7c3aed; color: white; border: none; border-radius: 10px; padding: 12px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
-  .add-btn:hover { background: #6d28d9; }
-  .filters { display: flex; gap: 6px; margin-bottom: 16px; }
-  .filter-btn { background: #1e1e2e; border: 1px solid #2a2a3e; border-radius: 8px; padding: 6px 14px; color: #a0a0b0; cursor: pointer; font-size: 12px; font-weight: 500; }
-  .filter-btn.active { background: #7c3aed; color: white; border-color: #7c3aed; }
-  .todo-list { display: flex; flex-direction: column; gap: 8px; }
-  .todo-item { display: flex; align-items: center; gap: 12px; background: #12121a; border: 1px solid #1e1e2e; border-radius: 10px; padding: 14px 16px; border-left: 3px solid; transition: all 0.15s; }
-  .todo-item:hover { background: #16161f; }
-  .todo-item.high { border-left-color: #ef4444; }
-  .todo-item.medium { border-left-color: #f59e0b; }
-  .todo-item.low { border-left-color: #22c55e; }
-  .checkbox { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #3a3a4e; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .checkbox.checked { background: #7c3aed; border-color: #7c3aed; }
-  .checkbox.checked::after { content: "\\2713"; color: white; font-size: 11px; }
-  .todo-text { flex: 1; font-size: 14px; }
-  .todo-text.done { text-decoration: line-through; opacity: 0.5; }
-  .badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .badge.high { background: rgba(239,68,68,0.15); color: #ef4444; }
-  .badge.medium { background: rgba(245,158,11,0.15); color: #f59e0b; }
-  .badge.low { background: rgba(34,197,94,0.15); color: #22c55e; }
-  .delete-btn { background: none; border: none; color: #555; cursor: pointer; font-size: 16px; padding: 4px; border-radius: 4px; }
-  .delete-btn:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
-  .empty { text-align: center; padding: 40px; color: #555; font-size: 14px; }
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>My Todos <button class="toggle" onclick="document.body.style.background=document.body.style.background==='#f8fafc'?'#0a0a0f':'#f8fafc'">Toggle Theme</button></h1>
-  <div class="add-form">
-    <input class="add-input" placeholder="What needs to be done?" id="todoInput">
-    <select class="priority-select" id="prioritySelect">
-      <option value="medium">Medium</option>
-      <option value="high">High</option>
-      <option value="low">Low</option>
-    </select>
-    <button class="add-btn" onclick="addTodo()">Add</button>
-  </div>
-  <div class="filters">
-    <button class="filter-btn active" onclick="filterTodos('all', this)">All</button>
-    <button class="filter-btn" onclick="filterTodos('high', this)">High</button>
-    <button class="filter-btn" onclick="filterTodos('medium', this)">Medium</button>
-    <button class="filter-btn" onclick="filterTodos('low', this)">Low</button>
-  </div>
-  <div class="todo-list" id="todoList">
-    <div class="todo-item high">
-      <div class="checkbox" onclick="this.classList.toggle('checked');this.parentElement.querySelector('.todo-text').classList.toggle('done')"></div>
-      <span class="todo-text">Deploy the new API endpoints</span>
-      <span class="badge high">high</span>
-      <button class="delete-btn" onclick="this.parentElement.remove()">&times;</button>
-    </div>
-    <div class="todo-item medium">
-      <div class="checkbox checked" onclick="this.classList.toggle('checked');this.parentElement.querySelector('.todo-text').classList.toggle('done')"></div>
-      <span class="todo-text done">Set up CI/CD pipeline</span>
-      <span class="badge medium">medium</span>
-      <button class="delete-btn" onclick="this.parentElement.remove()">&times;</button>
-    </div>
-    <div class="todo-item high">
-      <div class="checkbox" onclick="this.classList.toggle('checked');this.parentElement.querySelector('.todo-text').classList.toggle('done')"></div>
-      <span class="todo-text">Fix authentication bug on mobile</span>
-      <span class="badge high">high</span>
-      <button class="delete-btn" onclick="this.parentElement.remove()">&times;</button>
-    </div>
-    <div class="todo-item low">
-      <div class="checkbox" onclick="this.classList.toggle('checked');this.parentElement.querySelector('.todo-text').classList.toggle('done')"></div>
-      <span class="todo-text">Update documentation</span>
-      <span class="badge low">low</span>
-      <button class="delete-btn" onclick="this.parentElement.remove()">&times;</button>
-    </div>
-    <div class="todo-item medium">
-      <div class="checkbox" onclick="this.classList.toggle('checked');this.parentElement.querySelector('.todo-text').classList.toggle('done')"></div>
-      <span class="todo-text">Add priority color coding</span>
-      <span class="badge medium">medium</span>
-      <button class="delete-btn" onclick="this.parentElement.remove()">&times;</button>
-    </div>
-  </div>
-</div>
-<script>
-function addTodo() {
-  const input = document.getElementById('todoInput');
-  const priority = document.getElementById('prioritySelect').value;
-  if (!input.value.trim()) return;
-  const item = document.createElement('div');
-  item.className = 'todo-item ' + priority;
-  item.innerHTML = '<div class="checkbox" onclick="this.classList.toggle(\\'checked\\');this.parentElement.querySelector(\\'.todo-text\\').classList.toggle(\\'done\\')"></div><span class="todo-text">' + input.value + '</span><span class="badge ' + priority + '">' + priority + '</span><button class="delete-btn" onclick="this.parentElement.remove()">&times;</button>';
-  document.getElementById('todoList').prepend(item);
-  input.value = '';
+// ─── API helpers ────────────────────────────────────────────
+
+function authHeaders(): Record<string, string> {
+  const { accessToken } = getStoredTokens();
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 }
-function filterTodos(level, btn) {
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('.todo-item').forEach(item => {
-    item.style.display = level === 'all' || item.classList.contains(level) ? 'flex' : 'none';
+
+async function scaffoldProject(projectId: string): Promise<void> {
+  const res = await fetch(`${API_URL}/projects/${projectId}/scaffold`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
   });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Scaffold failed (${res.status}): ${text || "Unknown error"}`);
+  }
 }
-document.getElementById('todoInput').addEventListener('keydown', function(e) { if (e.key === 'Enter') addTodo(); });
-</script>
-</body>
-</html>`;
+
+async function fetchPreviewUrl(projectId: string): Promise<string> {
+  const res = await fetch(`${API_URL}/projects/${projectId}/preview-url`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Failed to get preview URL (${res.status}): ${text || "Unknown error"}`);
+  }
+  const json = (await res.json()) as { data: { url: string } };
+  return json.data.url;
+}
+
+async function fetchFileList(projectId: string): Promise<string[]> {
+  const res = await fetch(`${API_URL}/projects/${projectId}/files`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Failed to list files (${res.status}): ${text || "Unknown error"}`);
+  }
+  const json = (await res.json()) as { data: string[] };
+  return json.data;
+}
+
+async function fetchFileContent(
+  projectId: string,
+  filePath: string,
+): Promise<string> {
+  const res = await fetch(
+    `${API_URL}/projects/${projectId}/files/${encodeURIComponent(filePath)}`,
+    { headers: authHeaders() },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Failed to read file (${res.status}): ${text || "Unknown error"}`);
+  }
+  const json = (await res.json()) as { data: { path: string; content: string } };
+  return json.data.content;
+}
+
+// ─── Build file tree from flat paths ────────────────────────
+function buildFileTree(paths: string[]): FileTreeNode[] {
+  const root: FileTreeNode[] = [];
+
+  for (const filePath of paths) {
+    const parts = filePath.split("/");
+    let currentLevel = root;
+    let currentPath = "";
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]!;
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      const isLast = i === parts.length - 1;
+
+      const existing = currentLevel.find((n) => n.name === part);
+      if (existing) {
+        if (!isLast && existing.children) {
+          currentLevel = existing.children;
+        }
+      } else {
+        const node: FileTreeNode = {
+          name: part,
+          type: isLast ? "file" : "folder",
+          path: currentPath,
+          children: isLast ? undefined : [],
+        };
+        currentLevel.push(node);
+        if (!isLast && node.children) {
+          currentLevel = node.children;
+        }
+      }
+    }
+  }
+
+  // Sort: folders first, then alphabetical
+  const sortNodes = (nodes: FileTreeNode[]): FileTreeNode[] => {
+    nodes.sort((a, b) => {
+      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const node of nodes) {
+      if (node.children) sortNodes(node.children);
+    }
+    return nodes;
+  };
+
+  return sortNodes(root);
+}
 
 // ─── SSE Chat Helper ────────────────────────────────────────
 async function streamChat(
@@ -214,6 +174,7 @@ async function streamChat(
   onChunk: (text: string) => void,
   onDone: () => void,
   onError: (error: string) => void,
+  onToolCompleted?: (toolName: string, args: Record<string, unknown>) => void,
   signal?: AbortSignal,
 ) {
   const { accessToken } = getStoredTokens();
@@ -275,7 +236,21 @@ async function streamChat(
         }
 
         try {
-          const parsed = JSON.parse(payload) as { type?: string; data?: unknown; content?: string };
+          const parsed = JSON.parse(payload) as {
+            type?: string;
+            data?: unknown;
+            content?: string;
+            name?: string;
+            args?: Record<string, unknown>;
+          };
+
+          // Handle tool completion events — triggers file tree / content refresh
+          if (parsed.type === "tool.completed" && onToolCompleted) {
+            const toolName = parsed.name ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).name as string : "");
+            const toolArgs = parsed.args ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).args as Record<string, unknown> : {});
+            onToolCompleted(toolName ?? "", toolArgs ?? {});
+          }
+
           // Extract text content from various SSE event shapes
           let text = "";
           if (parsed.type === "text_delta") {
@@ -285,10 +260,12 @@ async function streamChat(
             // Full message event: {type:"assistant.message", data:{content:"..."}}
             const d = parsed.data as Record<string, unknown> | undefined;
             text = typeof d?.content === "string" ? d.content : "";
-          } else if (typeof parsed.data === "string") {
-            text = parsed.data;
-          } else if (typeof parsed.content === "string") {
-            text = parsed.content;
+          } else if (parsed.type === "text_delta" || !parsed.type || parsed.type === "content") {
+            if (typeof parsed.data === "string") {
+              text = parsed.data;
+            } else if (typeof parsed.content === "string") {
+              text = parsed.content;
+            }
           }
           // Skip non-text events (session.tools_updated, usage_info, etc.)
           if (text) {
@@ -315,8 +292,8 @@ async function streamChat(
 }
 
 // ─── Helpers ────────────────────────────────────────────────
-function generateTempId(): string {
-  return `temp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+function generateProjectId(): string {
+  return `proj-${Date.now()}`;
 }
 
 function nowTimestamp(): string {
@@ -333,13 +310,28 @@ export default function EditorPage() {
   const searchParams = useSearchParams();
   const rawProjectId = params.projectId;
 
-  // For "new" projects, generate a temp ID; otherwise use the URL param
+  // For "new" projects, generate a stable ID; otherwise use the URL param
   const [resolvedProjectId] = useState<string>(() =>
-    rawProjectId === "new" ? generateTempId() : rawProjectId
+    rawProjectId === "new" ? generateProjectId() : rawProjectId
   );
   const isNewProject = rawProjectId === "new";
 
-  // State
+  // ─── Scaffold / preview state ─────────────────────────────
+  const [scaffoldStatus, setScaffoldStatus] = useState<ScaffoldStatus>("idle");
+  const [scaffoldError, setScaffoldError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // ─── File tree state ──────────────────────────────────────
+  const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
+  const [fileTreeLoading, setFileTreeLoading] = useState(false);
+  const [fileTreeError, setFileTreeError] = useState<string | null>(null);
+
+  // ─── File content state ───────────────────────────────────
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [fileContentLoading, setFileContentLoading] = useState(false);
+  const [fileContentError, setFileContentError] = useState<string | null>(null);
+
+  // ─── UI state ─────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
   const [chatMode, setChatMode] = useState<ChatMode>("agent");
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
@@ -353,9 +345,9 @@ export default function EditorPage() {
   const [nameInput, setNameInput] = useState(projectName);
   const [splitPos, setSplitPos] = useState(40); // percentage
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedFile, setSelectedFile] = useState("src/App.tsx");
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    new Set(["src", "src/components", "src/hooks", "src/types"])
+    new Set<string>()
   );
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -363,6 +355,111 @@ export default function EditorPage() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const autoSentRef = useRef(false);
+  const scaffoldInitRef = useRef(false);
+
+  // ─── Scaffold + preview URL on mount ──────────────────────
+  useEffect(() => {
+    if (scaffoldInitRef.current) return;
+    scaffoldInitRef.current = true;
+
+    let cancelled = false;
+
+    const init = async () => {
+      setScaffoldStatus("scaffolding");
+      setScaffoldError(null);
+
+      try {
+        await scaffoldProject(resolvedProjectId);
+        if (cancelled) return;
+
+        setScaffoldStatus("starting");
+
+        // Poll for the preview URL (dev server may take a few seconds to start)
+        let url: string | null = null;
+        let attempts = 0;
+        const maxAttempts = 30; // up to ~30 seconds
+        while (!url && attempts < maxAttempts && !cancelled) {
+          try {
+            url = await fetchPreviewUrl(resolvedProjectId);
+          } catch {
+            attempts++;
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
+
+        if (cancelled) return;
+
+        if (url) {
+          setPreviewUrl(url);
+          setScaffoldStatus("ready");
+        } else {
+          throw new Error("Dev server did not start in time. Please try refreshing.");
+        }
+      } catch (err: unknown) {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : "Failed to scaffold project";
+        setScaffoldError(msg);
+        setScaffoldStatus("error");
+      }
+    };
+
+    init();
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedProjectId]);
+
+  // ─── Load file tree once scaffold is ready ────────────────
+  const loadFileTree = useCallback(async () => {
+    setFileTreeLoading(true);
+    setFileTreeError(null);
+    try {
+      const paths = await fetchFileList(resolvedProjectId);
+      const tree = buildFileTree(paths);
+      setFileTree(tree);
+      // Auto-expand top-level folders
+      const topFolders = tree
+        .filter((n) => n.type === "folder")
+        .map((n) => n.path);
+      setExpandedFolders((prev) => new Set([...prev, ...topFolders]));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to load files";
+      setFileTreeError(msg);
+    } finally {
+      setFileTreeLoading(false);
+    }
+  }, [resolvedProjectId]);
+
+  useEffect(() => {
+    if (scaffoldStatus === "ready") {
+      loadFileTree();
+    }
+  }, [scaffoldStatus, loadFileTree]);
+
+  // ─── Load file content when a file is selected ────────────
+  const loadFileContent = useCallback(
+    async (filePath: string) => {
+      setFileContentLoading(true);
+      setFileContentError(null);
+      setFileContent(null);
+      try {
+        const content = await fetchFileContent(resolvedProjectId, filePath);
+        setFileContent(content);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to load file";
+        setFileContentError(msg);
+      } finally {
+        setFileContentLoading(false);
+      }
+    },
+    [resolvedProjectId],
+  );
+
+  useEffect(() => {
+    if (selectedFile && scaffoldStatus === "ready") {
+      loadFileContent(selectedFile);
+    }
+  }, [selectedFile, scaffoldStatus, loadFileContent]);
 
   // Scroll chat to bottom on new messages
   useEffect(() => {
@@ -372,6 +469,8 @@ export default function EditorPage() {
   // Handle the "new project" flow — auto-send prompt from query params
   useEffect(() => {
     if (!isNewProject || autoSentRef.current) return;
+    // Wait until scaffold is ready (or at least started) before sending
+    if (scaffoldStatus !== "ready" && scaffoldStatus !== "starting") return;
     const prompt = searchParams.get("prompt");
     if (!prompt) return;
     autoSentRef.current = true;
@@ -381,7 +480,7 @@ export default function EditorPage() {
     }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNewProject, searchParams]);
+  }, [isNewProject, searchParams, scaffoldStatus]);
 
   // Handle panel resize
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -409,6 +508,39 @@ export default function EditorPage() {
       document.body.style.userSelect = "";
     };
   }, [isDragging]);
+
+  // ─── Handle tool completion — refresh files ────────────────
+  const handleToolCompleted = useCallback(
+    (toolName: string, _args: Record<string, unknown>) => {
+      // File-modifying tools: refresh the file tree and optionally reload current file
+      const fileTools = [
+        "create_file",
+        "write_file",
+        "edit_file",
+        "delete_file",
+        "rename_file",
+        "create_or_update_file",
+        "write",
+        "create",
+        "update",
+        "patch",
+      ];
+      const isFileOp = fileTools.some(
+        (t) => toolName.toLowerCase().includes(t) || t.includes(toolName.toLowerCase()),
+      );
+
+      if (isFileOp || !toolName) {
+        // Always refresh file tree on any tool completion for safety
+        loadFileTree();
+
+        // If the currently selected file was modified, reload it
+        if (selectedFile) {
+          loadFileContent(selectedFile);
+        }
+      }
+    },
+    [loadFileTree, selectedFile, loadFileContent],
+  );
 
   // ─── Send message to real API ──────────────────────────────
   const sendMessage = useCallback(
@@ -467,6 +599,9 @@ export default function EditorPage() {
             )
           );
           setIsStreaming(false);
+          // Refresh file tree after AI response completes (may have created files)
+          loadFileTree();
+          if (selectedFile) loadFileContent(selectedFile);
         },
         // onError
         (error: string) => {
@@ -484,10 +619,12 @@ export default function EditorPage() {
           );
           setIsStreaming(false);
         },
+        // onToolCompleted
+        handleToolCompleted,
         controller.signal,
       );
     },
-    [isStreaming, resolvedProjectId, chatMode]
+    [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, loadFileTree, selectedFile, loadFileContent]
   );
 
   // Send message handler (from input)
@@ -506,20 +643,18 @@ export default function EditorPage() {
   };
 
   // Render file tree
-  const renderTree = (nodes: FileTreeNode[], parentPath = "") => {
+  const renderTree = (nodes: FileTreeNode[], depth = 0) => {
     return nodes.map((node) => {
-      const path = parentPath ? `${parentPath}/${node.name}` : node.name;
       const isFolder = node.type === "folder";
-      const isExpanded = expandedFolders.has(path);
-      const isSelected = selectedFile === path;
-      const depth = path.split("/").length - 1;
+      const isExpanded = expandedFolders.has(node.path);
+      const isSelected = selectedFile === node.path;
 
       return (
-        <div key={path}>
+        <div key={node.path}>
           <button
             onClick={() => {
-              if (isFolder) toggleFolder(path);
-              else setSelectedFile(path);
+              if (isFolder) toggleFolder(node.path);
+              else setSelectedFile(node.path);
             }}
             className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-[13px] hover:bg-white/5 transition-colors ${
               isSelected && !isFolder
@@ -546,7 +681,7 @@ export default function EditorPage() {
             <span className="truncate">{node.name}</span>
           </button>
           {isFolder && isExpanded && node.children && (
-            <div>{renderTree(node.children, path)}</div>
+            <div>{renderTree(node.children, depth + 1)}</div>
           )}
         </div>
       );
@@ -673,10 +808,97 @@ export default function EditorPage() {
     });
   };
 
+  // Retry scaffold
+  const retryScaffold = useCallback(() => {
+    scaffoldInitRef.current = false;
+    setScaffoldStatus("idle");
+    setScaffoldError(null);
+    setPreviewUrl(null);
+    // Re-trigger by resetting the ref and forcing re-render
+    scaffoldInitRef.current = false;
+    // We need to re-run the effect — simplest is to just call init inline
+    const init = async () => {
+      setScaffoldStatus("scaffolding");
+      try {
+        await scaffoldProject(resolvedProjectId);
+        setScaffoldStatus("starting");
+        let url: string | null = null;
+        let attempts = 0;
+        while (!url && attempts < 30) {
+          try {
+            url = await fetchPreviewUrl(resolvedProjectId);
+          } catch {
+            attempts++;
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
+        if (url) {
+          setPreviewUrl(url);
+          setScaffoldStatus("ready");
+        } else {
+          throw new Error("Dev server did not start in time.");
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to scaffold project";
+        setScaffoldError(msg);
+        setScaffoldStatus("error");
+      }
+    };
+    init();
+  }, [resolvedProjectId]);
+
   // Determine what panels to show based on active tab
   const showChat = activeTab === "chat";
   const showCode = activeTab === "code";
   const showPreview = activeTab === "preview" || activeTab === "chat";
+
+  // ─── Scaffold loading overlay ─────────────────────────────
+  const renderScaffoldOverlay = () => {
+    if (scaffoldStatus === "ready") return null;
+
+    if (scaffoldStatus === "error") {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-center px-8">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600/10 mb-4">
+            <AlertCircle className="h-7 w-7 text-red-400" />
+          </div>
+          <h3 className="text-sm font-medium text-red-300 mb-2">
+            Failed to start project
+          </h3>
+          <p className="text-[13px] text-zinc-500 max-w-sm mb-4">
+            {scaffoldError}
+          </p>
+          <button
+            onClick={retryScaffold}
+            className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-500 transition-colors"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Retry
+          </button>
+        </div>
+      );
+    }
+
+    // Loading states
+    const statusMsg =
+      scaffoldStatus === "scaffolding"
+        ? "Setting up project..."
+        : scaffoldStatus === "starting"
+          ? "Starting dev server..."
+          : "Initializing...";
+
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center px-8">
+        <Loader2 className="h-8 w-8 animate-spin text-purple-400 mb-4" />
+        <h3 className="text-sm font-medium text-zinc-300 mb-1">{statusMsg}</h3>
+        <p className="text-[13px] text-zinc-600 max-w-[280px]">
+          {scaffoldStatus === "scaffolding"
+            ? "Installing dependencies and configuring the project"
+            : "Waiting for the Vite dev server to start"}
+        </p>
+      </div>
+    );
+  };
 
   return (
     <div className="flex h-screen flex-col bg-[#0a0a0f] text-zinc-200">
@@ -736,6 +958,20 @@ export default function EditorPage() {
               {projectName}
               <Pencil className="h-3 w-3 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />
             </button>
+          )}
+
+          {/* Scaffold status indicator */}
+          {scaffoldStatus !== "ready" && scaffoldStatus !== "idle" && scaffoldStatus !== "error" && (
+            <div className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+              <Loader2 className="h-3 w-3 animate-spin text-purple-400" />
+              {scaffoldStatus === "scaffolding" ? "Scaffolding..." : "Starting..."}
+            </div>
+          )}
+          {scaffoldStatus === "ready" && (
+            <div className="flex items-center gap-1 text-[11px] text-emerald-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Live
+            </div>
           )}
         </div>
 
@@ -951,10 +1187,45 @@ export default function EditorPage() {
           <div className="flex flex-1 overflow-hidden bg-[#0c0c14]">
             {/* File tree sidebar */}
             <div className="w-56 flex-shrink-0 overflow-y-auto border-r border-zinc-800/60 bg-[#09090f] py-2">
-              <div className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
-                Explorer
+              <div className="mb-1 px-3 flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+                  Explorer
+                </span>
+                {fileTreeLoading && (
+                  <Loader2 className="h-3 w-3 animate-spin text-zinc-600" />
+                )}
               </div>
-              {renderTree(MOCK_FILE_TREE)}
+              {scaffoldStatus !== "ready" ? (
+                <div className="px-3 py-4 text-center">
+                  {scaffoldStatus === "error" ? (
+                    <p className="text-[12px] text-red-400">Failed to load</p>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-zinc-600" />
+                      <p className="text-[12px] text-zinc-600">Loading files...</p>
+                    </div>
+                  )}
+                </div>
+              ) : fileTreeError ? (
+                <div className="px-3 py-4 text-center">
+                  <p className="text-[12px] text-red-400 mb-2">{fileTreeError}</p>
+                  <button
+                    onClick={loadFileTree}
+                    className="text-[11px] text-purple-400 hover:text-purple-300"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : fileTree.length === 0 ? (
+                <div className="px-3 py-4 text-center">
+                  <p className="text-[12px] text-zinc-600">No files yet</p>
+                  <p className="text-[11px] text-zinc-700 mt-1">
+                    Ask the AI to create some files
+                  </p>
+                </div>
+              ) : (
+                renderTree(fileTree)
+              )}
             </div>
 
             {/* Code display */}
@@ -962,28 +1233,87 @@ export default function EditorPage() {
               {/* Tab bar */}
               <div className="flex items-center border-b border-zinc-800/60 bg-[#0a0a12]">
                 <div className="flex items-center gap-0.5 px-1 py-1">
-                  <div className="flex items-center gap-1.5 rounded-md bg-zinc-800/50 px-3 py-1.5 text-[12px] text-zinc-300 border border-zinc-700/30">
-                    <File className="h-3 w-3 text-zinc-500" />
-                    {selectedFile.split("/").pop()}
-                  </div>
+                  {selectedFile ? (
+                    <div className="flex items-center gap-1.5 rounded-md bg-zinc-800/50 px-3 py-1.5 text-[12px] text-zinc-300 border border-zinc-700/30">
+                      <File className="h-3 w-3 text-zinc-500" />
+                      {selectedFile.split("/").pop()}
+                    </div>
+                  ) : (
+                    <div className="px-3 py-1.5 text-[12px] text-zinc-600">
+                      No file selected
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Placeholder: no real code yet */}
-              <div className="flex flex-1 items-center justify-center">
-                <div className="text-center px-8">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60 mx-auto mb-3">
-                    <Code2 className="h-6 w-6 text-zinc-600" />
+              {/* Code content */}
+              {!selectedFile ? (
+                <div className="flex flex-1 items-center justify-center">
+                  <div className="text-center px-8">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60 mx-auto mb-3">
+                      <Code2 className="h-6 w-6 text-zinc-600" />
+                    </div>
+                    <p className="text-sm text-zinc-500 mb-1">
+                      Select a file from the explorer
+                    </p>
+                    <p className="text-xs text-zinc-700">
+                      Click on any file to view its content
+                    </p>
                   </div>
-                  <p className="text-sm text-zinc-500 mb-1">
-                    Code will appear here as the AI generates files
-                  </p>
-                  <p className="text-xs text-zinc-700">
-                    Start a conversation in the Chat tab to generate your
-                    project
-                  </p>
                 </div>
-              </div>
+              ) : fileContentLoading ? (
+                <div className="flex flex-1 items-center justify-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader2 className="h-6 w-6 animate-spin text-purple-400" />
+                    <p className="text-sm text-zinc-500">Loading file...</p>
+                  </div>
+                </div>
+              ) : fileContentError ? (
+                <div className="flex flex-1 items-center justify-center">
+                  <div className="text-center px-8">
+                    <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-3" />
+                    <p className="text-sm text-red-300 mb-2">{fileContentError}</p>
+                    <button
+                      onClick={() => loadFileContent(selectedFile)}
+                      className="text-sm text-purple-400 hover:text-purple-300"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              ) : fileContent !== null ? (
+                <div className="flex-1 overflow-auto">
+                  <pre className="p-4 text-[13px] leading-relaxed text-zinc-300 font-mono">
+                    <code>
+                      {fileContent.split("\n").map((line, idx) => (
+                        <div key={idx} className="flex hover:bg-white/[0.02]">
+                          <span className="inline-block w-12 flex-shrink-0 select-none text-right pr-4 text-zinc-700">
+                            {idx + 1}
+                          </span>
+                          <span className="flex-1 whitespace-pre-wrap break-all">
+                            {line || " "}
+                          </span>
+                        </div>
+                      ))}
+                    </code>
+                  </pre>
+                </div>
+              ) : (
+                <div className="flex flex-1 items-center justify-center">
+                  <div className="text-center px-8">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60 mx-auto mb-3">
+                      <Code2 className="h-6 w-6 text-zinc-600" />
+                    </div>
+                    <p className="text-sm text-zinc-500 mb-1">
+                      Code will appear here as the AI generates files
+                    </p>
+                    <p className="text-xs text-zinc-700">
+                      Start a conversation in the Chat tab to generate your
+                      project
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1012,19 +1342,20 @@ export default function EditorPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
-                    if (iframeRef.current) {
-                      iframeRef.current.srcdoc = PREVIEW_HTML;
+                    if (iframeRef.current && previewUrl) {
+                      iframeRef.current.src = previewUrl;
                     }
                   }}
                   className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
                   title="Refresh"
+                  disabled={!previewUrl}
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                 </button>
                 <div className="flex items-center gap-1 rounded-md bg-zinc-900/80 border border-zinc-800/60 px-2.5 py-1">
                   <Globe className="h-3 w-3 text-zinc-600" />
                   <span className="text-[11px] text-zinc-500 font-mono">
-                    preview.doable.app/{resolvedProjectId}
+                    {previewUrl ?? `loading...`}
                   </span>
                 </div>
               </div>
@@ -1053,40 +1384,48 @@ export default function EditorPage() {
                 </button>
                 <div className="mx-1 h-4 w-px bg-zinc-800" />
                 <button
+                  onClick={() => {
+                    if (previewUrl) window.open(previewUrl, "_blank");
+                  }}
                   className="rounded-md p-1.5 text-zinc-600 hover:text-zinc-400 transition-colors"
                   title="Open in new tab"
+                  disabled={!previewUrl}
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
 
-            {/* Preview iframe */}
+            {/* Preview iframe or loading state */}
             <div className="flex flex-1 items-center justify-center overflow-hidden bg-[#08080d] p-2">
-              <div
-                className={`h-full overflow-hidden rounded-lg border border-zinc-800/40 bg-white transition-all duration-300 ${
-                  deviceMode === "mobile"
-                    ? "w-[375px] shadow-2xl shadow-black/40"
-                    : "w-full"
-                }`}
-                style={
-                  deviceMode === "mobile"
-                    ? {
-                        maxHeight: "calc(100% - 16px)",
-                        borderRadius: "24px",
-                        border: "4px solid #1e1e2e",
-                      }
-                    : {}
-                }
-              >
-                <iframe
-                  ref={iframeRef}
-                  srcDoc={PREVIEW_HTML}
-                  className="h-full w-full border-0"
-                  title="App Preview"
-                  sandbox="allow-scripts allow-same-origin"
-                />
-              </div>
+              {scaffoldStatus !== "ready" || !previewUrl ? (
+                renderScaffoldOverlay()
+              ) : (
+                <div
+                  className={`h-full overflow-hidden rounded-lg border border-zinc-800/40 bg-white transition-all duration-300 ${
+                    deviceMode === "mobile"
+                      ? "w-[375px] shadow-2xl shadow-black/40"
+                      : "w-full"
+                  }`}
+                  style={
+                    deviceMode === "mobile"
+                      ? {
+                          maxHeight: "calc(100% - 16px)",
+                          borderRadius: "24px",
+                          border: "4px solid #1e1e2e",
+                        }
+                      : {}
+                  }
+                >
+                  <iframe
+                    ref={iframeRef}
+                    src={previewUrl}
+                    className="h-full w-full border-0"
+                    title="App Preview"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
