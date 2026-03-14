@@ -66,7 +66,7 @@ function authHeaders(): Record<string, string> {
   return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 }
 
-async function scaffoldProject(projectId: string): Promise<void> {
+async function scaffoldProject(projectId: string): Promise<string | null> {
   const res = await fetch(`${API_URL}/projects/${projectId}/scaffold`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -75,6 +75,8 @@ async function scaffoldProject(projectId: string): Promise<void> {
     const text = await res.text().catch(() => "");
     throw new Error(`Scaffold failed (${res.status}): ${text || "Unknown error"}`);
   }
+  const json = (await res.json()) as { data: { previewUrl?: string | null } };
+  return json.data.previewUrl ?? null;
 }
 
 async function fetchPreviewUrl(projectId: string): Promise<string> {
@@ -359,9 +361,6 @@ export default function EditorPage() {
 
   // ─── Scaffold + preview URL on mount ──────────────────────
   useEffect(() => {
-    if (scaffoldInitRef.current) return;
-    scaffoldInitRef.current = true;
-
     let cancelled = false;
 
     const init = async () => {
@@ -369,31 +368,39 @@ export default function EditorPage() {
       setScaffoldError(null);
 
       try {
-        await scaffoldProject(resolvedProjectId);
+        const scaffoldUrl = await scaffoldProject(resolvedProjectId);
         if (cancelled) return;
 
-        setScaffoldStatus("starting");
-
-        // Poll for the preview URL (dev server may take a few seconds to start)
-        let url: string | null = null;
-        let attempts = 0;
-        const maxAttempts = 30; // up to ~30 seconds
-        while (!url && attempts < maxAttempts && !cancelled) {
-          try {
-            url = await fetchPreviewUrl(resolvedProjectId);
-          } catch {
-            attempts++;
-            await new Promise((r) => setTimeout(r, 1000));
-          }
-        }
-
-        if (cancelled) return;
-
-        if (url) {
-          setPreviewUrl(url);
+        if (scaffoldUrl) {
+          // Scaffold returned the preview URL directly
+          setPreviewUrl(scaffoldUrl);
           setScaffoldStatus("ready");
         } else {
-          throw new Error("Dev server did not start in time. Please try refreshing.");
+          // No URL from scaffold — poll for the preview URL
+          setScaffoldStatus("starting");
+          let url: string | null = null;
+          let attempts = 0;
+          const maxAttempts = 30;
+          while (!url && attempts < maxAttempts && !cancelled) {
+            try {
+              url = await fetchPreviewUrl(resolvedProjectId);
+            } catch {
+              // ignore and retry
+            }
+            if (!url) {
+              attempts++;
+              await new Promise((r) => setTimeout(r, 1000));
+            }
+          }
+
+          if (cancelled) return;
+
+          if (url) {
+            setPreviewUrl(url);
+            setScaffoldStatus("ready");
+          } else {
+            throw new Error("Dev server did not start in time. Please try refreshing.");
+          }
         }
       } catch (err: unknown) {
         if (cancelled) return;
@@ -820,23 +827,31 @@ export default function EditorPage() {
     const init = async () => {
       setScaffoldStatus("scaffolding");
       try {
-        await scaffoldProject(resolvedProjectId);
-        setScaffoldStatus("starting");
-        let url: string | null = null;
-        let attempts = 0;
-        while (!url && attempts < 30) {
-          try {
-            url = await fetchPreviewUrl(resolvedProjectId);
-          } catch {
-            attempts++;
-            await new Promise((r) => setTimeout(r, 1000));
-          }
-        }
-        if (url) {
-          setPreviewUrl(url);
+        const scaffoldUrl = await scaffoldProject(resolvedProjectId);
+        if (scaffoldUrl) {
+          setPreviewUrl(scaffoldUrl);
           setScaffoldStatus("ready");
         } else {
-          throw new Error("Dev server did not start in time.");
+          setScaffoldStatus("starting");
+          let url: string | null = null;
+          let attempts = 0;
+          while (!url && attempts < 30) {
+            try {
+              url = await fetchPreviewUrl(resolvedProjectId);
+            } catch {
+              // retry
+            }
+            if (!url) {
+              attempts++;
+              await new Promise((r) => setTimeout(r, 1000));
+            }
+          }
+          if (url) {
+            setPreviewUrl(url);
+            setScaffoldStatus("ready");
+          } else {
+            throw new Error("Dev server did not start in time.");
+          }
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Failed to scaffold project";
