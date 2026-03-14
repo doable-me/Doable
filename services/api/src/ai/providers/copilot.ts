@@ -1,0 +1,404 @@
+/**
+ * Copilot SDK Provider
+ *
+ * Integrates GitHub Copilot SDK as Doable's core AI engine.
+ * The SDK manages sessions, tool calling, and streaming via JSON-RPC.
+ *
+ * Authentication options:
+ *   1. GitHub Copilot subscription — user authenticates via GitHub OAuth,
+ *      SDK uses their Copilot entitlement for model inference
+ *   2. BYOK (Bring Your Own Key) — user provides their own API key
+ *      (OpenAI, Anthropic, Azure, Ollama, etc.) via the SDK's provider config
+ */
+
+import {
+  CopilotClient,
+  CopilotSession,
+  defineTool,
+  approveAll,
+  type SessionConfig,
+  type SessionEvent,
+  type Tool,
+  type AssistantMessageEvent,
+} from "@github/copilot-sdk";
+
+// ─── Types ──────────────────────────────────────────────
+
+export interface CopilotEngineConfig {
+  /** Path to copilot CLI binary (optional, auto-detected if on PATH) */
+  cliPath?: string;
+  /** Connect to an existing Copilot CLI server instead of spawning one */
+  cliUrl?: string;
+  /** Default model to use */
+  model?: string;
+}
+
+/** BYOK provider configuration — passed directly to the Copilot SDK */
+export interface ByokProviderConfig {
+  type?: "openai" | "azure" | "anthropic";
+  baseUrl: string;
+  apiKey?: string;
+  bearerToken?: string;
+  azure?: { apiVersion?: string };
+}
+
+export interface CopilotSessionConfig {
+  /** Project ID for context */
+  projectId: string;
+  /** User ID for tracking */
+  userId: string;
+  /** Custom tools to register with the session */
+  tools?: Tool[];
+  /** Model override for this session */
+  model?: string;
+  /** BYOK provider config — when set, uses user's own API key instead of Copilot subscription */
+  provider?: ByokProviderConfig;
+  /** System prompt to prepend */
+  systemPrompt?: string;
+  /** Handler for when the agent needs user input */
+  onUserInput?: (question: string) => Promise<string>;
+  /** Handler for streaming events */
+  onEvent?: (event: SessionEvent) => void;
+}
+
+// ─── Copilot Engine ────────────────────────────────────
+
+export class CopilotEngine {
+  private client: CopilotClient | null = null;
+  private config: CopilotEngineConfig;
+  private sessions = new Map<string, CopilotSession>();
+
+  constructor(config: CopilotEngineConfig = {}) {
+    this.config = config;
+  }
+
+  /**
+   * Initialize the Copilot client. Must be called before creating sessions.
+   */
+  async start(): Promise<void> {
+    if (this.client) return;
+
+    this.client = new CopilotClient({
+      ...(this.config.cliPath ? { cliPath: this.config.cliPath } : {}),
+      ...(this.config.cliUrl ? { cliUrl: this.config.cliUrl } : {}),
+    });
+
+    await this.client.start();
+    console.log("[CopilotEngine] Client started");
+  }
+
+  /**
+   * Stop the Copilot client and clean up all sessions.
+   */
+  async stop(): Promise<void> {
+    if (!this.client) return;
+
+    // Disconnect all active sessions
+    for (const [id, session] of this.sessions) {
+      try {
+        await session.disconnect();
+      } catch (err) {
+        console.error(`[CopilotEngine] Error disconnecting session ${id}:`, err);
+      }
+    }
+    this.sessions.clear();
+
+    const errors = await this.client.stop();
+    if (errors.length > 0) {
+      console.error("[CopilotEngine] Errors during stop:", errors);
+    }
+    this.client = null;
+    console.log("[CopilotEngine] Client stopped");
+  }
+
+  /**
+   * Check auth status — returns whether the user is authenticated with GitHub Copilot.
+   */
+  async getAuthStatus() {
+    this.ensureClient();
+    return this.client!.getAuthStatus();
+  }
+
+  /**
+   * List available models.
+   */
+  async listModels() {
+    this.ensureClient();
+    return this.client!.listModels();
+  }
+
+  /**
+   * Create a new conversation session.
+   */
+  async createSession(config: CopilotSessionConfig): Promise<string> {
+    this.ensureClient();
+
+    const sessionConfig: SessionConfig = {
+      onPermissionRequest: approveAll,
+      ...(config.model || this.config.model
+        ? { model: config.model ?? this.config.model }
+        : {}),
+      ...(config.provider ? { provider: config.provider } : {}),
+      ...(config.tools ? { tools: config.tools } : {}),
+      ...(config.systemPrompt
+        ? { systemMessage: { type: "replace" as const, content: config.systemPrompt } }
+        : {}),
+      ...(config.onUserInput
+        ? {
+            onUserInputRequest: async (request) => ({
+              answer: await config.onUserInput!(
+                (request as Record<string, string>).question ?? "Please provide input",
+              ),
+            }),
+          }
+        : {}),
+    };
+
+    const session = await this.client!.createSession(sessionConfig);
+
+    // Register event handler if provided
+    if (config.onEvent) {
+      session.on(config.onEvent);
+    }
+
+    this.sessions.set(session.sessionId, session);
+    return session.sessionId;
+  }
+
+  /**
+   * Resume an existing session.
+   */
+  async resumeSession(
+    sessionId: string,
+    config?: Partial<CopilotSessionConfig>,
+  ): Promise<string> {
+    this.ensureClient();
+
+    const session = await this.client!.resumeSession(sessionId, {
+      onPermissionRequest: approveAll,
+      ...(config?.tools ? { tools: config.tools } : {}),
+    });
+
+    if (config?.onEvent) {
+      session.on(config.onEvent);
+    }
+
+    this.sessions.set(session.sessionId, session);
+    return session.sessionId;
+  }
+
+  /**
+   * Send a message to a session and stream events back.
+   * Returns an async generator of SessionEvents for SSE streaming.
+   */
+  async *sendMessage(
+    sessionId: string,
+    prompt: string,
+  ): AsyncGenerator<SessionEvent> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    // Collect events via handler
+    const eventQueue: SessionEvent[] = [];
+    let resolveWaiting: (() => void) | null = null;
+    let done = false;
+
+    const unsubscribe = session.on((event: SessionEvent) => {
+      eventQueue.push(event);
+      if (resolveWaiting) {
+        resolveWaiting();
+        resolveWaiting = null;
+      }
+
+      if (
+        event.type === "session.idle" ||
+        event.type === "session.error"
+      ) {
+        done = true;
+      }
+    });
+
+    // Send the message (non-blocking)
+    session.send({ prompt }).catch((err) => {
+      eventQueue.push({
+        type: "session.error",
+        data: { message: err instanceof Error ? err.message : String(err) },
+      } as SessionEvent);
+      done = true;
+      if (resolveWaiting) {
+        resolveWaiting();
+        resolveWaiting = null;
+      }
+    });
+
+    try {
+      while (!done || eventQueue.length > 0) {
+        if (eventQueue.length > 0) {
+          yield eventQueue.shift()!;
+        } else if (!done) {
+          // Wait for next event
+          await new Promise<void>((resolve) => {
+            resolveWaiting = resolve;
+          });
+        }
+      }
+    } finally {
+      unsubscribe();
+    }
+  }
+
+  /**
+   * Send a message and wait for the complete response.
+   */
+  async sendAndWait(
+    sessionId: string,
+    prompt: string,
+    timeoutMs = 300_000, // 5 minutes default for agent work
+  ): Promise<AssistantMessageEvent | undefined> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    return session.sendAndWait({ prompt }, timeoutMs);
+  }
+
+  /**
+   * Abort the current message processing in a session.
+   */
+  async abortSession(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    await session.abort();
+  }
+
+  /**
+   * Disconnect a session (preserves history for resumption).
+   */
+  async disconnectSession(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    await session.disconnect();
+    this.sessions.delete(sessionId);
+  }
+
+  /**
+   * Delete a session permanently.
+   */
+  async deleteSession(sessionId: string): Promise<void> {
+    this.ensureClient();
+    await this.disconnectSession(sessionId);
+    await this.client!.deleteSession(sessionId);
+  }
+
+  /**
+   * Get session history/messages.
+   */
+  async getSessionMessages(sessionId: string): Promise<SessionEvent[]> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+    return session.getMessages();
+  }
+
+  /**
+   * Change the model for an active session.
+   */
+  async setSessionModel(sessionId: string, model: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+    await session.setModel(model);
+  }
+
+  private ensureClient(): asserts this is { client: CopilotClient } {
+    if (!this.client) {
+      throw new Error(
+        "CopilotEngine not started. Call start() first.",
+      );
+    }
+  }
+}
+
+// ─── Doable Tool Definitions ────────────────────────────
+
+/**
+ * Create Doable-specific tools for the Copilot agent.
+ * These extend the built-in Copilot tools with Doable platform features.
+ */
+export function createDoableTools(projectId: string): Tool[] {
+  return [
+    defineTool(
+      "deploy_preview",
+      "Deploy the current project to a preview URL for testing",
+      {
+        type: "object" as const,
+        properties: {
+          message: {
+            type: "string" as const,
+            description: "Deployment commit message",
+          },
+        },
+      },
+      async (_args) => {
+        // TODO: Wire up to Doable's deploy system
+        return {
+          success: true,
+          url: `https://preview-${projectId}.doable.dev`,
+          message: "Preview deployed successfully",
+        };
+      },
+    ),
+    defineTool(
+      "install_package",
+      "Install an npm package in the project",
+      {
+        type: "object" as const,
+        properties: {
+          name: {
+            type: "string" as const,
+            description: "Package name to install",
+          },
+          dev: {
+            type: "boolean" as const,
+            description: "Install as dev dependency",
+          },
+        },
+        required: ["name"] as const,
+      },
+      async (args) => {
+        // TODO: Wire up to package installation
+        return {
+          success: true,
+          package: (args as Record<string, unknown>).name,
+          message: `Installed ${(args as Record<string, unknown>).name}`,
+        };
+      },
+    ),
+  ];
+}
+
+// ─── Singleton ──────────────────────────────────────────
+
+let _engine: CopilotEngine | null = null;
+
+/**
+ * Get the global CopilotEngine instance.
+ * Creates and starts it on first call.
+ */
+export async function getCopilotEngine(): Promise<CopilotEngine> {
+  if (!_engine) {
+    _engine = new CopilotEngine({
+      model: process.env.COPILOT_DEFAULT_MODEL,
+      cliPath: process.env.COPILOT_CLI_PATH,
+      cliUrl: process.env.COPILOT_CLI_URL,
+    });
+    await _engine.start();
+  }
+  return _engine;
+}

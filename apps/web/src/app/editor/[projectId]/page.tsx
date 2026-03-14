@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { getStoredTokens } from "@/lib/api";
 import {
   ArrowLeft,
   Send,
@@ -22,7 +23,12 @@ import {
   User,
   Pencil,
   Check,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
+
+// ─── Constants ──────────────────────────────────────────────
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Types ──────────────────────────────────────────────────
 type ActiveTab = "chat" | "code" | "preview";
@@ -34,6 +40,8 @@ interface ChatMsg {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  isStreaming?: boolean;
+  isError?: boolean;
 }
 
 interface FileTreeNode {
@@ -42,65 +50,7 @@ interface FileTreeNode {
   children?: FileTreeNode[];
 }
 
-// ─── Mock Data ──────────────────────────────────────────────
-const MOCK_MESSAGES: ChatMsg[] = [
-  {
-    id: "1",
-    role: "user",
-    content: "Build me a todo app with dark mode",
-    timestamp: "2:34 PM",
-  },
-  {
-    id: "2",
-    role: "assistant",
-    content: `I'll create a todo app with dark mode support. Let me set up the project structure and build the components.
-
-Here's what I'm building:
-- A clean todo list with add/remove/complete functionality
-- Dark mode toggle with smooth transitions
-- Local storage persistence
-- Responsive design
-
-I've created the following files:
-
-\`\`\`tsx
-// src/App.tsx
-export default function App() {
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [dark, setDark] = useState(true);
-
-  return (
-    <div className={dark ? "dark" : ""}>
-      <TodoList todos={todos} />
-      <AddTodo onAdd={handleAdd} />
-    </div>
-  );
-}
-\`\`\`
-
-The app is now running in the preview panel. You can try adding some todos!`,
-    timestamp: "2:34 PM",
-  },
-  {
-    id: "3",
-    role: "user",
-    content: "Can you add a priority system? High, medium, and low with color coding.",
-    timestamp: "2:36 PM",
-  },
-  {
-    id: "4",
-    role: "assistant",
-    content: `I've added a priority system with three levels. Each priority has a distinct color:
-
-- **High** - Red badge and left border
-- **Medium** - Yellow/amber badge and left border
-- **Low** - Green badge and left border
-
-You can set the priority when creating a todo, and filter by priority level. The preview has been updated!`,
-    timestamp: "2:36 PM",
-  },
-];
-
+// ─── Mock Data (kept for preview & file tree) ───────────────
 const MOCK_FILE_TREE: FileTreeNode[] = [
   {
     name: "src",
@@ -139,72 +89,6 @@ const MOCK_FILE_TREE: FileTreeNode[] = [
   { name: "tsconfig.json", type: "file" },
   { name: "tailwind.config.js", type: "file" },
 ];
-
-const MOCK_CODE = `import { useState, useEffect } from "react";
-import { TodoList } from "./components/TodoList";
-import { AddTodo } from "./components/AddTodo";
-import { DarkModeToggle } from "./components/DarkModeToggle";
-import type { Todo, Priority } from "./types";
-
-export default function App() {
-  const [todos, setTodos] = useState<Todo[]>(() => {
-    const saved = localStorage.getItem("todos");
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [dark, setDark] = useState(true);
-  const [filter, setFilter] = useState<Priority | "all">("all");
-
-  useEffect(() => {
-    localStorage.setItem("todos", JSON.stringify(todos));
-  }, [todos]);
-
-  const addTodo = (text: string, priority: Priority) => {
-    setTodos((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        text,
-        completed: false,
-        priority,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-  };
-
-  const toggleTodo = (id: string) => {
-    setTodos((prev) =>
-      prev.map((t) =>
-        t.id === id ? { ...t, completed: !t.completed } : t
-      )
-    );
-  };
-
-  const deleteTodo = (id: string) => {
-    setTodos((prev) => prev.filter((t) => t.id !== id));
-  };
-
-  const filtered =
-    filter === "all"
-      ? todos
-      : todos.filter((t) => t.priority === filter);
-
-  return (
-    <div className={\`min-h-screen \${dark ? "dark bg-gray-950 text-white" : "bg-gray-50 text-gray-900"}\`}>
-      <div className="max-w-2xl mx-auto p-6">
-        <header className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-bold">My Todos</h1>
-          <DarkModeToggle dark={dark} onToggle={() => setDark(!dark)} />
-        </header>
-        <AddTodo onAdd={addTodo} />
-        <TodoList
-          todos={filtered}
-          onToggle={toggleTodo}
-          onDelete={deleteTodo}
-        />
-      </div>
-    </div>
-  );
-}`;
 
 const PREVIEW_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -322,21 +206,151 @@ document.getElementById('todoInput').addEventListener('keydown', function(e) { i
 </body>
 </html>`;
 
+// ─── SSE Chat Helper ────────────────────────────────────────
+async function streamChat(
+  projectId: string,
+  message: string,
+  mode: ChatMode,
+  onChunk: (text: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+  signal?: AbortSignal,
+) {
+  const { accessToken } = getStoredTokens();
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/projects/${projectId}/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({ content: message, mode }),
+      signal,
+    });
+  } catch (err: unknown) {
+    if (signal?.aborted) return;
+    onError(
+      "Unable to connect to Doable's AI engine. Please check that the API server is running."
+    );
+    return;
+  }
+
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => "");
+    onError(
+      `Server error (${res.status}): ${errorText || "Something went wrong. Please try again."}`
+    );
+    return;
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) {
+    onError("No response stream received from the server.");
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      // Keep the last (possibly incomplete) line in the buffer
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+        const payload = trimmed.slice(6); // strip "data: "
+        if (payload === "[DONE]") {
+          onDone();
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(payload) as { type?: string; data?: unknown; content?: string };
+          // Extract text content from various SSE event shapes
+          let text = "";
+          if (parsed.type === "text_delta") {
+            // Copilot SDK sends {type:"text_delta", data:"actual text"}
+            text = typeof parsed.data === "string" ? parsed.data : "";
+          } else if (parsed.type === "assistant.message") {
+            // Full message event: {type:"assistant.message", data:{content:"..."}}
+            const d = parsed.data as Record<string, unknown> | undefined;
+            text = typeof d?.content === "string" ? d.content : "";
+          } else if (typeof parsed.data === "string") {
+            text = parsed.data;
+          } else if (typeof parsed.content === "string") {
+            text = parsed.content;
+          }
+          // Skip non-text events (session.tools_updated, usage_info, etc.)
+          if (text) {
+            onChunk(text);
+          }
+        } catch {
+          // If the payload isn't JSON, treat it as raw text
+          if (payload) {
+            onChunk(payload);
+          }
+        }
+      }
+    }
+  } catch (err: unknown) {
+    if (signal?.aborted) return;
+    onError(
+      "Unable to connect to Doable's AI engine. Please check that the API server is running."
+    );
+    return;
+  }
+
+  // Stream ended without [DONE] — still call onDone
+  onDone();
+}
+
+// ─── Helpers ────────────────────────────────────────────────
+function generateTempId(): string {
+  return `temp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function nowTimestamp(): string {
+  return new Date().toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 // ─── Component ──────────────────────────────────────────────
 export default function EditorPage() {
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
-  const projectId = params.projectId;
+  const searchParams = useSearchParams();
+  const rawProjectId = params.projectId;
+
+  // For "new" projects, generate a temp ID; otherwise use the URL param
+  const [resolvedProjectId] = useState<string>(() =>
+    rawProjectId === "new" ? generateTempId() : rawProjectId
+  );
+  const isNewProject = rawProjectId === "new";
 
   // State
   const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
   const [chatMode, setChatMode] = useState<ChatMode>("agent");
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
-  const [messages, setMessages] = useState<ChatMsg[]>(MOCK_MESSAGES);
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [inputValue, setInputValue] = useState("");
-  const [projectName, setProjectName] = useState("My Awesome App");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [projectName, setProjectName] = useState(
+    isNewProject ? "New Project" : "My Awesome App"
+  );
   const [isEditingName, setIsEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState("My Awesome App");
+  const [nameInput, setNameInput] = useState(projectName);
   const [splitPos, setSplitPos] = useState(40); // percentage
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState("src/App.tsx");
@@ -347,11 +361,27 @@ export default function EditorPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const autoSentRef = useRef(false);
 
   // Scroll chat to bottom on new messages
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Handle the "new project" flow — auto-send prompt from query params
+  useEffect(() => {
+    if (!isNewProject || autoSentRef.current) return;
+    const prompt = searchParams.get("prompt");
+    if (!prompt) return;
+    autoSentRef.current = true;
+    // Delay slightly so the UI renders first
+    const timer = setTimeout(() => {
+      sendMessage(prompt);
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNewProject, searchParams]);
 
   // Handle panel resize
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -380,38 +410,90 @@ export default function EditorPage() {
     };
   }, [isDragging]);
 
-  // Send message handler
-  const handleSend = () => {
-    if (!inputValue.trim()) return;
-    const newMsg: ChatMsg = {
-      id: Date.now().toString(),
-      role: "user",
-      content: inputValue.trim(),
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit",
-      }),
-    };
-    setMessages((prev) => [...prev, newMsg]);
-    setInputValue("");
+  // ─── Send message to real API ──────────────────────────────
+  const sendMessage = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || isStreaming) return;
 
-    // Simulate AI response
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content:
-            "I understand your request. Let me work on implementing those changes. I'll update the preview once the modifications are ready.",
-          timestamp: new Date().toLocaleTimeString([], {
-            hour: "numeric",
-            minute: "2-digit",
-          }),
+      // Add user message
+      const userMsg: ChatMsg = {
+        id: Date.now().toString(),
+        role: "user",
+        content: trimmed,
+        timestamp: nowTimestamp(),
+      };
+
+      // Add placeholder assistant message for streaming
+      const assistantId = (Date.now() + 1).toString();
+      const assistantMsg: ChatMsg = {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        timestamp: nowTimestamp(),
+        isStreaming: true,
+      };
+
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      setInputValue("");
+      setIsStreaming(true);
+
+      // Abort any previous stream
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      streamChat(
+        resolvedProjectId,
+        trimmed,
+        chatMode,
+        // onChunk — append text to the streaming assistant message
+        (chunk: string) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: m.content + chunk }
+                : m
+            )
+          );
         },
-      ]);
-    }, 1200);
-  };
+        // onDone
+        () => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, isStreaming: false }
+                : m
+            )
+          );
+          setIsStreaming(false);
+        },
+        // onError
+        (error: string) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content: error,
+                    isStreaming: false,
+                    isError: true,
+                  }
+                : m
+            )
+          );
+          setIsStreaming(false);
+        },
+        controller.signal,
+      );
+    },
+    [isStreaming, resolvedProjectId, chatMode]
+  );
+
+  // Send message handler (from input)
+  const handleSend = useCallback(() => {
+    sendMessage(inputValue);
+  }, [inputValue, sendMessage]);
 
   // Toggle folder
   const toggleFolder = (path: string) => {
@@ -471,7 +553,7 @@ export default function EditorPage() {
     });
   };
 
-  // Format message content with basic markdown
+  // Format message content with markdown (bold, code blocks, inline code, lists)
   const formatContent = (content: string) => {
     const parts = content.split(/(```[\s\S]*?```)/g);
     return parts.map((part, i) => {
@@ -495,34 +577,99 @@ export default function EditorPage() {
           </div>
         );
       }
-      // Handle bold, inline code
-      const formatted = part
-        .split(/(\*\*.*?\*\*|`[^`]+`)/g)
-        .map((seg, j) => {
-          if (seg.startsWith("**") && seg.endsWith("**")) {
-            return (
-              <strong key={j} className="font-semibold text-white">
-                {seg.slice(2, -2)}
-              </strong>
-            );
+
+      // Process non-code-block text line by line to handle lists
+      const textLines = part.split("\n");
+      const elements: React.ReactNode[] = [];
+      let listBuffer: { ordered: boolean; items: React.ReactNode[] } | null =
+        null;
+
+      const flushList = () => {
+        if (!listBuffer) return;
+        if (listBuffer.ordered) {
+          elements.push(
+            <ol
+              key={`ol-${elements.length}`}
+              className="my-1.5 ml-4 list-decimal space-y-0.5 text-zinc-300"
+            >
+              {listBuffer.items.map((item, idx) => (
+                <li key={idx}>{item}</li>
+              ))}
+            </ol>
+          );
+        } else {
+          elements.push(
+            <ul
+              key={`ul-${elements.length}`}
+              className="my-1.5 ml-4 list-disc space-y-0.5 text-zinc-300"
+            >
+              {listBuffer.items.map((item, idx) => (
+                <li key={idx}>{item}</li>
+              ))}
+            </ul>
+          );
+        }
+        listBuffer = null;
+      };
+
+      for (let li = 0; li < textLines.length; li++) {
+        const line = textLines[li]!;
+
+        // Unordered list item: - or *
+        const ulMatch = line.match(/^\s*[-*]\s+(.*)/);
+        // Ordered list item: 1. 2. etc.
+        const olMatch = line.match(/^\s*\d+\.\s+(.*)/);
+
+        if (ulMatch) {
+          if (!listBuffer || listBuffer.ordered) {
+            flushList();
+            listBuffer = { ordered: false, items: [] };
           }
-          if (seg.startsWith("`") && seg.endsWith("`")) {
-            return (
-              <code
-                key={j}
-                className="rounded bg-zinc-800 px-1.5 py-0.5 text-[13px] text-purple-300"
-              >
-                {seg.slice(1, -1)}
-              </code>
-            );
+          listBuffer.items.push(formatInline(ulMatch[1] ?? ""));
+        } else if (olMatch) {
+          if (!listBuffer || !listBuffer.ordered) {
+            flushList();
+            listBuffer = { ordered: true, items: [] };
           }
-          return seg;
-        });
-      return (
-        <span key={i} className="whitespace-pre-wrap">
-          {formatted}
-        </span>
-      );
+          listBuffer.items.push(formatInline(olMatch[1] ?? ""));
+        } else {
+          flushList();
+          elements.push(
+            <span key={`line-${i}-${li}`} className="whitespace-pre-wrap">
+              {formatInline(line)}
+              {li < textLines.length - 1 ? "\n" : ""}
+            </span>
+          );
+        }
+      }
+      flushList();
+
+      return <span key={i}>{elements}</span>;
+    });
+  };
+
+  // Inline markdown formatting: bold, inline code
+  const formatInline = (text: string): React.ReactNode => {
+    const segments = text.split(/(\*\*.*?\*\*|`[^`]+`)/g);
+    return segments.map((seg, j) => {
+      if (seg.startsWith("**") && seg.endsWith("**")) {
+        return (
+          <strong key={j} className="font-semibold text-white">
+            {seg.slice(2, -2)}
+          </strong>
+        );
+      }
+      if (seg.startsWith("`") && seg.endsWith("`")) {
+        return (
+          <code
+            key={j}
+            className="rounded bg-zinc-800 px-1.5 py-0.5 text-[13px] text-purple-300"
+          >
+            {seg.slice(1, -1)}
+          </code>
+        );
+      }
+      return seg;
     });
   };
 
@@ -645,6 +792,9 @@ export default function EditorPage() {
                 <span className="text-sm font-medium text-zinc-300">
                   AI Assistant
                 </span>
+                {isStreaming && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-purple-400" />
+                )}
               </div>
               <span className="text-[11px] text-zinc-600">
                 {messages.length} messages
@@ -653,6 +803,21 @@ export default function EditorPage() {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin">
+              {messages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full text-center px-6">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-600/10 mb-4">
+                    <Sparkles className="h-6 w-6 text-purple-400" />
+                  </div>
+                  <h3 className="text-sm font-medium text-zinc-300 mb-1">
+                    Start a conversation
+                  </h3>
+                  <p className="text-[13px] text-zinc-600 max-w-[280px]">
+                    Describe what you want to build and Doable AI will generate
+                    the code for you.
+                  </p>
+                </div>
+              )}
+
               {messages.map((msg) => (
                 <div key={msg.id} className="group">
                   {msg.role === "user" ? (
@@ -677,19 +842,48 @@ export default function EditorPage() {
                   ) : (
                     <div className="flex items-start gap-3">
                       <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-purple-600/20 mt-0.5">
-                        <Sparkles className="h-3.5 w-3.5 text-purple-400" />
+                        {msg.isError ? (
+                          <AlertCircle className="h-3.5 w-3.5 text-red-400" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5 text-purple-400" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-purple-400">
-                            Doable AI
+                          <span
+                            className={`text-xs font-medium ${
+                              msg.isError
+                                ? "text-red-400"
+                                : "text-purple-400"
+                            }`}
+                          >
+                            {msg.isError ? "Error" : "Doable AI"}
                           </span>
                           <span className="text-[10px] text-zinc-700">
                             {msg.timestamp}
                           </span>
+                          {msg.isStreaming && (
+                            <Loader2 className="h-3 w-3 animate-spin text-purple-400" />
+                          )}
                         </div>
-                        <div className="text-[14px] leading-relaxed text-zinc-300">
-                          {formatContent(msg.content)}
+                        <div
+                          className={`text-[14px] leading-relaxed ${
+                            msg.isError
+                              ? "text-red-300 bg-red-950/30 border border-red-900/40 rounded-lg px-3 py-2"
+                              : "text-zinc-300"
+                          }`}
+                        >
+                          {msg.content
+                            ? formatContent(msg.content)
+                            : msg.isStreaming && (
+                                <span className="inline-flex items-center gap-1 text-zinc-500">
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                  Thinking...
+                                </span>
+                              )}
+                          {msg.isStreaming && msg.content && (
+                            <span className="inline-block w-1.5 h-4 bg-purple-400 animate-pulse ml-0.5 align-middle rounded-sm" />
+                          )}
                         </div>
                       </div>
                     </div>
@@ -733,14 +927,19 @@ export default function EditorPage() {
                       : "Describe what you want to plan..."
                   }
                   rows={2}
-                  className="flex-1 resize-none rounded-xl bg-zinc-900/80 border border-zinc-700/50 px-3.5 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-all"
+                  disabled={isStreaming}
+                  className="flex-1 resize-none rounded-xl bg-zinc-900/80 border border-zinc-700/50 px-3.5 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-all disabled:opacity-50"
                 />
                 <button
                   onClick={handleSend}
-                  disabled={!inputValue.trim()}
+                  disabled={!inputValue.trim() || isStreaming}
                   className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-30 disabled:hover:bg-purple-600 transition-colors"
                 >
-                  <Send className="h-4 w-4" />
+                  {isStreaming ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -770,22 +969,20 @@ export default function EditorPage() {
                 </div>
               </div>
 
-              {/* Code content with line numbers */}
-              <div className="flex-1 overflow-auto font-mono">
-                <table className="w-full border-collapse">
-                  <tbody>
-                    {MOCK_CODE.split("\n").map((line, i) => (
-                      <tr key={i} className="hover:bg-zinc-800/20">
-                        <td className="select-none border-r border-zinc-800/40 px-4 py-0 text-right text-[12px] leading-6 text-zinc-700 w-12">
-                          {i + 1}
-                        </td>
-                        <td className="px-4 py-0 text-[13px] leading-6 text-zinc-300 whitespace-pre">
-                          {highlightSyntax(line)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {/* Placeholder: no real code yet */}
+              <div className="flex flex-1 items-center justify-center">
+                <div className="text-center px-8">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60 mx-auto mb-3">
+                    <Code2 className="h-6 w-6 text-zinc-600" />
+                  </div>
+                  <p className="text-sm text-zinc-500 mb-1">
+                    Code will appear here as the AI generates files
+                  </p>
+                  <p className="text-xs text-zinc-700">
+                    Start a conversation in the Chat tab to generate your
+                    project
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -827,7 +1024,7 @@ export default function EditorPage() {
                 <div className="flex items-center gap-1 rounded-md bg-zinc-900/80 border border-zinc-800/60 px-2.5 py-1">
                   <Globe className="h-3 w-3 text-zinc-600" />
                   <span className="text-[11px] text-zinc-500 font-mono">
-                    preview.doable.app/{projectId}
+                    preview.doable.app/{resolvedProjectId}
                   </span>
                 </div>
               </div>
@@ -896,70 +1093,4 @@ export default function EditorPage() {
       </div>
     </div>
   );
-}
-
-// ─── Syntax highlighting (simple CSS-based) ─────────────────
-function highlightSyntax(line: string): React.ReactNode {
-  // Very basic keyword highlighting
-  const keywords =
-    /\b(import|export|default|function|const|let|var|return|from|if|else|type|interface|new|true|false|null|undefined|void|typeof|as|extends|implements)\b/g;
-  const strings = /(["'`])(?:(?=(\\?))\2.)*?\1/g;
-  const comments = /(\/\/.*$)/g;
-  const jsxTags = /(<\/?[A-Z]\w*|<\/?[a-z][\w.-]*)/g;
-
-  const parts: { start: number; end: number; cls: string }[] = [];
-
-  let m: RegExpExecArray | null;
-
-  // Comments first (highest priority)
-  while ((m = comments.exec(line)) !== null) {
-    parts.push({ start: m.index, end: m.index + m[0].length, cls: "text-zinc-600 italic" });
-  }
-
-  // Strings
-  while ((m = strings.exec(line)) !== null) {
-    if (!parts.some((p) => m!.index >= p.start && m!.index < p.end)) {
-      parts.push({ start: m.index, end: m.index + m[0].length, cls: "text-emerald-400" });
-    }
-  }
-
-  // Keywords
-  while ((m = keywords.exec(line)) !== null) {
-    if (!parts.some((p) => m!.index >= p.start && m!.index < p.end)) {
-      parts.push({ start: m.index, end: m.index + m[0].length, cls: "text-purple-400" });
-    }
-  }
-
-  // JSX tags
-  while ((m = jsxTags.exec(line)) !== null) {
-    if (!parts.some((p) => m!.index >= p.start && m!.index < p.end)) {
-      parts.push({ start: m.index, end: m.index + m[0].length, cls: "text-blue-400" });
-    }
-  }
-
-  if (parts.length === 0) return line;
-
-  // Sort by position
-  parts.sort((a, b) => a.start - b.start);
-
-  const result: React.ReactNode[] = [];
-  let lastEnd = 0;
-
-  parts.forEach((part, i) => {
-    if (part.start > lastEnd) {
-      result.push(line.slice(lastEnd, part.start));
-    }
-    result.push(
-      <span key={i} className={part.cls}>
-        {line.slice(part.start, part.end)}
-      </span>
-    );
-    lastEnd = part.end;
-  });
-
-  if (lastEnd < line.length) {
-    result.push(line.slice(lastEnd));
-  }
-
-  return <>{result}</>;
 }

@@ -2,34 +2,29 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
+import {
+  getCopilotEngine,
+  createDoableTools,
+  type ByokProviderConfig,
+} from "../ai/providers/copilot.js";
 
 export const chatRoutes = new Hono();
 
-// ─── In-memory chat storage (replace with DB in production) ─
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: string;
-}
-
-const chatHistories = new Map<string, ChatMessage[]>();
-
-function getChatHistory(projectId: string): ChatMessage[] {
-  if (!chatHistories.has(projectId)) {
-    chatHistories.set(projectId, []);
-  }
-  return chatHistories.get(projectId)!;
-}
-
-function generateId(): string {
-  return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
+// ─── In-memory session mapping (projectId → copilot sessionId) ─
+const projectSessions = new Map<string, string>();
 
 // ─── POST /projects/:id/chat ─ SSE streaming response ───────
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(32_000),
   mode: z.enum(["agent", "plan"]).default("agent"),
+  model: z.string().optional(),
+  provider: z
+    .object({
+      type: z.enum(["openai", "azure", "anthropic"]).optional(),
+      baseUrl: z.string(),
+      apiKey: z.string().optional(),
+    })
+    .optional(),
 });
 
 chatRoutes.post(
@@ -37,115 +32,204 @@ chatRoutes.post(
   zValidator("json", sendMessageSchema),
   async (c) => {
     const projectId = c.req.param("id");
-    const { content, mode } = c.req.valid("json");
-    const history = getChatHistory(projectId);
+    const { content, mode, model, provider } = c.req.valid("json");
 
-    // Store user message
-    const userMessage: ChatMessage = {
-      id: generateId(),
-      role: "user",
-      content,
-      timestamp: new Date().toISOString(),
-    };
-    history.push(userMessage);
+    try {
+      const engine = await getCopilotEngine();
 
-    // Generate AI response (placeholder - replace with real AI call)
-    const assistantId = generateId();
-    const responseText = generatePlaceholderResponse(content, mode);
+      // Get or create session for this project
+      let sessionId = projectSessions.get(projectId);
+      if (!sessionId) {
+        const systemPrompt =
+          mode === "plan"
+            ? "You are Doable's Plan Mode AI. Analyze requests, break them into steps, and produce structured plans. Do NOT write code directly — only plan and reason."
+            : "You are Doable's Agent Mode AI. You autonomously generate production-ready code, create and edit files, install packages, and deploy apps. Work step by step, creating complete, working implementations.";
 
-    return streamSSE(c, async (stream) => {
-      // Simulate streaming by chunking the response
-      const words = responseText.split(" ");
-      let accumulated = "";
-
-      for (let i = 0; i < words.length; i++) {
-        accumulated += (i > 0 ? " " : "") + words[i];
-
-        await stream.writeSSE({
-          data: JSON.stringify({
-            type: "text_delta",
-            data: (i > 0 ? " " : "") + words[i],
-          }),
+        sessionId = await engine.createSession({
+          projectId,
+          userId: "anonymous", // TODO: wire up auth
+          model,
+          provider: provider as ByokProviderConfig | undefined,
+          systemPrompt,
+          tools: createDoableTools(projectId),
         });
-
-        // Simulate delay
-        await new Promise((resolve) => setTimeout(resolve, 30));
+        projectSessions.set(projectId, sessionId);
       }
 
-      // Store complete assistant message
-      const assistantMessage: ChatMessage = {
-        id: assistantId,
-        role: "assistant",
-        content: accumulated,
-        timestamp: new Date().toISOString(),
-      };
-      history.push(assistantMessage);
+      // Stream events via SSE
+      return streamSSE(c, async (stream) => {
+        try {
+          for await (const event of engine.sendMessage(sessionId!, content)) {
+            const sseData = mapEventToSSE(event);
+            if (sseData) {
+              await stream.writeSSE({ data: JSON.stringify(sseData) });
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "error", data: msg }),
+          });
+        }
 
-      // Send done event
-      await stream.writeSSE({
-        data: "[DONE]",
+        await stream.writeSSE({ data: "[DONE]" });
       });
-    });
-  }
+    } catch (err) {
+      // If Copilot SDK is not available, fall back to placeholder
+      console.warn("[Chat] Copilot engine unavailable, using placeholder:", err);
+      return streamSSE(c, async (stream) => {
+        const responseText = generateFallbackResponse(content, mode);
+        const words = responseText.split(" ");
+
+        for (let i = 0; i < words.length; i++) {
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: "text_delta",
+              data: (i > 0 ? " " : "") + words[i],
+            }),
+          });
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        }
+
+        await stream.writeSSE({ data: "[DONE]" });
+      });
+    }
+  },
 );
 
 // ─── GET /projects/:id/chat/history ─ Chat history ──────────
-chatRoutes.get("/projects/:id/chat/history", (c) => {
+chatRoutes.get("/projects/:id/chat/history", async (c) => {
   const projectId = c.req.param("id");
-  const history = getChatHistory(projectId);
+  const sessionId = projectSessions.get(projectId);
 
-  return c.json({ data: history });
+  if (!sessionId) {
+    return c.json({ data: [] });
+  }
+
+  try {
+    const engine = await getCopilotEngine();
+    const messages = await engine.getSessionMessages(sessionId);
+    return c.json({ data: messages });
+  } catch {
+    return c.json({ data: [] });
+  }
 });
 
 // ─── DELETE /projects/:id/chat ─ Clear chat ─────────────────
-chatRoutes.delete("/projects/:id/chat", (c) => {
+chatRoutes.delete("/projects/:id/chat", async (c) => {
   const projectId = c.req.param("id");
-  chatHistories.delete(projectId);
+  const sessionId = projectSessions.get(projectId);
+
+  if (sessionId) {
+    try {
+      const engine = await getCopilotEngine();
+      await engine.deleteSession(sessionId);
+    } catch {
+      // Ignore cleanup errors
+    }
+    projectSessions.delete(projectId);
+  }
 
   return c.json({ data: { cleared: true } });
 });
 
-// ─── Placeholder Response Generator ─────────────────────────
-function generatePlaceholderResponse(
-  userMessage: string,
-  mode: string
-): string {
-  if (mode === "plan") {
-    return `Here's my plan for: "${userMessage}"
+// ─── POST /projects/:id/chat/abort ─ Abort current request ──
+chatRoutes.post("/projects/:id/chat/abort", async (c) => {
+  const projectId = c.req.param("id");
+  const sessionId = projectSessions.get(projectId);
 
-**Step 1: Analyze Requirements**
-I'll break down the requirements and identify key components needed.
-
-**Step 2: Create File Structure**
-Set up the necessary files and directories.
-
-**Step 3: Implement Core Logic**
-Build the main functionality with TypeScript and React.
-
-**Step 4: Add Styling**
-Apply Tailwind CSS for a polished look.
-
-**Step 5: Test & Refine**
-Verify everything works and make adjustments.
-
-Would you like me to proceed with this plan?`;
+  if (sessionId) {
+    try {
+      const engine = await getCopilotEngine();
+      await engine.abortSession(sessionId);
+    } catch {
+      // Ignore
+    }
   }
 
-  return `I'll help you with that! Let me work on: "${userMessage}"
+  return c.json({ data: { aborted: true } });
+});
 
-I'm generating the code now. Here's what I'm building:
+// ─── GET /ai/models ─ List available models ─────────────────
+chatRoutes.get("/ai/models", async (c) => {
+  try {
+    const engine = await getCopilotEngine();
+    const models = await engine.listModels();
+    return c.json({ data: models });
+  } catch (err) {
+    return c.json({
+      data: [],
+      error: err instanceof Error ? err.message : "Failed to list models",
+    });
+  }
+});
 
-\`\`\`tsx
-// Component generated based on your request
-export function GeneratedComponent() {
-  return (
-    <div className="p-4">
-      <h1>Generated Content</h1>
-      <p>This is a placeholder response.</p>
-    </div>
-  );
+// ─── GET /ai/auth-status ─ Check Copilot auth status ────────
+chatRoutes.get("/ai/auth-status", async (c) => {
+  try {
+    const engine = await getCopilotEngine();
+    const status = await engine.getAuthStatus();
+    return c.json({ data: status });
+  } catch (err) {
+    return c.json({
+      data: { authenticated: false },
+      error: err instanceof Error ? err.message : "Auth check failed",
+    });
+  }
+});
+
+// ─── Helpers ─────────────────────────────────────────────
+
+interface SSEEvent {
+  type: string;
+  data: unknown;
 }
-\`\`\`
 
-The files have been created and the preview should update shortly. Let me know if you'd like any changes!`;
+function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
+  const type = event.type as string;
+  const data = event.data as Record<string, unknown> | undefined;
+
+  switch (type) {
+    case "assistant.message":
+      return { type: "text_delta", data: data?.content ?? "" };
+    case "assistant.thinking":
+      return { type: "thinking", data: data?.content ?? "" };
+    case "tool.running":
+      return {
+        type: "tool_call",
+        data: {
+          name: data?.name,
+          arguments: data?.arguments,
+        },
+      };
+    case "tool.completed":
+      return {
+        type: "tool_result",
+        data: {
+          name: data?.name,
+          result: data?.result,
+        },
+      };
+    case "session.error":
+      return {
+        type: "error",
+        data: data?.message ?? "Unknown error",
+      };
+    case "session.idle":
+      return { type: "done", data: {} };
+    default:
+      // Pass through other events
+      if (data) {
+        return { type, data };
+      }
+      return null;
+  }
+}
+
+function generateFallbackResponse(userMessage: string, mode: string): string {
+  if (mode === "plan") {
+    return `Here's my plan for: "${userMessage}"\n\n**Step 1:** Analyze requirements\n**Step 2:** Create file structure\n**Step 3:** Implement core logic\n**Step 4:** Add styling\n**Step 5:** Test & refine\n\nWould you like me to proceed?`;
+  }
+
+  return `I'll help you with: "${userMessage}"\n\nNote: The Copilot SDK agent is not yet connected. To enable AI-powered code generation, ensure you have a GitHub Copilot subscription or configure a BYOK API key in settings.\n\nIn the meantime, you can use the editor to build your app manually.`;
 }

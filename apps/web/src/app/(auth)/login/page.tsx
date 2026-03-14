@@ -1,21 +1,40 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
+import { getGitHubLoginUrl, getGoogleLoginUrl } from "@/lib/api";
+
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  missing_tokens: "Authentication failed. Please try again.",
+  oauth_failed: "OAuth authentication failed. Please try again.",
+  access_denied: "Access was denied. Please try again.",
+};
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Pick up error from OAuth callback redirect
+  useEffect(() => {
+    const errorParam = searchParams.get("error");
+    if (errorParam) {
+      setError(
+        OAUTH_ERROR_MESSAGES[errorParam] ??
+          `Authentication error: ${errorParam}`
+      );
+    }
+  }, [searchParams]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -24,7 +43,7 @@ export default function LoginPage() {
 
     try {
       await login({ email, password });
-      router.push("/");
+      router.push("/dashboard");
     } catch (err: unknown) {
       if (err && typeof err === "object" && "body" in err) {
         const apiErr = err as { body: { error: string } };
@@ -49,7 +68,7 @@ export default function LoginPage() {
           variant="outline"
           className="w-full rounded-xl"
           onClick={() => {
-            window.location.href = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/auth/github`;
+            window.location.href = getGitHubLoginUrl();
           }}
         >
           <GitHubIcon className="mr-2 h-4 w-4" />
@@ -59,7 +78,7 @@ export default function LoginPage() {
           variant="outline"
           className="w-full rounded-xl"
           onClick={() => {
-            window.location.href = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/auth/google`;
+            window.location.href = getGoogleLoginUrl();
           }}
         >
           <GoogleIcon className="mr-2 h-4 w-4" />

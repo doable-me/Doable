@@ -3,22 +3,20 @@
 import { useContext } from "react";
 import { AuthContext, type AuthContextValue } from "@/providers/auth-provider";
 
-/**
- * Hook to access auth state and actions.
- *
- * Must be used inside an <AuthProvider>.
- *
- * @example
- * ```tsx
- * const { user, isAuthenticated, login, logout } = useAuth();
- * ```
- */
 export function useAuth(): AuthContextValue {
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error("useAuth must be used within an <AuthProvider>");
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    // Return a no-op fallback so pages don't crash outside AuthProvider
+    return {
+      user: null,
+      isLoading: false,
+      isAuthenticated: false,
+      login: async () => {},
+      register: async () => {},
+      logout: async () => {},
+      loginAsDemo: () => {},
+      refreshUser: async () => {},
+    };
   }
-
-  return context;
+  return ctx;
 }

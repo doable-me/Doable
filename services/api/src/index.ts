@@ -40,11 +40,12 @@ app.use("*", rateLimiter({ windowMs: 60_000, max: 100 }));
 // ─── Routes ─────────────────────────────────────────────────
 app.route("/health", healthRoutes);
 app.route("/auth", authRoutes);
+// Chat & editor routes BEFORE project routes (projectRoutes has wildcard auth middleware)
+app.route("/", chatRoutes);
+app.route("/", editorRoutes);
 app.route("/projects", projectRoutes);
 app.route("/workspaces", workspaceRoutes);
 app.route("/folders", folderRoutes);
-app.route("/", editorRoutes);
-app.route("/", chatRoutes);
 app.route("/billing", billingRoutes);
 app.route("/deploy", deployRoutes);
 app.route("/projects/:id/context", contextRoutes);

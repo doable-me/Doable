@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
+import { getGitHubLoginUrl, getGoogleLoginUrl } from "@/lib/api";
 
 function getPasswordStrength(password: string): {
   score: number;
@@ -63,7 +64,7 @@ export default function SignupPage() {
         password,
         displayName: displayName || undefined,
       });
-      router.push("/");
+      router.push("/dashboard");
     } catch (err: unknown) {
       if (err && typeof err === "object" && "body" in err) {
         const apiErr = err as { body: { error: string } };
@@ -88,7 +89,7 @@ export default function SignupPage() {
           variant="outline"
           className="w-full rounded-xl"
           onClick={() => {
-            window.location.href = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/auth/github`;
+            window.location.href = getGitHubLoginUrl();
           }}
         >
           <GitHubIcon className="mr-2 h-4 w-4" />
@@ -98,7 +99,7 @@ export default function SignupPage() {
           variant="outline"
           className="w-full rounded-xl"
           onClick={() => {
-            window.location.href = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/auth/google`;
+            window.location.href = getGoogleLoginUrl();
           }}
         >
           <GoogleIcon className="mr-2 h-4 w-4" />
