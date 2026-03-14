@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
-import { getGitHubLoginUrl, getGoogleLoginUrl, ApiError } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,9 +25,10 @@ export default function LoginPage() {
     try {
       await login({ email, password });
       router.push("/");
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.body.error);
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "body" in err) {
+        const apiErr = err as { body: { error: string } };
+        setError(apiErr.body.error);
       } else {
         setError("Something went wrong. Please try again.");
       }
@@ -39,7 +39,7 @@ export default function LoginPage() {
 
   return (
     <>
-      <h2 className="mb-6 text-center text-xl font-semibold text-foreground">
+      <h2 className="mb-6 text-center text-xl font-semibold text-[hsl(var(--foreground))]">
         Sign in to your account
       </h2>
 
@@ -47,9 +47,9 @@ export default function LoginPage() {
       <div className="space-y-3">
         <Button
           variant="outline"
-          className="w-full"
+          className="w-full rounded-xl"
           onClick={() => {
-            window.location.href = getGitHubLoginUrl();
+            window.location.href = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/auth/github`;
           }}
         >
           <GitHubIcon className="mr-2 h-4 w-4" />
@@ -57,9 +57,9 @@ export default function LoginPage() {
         </Button>
         <Button
           variant="outline"
-          className="w-full"
+          className="w-full rounded-xl"
           onClick={() => {
-            window.location.href = getGoogleLoginUrl();
+            window.location.href = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/auth/google`;
           }}
         >
           <GoogleIcon className="mr-2 h-4 w-4" />
@@ -70,10 +70,10 @@ export default function LoginPage() {
       {/* Divider */}
       <div className="relative my-6">
         <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-border" />
+          <span className="w-full border-t border-[hsl(var(--border))]" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-2 text-muted-foreground">
+          <span className="bg-[hsl(var(--card))] px-2 text-[hsl(var(--muted-foreground))]">
             Or continue with email
           </span>
         </div>
@@ -82,7 +82,7 @@ export default function LoginPage() {
       {/* Email/Password Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">
             {error}
           </div>
         )}
@@ -95,6 +95,7 @@ export default function LoginPage() {
             placeholder="you@example.com"
             autoComplete="email"
             required
+            className="rounded-xl"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
@@ -105,7 +106,7 @@ export default function LoginPage() {
             <Label htmlFor="password">Password</Label>
             <Link
               href="/forgot-password"
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
             >
               Forgot password?
             </Link>
@@ -116,21 +117,26 @@ export default function LoginPage() {
             placeholder="Enter your password"
             autoComplete="current-password"
             required
+            className="rounded-xl"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
 
-        <Button type="submit" className="w-full" disabled={isLoading}>
+        <Button
+          type="submit"
+          className="w-full rounded-xl bg-[hsl(263,70%,50%)] text-white hover:bg-[hsl(263,70%,45%)]"
+          disabled={isLoading}
+        >
           {isLoading ? "Signing in..." : "Sign in"}
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-muted-foreground">
+      <p className="mt-6 text-center text-sm text-[hsl(var(--muted-foreground))]">
         Don&apos;t have an account?{" "}
         <Link
           href="/signup"
-          className="font-medium text-foreground hover:underline"
+          className="font-medium text-[hsl(263,70%,50%)] hover:underline"
         >
           Sign up
         </Link>

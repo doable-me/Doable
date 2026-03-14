@@ -8,9 +8,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Doable - AI-Powered Application Builder",
+  title: "Doable - Build apps by chatting with AI",
   description:
-    "Build full-stack applications with AI. Describe what you want, and Doable builds it for you.",
+    "Create apps and websites by chatting with AI. Go from idea to deployed app in minutes, not months.",
   keywords: ["AI", "app builder", "code generation", "full-stack", "no-code"],
 };
 
@@ -21,7 +21,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body
+        className={`${inter.variable} font-sans antialiased`}
+        style={{ fontFamily: "var(--font-inter), system-ui, sans-serif" }}
+      >
         {children}
       </body>
     </html>

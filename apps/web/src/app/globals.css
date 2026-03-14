@@ -1,85 +1,126 @@
 @import "tailwindcss";
+@config "../../tailwind.config.ts";
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
+    --background: 40 33% 98%;
     --foreground: 240 10% 3.9%;
     --card: 0 0% 100%;
     --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
+    --primary: 263 70% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 260 10% 95%;
     --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
+    --muted: 40 20% 94%;
     --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
+    --accent: 260 10% 95%;
     --accent-foreground: 240 5.9% 10%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.5rem;
+    --border: 40 10% 90%;
+    --input: 40 10% 88%;
+    --ring: 263 70% 50%;
+    --radius: 0.75rem;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
+    --background: 240 10% 4%;
+    --foreground: 0 0% 95%;
+    --card: 240 10% 6%;
+    --card-foreground: 0 0% 95%;
+    --popover: 240 10% 6%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 263 70% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 4% 16%;
+    --accent-foreground: 0 0% 95%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 263 70% 58%;
   }
 }
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
 
   body {
-    @apply bg-background text-foreground;
-    font-feature-settings:
-      "rlig" 1,
-      "calt" 1;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
-/* ─── Editor Chat Markdown ────────────────────────────────── */
-@layer components {
-  .prose-editor pre.code-block {
-    @apply my-2 overflow-x-auto rounded-md border border-border bg-muted/50 p-3 font-mono text-xs leading-relaxed;
-    position: relative;
+/* Animated gradient orbs */
+@keyframes float-slow {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
   }
-
-  .prose-editor pre.code-block code {
-    @apply text-foreground;
+  33% {
+    transform: translate(30px, -50px) scale(1.05);
   }
-
-  .prose-editor code.inline-code {
-    @apply rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono text-xs text-foreground;
+  66% {
+    transform: translate(-20px, 20px) scale(0.95);
   }
+}
 
-  .prose-editor strong {
-    @apply font-semibold text-foreground;
+@keyframes float-medium {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
   }
+  33% {
+    transform: translate(-40px, 30px) scale(1.1);
+  }
+  66% {
+    transform: translate(30px, -30px) scale(0.9);
+  }
+}
 
-  .prose-editor em {
-    @apply italic;
+@keyframes float-fast {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(20px, 40px) scale(1.08);
+  }
+}
+
+.animate-float-slow {
+  animation: float-slow 20s ease-in-out infinite;
+}
+
+.animate-float-medium {
+  animation: float-medium 15s ease-in-out infinite;
+}
+
+.animate-float-fast {
+  animation: float-fast 10s ease-in-out infinite;
+}
+
+/* Gradient text utility */
+.text-gradient {
+  background: linear-gradient(135deg, #7C3AED, #a78bfa, #7C3AED);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradient-shift 4s ease-in-out infinite;
+}
+
+@keyframes gradient-shift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
   }
 }

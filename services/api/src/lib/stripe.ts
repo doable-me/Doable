@@ -2,13 +2,16 @@ import Stripe from "stripe";
 import type { WorkspacePlan } from "@doable/shared";
 
 // ─── Stripe Client ─────────────────────────────────────────
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? "";
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 
-export const stripe = new Stripe(STRIPE_SECRET_KEY, {
-  apiVersion: "2024-12-18.acacia",
-  typescript: true,
-});
+if (!STRIPE_SECRET_KEY) {
+  console.warn("⚠ STRIPE_SECRET_KEY not set — billing features will be unavailable.");
+}
+
+export const stripe = STRIPE_SECRET_KEY
+  ? new Stripe(STRIPE_SECRET_KEY, { typescript: true })
+  : (null as unknown as Stripe);
 
 // ─── Plan Definitions ──────────────────────────────────────
 export interface PlanDefinition {

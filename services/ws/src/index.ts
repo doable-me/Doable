@@ -1,21 +1,6 @@
 import { createServer } from "node:http";
-import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { logger } from "hono/logger";
 import { WebSocketServer, type WebSocket } from "ws";
 import * as jose from "jose";
-
-const app = new Hono();
-
-app.use("*", logger());
-
-app.get("/health", (c) => {
-  return c.json({
-    status: "healthy",
-    connections: clients.size,
-    timestamp: new Date().toISOString(),
-  });
-});
 
 // ─── Types ──────────────────────────────────────────────────
 interface AuthenticatedClient {
@@ -70,7 +55,16 @@ function broadcastToProject(
 const port = parseInt(process.env.WS_PORT ?? "4001", 10);
 const host = process.env.WS_HOST ?? "0.0.0.0";
 
-const server = createServer(serve({ fetch: app.fetch }).fetch as never);
+const server = createServer((req, res) => {
+  // Handle HTTP requests through Hono
+  if (req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "healthy", connections: clients.size, timestamp: new Date().toISOString() }));
+  } else {
+    res.writeHead(404);
+    res.end("Not Found");
+  }
+});
 
 const wss = new WebSocketServer({ server });
 
