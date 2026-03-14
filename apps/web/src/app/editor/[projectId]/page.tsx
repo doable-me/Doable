@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { getStoredTokens } from "@/lib/api";
+import { getStoredTokens, apiUpdateProject } from "@/lib/api";
 import {
   ArrowLeft,
   Send,
@@ -26,6 +26,12 @@ import {
   Loader2,
   AlertCircle,
   RotateCcw,
+  ThumbsUp,
+  ThumbsDown,
+  Copy,
+  MoreHorizontal,
+  Wrench,
+  Bookmark,
 } from "lucide-react";
 
 // ─── Constants ──────────────────────────────────────────────
@@ -36,6 +42,13 @@ type ActiveTab = "chat" | "code" | "preview";
 type ChatMode = "agent" | "plan";
 type DeviceMode = "desktop" | "mobile";
 
+interface ToolAction {
+  id: string;
+  toolName: string;
+  description: string;
+  isExpanded: boolean;
+}
+
 interface ChatMsg {
   id: string;
   role: "user" | "assistant";
@@ -43,6 +56,7 @@ interface ChatMsg {
   timestamp: string;
   isStreaming?: boolean;
   isError?: boolean;
+  toolActions?: ToolAction[];
 }
 
 interface FileTreeNode {
@@ -294,6 +308,48 @@ async function streamChat(
 }
 
 // ─── Helpers ────────────────────────────────────────────────
+
+/** Derive a project name from the user prompt (capitalize first letter of each word, max ~6 words) */
+function deriveProjectName(prompt: string): string {
+  const words = prompt.trim().split(/\s+/).slice(0, 6);
+  const name = words
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+  // Remove trailing punctuation
+  return name.replace(/[.!?,;:]+$/, "") || "New Project";
+}
+
+/** Generate a human-readable description for a tool action */
+function describeToolAction(toolName: string, args?: Record<string, unknown>): string {
+  const fileName = args?.path ?? args?.filePath ?? args?.file ?? "";
+  const shortName = typeof fileName === "string" ? fileName.split("/").pop() ?? "" : "";
+
+  if (toolName.toLowerCase().includes("create") || toolName.toLowerCase().includes("write")) {
+    return shortName ? `Create ${shortName}` : "Create file";
+  }
+  if (toolName.toLowerCase().includes("edit") || toolName.toLowerCase().includes("update") || toolName.toLowerCase().includes("patch")) {
+    return shortName ? `Edit ${shortName}` : "Edit file";
+  }
+  if (toolName.toLowerCase().includes("delete") || toolName.toLowerCase().includes("remove")) {
+    return shortName ? `Delete ${shortName}` : "Delete file";
+  }
+  if (toolName.toLowerCase().includes("rename")) {
+    return shortName ? `Rename ${shortName}` : "Rename file";
+  }
+  if (toolName.toLowerCase().includes("read")) {
+    return shortName ? `Read ${shortName}` : "Read file";
+  }
+  return toolName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Default suggestion chips */
+const DEFAULT_SUGGESTIONS = [
+  "Add navigation",
+  "Improve styling",
+  "Add dark mode",
+  "Add responsive design",
+];
+
 function generateProjectId(): string {
   return `proj-${Date.now()}`;
 }
@@ -340,12 +396,15 @@ export default function EditorPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [projectName, setProjectName] = useState(
-    isNewProject ? "New Project" : "My Awesome App"
-  );
+  const [projectName, setProjectName] = useState(() => {
+    const prompt = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("prompt") : null;
+    if (prompt) return deriveProjectName(prompt);
+    return isNewProject ? "New Project" : "My Awesome App";
+  });
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(projectName);
-  const [splitPos, setSplitPos] = useState(40); // percentage
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [splitPos, setSplitPos] = useState(35); // percentage
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
@@ -415,6 +474,19 @@ export default function EditorPage() {
       cancelled = true;
     };
   }, [resolvedProjectId]);
+
+  // ─── Update project name from prompt on mount ───────────────
+  useEffect(() => {
+    const prompt = searchParams.get("prompt");
+    if (!prompt) return;
+    const derived = deriveProjectName(prompt);
+    setProjectName(derived);
+    setNameInput(derived);
+    // Fire-and-forget update to the API
+    apiUpdateProject(resolvedProjectId, { name: derived }).catch(() => {
+      // Silently ignore — name will still be shown locally
+    });
+  }, [resolvedProjectId, searchParams]);
 
   // ─── Load file tree once scaffold is ready ────────────────
   const loadFileTree = useCallback(async () => {
@@ -516,9 +588,26 @@ export default function EditorPage() {
     };
   }, [isDragging]);
 
-  // ─── Handle tool completion — refresh files ────────────────
+  // ─── Handle tool completion — refresh files + add tool card ─
   const handleToolCompleted = useCallback(
     (toolName: string, _args: Record<string, unknown>) => {
+      // Add a tool action card to the currently streaming assistant message
+      setMessages((prev) => {
+        const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
+        if (!lastAssistant) return prev;
+        const action: ToolAction = {
+          id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          toolName,
+          description: describeToolAction(toolName, _args),
+          isExpanded: false,
+        };
+        return prev.map((m) =>
+          m.id === lastAssistant.id
+            ? { ...m, toolActions: [...(m.toolActions ?? []), action] }
+            : m,
+        );
+      });
+
       // File-modifying tools: refresh the file tree and optionally reload current file
       const fileTools = [
         "create_file",
@@ -897,10 +986,10 @@ export default function EditorPage() {
     // Loading states
     const statusMsg =
       scaffoldStatus === "scaffolding"
-        ? "Setting up project..."
+        ? "Getting ready..."
         : scaffoldStatus === "starting"
           ? "Starting dev server..."
-          : "Initializing...";
+          : "Getting ready...";
 
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-8">
@@ -931,55 +1020,68 @@ export default function EditorPage() {
 
           <div className="h-5 w-px bg-zinc-800" />
 
-          {/* Editable project name */}
-          {isEditingName ? (
-            <div className="flex items-center gap-1">
-              <input
-                autoFocus
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+          {/* Editable project name + preview status subtitle */}
+          <div className="flex flex-col">
+            {isEditingName ? (
+              <div className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      setProjectName(nameInput);
+                      setIsEditingName(false);
+                      apiUpdateProject(resolvedProjectId, { name: nameInput }).catch(() => {});
+                    }
+                    if (e.key === "Escape") {
+                      setNameInput(projectName);
+                      setIsEditingName(false);
+                    }
+                  }}
+                  onBlur={() => {
                     setProjectName(nameInput);
                     setIsEditingName(false);
-                  }
-                  if (e.key === "Escape") {
-                    setNameInput(projectName);
+                    apiUpdateProject(resolvedProjectId, { name: nameInput }).catch(() => {});
+                  }}
+                  className="bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 text-sm text-white outline-none focus:border-purple-500 w-48"
+                />
+                <button
+                  onClick={() => {
+                    setProjectName(nameInput);
                     setIsEditingName(false);
-                  }
-                }}
-                onBlur={() => {
-                  setProjectName(nameInput);
-                  setIsEditingName(false);
-                }}
-                className="bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 text-sm text-white outline-none focus:border-purple-500 w-48"
-              />
+                    apiUpdateProject(resolvedProjectId, { name: nameInput }).catch(() => {});
+                  }}
+                  className="p-1 text-zinc-400 hover:text-white"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={() => {
-                  setProjectName(nameInput);
-                  setIsEditingName(false);
-                }}
-                className="p-1 text-zinc-400 hover:text-white"
+                onClick={() => setIsEditingName(true)}
+                className="group flex items-center gap-1.5 text-sm font-medium text-zinc-200 hover:text-white"
               >
-                <Check className="h-3.5 w-3.5" />
+                <Sparkles className="h-3.5 w-3.5 text-purple-400" />
+                {projectName}
+                <Pencil className="h-3 w-3 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setIsEditingName(true)}
-              className="group flex items-center gap-1.5 text-sm font-medium text-zinc-200 hover:text-white"
-            >
-              <Sparkles className="h-3.5 w-3.5 text-purple-400" />
-              {projectName}
-              <Pencil className="h-3 w-3 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </button>
-          )}
+            )}
+            {/* Preview status subtitle */}
+            <span className="text-[10px] text-zinc-600 ml-5 leading-tight">
+              {scaffoldStatus === "ready"
+                ? "Previewing last saved version"
+                : scaffoldStatus === "error"
+                  ? "Preview unavailable"
+                  : "Loading Live Preview..."}
+            </span>
+          </div>
 
           {/* Scaffold status indicator */}
           {scaffoldStatus !== "ready" && scaffoldStatus !== "idle" && scaffoldStatus !== "error" && (
             <div className="flex items-center gap-1.5 text-[11px] text-zinc-500">
               <Loader2 className="h-3 w-3 animate-spin text-purple-400" />
-              {scaffoldStatus === "scaffolding" ? "Scaffolding..." : "Starting..."}
+              {scaffoldStatus === "scaffolding" ? "Getting ready..." : "Starting..."}
             </div>
           )}
           {scaffoldStatus === "ready" && (
@@ -1069,28 +1171,27 @@ export default function EditorPage() {
                 </div>
               )}
 
-              {messages.map((msg) => (
+              {messages.map((msg, msgIdx) => (
                 <div key={msg.id} className="group">
                   {msg.role === "user" ? (
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-800 mt-0.5">
-                        <User className="h-3.5 w-3.5 text-zinc-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-zinc-400">
-                            You
-                          </span>
+                    /* ── User message: right-aligned dark bubble (iMessage style) ── */
+                    <div className="flex justify-end">
+                      <div className="max-w-[85%]">
+                        <div className="flex items-center justify-end gap-2 mb-1">
                           <span className="text-[10px] text-zinc-700">
                             {msg.timestamp}
                           </span>
+                          <span className="text-xs font-medium text-zinc-400">
+                            You
+                          </span>
                         </div>
-                        <div className="rounded-xl rounded-tl-sm bg-zinc-800/60 border border-zinc-700/30 px-3.5 py-2.5 text-[14px] leading-relaxed text-zinc-200">
+                        <div className="rounded-2xl rounded-br-sm bg-zinc-700/80 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
                           {msg.content}
                         </div>
                       </div>
                     </div>
                   ) : (
+                    /* ── Assistant message: left-aligned ── */
                     <div className="flex items-start gap-3">
                       <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-purple-600/20 mt-0.5">
                         {msg.isError ? (
@@ -1117,6 +1218,27 @@ export default function EditorPage() {
                             <Loader2 className="h-3 w-3 animate-spin text-purple-400" />
                           )}
                         </div>
+
+                        {/* Tool action cards */}
+                        {msg.toolActions && msg.toolActions.length > 0 && (
+                          <div className="mb-2 space-y-1.5">
+                            {msg.toolActions.map((action) => (
+                              <div
+                                key={action.id}
+                                className="flex items-center justify-between rounded-lg border border-zinc-700/40 bg-zinc-800/50 px-3 py-2 text-[13px]"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Wrench className="h-3.5 w-3.5 flex-shrink-0 text-purple-400" />
+                                  <span className="text-zinc-300 truncate">
+                                    {action.description}
+                                  </span>
+                                </div>
+                                <Bookmark className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 hover:text-zinc-400 cursor-pointer" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         <div
                           className={`text-[14px] leading-relaxed ${
                             msg.isError
@@ -1136,6 +1258,65 @@ export default function EditorPage() {
                             <span className="inline-block w-1.5 h-4 bg-purple-400 animate-pulse ml-0.5 align-middle rounded-sm" />
                           )}
                         </div>
+
+                        {/* Feedback buttons below completed AI responses */}
+                        {!msg.isStreaming && !msg.isError && msg.content && (
+                          <div className="mt-2 flex items-center gap-1">
+                            <button
+                              className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                              title="Good response"
+                            >
+                              <ThumbsUp className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                              title="Bad response"
+                            >
+                              <ThumbsDown className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                              title="Copy message"
+                              onClick={() => {
+                                navigator.clipboard.writeText(msg.content).then(() => {
+                                  setCopiedMsgId(msg.id);
+                                  setTimeout(() => setCopiedMsgId(null), 2000);
+                                });
+                              }}
+                            >
+                              {copiedMsgId === msg.id ? (
+                                <Check className="h-3.5 w-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <button
+                              className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                              title="More"
+                            >
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Suggestion chips after the last completed AI response */}
+                        {!msg.isStreaming &&
+                          !msg.isError &&
+                          msg.content &&
+                          !isStreaming &&
+                          msgIdx === messages.length - 1 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {DEFAULT_SUGGESTIONS.map((suggestion) => (
+                                <button
+                                  key={suggestion}
+                                  onClick={() => sendMessage(suggestion)}
+                                  className="rounded-full border border-zinc-700/50 bg-zinc-800/40 px-3 py-1.5 text-[12px] text-zinc-400 hover:border-purple-500/40 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
+                                >
+                                  {suggestion}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                       </div>
                     </div>
                   )}
