@@ -170,3 +170,143 @@ export function getGitHubLoginUrl(): string {
 export function getGoogleLoginUrl(): string {
   return `${API_URL}/auth/google`;
 }
+
+// ─── Project Types (frontend) ─────────────────────────────
+
+export interface ApiProject {
+  id: string;
+  workspace_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  status: string;
+  visibility: string;
+  github_repo_url: string | null;
+  published_url: string | null;
+  thumbnail_url: string | null;
+  template_id: string | null;
+  folder_id: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  starred: boolean;
+}
+
+export interface ApiWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  avatar_url: string | null;
+  owner_id: string;
+  plan: string;
+  created_at: string;
+  updated_at: string;
+  memberCount: number;
+  credits: {
+    dailyRemaining: number;
+    monthlyRemaining: number;
+    rolloverCredits: number;
+  } | null;
+}
+
+// ─── Project API Methods ──────────────────────────────────
+
+export async function apiListProjects(opts?: {
+  workspaceId?: string;
+  search?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<{ data: ApiProject[]; pagination: { total: number; page: number; pageSize: number; totalPages: number } }> {
+  const params = new URLSearchParams();
+  if (opts?.workspaceId) params.set("workspaceId", opts.workspaceId);
+  if (opts?.search) params.set("search", opts.search);
+  if (opts?.status) params.set("status", opts.status);
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.pageSize) params.set("pageSize", String(opts.pageSize));
+  const qs = params.toString();
+  return apiFetch(`/projects${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiCreateProject(data: {
+  name: string;
+  description?: string;
+  workspaceId?: string;
+  prompt?: string;
+  templateId?: string;
+}): Promise<{ data: ApiProject }> {
+  return apiFetch("/projects", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function apiGetProject(id: string): Promise<{ data: ApiProject }> {
+  return apiFetch(`/projects/${id}`);
+}
+
+export async function apiUpdateProject(
+  id: string,
+  data: {
+    name?: string;
+    description?: string;
+    status?: string;
+    visibility?: string;
+    folderId?: string | null;
+  }
+): Promise<{ data: ApiProject }> {
+  return apiFetch(`/projects/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function apiDeleteProject(id: string): Promise<{ data: { id: string; deleted: boolean } }> {
+  return apiFetch(`/projects/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function apiDuplicateProject(id: string): Promise<{ data: ApiProject }> {
+  return apiFetch(`/projects/${id}/duplicate`, {
+    method: "POST",
+  });
+}
+
+export async function apiToggleStarProject(id: string): Promise<{ data: { projectId: string; starred: boolean } }> {
+  return apiFetch(`/projects/${id}/star`, {
+    method: "POST",
+  });
+}
+
+export async function apiListStarredProjects(): Promise<{ data: ApiProject[] }> {
+  return apiFetch("/projects/starred");
+}
+
+// ─── Workspace API Methods ────────────────────────────────
+
+export async function apiListWorkspaces(): Promise<{ data: ApiWorkspace[] }> {
+  return apiFetch("/workspaces");
+}
+
+export async function apiGetWorkspace(id: string): Promise<{ data: ApiWorkspace }> {
+  return apiFetch(`/workspaces/${id}`);
+}
+
+// ─── Template API Methods ─────────────────────────────────
+
+export interface ApiTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  previewImageUrl: string | null;
+  isOfficial: boolean;
+  fileCount: number;
+}
+
+export async function apiListTemplates(category?: string): Promise<{ data: { templates: ApiTemplate[]; categories: string[] } }> {
+  const qs = category ? `?category=${encodeURIComponent(category)}` : "";
+  return apiFetch(`/templates${qs}`);
+}

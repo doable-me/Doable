@@ -10,12 +10,14 @@ import {
 import {
   createProject,
   isProjectScaffolded,
+  getProjectPath,
 } from "../projects/file-manager.js";
 import {
   startDevServer,
   isRunning as isDevServerRunning,
   getDevServerUrl,
 } from "../projects/dev-server.js";
+import { autoVersion } from "../version-control/manager.js";
 
 export const chatRoutes = new Hono();
 
@@ -97,10 +99,12 @@ IMPORTANT RULES:
 
       // Stream events via SSE
       return streamSSE(c, async (stream) => {
+        let hadToolCalls = false;
         try {
           for await (const event of engine.sendMessage(sessionId!, content)) {
             const sseData = mapEventToSSE(event);
             if (sseData) {
+              if (sseData.type === "tool_result") hadToolCalls = true;
               await stream.writeSSE({ data: JSON.stringify(sseData) });
             }
           }
@@ -109,6 +113,21 @@ IMPORTANT RULES:
           await stream.writeSSE({
             data: JSON.stringify({ type: "error", data: msg }),
           });
+        }
+
+        // Auto-create a version snapshot after AI finishes making changes
+        if (hadToolCalls && isProjectScaffolded(projectId)) {
+          try {
+            const projectPath = getProjectPath(projectId);
+            await autoVersion(
+              projectId,
+              projectPath,
+              content.slice(0, 100), // Use first 100 chars of prompt as description
+              "anonymous" // TODO: wire up auth
+            );
+          } catch (vErr) {
+            console.warn("[Chat] Auto-version failed:", vErr);
+          }
         }
 
         await stream.writeSSE({ data: "[DONE]" });

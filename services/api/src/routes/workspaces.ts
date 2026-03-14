@@ -13,12 +13,33 @@ export const workspaceRoutes = new Hono<AuthEnv>();
 // All workspace routes require authentication
 workspaceRoutes.use("*", authMiddleware);
 
-// ─── List User's Workspaces ─────────────────────────────────
+// ─── List User's Workspaces (with member count + credits) ───
 workspaceRoutes.get("/", async (c) => {
   const userId = c.get("userId");
   const rows = await workspaces.listByUser(userId);
 
-  return c.json({ data: rows });
+  // Enrich each workspace with member count and credits
+  const data = await Promise.all(
+    rows.map(async (ws) => {
+      const [members, credits] = await Promise.all([
+        workspaces.listMembers(ws.id),
+        workspaces.getCredits(ws.id),
+      ]);
+      return {
+        ...ws,
+        memberCount: members.length,
+        credits: credits
+          ? {
+              dailyRemaining: credits.daily_remaining,
+              monthlyRemaining: credits.monthly_remaining,
+              rolloverCredits: credits.rollover_credits,
+            }
+          : null,
+      };
+    })
+  );
+
+  return c.json({ data });
 });
 
 // ─── Create Workspace ───────────────────────────────────────

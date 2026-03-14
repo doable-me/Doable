@@ -1,8 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  apiListWorkspaces,
+  apiListProjects,
+  type ApiWorkspace,
+  type ApiProject,
+} from "@/lib/api";
 import {
   Avatar,
   AvatarFallback,
@@ -29,21 +35,6 @@ import {
   LogOut,
   CreditCard,
 } from "lucide-react";
-
-// ─── Mock recent projects ────────────────────────────────────
-
-interface RecentProject {
-  id: string;
-  name: string;
-  icon: string;
-}
-
-const RECENT_PROJECTS: RecentProject[] = [
-  { id: "demo-1", name: "E-Commerce Dashboard", icon: "cart" },
-  { id: "demo-2", name: "AI Chat Interface", icon: "chat" },
-  { id: "demo-3", name: "Task Manager Pro", icon: "check" },
-  { id: "demo-5", name: "Analytics Platform", icon: "chart" },
-];
 
 // ─── Navigation Item ─────────────────────────────────────────
 
@@ -99,6 +90,33 @@ export function DashboardSidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const [recentOpen, setRecentOpen] = useState(true);
+  const [workspace, setWorkspace] = useState<ApiWorkspace | null>(null);
+  const [recentProjects, setRecentProjects] = useState<ApiProject[]>([]);
+
+  // Fetch workspace and recent projects
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadData() {
+      try {
+        const [wsRes, projRes] = await Promise.all([
+          apiListWorkspaces(),
+          apiListProjects({ pageSize: 5 }),
+        ]);
+        if (cancelled) return;
+
+        if (wsRes.data.length > 0) {
+          setWorkspace(wsRes.data[0]!);
+        }
+        setRecentProjects(projRes.data.slice(0, 5));
+      } catch (err) {
+        console.error("Sidebar: failed to load data:", err);
+      }
+    }
+
+    loadData();
+    return () => { cancelled = true; };
+  }, []);
 
   const displayName = user?.displayName ?? "User";
   const initials = displayName
@@ -108,9 +126,14 @@ export function DashboardSidebar() {
     .toUpperCase()
     .slice(0, 2);
 
-  const creditsUsed = 12;
-  const creditsTotal = 50;
-  const creditsPercent = (creditsUsed / creditsTotal) * 100;
+  // Use real workspace data or defaults
+  const workspaceName = workspace?.name ?? `${displayName}'s workspace`;
+  const workspacePlan = workspace?.plan ?? "free";
+  const memberCount = workspace?.memberCount ?? 1;
+  const dailyCredits = workspace?.credits?.dailyRemaining ?? 0;
+  const dailyTotal = workspacePlan === "free" ? 5 : workspacePlan === "pro" ? 50 : 200;
+  const creditsUsed = dailyTotal - dailyCredits;
+  const creditsPercent = dailyTotal > 0 ? (creditsUsed / dailyTotal) * 100 : 0;
 
   return (
     <aside className="flex h-screen w-[260px] shrink-0 flex-col border-r border-zinc-800 bg-[#0a0a0a]">
@@ -129,23 +152,25 @@ export function DashboardSidebar() {
         <div className="flex items-center justify-between mb-2">
           <div>
             <p className="text-sm font-medium text-zinc-200 truncate">
-              {displayName}&apos;s workspace
+              {workspaceName}
             </p>
-            <p className="text-[11px] text-zinc-500">Free plan</p>
+            <p className="text-[11px] text-zinc-500 capitalize">
+              {workspacePlan} plan{memberCount > 1 ? ` \u00b7 ${memberCount} members` : ""}
+            </p>
           </div>
           <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
         </div>
         <div className="space-y-1">
           <div className="flex items-center justify-between text-[11px]">
-            <span className="text-zinc-500">Credits</span>
+            <span className="text-zinc-500">Credits today</span>
             <span className="text-zinc-400">
-              {creditsUsed}/{creditsTotal}
+              {creditsUsed}/{dailyTotal}
             </span>
           </div>
           <div className="h-1.5 w-full rounded-full bg-zinc-800">
             <div
               className="h-1.5 rounded-full bg-gradient-to-r from-violet-600 to-purple-500 transition-all"
-              style={{ width: `${creditsPercent}%` }}
+              style={{ width: `${Math.min(creditsPercent, 100)}%` }}
             />
           </div>
         </div>
@@ -199,7 +224,12 @@ export function DashboardSidebar() {
           </button>
           {recentOpen && (
             <div className="space-y-0.5 mt-1">
-              {RECENT_PROJECTS.map((project) => (
+              {recentProjects.length === 0 && (
+                <p className="px-3 py-2 text-[11px] text-zinc-600">
+                  No recent projects
+                </p>
+              )}
+              {recentProjects.map((project) => (
                 <button
                   key={project.id}
                   onClick={() => router.push(`/editor/${project.id}`)}
@@ -219,20 +249,22 @@ export function DashboardSidebar() {
       {/* ── Bottom Section ───────────────────────────────── */}
       <div className="mt-auto border-t border-zinc-800 p-3 space-y-3">
         {/* Upgrade Card */}
-        <div className="rounded-lg bg-gradient-to-br from-violet-600/20 to-purple-600/10 border border-violet-500/20 p-3">
-          <div className="flex items-center gap-2 mb-1.5">
-            <Zap className="h-4 w-4 text-violet-400" />
-            <span className="text-sm font-medium text-violet-300">
-              Upgrade to Pro
-            </span>
+        {workspacePlan === "free" && (
+          <div className="rounded-lg bg-gradient-to-br from-violet-600/20 to-purple-600/10 border border-violet-500/20 p-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Zap className="h-4 w-4 text-violet-400" />
+              <span className="text-sm font-medium text-violet-300">
+                Upgrade to Pro
+              </span>
+            </div>
+            <p className="text-[11px] text-zinc-400 mb-2.5">
+              Get unlimited projects and priority AI generation.
+            </p>
+            <button className="w-full rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-500 transition-colors">
+              Upgrade now
+            </button>
           </div>
-          <p className="text-[11px] text-zinc-400 mb-2.5">
-            Get unlimited projects and priority AI generation.
-          </p>
-          <button className="w-full rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-500 transition-colors">
-            Upgrade now
-          </button>
-        </div>
+        )}
 
         {/* User Avatar + Menu */}
         <DropdownMenu>

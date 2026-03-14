@@ -37,7 +37,7 @@ templateRoutes.get("/:id", async (c) => {
     return c.json({ error: "Template not found" }, 404);
   }
 
-  // Return template info with file paths (not full content for listing)
+  // Return full template details including code files
   return c.json({
     data: {
       id: template.id,
@@ -47,6 +47,7 @@ templateRoutes.get("/:id", async (c) => {
       previewImageUrl: template.previewImageUrl,
       isOfficial: template.isOfficial,
       files: Object.keys(template.codeFiles),
+      codeFiles: template.codeFiles,
       hasContextOverrides: !!template.contextOverrides,
     },
   });

@@ -1,6 +1,10 @@
 import { blankTemplate } from "./definitions/blank.js";
 import { saasDashboardTemplate } from "./definitions/saas-dashboard.js";
 import { landingPageTemplate } from "./definitions/landing-page.js";
+import { ecommerceStoreTemplate } from "./definitions/ecommerce-store.js";
+import { blogTemplate } from "./definitions/blog.js";
+import { portfolioTemplate } from "./definitions/portfolio.js";
+import { todoAppTemplate } from "./definitions/todo-app.js";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -34,6 +38,10 @@ const BUILT_IN_TEMPLATES = new Map<string, TemplateDefinition>([
   [blankTemplate.id, blankTemplate],
   [saasDashboardTemplate.id, saasDashboardTemplate],
   [landingPageTemplate.id, landingPageTemplate],
+  [ecommerceStoreTemplate.id, ecommerceStoreTemplate],
+  [blogTemplate.id, blogTemplate],
+  [portfolioTemplate.id, portfolioTemplate],
+  [todoAppTemplate.id, todoAppTemplate],
 ]);
 
 /**

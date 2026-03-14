@@ -2,10 +2,13 @@ import { Hono } from "hono";
 import {
   createVersion,
   getVersions,
+  getVersion,
   restoreVersion,
   bookmarkVersion,
   diffVersions,
+  autoVersion,
 } from "../version-control/manager.js";
+import { getProjectPath, isProjectScaffolded } from "../projects/file-manager.js";
 
 export const versionRoutes = new Hono();
 
@@ -60,6 +63,59 @@ versionRoutes.post("/:projectId/versions", async (c) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: "Failed to create version", message }, 500);
+  }
+});
+
+// ─── Get single version ───────────────────────────────────
+versionRoutes.get("/:projectId/versions/:versionId", async (c) => {
+  const versionId = c.req.param("versionId");
+
+  try {
+    const version = await getVersion(versionId);
+
+    if (!version) {
+      return c.json({ error: "Version not found" }, 404);
+    }
+
+    return c.json({ data: version });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: "Failed to get version", message }, 500);
+  }
+});
+
+// ─── Auto-create version (called after AI finishes generating code) ──
+versionRoutes.post("/:projectId/versions/auto", async (c) => {
+  const projectId = c.req.param("projectId");
+
+  const body = await c.req.json<{
+    description?: string;
+    createdBy: string;
+  }>();
+
+  if (!body.createdBy) {
+    return c.json({ error: "Missing required field: createdBy" }, 400);
+  }
+
+  // Resolve project path from project ID
+  if (!isProjectScaffolded(projectId)) {
+    return c.json({ error: "Project not scaffolded yet" }, 400);
+  }
+
+  const projectPath = getProjectPath(projectId);
+
+  try {
+    const version = await autoVersion(
+      projectId,
+      projectPath,
+      body.description ?? "AI-generated changes",
+      body.createdBy
+    );
+
+    return c.json({ data: version }, 201);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: "Failed to auto-create version", message }, 500);
   }
 });
 

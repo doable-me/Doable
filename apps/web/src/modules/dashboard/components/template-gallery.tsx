@@ -39,6 +39,10 @@ const CATEGORY_CONFIG: Record<
   starter: { label: "Starters", icon: FileCode },
   dashboard: { label: "Dashboards", icon: BarChart3 },
   marketing: { label: "Marketing", icon: Layout },
+  ecommerce: { label: "E-commerce", icon: Rocket },
+  content: { label: "Content", icon: FileCode },
+  personal: { label: "Personal", icon: Layout },
+  productivity: { label: "Productivity", icon: BarChart3 },
 };
 
 // ─── Component ──────────────────────────────────────────────

@@ -4,12 +4,14 @@ import * as argon2 from "argon2";
 import { sql } from "../db/index.js";
 import { authQueries } from "@doable/db/queries/auth.js";
 import { userQueries } from "@doable/db/queries/users.js";
+import { workspaceQueries } from "@doable/db/queries/workspaces.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt.js";
 import { getGitHubAuthUrl, exchangeGitHubCode, getGoogleAuthUrl, exchangeGoogleCode } from "../lib/oauth.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const auth = authQueries(sql);
 const users = userQueries(sql);
+const workspaces = workspaceQueries(sql);
 export const authRoutes = new Hono();
 const FRONTEND_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
@@ -61,6 +63,44 @@ async function issueTokens(userId: string, email: string) {
     // DB unavailable — tokens still work for stateless JWT validation
   }
   return { accessToken, refreshToken, expiresIn: 900 };
+}
+
+/**
+ * Ensure the user has at least one workspace. If not, auto-create a personal one.
+ * This is called during /auth/me so the frontend always has a workspace to work with.
+ */
+async function ensureWorkspace(userId: string, displayName: string | null, email: string): Promise<void> {
+  try {
+    const existing = await workspaces.listByUser(userId);
+    if (existing.length > 0) return;
+
+    // Derive a workspace slug from the display name or email prefix
+    const baseName = displayName ?? email.split("@")[0] ?? "user";
+    const slug = baseName
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 48) || "workspace";
+
+    // Ensure slug uniqueness by appending a random suffix if taken
+    let finalSlug = slug;
+    const existingWs = await workspaces.findBySlug(finalSlug);
+    if (existingWs) {
+      finalSlug = `${slug.slice(0, 40)}-${Date.now().toString(36)}`;
+    }
+
+    await workspaces.create({
+      name: `${baseName}'s workspace`,
+      slug: finalSlug,
+      ownerId: userId,
+      plan: "free",
+    });
+    console.log(`[Auth] Auto-created workspace for user ${userId} (slug: ${finalSlug})`);
+  } catch (err) {
+    console.error("[Auth] Failed to auto-create workspace:", err);
+    // Non-fatal — user can still log in
+  }
 }
 
 // ─── POST /auth/register ───────────────────────────────────
@@ -139,7 +179,11 @@ authRoutes.get("/me", authMiddleware, async (c) => {
   // Try DB first, fall back to JWT payload if DB is unavailable
   try {
     const user = await users.findById(userId);
-    if (user) return c.json({ user: sanitizeUser(user) });
+    if (user) {
+      // Auto-create workspace on first login if needed
+      await ensureWorkspace(userId, user.display_name, user.email);
+      return c.json({ user: sanitizeUser(user) });
+    }
   } catch {
     // DB unavailable
   }
