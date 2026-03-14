@@ -1,0 +1,136 @@
+import { Hono } from "hono";
+import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
+import type { AuthEnv } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
+import { sql } from "../db/index.js";
+import { contextManager } from "../context/manager.js";
+import { getContextStats } from "../context/injector.js";
+
+export const contextRoutes = new Hono<AuthEnv>();
+contextRoutes.use("*", authMiddleware);
+
+const ctx = contextManager(sql);
+
+// ─── Validation ─────────────────────────────────────────────
+
+const filenameSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(
+    /^[a-z0-9][a-z0-9._-]*\.md$/,
+    "Filename must be lowercase, end with .md, and use only a-z, 0-9, dots, hyphens, underscores"
+  );
+
+const contentSchema = z.string().max(50_000, "Content must be under 50,000 characters");
+
+const updateBody = z.object({ content: contentSchema });
+const createBody = z.object({ content: contentSchema.optional() });
+
+// ─── Routes ─────────────────────────────────────────────────
+
+/**
+ * GET /projects/:id/context
+ * List all context files for a project, plus stats.
+ */
+contextRoutes.get("/", async (c) => {
+  const projectId = c.req.param("id");
+
+  // Ensure context is initialized
+  const files = await ctx.initializeContext(projectId!);
+  const stats = getContextStats(files);
+
+  return c.json({ data: { files, stats } });
+});
+
+/**
+ * GET /projects/:id/context/:filename
+ * Read a single context file.
+ */
+contextRoutes.get("/:filename", async (c) => {
+  const projectId = c.req.param("id");
+  const filename = c.req.param("filename");
+
+  const file = await ctx.readContextFile(projectId!, filename!);
+  if (!file) {
+    return c.json({ error: "Context file not found" }, 404);
+  }
+
+  return c.json({ data: file });
+});
+
+/**
+ * PUT /projects/:id/context/:filename
+ * Update a context file's content.
+ */
+contextRoutes.put(
+  "/:filename",
+  zValidator("json", updateBody),
+  async (c) => {
+    const projectId = c.req.param("id");
+    const filename = c.req.param("filename");
+    const { content } = c.req.valid("json");
+
+    const parseResult = filenameSchema.safeParse(filename);
+    if (!parseResult.success) {
+      return c.json({ error: "Invalid filename", details: parseResult.error.flatten() }, 400);
+    }
+
+    const file = await ctx.updateContextFile(projectId!, filename!, content);
+    return c.json({ data: file });
+  }
+);
+
+/**
+ * POST /projects/:id/context/:filename
+ * Create a new custom context file.
+ */
+contextRoutes.post(
+  "/:filename",
+  zValidator("json", createBody),
+  async (c) => {
+    const projectId = c.req.param("id");
+    const filename = c.req.param("filename");
+    const { content } = c.req.valid("json");
+
+    const parseResult = filenameSchema.safeParse(filename);
+    if (!parseResult.success) {
+      return c.json({ error: "Invalid filename", details: parseResult.error.flatten() }, 400);
+    }
+
+    // Check if file already exists
+    const existing = await ctx.readContextFile(projectId!, filename!);
+    if (existing) {
+      return c.json({ error: "Context file already exists. Use PUT to update." }, 409);
+    }
+
+    const file = await ctx.createContextFile(
+      projectId!,
+      filename!,
+      content ?? ""
+    );
+    return c.json({ data: file }, 201);
+  }
+);
+
+/**
+ * DELETE /projects/:id/context/:filename
+ * Delete a context file (default files get reset instead).
+ */
+contextRoutes.delete("/:filename", async (c) => {
+  const projectId = c.req.param("id");
+  const filename = c.req.param("filename");
+
+  const parseResult = filenameSchema.safeParse(filename);
+  if (!parseResult.success) {
+    return c.json({ error: "Invalid filename" }, 400);
+  }
+
+  const deleted = await ctx.deleteContextFile(projectId!, filename!);
+  if (!deleted) {
+    return c.json({ error: "Context file not found" }, 404);
+  }
+
+  return c.json({ data: { deleted: true } });
+});

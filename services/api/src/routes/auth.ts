@@ -1,0 +1,212 @@
+import { Hono } from "hono";
+import { z } from "zod";
+import * as argon2 from "argon2";
+import { sql } from "../db/index.js";
+import { authQueries } from "@doable/db/queries/auth.js";
+import { userQueries } from "@doable/db/queries/users.js";
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt.js";
+import { getGitHubAuthUrl, exchangeGitHubCode, getGoogleAuthUrl, exchangeGoogleCode } from "../lib/oauth.js";
+import { authMiddleware } from "../middleware/auth.js";
+
+const auth = authQueries(sql);
+const users = userQueries(sql);
+export const authRoutes = new Hono();
+const FRONTEND_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
+// ─── Validation Schemas ─────────────────────────────────────
+const registerSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128)
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, "Must contain uppercase, lowercase, and a number"),
+  displayName: z.string().min(1).max(100).optional(),
+});
+const loginSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(1, "Password is required"),
+});
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1, "Refresh token is required"),
+});
+const resetPasswordSchema = z.object({
+  token: z.string().min(1, "Reset token is required"),
+  password: z.string().min(8).max(128),
+});
+
+// ─── Helpers ────────────────────────────────────────────────
+function hashToken(token: string): string {
+  return Buffer.from(token).toString("base64url").slice(0, 64);
+}
+
+function sanitizeUser(user: {
+  id: string; email: string; display_name: string | null;
+  avatar_url: string | null; created_at: Date; updated_at: Date;
+}) {
+  return {
+    id: user.id, email: user.email,
+    displayName: user.display_name, avatarUrl: user.avatar_url,
+    createdAt: user.created_at.toISOString(), updatedAt: user.updated_at.toISOString(),
+  };
+}
+
+const ARGON2_OPTS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 } as const;
+
+async function issueTokens(userId: string, email: string) {
+  const accessToken = await signAccessToken(userId, email);
+  const refreshToken = await signRefreshToken(userId);
+  const tokenHash = hashToken(refreshToken);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await auth.storeRefreshToken({ userId, tokenHash, expiresAt });
+  return { accessToken, refreshToken, expiresIn: 900 };
+}
+
+// ─── POST /auth/register ───────────────────────────────────
+authRoutes.post("/register", async (c) => {
+  const parsed = registerSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
+  }
+  const { email, password, displayName } = parsed.data;
+
+  const existing = await auth.findUserByEmail(email);
+  if (existing) return c.json({ error: "An account with this email already exists" }, 409);
+
+  const passwordHash = await argon2.hash(password, ARGON2_OPTS);
+  const user = await auth.createUser({ email, passwordHash, displayName });
+  const tokens = await issueTokens(user.id, user.email);
+  return c.json({ user: sanitizeUser(user), tokens }, 201);
+});
+
+// ─── POST /auth/login ──────────────────────────────────────
+authRoutes.post("/login", async (c) => {
+  const parsed = loginSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
+  }
+  const { email, password } = parsed.data;
+
+  const user = await auth.findUserByEmail(email);
+  if (!user || !user.password_hash) return c.json({ error: "Invalid email or password" }, 401);
+
+  const valid = await argon2.verify(user.password_hash, password);
+  if (!valid) return c.json({ error: "Invalid email or password" }, 401);
+
+  const tokens = await issueTokens(user.id, user.email);
+  return c.json({ user: sanitizeUser(user), tokens });
+});
+
+// ─── POST /auth/refresh ────────────────────────────────────
+authRoutes.post("/refresh", async (c) => {
+  const parsed = refreshSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Refresh token is required" }, 400);
+
+  const { refreshToken } = parsed.data;
+  try {
+    const payload = await verifyRefreshToken(refreshToken);
+    const tokenHash = hashToken(refreshToken);
+    const stored = await auth.findRefreshToken(tokenHash);
+    if (!stored) return c.json({ error: "Refresh token has been revoked" }, 401);
+
+    await auth.deleteRefreshToken(tokenHash);
+    const user = await users.findById(payload.sub);
+    if (!user) return c.json({ error: "User not found" }, 401);
+
+    const tokens = await issueTokens(user.id, user.email);
+    return c.json({ user: sanitizeUser(user), tokens });
+  } catch {
+    return c.json({ error: "Invalid or expired refresh token" }, 401);
+  }
+});
+
+// ─── POST /auth/logout ─────────────────────────────────────
+authRoutes.post("/logout", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { refreshToken } = body as { refreshToken?: string };
+  if (refreshToken) await auth.deleteRefreshToken(hashToken(refreshToken));
+  return c.json({ message: "Logged out successfully" });
+});
+
+// ─── GET /auth/me ──────────────────────────────────────────
+authRoutes.get("/me", authMiddleware, async (c) => {
+  const userId = c.get("userId" as never) as string;
+  const user = await users.findById(userId);
+  if (!user) return c.json({ error: "User not found" }, 404);
+  return c.json({ user: sanitizeUser(user) });
+});
+
+// ─── POST /auth/forgot-password ────────────────────────────
+authRoutes.post("/forgot-password", async (c) => {
+  const { email } = (await c.req.json()) as { email?: string };
+  if (!email) return c.json({ error: "Email is required" }, 400);
+  // Always return success to prevent email enumeration
+  // TODO: Implement email sending with password reset link
+  return c.json({ message: "If an account with that email exists, a reset link has been sent." });
+});
+
+// ─── POST /auth/reset-password ─────────────────────────────
+authRoutes.post("/reset-password", async (c) => {
+  const parsed = resetPasswordSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
+  }
+  const { token, password } = parsed.data;
+  try {
+    const payload = await verifyRefreshToken(token);
+    const passwordHash = await argon2.hash(password, ARGON2_OPTS);
+    const user = await auth.updateUserPassword(payload.sub, passwordHash);
+    if (!user) return c.json({ error: "User not found" }, 404);
+    await auth.deleteAllRefreshTokensForUser(payload.sub);
+    return c.json({ message: "Password has been reset successfully" });
+  } catch {
+    return c.json({ error: "Invalid or expired reset token" }, 400);
+  }
+});
+
+// ─── GET /auth/github ──────────────────────────────────────
+authRoutes.get("/github", (c) => {
+  return c.redirect(getGitHubAuthUrl(crypto.randomUUID()));
+});
+
+// ─── GET /auth/github/callback ─────────────────────────────
+authRoutes.get("/github/callback", async (c) => {
+  const code = c.req.query("code");
+  if (!code) return c.redirect(`${FRONTEND_URL}/login?error=missing_code`);
+  try {
+    const { user: ghUser } = await exchangeGitHubCode(code);
+    if (!ghUser.email) return c.redirect(`${FRONTEND_URL}/login?error=no_email`);
+
+    const user = await auth.createOrUpdateOAuthUser({
+      email: ghUser.email, displayName: ghUser.name ?? ghUser.login,
+      avatarUrl: ghUser.avatar_url, githubId: String(ghUser.id),
+    });
+    const tokens = await issueTokens(user.id, user.email);
+    const params = new URLSearchParams({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
+    return c.redirect(`${FRONTEND_URL}/auth/callback?${params.toString()}`);
+  } catch (err) {
+    console.error("[OAuth] GitHub callback error:", err);
+    return c.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
+  }
+});
+
+// ─── GET /auth/google ──────────────────────────────────────
+authRoutes.get("/google", (c) => {
+  return c.redirect(getGoogleAuthUrl(crypto.randomUUID()));
+});
+
+// ─── GET /auth/google/callback ─────────────────────────────
+authRoutes.get("/google/callback", async (c) => {
+  const code = c.req.query("code");
+  if (!code) return c.redirect(`${FRONTEND_URL}/login?error=missing_code`);
+  try {
+    const { user: googleUser } = await exchangeGoogleCode(code);
+    const user = await auth.createOrUpdateOAuthUser({
+      email: googleUser.email, displayName: googleUser.name,
+      avatarUrl: googleUser.picture, googleId: googleUser.sub,
+    });
+    const tokens = await issueTokens(user.id, user.email);
+    const params = new URLSearchParams({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
+    return c.redirect(`${FRONTEND_URL}/auth/callback?${params.toString()}`);
+  } catch (err) {
+    console.error("[OAuth] Google callback error:", err);
+    return c.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
+  }
+});

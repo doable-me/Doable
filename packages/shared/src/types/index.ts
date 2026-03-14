@@ -1,0 +1,185 @@
+// ─── Enums ──────────────────────────────────────────────────
+export type WorkspacePlan = "free" | "pro" | "business" | "enterprise";
+export type WorkspaceRole = "owner" | "admin" | "member" | "viewer";
+export type ProjectStatus = "creating" | "draft" | "published" | "error";
+export type ProjectVisibility = "public" | "restricted";
+export type AiSessionMode = "agent" | "plan" | "chat";
+export type AiMessageRole = "user" | "assistant" | "system" | "tool";
+export type ApiKeyEnvironment = "test" | "live";
+export type ConnectorType = "shared" | "personal" | "custom";
+export type ConnectorStatus = "active" | "inactive" | "error";
+
+// ─── Core Entities ──────────────────────────────────────────
+export interface User {
+  id: string;
+  email: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  githubId: string | null;
+  googleId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  avatarUrl: string | null;
+  ownerId: string;
+  plan: WorkspacePlan;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceMember {
+  workspaceId: string;
+  userId: string;
+  role: WorkspaceRole;
+  joinedAt: string;
+}
+
+export interface Project {
+  id: string;
+  workspaceId: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  status: ProjectStatus;
+  visibility: ProjectVisibility;
+  githubRepoUrl: string | null;
+  publishedUrl: string | null;
+  thumbnailUrl: string | null;
+  templateId: string | null;
+  folderId: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectVersion {
+  id: string;
+  projectId: string;
+  versionNumber: number;
+  description: string | null;
+  snapshotData: Record<string, unknown> | null;
+  bookmarked: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface AiSession {
+  id: string;
+  projectId: string;
+  userId: string;
+  mode: AiSessionMode;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiMessage {
+  id: string;
+  sessionId: string;
+  role: AiMessageRole;
+  content: string | null;
+  toolCalls: Record<string, unknown>[] | null;
+  createdAt: string;
+}
+
+export interface Credits {
+  id: string;
+  workspaceId: string;
+  dailyRemaining: number;
+  monthlyRemaining: number;
+  rolloverCredits: number;
+  lastDailyReset: string | null;
+  lastMonthlyReset: string | null;
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  codeFiles: Record<string, unknown> | null;
+  doableContext: Record<string, unknown> | null;
+  previewImageUrl: string | null;
+  isOfficial: boolean;
+  usageCount: number;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+export interface Connector {
+  id: string;
+  workspaceId: string;
+  type: ConnectorType;
+  provider: string;
+  config: Record<string, unknown> | null;
+  status: ConnectorStatus;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface Folder {
+  id: string;
+  workspaceId: string;
+  name: string;
+  parentId: string | null;
+  position: number;
+  createdAt: string;
+}
+
+export interface ProjectStar {
+  userId: string;
+  projectId: string;
+  createdAt: string;
+}
+
+// ─── Version Control ───────────────────────────────────────
+export type FileChangeType = "added" | "modified" | "deleted";
+
+export interface FileChange {
+  path: string;
+  type: FileChangeType;
+  oldContent?: string;
+  newContent?: string;
+  oldSize?: number;
+  newSize?: number;
+}
+
+export interface DiffSummary {
+  added: number;
+  modified: number;
+  deleted: number;
+  totalChanges: number;
+}
+
+// ─── GitHub ─────────────────────────────────────────────────
+export type GitHubSyncStatus = "synced" | "ahead" | "behind" | "diverged" | "disconnected";
+
+export interface GitHubConnection {
+  id: string;
+  projectId: string;
+  repoOwner: string;
+  repoName: string;
+  defaultBranch: string;
+  lastSyncedAt: string | null;
+  syncStatus: GitHubSyncStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GitHubCommit {
+  id: string;
+  connectionId: string;
+  sha: string;
+  message: string;
+  author: string;
+  branch: string;
+  direction: "push" | "pull";
+  versionId: string | null;
+  createdAt: string;
+}
