@@ -500,9 +500,11 @@ export default function DashboardPage() {
 
   return (
     <div className="relative min-h-screen">
-      {/* Subtle gradient background */}
+      {/* Gradient background matching Lovable's blue-to-pink */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute top-0 left-1/4 h-[500px] w-[500px] rounded-full bg-blue-600/[0.04] blur-[120px]" />
+        <div className="absolute -top-20 left-1/4 h-[600px] w-[600px] rounded-full bg-blue-600/[0.08] blur-[120px]" />
+        <div className="absolute top-1/3 right-1/4 h-[500px] w-[500px] rounded-full bg-purple-600/[0.06] blur-[120px]" />
+        <div className="absolute bottom-0 left-1/3 h-[400px] w-[400px] rounded-full bg-pink-600/[0.06] blur-[120px]" />
         <div className="absolute top-20 right-1/4 h-[400px] w-[400px] rounded-full bg-purple-600/[0.05] blur-[120px]" />
         <div className="absolute top-40 left-1/2 h-[300px] w-[300px] rounded-full bg-pink-600/[0.03] blur-[100px]" />
       </div>
@@ -543,23 +545,29 @@ export default function DashboardPage() {
         )}
 
         {/* Tab Bar */}
-        <div className="flex items-center gap-1 border-b border-zinc-800 mb-6">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === tab.key
-                  ? "text-white"
-                  : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              {tab.label}
-              {activeTab === tab.key && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-full" />
-              )}
-            </button>
-          ))}
+        <div className="flex items-center border-b border-zinc-800 mb-6">
+          <div className="flex items-center gap-1 flex-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
+                  activeTab === tab.key
+                    ? "text-white"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                {tab.label}
+                {activeTab === tab.key && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-full" />
+                )}
+              </button>
+            ))}
+          </div>
+          <button className="flex items-center gap-1 px-3 py-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
+            Browse all
+            <span className="text-lg leading-none">→</span>
+          </button>
         </div>
 
         {/* Loading State */}
