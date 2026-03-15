@@ -8,11 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { getGitHubLoginUrl, getGoogleLoginUrl } from "@/lib/api";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
   missing_tokens: "Authentication failed. Please try again.",
   oauth_failed: "OAuth authentication failed. Please try again.",
   access_denied: "Access was denied. Please try again.",
+  missing_code: "Authentication code was missing. Please try again.",
+  no_email: "No email address associated with your account. Please try again.",
 };
 
 export default function LoginPage() {
@@ -22,8 +25,23 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isOAuthLoading, setIsOAuthLoading] = useState<
+    "github" | "google" | null
+  >(null);
+
+  // Restore remembered email
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const remembered = localStorage.getItem("doable_remember_email");
+    if (remembered) {
+      setEmail(remembered);
+      setRememberMe(true);
+    }
+  }, []);
 
   // Pick up error from OAuth callback redirect
   useEffect(() => {
@@ -41,6 +59,13 @@ export default function LoginPage() {
     setError(null);
     setIsLoading(true);
 
+    // Handle remember me
+    if (rememberMe) {
+      localStorage.setItem("doable_remember_email", email);
+    } else {
+      localStorage.removeItem("doable_remember_email");
+    }
+
     try {
       await login({ email, password });
       router.push("/dashboard");
@@ -56,6 +81,15 @@ export default function LoginPage() {
     }
   }
 
+  function handleOAuth(provider: "github" | "google") {
+    setIsOAuthLoading(provider);
+    setError(null);
+    window.location.href =
+      provider === "github" ? getGitHubLoginUrl() : getGoogleLoginUrl();
+  }
+
+  const isFormDisabled = isLoading || isOAuthLoading !== null;
+
   return (
     <>
       <h2 className="mb-6 text-center text-xl font-semibold text-[hsl(var(--foreground))]">
@@ -67,21 +101,27 @@ export default function LoginPage() {
         <Button
           variant="outline"
           className="w-full rounded-xl"
-          onClick={() => {
-            window.location.href = getGitHubLoginUrl();
-          }}
+          disabled={isFormDisabled}
+          onClick={() => handleOAuth("github")}
         >
-          <GitHubIcon className="mr-2 h-4 w-4" />
+          {isOAuthLoading === "github" ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <GitHubIcon className="mr-2 h-4 w-4" />
+          )}
           Continue with GitHub
         </Button>
         <Button
           variant="outline"
           className="w-full rounded-xl"
-          onClick={() => {
-            window.location.href = getGoogleLoginUrl();
-          }}
+          disabled={isFormDisabled}
+          onClick={() => handleOAuth("google")}
         >
-          <GoogleIcon className="mr-2 h-4 w-4" />
+          {isOAuthLoading === "google" ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <GoogleIcon className="mr-2 h-4 w-4" />
+          )}
           Continue with Google
         </Button>
       </div>
@@ -101,8 +141,15 @@ export default function LoginPage() {
       {/* Email/Password Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">
-            {error}
+          <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">
+            <svg
+              className="mt-0.5 h-4 w-4 shrink-0"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+            >
+              <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm-.75 4.75a.75.75 0 011.5 0v3a.75.75 0 01-1.5 0v-3zM8 11a1 1 0 110 2 1 1 0 010-2z" />
+            </svg>
+            <span>{error}</span>
           </div>
         )}
 
@@ -114,6 +161,7 @@ export default function LoginPage() {
             placeholder="you@example.com"
             autoComplete="email"
             required
+            disabled={isFormDisabled}
             className="rounded-xl"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -125,29 +173,69 @@ export default function LoginPage() {
             <Label htmlFor="password">Password</Label>
             <Link
               href="/forgot-password"
-              className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+              className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
             >
               Forgot password?
             </Link>
           </div>
-          <Input
-            id="password"
-            type="password"
-            placeholder="Enter your password"
-            autoComplete="current-password"
-            required
-            className="rounded-xl"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="Enter your password"
+              autoComplete="current-password"
+              required
+              disabled={isFormDisabled}
+              className="rounded-xl pr-10"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Remember Me */}
+        <div className="flex items-center gap-2">
+          <input
+            id="remember"
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+            className="h-4 w-4 rounded border-[hsl(var(--border))] bg-transparent text-[hsl(263,70%,50%)] focus:ring-[hsl(263,70%,50%)] focus:ring-offset-0"
           />
+          <label
+            htmlFor="remember"
+            className="text-sm text-[hsl(var(--muted-foreground))] select-none cursor-pointer"
+          >
+            Remember me
+          </label>
         </div>
 
         <Button
           type="submit"
           className="w-full rounded-xl bg-[hsl(263,70%,50%)] text-white hover:bg-[hsl(263,70%,45%)]"
-          disabled={isLoading}
+          disabled={isFormDisabled}
         >
-          {isLoading ? "Signing in..." : "Sign in"}
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Signing in...
+            </>
+          ) : (
+            "Sign in"
+          )}
         </Button>
       </form>
 

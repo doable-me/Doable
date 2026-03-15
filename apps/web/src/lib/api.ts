@@ -163,6 +163,23 @@ export async function apiGetMe(): Promise<{
   return apiFetch("/auth/me");
 }
 
+export async function apiForgotPassword(email: string): Promise<{ message: string }> {
+  return apiFetch("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function apiResetPassword(data: {
+  token: string;
+  password: string;
+}): Promise<{ message: string }> {
+  return apiFetch("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 export function getGitHubLoginUrl(): string {
   return `${API_URL}/auth/github`;
 }

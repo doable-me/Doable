@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { getGitHubLoginUrl, getGoogleLoginUrl } from "@/lib/api";
+import { Eye, EyeOff, Loader2, Check, X } from "lucide-react";
 
 function getPasswordStrength(password: string): {
   score: number;
@@ -27,6 +28,20 @@ function getPasswordStrength(password: string): {
   return { score, label: "Strong", color: "bg-green-500" };
 }
 
+function getPasswordCriteria(password: string) {
+  return [
+    { label: "At least 8 characters", met: password.length >= 8 },
+    { label: "Uppercase letter", met: /[A-Z]/.test(password) },
+    { label: "Lowercase letter", met: /[a-z]/.test(password) },
+    { label: "Number", met: /\d/.test(password) },
+    { label: "Special character", met: /[^a-zA-Z0-9]/.test(password) },
+  ];
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 export default function SignupPage() {
   const router = useRouter();
   const { register } = useAuth();
@@ -35,14 +50,28 @@ export default function SignupPage() {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isOAuthLoading, setIsOAuthLoading] = useState<
+    "github" | "google" | null
+  >(null);
+  const [emailTouched, setEmailTouched] = useState(false);
 
   const strength = useMemo(() => getPasswordStrength(password), [password]);
+  const criteria = useMemo(() => getPasswordCriteria(password), [password]);
+  const emailValid = useMemo(() => isValidEmail(email), [email]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (!emailValid) {
+      setError("Please enter a valid email address.");
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError("Passwords do not match.");
@@ -53,6 +82,11 @@ export default function SignupPage() {
       setError(
         "Password is too weak. Use at least 8 characters with uppercase, lowercase, and numbers."
       );
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setError("You must agree to the Terms of Service and Privacy Policy.");
       return;
     }
 
@@ -77,6 +111,15 @@ export default function SignupPage() {
     }
   }
 
+  function handleOAuth(provider: "github" | "google") {
+    setIsOAuthLoading(provider);
+    setError(null);
+    window.location.href =
+      provider === "github" ? getGitHubLoginUrl() : getGoogleLoginUrl();
+  }
+
+  const isFormDisabled = isLoading || isOAuthLoading !== null;
+
   return (
     <>
       <h2 className="mb-6 text-center text-xl font-semibold text-[hsl(var(--foreground))]">
@@ -88,21 +131,27 @@ export default function SignupPage() {
         <Button
           variant="outline"
           className="w-full rounded-xl"
-          onClick={() => {
-            window.location.href = getGitHubLoginUrl();
-          }}
+          disabled={isFormDisabled}
+          onClick={() => handleOAuth("github")}
         >
-          <GitHubIcon className="mr-2 h-4 w-4" />
+          {isOAuthLoading === "github" ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <GitHubIcon className="mr-2 h-4 w-4" />
+          )}
           Continue with GitHub
         </Button>
         <Button
           variant="outline"
           className="w-full rounded-xl"
-          onClick={() => {
-            window.location.href = getGoogleLoginUrl();
-          }}
+          disabled={isFormDisabled}
+          onClick={() => handleOAuth("google")}
         >
-          <GoogleIcon className="mr-2 h-4 w-4" />
+          {isOAuthLoading === "google" ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <GoogleIcon className="mr-2 h-4 w-4" />
+          )}
           Continue with Google
         </Button>
       </div>
@@ -122,8 +171,15 @@ export default function SignupPage() {
       {/* Registration Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">
-            {error}
+          <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">
+            <svg
+              className="mt-0.5 h-4 w-4 shrink-0"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+            >
+              <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm-.75 4.75a.75.75 0 011.5 0v3a.75.75 0 01-1.5 0v-3zM8 11a1 1 0 110 2 1 1 0 010-2z" />
+            </svg>
+            <span>{error}</span>
           </div>
         )}
 
@@ -134,6 +190,7 @@ export default function SignupPage() {
             type="text"
             placeholder="Your name"
             autoComplete="name"
+            disabled={isFormDisabled}
             className="rounded-xl"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
@@ -148,69 +205,188 @@ export default function SignupPage() {
             placeholder="you@example.com"
             autoComplete="email"
             required
-            className="rounded-xl"
+            disabled={isFormDisabled}
+            className={`rounded-xl ${
+              emailTouched && email.length > 0 && !emailValid
+                ? "border-red-500 focus-visible:ring-red-500"
+                : ""
+            }`}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onBlur={() => setEmailTouched(true)}
           />
+          {emailTouched && email.length > 0 && !emailValid && (
+            <p className="text-xs text-red-600 dark:text-red-400">
+              Please enter a valid email address
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            placeholder="At least 8 characters"
-            autoComplete="new-password"
-            required
-            minLength={8}
-            className="rounded-xl"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="At least 8 characters"
+              autoComplete="new-password"
+              required
+              minLength={8}
+              disabled={isFormDisabled}
+              className="rounded-xl pr-10"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+          </div>
           {password.length > 0 && (
-            <div className="space-y-1">
-              <div className="flex gap-1">
-                {[1, 2, 3, 4].map((level) => (
+            <div className="space-y-2">
+              {/* Strength bar */}
+              <div className="space-y-1">
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4].map((level) => (
+                    <div
+                      key={level}
+                      className={`h-1 flex-1 rounded-full transition-colors ${
+                        level <= strength.score
+                          ? strength.color
+                          : "bg-[hsl(var(--muted))]"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Password strength: {strength.label}
+                </p>
+              </div>
+              {/* Criteria checklist */}
+              <div className="space-y-1">
+                {criteria.map((c) => (
                   <div
-                    key={level}
-                    className={`h-1 flex-1 rounded-full transition-colors ${
-                      level <= strength.score ? strength.color : "bg-[hsl(var(--muted))]"
-                    }`}
-                  />
+                    key={c.label}
+                    className="flex items-center gap-1.5 text-xs"
+                  >
+                    {c.met ? (
+                      <Check className="h-3 w-3 text-green-500" />
+                    ) : (
+                      <X className="h-3 w-3 text-[hsl(var(--muted-foreground))]" />
+                    )}
+                    <span
+                      className={
+                        c.met
+                          ? "text-green-600 dark:text-green-400"
+                          : "text-[hsl(var(--muted-foreground))]"
+                      }
+                    >
+                      {c.label}
+                    </span>
+                  </div>
                 ))}
               </div>
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                Password strength: {strength.label}
-              </p>
             </div>
           )}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="confirmPassword">Confirm Password</Label>
-          <Input
-            id="confirmPassword"
-            type="password"
-            placeholder="Re-enter your password"
-            autoComplete="new-password"
-            required
-            className="rounded-xl"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-          />
+          <div className="relative">
+            <Input
+              id="confirmPassword"
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="Re-enter your password"
+              autoComplete="new-password"
+              required
+              disabled={isFormDisabled}
+              className="rounded-xl pr-10"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              aria-label={
+                showConfirmPassword ? "Hide password" : "Show password"
+              }
+            >
+              {showConfirmPassword ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+          </div>
           {confirmPassword.length > 0 && confirmPassword !== password && (
             <p className="text-xs text-red-600 dark:text-red-400">
               Passwords do not match
             </p>
           )}
+          {confirmPassword.length > 0 && confirmPassword === password && (
+            <p className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+              <Check className="h-3 w-3" />
+              Passwords match
+            </p>
+          )}
+        </div>
+
+        {/* Terms of Service */}
+        <div className="flex items-start gap-2">
+          <input
+            id="terms"
+            type="checkbox"
+            checked={agreedToTerms}
+            onChange={(e) => setAgreedToTerms(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-[hsl(var(--border))] bg-transparent text-[hsl(263,70%,50%)] focus:ring-[hsl(263,70%,50%)] focus:ring-offset-0"
+          />
+          <label
+            htmlFor="terms"
+            className="text-sm text-[hsl(var(--muted-foreground))] select-none cursor-pointer leading-snug"
+          >
+            I agree to the{" "}
+            <a
+              href="/terms"
+              className="font-medium text-[hsl(263,70%,50%)] hover:underline"
+              target="_blank"
+            >
+              Terms of Service
+            </a>{" "}
+            and{" "}
+            <a
+              href="/privacy"
+              className="font-medium text-[hsl(263,70%,50%)] hover:underline"
+              target="_blank"
+            >
+              Privacy Policy
+            </a>
+          </label>
         </div>
 
         <Button
           type="submit"
           className="w-full rounded-xl bg-[hsl(263,70%,50%)] text-white hover:bg-[hsl(263,70%,45%)]"
-          disabled={isLoading}
+          disabled={isFormDisabled || !agreedToTerms}
         >
-          {isLoading ? "Creating account..." : "Create account"}
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Creating account...
+            </>
+          ) : (
+            "Create account"
+          )}
         </Button>
       </form>
 
