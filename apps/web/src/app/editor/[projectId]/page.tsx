@@ -4,8 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { getStoredTokens, apiUpdateProject } from "@/lib/api";
 import {
-  ArrowLeft,
-  Send,
+  ArrowUp,
   RefreshCw,
   Smartphone,
   Monitor,
@@ -19,7 +18,6 @@ import {
   ChevronDown,
   File,
   Folder,
-  Bot,
   User,
   Pencil,
   Check,
@@ -434,7 +432,7 @@ export default function EditorPage() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     new Set<string>()
   );
-  const [showCreditsBar, setShowCreditsBar] = useState(true);
+  const [showCreditsBar, setShowCreditsBar] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1044,9 +1042,9 @@ export default function EditorPage() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-[#0a0a0f] text-zinc-200">
+    <div className="flex h-screen flex-col bg-[#1C1C1C] text-zinc-200">
       {/* ─── Top Bar ──────────────────────────────────────────── */}
-      <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#0e0e16] px-3">
+      <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#1C1C1C] px-3">
         {/* Left: Logo + Back arrow + Project name with dropdown */}
         <div className="flex items-center gap-2.5 min-w-0">
           {/* Doable logo icon */}
@@ -1057,17 +1055,6 @@ export default function EditorPage() {
           >
             D
           </button>
-
-          {/* Back arrow */}
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
-            title="Back"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-
-          <div className="h-5 w-px bg-zinc-800 flex-shrink-0" />
 
           {/* Editable project name with dropdown chevron + status subtitle */}
           <div className="flex flex-col min-w-0">
@@ -1109,14 +1096,14 @@ export default function EditorPage() {
             ) : (
               <button
                 onClick={() => setIsEditingName(true)}
-                className="group flex items-center gap-1 text-sm font-medium text-zinc-200 hover:text-white truncate"
+                className="group flex items-center gap-1 text-sm font-semibold text-white hover:text-white truncate"
               >
                 {projectName}
                 <ChevronDown className="h-3.5 w-3.5 text-zinc-500 flex-shrink-0" />
               </button>
             )}
             {/* Preview status subtitle */}
-            <span className="text-[10px] text-zinc-600 leading-tight truncate">
+            <span className="text-[11px] text-[#9b9a97] leading-tight truncate">
               {scaffoldStatus === "ready"
                 ? "Previewing last saved version"
                 : scaffoldStatus === "error"
@@ -1130,12 +1117,6 @@ export default function EditorPage() {
             <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 flex-shrink-0">
               <Loader2 className="h-3 w-3 animate-spin text-purple-400" />
               {scaffoldStatus === "scaffolding" ? "Getting ready..." : "Starting..."}
-            </div>
-          )}
-          {scaffoldStatus === "ready" && (
-            <div className="flex items-center gap-1 text-[11px] text-emerald-500 flex-shrink-0">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Live
             </div>
           )}
         </div>
@@ -1163,17 +1144,55 @@ export default function EditorPage() {
                     setActiveTab(key);
                   }
                 }}
-                className={`flex items-center justify-center rounded-md p-1.5 text-xs transition-all ${
+                className={`flex items-center justify-center text-xs transition-all ${
                   isActive
-                    ? "bg-[#1E52F1]/10 text-[#4D91FF] border border-[#4D91FF]/70"
-                    : "text-[#FCFBF8] border border-transparent hover:bg-[#272725]"
+                    ? "flex items-center gap-1.5 rounded-full bg-[#1E52F1]/10 border border-[#4D91FF]/70 text-[#4D91FF] px-3 py-1"
+                    : "rounded-md p-1.5 text-[#FCFBF8] border border-transparent hover:bg-[#272725]"
                 }`}
                 title={label}
               >
                 <Icon className="h-4 w-4" />
+                {isActive && <span className="text-xs">{label}</span>}
               </button>
             );
           })}
+        </div>
+
+        {/* Preview controls inline in top bar */}
+        <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 rounded-full bg-[#272725] border border-zinc-700/40 px-2.5 py-1">
+            <Globe className="h-3 w-3 text-zinc-500" />
+            <span className="text-[11px] text-zinc-400 font-mono">/</span>
+          </div>
+          <button
+            onClick={() => setDeviceMode(deviceMode === "desktop" ? "mobile" : "desktop")}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-[#272725] hover:text-zinc-300 transition-colors"
+            title={deviceMode === "desktop" ? "Switch to mobile" : "Switch to desktop"}
+          >
+            {deviceMode === "desktop" ? <Monitor className="h-3.5 w-3.5" /> : <Smartphone className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            onClick={() => {
+              if (iframeRef.current && previewUrl) {
+                iframeRef.current.src = previewUrl;
+              }
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-[#272725] hover:text-zinc-300 transition-colors"
+            title="Refresh preview"
+            disabled={!previewUrl}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => {
+              if (previewUrl) window.open(previewUrl, "_blank");
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-[#272725] hover:text-zinc-300 transition-colors"
+            title="Open in new tab"
+            disabled={!previewUrl}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </button>
         </div>
 
         {/* Right: Share + GitHub + Upgrade + Publish — pixel-exact Lovable */}
@@ -1183,9 +1202,9 @@ export default function EditorPage() {
             <UserPlus className="h-4 w-4" />
             <span className="hidden lg:inline">Share</span>
           </button>
-          {/* GitHub: rounded-md with muted bg, h-7 w-7 */}
+          {/* GitHub: rounded-full with muted bg, h-7 w-7 */}
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-md bg-[#272725] text-[#FCFBF8] hover:bg-[#333] transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-[#272725] text-[#FCFBF8] hover:bg-[#333] transition-colors"
             title="Sync with GitHub"
           >
             <Github className="h-4 w-4" />
@@ -1193,13 +1212,13 @@ export default function EditorPage() {
           {/* Upgrade: rounded-md, #5337CD purple, h-7 */}
           <button
             onClick={() => router.push("/billing")}
-            className="flex h-7 items-center gap-1.5 rounded-md bg-[#5337CD] px-2.5 text-sm text-[#F0F6FF] hover:bg-[#4a2fc0] transition-colors"
+            className="flex h-7 items-center gap-1.5 rounded-md bg-[#6D28D9] px-2.5 text-sm text-[#F0F6FF] hover:bg-[#5b21b6] transition-colors"
           >
             <Zap className="h-4 w-4" />
             Upgrade
           </button>
-          {/* Publish: rounded-md, #1E52F1 blue, h-7 */}
-          <button className="flex h-7 items-center rounded-md bg-[#1E52F1] px-2.5 text-sm text-[#F0F6FF] hover:bg-[#1a47d4] transition-colors">
+          {/* Publish: dark with border */}
+          <button className="flex h-7 items-center rounded-md bg-[#1C1C1C] border border-zinc-600 px-2.5 text-sm text-white hover:bg-[#272725] transition-colors">
             Publish
           </button>
         </div>
@@ -1210,28 +1229,12 @@ export default function EditorPage() {
         {/* ─── Chat Panel ───────────────────────────────────── */}
         {showChat && (
           <div
-            className="flex flex-col border-r border-zinc-800/60 bg-[#0c0c14]"
+            className="flex flex-col border-r border-zinc-800/60 bg-[#1C1C1C]"
             style={{
               width: showPreview ? `${splitPos}%` : "100%",
               minWidth: "320px",
             }}
           >
-            {/* Chat header */}
-            <div className="flex items-center justify-between border-b border-zinc-800/60 px-4 py-2.5">
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-purple-400" />
-                <span className="text-sm font-medium text-zinc-300">
-                  AI Assistant
-                </span>
-                {isStreaming && (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-purple-400" />
-                )}
-              </div>
-              <span className="text-[11px] text-zinc-600">
-                {messages.length} messages
-              </span>
-            </div>
-
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin">
               {messages.length === 0 && (
@@ -1388,7 +1391,7 @@ export default function EditorPage() {
                                 <button
                                   key={suggestion}
                                   onClick={() => sendMessage(suggestion)}
-                                  className="rounded-full border border-zinc-700/50 bg-zinc-800/40 px-3 py-1.5 text-[12px] text-zinc-400 hover:border-purple-500/40 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
+                                  className="rounded-md border border-zinc-700/50 bg-zinc-800/40 px-3 py-1.5 text-[12px] text-zinc-400 hover:border-purple-500/40 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
                                 >
                                   {suggestion}
                                 </button>
@@ -1432,7 +1435,7 @@ export default function EditorPage() {
 
               {/* Chat input toolbar */}
               <div className="p-3">
-                <div className="rounded-xl bg-zinc-900/80 border border-zinc-700/50 focus-within:border-purple-500/50 focus-within:ring-1 focus-within:ring-purple-500/20 transition-all">
+                <div className="rounded-2xl bg-[#272725] border border-zinc-700/50 focus-within:border-purple-500/50 focus-within:ring-1 focus-within:ring-purple-500/20 transition-all">
                   {/* Textarea */}
                   <textarea
                     value={inputValue}
@@ -1443,11 +1446,7 @@ export default function EditorPage() {
                         handleSend();
                       }
                     }}
-                    placeholder={
-                      chatMode === "agent"
-                        ? "Ask Doable AI to build something..."
-                        : "Describe what you want to plan..."
-                    }
+                    placeholder="Ask Doable..."
                     rows={2}
                     disabled={isStreaming}
                     className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none disabled:opacity-50"
@@ -1456,17 +1455,17 @@ export default function EditorPage() {
                   {/* Bottom toolbar row */}
                   <div className="flex items-center justify-between px-2 pb-2">
                     <div className="flex items-center gap-1">
-                      {/* + button */}
+                      {/* + button (rounded-full) */}
                       <button
-                        className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
                         title="Attach"
                       >
                         <Plus className="h-4 w-4" />
                       </button>
 
-                      {/* Visual edits button */}
+                      {/* Visual edits button (pill) */}
                       <button
-                        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                        className="flex items-center gap-1.5 rounded-full border border-zinc-700/50 px-3 py-1 text-[12px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
                         title="Visual edits"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
@@ -1475,47 +1474,41 @@ export default function EditorPage() {
                     </div>
 
                     <div className="flex items-center gap-1">
-                      {/* Chat/Plan toggle */}
-                      {(["agent", "plan"] as const).map((mode) => (
-                        <button
-                          key={mode}
-                          onClick={() => setChatMode(mode)}
-                          className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
-                            chatMode === mode
-                              ? "bg-purple-600/15 text-purple-400"
-                              : "text-zinc-600 hover:text-zinc-400"
-                          }`}
-                        >
-                          {mode === "agent" ? (
-                            <MessageSquare className="h-3.5 w-3.5" />
-                          ) : (
-                            <span>Plan</span>
-                          )}
-                        </button>
-                      ))}
-
-                      {/* Mic button */}
+                      {/* Chat mode toggle (single button) */}
                       <button
-                        className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                        onClick={() => setChatMode(chatMode === "agent" ? "plan" : "agent")}
+                        className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                          chatMode === "agent"
+                            ? "bg-purple-600/15 text-purple-400"
+                            : "bg-purple-600/15 text-purple-400"
+                        }`}
+                        title={chatMode === "agent" ? "Switch to Plan mode" : "Switch to Chat mode"}
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                      </button>
+
+                      {/* Mic button (rounded-full) */}
+                      <button
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
                         title="Voice input"
                       >
                         <Mic className="h-3.5 w-3.5" />
                       </button>
 
-                      {/* Send button — golden/highlighted when active */}
+                      {/* Send button — ArrowUp icon */}
                       <button
                         onClick={handleSend}
                         disabled={!inputValue.trim() || isStreaming}
                         className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all ${
                           inputValue.trim() && !isStreaming
                             ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-900/30 hover:from-amber-300 hover:to-orange-400"
-                            : "bg-zinc-800 text-zinc-600"
+                            : "bg-zinc-600 text-zinc-400"
                         }`}
                       >
                         {isStreaming ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                          <Send className="h-3.5 w-3.5" />
+                          <ArrowUp className="h-3.5 w-3.5" />
                         )}
                       </button>
                     </div>
@@ -1528,9 +1521,9 @@ export default function EditorPage() {
 
         {/* ─── Code Panel ───────────────────────────────────── */}
         {showCode && (
-          <div className="flex flex-1 overflow-hidden bg-[#0c0c14]">
+          <div className="flex flex-1 overflow-hidden bg-[#1C1C1C]">
             {/* File tree sidebar */}
-            <div className="w-56 flex-shrink-0 overflow-y-auto border-r border-zinc-800/60 bg-[#09090f] py-2">
+            <div className="w-56 flex-shrink-0 overflow-y-auto border-r border-zinc-800/60 bg-[#1a1917] py-2">
               <div className="mb-1 px-3 flex items-center justify-between">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
                   Explorer
@@ -1575,7 +1568,7 @@ export default function EditorPage() {
             {/* Code display */}
             <div className="flex flex-1 flex-col overflow-hidden">
               {/* Tab bar */}
-              <div className="flex items-center border-b border-zinc-800/60 bg-[#0a0a12]">
+              <div className="flex items-center border-b border-zinc-800/60 bg-[#1C1C1C]">
                 <div className="flex items-center gap-0.5 px-1 py-1">
                   {selectedFile ? (
                     <div className="flex items-center gap-1.5 rounded-md bg-zinc-800/50 px-3 py-1.5 text-[12px] text-zinc-300 border border-zinc-700/30">
@@ -1680,73 +1673,14 @@ export default function EditorPage() {
 
         {/* ─── Preview Panel ────────────────────────────────── */}
         {showPreview && !showCode && (
-          <div className="flex flex-1 flex-col overflow-hidden bg-[#0c0c14]">
-            {/* Preview toolbar */}
-            <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-zinc-800/60 bg-[#0a0a12] px-3">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    if (iframeRef.current && previewUrl) {
-                      iframeRef.current.src = previewUrl;
-                    }
-                  }}
-                  className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
-                  title="Refresh"
-                  disabled={!previewUrl}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </button>
-                <div className="flex items-center gap-1 rounded-md bg-zinc-900/80 border border-zinc-800/60 px-2.5 py-1">
-                  <Globe className="h-3 w-3 text-zinc-600" />
-                  <span className="text-[11px] text-zinc-500 font-mono">
-                    {previewUrl ?? `loading...`}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setDeviceMode("desktop")}
-                  className={`rounded-md p-1.5 transition-colors ${
-                    deviceMode === "desktop"
-                      ? "bg-zinc-800 text-zinc-200"
-                      : "text-zinc-600 hover:text-zinc-400"
-                  }`}
-                  title="Desktop view"
-                >
-                  <Monitor className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => setDeviceMode("mobile")}
-                  className={`rounded-md p-1.5 transition-colors ${
-                    deviceMode === "mobile"
-                      ? "bg-zinc-800 text-zinc-200"
-                      : "text-zinc-600 hover:text-zinc-400"
-                  }`}
-                  title="Mobile view"
-                >
-                  <Smartphone className="h-3.5 w-3.5" />
-                </button>
-                <div className="mx-1 h-4 w-px bg-zinc-800" />
-                <button
-                  onClick={() => {
-                    if (previewUrl) window.open(previewUrl, "_blank");
-                  }}
-                  className="rounded-md p-1.5 text-zinc-600 hover:text-zinc-400 transition-colors"
-                  title="Open in new tab"
-                  disabled={!previewUrl}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-
+          <div className="flex flex-1 flex-col overflow-hidden bg-[#1C1C1C]">
             {/* Preview iframe or loading state */}
-            <div className="flex flex-1 items-center justify-center overflow-hidden bg-[#08080d] p-2">
+            <div className="flex flex-1 items-center justify-center overflow-hidden bg-[#141412] p-2">
               {scaffoldStatus !== "ready" || !previewUrl ? (
                 renderScaffoldOverlay()
               ) : (
                 <div
-                  className={`h-full overflow-hidden rounded-lg border border-zinc-800/40 bg-white transition-all duration-300 ${
+                  className={`h-full overflow-hidden rounded-2xl border-none bg-white transition-all duration-300 ${
                     deviceMode === "mobile"
                       ? "w-[375px] shadow-2xl shadow-black/40"
                       : "w-full"
