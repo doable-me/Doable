@@ -11,6 +11,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer as createTcpServer } from "node:net";
+import { networkInterfaces } from "node:os";
 import { getProjectPath } from "../ai/project-files.js";
 
 // ─── Configuration ───────────────────────────────────────
@@ -18,6 +19,19 @@ import { getProjectPath } from "../ai/project-files.js";
 const PORT_RANGE_START = 3100;
 const PORT_RANGE_END = 3200;
 const DEV_SERVER_HOST = process.env.DEV_SERVER_HOST ?? "0.0.0.0";
+
+/** Get the machine's LAN IP so preview URLs work from other machines */
+function getLocalIP(): string {
+  const nets = networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] ?? []) {
+      if (net.family === "IPv4" && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return "localhost";
+}
 const STARTUP_TIMEOUT_MS = 30_000;
 
 // ─── Types ───────────────────────────────────────────────
@@ -116,7 +130,11 @@ export async function startDevServer(
 
   const port = await allocatePort();
   const projectPath = getProjectPath(projectId);
-  const url = `http://localhost:${port}`;
+  // Use the server's hostname so the preview is accessible from the browser
+  // (which may be on a different machine in the LAN)
+  const previewHost = process.env.PREVIEW_HOST ??
+    (process.env.API_HOST === "0.0.0.0" ? getLocalIP() : (process.env.API_HOST ?? "localhost"));
+  const url = `http://${previewHost}:${port}`;
 
   console.log(
     `[DevServer] Starting Vite dev server for project ${projectId} on port ${port}`,
