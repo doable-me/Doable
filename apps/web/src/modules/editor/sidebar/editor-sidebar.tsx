@@ -3,6 +3,8 @@
 import { useEditorStore } from "../hooks/use-editor-store";
 import { FileTree } from "./file-tree";
 import { VersionHistory } from "./version-history";
+import { PagesTab } from "./pages-tab";
+import { KnowledgeTab } from "./knowledge-tab";
 import {
   Files,
   History,
@@ -19,7 +21,7 @@ const tabs = [
 ];
 
 export function EditorSidebar() {
-  const { activeSidebarTab, setActiveSidebarTab, toggleSidebar } =
+  const { activeSidebarTab, setActiveSidebarTab, toggleSidebar, projectId } =
     useEditorStore();
 
   return (
@@ -53,61 +55,17 @@ export function EditorSidebar() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {activeSidebarTab === "pages" && <PagesPanel />}
+        {activeSidebarTab === "pages" && <PagesTab />}
         {activeSidebarTab === "files" && <FileTree />}
         {activeSidebarTab === "history" && <VersionHistory />}
-        {activeSidebarTab === "knowledge" && <KnowledgePanel />}
-      </div>
-    </div>
-  );
-}
-
-function PagesPanel() {
-  return (
-    <div className="p-3">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Pages
-        </h3>
-        <button className="text-xs text-primary hover:text-primary/80">
-          + Add
-        </button>
-      </div>
-      <div className="space-y-0.5">
-        {["Home", "About", "Contact"].map((page) => (
-          <button
-            key={page}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          >
-            <Layout className="h-3.5 w-3.5 flex-none" />
-            {page}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function KnowledgePanel() {
-  return (
-    <div className="p-3">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Knowledge Base
-        </h3>
-        <button className="text-xs text-primary hover:text-primary/80">
-          + Add
-        </button>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Add context files, docs, or references to improve AI understanding of
-        your project.
-      </p>
-      <div className="mt-3 rounded-md border border-dashed border-border p-4 text-center">
-        <BookOpen className="mx-auto h-6 w-6 text-muted-foreground/50" />
-        <p className="mt-1.5 text-xs text-muted-foreground">
-          Drop files or click to upload
-        </p>
+        {activeSidebarTab === "knowledge" && projectId && (
+          <KnowledgeTab projectId={projectId} />
+        )}
+        {activeSidebarTab === "knowledge" && !projectId && (
+          <div className="flex items-center justify-center h-48 text-xs text-muted-foreground">
+            No project selected.
+          </div>
+        )}
       </div>
     </div>
   );
