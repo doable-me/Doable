@@ -2451,7 +2451,6 @@ export default function EditorPage() {
               <div ref={chatEndRef} />
             </div>
 
-<<<<<<< HEAD
             {/* "Back to Chat" link when viewing a panel */}
             {isPanelView && (
               <button
