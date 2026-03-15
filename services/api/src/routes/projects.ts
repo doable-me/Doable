@@ -220,6 +220,28 @@ projectRoutes.patch("/:id", async (c) => {
   return c.json({ data: project });
 });
 
+// PUT also updates the project (some frontends use PUT instead of PATCH)
+projectRoutes.put("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const parsed = updateSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(
+      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+      400
+    );
+  }
+
+  const project = await projects.update(id, parsed.data);
+
+  if (!project) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  return c.json({ data: project });
+});
+
 // ─── Delete Project (Soft) ──────────────────────────────────
 projectRoutes.delete("/:id", async (c) => {
   const id = c.req.param("id");

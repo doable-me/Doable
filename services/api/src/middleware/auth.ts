@@ -58,6 +58,42 @@ export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
 });
 
 /**
+ * Optional auth middleware — extracts user info from JWT if present,
+ * but allows the request to proceed even without authentication.
+ * Sets userId to "anonymous" when no valid token is provided.
+ */
+export const optionalAuthMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    try {
+      const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
+        issuer: JWT_ISSUER,
+      });
+
+      const jwtPayload = payload as unknown as JwtPayload;
+
+      if (jwtPayload.sub && jwtPayload.email) {
+        c.set("userId", jwtPayload.sub);
+        c.set("userEmail", jwtPayload.email);
+        c.set("jwtPayload", jwtPayload);
+        await next();
+        return;
+      }
+    } catch {
+      // Token invalid or expired — fall through to anonymous
+    }
+  }
+
+  // No auth or invalid auth — proceed as anonymous
+  c.set("userId", "anonymous");
+  c.set("userEmail", "");
+  c.set("jwtPayload", { sub: "anonymous", email: "", iat: 0, exp: 0 } as JwtPayload);
+  await next();
+});
+
+/**
  * Sign a new JWT access token for a user.
  */
 export async function signAccessToken(

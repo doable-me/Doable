@@ -28,6 +28,7 @@ import {
   isRunning,
 } from "../projects/dev-server.js";
 import { sql } from "../db/index.js";
+import { buildZipBuffer } from "../lib/zip.js";
 
 export const projectFileRoutes = new Hono();
 
@@ -257,6 +258,53 @@ projectFileRoutes.post("/projects/:id/dev-server/restart", async (c) => {
   }
 
   return c.json({ error: "Project not scaffolded" }, 400);
+});
+
+// ─── POST /projects/:id/download ─ Download ZIP of all project files ──
+
+projectFileRoutes.post("/projects/:id/download", async (c) => {
+  const projectId = c.req.param("id");
+
+  if (!isProjectScaffolded(projectId)) {
+    return c.json({ error: "Project not scaffolded" }, 400);
+  }
+
+  try {
+    const files = await listFiles(projectId);
+
+    // Read all file contents
+    const entries: Array<{ path: string; content: Buffer }> = [];
+    for (const filePath of files) {
+      try {
+        const content = await readFile(projectId, filePath);
+        entries.push({
+          path: filePath,
+          content: Buffer.from(content, "utf-8"),
+        });
+      } catch {
+        // Skip files that can't be read (binary, etc.)
+        continue;
+      }
+    }
+
+    if (entries.length === 0) {
+      return c.json({ error: "No files to download" }, 404);
+    }
+
+    const zipBuffer = buildZipBuffer(entries);
+
+    c.header("Content-Type", "application/zip");
+    c.header(
+      "Content-Disposition",
+      `attachment; filename="project-${projectId.slice(0, 8)}.zip"`
+    );
+    c.header("Content-Length", String(zipBuffer.length));
+
+    return c.body(zipBuffer);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Failed to create download: ${msg}` }, 500);
+  }
 });
 
 // ─── Helpers ─────────────────────────────────────────────

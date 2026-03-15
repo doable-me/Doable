@@ -18,8 +18,14 @@ import {
   getDevServerUrl,
 } from "../projects/dev-server.js";
 import { autoVersion } from "../version-control/manager.js";
+import { optionalAuthMiddleware, type AuthEnv } from "../middleware/auth.js";
 
-export const chatRoutes = new Hono();
+export const chatRoutes = new Hono<AuthEnv>();
+
+// Apply optional auth to all chat routes — authenticated users get their
+// userId tracked, unauthenticated users proceed as "anonymous".
+chatRoutes.use("/projects/:id/chat", optionalAuthMiddleware);
+chatRoutes.use("/projects/:id/chat/*", optionalAuthMiddleware);
 
 // ─── In-memory session mapping (projectId → copilot sessionId) ─
 const projectSessions = new Map<string, string>();
@@ -44,6 +50,7 @@ chatRoutes.post(
   async (c) => {
     const projectId = c.req.param("id");
     const { content, mode, model, provider } = c.req.valid("json");
+    const userId = c.get("userId") ?? "anonymous";
 
     try {
       // Auto-scaffold the project if it hasn't been created yet
@@ -89,7 +96,7 @@ IMPORTANT RULES:
         const projectPath = getProjectPath(projectId);
         sessionId = await engine.createSession({
           projectId,
-          userId: "anonymous", // TODO: wire up auth
+          userId,
           model,
           provider: provider as ByokProviderConfig | undefined,
           workingDirectory: projectPath,
@@ -125,7 +132,7 @@ IMPORTANT RULES:
               projectId,
               projectPath,
               content.slice(0, 100), // Use first 100 chars of prompt as description
-              "anonymous" // TODO: wire up auth
+              userId
             );
           } catch (vErr) {
             console.warn("[Chat] Auto-version failed:", vErr);

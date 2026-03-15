@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { checkDbHealth } from "../db/index.js";
+import { getRunningServers } from "../projects/dev-server.js";
 
 export const healthRoutes = new Hono();
 
@@ -11,6 +12,9 @@ healthRoutes.get("/", async (c) => {
   const status = dbHealthy ? "healthy" : "degraded";
   const statusCode = dbHealthy ? 200 : 503;
 
+  const memUsage = process.memoryUsage();
+  const runningServers = getRunningServers();
+
   return c.json(
     {
       status,
@@ -21,6 +25,14 @@ healthRoutes.get("/", async (c) => {
         database: {
           status: dbHealthy ? "up" : "down",
           latencyMs,
+        },
+        memory: {
+          rssBytes: memUsage.rss,
+          heapUsedBytes: memUsage.heapUsed,
+          heapTotalBytes: memUsage.heapTotal,
+        },
+        devServers: {
+          active: runningServers.length,
         },
       },
     },
