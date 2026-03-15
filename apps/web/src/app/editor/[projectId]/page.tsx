@@ -30,6 +30,7 @@ import {
   MoreHorizontal,
   Wrench,
   Bookmark,
+  BookmarkCheck,
   Clock,
   PanelLeftClose,
   Palette,
@@ -40,6 +41,12 @@ import {
   Plus,
   Mic,
   X,
+  Square,
+  Eye,
+  ListChecks,
+  Undo2,
+  Bot,
+  ClipboardList,
 } from "lucide-react";
 
 // ─── Constants ──────────────────────────────────────────────
@@ -55,6 +62,8 @@ interface ToolAction {
   toolName: string;
   description: string;
   isExpanded: boolean;
+  isBookmarked?: boolean;
+  filePath?: string;
 }
 
 interface ChatMsg {
@@ -65,7 +74,10 @@ interface ChatMsg {
   isStreaming?: boolean;
   isError?: boolean;
   toolActions?: ToolAction[];
+  feedbackGiven?: "up" | "down" | null;
 }
+
+type TaskCardTab = "details" | "preview";
 
 interface FileTreeNode {
   name: string;
@@ -361,13 +373,47 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
   return toolName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Default suggestion chips */
+/** Default suggestion chips shown after AI responses */
 const DEFAULT_SUGGESTIONS = [
-  "Add navigation",
-  "Improve styling",
+  "Verify that it works",
+  "Add tactile feedback",
   "Add dark mode",
   "Add responsive design",
+  "Improve animations",
+  "Add navigation bar",
 ];
+
+/** Generate context-aware suggestions based on the last AI message */
+function generateSuggestions(lastAssistantContent: string): string[] {
+  const lower = lastAssistantContent.toLowerCase();
+  const suggestions: string[] = [];
+
+  // Always add "Verify that it works" first
+  suggestions.push("Verify that it works");
+
+  if (lower.includes("button") || lower.includes("click") || lower.includes("interactive")) {
+    suggestions.push("Add tactile feedback");
+  }
+  if (!lower.includes("dark mode") && !lower.includes("dark theme")) {
+    suggestions.push("Add dark mode");
+  }
+  if (lower.includes("page") || lower.includes("route") || lower.includes("navigation")) {
+    suggestions.push("Add page transitions");
+  }
+  if (lower.includes("form") || lower.includes("input")) {
+    suggestions.push("Add form validation");
+  }
+  if (lower.includes("list") || lower.includes("card") || lower.includes("grid")) {
+    suggestions.push("Add loading skeletons");
+  }
+  if (!lower.includes("responsive")) {
+    suggestions.push("Make it responsive");
+  }
+  suggestions.push("Improve the styling");
+
+  // Return unique suggestions, max 5
+  return [...new Set(suggestions)].slice(0, 5);
+}
 
 function generateProjectId(): string {
   return `proj-${Date.now()}`;
@@ -437,6 +483,9 @@ export default function EditorPage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(projectName);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [moreMenuMsgId, setMoreMenuMsgId] = useState<string | null>(null);
+  const [taskCardTabs, setTaskCardTabs] = useState<Record<string, TaskCardTab>>({});
+  const [collapsedTaskCards, setCollapsedTaskCards] = useState<Set<string>>(new Set());
   const [splitPos, setSplitPos] = useState(35); // percentage
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -643,11 +692,16 @@ export default function EditorPage() {
       setMessages((prev) => {
         const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
         if (!lastAssistant) return prev;
+        const filePath = typeof (_args?.path ?? _args?.filePath ?? _args?.file) === "string"
+            ? (_args?.path ?? _args?.filePath ?? _args?.file) as string
+            : undefined;
         const action: ToolAction = {
           id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           toolName,
           description: describeToolAction(toolName, _args),
           isExpanded: false,
+          isBookmarked: false,
+          filePath,
         };
         return prev.map((m) =>
           m.id === lastAssistant.id
@@ -775,6 +829,80 @@ export default function EditorPage() {
   const handleSend = useCallback(() => {
     sendMessage(inputValue);
   }, [inputValue, sendMessage]);
+
+  // Stop streaming handler
+  const handleStopStreaming = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.isStreaming
+          ? { ...m, isStreaming: false, content: m.content || "(Stopped by user)" }
+          : m
+      )
+    );
+    setIsStreaming(false);
+  }, []);
+
+  // Toggle feedback on a message
+  const handleFeedback = useCallback((msgId: string, type: "up" | "down") => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId
+          ? { ...m, feedbackGiven: m.feedbackGiven === type ? null : type }
+          : m
+      )
+    );
+  }, []);
+
+  // Toggle bookmark on a tool action
+  const handleToggleBookmark = useCallback((msgId: string, actionId: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId
+          ? {
+              ...m,
+              toolActions: m.toolActions?.map((a) =>
+                a.id === actionId ? { ...a, isBookmarked: !a.isBookmarked } : a
+              ),
+            }
+          : m
+      )
+    );
+  }, []);
+
+  // Toggle task card collapse
+  const toggleTaskCardCollapse = useCallback((msgId: string) => {
+    setCollapsedTaskCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) next.delete(msgId);
+      else next.add(msgId);
+      return next;
+    });
+  }, []);
+
+  // Revert to a specific message point
+  const handleRevertToPoint = useCallback((msgId: string) => {
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === msgId);
+      if (idx === -1) return prev;
+      return prev.slice(0, idx + 1);
+    });
+    setMoreMenuMsgId(null);
+  }, []);
+
+  // Close more menu when clicking outside
+  useEffect(() => {
+    if (!moreMenuMsgId) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-more-menu]")) {
+        setMoreMenuMsgId(null);
+      }
+    };
+    document.addEventListener("click", handler, { capture: true });
+    return () => document.removeEventListener("click", handler, { capture: true });
+  }, [moreMenuMsgId]);
 
   // Toggle folder
   const toggleFolder = (path: string) => {
@@ -1265,6 +1393,20 @@ export default function EditorPage() {
                     Describe what you want to build and Doable AI will generate
                     the code for you.
                   </p>
+                  {/* Mode indicator in empty state */}
+                  <div className="mt-4 flex items-center gap-2 rounded-full bg-zinc-800/60 px-3 py-1.5 text-[12px] text-zinc-500">
+                    {chatMode === "agent" ? (
+                      <>
+                        <Bot className="h-3.5 w-3.5 text-purple-400" />
+                        <span>Agent mode — generates code</span>
+                      </>
+                    ) : (
+                      <>
+                        <ClipboardList className="h-3.5 w-3.5 text-blue-400" />
+                        <span>Plan mode — creates plans only</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1316,23 +1458,124 @@ export default function EditorPage() {
                           )}
                         </div>
 
-                        {/* Tool action cards */}
+                        {/* ── Task Card: collapsible card with tool actions ── */}
                         {msg.toolActions && msg.toolActions.length > 0 && (
-                          <div className="mb-2 space-y-1.5">
-                            {msg.toolActions.map((action) => (
-                              <div
-                                key={action.id}
-                                className="flex items-center justify-between rounded-lg border border-zinc-700/40 bg-zinc-800/50 px-3 py-2 text-[13px]"
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <Wrench className="h-3.5 w-3.5 flex-shrink-0 text-purple-400" />
-                                  <span className="text-zinc-300 truncate">
-                                    {action.description}
-                                  </span>
+                          <div className="mb-3 rounded-xl border border-zinc-700/50 bg-zinc-800/40 overflow-hidden">
+                            {/* Card header — clickable to collapse/expand */}
+                            <button
+                              onClick={() => toggleTaskCardCollapse(msg.id)}
+                              className="flex w-full items-center justify-between px-3 py-2.5 hover:bg-zinc-800/60 transition-colors"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-purple-600/20">
+                                  <Wrench className="h-3.5 w-3.5 text-purple-400" />
                                 </div>
-                                <Bookmark className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 hover:text-zinc-400 cursor-pointer" />
+                                <span className="text-[13px] font-medium text-zinc-200 truncate">
+                                  {msg.toolActions.length === 1
+                                    ? msg.toolActions[0]!.description
+                                    : `${msg.toolActions.length} file changes`}
+                                </span>
                               </div>
-                            ))}
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className="text-[11px] text-zinc-600">
+                                  {msg.toolActions.length} {msg.toolActions.length === 1 ? "action" : "actions"}
+                                </span>
+                                {collapsedTaskCards.has(msg.id) ? (
+                                  <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
+                                ) : (
+                                  <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
+                                )}
+                              </div>
+                            </button>
+
+                            {/* Card body — only shown when not collapsed */}
+                            {!collapsedTaskCards.has(msg.id) && (
+                              <div className="border-t border-zinc-700/30">
+                                {/* Tabs: Details | Preview */}
+                                <div className="flex border-b border-zinc-700/30">
+                                  <button
+                                    onClick={() => setTaskCardTabs((prev) => ({ ...prev, [msg.id]: "details" }))}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                                      (taskCardTabs[msg.id] ?? "details") === "details"
+                                        ? "text-purple-400 border-b-2 border-purple-400"
+                                        : "text-zinc-500 hover:text-zinc-300"
+                                    }`}
+                                  >
+                                    <ListChecks className="h-3 w-3" />
+                                    Details
+                                  </button>
+                                  <button
+                                    onClick={() => setTaskCardTabs((prev) => ({ ...prev, [msg.id]: "preview" }))}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                                      taskCardTabs[msg.id] === "preview"
+                                        ? "text-purple-400 border-b-2 border-purple-400"
+                                        : "text-zinc-500 hover:text-zinc-300"
+                                    }`}
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                    Preview
+                                  </button>
+                                </div>
+
+                                {/* Tab content */}
+                                {(taskCardTabs[msg.id] ?? "details") === "details" ? (
+                                  <div className="p-2 space-y-1">
+                                    {msg.toolActions.map((action) => (
+                                      <div
+                                        key={action.id}
+                                        className="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-zinc-700/30 transition-colors"
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+                                            action.toolName.toLowerCase().includes("create") || action.toolName.toLowerCase().includes("write")
+                                              ? "bg-emerald-400"
+                                              : action.toolName.toLowerCase().includes("edit") || action.toolName.toLowerCase().includes("update")
+                                                ? "bg-amber-400"
+                                                : action.toolName.toLowerCase().includes("delete")
+                                                  ? "bg-red-400"
+                                                  : "bg-zinc-400"
+                                          }`} />
+                                          <span className="text-zinc-300 truncate">
+                                            {action.description}
+                                          </span>
+                                          {action.filePath && (
+                                            <span className="text-[11px] text-zinc-600 truncate hidden sm:inline">
+                                              {action.filePath}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleToggleBookmark(msg.id, action.id);
+                                          }}
+                                          className="flex-shrink-0 p-1 rounded hover:bg-zinc-700/50 transition-colors"
+                                          title={action.isBookmarked ? "Remove bookmark" : "Bookmark this version"}
+                                        >
+                                          {action.isBookmarked ? (
+                                            <BookmarkCheck className="h-3.5 w-3.5 text-purple-400" />
+                                          ) : (
+                                            <Bookmark className="h-3.5 w-3.5 text-zinc-600 hover:text-zinc-400" />
+                                          )}
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  /* Preview tab — shows a mini preview placeholder */
+                                  <div className="p-4 flex items-center justify-center">
+                                    <div className="text-center">
+                                      <div className="flex h-16 w-24 mx-auto items-center justify-center rounded-lg border border-zinc-700/40 bg-zinc-900/40 mb-2">
+                                        <Eye className="h-5 w-5 text-zinc-600" />
+                                      </div>
+                                      <p className="text-[11px] text-zinc-600">
+                                        Preview updates in the right panel
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -1356,21 +1599,34 @@ export default function EditorPage() {
                           )}
                         </div>
 
-                        {/* Feedback buttons below completed AI responses */}
+                        {/* ── Message Actions: feedback + copy + more menu ── */}
                         {!msg.isStreaming && !msg.isError && msg.content && (
-                          <div className="mt-2 flex items-center gap-1">
+                          <div className="mt-2 flex items-center gap-0.5">
+                            {/* Thumbs Up */}
                             <button
-                              className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                              onClick={() => handleFeedback(msg.id, "up")}
+                              className={`rounded-md p-1.5 transition-colors ${
+                                msg.feedbackGiven === "up"
+                                  ? "bg-emerald-900/30 text-emerald-400"
+                                  : "text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300"
+                              }`}
                               title="Good response"
                             >
                               <ThumbsUp className="h-3.5 w-3.5" />
                             </button>
+                            {/* Thumbs Down */}
                             <button
-                              className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                              onClick={() => handleFeedback(msg.id, "down")}
+                              className={`rounded-md p-1.5 transition-colors ${
+                                msg.feedbackGiven === "down"
+                                  ? "bg-red-900/30 text-red-400"
+                                  : "text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300"
+                              }`}
                               title="Bad response"
                             >
                               <ThumbsDown className="h-3.5 w-3.5" />
                             </button>
+                            {/* Copy */}
                             <button
                               className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
                               title="Copy message"
@@ -1387,31 +1643,64 @@ export default function EditorPage() {
                                 <Copy className="h-3.5 w-3.5" />
                               )}
                             </button>
-                            <button
-                              className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
-                              title="More"
-                            >
-                              <MoreHorizontal className="h-3.5 w-3.5" />
-                            </button>
+                            {/* More (...) with dropdown */}
+                            <div className="relative" data-more-menu>
+                              <button
+                                onClick={() => setMoreMenuMsgId(moreMenuMsgId === msg.id ? null : msg.id)}
+                                className={`rounded-md p-1.5 transition-colors ${
+                                  moreMenuMsgId === msg.id
+                                    ? "bg-zinc-800 text-zinc-300"
+                                    : "text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300"
+                                }`}
+                                title="More actions"
+                              >
+                                <MoreHorizontal className="h-3.5 w-3.5" />
+                              </button>
+                              {/* Dropdown menu */}
+                              {moreMenuMsgId === msg.id && (
+                                <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-lg border border-zinc-700/60 bg-zinc-800 py-1 shadow-xl shadow-black/40">
+                                  <button
+                                    onClick={() => {
+                                      setMoreMenuMsgId(null);
+                                      // Copy to clipboard as "edit" prompt
+                                      setInputValue(`Edit: ${msg.content.slice(0, 100)}`);
+                                    }}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5 text-zinc-500" />
+                                    Edit message
+                                  </button>
+                                  <button
+                                    onClick={() => handleRevertToPoint(msg.id)}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+                                  >
+                                    <Undo2 className="h-3.5 w-3.5 text-zinc-500" />
+                                    Revert to this point
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
 
-                        {/* Suggestion chips after the last completed AI response */}
+                        {/* ── Suggestion Chips: scrollable row after last AI response ── */}
                         {!msg.isStreaming &&
                           !msg.isError &&
                           msg.content &&
                           !isStreaming &&
                           msgIdx === messages.length - 1 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {DEFAULT_SUGGESTIONS.map((suggestion) => (
-                                <button
-                                  key={suggestion}
-                                  onClick={() => sendMessage(suggestion)}
-                                  className="rounded-md bg-[#272725] px-3 py-2 text-sm text-[#FCFBF8] hover:brightness-125 transition-all"
-                                >
-                                  {suggestion}
-                                </button>
-                              ))}
+                            <div className="mt-3 -mx-1 overflow-x-auto scrollbar-thin">
+                              <div className="flex gap-2 px-1 pb-1">
+                                {generateSuggestions(msg.content).map((suggestion) => (
+                                  <button
+                                    key={suggestion}
+                                    onClick={() => sendMessage(suggestion)}
+                                    className="flex-shrink-0 rounded-full border border-zinc-700/50 bg-zinc-800/60 px-3.5 py-1.5 text-[13px] text-zinc-300 hover:bg-zinc-700/60 hover:text-white hover:border-zinc-600 transition-all"
+                                  >
+                                    {suggestion}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                           )}
                       </div>
@@ -1421,6 +1710,19 @@ export default function EditorPage() {
               ))}
               <div ref={chatEndRef} />
             </div>
+
+            {/* ── Stop Generation Button (floating above input) ── */}
+            {isStreaming && (
+              <div className="flex justify-center px-4 -mb-1">
+                <button
+                  onClick={handleStopStreaming}
+                  className="flex items-center gap-2 rounded-full border border-zinc-600/60 bg-zinc-800/90 px-4 py-2 text-[13px] font-medium text-zinc-200 shadow-lg shadow-black/30 hover:bg-zinc-700/90 hover:border-zinc-500/60 transition-all backdrop-blur-sm"
+                >
+                  <Square className="h-3 w-3 fill-current" />
+                  Stop Doable
+                </button>
+              </div>
+            )}
 
             {/* Input area */}
             <div className="border-t border-zinc-800/60">
@@ -1473,15 +1775,15 @@ export default function EditorPage() {
                     <div className="flex items-center gap-1">
                       {/* + button (rounded-full) */}
                       <button
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-[#272725] text-[#FCFBF8] hover:brightness-125 transition-colors"
-                        title="Attach"
+                        className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-600/40 text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
+                        title="Attach image"
                       >
                         <Plus className="h-4 w-4" />
                       </button>
 
                       {/* Visual edits button (pill) */}
                       <button
-                        className="flex items-center gap-1.5 rounded-full bg-[#272725] px-2.5 h-7 text-sm text-[#FCFBF8] hover:brightness-125 transition-colors"
+                        className="flex items-center gap-1.5 rounded-full border border-zinc-600/40 px-2.5 h-7 text-[13px] text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
                         title="Visual edits"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
@@ -1490,39 +1792,78 @@ export default function EditorPage() {
                     </div>
 
                     <div className="flex items-center gap-1">
-                      {/* Chat mode toggle (single icon button like Lovable) */}
-                      <button
-                        onClick={() => setChatMode(chatMode === "agent" ? "plan" : "agent")}
-                        className="flex h-7 w-7 items-center justify-center rounded-full text-[#FCFBF8] hover:brightness-125 transition-colors"
-                        title={chatMode === "agent" ? "Switch to Plan mode" : "Switch to Chat mode"}
-                      >
-                        <MessageSquare className="h-3.5 w-3.5" />
-                      </button>
+                      {/* ── Agent / Plan Mode Toggle ── */}
+                      <div className="flex items-center rounded-full border border-zinc-600/40 overflow-hidden">
+                        <button
+                          onClick={() => setChatMode("agent")}
+                          className={`flex items-center gap-1 px-2 h-7 text-[12px] font-medium transition-all ${
+                            chatMode === "agent"
+                              ? "bg-purple-600/20 text-purple-300"
+                              : "text-zinc-500 hover:text-zinc-300"
+                          }`}
+                          title="Agent mode — generates code"
+                        >
+                          <Bot className="h-3 w-3" />
+                          <span className="hidden sm:inline">Agent</span>
+                        </button>
+                        <div className="w-px h-4 bg-zinc-600/40" />
+                        <button
+                          onClick={() => setChatMode("plan")}
+                          className={`flex items-center gap-1 px-2 h-7 text-[12px] font-medium transition-all ${
+                            chatMode === "plan"
+                              ? "bg-blue-600/20 text-blue-300"
+                              : "text-zinc-500 hover:text-zinc-300"
+                          }`}
+                          title="Plan mode — creates plans only"
+                        >
+                          <ClipboardList className="h-3 w-3" />
+                          <span className="hidden sm:inline">Plan</span>
+                        </button>
+                      </div>
 
                       {/* Mic button (rounded-full) */}
                       <button
-                        className="flex h-7 w-7 items-center justify-center rounded-full text-[#FCFBF8] hover:brightness-125 transition-colors"
-                        title="Voice input"
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+                        title="Voice input (coming soon)"
                       >
                         <Mic className="h-3.5 w-3.5" />
                       </button>
 
-                      {/* Send button — ArrowUp icon */}
-                      <button
-                        onClick={handleSend}
-                        disabled={!inputValue.trim() || isStreaming}
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#FCFBF8] text-[#1C1C1C] transition-all hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isStreaming ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
+                      {/* Send / Stop button */}
+                      {isStreaming ? (
+                        <button
+                          onClick={handleStopStreaming}
+                          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-red-600/80 text-white transition-all hover:bg-red-500"
+                          title="Stop generation"
+                        >
+                          <Square className="h-3 w-3 fill-current" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleSend}
+                          disabled={!inputValue.trim()}
+                          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#FCFBF8] text-[#1C1C1C] transition-all hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
                           <ArrowUp className="h-3.5 w-3.5" />
-                        )}
-                      </button>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
+
+              {/* ── "Back to Chat" link when on non-chat tabs ── */}
+              {activeTab !== "chat" && (
+                <div className="flex justify-center pb-2">
+                  <button
+                    onClick={() => setActiveTab("chat")}
+                    className="flex items-center gap-1.5 text-[12px] text-purple-400 hover:text-purple-300 transition-colors"
+                  >
+                    <MessageSquare className="h-3 w-3" />
+                    Back to Chat
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
