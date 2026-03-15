@@ -1474,14 +1474,10 @@ export default function EditorPage() {
                     </div>
 
                     <div className="flex items-center gap-1">
-                      {/* Chat mode toggle (single button) */}
+                      {/* Chat mode toggle (single icon button like Lovable) */}
                       <button
                         onClick={() => setChatMode(chatMode === "agent" ? "plan" : "agent")}
-                        className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
-                          chatMode === "agent"
-                            ? "bg-purple-600/15 text-purple-400"
-                            : "bg-purple-600/15 text-purple-400"
-                        }`}
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
                         title={chatMode === "agent" ? "Switch to Plan mode" : "Switch to Chat mode"}
                       >
                         <MessageSquare className="h-3.5 w-3.5" />
@@ -1499,10 +1495,10 @@ export default function EditorPage() {
                       <button
                         onClick={handleSend}
                         disabled={!inputValue.trim() || isStreaming}
-                        className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all ${
+                        className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-all ${
                           inputValue.trim() && !isStreaming
-                            ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-900/30 hover:from-amber-300 hover:to-orange-400"
-                            : "bg-zinc-600 text-zinc-400"
+                            ? "bg-[#FCFBF8] text-[#1C1C1C] hover:bg-white"
+                            : "bg-zinc-700 text-zinc-500"
                         }`}
                       >
                         {isStreaming ? (
