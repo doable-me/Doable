@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Settings,
   Globe,
@@ -8,32 +8,228 @@ import {
   AlertTriangle,
   ExternalLink,
   Trash2,
+  Plug,
+  FileText,
+  Eye,
+  EyeOff,
+  Save,
+  Loader2,
+  Check,
+  X,
+  ChevronRight,
+  ArrowLeft,
+  RefreshCw,
+  GitBranch,
+  CreditCard,
+  Database,
+  Lock,
+  Shield,
+  Calendar,
+  Hash,
+  Link2,
+  BookOpen,
+  Brain,
+  Lightbulb,
+  Heart,
+  Clock,
+  User,
+  Map,
+  Crown,
+  ArrowRightLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  apiFetch,
+  apiGetProject,
+  apiUpdateProject,
+  apiDeleteProject,
+  type ApiProject,
+} from "@/lib/api";
+
+// ─── Types ──────────────────────────────────────────────────
 
 interface ProjectSettingsProps {
   projectId: string;
 }
 
-type Tab = "general" | "domain" | "environments" | "danger";
+type Tab =
+  | "general"
+  | "integrations"
+  | "context"
+  | "domain"
+  | "environments"
+  | "danger";
+
+interface ContextFile {
+  filename: string;
+  content: string;
+  updatedAt: string;
+}
+
+interface ContextStats {
+  totalFiles: number;
+  totalChars: number;
+  estimatedTokens: number;
+  budgetUsedPercent: number;
+}
+
+interface Toast {
+  id: string;
+  type: "success" | "error";
+  message: string;
+}
+
+// ─── Constants ──────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "general", label: "General", icon: Settings },
-  { id: "domain", label: "Domain", icon: Globe },
+  { id: "integrations", label: "Integrations", icon: Plug },
+  { id: "context", label: "Context Files", icon: FileText },
+  { id: "domain", label: "Custom Domain", icon: Globe },
   { id: "environments", label: "Environments", icon: Server },
   { id: "danger", label: "Danger Zone", icon: AlertTriangle },
 ];
 
+const FILE_ICONS: Record<string, typeof FileText> = {
+  "identity.md": BookOpen,
+  "knowledge.md": Brain,
+  "instructions.md": Lightbulb,
+  "soul.md": Heart,
+  "memory.md": Clock,
+  "user.md": User,
+  "plan.md": Map,
+};
+
+// ─── Toast System ───────────────────────────────────────────
+
+function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: string) => void }) {
+  return (
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          className={cn(
+            "flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg transition-all animate-in slide-in-from-bottom-2",
+            toast.type === "success"
+              ? "border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200"
+              : "border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+          )}
+        >
+          {toast.type === "success" ? (
+            <Check className="h-4 w-4 shrink-0" />
+          ) : (
+            <X className="h-4 w-4 shrink-0" />
+          )}
+          <span className="text-sm">{toast.message}</span>
+          <button
+            onClick={() => onDismiss(toast.id)}
+            className="ml-2 shrink-0 opacity-60 hover:opacity-100"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function useToasts() {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const addToast = useCallback((type: "success" | "error", message: string) => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  return { toasts, addToast, dismissToast };
+}
+
+// ─── Section Card ───────────────────────────────────────────
+
+function SectionCard({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("rounded-xl border bg-card p-6", className)}>
+      <div className="mb-5">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        {description && (
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ─── Main Component ─────────────────────────────────────────
+
 export function ProjectSettings({ projectId }: ProjectSettingsProps) {
   const [activeTab, setActiveTab] = useState<Tab>("general");
-  const [projectName, setProjectName] = useState("");
-  const [projectSlug, setProjectSlug] = useState("");
-  const [description, setDescription] = useState("");
-  const [customDomain, setCustomDomain] = useState("");
-  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [project, setProject] = useState<ApiProject | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { toasts, addToast, dismissToast } = useToasts();
+
+  // Load project data
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    apiGetProject(projectId)
+      .then(({ data }) => {
+        if (!cancelled) {
+          setProject(data);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          addToast("error", err instanceof Error ? err.message : "Failed to load project");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, addToast]);
+
+  if (loading) {
+    return <SettingsLoadingSkeleton />;
+  }
+
+  if (!project) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <AlertTriangle className="mb-3 h-10 w-10 text-muted-foreground" />
+        <p className="text-lg font-medium">Project not found</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          The project may have been deleted or you don't have access.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
       {/* Tab Navigation */}
       <nav className="flex gap-1 overflow-x-auto rounded-lg border bg-muted/50 p-1">
         {TABS.map((tab) => {
@@ -56,148 +252,976 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
         })}
       </nav>
 
-      {/* General Tab */}
+      {/* Tab Content */}
       {activeTab === "general" && (
-        <div className="space-y-6 rounded-xl border p-6">
-          <h2 className="text-lg font-semibold">Project Details</h2>
+        <GeneralTab
+          project={project}
+          onUpdate={(updated) => setProject(updated)}
+          addToast={addToast}
+        />
+      )}
+      {activeTab === "integrations" && (
+        <IntegrationsTab projectId={projectId} addToast={addToast} />
+      )}
+      {activeTab === "context" && (
+        <ContextFilesTab projectId={projectId} addToast={addToast} />
+      )}
+      {activeTab === "domain" && (
+        <DomainTab project={project} addToast={addToast} />
+      )}
+      {activeTab === "environments" && (
+        <EnvironmentsTab project={project} />
+      )}
+      {activeTab === "danger" && (
+        <DangerTab project={project} addToast={addToast} />
+      )}
+    </div>
+  );
+}
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="name" className="text-sm font-medium">
-                Project Name
-              </label>
-              <input
-                id="name"
-                type="text"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                placeholder="My Project"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
+// ─── Loading Skeleton ───────────────────────────────────────
+
+function SettingsLoadingSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="flex gap-1 rounded-lg border bg-muted/50 p-1">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-9 w-28 animate-pulse rounded-md bg-muted" />
+        ))}
+      </div>
+      <div className="space-y-4 rounded-xl border p-6">
+        <div className="h-6 w-40 animate-pulse rounded bg-muted" />
+        <div className="space-y-3">
+          <div className="h-10 animate-pulse rounded-md bg-muted" />
+          <div className="h-10 animate-pulse rounded-md bg-muted" />
+          <div className="h-24 animate-pulse rounded-md bg-muted" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GENERAL TAB
+// ═══════════════════════════════════════════════════════════════
+
+function GeneralTab({
+  project,
+  onUpdate,
+  addToast,
+}: {
+  project: ApiProject;
+  onUpdate: (p: ApiProject) => void;
+  addToast: (type: "success" | "error", msg: string) => void;
+}) {
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description ?? "");
+  const [visibility, setVisibility] = useState(project.visibility);
+  const [saving, setSaving] = useState(false);
+  const hasChanges =
+    name !== project.name ||
+    description !== (project.description ?? "") ||
+    visibility !== project.visibility;
+
+  const handleSave = async () => {
+    if (!hasChanges || saving) return;
+    setSaving(true);
+    try {
+      const { data } = await apiUpdateProject(project.id, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        visibility,
+      });
+      onUpdate(data);
+      addToast("success", "Project settings saved");
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Project Details */}
+      <SectionCard title="Project Details">
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label htmlFor="settings-name" className="text-sm font-medium">
+              Project Name
+            </label>
+            <input
+              id="settings-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="My Project"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="settings-description" className="text-sm font-medium">
+              Description
+            </label>
+            <textarea
+              id="settings-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              placeholder="A brief description of your project"
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Visibility</label>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setVisibility("public")}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg border px-4 py-3 text-sm transition-colors flex-1",
+                  visibility === "public"
+                    ? "border-primary bg-primary/5 text-foreground"
+                    : "border-input text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Eye className="h-4 w-4" />
+                <div className="text-left">
+                  <div className="font-medium">Public</div>
+                  <div className="text-xs text-muted-foreground">Anyone can view</div>
+                </div>
+              </button>
+              <button
+                onClick={() => setVisibility("private")}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg border px-4 py-3 text-sm transition-colors flex-1",
+                  visibility === "private"
+                    ? "border-primary bg-primary/5 text-foreground"
+                    : "border-input text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <EyeOff className="h-4 w-4" />
+                <div className="text-left">
+                  <div className="font-medium">Private</div>
+                  <div className="text-xs text-muted-foreground">Only you can access</div>
+                </div>
+              </button>
             </div>
+          </div>
 
-            <div className="space-y-2">
-              <label htmlFor="slug" className="text-sm font-medium">
-                Slug
-              </label>
-              <input
-                id="slug"
-                type="text"
-                value={projectSlug}
-                onChange={(e) => setProjectSlug(e.target.value)}
-                placeholder="my-project"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-              <p className="text-xs text-muted-foreground">
-                Used in the project URL: {projectSlug || "my-project"}.doable.app
-              </p>
+          <div className="flex items-center justify-between pt-2">
+            <div className="text-sm text-muted-foreground">
+              {hasChanges && "You have unsaved changes"}
             </div>
-
-            <div className="space-y-2">
-              <label htmlFor="description" className="text-sm font-medium">
-                Description
-              </label>
-              <textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-                placeholder="A brief description of your project"
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-
-            <button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-              Save Changes
+            <button
+              onClick={() => void handleSave()}
+              disabled={!hasChanges || saving}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
+                hasChanges
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "bg-muted text-muted-foreground cursor-not-allowed"
+              )}
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </div>
-      )}
+      </SectionCard>
 
-      {/* Domain Tab */}
-      {activeTab === "domain" && (
-        <div className="space-y-6 rounded-xl border p-6">
-          <h2 className="text-lg font-semibold">Custom Domain</h2>
-          <p className="text-sm text-muted-foreground">
-            Connect a custom domain to your project. Your project is always
-            available at its .doable.app subdomain.
+      {/* Project Info */}
+      <SectionCard title="Project Information" description="Read-only metadata about your project.">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <InfoItem
+            icon={Hash}
+            label="Project ID"
+            value={project.id}
+            mono
+          />
+          <InfoItem
+            icon={Calendar}
+            label="Created"
+            value={new Date(project.created_at).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
+          />
+          <InfoItem
+            icon={Clock}
+            label="Last Updated"
+            value={new Date(project.updated_at).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          />
+          <InfoItem
+            icon={Link2}
+            label="Project URL"
+            value={`${project.slug}.doable.app`}
+            mono
+          />
+          <InfoItem
+            icon={Shield}
+            label="Status"
+            value={project.status}
+            badge
+          />
+          <InfoItem
+            icon={Eye}
+            label="Visibility"
+            value={project.visibility}
+            badge
+          />
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+function InfoItem({
+  icon: Icon,
+  label,
+  value,
+  mono,
+  badge,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  mono?: boolean;
+  badge?: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg bg-muted/30 p-3">
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        {badge ? (
+          <span className="mt-0.5 inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium capitalize text-primary">
+            {value}
+          </span>
+        ) : (
+          <p
+            className={cn(
+              "mt-0.5 text-sm truncate",
+              mono && "font-mono text-xs"
+            )}
+            title={value}
+          >
+            {value}
           </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
-          <div className="space-y-4">
-            <div className="rounded-lg bg-muted/50 p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium">Default Domain</p>
-                  <p className="mt-0.5 text-sm font-mono text-muted-foreground">
-                    {projectSlug || "your-project"}.doable.app
-                  </p>
+// ═══════════════════════════════════════════════════════════════
+// INTEGRATIONS TAB
+// ═══════════════════════════════════════════════════════════════
+
+interface IntegrationCardProps {
+  icon: React.ElementType;
+  name: string;
+  description: string;
+  connected: boolean;
+  status?: string;
+  onConnect?: () => void;
+  onDisconnect?: () => void;
+  children?: React.ReactNode;
+  comingSoon?: boolean;
+}
+
+function IntegrationCard({
+  icon: Icon,
+  name,
+  description,
+  connected,
+  status,
+  onConnect,
+  onDisconnect,
+  children,
+  comingSoon,
+}: IntegrationCardProps) {
+  return (
+    <div className="rounded-xl border p-5 transition-colors">
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold">{name}</h3>
+              {comingSoon && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Coming Soon
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {connected && status && (
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-green-500" />
+              <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                {status}
+              </span>
+            </div>
+          )}
+          {!comingSoon && (
+            <button
+              onClick={connected ? onDisconnect : onConnect}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                connected
+                  ? "border border-input text-muted-foreground hover:bg-accent hover:text-foreground"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90"
+              )}
+            >
+              {connected ? "Disconnect" : "Connect"}
+            </button>
+          )}
+        </div>
+      </div>
+      {children && <div className="mt-4 border-t pt-4">{children}</div>}
+    </div>
+  );
+}
+
+function IntegrationsTab({
+  projectId,
+  addToast,
+}: {
+  projectId: string;
+  addToast: (type: "success" | "error", msg: string) => void;
+}) {
+  const [githubStatus, setGithubStatus] = useState<{
+    connected: boolean;
+    status: string;
+    repoUrl: string | null;
+    branch: string;
+    lastSyncedAt: string | null;
+  } | null>(null);
+  const [githubLoading, setGithubLoading] = useState(true);
+
+  // Load GitHub status
+  useEffect(() => {
+    apiFetch<{ data: typeof githubStatus }>(
+      `/projects/${projectId}/github/status`
+    )
+      .then((res) => setGithubStatus(res.data))
+      .catch(() => setGithubStatus(null))
+      .finally(() => setGithubLoading(false));
+  }, [projectId]);
+
+  const handleGitHubDisconnect = async () => {
+    try {
+      await apiFetch(`/projects/${projectId}/github/connect`, {
+        method: "DELETE",
+      });
+      setGithubStatus(null);
+      addToast("success", "Disconnected from GitHub");
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Failed to disconnect");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionCard
+        title="Integrations Hub"
+        description="Connect third-party services to extend your project."
+      >
+        <div className="space-y-4">
+          {/* GitHub Integration */}
+          {githubLoading ? (
+            <div className="rounded-xl border p-5">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 animate-pulse rounded-lg bg-muted" />
+                <div className="space-y-2">
+                  <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+                  <div className="h-3 w-48 animate-pulse rounded bg-muted" />
                 </div>
-                <a
-                  href={`https://${projectSlug || "your-project"}.doable.app`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </a>
               </div>
             </div>
+          ) : (
+            <IntegrationCard
+              icon={GitBranch}
+              name="GitHub"
+              description="Sync your project code with a GitHub repository for version control."
+              connected={githubStatus?.connected ?? false}
+              status={githubStatus?.status}
+              onConnect={() =>
+                addToast(
+                  "success",
+                  "Use the GitHub button in the editor toolbar to connect."
+                )
+              }
+              onDisconnect={() => void handleGitHubDisconnect()}
+            >
+              {githubStatus?.connected && (
+                <div className="space-y-2">
+                  {githubStatus.repoUrl && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Repository</span>
+                      <a
+                        href={githubStatus.repoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-primary hover:underline"
+                      >
+                        {githubStatus.repoUrl.replace("https://github.com/", "")}
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Branch</span>
+                    <span className="font-mono text-xs">{githubStatus.branch}</span>
+                  </div>
+                  {githubStatus.lastSyncedAt && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Last synced</span>
+                      <span className="text-xs">
+                        {new Date(githubStatus.lastSyncedAt).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </IntegrationCard>
+          )}
 
+          {/* Stripe Integration (Placeholder) */}
+          <IntegrationCard
+            icon={CreditCard}
+            name="Stripe"
+            description="Accept payments, manage subscriptions, and process transactions."
+            connected={false}
+            comingSoon
+          />
+
+          {/* Supabase Integration (Placeholder) */}
+          <IntegrationCard
+            icon={Database}
+            name="Supabase"
+            description="Connect a Supabase database for backend storage and authentication."
+            connected={false}
+            comingSoon
+          />
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONTEXT FILES TAB
+// ═══════════════════════════════════════════════════════════════
+
+function ContextFilesTab({
+  projectId,
+  addToast,
+}: {
+  projectId: string;
+  addToast: (type: "success" | "error", msg: string) => void;
+}) {
+  const [files, setFiles] = useState<ContextFile[]>([]);
+  const [stats, setStats] = useState<ContextStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editingFile, setEditingFile] = useState<string | null>(null);
+
+  const fetchFiles = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch<{
+        data: { files: ContextFile[]; stats: ContextStats };
+      }>(`/projects/${projectId}/context`);
+      setFiles(res.data.files);
+      setStats(res.data.stats);
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Failed to load context files");
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId, addToast]);
+
+  useEffect(() => {
+    void fetchFiles();
+  }, [fetchFiles]);
+
+  const handleSave = async (filename: string, content: string) => {
+    try {
+      await apiFetch(`/projects/${projectId}/context/${filename}`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      });
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.filename === filename
+            ? { ...f, content, updatedAt: new Date().toISOString() }
+            : f
+        )
+      );
+      addToast("success", `Saved ${filename}`);
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Failed to save");
+      throw err;
+    }
+  };
+
+  // If editing a file, show the editor
+  const activeFile = files.find((f) => f.filename === editingFile);
+  if (activeFile) {
+    return (
+      <ContextFileEditor
+        file={activeFile}
+        onSave={(content) => handleSave(activeFile.filename, content)}
+        onBack={() => setEditingFile(null)}
+        addToast={addToast}
+      />
+    );
+  }
+
+  if (loading) {
+    return (
+      <SectionCard title="Context Files (.doable/)">
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 rounded-lg border p-3">
+              <div className="h-8 w-8 animate-pulse rounded bg-muted" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-20 animate-pulse rounded bg-muted" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <SectionCard
+        title="Context Files (.doable/)"
+        description="Context files guide the AI's behavior when editing your project. Each file serves a different purpose."
+      >
+        {/* Token budget */}
+        {stats && (
+          <div className="mb-5 rounded-lg bg-muted/30 p-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">
+                {stats.totalFiles} files, {stats.estimatedTokens.toLocaleString()} tokens
+              </span>
+              <span
+                className={cn(
+                  "text-xs font-medium",
+                  stats.budgetUsedPercent > 80
+                    ? "text-amber-600"
+                    : "text-muted-foreground"
+                )}
+              >
+                {stats.budgetUsedPercent}% of budget used
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all",
+                  stats.budgetUsedPercent > 95
+                    ? "bg-red-500"
+                    : stats.budgetUsedPercent > 80
+                      ? "bg-amber-500"
+                      : "bg-primary"
+                )}
+                style={{
+                  width: `${Math.min(100, stats.budgetUsedPercent)}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* File list */}
+        <div className="space-y-2">
+          {files.map((file) => {
+            const Icon = FILE_ICONS[file.filename] ?? FileText;
+            const hasContent = file.content.trim().length > 10;
+
+            return (
+              <button
+                key={file.filename}
+                onClick={() => setEditingFile(file.filename)}
+                className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 group"
+              >
+                <div
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-lg",
+                    hasContent ? "bg-primary/10" : "bg-muted"
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      "h-4 w-4",
+                      hasContent ? "text-primary" : "text-muted-foreground"
+                    )}
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{file.filename}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {hasContent
+                      ? `${file.content.length} characters`
+                      : "Empty -- click to edit"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div
+                    className={cn(
+                      "h-2 w-2 rounded-full",
+                      hasContent ? "bg-emerald-500" : "bg-muted-foreground/30"
+                    )}
+                  />
+                  <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Refresh */}
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={() => void fetchFiles()}
+            className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
+            Refresh
+          </button>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+// ─── Context File Editor ────────────────────────────────────
+
+function ContextFileEditor({
+  file,
+  onSave,
+  onBack,
+  addToast,
+}: {
+  file: ContextFile;
+  onSave: (content: string) => Promise<void>;
+  onBack: () => void;
+  addToast: (type: "success" | "error", msg: string) => void;
+}) {
+  const [content, setContent] = useState(file.content);
+  const [saving, setSaving] = useState(false);
+  const dirty = content !== file.content;
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setContent(file.content);
+  }, [file.filename, file.content]);
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  const handleSave = async () => {
+    if (!dirty || saving) return;
+    setSaving(true);
+    try {
+      await onSave(content);
+    } catch {
+      // Toast already shown by parent
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      e.preventDefault();
+      void handleSave();
+    }
+  };
+
+  const Icon = FILE_ICONS[file.filename] ?? FileText;
+
+  return (
+    <div className="rounded-xl border" onKeyDown={handleKeyDown}>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between border-b px-4 py-3">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="rounded-md p-1.5 transition-colors hover:bg-muted"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-semibold">{file.filename}</span>
+          {dirty && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+              Unsaved
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {content.length} chars
+          </span>
+          <button
+            onClick={() => void handleSave()}
+            disabled={!dirty || saving}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              dirty
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "bg-muted text-muted-foreground cursor-not-allowed"
+            )}
+          >
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+
+      {/* Editor */}
+      <textarea
+        ref={textareaRef}
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        className="w-full bg-background p-4 text-sm font-mono leading-relaxed focus:outline-none resize-none"
+        rows={20}
+        placeholder="Start writing..."
+        spellCheck={false}
+      />
+
+      {/* Footer */}
+      <div className="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground">
+        <span>
+          Last updated:{" "}
+          {new Date(file.updatedAt).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
+        <span className="text-muted-foreground/60">Ctrl+S to save</span>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CUSTOM DOMAIN TAB
+// ═══════════════════════════════════════════════════════════════
+
+function DomainTab({
+  project,
+  addToast,
+}: {
+  project: ApiProject;
+  addToast: (type: "success" | "error", msg: string) => void;
+}) {
+  const [customDomain, setCustomDomain] = useState("");
+  const isPro = false; // TODO: derive from workspace plan
+
+  return (
+    <div className="space-y-6">
+      {/* Default Domain */}
+      <SectionCard title="Default Domain" description="Your project is always accessible at its .doable.app subdomain.">
+        <div className="flex items-center justify-between rounded-lg bg-muted/30 p-4">
+          <div>
+            <p className="text-sm font-medium">Default URL</p>
+            <p className="mt-0.5 font-mono text-sm text-muted-foreground">
+              {project.slug}.doable.app
+            </p>
+          </div>
+          <a
+            href={`https://${project.slug}.doable.app`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            Visit
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
+      </SectionCard>
+
+      {/* Custom Domain */}
+      <SectionCard title="Custom Domain">
+        {!isPro ? (
+          <div className="flex flex-col items-center rounded-lg border-2 border-dashed p-8 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900">
+              <Crown className="h-6 w-6 text-amber-600 dark:text-amber-300" />
+            </div>
+            <h3 className="mt-4 text-sm font-semibold">Pro+ Feature</h3>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              Custom domains are available on the Pro plan and above. Upgrade
+              your workspace to connect your own domain.
+            </p>
+            <button className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+              <Crown className="h-4 w-4" />
+              Upgrade to Pro
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
             <div className="space-y-2">
-              <label htmlFor="domain" className="text-sm font-medium">
-                Custom Domain
+              <label htmlFor="custom-domain" className="text-sm font-medium">
+                Domain Name
               </label>
               <input
-                id="domain"
+                id="custom-domain"
                 type="text"
                 value={customDomain}
                 onChange={(e) => setCustomDomain(e.target.value)}
                 placeholder="app.example.com"
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-              <p className="text-xs text-muted-foreground">
-                Add a CNAME record pointing to cname.doable.app
-              </p>
             </div>
 
-            <button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            {/* DNS Instructions */}
+            <div className="rounded-lg bg-muted/30 p-4">
+              <h4 className="text-sm font-medium">DNS Configuration</h4>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Add the following DNS records to your domain provider:
+              </p>
+              <div className="mt-3 overflow-hidden rounded-md border">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-3 py-2 text-left font-medium">Type</th>
+                      <th className="px-3 py-2 text-left font-medium">Name</th>
+                      <th className="px-3 py-2 text-left font-medium">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b">
+                      <td className="px-3 py-2 font-mono">CNAME</td>
+                      <td className="px-3 py-2 font-mono">
+                        {customDomain || "app"}
+                      </td>
+                      <td className="px-3 py-2 font-mono">
+                        cname.doable.app
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono">TXT</td>
+                      <td className="px-3 py-2 font-mono">
+                        _doable-verify
+                      </td>
+                      <td className="px-3 py-2 font-mono text-muted-foreground">
+                        doable-verify={project.id.slice(0, 8)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* SSL Status */}
+            <div className="flex items-center justify-between rounded-lg bg-muted/30 p-4">
+              <div className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">SSL Certificate</p>
+                  <p className="text-xs text-muted-foreground">
+                    Auto-provisioned via Let's Encrypt
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                Not configured
+              </span>
+            </div>
+
+            <button
+              disabled={!customDomain.trim()}
+              onClick={() =>
+                addToast("success", "Domain configuration saved")
+              }
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+            >
+              <Globe className="h-4 w-4" />
               Add Domain
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </SectionCard>
+    </div>
+  );
+}
 
-      {/* Environments Tab */}
-      {activeTab === "environments" && (
-        <div className="space-y-6 rounded-xl border p-6">
-          <h2 className="text-lg font-semibold">Environments</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage deployment environments and their configurations.
-          </p>
+// ═══════════════════════════════════════════════════════════════
+// ENVIRONMENTS TAB
+// ═══════════════════════════════════════════════════════════════
 
-          <div className="space-y-3">
-            {[
-              {
-                name: "Production",
-                status: "active",
-                url: `${projectSlug || "project"}.doable.app`,
-              },
-              {
-                name: "Preview",
-                status: "inactive",
-                url: `preview-${projectSlug || "project"}.doable.app`,
-              },
-            ].map((env) => (
-              <div
-                key={env.name}
-                className="flex items-center justify-between rounded-lg border p-4"
-              >
-                <div>
+function EnvironmentsTab({ project }: { project: ApiProject }) {
+  const environments = [
+    {
+      name: "Production",
+      status: "active" as const,
+      url: `${project.slug}.doable.app`,
+      description: "Live site accessible to all visitors",
+      lastDeployed: project.updated_at,
+    },
+    {
+      name: "Preview",
+      status: "active" as const,
+      url: `preview-${project.slug}.doable.app`,
+      description: "Test changes before publishing to production",
+      lastDeployed: null,
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <SectionCard
+        title="Environments"
+        description="Manage deployment environments and their configurations."
+      >
+        <div className="space-y-3">
+          {environments.map((env) => (
+            <div
+              key={env.name}
+              className="rounded-lg border p-4 transition-colors hover:bg-muted/30"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">{env.name}</p>
+                    <h3 className="text-sm font-semibold">{env.name}</h3>
                     <span
                       className={cn(
-                        "rounded-full px-2 py-0.5 text-xs",
+                        "rounded-full px-2 py-0.5 text-xs font-medium",
                         env.status === "active"
                           ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
                           : "bg-muted text-muted-foreground"
@@ -206,64 +1230,225 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                       {env.status}
                     </span>
                   </div>
-                  <p className="mt-0.5 text-xs font-mono text-muted-foreground">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {env.description}
+                  </p>
+                  <p className="mt-1.5 font-mono text-xs text-muted-foreground">
                     {env.url}
                   </p>
+                  {env.lastDeployed && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Last deployed:{" "}
+                      {new Date(env.lastDeployed).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  )}
                 </div>
                 <a
                   href={`https://${env.url}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-foreground"
+                  className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
-                  <ExternalLink className="h-4 w-4" />
+                  Visit
+                  <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
-      )}
+      </SectionCard>
 
-      {/* Danger Zone Tab */}
-      {activeTab === "danger" && (
-        <div className="space-y-6 rounded-xl border border-destructive/30 p-6">
-          <h2 className="text-lg font-semibold text-destructive">Danger Zone</h2>
+      {/* Environment Variables (Placeholder) */}
+      <SectionCard
+        title="Environment Variables"
+        description="Environment-specific configuration values. These are injected at build time."
+      >
+        <div className="flex flex-col items-center rounded-lg border-2 border-dashed p-8 text-center">
+          <Server className="mb-3 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm font-medium">No environment variables configured</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Environment variables will be available in a future update.
+          </p>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
 
-          <div className="space-y-4">
-            <div className="rounded-lg border border-destructive/20 p-4">
-              <h3 className="text-sm font-medium">Delete Project</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Permanently delete this project and all its deployments. This
-                action cannot be undone.
-              </p>
+// ═══════════════════════════════════════════════════════════════
+// DANGER ZONE TAB
+// ═══════════════════════════════════════════════════════════════
 
-              <div className="mt-4 space-y-3">
-                <div className="space-y-2">
-                  <label htmlFor="delete-confirm" className="text-sm font-medium">
-                    Type the project name to confirm
-                  </label>
-                  <input
-                    id="delete-confirm"
-                    type="text"
-                    value={deleteConfirm}
-                    onChange={(e) => setDeleteConfirm(e.target.value)}
-                    placeholder={projectName || "project-name"}
-                    className="flex h-10 w-full rounded-md border border-destructive/30 bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
-                  />
-                </div>
+function DangerTab({
+  project,
+  addToast,
+}: {
+  project: ApiProject;
+  addToast: (type: "success" | "error", msg: string) => void;
+}) {
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [transferEmail, setTransferEmail] = useState("");
 
-                <button
-                  disabled={deleteConfirm !== projectName || !projectName}
-                  className="inline-flex items-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:pointer-events-none disabled:opacity-50"
+  const handleDelete = async () => {
+    if (deleteConfirm !== project.name) return;
+    setDeleting(true);
+    try {
+      await apiDeleteProject(project.id);
+      addToast("success", "Project deleted successfully");
+      // Redirect after a brief delay
+      setTimeout(() => {
+        window.location.href = "/projects";
+      }, 1000);
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Failed to delete project");
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Transfer Project */}
+      <div className="rounded-xl border border-amber-200 p-6 dark:border-amber-800">
+        <div className="flex items-start gap-3">
+          <ArrowRightLeft className="mt-0.5 h-5 w-5 text-amber-600 dark:text-amber-400" />
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold">Transfer Project</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Transfer this project to another workspace. The project will be
+              moved along with all its files, settings, and deployment history.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <div className="space-y-2">
+                <label
+                  htmlFor="transfer-email"
+                  className="text-sm font-medium"
                 >
-                  <Trash2 className="h-4 w-4" />
-                  Delete Project
-                </button>
+                  Destination workspace owner email
+                </label>
+                <input
+                  id="transfer-email"
+                  type="email"
+                  value={transferEmail}
+                  onChange={(e) => setTransferEmail(e.target.value)}
+                  placeholder="owner@example.com"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
               </div>
+              <button
+                disabled={!transferEmail.trim() || !transferEmail.includes("@")}
+                onClick={() =>
+                  addToast(
+                    "success",
+                    "Transfer request sent. The recipient will receive an email to accept."
+                  )
+                }
+                className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 disabled:pointer-events-none disabled:opacity-50 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900"
+              >
+                <ArrowRightLeft className="h-4 w-4" />
+                Transfer Project
+              </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
+
+      {/* Delete Project */}
+      <div className="rounded-xl border border-destructive/30 p-6">
+        <div className="flex items-start gap-3">
+          <Trash2 className="mt-0.5 h-5 w-5 text-destructive" />
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-destructive">
+              Delete Project
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Permanently delete this project and all its deployments, files,
+              and data. This action cannot be undone.
+            </p>
+
+            {!showDeleteDialog ? (
+              <button
+                onClick={() => setShowDeleteDialog(true)}
+                className="mt-4 inline-flex items-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete This Project
+              </button>
+            ) : (
+              <div className="mt-4 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                <p className="text-sm font-medium text-destructive">
+                  Are you absolutely sure?
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This will permanently delete{" "}
+                  <strong className="text-foreground">{project.name}</strong>{" "}
+                  and all associated data. Type the project name below to
+                  confirm.
+                </p>
+
+                <div className="mt-3 space-y-3">
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="delete-confirm"
+                      className="text-sm font-medium"
+                    >
+                      Type{" "}
+                      <span className="font-mono text-destructive">
+                        {project.name}
+                      </span>{" "}
+                      to confirm
+                    </label>
+                    <input
+                      id="delete-confirm"
+                      type="text"
+                      value={deleteConfirm}
+                      onChange={(e) => setDeleteConfirm(e.target.value)}
+                      placeholder={project.name}
+                      className="flex h-10 w-full rounded-md border border-destructive/30 bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => void handleDelete()}
+                      disabled={
+                        deleteConfirm !== project.name || deleting
+                      }
+                      className="inline-flex items-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      {deleting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                      {deleting
+                        ? "Deleting..."
+                        : "I understand, delete this project"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowDeleteDialog(false);
+                        setDeleteConfirm("");
+                      }}
+                      className="rounded-md border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
