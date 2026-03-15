@@ -18,7 +18,7 @@ import {
   startDevServer,
   isRunning,
 } from "../projects/dev-server.js";
-import { isProjectScaffolded } from "../projects/file-manager.js";
+import { isProjectScaffolded, ensureDependencies } from "../projects/file-manager.js";
 
 export const previewRoutes = new Hono();
 
@@ -31,6 +31,7 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
   // Ensure the dev server is running (auto-start if scaffolded)
   if (!isRunning(projectId) && isProjectScaffolded(projectId)) {
     try {
+      await ensureDependencies(projectId);
       await startDevServer(projectId);
     } catch {
       // Fall through — getDevServerInternalUrl will return null
@@ -42,11 +43,12 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
     return c.text("Preview not available. Project may still be starting.", 503);
   }
 
-  // Build the target URL — strip the /preview/{projectId} prefix
+  // Build the target URL — keep the full /preview/{projectId}/... path
+  // because Vite is started with --base /preview/{projectId}/ and expects
+  // requests to arrive with that prefix intact.
   const originalPath = c.req.path;
   const prefix = `/preview/${projectId}`;
-  const targetPath = originalPath.slice(prefix.length) || "/";
-  const targetUrl = `${devUrl}${targetPath}`;
+  const targetUrl = `${devUrl}${originalPath}`;
 
   // Preserve query string
   const qsIndex = c.req.url.indexOf("?");

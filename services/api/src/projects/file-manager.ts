@@ -224,6 +224,31 @@ export function isProjectScaffolded(projectId: string): boolean {
   return existsSync(projectPath + "/package.json");
 }
 
+/**
+ * Check if a project has node_modules installed.
+ */
+export function hasNodeModules(projectId: string): boolean {
+  const projectPath = getProjectPath(projectId);
+  return existsSync(projectPath + "/node_modules");
+}
+
+/**
+ * Install dependencies for an existing project that's missing node_modules.
+ * This can happen if the project was scaffolded but node_modules was
+ * cleaned up, or if npm install failed during initial scaffold.
+ */
+export async function ensureDependencies(projectId: string): Promise<void> {
+  if (hasNodeModules(projectId)) return;
+
+  const projectPath = getProjectPath(projectId);
+  if (!existsSync(projectPath + "/package.json")) return;
+
+  console.log(
+    `[FileManager] node_modules missing for project ${projectId} — running npm install`,
+  );
+  await runPnpmInstall(projectPath);
+}
+
 // ─── pnpm Install ────────────────────────────────────────
 
 function runPnpmInstall(cwd: string): Promise<string> {

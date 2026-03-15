@@ -17,6 +17,7 @@ import {
   listFiles,
   getProjectPath,
   isProjectScaffolded,
+  ensureDependencies,
   ProjectExistsError,
   FileNotFoundError,
   FileAccessError,
@@ -68,9 +69,10 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
     );
   } catch (err) {
     if (err instanceof ProjectExistsError) {
-      // Project already exists — just ensure dev server is running
+      // Project already exists — ensure deps installed, then start dev server
       let devServer: { url: string; port: number } | null = null;
       try {
+        await ensureDependencies(projectId);
         devServer = await startDevServer(projectId);
       } catch (devErr) {
         console.error(
@@ -212,9 +214,10 @@ projectFileRoutes.get("/projects/:id/preview-url", async (c) => {
     return c.json({ data: { url, running: true } });
   }
 
-  // If project is scaffolded, auto-start the dev server
+  // If project is scaffolded, ensure deps installed and auto-start the dev server
   if (isProjectScaffolded(projectId)) {
     try {
+      await ensureDependencies(projectId);
       const { url } = await startDevServer(projectId);
       return c.json({ data: { url, running: true } });
     } catch (err) {

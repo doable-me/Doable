@@ -45,7 +45,7 @@ export async function createVersion(
       ${projectId},
       ${nextVersion},
       ${opts.description ?? null},
-      ${sql.json(snapshotData)},
+      ${sql.json(snapshotData as unknown as Record<string, never>)},
       ${opts.createdBy}
     )
     RETURNING *

@@ -23,10 +23,25 @@ import { rateLimiter } from "./middleware/rate-limit.js";
 
 const app = new Hono();
 
+// Pre-create middleware instances (avoid re-instantiating on every request)
+const secureHeadersMw = secureHeaders();
+const apiRateLimiter = rateLimiter({ windowMs: 60_000, max: 100 });
+
 // ─── Global Middleware ──────────────────────────────────────
 app.use("*", logger());
 app.use("*", timing());
-app.use("*", secureHeaders());
+
+// Secure headers for all routes EXCEPT /preview/* — the default secureHeaders()
+// sets X-Frame-Options: SAMEORIGIN and Cross-Origin-Resource-Policy: same-origin
+// which block the cross-origin iframe embedding that the preview panel relies on.
+app.use("*", async (c, next) => {
+  if (c.req.path.startsWith("/preview/")) {
+    await next();
+    return;
+  }
+  return secureHeadersMw(c, next);
+});
+
 app.use(
   "*",
   cors({
@@ -65,7 +80,17 @@ app.use(
     maxAge: 86400,
   })
 );
-app.use("*", rateLimiter({ windowMs: 60_000, max: 100 }));
+
+// Rate limiter for all routes EXCEPT /preview/* — a single Vite page load
+// triggers many subrequests (HTML + JS chunks + CSS + assets) which would
+// quickly exhaust the limit and cause preview loads to fail with 429.
+app.use("*", async (c, next) => {
+  if (c.req.path.startsWith("/preview/")) {
+    await next();
+    return;
+  }
+  return apiRateLimiter(c, next);
+});
 
 // ─── Routes ─────────────────────────────────────────────────
 app.route("/health", healthRoutes);

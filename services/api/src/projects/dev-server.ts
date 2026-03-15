@@ -134,9 +134,14 @@ export async function startDevServer(
     rejectReady = reject;
   });
 
+  // Tell Vite to use the proxy prefix as its base path so all generated
+  // asset URLs (/@vite/client, /src/main.tsx, etc.) include the prefix.
+  // This makes the reverse proxy transparent — no HTML rewriting needed.
+  const base = `/preview/${projectId}/`;
+
   const child = spawn(
     "npx",
-    ["vite", "--host", DEV_SERVER_HOST, "--port", String(port), "--strictPort"],
+    ["vite", "--host", DEV_SERVER_HOST, "--port", String(port), "--strictPort", "--base", base],
     {
       cwd: projectPath,
       shell: true,

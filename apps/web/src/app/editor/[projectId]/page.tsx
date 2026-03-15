@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { getStoredTokens, apiUpdateProject, apiDeleteProject, apiDuplicateProject } from "@/lib/api";
 import {
   ArrowUp,
+  ArrowLeft,
   RefreshCw,
   Smartphone,
   Monitor,
@@ -19,6 +20,7 @@ import {
   ChevronDown,
   File,
   Folder,
+  FolderOpen,
   User,
   Pencil,
   Check,
@@ -59,6 +61,10 @@ import {
   Map,
   Lock,
   FileCode2,
+  Pin,
+  PinOff,
+  Shield,
+  Gauge,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -96,11 +102,20 @@ const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
   },
 );
 
+// ─── Dynamic panel imports ──────────────────────────────────
+const CodePanel = dynamic(() => import("@/modules/editor/panels/code-panel").then(m => ({ default: m.CodePanel })), { ssr: false });
+const DesignPanel = dynamic(() => import("@/modules/editor/panels/design-panel").then(m => ({ default: m.DesignPanel })), { ssr: false });
+const FilesPanel = dynamic(() => import("@/modules/editor/panels/files-panel").then(m => ({ default: m.FilesPanel })), { ssr: false });
+const CloudPanel = dynamic(() => import("@/modules/editor/panels/cloud-panel").then(m => ({ default: m.CloudPanel })), { ssr: false });
+const AnalyticsPanel = dynamic(() => import("@/modules/editor/panels/analytics-panel").then(m => ({ default: m.AnalyticsPanel })), { ssr: false });
+const SecurityPanel = dynamic(() => import("@/modules/editor/panels/security-panel").then(m => ({ default: m.SecurityPanel })), { ssr: false });
+const SpeedPanel = dynamic(() => import("@/modules/editor/panels/speed-panel").then(m => ({ default: m.SpeedPanel })), { ssr: false });
+
 // ─── Constants ──────────────────────────────────────────────
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Types ──────────────────────────────────────────────────
-type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics";
+type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed";
 type ChatMode = "agent" | "plan";
 type DeviceMode = "desktop" | "mobile";
 
@@ -166,6 +181,47 @@ function detectLanguage(filename: string): string {
 
 // ─── Autosave delay ─────────────────────────────────────────
 const AUTOSAVE_DELAY_MS = 1500;
+
+/** Tabs that render a full panel (replacing the preview pane) */
+const PANEL_TABS: ActiveTab[] = ["design", "cloud", "analytics", "files", "security", "speed"];
+
+/** All items available in the triple-dots "More" menu */
+interface MoreMenuItem {
+  key: ActiveTab;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+}
+
+const MORE_MENU_ITEMS: MoreMenuItem[] = [
+  { key: "history", icon: Clock, label: "History" },
+  { key: "design", icon: Palette, label: "Design" },
+  { key: "cloud", icon: Cloud, label: "Cloud" },
+  { key: "analytics", icon: BarChart3, label: "Analytics" },
+  { key: "files", icon: FolderOpen, label: "Files" },
+  { key: "security", icon: Shield, label: "Security" },
+  { key: "speed", icon: Gauge, label: "Speed" },
+];
+
+/** Load pinned toolbar items from localStorage */
+function loadPinnedItems(): ActiveTab[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = localStorage.getItem("doable_pinned_toolbar");
+    if (stored) return JSON.parse(stored) as ActiveTab[];
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+/** Save pinned toolbar items to localStorage */
+function savePinnedItems(items: ActiveTab[]) {
+  try {
+    localStorage.setItem("doable_pinned_toolbar", JSON.stringify(items));
+  } catch {
+    // ignore
+  }
+}
 
 // ─── API helpers ────────────────────────────────────────────
 
@@ -556,6 +612,9 @@ export default function EditorPage() {
   );
   const [showCreditsBar, setShowCreditsBar] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [pinnedItems, setPinnedItems] = useState<ActiveTab[]>(() => loadPinnedItems());
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   // ─── Toolbar dialog/modal state ────────────────────────────
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -904,6 +963,35 @@ export default function EditorPage() {
       document.body.style.userSelect = "";
     };
   }, [isDragging]);
+
+  // Close "More" menu when clicking outside
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setShowMoreMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showMoreMenu]);
+
+  // Toggle pin for a toolbar item
+  const togglePin = useCallback((tab: ActiveTab) => {
+    setPinnedItems((prev) => {
+      const next = prev.includes(tab) ? prev.filter((t) => t !== tab) : [...prev, tab];
+      savePinnedItems(next);
+      return next;
+    });
+  }, []);
+
+  // Close panel handler — go back to chat
+  const handlePanelClose = useCallback(() => {
+    setActiveTab("chat");
+  }, []);
+
+  // Whether the current tab is a full panel view
+  const isPanelView = PANEL_TABS.includes(activeTab);
 
   // ─── Handle tool completion — refresh files + add tool card ─
   const handleToolCompleted = useCallback(
@@ -1499,9 +1587,9 @@ export default function EditorPage() {
   }, [handleToggleFullscreen, shareDialogOpen, publishModalOpen, publishStatus, deleteConfirmOpen, isDeleting, githubDialogOpen, shortcutsDialogOpen]);
 
   // Determine what panels to show based on active tab
-  const showChat = activeTab === "chat" || activeTab === "preview" || activeTab === "history" || activeTab === "design" || activeTab === "cloud" || activeTab === "analytics";
+  const showChat = activeTab === "chat" || activeTab === "preview" || activeTab === "history" || isPanelView;
   const showCode = activeTab === "code";
-  const showPreview = activeTab === "preview" || activeTab === "chat" || activeTab === "history" || activeTab === "design" || activeTab === "cloud" || activeTab === "analytics";
+  const showPreview = (activeTab === "preview" || activeTab === "chat" || activeTab === "history") && !isPanelView;
 
   // ─── Scaffold loading overlay ─────────────────────────────
   const renderScaffoldOverlay = () => {
@@ -1633,24 +1721,21 @@ export default function EditorPage() {
 
         {/* Center: View toggle icon buttons (Lovable-style) */}
         <div className="flex items-center gap-0.5">
+          {/* Core toolbar buttons */}
           {([
-            { key: "history" as ActiveTab, icon: Clock, label: "History", isToggle: false, isMore: false },
-            { key: "chat" as ActiveTab, icon: PanelLeftClose, label: "Toggle sidebar", isToggle: true, isMore: false },
-            { key: "preview" as ActiveTab, icon: Globe, label: "Preview", isToggle: false, isMore: false },
-            { key: "design" as ActiveTab, icon: Palette, label: "Design", isToggle: false, isMore: false },
-            { key: "code" as ActiveTab, icon: Code2, label: "Code", isToggle: false, isMore: false },
-            { key: "cloud" as ActiveTab, icon: Cloud, label: "Cloud", isToggle: false, isMore: false },
-            { key: "analytics" as ActiveTab, icon: BarChart3, label: "Analytics", isToggle: false, isMore: false },
-            { key: "chat" as ActiveTab, icon: MoreHorizontal, label: "More", isToggle: false, isMore: true },
-          ]).map(({ key, icon: Icon, label, isToggle, isMore }, idx) => {
-            const isActive = !isToggle && !isMore && activeTab === key;
+            { key: "history" as ActiveTab, icon: Clock, label: "History", isToggle: false },
+            { key: "chat" as ActiveTab, icon: PanelLeftClose, label: "Toggle sidebar", isToggle: true },
+            { key: "preview" as ActiveTab, icon: Globe, label: "Preview", isToggle: false },
+            { key: "code" as ActiveTab, icon: Code2, label: "Code", isToggle: false },
+          ]).map(({ key, icon: Icon, label, isToggle }, idx) => {
+            const isActive = !isToggle && activeTab === key;
             return (
               <button
                 key={`${key}-${idx}`}
                 onClick={() => {
                   if (isToggle) {
                     setShowSidebar((v) => !v);
-                  } else if (!isMore) {
+                  } else {
                     setActiveTab(key);
                   }
                 }}
@@ -1667,6 +1752,91 @@ export default function EditorPage() {
               </button>
             );
           })}
+
+          {/* Pinned items from More menu */}
+          {pinnedItems.map((tabKey) => {
+            const item = MORE_MENU_ITEMS.find((m) => m.key === tabKey);
+            if (!item) return null;
+            const IconComp = item.icon;
+            const isActive = activeTab === tabKey;
+            return (
+              <button
+                key={`pinned-${tabKey}`}
+                onClick={() => setActiveTab(tabKey)}
+                className={`flex items-center justify-center text-sm transition-all ${
+                  isActive
+                    ? "gap-1.5 rounded-md bg-[#1E52F1]/10 text-[#4D91FF] px-1.5 py-1"
+                    : "rounded-md p-1 text-[#FCFBF8] hover:brightness-125"
+                }`}
+                style={isActive ? { border: "0.667px solid rgb(77, 145, 255)" } : { border: "0.667px solid rgba(252, 251, 248, 0.4)" }}
+                title={item.label}
+              >
+                <IconComp className="h-4 w-4" />
+                {isActive && <span className="text-xs">{item.label}</span>}
+              </button>
+            );
+          })}
+
+          {/* More menu (triple-dots) */}
+          <div className="relative" ref={moreMenuRef}>
+            <button
+              onClick={() => setShowMoreMenu((v) => !v)}
+              className={`flex items-center justify-center text-sm transition-all rounded-md p-1 ${
+                showMoreMenu
+                  ? "bg-[#1E52F1]/10 text-[#4D91FF]"
+                  : "text-[#FCFBF8] hover:brightness-125"
+              }`}
+              style={showMoreMenu ? { border: "0.667px solid rgb(77, 145, 255)" } : { border: "0.667px solid rgba(252, 251, 248, 0.4)" }}
+              title="More views"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+
+            {/* Dropdown */}
+            {showMoreMenu && (
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-52 rounded-lg border border-zinc-700/60 bg-[#232322] shadow-xl shadow-black/40 py-1 z-50">
+                {MORE_MENU_ITEMS.map(({ key, icon: MenuIcon, label }) => {
+                  const isActive = activeTab === key;
+                  const isPinned = pinnedItems.includes(key);
+                  return (
+                    <div
+                      key={key}
+                      className={`flex items-center justify-between px-3 py-2 text-sm cursor-pointer transition-colors ${
+                        isActive
+                          ? "bg-[#1E52F1]/10 text-[#4D91FF]"
+                          : "text-zinc-300 hover:bg-white/5"
+                      }`}
+                    >
+                      <button
+                        className="flex items-center gap-2.5 flex-1 min-w-0"
+                        onClick={() => {
+                          setActiveTab(key);
+                          setShowMoreMenu(false);
+                        }}
+                      >
+                        <MenuIcon className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{label}</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePin(key);
+                        }}
+                        className={`flex-shrink-0 p-1 rounded transition-colors ${
+                          isPinned
+                            ? "text-[#4D91FF] hover:text-blue-300"
+                            : "text-zinc-600 hover:text-zinc-300"
+                        }`}
+                        title={isPinned ? "Unpin from toolbar" : "Pin to toolbar"}
+                      >
+                        {isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Preview controls inline in top bar */}
@@ -1818,7 +1988,7 @@ export default function EditorPage() {
           <div
             className="flex flex-col border-r border-zinc-800/60 bg-[#1C1C1C]"
             style={{
-              width: showPreview ? `${splitPos}%` : "100%",
+              width: (showPreview || isPanelView) ? `${splitPos}%` : "100%",
               minWidth: "320px",
             }}
           >
@@ -1992,6 +2162,17 @@ export default function EditorPage() {
               ))}
               <div ref={chatEndRef} />
             </div>
+
+            {/* "Back to Chat" link when viewing a panel */}
+            {isPanelView && (
+              <button
+                onClick={handlePanelClose}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-400 hover:text-white border-t border-zinc-800/40 transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Chat
+              </button>
+            )}
 
             {/* Input area */}
             <div className="border-t border-zinc-800/60">
@@ -2292,7 +2473,7 @@ export default function EditorPage() {
         )}
 
         {/* ─── Resize Handle ────────────────────────────────── */}
-        {showChat && showPreview && (
+        {showChat && (showPreview || isPanelView) && (
           <div
             className="group relative z-20 w-1 flex-shrink-0 cursor-col-resize"
             onMouseDown={handleMouseDown}
@@ -2341,6 +2522,30 @@ export default function EditorPage() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ─── Full Panel Views (Design, Cloud, Analytics, Files, Security, Speed) ── */}
+        {isPanelView && (
+          <div className="flex flex-1 flex-col overflow-hidden bg-[#1C1C1C]">
+            {activeTab === "design" && (
+              <DesignPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
+            )}
+            {activeTab === "cloud" && (
+              <CloudPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
+            )}
+            {activeTab === "analytics" && (
+              <AnalyticsPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
+            )}
+            {activeTab === "files" && (
+              <FilesPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
+            )}
+            {activeTab === "security" && (
+              <SecurityPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
+            )}
+            {activeTab === "speed" && (
+              <SpeedPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
+            )}
           </div>
         )}
       </div>
