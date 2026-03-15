@@ -1176,26 +1176,28 @@ export default function EditorPage() {
           })}
         </div>
 
-        {/* Right: Share + GitHub + Upgrade + Publish */}
-        <div className="flex items-center gap-1.5">
-          <button className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors">
-            <UserPlus className="h-3.5 w-3.5" />
+        {/* Right: Share + GitHub + Upgrade + Publish — exact Lovable style */}
+        <div className="flex items-center gap-2">
+          <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] text-zinc-300 hover:text-white transition-colors">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-600 shrink-0">
+              <User className="h-3 w-3 text-white" />
+            </div>
             <span className="hidden lg:inline">Share</span>
           </button>
           <button
-            className="flex items-center justify-center rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
             title="GitHub"
           >
-            <Github className="h-4 w-4" />
+            <Github className="h-[18px] w-[18px]" />
           </button>
           <button
             onClick={() => router.push("/billing")}
-            className="flex items-center gap-1.5 rounded-full bg-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-purple-500 transition-colors shadow-lg shadow-purple-900/30"
+            className="flex items-center gap-1.5 rounded-full bg-[#7c3aed] px-4 py-[7px] text-[13px] font-medium text-white hover:bg-[#6d28d9] transition-colors"
           >
-            <Zap className="h-3.5 w-3.5" />
-            <span className="hidden lg:inline">Upgrade</span>
+            <Zap className="h-3.5 w-3.5 fill-current" />
+            Upgrade
           </button>
-          <button className="flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/30">
+          <button className="rounded-full bg-[#2563eb] px-4 py-[7px] text-[13px] font-medium text-white hover:bg-[#1d4ed8] transition-colors">
             Publish
           </button>
         </div>
