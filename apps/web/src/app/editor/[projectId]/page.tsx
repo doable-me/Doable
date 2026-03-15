@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { getStoredTokens, apiUpdateProject } from "@/lib/api";
 import {
   ArrowUp,
@@ -40,7 +41,31 @@ import {
   Plus,
   Mic,
   X,
+  Circle,
+  Map,
+  Lock,
+  FileCode2,
 } from "lucide-react";
+import type { MonacoEditorWrapperProps } from "@/modules/editor/code-editor/monaco-editor-wrapper";
+
+// ─── Dynamically import Monaco (browser-only) ───────────────
+const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
+  () =>
+    import("@/modules/editor/code-editor/monaco-editor-wrapper").then(
+      (mod) => mod.MonacoEditorWrapper,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center bg-[#1e1e1e]">
+        <div className="flex flex-col items-center gap-2">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-purple-400" />
+          <span className="text-xs text-zinc-500">Loading editor...</span>
+        </div>
+      </div>
+    ),
+  },
+);
 
 // ─── Constants ──────────────────────────────────────────────
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -80,6 +105,38 @@ type ScaffoldStatus =
   | "starting"
   | "ready"
   | "error";
+
+interface OpenFileTab {
+  path: string;
+  name: string;
+  language: string;
+  isDirty: boolean;
+}
+
+// ─── Language detection ─────────────────────────────────────
+function detectLanguage(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    ts: "typescript",
+    tsx: "tsx",
+    js: "javascript",
+    jsx: "jsx",
+    css: "css",
+    json: "json",
+    html: "html",
+    md: "markdown",
+    yaml: "yaml",
+    yml: "yaml",
+    py: "python",
+    sql: "sql",
+    sh: "shell",
+    env: "env",
+  };
+  return map[ext] ?? "plaintext";
+}
+
+// ─── Autosave delay ─────────────────────────────────────────
+const AUTOSAVE_DELAY_MS = 1500;
 
 // ─── API helpers ────────────────────────────────────────────
 
@@ -150,6 +207,25 @@ async function fetchFileContent(
   }
   const json = (await res.json()) as { data: { path: string; content: string } };
   return json.data.content;
+}
+
+async function saveFileContent(
+  projectId: string,
+  filePath: string,
+  content: string,
+): Promise<void> {
+  const res = await fetch(
+    `${API_URL}/projects/${projectId}/files/${encodeURIComponent(filePath)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ content }),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Failed to save file (${res.status}): ${text || "Unknown error"}`);
+  }
 }
 
 // ─── Build file tree from flat paths ────────────────────────
@@ -408,6 +484,12 @@ export default function EditorPage() {
   const [fileContentLoading, setFileContentLoading] = useState(false);
   const [fileContentError, setFileContentError] = useState<string | null>(null);
 
+  // ─── Multi-tab editor state ─────────────────────────────────
+  const [openFileTabs, setOpenFileTabs] = useState<OpenFileTab[]>([]);
+  const [showMinimap, setShowMinimap] = useState(false);
+  const fileContentsCache = useRef<Record<string, string>>({});
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ─── UI state ─────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
   const [chatMode, setChatMode] = useState<ChatMode>("agent");
@@ -553,12 +635,22 @@ export default function EditorPage() {
   // ─── Load file content when a file is selected ────────────
   const loadFileContent = useCallback(
     async (filePath: string) => {
+      // Check the cache first (for unsaved edits)
+      const cached = fileContentsCache.current[filePath];
+      if (cached !== undefined) {
+        setFileContent(cached);
+        setFileContentLoading(false);
+        setFileContentError(null);
+        return;
+      }
+
       setFileContentLoading(true);
       setFileContentError(null);
       setFileContent(null);
       try {
         const content = await fetchFileContent(resolvedProjectId, filePath);
         setFileContent(content);
+        fileContentsCache.current[filePath] = content;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Failed to load file";
         setFileContentError(msg);
@@ -569,11 +661,134 @@ export default function EditorPage() {
     [resolvedProjectId],
   );
 
+  // ─── Open a file in a tab ────────────────────────────────
+  const openFileInTab = useCallback(
+    (filePath: string) => {
+      setSelectedFile(filePath);
+      const filename = filePath.split("/").pop() ?? filePath;
+      const language = detectLanguage(filename);
+
+      setOpenFileTabs((prev) => {
+        const exists = prev.find((t) => t.path === filePath);
+        if (exists) return prev;
+        return [...prev, { path: filePath, name: filename, language, isDirty: false }];
+      });
+    },
+    [],
+  );
+
+  // ─── Close a file tab ────────────────────────────────────
+  const closeFileTab = useCallback(
+    (filePath: string) => {
+      delete fileContentsCache.current[filePath];
+      setOpenFileTabs((prev) => {
+        const filtered = prev.filter((t) => t.path !== filePath);
+        // If we closed the active tab, switch to the last remaining tab
+        if (selectedFile === filePath) {
+          if (filtered.length > 0) {
+            const newActive = filtered[filtered.length - 1]!.path;
+            setSelectedFile(newActive);
+            const cached = fileContentsCache.current[newActive];
+            if (cached !== undefined) {
+              setFileContent(cached);
+            } else {
+              loadFileContent(newActive);
+            }
+          } else {
+            setSelectedFile(null);
+            setFileContent(null);
+          }
+        }
+        return filtered;
+      });
+    },
+    [selectedFile, loadFileContent],
+  );
+
+  // ─── Mark tab dirty/clean ────────────────────────────────
+  const markTabDirty = useCallback(
+    (filePath: string, dirty: boolean) => {
+      setOpenFileTabs((prev) =>
+        prev.map((t) => (t.path === filePath ? { ...t, isDirty: dirty } : t)),
+      );
+    },
+    [],
+  );
+
+  // ─── Handle editor content change (with autosave) ────────
+  const handleMonacoChange = useCallback(
+    (newValue: string) => {
+      if (!selectedFile) return;
+
+      setFileContent(newValue);
+      fileContentsCache.current[selectedFile] = newValue;
+      markTabDirty(selectedFile, true);
+
+      // Debounced autosave
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+      }
+      autosaveTimerRef.current = setTimeout(() => {
+        if (selectedFile) {
+          const content = fileContentsCache.current[selectedFile];
+          if (content !== undefined) {
+            saveFileContent(resolvedProjectId, selectedFile, content)
+              .then(() => markTabDirty(selectedFile, false))
+              .catch((err) => console.error("Autosave failed:", err));
+          }
+        }
+      }, AUTOSAVE_DELAY_MS);
+    },
+    [selectedFile, resolvedProjectId, markTabDirty],
+  );
+
+  // ─── Handle explicit save (Ctrl+S) ──────────────────────
+  const handleMonacoSave = useCallback(
+    (value: string) => {
+      if (!selectedFile) return;
+
+      // Cancel pending autosave
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+
+      fileContentsCache.current[selectedFile] = value;
+      saveFileContent(resolvedProjectId, selectedFile, value)
+        .then(() => markTabDirty(selectedFile, false))
+        .catch((err) => console.error("Save failed:", err));
+    },
+    [selectedFile, resolvedProjectId, markTabDirty],
+  );
+
   useEffect(() => {
     if (selectedFile && scaffoldStatus === "ready") {
       loadFileContent(selectedFile);
     }
   }, [selectedFile, scaffoldStatus, loadFileContent]);
+
+  // Cleanup autosave timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Ctrl+W to close current tab
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "w" && activeTab === "code") {
+        e.preventDefault();
+        if (selectedFile) {
+          closeFileTab(selectedFile);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedFile, activeTab, closeFileTab]);
 
   // Scroll chat to bottom on new messages
   useEffect(() => {
@@ -677,8 +892,10 @@ export default function EditorPage() {
         // Always refresh file tree on any tool completion for safety
         loadFileTree();
 
-        // If the currently selected file was modified, reload it
+        // If the currently selected file was modified, reload it from API
+        // Clear the cache first so loadFileContent fetches fresh content
         if (selectedFile) {
+          delete fileContentsCache.current[selectedFile];
           loadFileContent(selectedFile);
         }
       }
@@ -745,7 +962,10 @@ export default function EditorPage() {
           setIsStreaming(false);
           // Refresh file tree after AI response completes (may have created files)
           loadFileTree();
-          if (selectedFile) loadFileContent(selectedFile);
+          if (selectedFile) {
+            delete fileContentsCache.current[selectedFile];
+            loadFileContent(selectedFile);
+          }
         },
         // onError
         (error: string) => {
@@ -798,7 +1018,7 @@ export default function EditorPage() {
           <button
             onClick={() => {
               if (isFolder) toggleFolder(node.path);
-              else setSelectedFile(node.path);
+              else openFileInTab(node.path);
             }}
             className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-[13px] hover:bg-white/5 transition-colors ${
               isSelected && !isFolder
@@ -1573,27 +1793,83 @@ export default function EditorPage() {
               )}
             </div>
 
-            {/* Code display */}
+            {/* Code display with Monaco editor */}
             <div className="flex flex-1 flex-col overflow-hidden">
-              {/* Tab bar */}
-              <div className="flex items-center border-b border-zinc-800/60 bg-[#1C1C1C]">
-                <div className="flex items-center gap-0.5 px-1 py-1">
-                  {selectedFile ? (
-                    <div className="flex items-center gap-1.5 rounded-md bg-zinc-800/50 px-3 py-1.5 text-[12px] text-zinc-300 border border-zinc-700/30">
-                      <File className="h-3 w-3 text-zinc-500" />
-                      {selectedFile.split("/").pop()}
-                    </div>
-                  ) : (
-                    <div className="px-3 py-1.5 text-[12px] text-zinc-600">
-                      No file selected
-                    </div>
-                  )}
+              {/* Multi-tab bar */}
+              <div className="flex h-9 items-center overflow-x-auto border-b border-zinc-800/60 bg-[#252526]">
+                {openFileTabs.length > 0 ? (
+                  openFileTabs.map((tab) => {
+                    const isActiveTab = tab.path === selectedFile;
+                    return (
+                      <div
+                        key={tab.path}
+                        className={`group flex h-full items-center gap-1.5 border-r border-zinc-800/40 px-3 text-xs cursor-pointer select-none transition-colors ${
+                          isActiveTab
+                            ? "bg-[#1e1e1e] text-zinc-200"
+                            : "text-zinc-500 hover:bg-[#2a2a2b] hover:text-zinc-300"
+                        }`}
+                        onClick={() => {
+                          setSelectedFile(tab.path);
+                          const cached = fileContentsCache.current[tab.path];
+                          if (cached !== undefined) {
+                            setFileContent(cached);
+                          } else {
+                            loadFileContent(tab.path);
+                          }
+                        }}
+                      >
+                        <FileCode2 className="h-3 w-3 flex-none text-zinc-500" />
+                        <span className="truncate max-w-[120px]">{tab.name}</span>
+                        {tab.isDirty && (
+                          <Circle className="h-2 w-2 flex-none fill-current text-purple-400" />
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            closeFileTab(tab.path);
+                          }}
+                          className="flex h-4 w-4 flex-none items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-zinc-700 transition-all"
+                          title="Close (Ctrl+W)"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="px-3 py-1.5 text-[12px] text-zinc-600">
+                    No file selected
+                  </div>
+                )}
+
+                {/* Minimap toggle */}
+                <div className="ml-auto flex items-center gap-1 px-2">
+                  <button
+                    onClick={() => setShowMinimap((v) => !v)}
+                    className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
+                      showMinimap
+                        ? "text-purple-400 bg-zinc-800"
+                        : "text-zinc-600 hover:text-zinc-400"
+                    }`}
+                    title={showMinimap ? "Hide minimap" : "Show minimap"}
+                  >
+                    <Map className="h-3 w-3" />
+                  </button>
                 </div>
               </div>
 
-              {/* Code content */}
+              {/* Breadcrumb */}
+              {selectedFile && (
+                <div className="flex h-6 items-center border-b border-zinc-800/40 bg-[#1e1e1e] px-3">
+                  <span className="text-[11px] text-zinc-600 font-mono truncate">
+                    {selectedFile}
+                  </span>
+                </div>
+              )}
+
+              {/* Editor content */}
               {!selectedFile ? (
-                <div className="flex flex-1 items-center justify-center">
+                <div className="flex flex-1 items-center justify-center bg-[#1e1e1e]">
                   <div className="text-center px-8">
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60 mx-auto mb-3">
                       <Code2 className="h-6 w-6 text-zinc-600" />
@@ -1604,17 +1880,23 @@ export default function EditorPage() {
                     <p className="text-xs text-zinc-700">
                       Click on any file to view its content
                     </p>
+                    <div className="mt-4 flex flex-col gap-1 text-[11px] text-zinc-700">
+                      <span>Ctrl+S to save</span>
+                      <span>Ctrl+F to search</span>
+                      <span>Ctrl+H to replace</span>
+                      <span>Ctrl+W to close tab</span>
+                    </div>
                   </div>
                 </div>
               ) : fileContentLoading ? (
-                <div className="flex flex-1 items-center justify-center">
+                <div className="flex flex-1 items-center justify-center bg-[#1e1e1e]">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="h-6 w-6 animate-spin text-purple-400" />
                     <p className="text-sm text-zinc-500">Loading file...</p>
                   </div>
                 </div>
               ) : fileContentError ? (
-                <div className="flex flex-1 items-center justify-center">
+                <div className="flex flex-1 items-center justify-center bg-[#1e1e1e]">
                   <div className="text-center px-8">
                     <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-3" />
                     <p className="text-sm text-red-300 mb-2">{fileContentError}</p>
@@ -1627,24 +1909,19 @@ export default function EditorPage() {
                   </div>
                 </div>
               ) : fileContent !== null ? (
-                <div className="flex-1 overflow-auto">
-                  <pre className="p-4 text-[13px] leading-relaxed text-zinc-300 font-mono">
-                    <code>
-                      {fileContent.split("\n").map((line, idx) => (
-                        <div key={idx} className="flex hover:bg-white/[0.02]">
-                          <span className="inline-block w-12 flex-shrink-0 select-none text-right pr-4 text-zinc-700">
-                            {idx + 1}
-                          </span>
-                          <span className="flex-1 whitespace-pre-wrap break-all">
-                            {line || " "}
-                          </span>
-                        </div>
-                      ))}
-                    </code>
-                  </pre>
+                <div className="flex-1 overflow-hidden">
+                  <MonacoEditorWrapper
+                    value={fileContent}
+                    language={detectLanguage(selectedFile.split("/").pop() ?? "")}
+                    filePath={selectedFile}
+                    readOnly={false}
+                    onChange={handleMonacoChange}
+                    onSave={handleMonacoSave}
+                    showMinimap={showMinimap}
+                  />
                 </div>
               ) : (
-                <div className="flex flex-1 items-center justify-center">
+                <div className="flex flex-1 items-center justify-center bg-[#1e1e1e]">
                   <div className="text-center px-8">
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60 mx-auto mb-3">
                       <Code2 className="h-6 w-6 text-zinc-600" />
