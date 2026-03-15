@@ -9,9 +9,9 @@ export function usePreview(projectId: string | null) {
   const { previewUrl, previewLoading, setPreviewUrl, setPreviewLoading } =
     useEditorStore();
 
-  const baseUrl = projectId
-    ? `${process.env.NEXT_PUBLIC_PREVIEW_URL ?? "http://localhost:3100"}/${projectId}`
-    : "";
+  // Preview goes through the API server's reverse proxy so it works from any machine
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  const baseUrl = projectId ? `${apiUrl}/preview/${projectId}/` : "";
 
   const refresh = useCallback(() => {
     if (!iframeRef.current || !baseUrl) return;

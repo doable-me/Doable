@@ -18,6 +18,7 @@ import { templateRoutes } from "./routes/templates.js";
 import { versionRoutes } from "./routes/versions.js";
 import { githubRoutes } from "./routes/github.js";
 import { projectFileRoutes } from "./routes/project-files.js";
+import { previewRoutes } from "./routes/preview-proxy.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 
 const app = new Hono();
@@ -29,7 +30,14 @@ app.use("*", secureHeaders());
 app.use(
   "*",
   cors({
-    origin: (process.env.CORS_ORIGINS ?? "http://localhost:3000").split(","),
+    origin: (origin, c) => {
+      // Preview proxy routes: allow any origin (iframe embedding)
+      if (c.req.path.startsWith("/preview/")) {
+        return origin;
+      }
+      const allowed = (process.env.CORS_ORIGINS ?? "http://localhost:3000").split(",");
+      return allowed.includes(origin) ? origin : allowed[0];
+    },
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
@@ -41,6 +49,9 @@ app.use("*", rateLimiter({ windowMs: 60_000, max: 100 }));
 // ─── Routes ─────────────────────────────────────────────────
 app.route("/health", healthRoutes);
 app.route("/auth", authRoutes);
+// Preview reverse proxy — forwards /preview/:projectId/* to the Vite dev server.
+// Must be before other catch-all routes.
+app.route("/", previewRoutes);
 // Project file routes (no auth — filesystem-backed, powers live preview)
 app.route("/", projectFileRoutes);
 // Chat & editor routes BEFORE project routes (projectRoutes has wildcard auth middleware)

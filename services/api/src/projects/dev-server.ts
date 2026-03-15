@@ -11,7 +11,6 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer as createTcpServer } from "node:net";
-import { networkInterfaces } from "node:os";
 import { getProjectPath } from "../ai/project-files.js";
 
 // ─── Configuration ───────────────────────────────────────
@@ -19,19 +18,6 @@ import { getProjectPath } from "../ai/project-files.js";
 const PORT_RANGE_START = 3100;
 const PORT_RANGE_END = 3200;
 const DEV_SERVER_HOST = process.env.DEV_SERVER_HOST ?? "0.0.0.0";
-
-/** Get the machine's LAN IP so preview URLs work from other machines */
-function getLocalIP(): string {
-  const nets = networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name] ?? []) {
-      if (net.family === "IPv4" && !net.internal) {
-        return net.address;
-      }
-    }
-  }
-  return "localhost";
-}
 const STARTUP_TIMEOUT_MS = 30_000;
 
 // ─── Types ───────────────────────────────────────────────
@@ -119,7 +105,8 @@ export async function startDevServer(
     if (existing.process.exitCode === null) {
       // Process is still alive — wait for it to be ready
       await existing.readyPromise;
-      return { url: existing.url, port: existing.port };
+      // Return proxy-based URL, not the internal localhost URL
+      return { url: `/preview/${projectId}/`, port: existing.port };
     }
     // Process died — clean up the stale entry before starting fresh
     console.warn(
@@ -130,11 +117,8 @@ export async function startDevServer(
 
   const port = await allocatePort();
   const projectPath = getProjectPath(projectId);
-  // Use the server's hostname so the preview is accessible from the browser
-  // (which may be on a different machine in the LAN)
-  const previewHost = process.env.PREVIEW_HOST ??
-    (process.env.API_HOST === "0.0.0.0" ? getLocalIP() : (process.env.API_HOST ?? "localhost"));
-  const url = `http://${previewHost}:${port}`;
+  // Internal URL for the reverse proxy to forward to (always localhost)
+  const url = `http://localhost:${port}`;
 
   console.log(
     `[DevServer] Starting Vite dev server for project ${projectId} on port ${port}`,
@@ -266,7 +250,8 @@ export async function startDevServer(
     .catch(() => clearTimeout(startupTimeout));
 
   await readyPromise;
-  return { url, port };
+  // Return the proxy-based URL (relative path) — the frontend prepends the API base
+  return { url: `/preview/${projectId}/`, port };
 }
 
 /**
@@ -326,7 +311,9 @@ export async function stopDevServer(projectId: string): Promise<void> {
 }
 
 /**
- * Get the dev server URL for a project.
+ * Get the proxy-based preview URL for a project.
+ * This is what the frontend iframe should load — it goes through
+ * the API server's reverse proxy so it works from any machine.
  * Returns null if no server is running.
  */
 export function getDevServerUrl(projectId: string): string | null {
@@ -337,7 +324,25 @@ export function getDevServerUrl(projectId: string): string | null {
     cleanup(projectId);
     return null;
   }
-  return instance.url;
+  // Return the proxy path — the frontend will prepend the API base URL
+  return `/preview/${projectId}/`;
+}
+
+/**
+ * Get the internal (localhost) URL for the Vite dev server.
+ * Used by the reverse proxy to forward requests. This always
+ * points to localhost because the proxy runs on the same machine.
+ * Returns null if no server is running.
+ */
+export function getDevServerInternalUrl(projectId: string): string | null {
+  const instance = servers.get(projectId);
+  if (!instance) return null;
+  // Verify the process is still alive
+  if (instance.process.exitCode !== null) {
+    cleanup(projectId);
+    return null;
+  }
+  return `http://localhost:${instance.port}`;
 }
 
 /**
@@ -369,7 +374,7 @@ export function getRunningServers(): Array<{
     .map((s) => ({
       projectId: s.projectId,
       port: s.port,
-      url: s.url,
+      url: `/preview/${s.projectId}/`,
       startedAt: s.startedAt,
       ready: s.ready,
     }));

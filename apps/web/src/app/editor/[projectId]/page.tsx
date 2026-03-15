@@ -88,6 +88,15 @@ function authHeaders(): Record<string, string> {
   return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 }
 
+/** Convert a relative preview path (e.g. /preview/abc/) to an absolute URL using the API base. */
+function toAbsolutePreviewUrl(url: string | null): string | null {
+  if (!url) return null;
+  // Already absolute — return as-is
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  // Relative path — prepend the API base URL
+  return `${API_URL}${url}`;
+}
+
 async function scaffoldProject(projectId: string): Promise<string | null> {
   const res = await fetch(`${API_URL}/projects/${projectId}/scaffold`, {
     method: "POST",
@@ -98,7 +107,7 @@ async function scaffoldProject(projectId: string): Promise<string | null> {
     throw new Error(`Scaffold failed (${res.status}): ${text || "Unknown error"}`);
   }
   const json = (await res.json()) as { data: { previewUrl?: string | null } };
-  return json.data.previewUrl ?? null;
+  return toAbsolutePreviewUrl(json.data.previewUrl ?? null);
 }
 
 async function fetchPreviewUrl(projectId: string): Promise<string | null> {
@@ -112,7 +121,7 @@ async function fetchPreviewUrl(projectId: string): Promise<string | null> {
   const json = (await res.json()) as { data: { url: string | null; running: boolean } };
   // Return null if the server isn't running yet — caller will retry
   if (!json.data.url || !json.data.running) return null;
-  return json.data.url;
+  return toAbsolutePreviewUrl(json.data.url);
 }
 
 async function fetchFileList(projectId: string): Promise<string[]> {
