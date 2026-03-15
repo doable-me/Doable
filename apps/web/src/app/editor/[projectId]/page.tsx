@@ -13,10 +13,10 @@ import {
   Globe,
   MessageSquare,
   Code2,
-  Eye,
   Share2,
   Sparkles,
   ChevronRight,
+  ChevronDown,
   File,
   Folder,
   Bot,
@@ -32,13 +32,23 @@ import {
   MoreHorizontal,
   Wrench,
   Bookmark,
+  Clock,
+  PanelLeftClose,
+  Palette,
+  Cloud,
+  BarChart3,
+  Github,
+  Zap,
+  Plus,
+  Mic,
+  X,
 } from "lucide-react";
 
 // ─── Constants ──────────────────────────────────────────────
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Types ──────────────────────────────────────────────────
-type ActiveTab = "chat" | "code" | "preview";
+type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics";
 type ChatMode = "agent" | "plan";
 type DeviceMode = "desktop" | "mobile";
 
@@ -410,6 +420,8 @@ export default function EditorPage() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     new Set<string>()
   );
+  const [showCreditsBar, setShowCreditsBar] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(true);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -952,9 +964,9 @@ export default function EditorPage() {
   }, [resolvedProjectId]);
 
   // Determine what panels to show based on active tab
-  const showChat = activeTab === "chat";
+  const showChat = activeTab === "chat" || activeTab === "preview" || activeTab === "history" || activeTab === "design" || activeTab === "cloud" || activeTab === "analytics";
   const showCode = activeTab === "code";
-  const showPreview = activeTab === "preview" || activeTab === "chat";
+  const showPreview = activeTab === "preview" || activeTab === "chat" || activeTab === "history" || activeTab === "design" || activeTab === "cloud" || activeTab === "analytics";
 
   // ─── Scaffold loading overlay ─────────────────────────────
   const renderScaffoldOverlay = () => {
@@ -1008,20 +1020,30 @@ export default function EditorPage() {
     <div className="flex h-screen flex-col bg-[#0a0a0f] text-zinc-200">
       {/* ─── Top Bar ──────────────────────────────────────────── */}
       <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#0e0e16] px-3">
-        {/* Left */}
-        <div className="flex items-center gap-3">
+        {/* Left: Logo + Back arrow + Project name with dropdown */}
+        <div className="flex items-center gap-2.5 min-w-0">
+          {/* Doable logo icon */}
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 text-white font-bold text-sm shadow-md shadow-purple-900/40 hover:from-purple-400 hover:to-purple-600 transition-all"
+            title="Back to dashboard"
           >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">Back</span>
+            D
           </button>
 
-          <div className="h-5 w-px bg-zinc-800" />
+          {/* Back arrow */}
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            title="Back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
 
-          {/* Editable project name + preview status subtitle */}
-          <div className="flex flex-col">
+          <div className="h-5 w-px bg-zinc-800 flex-shrink-0" />
+
+          {/* Editable project name with dropdown chevron + status subtitle */}
+          <div className="flex flex-col min-w-0">
             {isEditingName ? (
               <div className="flex items-center gap-1">
                 <input
@@ -1060,15 +1082,14 @@ export default function EditorPage() {
             ) : (
               <button
                 onClick={() => setIsEditingName(true)}
-                className="group flex items-center gap-1.5 text-sm font-medium text-zinc-200 hover:text-white"
+                className="group flex items-center gap-1 text-sm font-medium text-zinc-200 hover:text-white truncate"
               >
-                <Sparkles className="h-3.5 w-3.5 text-purple-400" />
                 {projectName}
-                <Pencil className="h-3 w-3 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <ChevronDown className="h-3.5 w-3.5 text-zinc-500 flex-shrink-0" />
               </button>
             )}
             {/* Preview status subtitle */}
-            <span className="text-[10px] text-zinc-600 ml-5 leading-tight">
+            <span className="text-[10px] text-zinc-600 leading-tight truncate">
               {scaffoldStatus === "ready"
                 ? "Previewing last saved version"
                 : scaffoldStatus === "error"
@@ -1079,49 +1100,75 @@ export default function EditorPage() {
 
           {/* Scaffold status indicator */}
           {scaffoldStatus !== "ready" && scaffoldStatus !== "idle" && scaffoldStatus !== "error" && (
-            <div className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+            <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 flex-shrink-0">
               <Loader2 className="h-3 w-3 animate-spin text-purple-400" />
               {scaffoldStatus === "scaffolding" ? "Getting ready..." : "Starting..."}
             </div>
           )}
           {scaffoldStatus === "ready" && (
-            <div className="flex items-center gap-1 text-[11px] text-emerald-500">
+            <div className="flex items-center gap-1 text-[11px] text-emerald-500 flex-shrink-0">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Live
             </div>
           )}
         </div>
 
-        {/* Center tabs */}
-        <div className="flex items-center rounded-lg bg-zinc-900/80 border border-zinc-800/80 p-0.5">
-          {(
-            [
-              { key: "chat", icon: MessageSquare, label: "Chat" },
-              { key: "code", icon: Code2, label: "Code" },
-              { key: "preview", icon: Eye, label: "Preview" },
-            ] as const
-          ).map(({ key, icon: Icon, label }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
-                activeTab === key
-                  ? "bg-zinc-700/80 text-white shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-            </button>
-          ))}
+        {/* Center: View toggle icon buttons (Lovable-style) */}
+        <div className="flex items-center gap-0.5">
+          {([
+            { key: "history" as ActiveTab, icon: Clock, label: "History", isToggle: false, isMore: false },
+            { key: "chat" as ActiveTab, icon: PanelLeftClose, label: "Toggle sidebar", isToggle: true, isMore: false },
+            { key: "preview" as ActiveTab, icon: Globe, label: "Preview", isToggle: false, isMore: false },
+            { key: "design" as ActiveTab, icon: Palette, label: "Design", isToggle: false, isMore: false },
+            { key: "code" as ActiveTab, icon: Code2, label: "Code", isToggle: false, isMore: false },
+            { key: "cloud" as ActiveTab, icon: Cloud, label: "Cloud", isToggle: false, isMore: false },
+            { key: "analytics" as ActiveTab, icon: BarChart3, label: "Analytics", isToggle: false, isMore: false },
+            { key: "chat" as ActiveTab, icon: MoreHorizontal, label: "More", isToggle: false, isMore: true },
+          ]).map(({ key, icon: Icon, label, isToggle, isMore }, idx) => {
+            const isActive = !isToggle && !isMore && activeTab === key;
+            return (
+              <button
+                key={`${key}-${idx}`}
+                onClick={() => {
+                  if (isToggle) {
+                    setShowSidebar((v) => !v);
+                  } else if (!isMore) {
+                    setActiveTab(key);
+                  }
+                }}
+                className={`flex items-center justify-center rounded-md p-1.5 text-xs transition-all ${
+                  isActive
+                    ? "bg-purple-600/20 text-purple-400 shadow-sm"
+                    : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                }`}
+                title={label}
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            );
+          })}
         </div>
 
-        {/* Right */}
-        <div className="flex items-center gap-2">
-          <button className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors">
-            <Share2 className="h-4 w-4" />
+        {/* Right: Share + GitHub + Upgrade + Publish */}
+        <div className="flex items-center gap-1.5">
+          <button className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors">
+            <Share2 className="h-3.5 w-3.5" />
+            <span className="hidden lg:inline">Share</span>
           </button>
-          <button className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-purple-500 transition-colors shadow-lg shadow-purple-900/30">
+          <button
+            className="flex items-center justify-center rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            title="GitHub"
+          >
+            <Github className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => router.push("/billing")}
+            className="flex items-center gap-1.5 rounded-lg bg-purple-600/15 border border-purple-500/20 px-3 py-1.5 text-xs font-medium text-purple-400 hover:bg-purple-600/25 hover:border-purple-500/30 transition-colors"
+          >
+            <Zap className="h-3.5 w-3.5" />
+            <span className="hidden lg:inline">Upgrade</span>
+          </button>
+          <button className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/30">
             Publish
           </button>
         </div>
@@ -1326,53 +1373,123 @@ export default function EditorPage() {
             </div>
 
             {/* Input area */}
-            <div className="border-t border-zinc-800/60 p-3">
-              {/* Mode toggle */}
-              <div className="mb-2 flex items-center gap-1">
-                {(["agent", "plan"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setChatMode(mode)}
-                    className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                      chatMode === mode
-                        ? "bg-purple-600/15 text-purple-400"
-                        : "text-zinc-600 hover:text-zinc-400"
-                    }`}
-                  >
-                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-end gap-2">
-                <textarea
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
+            <div className="border-t border-zinc-800/60">
+              {/* Credits bar */}
+              {showCreditsBar && (
+                <div className="flex items-center justify-between px-4 py-2 bg-zinc-900/60 border-b border-zinc-800/40">
+                  <div className="flex items-center gap-2 text-[12px] text-zinc-400">
+                    <Zap className="h-3.5 w-3.5 text-amber-400" />
+                    <span>5 credits remaining</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => router.push("/billing")}
+                      className="text-[12px] font-medium text-purple-400 hover:text-purple-300 transition-colors"
+                    >
+                      Add credits
+                    </button>
+                    <button
+                      onClick={() => setShowCreditsBar(false)}
+                      className="p-0.5 text-zinc-600 hover:text-zinc-400 transition-colors"
+                      title="Dismiss"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Chat input toolbar */}
+              <div className="p-3">
+                <div className="rounded-xl bg-zinc-900/80 border border-zinc-700/50 focus-within:border-purple-500/50 focus-within:ring-1 focus-within:ring-purple-500/20 transition-all">
+                  {/* Textarea */}
+                  <textarea
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
+                    placeholder={
+                      chatMode === "agent"
+                        ? "Ask Doable AI to build something..."
+                        : "Describe what you want to plan..."
                     }
-                  }}
-                  placeholder={
-                    chatMode === "agent"
-                      ? "Ask Doable AI to build something..."
-                      : "Describe what you want to plan..."
-                  }
-                  rows={2}
-                  disabled={isStreaming}
-                  className="flex-1 resize-none rounded-xl bg-zinc-900/80 border border-zinc-700/50 px-3.5 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-all disabled:opacity-50"
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={!inputValue.trim() || isStreaming}
-                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-30 disabled:hover:bg-purple-600 transition-colors"
-                >
-                  {isStreaming ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </button>
+                    rows={2}
+                    disabled={isStreaming}
+                    className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none disabled:opacity-50"
+                  />
+
+                  {/* Bottom toolbar row */}
+                  <div className="flex items-center justify-between px-2 pb-2">
+                    <div className="flex items-center gap-1">
+                      {/* + button */}
+                      <button
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                        title="Attach"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+
+                      {/* Visual edits button */}
+                      <button
+                        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                        title="Visual edits"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>Visual edits</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      {/* Chat/Plan toggle */}
+                      {(["agent", "plan"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setChatMode(mode)}
+                          className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                            chatMode === mode
+                              ? "bg-purple-600/15 text-purple-400"
+                              : "text-zinc-600 hover:text-zinc-400"
+                          }`}
+                        >
+                          {mode === "agent" ? (
+                            <MessageSquare className="h-3.5 w-3.5" />
+                          ) : (
+                            <span>Plan</span>
+                          )}
+                        </button>
+                      ))}
+
+                      {/* Mic button */}
+                      <button
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                        title="Voice input"
+                      >
+                        <Mic className="h-3.5 w-3.5" />
+                      </button>
+
+                      {/* Send button — golden/highlighted when active */}
+                      <button
+                        onClick={handleSend}
+                        disabled={!inputValue.trim() || isStreaming}
+                        className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all ${
+                          inputValue.trim() && !isStreaming
+                            ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-900/30 hover:from-amber-300 hover:to-orange-400"
+                            : "bg-zinc-800 text-zinc-600"
+                        }`}
+                      >
+                        {isStreaming ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
