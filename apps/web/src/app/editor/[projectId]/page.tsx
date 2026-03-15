@@ -101,7 +101,7 @@ async function scaffoldProject(projectId: string): Promise<string | null> {
   return json.data.previewUrl ?? null;
 }
 
-async function fetchPreviewUrl(projectId: string): Promise<string> {
+async function fetchPreviewUrl(projectId: string): Promise<string | null> {
   const res = await fetch(`${API_URL}/projects/${projectId}/preview-url`, {
     headers: authHeaders(),
   });
@@ -109,7 +109,9 @@ async function fetchPreviewUrl(projectId: string): Promise<string> {
     const text = await res.text().catch(() => "");
     throw new Error(`Failed to get preview URL (${res.status}): ${text || "Unknown error"}`);
   }
-  const json = (await res.json()) as { data: { url: string } };
+  const json = (await res.json()) as { data: { url: string | null; running: boolean } };
+  // Return null if the server isn't running yet — caller will retry
+  if (!json.data.url || !json.data.running) return null;
   return json.data.url;
 }
 

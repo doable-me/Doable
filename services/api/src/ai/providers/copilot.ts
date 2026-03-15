@@ -53,6 +53,8 @@ export interface CopilotSessionConfig {
   model?: string;
   /** BYOK provider config — when set, uses user's own API key instead of Copilot subscription */
   provider?: ByokProviderConfig;
+  /** Working directory for the session — file tools operate relative to this */
+  workingDirectory?: string;
   /** System prompt to prepend */
   systemPrompt?: string;
   /** Handler for when the agent needs user input */
@@ -135,6 +137,7 @@ export class CopilotEngine {
 
     const sessionConfig: SessionConfig = {
       onPermissionRequest: approveAll,
+      ...(config.workingDirectory ? { workingDirectory: config.workingDirectory } : {}),
       ...(config.model || this.config.model
         ? { model: config.model ?? this.config.model }
         : {}),

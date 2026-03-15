@@ -4,9 +4,13 @@
  * Spawns and manages Vite dev servers for each project.
  * Each project gets a unique port in the range 3100-3200.
  * The preview iframe in the editor points to these dev servers.
+ *
+ * Key invariant: each project ID maps to exactly ONE dev server
+ * on a unique port, serving files from that project's directory.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { createServer as createTcpServer } from "node:net";
 import { getProjectPath } from "../ai/project-files.js";
 
 // ─── Configuration ───────────────────────────────────────
@@ -14,6 +18,7 @@ import { getProjectPath } from "../ai/project-files.js";
 const PORT_RANGE_START = 3100;
 const PORT_RANGE_END = 3200;
 const DEV_SERVER_HOST = process.env.DEV_SERVER_HOST ?? "0.0.0.0";
+const STARTUP_TIMEOUT_MS = 30_000;
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -33,18 +38,48 @@ const servers = new Map<string, DevServerInstance>();
 const usedPorts = new Set<number>();
 
 /**
- * Allocate the next available port in the range.
+ * Check if a port is actually free on the system.
+ * This catches orphaned Vite processes from previous API server runs
+ * that are still occupying ports even though our in-memory set is empty.
  */
-function allocatePort(): number {
+function isPortFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createTcpServer();
+    server.once("error", () => {
+      // Port is in use (EADDRINUSE or similar)
+      resolve(false);
+    });
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, "0.0.0.0");
+  });
+}
+
+/**
+ * Allocate the next available port in the range.
+ * Checks both our in-memory registry AND the actual OS to detect
+ * orphaned processes from previous server runs.
+ */
+async function allocatePort(): Promise<number> {
   for (let port = PORT_RANGE_START; port <= PORT_RANGE_END; port++) {
-    if (!usedPorts.has(port)) {
+    if (usedPorts.has(port)) continue;
+
+    // Actually check if the port is free on the system
+    const free = await isPortFree(port);
+    if (free) {
       usedPorts.add(port);
       return port;
     }
+
+    // Port is occupied by something outside our registry (orphaned process, etc.)
+    console.warn(
+      `[DevServer] Port ${port} is occupied by an external process — skipping`,
+    );
   }
   throw new Error(
     `No available ports in range ${PORT_RANGE_START}-${PORT_RANGE_END}. ` +
-      `${usedPorts.size} servers are running.`,
+      `${usedPorts.size} ports are tracked, and others may be occupied by orphaned processes.`,
   );
 }
 
@@ -64,22 +99,32 @@ function releasePort(port: number): void {
 export async function startDevServer(
   projectId: string,
 ): Promise<{ url: string; port: number }> {
-  // Return existing server if running
+  // Return existing server if running and the process is still alive
   const existing = servers.get(projectId);
   if (existing) {
-    // Wait for it to be ready if it's still starting
-    await existing.readyPromise;
-    return { url: existing.url, port: existing.port };
+    if (existing.process.exitCode === null) {
+      // Process is still alive — wait for it to be ready
+      await existing.readyPromise;
+      return { url: existing.url, port: existing.port };
+    }
+    // Process died — clean up the stale entry before starting fresh
+    console.warn(
+      `[DevServer] Stale server entry for project ${projectId} (process exited with code ${existing.process.exitCode}) — cleaning up`,
+    );
+    cleanup(projectId);
   }
 
-  const port = allocatePort();
+  const port = await allocatePort();
   const projectPath = getProjectPath(projectId);
   const url = `http://localhost:${port}`;
 
   console.log(
     `[DevServer] Starting Vite dev server for project ${projectId} on port ${port}`,
   );
+  console.log(`[DevServer]   Directory: ${projectPath}`);
 
+  // Use a settled flag to prevent race between timeout, close, and ready
+  let settled = false;
   let resolveReady: () => void;
   let rejectReady: (err: Error) => void;
   const readyPromise = new Promise<void>((resolve, reject) => {
@@ -118,15 +163,28 @@ export async function startDevServer(
   // Listen for "ready" signal from Vite
   let outputBuffer = "";
 
+  const markReady = () => {
+    if (settled) return;
+    settled = true;
+    instance.ready = true;
+    console.log(`[DevServer] Project ${projectId} ready at ${url}`);
+    resolveReady!();
+  };
+
+  const markFailed = (err: Error) => {
+    if (settled) return;
+    settled = true;
+    cleanup(projectId);
+    rejectReady!(err);
+  };
+
   child.stdout?.on("data", (data: Buffer) => {
     const text = data.toString();
     outputBuffer += text;
 
     // Vite prints the local URL when ready
-    if (!instance.ready && (text.includes("Local:") || text.includes("ready in"))) {
-      instance.ready = true;
-      console.log(`[DevServer] Project ${projectId} ready at ${url}`);
-      resolveReady!();
+    if (!settled && (text.includes("Local:") || text.includes("ready in"))) {
+      markReady();
     }
   });
 
@@ -134,49 +192,60 @@ export async function startDevServer(
     const text = data.toString();
     outputBuffer += text;
     // Vite sometimes outputs to stderr too
-    if (!instance.ready && (text.includes("Local:") || text.includes("ready in"))) {
-      instance.ready = true;
-      console.log(`[DevServer] Project ${projectId} ready at ${url}`);
-      resolveReady!();
+    if (!settled && (text.includes("Local:") || text.includes("ready in"))) {
+      markReady();
     }
   });
 
   child.on("error", (err) => {
     console.error(`[DevServer] Error for project ${projectId}:`, err.message);
-    cleanup(projectId);
-    if (!instance.ready) {
-      rejectReady!(new Error(`Dev server failed to start: ${err.message}`));
-    }
+    markFailed(new Error(`Dev server failed to start: ${err.message}`));
   });
 
   child.on("close", (code) => {
     console.log(
       `[DevServer] Server for project ${projectId} exited with code ${code}`,
     );
-    cleanup(projectId);
-    if (!instance.ready) {
-      rejectReady!(
+    if (!settled) {
+      // Process died before becoming ready — this is a failure
+      markFailed(
         new Error(
           `Dev server exited with code ${code} before becoming ready.\nOutput: ${outputBuffer.slice(-500)}`,
         ),
       );
+    } else {
+      // Process died after becoming ready — clean up the registry
+      // so the next call to startDevServer will spawn a new one
+      cleanup(projectId);
     }
   });
 
-  // Timeout: if Vite doesn't signal ready in 30s, consider it ready anyway
-  // (sometimes the output format changes between versions)
+  // Timeout: if Vite doesn't signal ready in STARTUP_TIMEOUT_MS,
+  // check if the process is still alive before assuming ready.
   const startupTimeout = setTimeout(() => {
-    if (!instance.ready) {
-      instance.ready = true;
-      console.log(
-        `[DevServer] Project ${projectId} startup timeout — assuming ready at ${url}`,
-      );
-      resolveReady!();
-    }
-  }, 30_000);
+    if (settled) return;
 
-  // Clean up timeout when ready
-  readyPromise.then(() => clearTimeout(startupTimeout)).catch(() => clearTimeout(startupTimeout));
+    if (child.exitCode !== null) {
+      // Process already exited — don't assume ready
+      markFailed(
+        new Error(
+          `Dev server process exited (code ${child.exitCode}) without signaling ready.\nOutput: ${outputBuffer.slice(-500)}`,
+        ),
+      );
+    } else {
+      // Process is still alive but hasn't printed the expected output.
+      // This can happen if the Vite output format changed. Assume ready.
+      console.log(
+        `[DevServer] Project ${projectId} startup timeout — process is alive, assuming ready at ${url}`,
+      );
+      markReady();
+    }
+  }, STARTUP_TIMEOUT_MS);
+
+  // Clean up timeout when settled
+  readyPromise
+    .then(() => clearTimeout(startupTimeout))
+    .catch(() => clearTimeout(startupTimeout));
 
   await readyPromise;
   return { url, port };
@@ -191,10 +260,28 @@ export async function stopDevServer(projectId: string): Promise<void> {
 
   console.log(`[DevServer] Stopping server for project ${projectId}`);
 
-  // Try graceful shutdown first
-  instance.process.kill("SIGTERM");
+  // If already exited, just clean up
+  if (instance.process.exitCode !== null) {
+    cleanup(projectId);
+    return;
+  }
 
-  // Force kill after 5 seconds
+  // On Windows, shell: true means the child is cmd.exe; SIGTERM doesn't
+  // propagate to the grandchild (node/vite). Use taskkill for tree-kill.
+  if (process.platform === "win32" && instance.process.pid) {
+    try {
+      spawn("taskkill", ["/pid", String(instance.process.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+    } catch {
+      // Fall back to regular kill
+      instance.process.kill("SIGTERM");
+    }
+  } else {
+    instance.process.kill("SIGTERM");
+  }
+
+  // Force kill after 5 seconds (non-Windows fallback)
   const forceKillTimeout = setTimeout(() => {
     try {
       instance.process.kill("SIGKILL");
@@ -227,6 +314,11 @@ export async function stopDevServer(projectId: string): Promise<void> {
 export function getDevServerUrl(projectId: string): string | null {
   const instance = servers.get(projectId);
   if (!instance) return null;
+  // Verify the process is still alive
+  if (instance.process.exitCode !== null) {
+    cleanup(projectId);
+    return null;
+  }
   return instance.url;
 }
 
@@ -235,7 +327,13 @@ export function getDevServerUrl(projectId: string): string | null {
  */
 export function isRunning(projectId: string): boolean {
   const instance = servers.get(projectId);
-  return instance !== undefined && instance.process.exitCode === null;
+  if (!instance) return false;
+  if (instance.process.exitCode !== null) {
+    // Process died — clean up the stale entry
+    cleanup(projectId);
+    return false;
+  }
+  return true;
 }
 
 /**

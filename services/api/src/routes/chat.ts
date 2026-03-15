@@ -86,11 +86,13 @@ IMPORTANT RULES:
 - Prefer function components with hooks.
 - Import styles and components using relative paths.`;
 
+        const projectPath = getProjectPath(projectId);
         sessionId = await engine.createSession({
           projectId,
           userId: "anonymous", // TODO: wire up auth
           model,
           provider: provider as ByokProviderConfig | undefined,
+          workingDirectory: projectPath,
           systemPrompt,
           tools: createDoableTools(projectId),
         });
