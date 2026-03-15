@@ -27,6 +27,7 @@ import {
   getDevServerUrl,
   isRunning,
 } from "../projects/dev-server.js";
+import { sql } from "../db/index.js";
 
 export const projectFileRoutes = new Hono();
 
@@ -48,6 +49,9 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
         err,
       );
     }
+
+    // Ensure a project record exists in the database so the dashboard can list it
+    await ensureProjectDbRecord(projectId);
 
     return c.json(
       {
@@ -73,6 +77,9 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
           devErr,
         );
       }
+
+      // Also ensure DB record exists for previously-scaffolded projects
+      await ensureProjectDbRecord(projectId);
 
       return c.json({
         data: {
@@ -265,4 +272,75 @@ function extractFilePath(requestPath: string, projectId: string): string {
 
   const raw = requestPath.slice(idx + prefix.length);
   return decodeURIComponent(raw);
+}
+
+/**
+ * Check if a string is a valid UUID v4 format.
+ */
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+/**
+ * Ensure a project record exists in the database.
+ * This is needed because the scaffold endpoint creates files on disk
+ * but doesn't require auth, so the normal POST /projects flow (which
+ * requires auth) may not have been called. Without a DB record the
+ * dashboard's GET /projects returns nothing.
+ *
+ * Only works for UUID project IDs (the projects table has a uuid primary key).
+ * Non-UUID IDs (e.g. "proj-1234567890") are skipped since they come from
+ * the editor's "new project" flow and will get a proper DB record later.
+ *
+ * Uses INSERT ... ON CONFLICT DO NOTHING so it's safe to call multiple times.
+ */
+async function ensureProjectDbRecord(projectId: string): Promise<void> {
+  try {
+    // The projects table uses uuid as the primary key type.
+    // Skip non-UUID project IDs — they can't be stored.
+    if (!isValidUuid(projectId)) {
+      console.log(`[Scaffold] Skipping DB record for non-UUID projectId: ${projectId}`);
+      return;
+    }
+
+    // Check if a record already exists
+    const existing = await sql`SELECT id FROM projects WHERE id = ${projectId}`;
+    if (existing.length > 0) return;
+
+    // Find a workspace to associate the project with.
+    // Since this endpoint has no auth, pick the first available workspace.
+    const workspaces = await sql`SELECT id FROM workspaces ORDER BY created_at ASC LIMIT 1`;
+    if (workspaces.length === 0) {
+      console.warn(
+        `[Scaffold] No workspaces in DB — cannot create project record for ${projectId}. ` +
+        `The project will exist on disk but won't appear on the dashboard until a workspace is created.`
+      );
+      return;
+    }
+
+    const workspaceId = workspaces[0]!.id as string;
+
+    // Derive a human-readable name from the projectId
+    const projectName = projectId
+      .replace(/^proj-/, "")
+      .replace(/[-_]/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .slice(0, 100) || "Untitled Project";
+
+    // Generate a slug from the projectId, adding a timestamp suffix for uniqueness
+    // (the projects table has a UNIQUE(workspace_id, slug) constraint)
+    const baseSlug = projectId.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40) || "project";
+    const slug = `${baseSlug}-${Date.now().toString(36)}`;
+
+    await sql`
+      INSERT INTO projects (id, workspace_id, name, slug, status)
+      VALUES (${projectId}, ${workspaceId}, ${projectName}, ${slug}, 'draft')
+      ON CONFLICT (id) DO NOTHING
+    `;
+
+    console.log(`[Scaffold] Created DB record for project ${projectId} in workspace ${workspaceId}`);
+  } catch (err) {
+    // Don't let DB errors break the scaffold flow — the project still works on disk
+    console.warn(`[Scaffold] Failed to create DB record for ${projectId}:`, err);
+  }
 }

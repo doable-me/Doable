@@ -403,7 +403,21 @@ export default function EditorPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
   const [chatMode, setChatMode] = useState<ChatMode>("agent");
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [messages, setMessages] = useState<ChatMsg[]>(() => {
+    // Restore chat history from localStorage on mount
+    if (typeof window === "undefined") return [];
+    try {
+      const stored = localStorage.getItem(`doable_chat_${resolvedProjectId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored) as ChatMsg[];
+        // Strip any leftover streaming state from a previous session
+        return parsed.map((m) => ({ ...m, isStreaming: false }));
+      }
+    } catch {
+      // Ignore corrupt localStorage data
+    }
+    return [];
+  });
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [projectName, setProjectName] = useState(() => {
@@ -556,6 +570,19 @@ export default function EditorPage() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Persist chat messages to localStorage so they survive page reloads
+  useEffect(() => {
+    if (messages.length === 0) return;
+    try {
+      localStorage.setItem(
+        `doable_chat_${resolvedProjectId}`,
+        JSON.stringify(messages),
+      );
+    } catch {
+      // localStorage full or unavailable — silently ignore
+    }
+  }, [messages, resolvedProjectId]);
 
   // Handle the "new project" flow — auto-send prompt from query params
   useEffect(() => {
