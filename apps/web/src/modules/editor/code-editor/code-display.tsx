@@ -36,11 +36,12 @@ function tokenize(code: string, language: string): Token[][] {
 
       if (!matched) {
         // Accumulate plain text
+        const char = remaining[0] ?? "";
         const last = tokens[tokens.length - 1];
         if (last && last.className === "") {
-          last.text += remaining[0];
+          last.text += char;
         } else {
-          tokens.push({ text: remaining[0], className: "" });
+          tokens.push({ text: char, className: "" });
         }
         remaining = remaining.slice(1);
       }

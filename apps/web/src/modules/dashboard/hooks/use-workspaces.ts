@@ -44,7 +44,7 @@ export function useWorkspaces(): UseWorkspacesReturn {
             ? localStorage.getItem(ACTIVE_WS_KEY)
             : null;
         const found = data.find((w: Workspace) => w.id === persisted);
-        setActiveId(found ? found.id : data[0].id);
+        setActiveId(found ? found.id : data[0]?.id ?? null);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unknown error");

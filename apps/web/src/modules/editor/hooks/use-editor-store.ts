@@ -137,7 +137,7 @@ export const useEditorStore = create<EditorState>()(
           const newActive =
             state.activeFilePath === path
               ? tabs.length > 0
-                ? tabs[tabs.length - 1].path
+                ? tabs[tabs.length - 1]?.path ?? null
                 : null
               : state.activeFilePath;
           return { openTabs: tabs, activeFilePath: newActive };
