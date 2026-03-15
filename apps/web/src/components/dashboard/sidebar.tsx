@@ -287,11 +287,17 @@ export function DashboardSidebar() {
             align="start"
             className="w-56 bg-zinc-900 border-zinc-800 bottom-full mb-2"
           >
-            <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white">
+            <DropdownMenuItem
+              className="text-zinc-300 focus:bg-white/5 focus:text-white"
+              onClick={() => router.push("/settings")}
+            >
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white">
+            <DropdownMenuItem
+              className="text-zinc-300 focus:bg-white/5 focus:text-white"
+              onClick={() => router.push("/billing")}
+            >
               <CreditCard className="mr-2 h-4 w-4" />
               Billing
             </DropdownMenuItem>
