@@ -1165,8 +1165,8 @@ export default function EditorPage() {
                 }}
                 className={`flex items-center justify-center rounded-md p-1.5 text-xs transition-all ${
                   isActive
-                    ? "bg-purple-600/20 text-purple-400 shadow-sm"
-                    : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                    ? "bg-[#1E52F1]/10 text-[#4D91FF] border border-[#4D91FF]/70"
+                    : "text-[#FCFBF8] border border-transparent hover:bg-[#272725]"
                 }`}
                 title={label}
               >
@@ -1176,28 +1176,30 @@ export default function EditorPage() {
           })}
         </div>
 
-        {/* Right: Share + GitHub + Upgrade + Publish — exact Lovable style */}
-        <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] text-zinc-300 hover:text-white transition-colors">
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-600 shrink-0">
-              <User className="h-3 w-3 text-white" />
-            </div>
+        {/* Right: Share + GitHub + Upgrade + Publish — pixel-exact Lovable */}
+        <div className="flex items-center gap-1.5">
+          {/* Share: pill with muted bg, h-7 */}
+          <button className="flex h-7 items-center gap-1.5 rounded-full bg-[#272725] px-2.5 text-sm text-[#FCFBF8] hover:bg-[#333] transition-colors">
+            <UserPlus className="h-4 w-4" />
             <span className="hidden lg:inline">Share</span>
           </button>
+          {/* GitHub: rounded-md with muted bg, h-7 w-7 */}
           <button
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
-            title="GitHub"
+            className="flex h-7 w-7 items-center justify-center rounded-md bg-[#272725] text-[#FCFBF8] hover:bg-[#333] transition-colors"
+            title="Sync with GitHub"
           >
-            <Github className="h-[18px] w-[18px]" />
+            <Github className="h-4 w-4" />
           </button>
+          {/* Upgrade: rounded-md, #5337CD purple, h-7 */}
           <button
             onClick={() => router.push("/billing")}
-            className="flex items-center gap-1.5 rounded-full bg-[#7c3aed] px-4 py-[7px] text-[13px] font-medium text-white hover:bg-[#6d28d9] transition-colors"
+            className="flex h-7 items-center gap-1.5 rounded-md bg-[#5337CD] px-2.5 text-sm text-[#F0F6FF] hover:bg-[#4a2fc0] transition-colors"
           >
-            <Zap className="h-3.5 w-3.5 fill-current" />
+            <Zap className="h-4 w-4" />
             Upgrade
           </button>
-          <button className="rounded-full bg-[#2563eb] px-4 py-[7px] text-[13px] font-medium text-white hover:bg-[#1d4ed8] transition-colors">
+          {/* Publish: rounded-md, #1E52F1 blue, h-7 */}
+          <button className="flex h-7 items-center rounded-md bg-[#1E52F1] px-2.5 text-sm text-[#F0F6FF] hover:bg-[#1a47d4] transition-colors">
             Publish
           </button>
         </div>
