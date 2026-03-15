@@ -1209,16 +1209,16 @@ export default function EditorPage() {
           >
             <Github className="h-4 w-4" />
           </button>
-          {/* Upgrade: rounded-md, #5337CD purple, h-7 */}
+          {/* Upgrade: rounded-md, purple */}
           <button
             onClick={() => router.push("/billing")}
-            className="flex h-7 items-center gap-1.5 rounded-md bg-[#6D28D9] px-2.5 text-sm text-[#F0F6FF] hover:bg-[#5b21b6] transition-colors"
+            className="flex h-7 items-center gap-1.5 rounded-md bg-[#5337CD] px-3 py-1 text-sm text-[#F0F6FF] hover:bg-[#4a2fc0] transition-colors"
           >
-            <Zap className="h-4 w-4" />
+            <Zap className="h-3.5 w-3.5" />
             Upgrade
           </button>
-          {/* Publish: dark with border */}
-          <button className="flex h-7 items-center rounded-md bg-[#1C1C1C] border border-zinc-600 px-2.5 text-sm text-white hover:bg-[#272725] transition-colors">
+          {/* Publish: rounded-md, blue — same as Lovable */}
+          <button className="flex h-7 items-center rounded-md bg-[#1E52F1] px-3 py-1 text-sm text-[#F0F6FF] hover:bg-[#1a47d4] transition-colors">
             Publish
           </button>
         </div>
