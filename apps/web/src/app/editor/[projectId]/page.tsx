@@ -13,7 +13,7 @@ import {
   Globe,
   MessageSquare,
   Code2,
-  Share2,
+  UserPlus,
   Sparkles,
   ChevronRight,
   ChevronDown,
@@ -1179,7 +1179,7 @@ export default function EditorPage() {
         {/* Right: Share + GitHub + Upgrade + Publish */}
         <div className="flex items-center gap-1.5">
           <button className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors">
-            <Share2 className="h-3.5 w-3.5" />
+            <UserPlus className="h-3.5 w-3.5" />
             <span className="hidden lg:inline">Share</span>
           </button>
           <button
@@ -1190,12 +1190,12 @@ export default function EditorPage() {
           </button>
           <button
             onClick={() => router.push("/billing")}
-            className="flex items-center gap-1.5 rounded-lg bg-purple-600/15 border border-purple-500/20 px-3 py-1.5 text-xs font-medium text-purple-400 hover:bg-purple-600/25 hover:border-purple-500/30 transition-colors"
+            className="flex items-center gap-1.5 rounded-full bg-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-purple-500 transition-colors shadow-lg shadow-purple-900/30"
           >
             <Zap className="h-3.5 w-3.5" />
             <span className="hidden lg:inline">Upgrade</span>
           </button>
-          <button className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/30">
+          <button className="flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/30">
             Publish
           </button>
         </div>

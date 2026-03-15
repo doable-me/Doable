@@ -15,11 +15,9 @@ import {
 } from "@/lib/api";
 import {
   Plus,
-  Pencil,
   MessageSquare,
   Mic,
   ArrowUp,
-  Clock,
   MoreHorizontal,
   Copy,
   Trash2,
@@ -58,30 +56,6 @@ function useRotatingGreeting(name: string) {
   return `${GREETINGS[index]}, ${name}?`;
 }
 
-// ─── Gradient Assignment ─────────────────────────────────────
-
-const GRADIENTS = [
-  "from-violet-500 via-purple-500 to-fuchsia-500",
-  "from-cyan-500 via-blue-500 to-indigo-500",
-  "from-emerald-500 via-teal-500 to-cyan-500",
-  "from-orange-500 via-amber-500 to-yellow-500",
-  "from-rose-500 via-pink-500 to-fuchsia-500",
-  "from-lime-500 via-green-500 to-emerald-500",
-  "from-blue-600 to-cyan-500",
-  "from-violet-600 to-purple-500",
-  "from-indigo-600 to-blue-500",
-  "from-pink-600 to-rose-500",
-];
-
-function getProjectGradient(projectId: string): string {
-  // Deterministic gradient from project ID
-  let hash = 0;
-  for (let i = 0; i < projectId.length; i++) {
-    hash = (hash * 31 + projectId.charCodeAt(i)) | 0;
-  }
-  return GRADIENTS[Math.abs(hash) % GRADIENTS.length]!;
-}
-
 // ─── Time Formatting ─────────────────────────────────────────
 
 function formatRelativeTime(dateStr: string): string {
@@ -102,22 +76,6 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString();
 }
 
-// ─── Template Gradient Map ───────────────────────────────────
-
-const TEMPLATE_GRADIENTS: Record<string, string> = {
-  "saas-dashboard": "from-violet-600 to-purple-500",
-  "landing-page": "from-blue-600 to-cyan-500",
-  "ecommerce-store": "from-emerald-600 to-teal-500",
-  blog: "from-orange-600 to-amber-500",
-  portfolio: "from-pink-600 to-rose-500",
-  "todo-app": "from-indigo-600 to-blue-500",
-  blank: "from-zinc-600 to-zinc-500",
-};
-
-function getTemplateGradient(templateId: string): string {
-  return TEMPLATE_GRADIENTS[templateId] ?? GRADIENTS[Math.abs(templateId.length * 7) % GRADIENTS.length]!;
-}
-
 // ─── Project Card ────────────────────────────────────────────
 
 function ProjectCard({
@@ -127,7 +85,7 @@ function ProjectCard({
   onDelete,
   onDuplicate,
 }: {
-  project: ApiProject & { gradient: string };
+  project: ApiProject;
   onStar: () => void;
   onClick: () => void;
   onDelete: () => void;
@@ -138,15 +96,24 @@ function ProjectCard({
       className="group relative flex flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/80 transition-all duration-200 hover:border-zinc-700 hover:bg-zinc-900 cursor-pointer"
       onClick={onClick}
     >
-      {/* Thumbnail */}
-      <div
-        className={`relative h-32 bg-gradient-to-br ${project.gradient} flex items-center justify-center`}
-      >
-        <div className="h-16 w-24 rounded-md bg-white/10 backdrop-blur-sm border border-white/20" />
+      {/* Thumbnail — wireframe mockup */}
+      <div className="relative h-36 bg-white rounded-t-xl p-3 overflow-hidden">
+        {/* Mini wireframe: nav bar, content blocks */}
+        <div className="h-2 w-16 bg-gray-200 rounded mb-2" />
+        <div className="h-2 w-full bg-gray-100 rounded mb-1" />
+        <div className="h-2 w-3/4 bg-gray-100 rounded mb-3" />
+        <div className="flex gap-2 mb-2">
+          <div className="h-8 w-8 bg-gray-200 rounded" />
+          <div className="flex-1">
+            <div className="h-2 w-full bg-gray-100 rounded mb-1" />
+            <div className="h-2 w-2/3 bg-gray-100 rounded" />
+          </div>
+        </div>
+        <div className="h-6 w-20 bg-purple-100 rounded" />
 
         {/* Star button */}
         <button
-          className="absolute top-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-white/70 hover:bg-black/50 hover:text-white transition-all opacity-0 group-hover:opacity-100"
+          className="absolute top-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-all opacity-0 group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
             onStar();
@@ -159,7 +126,7 @@ function ProjectCard({
 
         {/* More menu */}
         <div
-          className="absolute top-2.5 left-2.5 opacity-0 group-hover:opacity-100 transition-all"
+          className="absolute top-2.5 left-2.5 opacity-0 group-hover:opacity-100 transition-all [&_button]:text-gray-400 [&_button]:bg-gray-100 [&_button:hover]:bg-gray-200 [&_button:hover]:text-gray-600"
           onClick={(e) => e.stopPropagation()}
         >
           <DropdownMenu>
@@ -195,13 +162,18 @@ function ProjectCard({
       </div>
 
       {/* Info */}
-      <div className="flex flex-col gap-1.5 p-4">
-        <h3 className="text-sm font-medium text-zinc-200 leading-tight line-clamp-1">
-          {project.name}
-        </h3>
-        <div className="flex items-center gap-1.5 text-[11px] text-zinc-500">
-          <Clock className="h-3 w-3" />
-          Edited {formatRelativeTime(project.updated_at)}
+      <div className="flex items-center gap-2.5 p-3">
+        {/* User avatar */}
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-purple-600 text-[10px] font-semibold text-white">
+          {project.name?.charAt(0)?.toUpperCase() ?? "U"}
+        </div>
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <h3 className="text-sm font-medium text-zinc-200 leading-tight line-clamp-1">
+            {project.name}
+          </h3>
+          <span className="text-[11px] text-zinc-500">
+            Viewed {formatRelativeTime(project.updated_at)}
+          </span>
         </div>
       </div>
     </div>
@@ -214,7 +186,7 @@ function TemplateCard({
   template,
   onClick,
 }: {
-  template: ApiTemplate & { gradient: string };
+  template: ApiTemplate;
   onClick: () => void;
 }) {
   return (
@@ -222,12 +194,84 @@ function TemplateCard({
       className="group relative flex flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/80 transition-all duration-200 hover:border-zinc-700 hover:bg-zinc-900 cursor-pointer"
       onClick={onClick}
     >
-      <div
-        className={`relative h-32 bg-gradient-to-br ${template.gradient} flex items-center justify-center`}
-      >
-        <div className="h-12 w-20 rounded-md bg-white/10 backdrop-blur-sm border border-white/20" />
+      <div className="relative h-36 bg-white rounded-t-xl p-3 overflow-hidden">
+        {/* Distinct wireframe mockups per template category */}
+        {template.category === "dashboard" || template.id === "saas-dashboard" ? (
+          <>
+            <div className="flex gap-2 mb-2">
+              <div className="h-full w-10 bg-gray-100 rounded" />
+              <div className="flex-1">
+                <div className="h-2 w-24 bg-gray-200 rounded mb-2" />
+                <div className="flex gap-2 mb-2">
+                  <div className="h-10 flex-1 bg-blue-50 rounded" />
+                  <div className="h-10 flex-1 bg-green-50 rounded" />
+                  <div className="h-10 flex-1 bg-purple-50 rounded" />
+                </div>
+                <div className="h-12 w-full bg-gray-50 rounded" />
+              </div>
+            </div>
+          </>
+        ) : template.category === "marketing" || template.id === "landing-page" ? (
+          <>
+            <div className="h-2 w-20 bg-gray-200 rounded mx-auto mb-2" />
+            <div className="h-3 w-32 bg-gray-100 rounded mx-auto mb-1" />
+            <div className="h-2 w-24 bg-gray-100 rounded mx-auto mb-3" />
+            <div className="h-6 w-16 bg-blue-100 rounded mx-auto mb-2" />
+            <div className="flex gap-2">
+              <div className="h-12 flex-1 bg-gray-50 rounded" />
+              <div className="h-12 flex-1 bg-gray-50 rounded" />
+              <div className="h-12 flex-1 bg-gray-50 rounded" />
+            </div>
+          </>
+        ) : template.category === "ecommerce" || template.id === "ecommerce-store" ? (
+          <>
+            <div className="h-2 w-full bg-gray-200 rounded mb-2" />
+            <div className="grid grid-cols-3 gap-1.5">
+              <div className="h-10 bg-gray-100 rounded" />
+              <div className="h-10 bg-gray-100 rounded" />
+              <div className="h-10 bg-gray-100 rounded" />
+              <div className="h-10 bg-gray-100 rounded" />
+              <div className="h-10 bg-gray-100 rounded" />
+              <div className="h-10 bg-gray-100 rounded" />
+            </div>
+          </>
+        ) : template.category === "blog" || template.id === "blog" ? (
+          <>
+            <div className="h-2 w-20 bg-gray-200 rounded mb-2" />
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <div className="h-10 w-10 bg-gray-100 rounded" />
+                <div className="flex-1">
+                  <div className="h-2 w-full bg-gray-100 rounded mb-1" />
+                  <div className="h-2 w-3/4 bg-gray-50 rounded" />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <div className="h-10 w-10 bg-gray-100 rounded" />
+                <div className="flex-1">
+                  <div className="h-2 w-full bg-gray-100 rounded mb-1" />
+                  <div className="h-2 w-2/3 bg-gray-50 rounded" />
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="h-2 w-16 bg-gray-200 rounded mb-2" />
+            <div className="h-2 w-full bg-gray-100 rounded mb-1" />
+            <div className="h-2 w-3/4 bg-gray-100 rounded mb-3" />
+            <div className="flex gap-2 mb-2">
+              <div className="h-8 w-8 bg-gray-200 rounded" />
+              <div className="flex-1">
+                <div className="h-2 w-full bg-gray-100 rounded mb-1" />
+                <div className="h-2 w-2/3 bg-gray-100 rounded" />
+              </div>
+            </div>
+            <div className="h-6 w-20 bg-indigo-100 rounded" />
+          </>
+        )}
         {template.isOfficial && (
-          <span className="absolute top-2 right-2 inline-flex items-center rounded-full bg-black/30 backdrop-blur-sm px-2 py-0.5 text-[10px] font-medium text-white/80">
+          <span className="absolute top-2 right-2 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
             Official
           </span>
         )}
@@ -265,8 +309,6 @@ function ChatInput({
   onSubmit: () => void;
   isCreating: boolean;
 }) {
-  const [mode, setMode] = useState<"chat" | "plan">("chat");
-
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -301,36 +343,10 @@ function ChatInput({
               <Plus className="h-4 w-4" />
             </button>
 
-            {/* Visual edits */}
-            <button className="flex items-center gap-1.5 rounded-lg px-2.5 h-8 text-zinc-500 hover:bg-white/5 hover:text-zinc-300 transition-colors text-xs">
-              <Pencil className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Visual edits</span>
+            {/* Chat icon */}
+            <button className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/5 hover:text-zinc-300 transition-colors">
+              <MessageSquare className="h-4 w-4" />
             </button>
-
-            {/* Chat / Plan toggle */}
-            <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-800/50 p-0.5">
-              <button
-                onClick={() => setMode("chat")}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${
-                  mode === "chat"
-                    ? "bg-zinc-700 text-zinc-200"
-                    : "text-zinc-500 hover:text-zinc-400"
-                }`}
-              >
-                <MessageSquare className="h-3 w-3" />
-                Chat
-              </button>
-              <button
-                onClick={() => setMode("plan")}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${
-                  mode === "plan"
-                    ? "bg-zinc-700 text-zinc-200"
-                    : "text-zinc-500 hover:text-zinc-400"
-                }`}
-              >
-                Plan
-              </button>
-            </div>
           </div>
 
           <div className="flex items-center gap-1">
@@ -545,22 +561,19 @@ export default function DashboardPage() {
         )}
 
         {/* Tab Bar */}
-        <div className="flex items-center border-b border-zinc-800 mb-6">
+        <div className="flex items-center mb-6">
           <div className="flex items-center gap-1 flex-1">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`relative px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                   activeTab === tab.key
-                    ? "text-white"
-                    : "text-zinc-500 hover:text-zinc-300"
+                    ? "text-white bg-zinc-800"
+                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
                 }`}
               >
                 {tab.label}
-                {activeTab === tab.key && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-full" />
-                )}
               </button>
             ))}
           </div>
@@ -584,10 +597,7 @@ export default function DashboardPage() {
             {displayProjects.map((project) => (
               <ProjectCard
                 key={project.id}
-                project={{
-                  ...project,
-                  gradient: getProjectGradient(project.id),
-                }}
+                project={project}
                 onStar={() => toggleStar(project.id)}
                 onClick={() => navigateToProject(project.id)}
                 onDelete={() => handleDelete(project.id)}
@@ -609,10 +619,7 @@ export default function DashboardPage() {
               {templates.map((template) => (
                 <TemplateCard
                   key={template.id}
-                  template={{
-                    ...template,
-                    gradient: getTemplateGradient(template.id),
-                  }}
+                  template={template}
                   onClick={async () => {
                     setIsCreating(true);
                     try {
