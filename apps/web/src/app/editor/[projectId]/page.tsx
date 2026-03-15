@@ -1144,11 +1144,12 @@ export default function EditorPage() {
                     setActiveTab(key);
                   }
                 }}
-                className={`flex items-center justify-center text-xs transition-all ${
+                className={`flex items-center justify-center text-sm transition-all ${
                   isActive
-                    ? "flex items-center gap-1.5 rounded-full bg-[#1E52F1]/10 border border-[#4D91FF]/70 text-[#4D91FF] px-3 py-1"
-                    : "rounded-md p-1.5 text-[#FCFBF8] border border-transparent hover:bg-[#272725]"
+                    ? "gap-1.5 rounded-md bg-[#1E52F1]/10 text-[#4D91FF] px-1.5 py-1"
+                    : "rounded-md p-1 text-[#FCFBF8] hover:brightness-125"
                 }`}
+                style={isActive ? { border: "0.667px solid rgb(77, 145, 255)" } : { border: "0.667px solid rgba(252, 251, 248, 0.4)" }}
                 title={label}
               >
                 <Icon className="h-4 w-4" />
@@ -1202,23 +1203,27 @@ export default function EditorPage() {
             <UserPlus className="h-4 w-4" />
             <span className="hidden lg:inline">Share</span>
           </button>
-          {/* GitHub: rounded-full with muted bg, h-7 w-7 */}
+          {/* GitHub: rounded-md 6px, muted bg — exact Lovable audit */}
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-[#272725] text-[#FCFBF8] hover:bg-[#333] transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-md bg-[#272725] text-[#FCFBF8] hover:brightness-125 transition-colors"
             title="Sync with GitHub"
           >
             <Github className="h-4 w-4" />
           </button>
-          {/* Upgrade: rounded-md, purple */}
+          {/* Upgrade: rounded-md 6px, #5337CD, px-2.5, inset shadow — exact Lovable */}
           <button
             onClick={() => router.push("/billing")}
-            className="flex h-7 items-center gap-1.5 rounded-md bg-[#5337CD] px-3 py-1 text-sm text-[#F0F6FF] hover:bg-[#4a2fc0] transition-colors"
+            className="flex h-7 items-center gap-1.5 rounded-md bg-[#5337CD] px-2.5 text-sm text-[#F0F6FF] hover:brightness-110 transition-colors"
+            style={{ boxShadow: "rgba(255,255,255,0.2) 0px 0.5px 0px 0px inset, rgba(255,255,255,0.1) 0px 0px 0px 0.5px inset, rgba(0,0,0,0.05) 0px 1px 2px 0px" }}
           >
-            <Zap className="h-3.5 w-3.5" />
+            <Zap className="h-4 w-4" />
             Upgrade
           </button>
-          {/* Publish: rounded-md, blue — same as Lovable */}
-          <button className="flex h-7 items-center rounded-md bg-[#1E52F1] px-3 py-1 text-sm text-[#F0F6FF] hover:bg-[#1a47d4] transition-colors">
+          {/* Publish: rounded-md 6px, #1E52F1, px-2.5, inset shadow — exact Lovable */}
+          <button
+            className="flex h-7 items-center gap-1.5 rounded-md bg-[#1E52F1] px-2.5 text-sm text-[#F0F6FF] hover:brightness-110 transition-colors"
+            style={{ boxShadow: "rgba(255,255,255,0.2) 0px 0.5px 0px 0px inset, rgba(255,255,255,0.1) 0px 0px 0px 0.5px inset, rgba(0,0,0,0.05) 0px 1px 2px 0px" }}
+          >
             Publish
           </button>
         </div>
@@ -1391,7 +1396,7 @@ export default function EditorPage() {
                                 <button
                                   key={suggestion}
                                   onClick={() => sendMessage(suggestion)}
-                                  className="rounded-md border border-zinc-700/50 bg-zinc-800/40 px-3 py-1.5 text-[12px] text-zinc-400 hover:border-purple-500/40 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
+                                  className="rounded-md bg-[#272725] px-3 py-2 text-sm text-[#FCFBF8] hover:brightness-125 transition-all"
                                 >
                                   {suggestion}
                                 </button>
@@ -1434,8 +1439,8 @@ export default function EditorPage() {
               )}
 
               {/* Chat input toolbar */}
-              <div className="p-3">
-                <div className="rounded-2xl bg-[#272725] border border-zinc-700/50 focus-within:border-purple-500/50 focus-within:ring-1 focus-within:ring-purple-500/20 transition-all">
+              <div className="px-2 py-2">
+                <div className="rounded-3xl bg-[#272725] border border-[#40403F] p-3 focus-within:border-purple-500/50 focus-within:ring-1 focus-within:ring-purple-500/20 transition-all">
                   {/* Textarea */}
                   <textarea
                     value={inputValue}
@@ -1449,15 +1454,15 @@ export default function EditorPage() {
                     placeholder="Ask Doable..."
                     rows={2}
                     disabled={isStreaming}
-                    className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none disabled:opacity-50"
+                    className="w-full resize-none bg-transparent px-1 pt-0 pb-1 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none disabled:opacity-50"
                   />
 
                   {/* Bottom toolbar row */}
-                  <div className="flex items-center justify-between px-2 pb-2">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1">
                       {/* + button (rounded-full) */}
                       <button
-                        className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                        className="flex h-7 w-7 items-center justify-center rounded-full bg-[#272725] text-[#FCFBF8] hover:brightness-125 transition-colors"
                         title="Attach"
                       >
                         <Plus className="h-4 w-4" />
@@ -1465,7 +1470,7 @@ export default function EditorPage() {
 
                       {/* Visual edits button (pill) */}
                       <button
-                        className="flex items-center gap-1.5 rounded-full border border-zinc-700/50 px-3 py-1 text-[12px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                        className="flex items-center gap-1.5 rounded-full bg-[#272725] px-2.5 h-7 text-sm text-[#FCFBF8] hover:brightness-125 transition-colors"
                         title="Visual edits"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
@@ -1477,7 +1482,7 @@ export default function EditorPage() {
                       {/* Chat mode toggle (single icon button like Lovable) */}
                       <button
                         onClick={() => setChatMode(chatMode === "agent" ? "plan" : "agent")}
-                        className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-[#FCFBF8] hover:brightness-125 transition-colors"
                         title={chatMode === "agent" ? "Switch to Plan mode" : "Switch to Chat mode"}
                       >
                         <MessageSquare className="h-3.5 w-3.5" />
@@ -1485,7 +1490,7 @@ export default function EditorPage() {
 
                       {/* Mic button (rounded-full) */}
                       <button
-                        className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-[#FCFBF8] hover:brightness-125 transition-colors"
                         title="Voice input"
                       >
                         <Mic className="h-3.5 w-3.5" />
@@ -1495,11 +1500,7 @@ export default function EditorPage() {
                       <button
                         onClick={handleSend}
                         disabled={!inputValue.trim() || isStreaming}
-                        className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-all ${
-                          inputValue.trim() && !isStreaming
-                            ? "bg-[#FCFBF8] text-[#1C1C1C] hover:bg-white"
-                            : "bg-zinc-700 text-zinc-500"
-                        }`}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#FCFBF8] text-[#1C1C1C] transition-all hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isStreaming ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
