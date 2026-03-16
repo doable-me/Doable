@@ -86,6 +86,52 @@ type StatusFilter = "all" | "published" | "draft" | "error";
 type SortKey = "name" | "updated_at" | "created_at" | "status";
 type SortDir = "asc" | "desc";
 
+// ---- Project Card Gradient Helpers ----
+
+const PROJECT_GRADIENTS = [
+  "from-violet-500/20 to-purple-600/20",
+  "from-blue-500/20 to-cyan-600/20",
+  "from-emerald-500/20 to-teal-600/20",
+  "from-orange-500/20 to-amber-600/20",
+  "from-pink-500/20 to-rose-600/20",
+  "from-indigo-500/20 to-blue-600/20",
+  "from-fuchsia-500/20 to-pink-600/20",
+  "from-cyan-500/20 to-sky-600/20",
+];
+
+const PROJECT_ACCENT_COLORS = [
+  "bg-violet-500/30",
+  "bg-blue-500/30",
+  "bg-emerald-500/30",
+  "bg-orange-500/30",
+  "bg-pink-500/30",
+  "bg-indigo-500/30",
+  "bg-fuchsia-500/30",
+  "bg-cyan-500/30",
+];
+
+function getProjectColorIndex(name: string): number {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash) % PROJECT_GRADIENTS.length;
+}
+
+const TEMPLATE_CATEGORY_COLORS: Record<string, { bg: string; accent: string; highlight: string }> = {
+  dashboard: { bg: "bg-blue-50", accent: "bg-blue-100", highlight: "bg-blue-200" },
+  marketing: { bg: "bg-amber-50", accent: "bg-amber-100", highlight: "bg-amber-200" },
+  ecommerce: { bg: "bg-emerald-50", accent: "bg-emerald-100", highlight: "bg-emerald-200" },
+  blog: { bg: "bg-rose-50", accent: "bg-rose-100", highlight: "bg-rose-200" },
+  social: { bg: "bg-violet-50", accent: "bg-violet-100", highlight: "bg-violet-200" },
+  productivity: { bg: "bg-cyan-50", accent: "bg-cyan-100", highlight: "bg-cyan-200" },
+  portfolio: { bg: "bg-indigo-50", accent: "bg-indigo-100", highlight: "bg-indigo-200" },
+};
+
+function getTemplateCategoryColors(category: string) {
+  return TEMPLATE_CATEGORY_COLORS[category] ?? { bg: "bg-gray-50", accent: "bg-gray-100", highlight: "bg-gray-200" };
+}
+
 // ---- Helpers ----
 
 function useRotatingGreeting(name: string) {
@@ -190,6 +236,55 @@ function useContextMenu() {
 
 // ---- Chat Input Box ----
 
+const DASHBOARD_SUGGESTIONS = [
+  "Build a SaaS landing page with pricing...",
+  "Create a portfolio website with animations...",
+  "Design a task management app...",
+  "Make an e-commerce store with checkout...",
+  "Build a social media dashboard...",
+  "Create a recipe sharing platform...",
+  "Design a fitness tracking app...",
+  "Build a blog with markdown support...",
+  "Create a real-time chat application...",
+  "Make an invoice management system...",
+];
+
+function useTypingPlaceholder(): string {
+  const [index, setIndex] = useState(0);
+  const [displayText, setDisplayText] = useState("");
+  const [phase, setPhase] = useState<"typing" | "holding" | "erasing">("typing");
+
+  useEffect(() => {
+    const target = DASHBOARD_SUGGESTIONS[index]!;
+    let timeout: ReturnType<typeof setTimeout>;
+
+    if (phase === "typing") {
+      if (displayText.length < target.length) {
+        timeout = setTimeout(() => {
+          setDisplayText(target.slice(0, displayText.length + 1));
+        }, 35 + Math.random() * 25);
+      } else {
+        timeout = setTimeout(() => setPhase("holding"), 100);
+      }
+    } else if (phase === "holding") {
+      timeout = setTimeout(() => setPhase("erasing"), 2500);
+    } else {
+      if (displayText.length > 0) {
+        timeout = setTimeout(() => {
+          setDisplayText(displayText.slice(0, -1));
+        }, 18);
+      } else {
+        setIndex((prev) => (prev + 1) % DASHBOARD_SUGGESTIONS.length);
+        setPhase("typing");
+      }
+    }
+
+    return () => clearTimeout(timeout);
+  }, [displayText, phase, index]);
+
+  return displayText || "Ask Doable to create...";
+}
+
 function ChatInput({
   value,
   onChange,
@@ -211,13 +306,15 @@ function ChatInput({
     [onSubmit]
   );
 
+  const placeholder = useTypingPlaceholder();
+
   return (
     <div className="w-full max-w-2xl mx-auto">
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/90 shadow-2xl shadow-black/20 transition-all focus-within:border-zinc-700">
         <div className="p-4 pb-2">
           <textarea
             className="w-full resize-none border-0 bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none min-h-[48px]"
-            placeholder="Ask Doable to create..."
+            placeholder={value ? "" : placeholder}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -284,6 +381,9 @@ function ProjectCard({
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
   const statusStyle = STATUS_STYLES[project.status] ?? STATUS_STYLES.draft!;
+  const [imgFailed, setImgFailed] = useState(false);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  const colorIdx = getProjectColorIndex(project.name);
 
   return (
     <div
@@ -295,27 +395,39 @@ function ProjectCard({
       onClick={onClick}
       onContextMenu={onContextMenu}
     >
-      {/* Thumbnail */}
-      <div className="relative h-36 bg-white rounded-t-xl p-3 overflow-hidden">
-        {project.thumbnail_url ? (
+      {/* Thumbnail — real image with gradient fallback */}
+      <div className={`relative h-36 rounded-t-xl overflow-hidden ${imgFailed ? `bg-gradient-to-br ${PROJECT_GRADIENTS[colorIdx]}` : ''}`}>
+        {!imgFailed ? (
           <img
-            src={project.thumbnail_url}
+            src={`${project.thumbnail_url || `${API_URL}/thumbnails/${project.id}.png`}?v=${encodeURIComponent(project.updated_at)}`}
             alt={project.name}
-            className="h-full w-full object-cover rounded-t-xl"
+            className="h-full w-full object-cover object-top rounded-t-xl"
+            onError={() => setImgFailed(true)}
           />
         ) : (
           <>
-            <div className="h-2 w-16 bg-gray-200 rounded mb-2" />
-            <div className="h-2 w-full bg-gray-100 rounded mb-1" />
-            <div className="h-2 w-3/4 bg-gray-100 rounded mb-3" />
-            <div className="flex gap-2 mb-2">
-              <div className="h-8 w-8 bg-gray-200 rounded" />
-              <div className="flex-1">
-                <div className="h-2 w-full bg-gray-100 rounded mb-1" />
-                <div className="h-2 w-2/3 bg-gray-100 rounded" />
+            {/* Decorative dot grid */}
+            <div className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage: "radial-gradient(circle, currentColor 1px, transparent 1px)", backgroundSize: "16px 16px" }} />
+            {/* Decorative blurred orbs */}
+            <div className={`absolute -bottom-4 -right-4 h-24 w-24 rounded-full ${PROJECT_ACCENT_COLORS[colorIdx]} blur-xl`} />
+            <div className={`absolute -top-2 -left-2 h-16 w-16 rounded-full ${PROJECT_ACCENT_COLORS[colorIdx]} blur-lg opacity-60`} />
+            {/* Mini wireframe overlay */}
+            <div className="absolute inset-3 rounded-lg bg-white/[0.06] backdrop-blur-[1px] border border-white/[0.08] p-2.5">
+              <div className="h-1.5 w-10 bg-white/10 rounded mb-1.5" />
+              <div className="h-1.5 w-full bg-white/[0.06] rounded mb-1" />
+              <div className="h-1.5 w-3/4 bg-white/[0.06] rounded mb-2.5" />
+              <div className="flex gap-1.5 mb-1.5">
+                <div className="h-5 w-5 bg-white/[0.08] rounded" />
+                <div className="flex-1">
+                  <div className="h-1.5 w-full bg-white/[0.06] rounded mb-0.5" />
+                  <div className="h-1.5 w-2/3 bg-white/[0.06] rounded" />
+                </div>
               </div>
             </div>
-            <div className="h-6 w-20 bg-purple-100 rounded" />
+            {/* Large initial watermark */}
+            <div className="absolute bottom-2 right-3 text-4xl font-bold text-white/[0.08] leading-none select-none">
+              {project.name?.charAt(0)?.toUpperCase() ?? "P"}
+            </div>
           </>
         )}
 
@@ -343,7 +455,7 @@ function ProjectCard({
           className={`absolute top-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full transition-all ${
             project.starred
               ? "bg-yellow-500/20 text-yellow-400 opacity-100"
-              : "bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600 opacity-0 group-hover:opacity-100"
+              : "bg-black/30 backdrop-blur-sm text-white/70 hover:bg-black/50 hover:text-white opacity-0 group-hover:opacity-100"
           }`}
           onClick={(e) => {
             e.stopPropagation();
@@ -596,68 +708,67 @@ function TemplateCard({
   template: ApiTemplate;
   onClick: () => void;
 }) {
+  const catColors = getTemplateCategoryColors(template.category);
+
   return (
     <div
       className="group relative flex flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/80 transition-all duration-200 hover:border-zinc-700 hover:bg-zinc-900 cursor-pointer"
       onClick={onClick}
     >
-      <div className="relative h-36 bg-white rounded-t-xl p-3 overflow-hidden">
+      <div className={`relative h-36 ${catColors.bg} rounded-t-xl p-3 overflow-hidden`}>
         {template.category === "dashboard" || template.id === "saas-dashboard" ? (
           <>
             <div className="flex gap-2 mb-2">
-              <div className="h-full w-10 bg-gray-100 rounded" />
+              <div className={`h-full w-10 ${catColors.accent} rounded`} />
               <div className="flex-1">
-                <div className="h-2 w-24 bg-gray-200 rounded mb-2" />
+                <div className={`h-2 w-24 ${catColors.highlight} rounded mb-2`} />
                 <div className="flex gap-2 mb-2">
-                  <div className="h-10 flex-1 bg-blue-50 rounded" />
-                  <div className="h-10 flex-1 bg-green-50 rounded" />
-                  <div className="h-10 flex-1 bg-purple-50 rounded" />
+                  <div className="h-10 flex-1 bg-blue-100/60 rounded" />
+                  <div className="h-10 flex-1 bg-green-100/60 rounded" />
+                  <div className="h-10 flex-1 bg-purple-100/60 rounded" />
                 </div>
-                <div className="h-12 w-full bg-gray-50 rounded" />
+                <div className={`h-12 w-full ${catColors.accent} rounded`} />
               </div>
             </div>
           </>
         ) : template.category === "marketing" || template.id === "landing-page" ? (
           <>
-            <div className="h-2 w-20 bg-gray-200 rounded mx-auto mb-2" />
-            <div className="h-3 w-32 bg-gray-100 rounded mx-auto mb-1" />
-            <div className="h-2 w-24 bg-gray-100 rounded mx-auto mb-3" />
-            <div className="h-6 w-16 bg-blue-100 rounded mx-auto mb-2" />
+            <div className={`h-2 w-20 ${catColors.highlight} rounded mx-auto mb-2`} />
+            <div className={`h-3 w-32 ${catColors.accent} rounded mx-auto mb-1`} />
+            <div className={`h-2 w-24 ${catColors.accent} rounded mx-auto mb-3`} />
+            <div className={`h-6 w-16 ${catColors.highlight} rounded mx-auto mb-2`} />
             <div className="flex gap-2">
-              <div className="h-12 flex-1 bg-gray-50 rounded" />
-              <div className="h-12 flex-1 bg-gray-50 rounded" />
-              <div className="h-12 flex-1 bg-gray-50 rounded" />
+              <div className={`h-12 flex-1 ${catColors.accent} rounded`} />
+              <div className={`h-12 flex-1 ${catColors.accent} rounded`} />
+              <div className={`h-12 flex-1 ${catColors.accent} rounded`} />
             </div>
           </>
         ) : template.category === "ecommerce" || template.id === "ecommerce-store" ? (
           <>
-            <div className="h-2 w-full bg-gray-200 rounded mb-2" />
+            <div className={`h-2 w-full ${catColors.highlight} rounded mb-2`} />
             <div className="grid grid-cols-3 gap-1.5">
-              <div className="h-10 bg-gray-100 rounded" />
-              <div className="h-10 bg-gray-100 rounded" />
-              <div className="h-10 bg-gray-100 rounded" />
-              <div className="h-10 bg-gray-100 rounded" />
-              <div className="h-10 bg-gray-100 rounded" />
-              <div className="h-10 bg-gray-100 rounded" />
+              {[1,2,3,4,5,6].map(i => (
+                <div key={i} className={`h-10 ${catColors.accent} rounded`} />
+              ))}
             </div>
           </>
         ) : (
           <>
-            <div className="h-2 w-16 bg-gray-200 rounded mb-2" />
-            <div className="h-2 w-full bg-gray-100 rounded mb-1" />
-            <div className="h-2 w-3/4 bg-gray-100 rounded mb-3" />
+            <div className={`h-2 w-16 ${catColors.highlight} rounded mb-2`} />
+            <div className={`h-2 w-full ${catColors.accent} rounded mb-1`} />
+            <div className={`h-2 w-3/4 ${catColors.accent} rounded mb-3`} />
             <div className="flex gap-2 mb-2">
-              <div className="h-8 w-8 bg-gray-200 rounded" />
+              <div className={`h-8 w-8 ${catColors.highlight} rounded`} />
               <div className="flex-1">
-                <div className="h-2 w-full bg-gray-100 rounded mb-1" />
-                <div className="h-2 w-2/3 bg-gray-100 rounded" />
+                <div className={`h-2 w-full ${catColors.accent} rounded mb-1`} />
+                <div className={`h-2 w-2/3 ${catColors.accent} rounded`} />
               </div>
             </div>
-            <div className="h-6 w-20 bg-indigo-100 rounded" />
+            <div className={`h-6 w-20 ${catColors.highlight} rounded`} />
           </>
         )}
         {template.isOfficial && (
-          <span className="absolute top-2 right-2 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
+          <span className="absolute top-2 right-2 inline-flex items-center rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium text-gray-600">
             Official
           </span>
         )}
@@ -1155,21 +1266,34 @@ export default function DashboardPage() {
       <div className="relative z-10 mx-auto max-w-5xl px-6 pt-12 pb-10">
         {/* Greeting + Chat Input (only when no folder/filter active) */}
         {!activeFolderId && sidebarFilter === "all" && (
-          <>
-            <div className="text-center mb-6">
-              <h1 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight transition-all duration-500">
-                {greeting}
-              </h1>
+          <div className="relative overflow-hidden rounded-2xl mb-8">
+            {/* Gradient background */}
+            <div className="absolute inset-0 bg-gradient-to-br from-violet-600/40 via-pink-500/30 to-orange-400/20" />
+            {/* Secondary gradient layer for richness */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-purple-700/20 via-transparent to-rose-500/15" />
+            {/* Animated orbs */}
+            <div className="absolute -top-20 -left-20 h-60 w-60 rounded-full bg-violet-500/20 blur-3xl animate-float-slow" />
+            <div className="absolute -bottom-20 -right-20 h-60 w-60 rounded-full bg-pink-500/20 blur-3xl animate-float-medium" />
+            <div className="absolute top-10 right-1/4 h-40 w-40 rounded-full bg-orange-400/15 blur-3xl animate-float-fast" />
+            {/* Bottom fade into dark background */}
+            <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[hsl(240,10%,4%)] to-transparent" />
+            {/* Content */}
+            <div className="relative z-10 px-8 py-12">
+              <div className="text-center mb-6">
+                <h1 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight transition-all duration-500">
+                  {greeting}
+                </h1>
+              </div>
+              <div>
+                <ChatInput
+                  value={prompt}
+                  onChange={setPrompt}
+                  onSubmit={handleSubmit}
+                  isCreating={isCreating}
+                />
+              </div>
             </div>
-            <div className="mb-10">
-              <ChatInput
-                value={prompt}
-                onChange={setPrompt}
-                onSubmit={handleSubmit}
-                isCreating={isCreating}
-              />
-            </div>
-          </>
+          </div>
         )}
 
         {/* Folder/Filter breadcrumb */}

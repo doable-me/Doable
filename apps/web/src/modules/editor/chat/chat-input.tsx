@@ -1,8 +1,67 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Send, Paperclip, Square } from "lucide-react";
 import { ModeToggle } from "./mode-toggle";
+
+const PLACEHOLDER_SUGGESTIONS = [
+  "Build a SaaS landing page with pricing...",
+  "Create a task management dashboard...",
+  "Design an e-commerce product page...",
+  "Make a portfolio website with animations...",
+  "Build a blog platform with markdown...",
+  "Create a recipe sharing app...",
+  "Design a fitness tracking dashboard...",
+  "Build a social media feed layout...",
+  "Create a weather app with API integration...",
+  "Make a chat application with real-time messaging...",
+];
+
+function useRotatingPlaceholder(): string {
+  const [index, setIndex] = useState(0);
+  const [displayText, setDisplayText] = useState("");
+  const [isTyping, setIsTyping] = useState(true);
+
+  useEffect(() => {
+    const target = PLACEHOLDER_SUGGESTIONS[index]!;
+    let charIndex = 0;
+    let timeout: ReturnType<typeof setTimeout>;
+
+    if (isTyping) {
+      // Typing animation
+      const typeChar = () => {
+        if (charIndex <= target.length) {
+          setDisplayText(target.slice(0, charIndex));
+          charIndex++;
+          timeout = setTimeout(typeChar, 30 + Math.random() * 20);
+        } else {
+          // Hold for a moment then start erasing
+          timeout = setTimeout(() => setIsTyping(false), 2500);
+        }
+      };
+      typeChar();
+    } else {
+      // Erasing animation
+      let eraseIndex = displayText.length;
+      const eraseChar = () => {
+        if (eraseIndex > 0) {
+          eraseIndex--;
+          setDisplayText(target.slice(0, eraseIndex));
+          timeout = setTimeout(eraseChar, 15);
+        } else {
+          // Move to next suggestion
+          setIndex((prev) => (prev + 1) % PLACEHOLDER_SUGGESTIONS.length);
+          setIsTyping(true);
+        }
+      };
+      eraseChar();
+    }
+
+    return () => clearTimeout(timeout);
+  }, [index, isTyping]);
+
+  return displayText || "Describe what you want to build...";
+}
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -19,6 +78,7 @@ export function ChatInput({
 }: ChatInputProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const placeholder = useRotatingPlaceholder();
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
@@ -74,7 +134,7 @@ export function ChatInput({
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
-          placeholder="Describe what you want to build..."
+          placeholder={value ? "" : placeholder}
           disabled={disabled}
           rows={1}
           className="max-h-[200px] min-h-[36px] flex-1 resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"

@@ -155,7 +155,7 @@ export function VersionHistory() {
 
   // Restore success toast
   const [restoreSuccess, setRestoreSuccess] = useState<string | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // ─── Fetch versions ───────────────────────────────────────
 

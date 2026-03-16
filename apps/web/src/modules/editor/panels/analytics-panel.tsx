@@ -29,6 +29,7 @@ interface Props {
 type DateRange = "7d" | "30d" | "90d";
 
 type SortColumn = "path" | "views" | "visitors" | "avgTime";
+type SortDirection = "asc" | "desc";
 
 interface OverviewMetric {
   label: string;
@@ -201,7 +202,9 @@ function TrafficChart({ data }: { data: DailyData[] }) {
     .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
     .join(" ");
 
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${height - padding.bottom} L ${points[0].x} ${height - padding.bottom} Z`;
+  const lastPoint = points[points.length - 1]!;
+  const firstPoint = points[0]!;
+  const areaPath = `${linePath} L ${lastPoint.x} ${height - padding.bottom} L ${firstPoint.x} ${height - padding.bottom} Z`;
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -498,8 +501,8 @@ function ReferrersSection() {
 function DeviceBreakdownChart() {
   // CSS-based pie chart using conic-gradient
   const segments = DEVICES.reduce<{ device: string; start: number; end: number; color: string; icon: typeof Monitor }[]>(
-    (acc, d) => {
-      const start = acc.length > 0 ? acc[acc.length - 1].end : 0;
+    (acc, d: typeof DEVICES[number]) => {
+      const start = acc.length > 0 ? acc[acc.length - 1]!.end : 0;
       acc.push({
         device: d.device,
         start,

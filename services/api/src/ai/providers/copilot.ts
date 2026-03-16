@@ -344,11 +344,11 @@ import {
  * Vite hot-reloads changes automatically.
  */
 export function createDoableTools(projectId: string): Tool[] {
-  return [
-    defineTool(
-      "create_file",
-      "Create a new file in the project with the given content. Creates parent directories as needed. Use this for new files.",
-      {
+  return ([
+    defineTool("create_file", {
+      description:
+        "Create a new file in the project with the given content. Creates parent directories as needed. Use this for new files.",
+      parameters: {
         type: "object" as const,
         properties: {
           path: {
@@ -363,8 +363,8 @@ export function createDoableTools(projectId: string): Tool[] {
         },
         required: ["path", "content"] as const,
       },
-      async (args) => {
-        const { path, content } = args as { path: string; content: string };
+      handler: async (args: { path: string; content: string }) => {
+        const { path, content } = args;
         await writeFile(projectId, path, content);
         return {
           success: true,
@@ -373,12 +373,12 @@ export function createDoableTools(projectId: string): Tool[] {
           message: `Created ${path}`,
         };
       },
-    ),
+    }),
 
-    defineTool(
-      "edit_file",
-      "Replace the entire content of an existing file. Read the file first to understand what to change, then write the complete updated content.",
-      {
+    defineTool("edit_file", {
+      description:
+        "Replace the entire content of an existing file. Read the file first to understand what to change, then write the complete updated content.",
+      parameters: {
         type: "object" as const,
         properties: {
           path: {
@@ -392,8 +392,8 @@ export function createDoableTools(projectId: string): Tool[] {
         },
         required: ["path", "content"] as const,
       },
-      async (args) => {
-        const { path, content } = args as { path: string; content: string };
+      handler: async (args: { path: string; content: string }) => {
+        const { path, content } = args;
         await writeFile(projectId, path, content);
         return {
           success: true,
@@ -402,12 +402,12 @@ export function createDoableTools(projectId: string): Tool[] {
           message: `Updated ${path}`,
         };
       },
-    ),
+    }),
 
-    defineTool(
-      "read_file",
-      "Read the contents of a file in the project. Returns the full file content.",
-      {
+    defineTool("read_file", {
+      description:
+        "Read the contents of a file in the project. Returns the full file content.",
+      parameters: {
         type: "object" as const,
         properties: {
           path: {
@@ -417,8 +417,8 @@ export function createDoableTools(projectId: string): Tool[] {
         },
         required: ["path"] as const,
       },
-      async (args) => {
-        const { path } = args as { path: string };
+      handler: async (args: { path: string }) => {
+        const { path } = args;
         try {
           const content = await readFile(projectId, path);
           return {
@@ -435,12 +435,12 @@ export function createDoableTools(projectId: string): Tool[] {
           };
         }
       },
-    ),
+    }),
 
-    defineTool(
-      "list_files",
-      "List all files in the project directory (excluding node_modules, .git, dist). Returns relative paths.",
-      {
+    defineTool("list_files", {
+      description:
+        "List all files in the project directory (excluding node_modules, .git, dist). Returns relative paths.",
+      parameters: {
         type: "object" as const,
         properties: {
           directory: {
@@ -450,9 +450,8 @@ export function createDoableTools(projectId: string): Tool[] {
           },
         },
       },
-      async (args) => {
-        const dir =
-          (args as { directory?: string }).directory ?? ".";
+      handler: async (args: { directory?: string }) => {
+        const dir = args.directory ?? ".";
         const files = await listFiles(projectId, dir);
         return {
           success: true,
@@ -460,12 +459,11 @@ export function createDoableTools(projectId: string): Tool[] {
           files,
         };
       },
-    ),
+    }),
 
-    defineTool(
-      "install_package",
-      "Install npm packages in the project using pnpm.",
-      {
+    defineTool("install_package", {
+      description: "Install npm packages in the project using pnpm.",
+      parameters: {
         type: "object" as const,
         properties: {
           packages: {
@@ -480,11 +478,8 @@ export function createDoableTools(projectId: string): Tool[] {
         },
         required: ["packages"] as const,
       },
-      async (args) => {
-        const { packages, dev } = args as {
-          packages: string;
-          dev?: boolean;
-        };
+      handler: async (args: { packages: string; dev?: boolean }) => {
+        const { packages, dev } = args;
         const { spawn: spawnCmd } = await import("node:child_process");
         const projectPath = getProjectPath(projectId);
         const pkgList = packages.split(/\s+/).filter(Boolean);
@@ -541,12 +536,12 @@ export function createDoableTools(projectId: string): Tool[] {
           }, 120_000);
         });
       },
-    ),
+    }),
 
-    defineTool(
-      "deploy_preview",
-      "Deploy the current project to a preview URL for testing",
-      {
+    defineTool("deploy_preview", {
+      description:
+        "Deploy the current project to a preview URL for testing",
+      parameters: {
         type: "object" as const,
         properties: {
           message: {
@@ -555,7 +550,7 @@ export function createDoableTools(projectId: string): Tool[] {
           },
         },
       },
-      async (_args) => {
+      handler: async (_args: { message?: string }) => {
         // TODO: Wire up to Doable's deploy system
         return {
           success: true,
@@ -563,8 +558,8 @@ export function createDoableTools(projectId: string): Tool[] {
           message: "Preview deployed successfully",
         };
       },
-    ),
-  ];
+    }),
+  ] as Tool[]);
 }
 
 // ─── Singleton ──────────────────────────────────────────

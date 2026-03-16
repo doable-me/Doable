@@ -36,7 +36,7 @@ function CallbackHandler() {
     }
 
     if (!accessToken || !refreshToken) {
-      setError(ERROR_MESSAGES.missing_tokens);
+      setError(ERROR_MESSAGES.missing_tokens ?? "Authentication tokens were missing.");
       return;
     }
 

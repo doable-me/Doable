@@ -79,12 +79,25 @@ function EmptyState() {
       </p>
       <div className="mt-4 space-y-1.5">
         {[
-          "Build a landing page with a hero section",
-          "Create a dashboard with charts",
-          "Add a contact form with validation",
+          "Build a SaaS landing page",
+          "Create a kanban task board",
+          "Make a recipe sharing app",
         ].map((suggestion) => (
           <button
             key={suggestion}
+            onClick={() => {
+              const chatInput = document.querySelector<HTMLTextAreaElement>(
+                'textarea[placeholder*="Describe"]'
+              );
+              if (chatInput) {
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                  window.HTMLTextAreaElement.prototype, 'value'
+                )?.set;
+                nativeInputValueSetter?.call(chatInput, suggestion);
+                chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                chatInput.focus();
+              }
+            }}
             className="block w-full rounded-md border border-border px-3 py-2 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
           >
             {suggestion}

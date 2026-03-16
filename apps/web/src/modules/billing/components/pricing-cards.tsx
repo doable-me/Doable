@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Plan } from "../hooks/use-billing";
 
@@ -23,32 +23,34 @@ export function PricingCards({
   return (
     <div className="space-y-6">
       {/* Interval Toggle */}
-      <div className="flex items-center justify-center gap-3">
-        <button
-          onClick={() => setInterval("monthly")}
-          className={cn(
-            "rounded-md px-4 py-2 text-sm font-medium transition-colors",
-            interval === "monthly"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          Monthly
-        </button>
-        <button
-          onClick={() => setInterval("yearly")}
-          className={cn(
-            "rounded-md px-4 py-2 text-sm font-medium transition-colors",
-            interval === "yearly"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          Yearly
-          <span className="ml-1.5 text-xs text-green-600 dark:text-green-400">
-            Save 20%
-          </span>
-        </button>
+      <div className="flex items-center justify-center">
+        <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/80 p-1">
+          <button
+            onClick={() => setInterval("monthly")}
+            className={cn(
+              "rounded-md px-4 py-2 text-sm font-medium transition-all",
+              interval === "monthly"
+                ? "bg-violet-600 text-white shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200"
+            )}
+          >
+            Monthly
+          </button>
+          <button
+            onClick={() => setInterval("yearly")}
+            className={cn(
+              "rounded-md px-4 py-2 text-sm font-medium transition-all",
+              interval === "yearly"
+                ? "bg-violet-600 text-white shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200"
+            )}
+          >
+            Yearly
+            <span className="ml-1.5 rounded-full bg-green-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-green-400">
+              -20%
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Cards */}
@@ -63,43 +65,53 @@ export function PricingCards({
             <div
               key={plan.id}
               className={cn(
-                "relative flex flex-col rounded-xl border p-6",
-                isPopular && "border-primary shadow-lg",
-                isCurrent && "bg-muted/50"
+                "relative flex flex-col rounded-xl border p-6 transition-all",
+                isPopular
+                  ? "border-violet-500/50 bg-violet-500/5 shadow-lg shadow-violet-500/10"
+                  : "border-zinc-800 bg-zinc-900/50",
+                isCurrent && "ring-1 ring-violet-500/30"
               )}
             >
               {isPopular && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
-                  Most Popular
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                  <div className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-3 py-1 text-xs font-medium text-white shadow-sm">
+                    <Sparkles className="h-3 w-3" />
+                    Most Popular
+                  </div>
                 </div>
               )}
 
               <div className="mb-4">
-                <h3 className="text-lg font-semibold">{plan.name}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
+                <h3 className="text-lg font-semibold text-white">{plan.name}</h3>
+                <p className="mt-1 text-sm text-zinc-400">
                   {plan.description}
                 </p>
               </div>
 
               <div className="mb-6">
-                <span className="text-4xl font-bold">
+                <span className="text-4xl font-bold text-white">
                   ${Math.round(price)}
                 </span>
                 {plan.priceMonthly > 0 && (
-                  <span className="text-muted-foreground">/mo</span>
+                  <span className="text-zinc-500">/mo</span>
                 )}
                 {interval === "yearly" && plan.priceYearly > 0 && (
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <p className="mt-1 text-xs text-zinc-500">
                     Billed ${plan.priceYearly}/year
+                  </p>
+                )}
+                {plan.priceMonthly === 0 && (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Free forever
                   </p>
                 )}
               </div>
 
               <ul className="mb-6 flex-1 space-y-2.5">
                 {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2 text-sm">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
-                    <span>{feature}</span>
+                  <li key={feature} className="flex items-start gap-2.5 text-sm">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
+                    <span className="text-zinc-300">{feature}</span>
                   </li>
                 ))}
               </ul>
@@ -108,19 +120,23 @@ export function PricingCards({
                 onClick={() => onSelect(plan.id, interval)}
                 disabled={isCurrent || loading || plan.id === "free"}
                 className={cn(
-                  "w-full rounded-md px-4 py-2.5 text-sm font-medium transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-all",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500",
                   "disabled:pointer-events-none disabled:opacity-50",
                   isPopular
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+                    ? "bg-violet-600 text-white hover:bg-violet-500 shadow-sm"
+                    : "border border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:text-white"
                 )}
               >
-                {isCurrent
-                  ? "Current Plan"
-                  : plan.id === "free"
-                    ? "Free Forever"
-                    : `Upgrade to ${plan.name}`}
+                {loading ? (
+                  <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+                ) : isCurrent ? (
+                  "Current Plan"
+                ) : plan.id === "free" ? (
+                  "Free Forever"
+                ) : (
+                  `Upgrade to ${plan.name}`
+                )}
               </button>
             </div>
           );

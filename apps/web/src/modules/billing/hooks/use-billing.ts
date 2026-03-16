@@ -47,7 +47,7 @@ export interface Subscription {
 
 function getAuthHeaders(): HeadersInit {
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    typeof window !== "undefined" ? localStorage.getItem("doable_access_token") : null;
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -74,7 +74,10 @@ export function useCredits(workspaceId: string | undefined) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(() => {
-    if (!workspaceId) return;
+    if (!workspaceId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     fetch(`${API_URL}/billing/credits?workspaceId=${workspaceId}`, {
       headers: getAuthHeaders(),
@@ -97,7 +100,10 @@ export function useUsage(workspaceId: string | undefined) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaceId) {
+      setLoading(false);
+      return;
+    }
     fetch(`${API_URL}/billing/usage?workspaceId=${workspaceId}`, {
       headers: getAuthHeaders(),
     })
@@ -108,6 +114,33 @@ export function useUsage(workspaceId: string | undefined) {
   }, [workspaceId]);
 
   return { usage, loading };
+}
+
+export function useCurrentPlan(workspaceId: string | undefined) {
+  const [plan, setPlan] = useState<string>("free");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setLoading(false);
+      return;
+    }
+    // Get workspace to determine current plan
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("doable_access_token") : null;
+    fetch(`${API_URL}/workspaces/${workspaceId}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+      .then((r) => r.json())
+      .then((res) => setPlan(res.data?.plan ?? "free"))
+      .catch(() => setPlan("free"))
+      .finally(() => setLoading(false));
+  }, [workspaceId]);
+
+  return { plan, loading };
 }
 
 export function useBillingActions(workspaceId: string | undefined) {

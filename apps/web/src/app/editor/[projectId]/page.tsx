@@ -132,6 +132,7 @@ interface ToolAction {
   isExpanded: boolean;
   isBookmarked?: boolean;
   filePath?: string;
+  status?: "running" | "completed" | "failed";
 }
 
 interface ChatMsg {
@@ -382,6 +383,7 @@ async function streamChat(
   onDone: () => void,
   onError: (error: string) => void,
   onToolCompleted?: (toolName: string, args: Record<string, unknown>) => void,
+  onToolStarted?: (toolName: string, args: Record<string, unknown>) => void,
   signal?: AbortSignal,
 ) {
   const { accessToken } = getStoredTokens();
@@ -421,6 +423,8 @@ async function streamChat(
 
   const decoder = new TextDecoder();
   let buffer = "";
+  // Track pending tool names so tool_result can resolve via the last tool_call
+  const pendingToolNames: string[] = [];
 
   try {
     while (true) {
@@ -451,12 +455,53 @@ async function streamChat(
             args?: Record<string, unknown>;
           };
 
+          // Handle tool_call events — show "in progress" card immediately
+          if (parsed.type === "tool_call" && onToolStarted) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+            const toolArgs = (d?.arguments as Record<string, unknown>) ?? {};
+            if (toolName) {
+              pendingToolNames.push(toolName);
+              onToolStarted(toolName, toolArgs);
+            }
+          }
+
           // Handle tool completion events — triggers file tree / content refresh
           if (parsed.type === "tool.completed" && onToolCompleted) {
             const toolName = parsed.name ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).name as string : "");
             const toolArgs = parsed.args ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).args as Record<string, unknown> : {});
             onToolCompleted(toolName ?? "", toolArgs ?? {});
           }
+
+          // Handle tool_result events — tool finished executing, update card to completed
+          if ((parsed.type === "tool_result" || parsed.type === "tool.completed") && onToolCompleted) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            let toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+            const toolArgs = (d?.result as Record<string, unknown>) ?? (d?.args as Record<string, unknown>) ?? {};
+            // If tool_result lacks a name, use the name from the last tool_call
+            if (!toolName && pendingToolNames.length > 0) {
+              toolName = pendingToolNames.shift()!;
+            } else if (toolName && pendingToolNames.length > 0 && pendingToolNames[0] === toolName) {
+              pendingToolNames.shift();
+            }
+            if (toolName) {
+              onToolCompleted(toolName, toolArgs);
+            }
+          }
+
+          // Handle code_diff events
+          if (parsed.type === "code_diff" && onToolCompleted) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const filePath = (d?.filePath as string) ?? "";
+            const action = (d?.action as string) ?? "edit";
+            if (filePath) {
+              onToolCompleted(`${action}_file`, { path: filePath });
+            }
+          }
+
+          // Thinking events are silently consumed — tool action cards
+          // already show what the AI is doing. No need to inject thinking
+          // text into the message content.
 
           // Extract text content from various SSE event shapes
           let text = "";
@@ -533,46 +578,30 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
   return toolName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Default suggestion chips shown after AI responses */
-const DEFAULT_SUGGESTIONS = [
-  "Verify that it works",
-  "Add tactile feedback",
-  "Add dark mode",
-  "Add responsive design",
-  "Improve animations",
-  "Add navigation bar",
-];
+/** Brief fallback shown for ~2s while AI suggestions load */
+const FALLBACK_SUGGESTIONS: string[] = [];
 
-/** Generate context-aware suggestions based on the last AI message */
-function generateSuggestions(lastAssistantContent: string): string[] {
-  const lower = lastAssistantContent.toLowerCase();
-  const suggestions: string[] = [];
-
-  // Always add "Verify that it works" first
-  suggestions.push("Verify that it works");
-
-  if (lower.includes("button") || lower.includes("click") || lower.includes("interactive")) {
-    suggestions.push("Add tactile feedback");
+/**
+ * Fetch AI-generated contextual suggestions from the API.
+ * Uses a fast/cheap model via Copilot SDK to generate relevant next steps.
+ */
+async function fetchAISuggestions(
+  projectId: string,
+  userPrompt: string,
+  lastAssistantMessage: string,
+): Promise<string[]> {
+  try {
+    const res = await fetch(`${API_URL}/projects/${projectId}/chat/suggestions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userPrompt, lastAssistantMessage }),
+    });
+    if (!res.ok) return FALLBACK_SUGGESTIONS;
+    const json = (await res.json()) as { data: string[] };
+    return json.data.length > 0 ? json.data : FALLBACK_SUGGESTIONS;
+  } catch {
+    return FALLBACK_SUGGESTIONS;
   }
-  if (!lower.includes("dark mode") && !lower.includes("dark theme")) {
-    suggestions.push("Add dark mode");
-  }
-  if (lower.includes("page") || lower.includes("route") || lower.includes("navigation")) {
-    suggestions.push("Add page transitions");
-  }
-  if (lower.includes("form") || lower.includes("input")) {
-    suggestions.push("Add form validation");
-  }
-  if (lower.includes("list") || lower.includes("card") || lower.includes("grid")) {
-    suggestions.push("Add loading skeletons");
-  }
-  if (!lower.includes("responsive")) {
-    suggestions.push("Make it responsive");
-  }
-  suggestions.push("Improve the styling");
-
-  // Return unique suggestions, max 5
-  return [...new Set(suggestions)].slice(0, 5);
 }
 
 function generateProjectId(): string {
@@ -593,10 +622,18 @@ export default function EditorPage() {
   const searchParams = useSearchParams();
   const rawProjectId = params.projectId;
 
-  // For "new" projects, generate a stable ID; otherwise use the URL param
-  const [resolvedProjectId] = useState<string>(() =>
-    rawProjectId === "new" ? generateProjectId() : rawProjectId
-  );
+  // For "new" projects, generate a stable ID and persist it so refreshes
+  // don't create duplicate projects and waste credits.
+  const [resolvedProjectId] = useState<string>(() => {
+    if (rawProjectId !== "new") return rawProjectId;
+    // Check sessionStorage first — if user refreshes, reuse the same project
+    const storageKey = "doable_new_project_id";
+    const stored = typeof window !== "undefined" ? sessionStorage.getItem(storageKey) : null;
+    if (stored) return stored;
+    const newId = generateProjectId();
+    if (typeof window !== "undefined") sessionStorage.setItem(storageKey, newId);
+    return newId;
+  });
   const isNewProject = rawProjectId === "new";
 
   // ─── Scaffold / preview state ─────────────────────────────
@@ -648,6 +685,7 @@ export default function EditorPage() {
   });
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(projectName);
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>(FALLBACK_SUGGESTIONS);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [moreMenuMsgId, setMoreMenuMsgId] = useState<string | null>(null);
   const [taskCardTabs, setTaskCardTabs] = useState<Record<string, TaskCardTab>>({});
@@ -695,6 +733,14 @@ export default function EditorPage() {
   const abortRef = useRef<AbortController | null>(null);
   const autoSentRef = useRef(false);
   const scaffoldInitRef = useRef(false);
+
+  // ─── Replace URL from /editor/new to /editor/{id} to prevent re-scaffold on refresh ─
+  useEffect(() => {
+    if (isNewProject && resolvedProjectId) {
+      const newUrl = `/editor/${resolvedProjectId}${window.location.search}`;
+      window.history.replaceState({}, "", newUrl);
+    }
+  }, [isNewProject, resolvedProjectId]);
 
   // ─── Scaffold + preview URL on mount ──────────────────────
   useEffect(() => {
@@ -969,9 +1015,16 @@ export default function EditorPage() {
     }
   }, [messages, resolvedProjectId]);
 
-  // Handle the "new project" flow — auto-send prompt from query params
+  // Handle the "new project" flow — auto-send prompt from query params.
+  // Only fires ONCE per project (not on refresh) by checking both the ref
+  // and whether messages already exist for this project.
   useEffect(() => {
     if (!isNewProject || autoSentRef.current) return;
+    // Don't auto-send if messages already exist (page was refreshed)
+    if (messages.length > 0) {
+      autoSentRef.current = true;
+      return;
+    }
     // Wait until scaffold is ready (or at least started) before sending
     if (scaffoldStatus !== "ready" && scaffoldStatus !== "starting") return;
     const prompt = searchParams.get("prompt");
@@ -1041,10 +1094,9 @@ export default function EditorPage() {
   // Whether the current tab is a full panel view
   const isPanelView = PANEL_TABS.includes(activeTab);
 
-  // ─── Handle tool completion — refresh files + add tool card ─
-  const handleToolCompleted = useCallback(
+  // ─── Handle tool started — add "running" card ─────────────
+  const handleToolStarted = useCallback(
     (toolName: string, _args: Record<string, unknown>) => {
-      // Add a tool action card to the currently streaming assistant message
       setMessages((prev) => {
         const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
         if (!lastAssistant) return prev;
@@ -1058,6 +1110,59 @@ export default function EditorPage() {
           isExpanded: false,
           isBookmarked: false,
           filePath,
+          status: "running",
+        };
+        return prev.map((m) =>
+          m.id === lastAssistant.id
+            ? { ...m, toolActions: [...(m.toolActions ?? []), action] }
+            : m,
+        );
+      });
+    },
+    [],
+  );
+
+  // ─── Handle tool completion — refresh files + update card ─
+  const handleToolCompleted = useCallback(
+    (toolName: string, _args: Record<string, unknown>) => {
+      // Update the running tool action card to "completed", or add a new completed card
+      setMessages((prev) => {
+        const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
+        if (!lastAssistant) return prev;
+
+        // Try to find a running action with this tool name to mark as completed
+        const runningAction = lastAssistant.toolActions?.find(
+          (a) => a.toolName === toolName && a.status === "running"
+        );
+
+        if (runningAction) {
+          // Update existing running card to completed
+          return prev.map((m) =>
+            m.id === lastAssistant.id
+              ? {
+                  ...m,
+                  toolActions: m.toolActions?.map((a) =>
+                    a.id === runningAction.id
+                      ? { ...a, status: "completed" as const }
+                      : a
+                  ),
+                }
+              : m,
+          );
+        }
+
+        // No running card found — add a new completed card (fallback)
+        const filePath = typeof (_args?.path ?? _args?.filePath ?? _args?.file) === "string"
+            ? (_args?.path ?? _args?.filePath ?? _args?.file) as string
+            : undefined;
+        const action: ToolAction = {
+          id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          toolName,
+          description: describeToolAction(toolName, _args),
+          isExpanded: false,
+          isBookmarked: false,
+          filePath,
+          status: "completed",
         };
         return prev.map((m) =>
           m.id === lastAssistant.id
@@ -1093,9 +1198,16 @@ export default function EditorPage() {
           delete fileContentsCache.current[selectedFile];
           loadFileContent(selectedFile);
         }
+
+        // Auto-refresh preview when files change
+        setTimeout(() => {
+          if (iframeRef.current && previewUrl) {
+            iframeRef.current.src = previewUrl;
+          }
+        }, 500);
       }
     },
-    [loadFileTree, selectedFile, loadFileContent],
+    [loadFileTree, selectedFile, loadFileContent, previewUrl],
   );
 
   // ─── Send message to real API ──────────────────────────────
@@ -1161,6 +1273,27 @@ export default function EditorPage() {
             delete fileContentsCache.current[selectedFile];
             loadFileContent(selectedFile);
           }
+          // Auto-refresh preview after AI makes changes
+          setTimeout(() => {
+            if (iframeRef.current && previewUrl) {
+              iframeRef.current.src = previewUrl;
+            }
+          }, 500); // Small delay to let Vite process changes
+
+          // Fetch AI-powered suggestions based on what was just built
+          setAiSuggestions(FALLBACK_SUGGESTIONS); // Show fallback immediately
+          // Read current assistant content from state via updater
+          setMessages((prev) => {
+            const lastAssistant = prev.find((m) => m.id === assistantId);
+            if (lastAssistant?.content) {
+              fetchAISuggestions(
+                resolvedProjectId,
+                trimmed,
+                lastAssistant.content,
+              ).then((s) => setAiSuggestions(s));
+            }
+            return prev; // Don't modify state
+          });
         },
         // onError
         (error: string) => {
@@ -1180,10 +1313,12 @@ export default function EditorPage() {
         },
         // onToolCompleted
         handleToolCompleted,
+        // onToolStarted
+        handleToolStarted,
         controller.signal,
       );
     },
-    [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, loadFileTree, selectedFile, loadFileContent]
+    [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, handleToolStarted, loadFileTree, selectedFile, loadFileContent, previewUrl]
   );
 
   // Send message handler (from input)
@@ -2147,6 +2282,23 @@ export default function EditorPage() {
                       </>
                     )}
                   </div>
+                  {/* Prompt starter chips in empty state */}
+                  <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-[360px]">
+                    {[
+                      "Build a SaaS landing page",
+                      "Create a kanban task board",
+                      "Make a recipe sharing app",
+                      "Design a portfolio site",
+                    ].map((starter) => (
+                      <button
+                        key={starter}
+                        onClick={() => sendMessage(starter)}
+                        className="rounded-full border border-zinc-700/50 bg-zinc-800/60 px-3.5 py-1.5 text-[13px] text-zinc-300 hover:bg-zinc-700/60 hover:text-white hover:border-zinc-600 transition-all"
+                      >
+                        {starter}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -2266,17 +2418,24 @@ export default function EditorPage() {
                                         className="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-zinc-700/30 transition-colors"
                                       >
                                         <div className="flex items-center gap-2 min-w-0">
-                                          <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
-                                            action.toolName.toLowerCase().includes("create") || action.toolName.toLowerCase().includes("write")
-                                              ? "bg-emerald-400"
-                                              : action.toolName.toLowerCase().includes("edit") || action.toolName.toLowerCase().includes("update")
-                                                ? "bg-amber-400"
-                                                : action.toolName.toLowerCase().includes("delete")
-                                                  ? "bg-red-400"
-                                                  : "bg-zinc-400"
-                                          }`} />
+                                          {action.status === "running" ? (
+                                            <div className="h-1.5 w-1.5 rounded-full flex-shrink-0 bg-blue-400 animate-pulse" />
+                                          ) : (
+                                            <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+                                              action.toolName.toLowerCase().includes("create") || action.toolName.toLowerCase().includes("write")
+                                                ? "bg-emerald-400"
+                                                : action.toolName.toLowerCase().includes("edit") || action.toolName.toLowerCase().includes("update")
+                                                  ? "bg-amber-400"
+                                                  : action.toolName.toLowerCase().includes("delete")
+                                                    ? "bg-red-400"
+                                                    : "bg-zinc-400"
+                                            }`} />
+                                          )}
                                           <span className="text-zinc-300 truncate">
                                             {action.description}
+                                            {action.status === "running" && (
+                                              <span className="ml-1.5 text-[11px] text-blue-400">Running...</span>
+                                            )}
                                           </span>
                                           {action.filePath && (
                                             <span className="text-[11px] text-zinc-600 truncate hidden sm:inline">
@@ -2431,7 +2590,7 @@ export default function EditorPage() {
                           msgIdx === messages.length - 1 && (
                             <div className="mt-3 -mx-1 overflow-x-auto scrollbar-thin">
                               <div className="flex gap-2 px-1 pb-1">
-                                {generateSuggestions(msg.content).map((suggestion) => (
+                                {aiSuggestions.map((suggestion) => (
                                   <button
                                     key={suggestion}
                                     onClick={() => sendMessage(suggestion)}
@@ -2869,7 +3028,7 @@ export default function EditorPage() {
         {isPanelView && (
           <div className="flex flex-1 flex-col overflow-hidden bg-[#1C1C1C]">
             {activeTab === "design" && (
-              <DesignPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
+              <DesignPanel projectId={resolvedProjectId} onClose={handlePanelClose} onSendMessage={sendMessage} />
             )}
             {activeTab === "cloud" && (
               <CloudPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
@@ -2884,7 +3043,7 @@ export default function EditorPage() {
               <SecurityPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
             )}
             {activeTab === "speed" && (
-              <SpeedPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
+              <SpeedPanel projectId={resolvedProjectId} onClose={handlePanelClose} onSendMessage={sendMessage} />
             )}
           </div>
         )}

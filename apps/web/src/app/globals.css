@@ -58,6 +58,37 @@
     color: hsl(var(--foreground));
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
+  /* ─── Custom scrollbars ─────────────────────────────── */
+
+  /* Webkit (Chrome, Edge, Safari) */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.35);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
+  }
 }
 
 /* Animated gradient orbs */

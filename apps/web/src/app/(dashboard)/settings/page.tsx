@@ -140,12 +140,25 @@ export default function SettingsPage() {
     setProfileSaving(true);
     setProfileSuccess(false);
 
-    // Simulate save (the API endpoint would be PATCH /auth/me or similar)
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    setProfileSaving(false);
-    setProfileSuccess(true);
-    setTimeout(() => setProfileSuccess(false), 3000);
+    try {
+      const token = localStorage.getItem("doable_access_token");
+      const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+      const res = await fetch(`${API_URL}/auth/me`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ displayName }),
+      });
+      if (!res.ok) throw new Error("Failed to save profile");
+      setProfileSuccess(true);
+      setTimeout(() => setProfileSuccess(false), 3000);
+    } catch (err) {
+      console.error("Failed to save profile:", err);
+    } finally {
+      setProfileSaving(false);
+    }
   }
 
   async function handlePasswordChange(e: FormEvent) {
@@ -167,15 +180,32 @@ export default function SettingsPage() {
 
     setPasswordSaving(true);
 
-    // Simulate save
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    setPasswordSaving(false);
-    setPasswordSuccess(true);
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
-    setTimeout(() => setPasswordSuccess(false), 3000);
+    try {
+      const token = localStorage.getItem("doable_access_token");
+      const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+      const res = await fetch(`${API_URL}/auth/change-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Failed to change password" }));
+        setPasswordError(data.error ?? "Failed to change password");
+        return;
+      }
+      setPasswordSuccess(true);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setTimeout(() => setPasswordSuccess(false), 3000);
+    } catch (err) {
+      setPasswordError("Failed to change password. Please try again.");
+    } finally {
+      setPasswordSaving(false);
+    }
   }
 
   function handleThemeChange(newTheme: "dark" | "light" | "system") {
@@ -200,31 +230,33 @@ export default function SettingsPage() {
     if (deleteConfirmation !== "DELETE") return;
     setIsDeleting(true);
 
-    // Simulate delete
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const token = localStorage.getItem("doable_access_token");
+      const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+      await fetch(`${API_URL}/auth/delete-account`, {
+        method: "DELETE",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+    } catch {
+      // Even if server call fails, proceed with logout
+    }
 
     await logout();
     router.push("/");
   }
 
-  // ─── Mock sessions ────────────────────────────────────────
-
+  // Active sessions - currently shows current session only
+  // TODO: Fetch real session list from /auth/sessions when multi-session tracking is implemented
   const sessions = [
     {
-      id: "1",
-      device: "Chrome on Windows",
+      id: "current",
+      device: typeof navigator !== "undefined" ? navigator.userAgent.split("(")[1]?.split(")")[0] ?? "Unknown Device" : "Unknown Device",
       icon: Monitor,
       location: "Current session",
       lastActive: "Now",
       current: true,
-    },
-    {
-      id: "2",
-      device: "Safari on iPhone",
-      icon: Smartphone,
-      location: "Mobile",
-      lastActive: "2 hours ago",
-      current: false,
     },
   ];
 

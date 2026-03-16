@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
+import { sql } from "../db/index.js";
 import {
   getCopilotEngine,
   createDoableTools,
@@ -29,6 +30,9 @@ chatRoutes.use("/projects/:id/chat/*", optionalAuthMiddleware);
 
 // ─── In-memory session mapping (projectId → copilot sessionId) ─
 const projectSessions = new Map<string, string>();
+
+// ─── Debounce guard for thumbnail captures ─
+const captureInProgress = new Set<string>();
 
 // ─── POST /projects/:id/chat ─ SSE streaming response ───────
 const sendMessageSchema = z.object({
@@ -109,11 +113,27 @@ IMPORTANT RULES:
       // Stream events via SSE
       return streamSSE(c, async (stream) => {
         let hadToolCalls = false;
+        // Track pending tool names so tool_result events can include the name
+        const pendingToolNames: string[] = [];
         try {
           for await (const event of engine.sendMessage(sessionId!, content)) {
             const sseData = mapEventToSSE(event);
             if (sseData) {
-              if (sseData.type === "tool_result") hadToolCalls = true;
+              // When a tool_call is emitted, record the name for pairing
+              if (sseData.type === "tool_call") {
+                const toolData = sseData.data as Record<string, unknown>;
+                if (toolData?.name) {
+                  pendingToolNames.push(toolData.name as string);
+                }
+              }
+              // When a tool_result is emitted, inject the name from the queue
+              if (sseData.type === "tool_result") {
+                hadToolCalls = true;
+                const resultData = sseData.data as Record<string, unknown>;
+                if (!resultData?.name && pendingToolNames.length > 0) {
+                  resultData.name = pendingToolNames.shift();
+                }
+              }
               await stream.writeSSE({ data: JSON.stringify(sseData) });
             }
           }
@@ -137,27 +157,58 @@ IMPORTANT RULES:
           } catch (vErr) {
             console.warn("[Chat] Auto-version failed:", vErr);
           }
+
+          // Update project's updated_at so dashboard shows fresh data & cache busts thumbnails
+          try {
+            await sql`UPDATE projects SET updated_at = NOW() WHERE id = ${projectId}`;
+          } catch {
+            // Non-critical — don't break the chat if DB update fails
+          }
+        }
+
+        // Capture thumbnail asynchronously (don't block the response)
+        if (hadToolCalls && !captureInProgress.has(projectId)) {
+          captureInProgress.add(projectId);
+          const { getDevServerInternalUrl } = await import(
+            "../projects/dev-server.js"
+          );
+          const internalUrl = getDevServerInternalUrl(projectId);
+          if (internalUrl) {
+            // The Vite base path is /preview/{projectId}/ — Puppeteer
+            // needs the full internal URL with that path.
+            const previewUrl = `${internalUrl}/preview/${projectId}/`;
+            // Fire and forget — wait for Vite to process changes, then capture
+            import("../thumbnails/capture.js")
+              .then(({ captureProjectThumbnail }) => {
+                setTimeout(() => {
+                  captureProjectThumbnail(projectId, previewUrl)
+                    .finally(() => captureInProgress.delete(projectId))
+                    .catch(console.warn);
+                }, 3000); // 3s delay for Vite HMR to settle
+              })
+              .catch((err) => {
+                captureInProgress.delete(projectId);
+                console.warn("[Thumbnail] Import failed:", err);
+              });
+          } else {
+            captureInProgress.delete(projectId);
+          }
         }
 
         await stream.writeSSE({ data: "[DONE]" });
       });
     } catch (err) {
-      // If Copilot SDK is not available, fall back to placeholder
-      console.warn("[Chat] Copilot engine unavailable, using placeholder:", err);
+      // Copilot SDK is the core engine — surface the real error, don't work around it
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error("[Chat] Copilot SDK error:", errMsg);
+
       return streamSSE(c, async (stream) => {
-        const responseText = generateFallbackResponse(content, mode);
-        const words = responseText.split(" ");
-
-        for (let i = 0; i < words.length; i++) {
-          await stream.writeSSE({
-            data: JSON.stringify({
-              type: "text_delta",
-              data: (i > 0 ? " " : "") + words[i],
-            }),
-          });
-          await new Promise((resolve) => setTimeout(resolve, 30));
-        }
-
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: "error",
+            data: `Copilot SDK error: ${errMsg}. Ensure you have a GitHub Copilot subscription or configure BYOK in settings.`,
+          }),
+        });
         await stream.writeSSE({ data: "[DONE]" });
       });
     }
@@ -245,6 +296,61 @@ chatRoutes.get("/ai/auth-status", async (c) => {
   }
 });
 
+// ─── POST /projects/:id/chat/suggestions ─ AI-powered suggestions ─
+const suggestionsSchema = z.object({
+  lastAssistantMessage: z.string().min(1).max(4000),
+  userPrompt: z.string().min(1).max(4000),
+});
+
+chatRoutes.post(
+  "/projects/:id/chat/suggestions",
+  zValidator("json", suggestionsSchema),
+  async (c) => {
+    const { lastAssistantMessage, userPrompt } = c.req.valid("json");
+
+    try {
+      const engine = await getCopilotEngine();
+
+      // Create a lightweight session with a fast/cheap model for suggestions
+      const sessionId = await engine.createSession({
+        projectId: "suggestions",
+        userId: "system",
+        model: "gpt-4o-mini", // Fast, cheap model for simple text generation
+        systemPrompt: `You generate short, contextual next-step suggestion chips for an AI app builder. Given the user's last prompt and the AI's response, return exactly 4 suggestions as a JSON array of strings. Each suggestion should be 2-6 words, actionable, and relevant to what was just built. Do NOT include generic suggestions. Focus on what the user would logically want to do next with THIS specific app. Return ONLY the JSON array, no other text.`,
+      });
+
+      const result = await engine.sendAndWait(
+        sessionId,
+        `User asked: "${userPrompt.slice(0, 200)}"\n\nAI built: "${lastAssistantMessage.slice(0, 500)}"\n\nReturn 4 contextual next-step suggestions as a JSON array:`,
+        15_000, // 15s timeout — suggestions should be fast
+      );
+
+      // Clean up the ephemeral session
+      engine.disconnectSession(sessionId).catch(() => {});
+
+      // Parse the response — AssistantMessageEvent has { data: { content: string } }
+      const resultData = result?.data as Record<string, unknown> | undefined;
+      const content = typeof resultData?.content === "string" ? resultData.content : "";
+
+      // Extract JSON array from the response (may have markdown fences)
+      const jsonMatch = content.match(/\[[\s\S]*?\]/);
+      if (jsonMatch) {
+        const suggestions = JSON.parse(jsonMatch[0]) as string[];
+        return c.json({
+          data: suggestions
+            .filter((s): s is string => typeof s === "string")
+            .slice(0, 5),
+        });
+      }
+
+      return c.json({ data: [] });
+    } catch (err) {
+      console.warn("[Suggestions] Failed:", err);
+      return c.json({ data: [] });
+    }
+  },
+);
+
 // ─── Helpers ─────────────────────────────────────────────
 
 interface SSEEvent {
@@ -257,33 +363,73 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
   const data = event.data as Record<string, unknown> | undefined;
 
   switch (type) {
+    // ─── Text content ─────────────────────────────────────
+    case "text_delta":
+      // Already in the right format — pass through
+      return { type: "text_delta", data: data?.content ?? data ?? "" };
     case "assistant.message":
       return { type: "text_delta", data: data?.content ?? "" };
+
+    // ─── Thinking / reasoning ─────────────────────────────
     case "assistant.thinking":
+    case "assistant.reasoning":
       return { type: "thinking", data: data?.content ?? "" };
+
+    // ─── Tool calls (starting) ────────────────────────────
+    // Only emit from tool.execution_start — external_tool.requested
+    // is a duplicate for the same tool invocation.
     case "tool.running":
+    case "tool.execution_start":
       return {
         type: "tool_call",
         data: {
-          name: data?.name,
+          name: data?.toolName ?? data?.name,
           arguments: data?.arguments,
         },
       };
+    case "external_tool.requested":
+      return null; // Skip — duplicate of tool.execution_start
+
+    // ─── Tool results (completed) ─────────────────────────
+    // Only emit from tool.execution_complete — external_tool.completed
+    // is a duplicate for the same tool invocation.
     case "tool.completed":
+    case "tool.execution_complete":
       return {
         type: "tool_result",
         data: {
-          name: data?.name,
+          name: data?.toolName ?? data?.name,
           result: data?.result,
+          success: data?.success,
         },
       };
+    case "external_tool.completed":
+      return null; // Skip — duplicate of tool.execution_complete
+
+    // ─── Errors ───────────────────────────────────────────
     case "session.error":
       return {
         type: "error",
         data: data?.message ?? "Unknown error",
       };
+
+    // ─── Done ─────────────────────────────────────────────
     case "session.idle":
+    case "done":
       return { type: "done", data: {} };
+
+    // ─── Skip noise events ────────────────────────────────
+    case "pending_messages.modified":
+    case "session.tools_updated":
+    case "session.usage_info":
+    case "assistant.usage":
+    case "user.message":
+    case "assistant.turn_start":
+    case "assistant.turn_end":
+    case "permission.requested":
+    case "permission.completed":
+      return null;
+
     default:
       // Pass through other events
       if (data) {
@@ -293,10 +439,3 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
   }
 }
 
-function generateFallbackResponse(userMessage: string, mode: string): string {
-  if (mode === "plan") {
-    return `Here's my plan for: "${userMessage}"\n\n**Step 1:** Analyze requirements\n**Step 2:** Create file structure\n**Step 3:** Implement core logic\n**Step 4:** Add styling\n**Step 5:** Test & refine\n\nWould you like me to proceed?`;
-  }
-
-  return `I'll help you with: "${userMessage}"\n\nNote: The Copilot SDK agent is not yet connected. To enable AI-powered code generation, ensure you have a GitHub Copilot subscription or configure a BYOK API key in settings.\n\nIn the meantime, you can use the editor to build your app manually.`;
-}

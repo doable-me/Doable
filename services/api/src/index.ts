@@ -19,6 +19,7 @@ import { versionRoutes } from "./routes/versions.js";
 import { githubRoutes } from "./routes/github.js";
 import { projectFileRoutes } from "./routes/project-files.js";
 import { previewRoutes } from "./routes/preview-proxy.js";
+import { thumbnailRoutes } from "./routes/thumbnails.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 
 const app = new Hono();
@@ -31,11 +32,12 @@ const apiRateLimiter = rateLimiter({ windowMs: 60_000, max: 100 });
 app.use("*", logger());
 app.use("*", timing());
 
-// Secure headers for all routes EXCEPT /preview/* — the default secureHeaders()
-// sets X-Frame-Options: SAMEORIGIN and Cross-Origin-Resource-Policy: same-origin
-// which block the cross-origin iframe embedding that the preview panel relies on.
+// Secure headers for all routes EXCEPT /preview/* and /thumbnails/* —
+// the default secureHeaders() sets X-Frame-Options: SAMEORIGIN and
+// Cross-Origin-Resource-Policy: same-origin which block cross-origin
+// iframe embedding and image loading.
 app.use("*", async (c, next) => {
-  if (c.req.path.startsWith("/preview/")) {
+  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/thumbnails/")) {
     await next();
     return;
   }
@@ -112,6 +114,7 @@ app.route("/projects/:id/context", contextRoutes);
 app.route("/templates", templateRoutes);
 app.route("/projects", versionRoutes);
 app.route("/", githubRoutes);
+app.route("/thumbnails", thumbnailRoutes);
 
 // ─── 404 Fallback ───────────────────────────────────────────
 app.notFound((c) => {
