@@ -10,6 +10,9 @@
  * Vite HMR WebSocket is NOT proxied — the preview relies on manual
  * refresh (which matches how Lovable-style editors work: the preview
  * refreshes after the AI finishes writing code, not in real-time).
+ *
+ * For HTML responses, the analytics tracking script is injected before
+ * </head> so visitor metrics are collected automatically.
  */
 
 import { Hono } from "hono";
@@ -19,6 +22,10 @@ import {
   isRunning,
 } from "../projects/dev-server.js";
 import { isProjectScaffolded, ensureDependencies } from "../projects/file-manager.js";
+
+const apiUrl =
+  process.env.API_URL ??
+  `http://localhost:${process.env.API_PORT ?? "4000"}`;
 
 export const previewRoutes = new Hono();
 
@@ -96,6 +103,23 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
     responseHeaders.set("Access-Control-Allow-Origin", "*");
     responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     responseHeaders.set("Access-Control-Allow-Headers", "*");
+
+    // Inject analytics tracking script into HTML responses
+    const contentType = resp.headers.get("content-type") ?? "";
+    if (contentType.includes("text/html")) {
+      const html = await resp.text();
+      const analyticsSnippet =
+        `<meta name="doable-project-id" content="${projectId}">` +
+        `<script src="${apiUrl}/analytics/script.js"></script>`;
+      const injected = html.includes("</head>")
+        ? html.replace("</head>", `${analyticsSnippet}</head>`)
+        : html.replace("</body>", `${analyticsSnippet}</body>`);
+
+      return new Response(injected, {
+        status: resp.status,
+        headers: responseHeaders,
+      });
+    }
 
     return new Response(resp.body, {
       status: resp.status,

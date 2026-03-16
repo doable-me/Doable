@@ -9,3 +9,4 @@ export * from "./queries/github.js";
 export * from "./queries/billing.js";
 export * from "./queries/deployments.js";
 export * from "./queries/templates.js";
+export * from "./queries/analytics.js";

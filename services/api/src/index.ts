@@ -20,6 +20,7 @@ import { githubRoutes } from "./routes/github.js";
 import { projectFileRoutes } from "./routes/project-files.js";
 import { previewRoutes } from "./routes/preview-proxy.js";
 import { thumbnailRoutes } from "./routes/thumbnails.js";
+import { analyticsRoutes } from "./routes/analytics.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 
 const app = new Hono();
@@ -37,7 +38,7 @@ app.use("*", timing());
 // Cross-Origin-Resource-Policy: same-origin which block cross-origin
 // iframe embedding and image loading.
 app.use("*", async (c, next) => {
-  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/thumbnails/")) {
+  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/thumbnails/") || c.req.path.startsWith("/analytics/")) {
     await next();
     return;
   }
@@ -87,7 +88,7 @@ app.use(
 // triggers many subrequests (HTML + JS chunks + CSS + assets) which would
 // quickly exhaust the limit and cause preview loads to fail with 429.
 app.use("*", async (c, next) => {
-  if (c.req.path.startsWith("/preview/")) {
+  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/analytics/")) {
     await next();
     return;
   }
@@ -115,6 +116,7 @@ app.route("/templates", templateRoutes);
 app.route("/projects", versionRoutes);
 app.route("/", githubRoutes);
 app.route("/thumbnails", thumbnailRoutes);
+app.route("/analytics", analyticsRoutes);
 
 // ─── 404 Fallback ───────────────────────────────────────────
 app.notFound((c) => {
