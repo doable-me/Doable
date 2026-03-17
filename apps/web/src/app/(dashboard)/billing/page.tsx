@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CreditCard, Zap, ExternalLink, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, CreditCard, Zap, ExternalLink, Loader2, CheckCircle2, XCircle, AlertTriangle, X } from "lucide-react";
 import { PricingCards } from "@/modules/billing/components/pricing-cards";
 import { CreditDisplay } from "@/modules/billing/components/credit-display";
 import {
@@ -13,19 +13,57 @@ import {
   useBillingActions,
   useCurrentPlan,
 } from "@/modules/billing/hooks/use-billing";
+import { apiFetch, type ApiWorkspace } from "@/lib/api";
 
-function useActiveWorkspaceId(): string | undefined {
+function useActiveWorkspaceId(): { workspaceId: string | undefined; loading: boolean } {
   const [workspaceId, setWorkspaceId] = useState<string | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    const stored = localStorage.getItem("doable_active_workspace_id");
-    if (stored) setWorkspaceId(stored);
+    const resolve = async () => {
+      // 1. Try localStorage first
+      const stored = localStorage.getItem("doable_active_workspace_id");
+      if (stored) {
+        setWorkspaceId(stored);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Fetch workspaces from API
+      try {
+        const wsRes = await apiFetch<{ data: ApiWorkspace[] }>("/workspaces");
+        if (wsRes.data && wsRes.data.length > 0) {
+          const wsId = wsRes.data[0]!.id;
+          localStorage.setItem("doable_active_workspace_id", wsId);
+          setWorkspaceId(wsId);
+          setLoading(false);
+          return;
+        }
+
+        // 3. No workspaces exist — create one
+        const slug = `my-workspace-${Date.now()}`;
+        const createRes = await apiFetch<{ data: ApiWorkspace }>("/workspaces", {
+          method: "POST",
+          body: JSON.stringify({ name: "My Workspace", slug }),
+        });
+        if (createRes.data?.id) {
+          localStorage.setItem("doable_active_workspace_id", createRes.data.id);
+          setWorkspaceId(createRes.data.id);
+        }
+      } catch (err) {
+        console.warn("[Billing] Failed to resolve workspace:", err);
+      }
+      setLoading(false);
+    };
+    resolve();
   }, []);
-  return workspaceId;
+
+  return { workspaceId, loading };
 }
 
 export default function BillingPage() {
   const router = useRouter();
-  const WORKSPACE_ID = useActiveWorkspaceId();
+  const { workspaceId: WORKSPACE_ID, loading: wsLoading } = useActiveWorkspaceId();
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
   const canceled = searchParams.get("canceled");
@@ -34,9 +72,41 @@ export default function BillingPage() {
   const { plans, loading: plansLoading } = usePlans();
   const { credits, loading: creditsLoading } = useCredits(WORKSPACE_ID);
   const { usage, loading: usageLoading } = useUsage(WORKSPACE_ID);
-  const { subscribe, openPortal, topUp, loading: actionLoading } =
+  const { subscribe, openPortal, topUp, loading: actionLoading, error: actionError, clearError } =
     useBillingActions(WORKSPACE_ID);
   const { plan: currentPlan } = useCurrentPlan(WORKSPACE_ID);
+
+  // Show loading spinner while resolving workspace
+  if (wsLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
+          <p className="text-sm text-zinc-400">Loading billing...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Workspace could not be resolved (user likely not signed in)
+  if (!WORKSPACE_ID) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center max-w-md">
+          <p className="text-zinc-300 font-medium">Unable to load billing</p>
+          <p className="mt-2 text-sm text-zinc-500">
+            Please sign in to manage your subscription and credits.
+          </p>
+          <button
+            onClick={() => router.push("/login")}
+            className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 transition-colors"
+          >
+            Sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-6 py-10">
@@ -72,6 +142,21 @@ export default function BillingPage() {
         <div className="flex items-center gap-3 rounded-lg border border-green-800 bg-green-950/50 p-4 text-sm text-green-300">
           <CheckCircle2 className="h-5 w-5 shrink-0 text-green-400" />
           Credits added successfully!
+        </div>
+      )}
+      {actionError && (
+        <div className="flex items-center justify-between rounded-lg border border-red-800 bg-red-950/50 p-4 text-sm text-red-300">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-red-400" />
+            {actionError}
+          </div>
+          <button
+            onClick={clearError}
+            className="shrink-0 rounded p-1 text-red-400 hover:bg-red-900/50 hover:text-red-300 transition-colors"
+            aria-label="Dismiss error"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 

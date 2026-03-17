@@ -145,10 +145,14 @@ export function useCurrentPlan(workspaceId: string | undefined) {
 
 export function useBillingActions(workspaceId: string | undefined) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const clearError = useCallback(() => setError(null), []);
 
   const subscribe = async (planId: string, interval: "monthly" | "yearly" = "monthly") => {
     if (!workspaceId) return;
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${API_URL}/billing/subscribe`, {
         method: "POST",
@@ -156,9 +160,17 @@ export function useBillingActions(workspaceId: string | undefined) {
         body: JSON.stringify({ workspaceId, planId, interval }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to start checkout");
+        return;
+      }
       if (data.data?.url) {
         window.location.href = data.data.url;
+      } else {
+        setError("Checkout URL not available. Please try again.");
       }
+    } catch {
+      setError("Network error. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -167,6 +179,7 @@ export function useBillingActions(workspaceId: string | undefined) {
   const openPortal = async () => {
     if (!workspaceId) return;
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${API_URL}/billing/portal`, {
         method: "POST",
@@ -174,9 +187,17 @@ export function useBillingActions(workspaceId: string | undefined) {
         body: JSON.stringify({ workspaceId }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to open billing portal");
+        return;
+      }
       if (data.data?.url) {
         window.location.href = data.data.url;
+      } else {
+        setError("Portal URL not available. Please try again.");
       }
+    } catch {
+      setError("Network error. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -185,6 +206,7 @@ export function useBillingActions(workspaceId: string | undefined) {
   const topUp = async (credits: number) => {
     if (!workspaceId) return;
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${API_URL}/billing/top-up`, {
         method: "POST",
@@ -192,13 +214,21 @@ export function useBillingActions(workspaceId: string | undefined) {
         body: JSON.stringify({ workspaceId, credits }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to start top-up checkout");
+        return;
+      }
       if (data.data?.url) {
         window.location.href = data.data.url;
+      } else {
+        setError("Top-up URL not available. Please try again.");
       }
+    } catch {
+      setError("Network error. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  return { subscribe, openPortal, topUp, loading };
+  return { subscribe, openPortal, topUp, loading, error, clearError };
 }
