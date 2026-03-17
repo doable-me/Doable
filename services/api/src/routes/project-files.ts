@@ -5,10 +5,11 @@
  * file CRUD, and dev server preview URLs. These power the
  * editor's live preview and file tree.
  *
- * No auth required (DB is down) — these are public for now.
+ * All routes require JWT authentication via authMiddleware.
  */
 
 import { Hono } from "hono";
+import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import {
   createProject,
   readFile,
@@ -30,8 +31,12 @@ import {
 } from "../projects/dev-server.js";
 import { sql } from "../db/index.js";
 import { buildZipBuffer } from "../lib/zip.js";
+import { getTemplate } from "../templates/registry.js";
 
-export const projectFileRoutes = new Hono();
+export const projectFileRoutes = new Hono<AuthEnv>();
+
+// Require authentication for all project file operations
+projectFileRoutes.use("/projects/:id/*", authMiddleware);
 
 // ─── POST /projects/:id/scaffold ─ Create project scaffold ──
 
@@ -39,7 +44,24 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
   const projectId = c.req.param("id");
 
   try {
-    const result = await createProject(projectId);
+    // Check if this project has a template_id — if so, use template files
+    let templateFiles: Record<string, string> | undefined;
+    try {
+      const [project] = await sql<{ template_id: string | null }[]>`
+        SELECT template_id FROM projects WHERE id = ${projectId}
+      `;
+      if (project?.template_id) {
+        const template = getTemplate(project.template_id);
+        if (template) {
+          templateFiles = template.codeFiles;
+          console.log(`[Scaffold] Using template "${template.id}" for project ${projectId}`);
+        }
+      }
+    } catch {
+      // DB lookup failed — fall back to blank scaffold
+    }
+
+    const result = await createProject(projectId, templateFiles);
 
     // Start the dev server after scaffolding
     let devServer: { url: string; port: number } | null = null;

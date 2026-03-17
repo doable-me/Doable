@@ -115,7 +115,7 @@ const createSchema = z.object({
   name: z.string().min(1).max(100),
   slug: z.string().min(SLUG_MIN_LENGTH).max(SLUG_MAX_LENGTH).regex(SLUG_REGEX).optional(),
   description: z.string().max(500).optional(),
-  templateId: z.string().uuid().optional(),
+  templateId: z.string().min(1).max(128).optional(),
   folderId: z.string().uuid().optional(),
   workspaceId: z.string().uuid().optional(),
   prompt: z.string().max(5000).optional(),

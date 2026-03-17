@@ -1,8 +1,13 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
+import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 
-export const editorRoutes = new Hono();
+export const editorRoutes = new Hono<AuthEnv>();
+
+// All editor routes require authentication
+editorRoutes.use("/projects/:id/*", authMiddleware);
+editorRoutes.use("/projects/:id/files", authMiddleware);
 
 // ─── In-memory file storage (replace with real storage in production) ────
 interface ProjectFile {

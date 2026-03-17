@@ -14,8 +14,6 @@ export const saasDashboardTemplate: TemplateDefinition = {
     "package.json": blankTemplate.codeFiles["package.json"]!,
     "vite.config.ts": blankTemplate.codeFiles["vite.config.ts"]!,
     "tsconfig.json": blankTemplate.codeFiles["tsconfig.json"]!,
-    "tailwind.config.ts": blankTemplate.codeFiles["tailwind.config.ts"]!,
-    "postcss.config.js": blankTemplate.codeFiles["postcss.config.js"]!,
     "index.html": blankTemplate.codeFiles["index.html"]!,
     "src/main.tsx": blankTemplate.codeFiles["src/main.tsx"]!,
     "src/index.css": blankTemplate.codeFiles["src/index.css"]!,
@@ -29,7 +27,7 @@ import { AnalyticsPage } from "@/pages/analytics";
 
 type Page = "dashboard" | "analytics" | "settings";
 
-export const App = () => {
+export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
 
   const renderPage = () => {
@@ -51,7 +49,7 @@ export const App = () => {
       </main>
     </div>
   );
-};
+}
 `,
 
     "src/components/layout/sidebar.tsx": `import { cn } from "@/lib/utils";

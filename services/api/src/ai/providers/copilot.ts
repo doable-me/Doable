@@ -462,7 +462,7 @@ export function createDoableTools(projectId: string): Tool[] {
     }),
 
     defineTool("install_package", {
-      description: "Install npm packages in the project using pnpm.",
+      description: "Install npm packages in the project. Call this BEFORE importing any package that is not already in the project's package.json.",
       parameters: {
         type: "object" as const,
         properties: {
@@ -483,14 +483,15 @@ export function createDoableTools(projectId: string): Tool[] {
         const { spawn: spawnCmd } = await import("node:child_process");
         const projectPath = getProjectPath(projectId);
         const pkgList = packages.split(/\s+/).filter(Boolean);
-        const pnpmArgs = [
-          "add",
-          ...(dev ? ["-D"] : []),
+        const npmArgs = [
+          "install",
+          ...(dev ? ["--save-dev"] : []),
           ...pkgList,
+          "--legacy-peer-deps",
         ];
 
         return new Promise((resolve) => {
-          const child = spawnCmd("pnpm", pnpmArgs, {
+          const child = spawnCmd("npm", npmArgs, {
             cwd: projectPath,
             shell: true,
             stdio: "pipe",
@@ -522,7 +523,7 @@ export function createDoableTools(projectId: string): Tool[] {
             resolve({
               success: false,
               error: err.message,
-              message: `Failed to run pnpm: ${err.message}`,
+              message: `Failed to run npm install: ${err.message}`,
             });
           });
 
@@ -531,7 +532,7 @@ export function createDoableTools(projectId: string): Tool[] {
             child.kill("SIGTERM");
             resolve({
               success: false,
-              message: "pnpm install timed out",
+              message: "npm install timed out",
             });
           }, 120_000);
         });

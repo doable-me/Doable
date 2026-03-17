@@ -14,8 +14,6 @@ export const todoAppTemplate: TemplateDefinition = {
     "package.json": blankTemplate.codeFiles["package.json"]!,
     "vite.config.ts": blankTemplate.codeFiles["vite.config.ts"]!,
     "tsconfig.json": blankTemplate.codeFiles["tsconfig.json"]!,
-    "tailwind.config.ts": blankTemplate.codeFiles["tailwind.config.ts"]!,
-    "postcss.config.js": blankTemplate.codeFiles["postcss.config.js"]!,
     "index.html": blankTemplate.codeFiles["index.html"]!,
     "src/main.tsx": blankTemplate.codeFiles["src/main.tsx"]!,
     "src/index.css": blankTemplate.codeFiles["src/index.css"]!,
@@ -43,7 +41,7 @@ function saveTodos(todos: Todo[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
 }
 
-export const App = () => {
+export default function App() {
   const [todos, setTodos] = useState<Todo[]>(loadTodos);
   const [filter, setFilter] = useState<TodoFilter>("all");
 
@@ -131,7 +129,7 @@ export const App = () => {
       </div>
     </div>
   );
-};
+}
 `,
 
     "src/types.ts": `export type Priority = "low" | "medium" | "high";

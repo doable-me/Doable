@@ -12,21 +12,101 @@ import {
   createProject,
   isProjectScaffolded,
   getProjectPath,
+  readFile,
+  listFiles,
 } from "../projects/file-manager.js";
 import {
   startDevServer,
   isRunning as isDevServerRunning,
   getDevServerUrl,
+  getDevServerInternalUrl,
 } from "../projects/dev-server.js";
 import { autoVersion } from "../version-control/manager.js";
-import { optionalAuthMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 
 export const chatRoutes = new Hono<AuthEnv>();
 
-// Apply optional auth to all chat routes — authenticated users get their
-// userId tracked, unauthenticated users proceed as "anonymous".
-chatRoutes.use("/projects/:id/chat", optionalAuthMiddleware);
-chatRoutes.use("/projects/:id/chat/*", optionalAuthMiddleware);
+// Require authentication for all chat and AI routes
+chatRoutes.use("/projects/:id/chat", authMiddleware);
+chatRoutes.use("/projects/:id/chat/*", authMiddleware);
+chatRoutes.use("/ai/*", authMiddleware);
+
+// ─── Helpers: project context & error detection ─────────
+
+/**
+ * Build a context string describing the project's current files and
+ * installed packages. Injected into the system prompt so the AI
+ * knows what already exists before it starts generating code.
+ */
+async function buildProjectContext(projectId: string): Promise<string> {
+  if (!isProjectScaffolded(projectId)) return "";
+
+  try {
+    const [files, pkgContent] = await Promise.all([
+      listFiles(projectId).catch(() => [] as string[]),
+      readFile(projectId, "package.json").catch(() => ""),
+    ]);
+
+    let context = "";
+
+    if (files.length > 0) {
+      context += `\n\nCurrent project files:\n${files.join("\n")}`;
+    }
+
+    if (pkgContent) {
+      try {
+        const pkg = JSON.parse(pkgContent);
+        const deps = Object.keys(pkg.dependencies || {});
+        const devDeps = Object.keys(pkg.devDependencies || {});
+        context += `\n\nInstalled dependencies: ${deps.join(", ") || "(none)"}`;
+        context += `\nInstalled devDependencies: ${devDeps.join(", ") || "(none)"}`;
+      } catch { /* ignore parse errors */ }
+    }
+
+    return context;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Check whether the Vite dev server can successfully transform
+ * the project's key source files. Returns an error string if
+ * Vite reports a transform/resolve error, or null if everything is OK.
+ */
+async function detectPreviewError(projectId: string): Promise<string | null> {
+  try {
+    const internalUrl = getDevServerInternalUrl(projectId);
+    if (!internalUrl) return null;
+
+    const base = `${internalUrl}/preview/${projectId}`;
+
+    // Check key entry-point modules — Vite returns 500 when transform fails
+    for (const file of ["src/main.tsx", "src/App.tsx"]) {
+      try {
+        const res = await fetch(`${base}/${file}`, {
+          headers: { Accept: "application/javascript" },
+        });
+        if (!res.ok) {
+          const body = await res.text();
+          // Strip HTML tags for a cleaner error message
+          const clean = body
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 800);
+          return `Error in ${file}: ${clean}`;
+        }
+      } catch {
+        // Network error — dev server might be restarting, not a code error
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // ─── In-memory session mapping (projectId → copilot sessionId) ─
 const projectSessions = new Map<string, string>();
@@ -37,7 +117,7 @@ const captureInProgress = new Set<string>();
 // ─── POST /projects/:id/chat ─ SSE streaming response ───────
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(32_000),
-  mode: z.enum(["agent", "plan"]).default("agent"),
+  mode: z.enum(["agent", "plan", "visual-edit"]).default("agent"),
   model: z.string().optional(),
   provider: z
     .object({
@@ -54,7 +134,7 @@ chatRoutes.post(
   async (c) => {
     const projectId = c.req.param("id");
     const { content, mode, model, provider } = c.req.valid("json");
-    const userId = c.get("userId") ?? "anonymous";
+    const userId = c.get("userId")!;
 
     try {
       // Auto-scaffold the project if it hasn't been created yet
@@ -79,23 +159,57 @@ chatRoutes.post(
 
       const engine = await getCopilotEngine();
 
-      // Get or create session for this project
-      let sessionId = projectSessions.get(projectId);
+      // Get or create session for this project.
+      // Visual-edit mode uses a separate session key so it doesn't
+      // pollute the main chat context with element-level edits.
+      const sessionKey = mode === "visual-edit" ? `${projectId}:visual-edit` : projectId;
+      let sessionId = projectSessions.get(sessionKey);
       if (!sessionId) {
         const previewUrl = getDevServerUrl(projectId);
+        const projectContext = await buildProjectContext(projectId);
+
         const systemPrompt =
           mode === "plan"
             ? "You are Doable's Plan Mode AI. Analyze requests, break them into steps, and produce structured plans. Do NOT write code directly — only plan and reason."
-            : `You are Doable's Agent Mode AI. You autonomously generate production-ready code, create and edit files, install packages, and deploy apps. Work step by step, creating complete, working implementations.
+            : mode === "visual-edit"
+            ? `You are Doable's Visual Edit AI. You make precise, surgical edits to individual UI elements. The user has selected a specific element in the visual preview and wants you to modify it.
 
-The project is a Vite + React + TypeScript app with Tailwind CSS v4. The project files are on the server filesystem and changes are hot-reloaded via Vite.${previewUrl ? `\n\nThe live preview is available at: ${previewUrl}` : ""}
+RULES:
+- Make ONLY the specific change requested. Do not refactor surrounding code.
+- Read the target file first, then edit only the relevant element.
+- Use Tailwind CSS classes for styling changes.
+- Be fast and precise — modify only what's needed, nothing more.
+- Respond briefly: state what you changed in 1-2 sentences.
 
-IMPORTANT RULES:
-- Use Tailwind CSS classes for styling (v4 — just \`@import "tailwindcss"\` in CSS, no config needed).
-- Write complete file contents when creating or editing files.
-- Always use TypeScript (.tsx for React components, .ts for utilities).
-- Prefer function components with hooks.
-- Import styles and components using relative paths.`;
+The project is a Vite + React + TypeScript app with Tailwind CSS v4.${previewUrl ? `\nPreview: ${previewUrl}` : ""}`
+            : `You are Doable's Agent Mode AI. You build complete, working web applications by creating files, editing files, and installing packages. The user sees a live preview that updates in real-time as you make changes.
+
+The project is a Vite + React 19 + TypeScript app with Tailwind CSS v4 (using the @tailwindcss/vite plugin). Files are hot-reloaded via Vite.${previewUrl ? `\nLive preview: ${previewUrl}` : ""}${projectContext}
+
+CRITICAL RULES — violating these will break the live preview:
+
+1. **INSTALL BEFORE IMPORT**: You MUST call install_package to install any npm package BEFORE importing it in your code. Check the installed dependencies list above — if a package is NOT listed there, install it first with install_package. The preview will crash with "Failed to resolve import" errors otherwise. Common packages that need installing: react-router-dom, zustand, axios, date-fns, uuid, framer-motion, zod, @tanstack/react-query, etc.
+
+2. **READ BEFORE EDIT**: Always call read_file before editing a file. Never assume what a file contains.
+
+3. **LIST FILES FIRST**: At the start, call list_files to see the current project structure before making changes.
+
+4. **COMPLETE FILES**: Always write the complete, valid file content. Never use placeholder comments like "// rest of code here" or "// ...existing code...".
+
+5. **VALID IMPORTS**: Only import packages that are in the installed dependencies list above, or that you just installed. For local files, use relative paths (e.g., "./components/Button"). Do NOT use path aliases like "@/" unless tsconfig.json has paths configured for it.
+
+6. **TAILWIND CSS v4**: Use \`@import "tailwindcss"\` in CSS (NOT \`@tailwind base/components/utilities\` which is v3 syntax). No tailwind.config.ts is needed — Tailwind v4 auto-detects utility classes.
+
+7. **DEFAULT EXPORT**: src/App.tsx must use \`export default\` since src/main.tsx imports it as a default import.
+
+8. **BUILD ORDER**: Follow this sequence:
+   a. Call list_files to see what exists
+   b. Install needed packages with install_package
+   c. Create utility/helper files first
+   d. Create components
+   e. Update src/App.tsx last (importing the new components)
+
+9. **WORKING CODE**: Every file must be syntactically valid. Verify all JSX tags are properly closed, all imports resolve, and all variables are defined before use.`;
 
         const projectPath = getProjectPath(projectId);
         sessionId = await engine.createSession({
@@ -107,7 +221,41 @@ IMPORTANT RULES:
           systemPrompt,
           tools: createDoableTools(projectId),
         });
-        projectSessions.set(projectId, sessionId);
+        projectSessions.set(sessionKey, sessionId);
+      }
+
+      // Persist session to database
+      let dbSessionId: string | undefined;
+      try {
+        const [dbSession] = await sql`
+          SELECT id FROM ai_sessions
+          WHERE project_id = ${projectId} AND user_id = ${userId}
+          ORDER BY created_at DESC LIMIT 1
+        `;
+        if (dbSession) {
+          dbSessionId = dbSession.id;
+        } else {
+          const [newSession] = await sql`
+            INSERT INTO ai_sessions (project_id, user_id, mode)
+            VALUES (${projectId}, ${userId}, ${mode})
+            RETURNING id
+          `;
+          dbSessionId = newSession?.id;
+        }
+      } catch (e) {
+        console.warn("[Chat] DB session lookup failed:", e);
+      }
+
+      // Save user message to database
+      if (dbSessionId) {
+        try {
+          await sql`
+            INSERT INTO ai_messages (session_id, role, content)
+            VALUES (${dbSessionId}, 'user', ${content})
+          `;
+        } catch (e) {
+          console.warn("[Chat] Failed to save user message:", e);
+        }
       }
 
       // Stream events via SSE
@@ -115,6 +263,10 @@ IMPORTANT RULES:
         let hadToolCalls = false;
         // Track pending tool names so tool_result events can include the name
         const pendingToolNames: string[] = [];
+        // Track assistant content and tool calls for DB persistence
+        let assistantContent = "";
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let assistantToolCalls: any[] = [];
         try {
           for await (const event of engine.sendMessage(sessionId!, content)) {
             const sseData = mapEventToSSE(event);
@@ -134,6 +286,15 @@ IMPORTANT RULES:
                   resultData.name = pendingToolNames.shift();
                 }
               }
+              // Accumulate assistant content for DB persistence
+              if (sseData.type === "text_delta") {
+                assistantContent += typeof sseData.data === "string" ? sseData.data : "";
+              }
+              // Accumulate tool calls for DB persistence
+              if (sseData.type === "tool_call") {
+                const toolData = sseData.data as Record<string, unknown>;
+                assistantToolCalls.push({ name: toolData?.name as string, arguments: toolData?.arguments });
+              }
               await stream.writeSSE({ data: JSON.stringify(sseData) });
             }
           }
@@ -142,6 +303,51 @@ IMPORTANT RULES:
           await stream.writeSSE({
             data: JSON.stringify({ type: "error", data: msg }),
           });
+        }
+
+        // ── Auto-detect and fix preview errors ─────────────
+        if (hadToolCalls && isProjectScaffolded(projectId)) {
+          const MAX_FIX_ATTEMPTS = 2;
+          for (let attempt = 0; attempt < MAX_FIX_ATTEMPTS; attempt++) {
+            // Give Vite time to process file changes
+            await new Promise((r) => setTimeout(r, 2500));
+            const previewError = await detectPreviewError(projectId);
+            if (!previewError) break;
+
+            console.log(
+              `[Chat] Preview error detected (attempt ${attempt + 1}/${MAX_FIX_ATTEMPTS}): ${previewError.slice(0, 200)}`,
+            );
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "text_delta",
+                data: `\n\n---\n**Preview error detected — auto-fixing (attempt ${attempt + 1})...**\n\n`,
+              }),
+            });
+
+            try {
+              for await (const event of engine.sendMessage(
+                sessionId!,
+                `URGENT: The live preview is showing an error. Fix it immediately.\n\n` +
+                  `Error:\n${previewError}\n\n` +
+                  `Common fixes:\n` +
+                  `- "Failed to resolve import 'X'" → call install_package to install the missing package, then re-save the file that imports it\n` +
+                  `- "X is not exported from Y" → read file Y and fix the export\n` +
+                  `- Syntax error → read the file, find the syntax issue, rewrite the file correctly\n\n` +
+                  `Read the affected file(s) and fix the error now.`,
+              )) {
+                const sseData = mapEventToSSE(event);
+                if (sseData) {
+                  await stream.writeSSE({ data: JSON.stringify(sseData) });
+                }
+              }
+            } catch (fixErr) {
+              console.warn(
+                `[Chat] Auto-fix attempt ${attempt + 1} failed:`,
+                fixErr,
+              );
+              break;
+            }
+          }
         }
 
         // Auto-create a version snapshot after AI finishes making changes
@@ -195,6 +401,25 @@ IMPORTANT RULES:
           }
         }
 
+        // Save assistant message to database
+        if (dbSessionId && assistantContent) {
+          try {
+            if (assistantToolCalls.length > 0) {
+              await sql`
+                INSERT INTO ai_messages (session_id, role, content, tool_calls)
+                VALUES (${dbSessionId}, 'assistant', ${assistantContent}, ${sql.json(assistantToolCalls)})
+              `;
+            } else {
+              await sql`
+                INSERT INTO ai_messages (session_id, role, content)
+                VALUES (${dbSessionId}, 'assistant', ${assistantContent})
+              `;
+            }
+          } catch (e) {
+            console.warn("[Chat] Failed to save assistant message:", e);
+          }
+        }
+
         await stream.writeSSE({ data: "[DONE]" });
       });
     } catch (err) {
@@ -218,24 +443,47 @@ IMPORTANT RULES:
 // ─── GET /projects/:id/chat/history ─ Chat history ──────────
 chatRoutes.get("/projects/:id/chat/history", async (c) => {
   const projectId = c.req.param("id");
-  const sessionId = projectSessions.get(projectId);
-
-  if (!sessionId) {
-    return c.json({ data: [] });
-  }
+  const userId = c.get("userId")!;
 
   try {
-    const engine = await getCopilotEngine();
-    const messages = await engine.getSessionMessages(sessionId);
+    // Load from database (source of truth)
+    const [dbSession] = await sql`
+      SELECT id FROM ai_sessions
+      WHERE project_id = ${projectId} AND user_id = ${userId}
+      ORDER BY created_at DESC LIMIT 1
+    `;
+
+    if (!dbSession) {
+      return c.json({ data: [] });
+    }
+
+    const messages = await sql`
+      SELECT id, role, content, tool_calls, suggestions, tool_actions, created_at
+      FROM ai_messages
+      WHERE session_id = ${dbSession.id}
+      ORDER BY created_at ASC
+    `;
+
     return c.json({ data: messages });
-  } catch {
-    return c.json({ data: [] });
+  } catch (err) {
+    console.warn("[Chat] Failed to load history from DB:", err);
+    // Fallback to in-memory if DB fails
+    const sessionId = projectSessions.get(projectId);
+    if (!sessionId) return c.json({ data: [] });
+    try {
+      const engine = await getCopilotEngine();
+      const messages = await engine.getSessionMessages(sessionId);
+      return c.json({ data: messages });
+    } catch {
+      return c.json({ data: [] });
+    }
   }
 });
 
 // ─── DELETE /projects/:id/chat ─ Clear chat ─────────────────
 chatRoutes.delete("/projects/:id/chat", async (c) => {
   const projectId = c.req.param("id");
+  const userId = c.get("userId")!;
   const sessionId = projectSessions.get(projectId);
 
   if (sessionId) {
@@ -246,6 +494,20 @@ chatRoutes.delete("/projects/:id/chat", async (c) => {
       // Ignore cleanup errors
     }
     projectSessions.delete(projectId);
+  }
+
+  // Also clear database messages
+  try {
+    const [dbSession] = await sql`
+      SELECT id FROM ai_sessions
+      WHERE project_id = ${projectId} AND user_id = ${userId}
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    if (dbSession) {
+      await sql`DELETE FROM ai_messages WHERE session_id = ${dbSession.id}`;
+    }
+  } catch (e) {
+    console.warn("[Chat] Failed to clear DB messages:", e);
   }
 
   return c.json({ data: { cleared: true } });
@@ -306,6 +568,7 @@ chatRoutes.post(
   "/projects/:id/chat/suggestions",
   zValidator("json", suggestionsSchema),
   async (c) => {
+    const projectId = c.req.param("id");
     const { lastAssistantMessage, userPrompt } = c.req.valid("json");
 
     try {
@@ -336,11 +599,34 @@ chatRoutes.post(
       const jsonMatch = content.match(/\[[\s\S]*?\]/);
       if (jsonMatch) {
         const suggestions = JSON.parse(jsonMatch[0]) as string[];
-        return c.json({
-          data: suggestions
-            .filter((s): s is string => typeof s === "string")
-            .slice(0, 5),
-        });
+        const filteredSuggestions = suggestions
+          .filter((s): s is string => typeof s === "string")
+          .slice(0, 5);
+
+        // Save suggestions to the last assistant message in DB
+        const userId = c.get("userId")!;
+        try {
+          const [dbSession] = await sql`
+            SELECT id FROM ai_sessions
+            WHERE project_id = ${projectId} AND user_id = ${userId}
+            ORDER BY created_at DESC LIMIT 1
+          `;
+          if (dbSession) {
+            await sql`
+              UPDATE ai_messages
+              SET suggestions = ${sql.json(filteredSuggestions)}
+              WHERE id = (
+                SELECT id FROM ai_messages
+                WHERE session_id = ${dbSession.id} AND role = 'assistant'
+                ORDER BY created_at DESC LIMIT 1
+              )
+            `;
+          }
+        } catch (e) {
+          console.warn("[Chat] Failed to save suggestions:", e);
+        }
+
+        return c.json({ data: filteredSuggestions });
       }
 
       return c.json({ data: [] });
@@ -356,6 +642,45 @@ chatRoutes.post(
 interface SSEEvent {
   type: string;
   data: unknown;
+}
+
+/** Generate a human-friendly message for a tool operation */
+function friendlyToolMessage(
+  toolName: string,
+  args?: Record<string, unknown>,
+): string {
+  const fileName = (args?.path ?? args?.filePath ?? args?.file) as string | undefined;
+  const shortName = fileName?.split("/").pop() ?? "";
+  const lower = toolName.toLowerCase();
+
+  if (lower.includes("create") || lower.includes("write")) {
+    return shortName ? `Creating ${shortName}` : "Creating a new file";
+  }
+  if (lower.includes("edit") || lower.includes("update") || lower.includes("patch")) {
+    return shortName ? `Updating ${shortName}` : "Updating a file";
+  }
+  if (lower.includes("read")) {
+    return shortName ? `Reading ${shortName}` : "Reading a file";
+  }
+  if (lower.includes("list")) {
+    return "Scanning project structure";
+  }
+  if (lower.includes("install") || lower.includes("package")) {
+    const pkgs = (args?.packages ?? args?.name) as string | undefined;
+    if (pkgs) {
+      const first = pkgs.split(/\s+/)[0] ?? pkgs;
+      return `Installing ${first}`;
+    }
+    return "Installing packages";
+  }
+  if (lower.includes("delete") || lower.includes("remove")) {
+    return shortName ? `Removing ${shortName}` : "Removing a file";
+  }
+  if (lower.includes("deploy")) {
+    return "Deploying preview";
+  }
+  // Filter out technical jargon
+  return toolName.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
@@ -379,14 +704,18 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     // Only emit from tool.execution_start — external_tool.requested
     // is a duplicate for the same tool invocation.
     case "tool.running":
-    case "tool.execution_start":
+    case "tool.execution_start": {
+      const toolName = (data?.toolName ?? data?.name) as string | undefined;
+      const toolArgs = data?.arguments as Record<string, unknown> | undefined;
       return {
         type: "tool_call",
         data: {
-          name: data?.toolName ?? data?.name,
-          arguments: data?.arguments,
+          name: toolName,
+          arguments: toolArgs,
+          friendlyMessage: toolName ? friendlyToolMessage(toolName, toolArgs) : undefined,
         },
       };
+    }
     case "external_tool.requested":
       return null; // Skip — duplicate of tool.execution_start
 

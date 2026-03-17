@@ -22,6 +22,7 @@ import {
   isRunning,
 } from "../projects/dev-server.js";
 import { isProjectScaffolded, ensureDependencies } from "../projects/file-manager.js";
+import { VISUAL_EDIT_BRIDGE_INLINE } from "../visual-edit-bridge-inline.js";
 
 const apiUrl =
   process.env.API_URL ??
@@ -104,17 +105,32 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
     responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     responseHeaders.set("Access-Control-Allow-Headers", "*");
 
-    // Inject analytics tracking script into HTML responses
+    // Inject analytics + visual edit bridge script into HTML responses
     const contentType = resp.headers.get("content-type") ?? "";
     if (contentType.includes("text/html")) {
       const html = await resp.text();
-      const analyticsSnippet =
+      // Analytics meta + script go in <head>
+      const headSnippet =
         `<meta name="doable-project-id" content="${projectId}">` +
         `<script src="${apiUrl}/analytics/script.js"></script>`;
-      const injected = html.includes("</head>")
-        ? html.replace("</head>", `${analyticsSnippet}</head>`)
-        : html.replace("</body>", `${analyticsSnippet}</body>`);
+      // Visual edit bridge must go before </body> so document.body exists.
+      // Inlined to avoid cross-origin script loading issues in sandboxed iframes.
+      const bodySnippet = `<script>${VISUAL_EDIT_BRIDGE_INLINE}</script>`;
 
+      let injected = html;
+      if (injected.includes("</head>")) {
+        injected = injected.replace("</head>", `${headSnippet}</head>`);
+      }
+      if (injected.includes("</body>")) {
+        injected = injected.replace("</body>", `${bodySnippet}</body>`);
+      } else {
+        // Fallback: append at end
+        injected += bodySnippet;
+      }
+
+      // Remove old content-length since we changed the body size
+      responseHeaders.delete("content-length");
+      responseHeaders.set("content-type", "text/html; charset=utf-8");
       return new Response(injected, {
         status: resp.status,
         headers: responseHeaders,

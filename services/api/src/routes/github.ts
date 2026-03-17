@@ -3,8 +3,14 @@ import * as githubClient from "../github/client.js";
 import * as githubSync from "../github/sync.js";
 import { processWebhook } from "../github/webhook.js";
 import { sql } from "../db/index.js";
+import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 
-export const githubRoutes = new Hono();
+export const githubRoutes = new Hono<AuthEnv>();
+
+// Protect all routes except webhook — use specific paths to avoid
+// matching unrelated routes (this router is mounted at "/" in index.ts)
+githubRoutes.use("/:projectId/github/*", authMiddleware);
+githubRoutes.use("/repos", authMiddleware);
 
 // ─── Connect project to GitHub ─────────────────────────────
 githubRoutes.post("/:projectId/github/connect", async (c) => {

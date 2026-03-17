@@ -9,8 +9,12 @@ import {
   autoVersion,
 } from "../version-control/manager.js";
 import { getProjectPath, isProjectScaffolded } from "../projects/file-manager.js";
+import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 
-export const versionRoutes = new Hono();
+export const versionRoutes = new Hono<AuthEnv>();
+
+// ─── Require authentication for all version routes ───────
+versionRoutes.use("/:projectId/*", authMiddleware);
 
 // ─── List versions ─────────────────────────────────────────
 versionRoutes.get("/:projectId/versions", async (c) => {

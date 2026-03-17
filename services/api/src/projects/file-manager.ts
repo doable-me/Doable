@@ -94,8 +94,6 @@ function tsConfig(): string {
         noEmit: true,
         jsx: "react-jsx",
         strict: true,
-        noUnusedLocals: true,
-        noUnusedParameters: true,
         noFallthroughCasesInSwitch: true,
         noUncheckedSideEffectImports: true,
       },
@@ -177,8 +175,12 @@ export interface ScaffoldResult {
 /**
  * Create a new Vite+React+TypeScript project scaffold.
  * Writes all template files and runs `pnpm install`.
+ * If templateFiles is provided, uses those instead of the default blank scaffold.
  */
-export async function createProject(projectId: string): Promise<ScaffoldResult> {
+export async function createProject(
+  projectId: string,
+  templateFiles?: Record<string, string>
+): Promise<ScaffoldResult> {
   const projectPath = getProjectPath(projectId);
 
   // Check if already scaffolded
@@ -188,17 +190,24 @@ export async function createProject(projectId: string): Promise<ScaffoldResult> 
 
   await ensureProjectDir(projectId);
 
-  // Write all scaffold files
-  const files: Array<[string, string]> = [
-    ["package.json", packageJson()],
-    ["vite.config.ts", viteConfig()],
-    ["tsconfig.json", tsConfig()],
-    ["index.html", indexHtml()],
-    ["src/main.tsx", mainTsx()],
-    ["src/App.tsx", appTsx()],
-    ["src/index.css", indexCss()],
-    ["src/vite-env.d.ts", viteEnvDts()],
-  ];
+  let files: Array<[string, string]>;
+
+  if (templateFiles && Object.keys(templateFiles).length > 0) {
+    // Use template files
+    files = Object.entries(templateFiles);
+  } else {
+    // Default blank scaffold
+    files = [
+      ["package.json", packageJson()],
+      ["vite.config.ts", viteConfig()],
+      ["tsconfig.json", tsConfig()],
+      ["index.html", indexHtml()],
+      ["src/main.tsx", mainTsx()],
+      ["src/App.tsx", appTsx()],
+      ["src/index.css", indexCss()],
+      ["src/vite-env.d.ts", viteEnvDts()],
+    ];
+  }
 
   const createdFiles: string[] = [];
   for (const [filePath, content] of files) {

@@ -1,33 +1,12 @@
-import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { logger } from "hono/logger";
-import { secureHeaders } from "hono/secure-headers";
-import { timing } from "hono/timing";
-import { healthRoutes } from "./routes/health.js";
-import { authRoutes } from "./routes/auth.js";
-import { projectRoutes } from "./routes/projects.js";
-import { workspaceRoutes } from "./routes/workspaces.js";
-import { folderRoutes } from "./routes/folders.js";
-import { editorRoutes } from "./routes/editor.js";
-import { chatRoutes } from "./routes/chat.js";
-import { billingRoutes } from "./routes/billing.js";
-import { deployRoutes } from "./routes/deploy.js";
-import { contextRoutes } from "./routes/context.js";
-import { templateRoutes } from "./routes/templates.js";
-import { versionRoutes } from "./routes/versions.js";
-import { githubRoutes } from "./routes/github.js";
-import { projectFileRoutes } from "./routes/project-files.js";
-import { previewRoutes } from "./routes/preview-proxy.js";
-import { thumbnailRoutes } from "./routes/thumbnails.js";
-import { analyticsRoutes } from "./routes/analytics.js";
-import { directSaveRoutes } from "./direct-save/index.js";
-import { rateLimiter } from "./middleware/rate-limit.js";
-
-// ─── Visual Edit Bridge Script ───────────────────────────────
-// This script is loaded by preview iframes to enable visual editing.
-// It communicates with the parent editor via postMessage.
-const VISUAL_EDIT_BRIDGE_JS = `
+/**
+ * Visual Edit Bridge Script (inline version)
+ *
+ * This script is injected inline into preview HTML before </body>.
+ * It enables visual editing by communicating with the parent editor
+ * via postMessage. Handles: element hover highlighting, click-to-select,
+ * element info extraction, CSS selector generation, and parent selection.
+ */
+export const VISUAL_EDIT_BRIDGE_INLINE = `
 (function() {
   if (window.__visualEditBridge) return;
   window.__visualEditBridge = true;
@@ -36,7 +15,6 @@ const VISUAL_EDIT_BRIDGE_JS = `
   var selectedElement = null;
   var hoveredElement = null;
 
-  // Overlay elements
   var hoverOverlay = document.createElement('div');
   hoverOverlay.id = '__ve-hover-overlay';
   hoverOverlay.style.cssText = 'position:fixed;pointer-events:none;z-index:99998;border:2px solid rgba(99,102,241,0.6);background:rgba(99,102,241,0.08);display:none;transition:all 0.1s ease;border-radius:2px;';
@@ -61,7 +39,7 @@ const VISUAL_EDIT_BRIDGE_JS = `
       var selector = current.tagName.toLowerCase();
       if (current.id) { parts.unshift('#' + current.id); break; }
       if (current.className && typeof current.className === 'string') {
-        var classes = current.className.trim().split(/\\s+/).filter(function(c) { return !c.startsWith('__ve-'); }).slice(0, 3);
+        var classes = current.className.trim().split(/\\s+/).filter(function(c) { return c.indexOf('__ve-') !== 0; }).slice(0, 3);
         if (classes.length > 0) selector += '.' + classes.join('.');
       }
       if (current.parentElement) {
@@ -88,10 +66,31 @@ const VISUAL_EDIT_BRIDGE_JS = `
     var isIcon = isSvg || (el.children.length === 1 && el.children[0] && el.children[0].tagName && el.children[0].tagName.toLowerCase() === 'svg');
     var text = '';
     for (var i = 0; i < el.childNodes.length; i++) {
-      if (el.childNodes[i].nodeType === 3) text += el.childNodes[i].textContent.trim() + ' ';
+      if (el.childNodes[i].nodeType === 3) text += (el.childNodes[i].textContent || '').trim() + ' ';
     }
     text = text.trim().slice(0, 200);
     if (!text) text = (el.textContent || '').slice(0, 200);
+
+    var sourceLocation = null;
+    var sourceEl = el;
+    while (sourceEl && sourceEl !== document.body && sourceEl !== document.documentElement) {
+      var srcAttr = sourceEl.getAttribute('data-source');
+      if (srcAttr) {
+        var parts = srcAttr.split(':');
+        if (parts.length >= 3) {
+          var colStr = parts.pop();
+          var lineStr = parts.pop();
+          var filePath = parts.join(':');
+          var lineNum = parseInt(lineStr, 10);
+          var colNum = parseInt(colStr, 10);
+          if (filePath && !isNaN(lineNum) && !isNaN(colNum)) {
+            sourceLocation = { file: filePath, line: lineNum, col: colNum };
+          }
+        }
+        break;
+      }
+      sourceEl = sourceEl.parentElement;
+    }
 
     return {
       tagName: tag,
@@ -112,7 +111,8 @@ const VISUAL_EDIT_BRIDGE_JS = `
       isTextElement: isText || (text.length > 0 && el.children.length === 0),
       isIconElement: isIcon,
       hasChildren: el.children.length > 0,
-      childCount: el.children.length
+      childCount: el.children.length,
+      sourceLocation: sourceLocation
     };
   }
 
@@ -137,7 +137,7 @@ const VISUAL_EDIT_BRIDGE_JS = `
 
   function shouldIgnore(el) {
     if (!el || el === document.body || el === document.documentElement) return true;
-    if (el.id && el.id.startsWith('__ve-')) return true;
+    if (el.id && el.id.indexOf('__ve-') === 0) return true;
     return false;
   }
 
@@ -181,7 +181,7 @@ const VISUAL_EDIT_BRIDGE_JS = `
 
   window.addEventListener('message', function(e) {
     var msg = e.data;
-    if (!msg || !msg.type || msg.type.indexOf('visual-edit:') !== 0) return;
+    if (!msg || !msg.type || typeof msg.type !== 'string' || msg.type.indexOf('visual-edit:') !== 0) return;
     switch(msg.type) {
       case 'visual-edit:enable-selection':
         selectionEnabled = true;
@@ -204,10 +204,10 @@ const VISUAL_EDIT_BRIDGE_JS = `
       case 'visual-edit:select-parent':
         if (selectedElement && selectedElement.parentElement && selectedElement.parentElement !== document.body) {
           selectedElement = selectedElement.parentElement;
-          var rect = selectedElement.getBoundingClientRect();
-          positionOverlay(selectOverlay, rect);
+          var r = selectedElement.getBoundingClientRect();
+          positionOverlay(selectOverlay, r);
           var info = extractElementInfo(selectedElement);
-          positionTagLabel(rect, info.tagName);
+          positionTagLabel(r, info.tagName);
           window.parent.postMessage({ type: 'visual-edit:parent-selected', element: info }, '*');
         }
         break;
@@ -216,147 +216,68 @@ const VISUAL_EDIT_BRIDGE_JS = `
         hideSelection();
         window.parent.postMessage({ type: 'visual-edit:element-deselected' }, '*');
         break;
+      case 'visual-edit:apply-style':
+        if (selectedElement && msg.property && msg.value !== undefined) {
+          if (!window.__veOriginalStyles) window.__veOriginalStyles = {};
+          if (!(msg.property in window.__veOriginalStyles)) {
+            window.__veOriginalStyles[msg.property] = selectedElement.style[msg.property] || '';
+          }
+          selectedElement.style[msg.property] = msg.value;
+          updateSelectedOverlay();
+        }
+        break;
+      case 'visual-edit:apply-text':
+        if (selectedElement && msg.text !== undefined) {
+          if (!window.__veOriginalText) {
+            var origText = '';
+            for (var ti = 0; ti < selectedElement.childNodes.length; ti++) {
+              if (selectedElement.childNodes[ti].nodeType === 3) { origText = selectedElement.childNodes[ti].textContent || ''; break; }
+            }
+            window.__veOriginalText = origText;
+            window.__veOriginalTextEl = selectedElement;
+          }
+          var found = false;
+          for (var tn = 0; tn < selectedElement.childNodes.length; tn++) {
+            if (selectedElement.childNodes[tn].nodeType === 3) { selectedElement.childNodes[tn].textContent = msg.text; found = true; break; }
+          }
+          if (!found) { selectedElement.textContent = msg.text; }
+          updateSelectedOverlay();
+        }
+        break;
+      case 'visual-edit:revert-changes':
+        if (selectedElement && window.__veOriginalStyles) {
+          var props = Object.keys(window.__veOriginalStyles);
+          for (var ri = 0; ri < props.length; ri++) {
+            selectedElement.style[props[ri]] = window.__veOriginalStyles[props[ri]];
+          }
+        }
+        if (window.__veOriginalTextEl && window.__veOriginalText !== undefined) {
+          var revFound = false;
+          for (var rn = 0; rn < window.__veOriginalTextEl.childNodes.length; rn++) {
+            if (window.__veOriginalTextEl.childNodes[rn].nodeType === 3) { window.__veOriginalTextEl.childNodes[rn].textContent = window.__veOriginalText; revFound = true; break; }
+          }
+          if (!revFound) { window.__veOriginalTextEl.textContent = window.__veOriginalText; }
+        }
+        window.__veOriginalStyles = {};
+        window.__veOriginalText = undefined;
+        window.__veOriginalTextEl = undefined;
+        if (selectedElement) updateSelectedOverlay();
+        break;
     }
   });
 
+  // Send ready immediately and keep retrying indefinitely until parent acknowledges.
+  // The parent may not have its listener set up yet (React hook mounts asynchronously).
   window.parent.postMessage({ type: 'visual-edit:ready' }, '*');
+  var readyInterval = setInterval(function() {
+    window.parent.postMessage({ type: 'visual-edit:ready' }, '*');
+  }, 1000);
+
+  // Stop retrying once parent sends any visual-edit message back (means it's listening)
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type && typeof e.data.type === 'string' && e.data.type.indexOf('visual-edit:') === 0) {
+      clearInterval(readyInterval);
+    }
+  });
 })();
 `;
-
-const app = new Hono();
-
-// Pre-create middleware instances (avoid re-instantiating on every request)
-const secureHeadersMw = secureHeaders();
-const apiRateLimiter = rateLimiter({ windowMs: 60_000, max: 100 });
-
-// ─── Global Middleware ──────────────────────────────────────
-app.use("*", logger());
-app.use("*", timing());
-
-// Secure headers for all routes EXCEPT /preview/* and /thumbnails/* —
-// the default secureHeaders() sets X-Frame-Options: SAMEORIGIN and
-// Cross-Origin-Resource-Policy: same-origin which block cross-origin
-// iframe embedding and image loading.
-app.use("*", async (c, next) => {
-  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/thumbnails/") || c.req.path.startsWith("/analytics/") || c.req.path.match(/^\/templates\/[^/]+\/preview/) || c.req.path === "/visual-edit-bridge.js") {
-    await next();
-    return;
-  }
-  return secureHeadersMw(c, next);
-});
-
-app.use(
-  "*",
-  cors({
-    origin: (origin, c) => {
-      // Preview proxy routes: allow any origin (iframe embedding)
-      if (c.req.path.startsWith("/preview/")) {
-        return origin;
-      }
-
-      // Allow any localhost origin (any port) for development
-      if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) {
-        return origin;
-      }
-
-      // Allow any 127.0.0.1 origin (any port) for development
-      if (/^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) {
-        return origin;
-      }
-
-      // Check against explicit allowed origins from env
-      const allowed = (process.env.CORS_ORIGINS ?? "").split(",").filter(Boolean);
-      if (allowed.length > 0 && allowed.includes(origin)) {
-        return origin;
-      }
-
-      // Default: allow the origin (in dev mode)
-      if (process.env.NODE_ENV !== "production") {
-        return origin;
-      }
-
-      return allowed[0] ?? "http://localhost:3000";
-    },
-    credentials: true,
-    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
-    maxAge: 86400,
-  })
-);
-
-// Rate limiter for all routes EXCEPT /preview/* — a single Vite page load
-// triggers many subrequests (HTML + JS chunks + CSS + assets) which would
-// quickly exhaust the limit and cause preview loads to fail with 429.
-app.use("*", async (c, next) => {
-  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/analytics/") || c.req.path === "/visual-edit-bridge.js") {
-    await next();
-    return;
-  }
-  return apiRateLimiter(c, next);
-});
-
-// ─── Visual Edit Bridge Script (served to preview iframes) ───
-app.get("/visual-edit-bridge.js", (c) => {
-  c.header("Content-Type", "application/javascript");
-  c.header("Cache-Control", "no-cache");
-  c.header("Access-Control-Allow-Origin", "*");
-  return c.body(VISUAL_EDIT_BRIDGE_JS);
-});
-
-// ─── Routes ─────────────────────────────────────────────────
-app.route("/health", healthRoutes);
-app.route("/auth", authRoutes);
-// Preview reverse proxy — forwards /preview/:projectId/* to the Vite dev server.
-// Must be before other catch-all routes.
-app.route("/", previewRoutes);
-// Project file routes (no auth — filesystem-backed, powers live preview)
-app.route("/", projectFileRoutes);
-// Direct save — AST-based visual edit saves (no AI, no auth — filesystem-backed)
-app.route("/", directSaveRoutes);
-// Chat & editor routes BEFORE project routes (projectRoutes has wildcard auth middleware)
-app.route("/", chatRoutes);
-app.route("/", editorRoutes);
-app.route("/projects", projectRoutes);
-app.route("/workspaces", workspaceRoutes);
-app.route("/folders", folderRoutes);
-app.route("/billing", billingRoutes);
-app.route("/deploy", deployRoutes);
-app.route("/projects/:id/context", contextRoutes);
-app.route("/templates", templateRoutes);
-app.route("/projects", versionRoutes);
-app.route("/", githubRoutes);
-app.route("/thumbnails", thumbnailRoutes);
-app.route("/analytics", analyticsRoutes);
-
-// ─── 404 Fallback ───────────────────────────────────────────
-app.notFound((c) => {
-  return c.json({ error: "Not Found", path: c.req.path }, 404);
-});
-
-// ─── Global Error Handler ───────────────────────────────────
-app.onError((err, c) => {
-  console.error(`[ERROR] ${c.req.method} ${c.req.path}:`, err);
-  return c.json(
-    {
-      error: "Internal Server Error",
-      message:
-        process.env.NODE_ENV === "development" ? err.message : undefined,
-    },
-    500
-  );
-});
-
-// ─── Start Server ───────────────────────────────────────────
-const port = parseInt(process.env.API_PORT ?? "4000", 10);
-const host = process.env.API_HOST ?? "0.0.0.0";
-
-console.log(`Doable API starting on ${host}:${port}`);
-
-serve({
-  fetch: app.fetch,
-  port,
-  hostname: host,
-});
-
-export default app;
-export type AppType = typeof app;

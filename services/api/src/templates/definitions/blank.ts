@@ -3,7 +3,7 @@ import type { TemplateDefinition } from "../registry.js";
 export const blankTemplate: TemplateDefinition = {
   id: "blank",
   name: "Blank Project",
-  description: "Minimal React + Vite + Tailwind CSS + shadcn/ui starter. Clean slate with best-practice defaults.",
+  description: "Minimal React + Vite + Tailwind CSS v4 + shadcn/ui starter. Clean slate with best-practice defaults.",
   category: "starter",
   previewImageUrl: null,
   isOfficial: true,
@@ -25,17 +25,15 @@ export const blankTemplate: TemplateDefinition = {
           "react-dom": "^19.0.0",
           "class-variance-authority": "^0.7.1",
           clsx: "^2.1.1",
-          "lucide-react": "^0.468.0",
+          "lucide-react": "^0.577.0",
           "tailwind-merge": "^2.6.0",
-          "tailwindcss-animate": "^1.0.7",
         },
         devDependencies: {
+          "@tailwindcss/vite": "^4.0.0",
           "@types/react": "^19.0.3",
           "@types/react-dom": "^19.0.2",
           "@vitejs/plugin-react": "^4.3.4",
-          autoprefixer: "^10.4.20",
-          postcss: "^8.4.49",
-          tailwindcss: "^3.4.17",
+          tailwindcss: "^4.0.0",
           typescript: "^5.7.2",
           vite: "^6.0.0",
         },
@@ -46,18 +44,19 @@ export const blankTemplate: TemplateDefinition = {
 
     "vite.config.ts": `import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
   server: {
-    port: 3000,
     host: true,
+    allowedHosts: true,
   },
 });
 `,
@@ -87,32 +86,6 @@ export default defineConfig({
       2
     ),
 
-    "tailwind.config.ts": `import type { Config } from "tailwindcss";
-import tailwindcssAnimate from "tailwindcss-animate";
-
-const config: Config = {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
-  theme: {
-    extend: {
-      fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
-      },
-    },
-  },
-  plugins: [tailwindcssAnimate],
-};
-
-export default config;
-`,
-
-    "postcss.config.js": `export default {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
-};
-`,
-
     "index.html": `<!doctype html>
 <html lang="en">
   <head>
@@ -132,7 +105,7 @@ export default config;
 
     "src/main.tsx": `import React from "react";
 import ReactDOM from "react-dom/client";
-import { App } from "./App";
+import App from "./App";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -142,7 +115,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 );
 `,
 
-    "src/App.tsx": `export const App = () => {
+    "src/App.tsx": `export default function App() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="text-center space-y-4">
@@ -155,44 +128,70 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       </div>
     </div>
   );
-};
+}
 `,
 
-    "src/index.css": `@tailwind base;
-@tailwind components;
-@tailwind utilities;
+    "src/index.css": `@import "tailwindcss";
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --ring: 0 0% 3.9%;
-    --radius: 0.5rem;
-  }
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-ring: hsl(var(--ring));
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
 
-  * {
-    @apply border-border;
-  }
+:root {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 3.9%;
+  --muted: 0 0% 96.1%;
+  --muted-foreground: 0 0% 45.1%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 3.9%;
+  --border: 0 0% 89.8%;
+  --input: 0 0% 89.8%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 96.1%;
+  --secondary-foreground: 0 0% 9%;
+  --accent: 0 0% 96.1%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --ring: 0 0% 3.9%;
+  --radius: 0.5rem;
+}
 
-  body {
-    @apply bg-background text-foreground font-sans antialiased;
-  }
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 `,
 
@@ -210,13 +209,13 @@ export function cn(...inputs: ClassValue[]) {
 
 ## Tech Stack
 - Frontend: React 19 + Vite 6 + TypeScript (strict)
-- Styling: Tailwind CSS 3 + tailwindcss-animate
+- Styling: Tailwind CSS 4 (using @tailwindcss/vite plugin)
 - UI Components: shadcn/ui pattern (add as needed)
 - Icons: Lucide React
 - Utilities: clsx + tailwind-merge via cn()
 
 ## File Structure
-- \`src/App.tsx\` — Root component
+- \`src/App.tsx\` — Root component (default export)
 - \`src/main.tsx\` — Entry point
 - \`src/lib/utils.ts\` — Utility functions (cn, etc.)
 - \`src/components/\` — Reusable components (create as needed)
@@ -224,8 +223,9 @@ export function cn(...inputs: ClassValue[]) {
 
 ## Conventions
 - Path alias: \`@/\` maps to \`src/\`
-- CSS variables for theming (see index.css)
+- CSS variables for theming (see index.css @theme section)
 - shadcn/ui color system with HSL variables
+- Tailwind v4: use \`@import "tailwindcss"\` (not @tailwind directives)
 `,
   },
 };

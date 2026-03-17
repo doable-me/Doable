@@ -14,8 +14,6 @@ export const portfolioTemplate: TemplateDefinition = {
     "package.json": blankTemplate.codeFiles["package.json"]!,
     "vite.config.ts": blankTemplate.codeFiles["vite.config.ts"]!,
     "tsconfig.json": blankTemplate.codeFiles["tsconfig.json"]!,
-    "tailwind.config.ts": blankTemplate.codeFiles["tailwind.config.ts"]!,
-    "postcss.config.js": blankTemplate.codeFiles["postcss.config.js"]!,
     "index.html": blankTemplate.codeFiles["index.html"]!,
     "src/main.tsx": blankTemplate.codeFiles["src/main.tsx"]!,
     "src/index.css": blankTemplate.codeFiles["src/index.css"]!,
@@ -28,16 +26,18 @@ import { Skills } from "@/components/skills";
 import { Contact } from "@/components/contact";
 import { Footer } from "@/components/footer";
 
-export const App = () => (
-  <div className="min-h-screen bg-background">
-    <PortfolioNav />
-    <Hero />
-    <Projects />
-    <Skills />
-    <Contact />
-    <Footer />
-  </div>
-);
+export default function App() {
+  return (
+    <div className="min-h-screen bg-background">
+      <PortfolioNav />
+      <Hero />
+      <Projects />
+      <Skills />
+      <Contact />
+      <Footer />
+    </div>
+  );
+}
 `,
 
     "src/components/portfolio-nav.tsx": `export const PortfolioNav = () => (

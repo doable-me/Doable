@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { getStoredTokens, apiUpdateProject, apiDeleteProject, apiDuplicateProject } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
   ArrowUp,
   ArrowLeft,
@@ -88,6 +89,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import type { MonacoEditorWrapperProps } from "@/modules/editor/code-editor/monaco-editor-wrapper";
+import { useVisualEdit } from "@/modules/editor/visual-edit/use-visual-edit";
+import { VisualEditToolbar } from "@/modules/editor/visual-edit/visual-edit-toolbar";
 
 // ─── Dynamically import Monaco (browser-only) ───────────────
 const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
@@ -122,7 +125,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Types ──────────────────────────────────────────────────
 type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed";
-type ChatMode = "agent" | "plan";
+type ChatMode = "agent" | "plan" | "visual-edit";
 type DeviceMode = "desktop" | "mobile";
 
 interface ToolAction {
@@ -144,6 +147,7 @@ interface ChatMsg {
   isError?: boolean;
   toolActions?: ToolAction[];
   feedbackGiven?: "up" | "down" | null;
+  suggestions?: string[];  // AI-generated next-step suggestions
 }
 
 type TaskCardTab = "details" | "preview";
@@ -195,7 +199,7 @@ function detectLanguage(filename: string): string {
 const AUTOSAVE_DELAY_MS = 1500;
 
 /** Tabs that render a full panel (replacing the preview pane) */
-const PANEL_TABS: ActiveTab[] = ["design", "cloud", "analytics", "files", "security", "speed"];
+const PANEL_TABS: ActiveTab[] = ["cloud", "analytics", "files", "security", "speed"];
 
 /** All items available in the triple-dots "More" menu */
 interface MoreMenuItem {
@@ -385,6 +389,7 @@ async function streamChat(
   onToolCompleted?: (toolName: string, args: Record<string, unknown>) => void,
   onToolStarted?: (toolName: string, args: Record<string, unknown>) => void,
   signal?: AbortSignal,
+  onThinking?: (text: string) => void,
 ) {
   const { accessToken } = getStoredTokens();
 
@@ -460,6 +465,11 @@ async function streamChat(
             const d = parsed.data as Record<string, unknown> | undefined;
             const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
             const toolArgs = (d?.arguments as Record<string, unknown>) ?? {};
+            // Use backend's human-friendly message if available
+            const friendly = (d?.friendlyMessage as string) ?? "";
+            if (friendly && onThinking) {
+              onThinking(friendly);
+            }
             if (toolName) {
               pendingToolNames.push(toolName);
               onToolStarted(toolName, toolArgs);
@@ -499,9 +509,13 @@ async function streamChat(
             }
           }
 
-          // Thinking events are silently consumed — tool action cards
-          // already show what the AI is doing. No need to inject thinking
-          // text into the message content.
+          // Forward thinking events for live status display
+          if (parsed.type === "thinking" && onThinking) {
+            const thinkingContent = typeof parsed.data === "string" ? parsed.data : "";
+            if (thinkingContent) {
+              onThinking(thinkingContent);
+            }
+          }
 
           // Extract text content from various SSE event shapes
           let text = "";
@@ -561,21 +575,61 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
   const shortName = typeof fileName === "string" ? fileName.split("/").pop() ?? "" : "";
 
   if (toolName.toLowerCase().includes("create") || toolName.toLowerCase().includes("write")) {
-    return shortName ? `Create ${shortName}` : "Create file";
+    return shortName ? `Creating ${shortName}` : "Creating file";
   }
   if (toolName.toLowerCase().includes("edit") || toolName.toLowerCase().includes("update") || toolName.toLowerCase().includes("patch")) {
-    return shortName ? `Edit ${shortName}` : "Edit file";
+    return shortName ? `Updating ${shortName}` : "Updating file";
   }
   if (toolName.toLowerCase().includes("delete") || toolName.toLowerCase().includes("remove")) {
-    return shortName ? `Delete ${shortName}` : "Delete file";
+    return shortName ? `Removing ${shortName}` : "Removing file";
   }
   if (toolName.toLowerCase().includes("rename")) {
-    return shortName ? `Rename ${shortName}` : "Rename file";
+    return shortName ? `Renaming ${shortName}` : "Renaming file";
   }
   if (toolName.toLowerCase().includes("read")) {
-    return shortName ? `Read ${shortName}` : "Read file";
+    return shortName ? `Reading ${shortName}` : "Reading file";
   }
-  return toolName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  if (toolName.toLowerCase().includes("list")) {
+    return "Scanning project structure";
+  }
+  if (toolName.toLowerCase().includes("install") || toolName.toLowerCase().includes("package")) {
+    const pkgs = args?.packages ?? args?.name ?? "";
+    if (typeof pkgs === "string" && pkgs) {
+      const first = pkgs.split(/\s+/)[0] ?? pkgs;
+      return `Installing ${first}`;
+    }
+    return "Installing packages";
+  }
+  if (toolName.toLowerCase().includes("deploy")) {
+    return "Deploying preview";
+  }
+  // Filter out technical jargon - never show raw tool names like "powershell"
+  const cleaned = toolName
+    .replace(/[_-]/g, " ")
+    .replace(/\b(powershell|bash|shell|cmd|exec|run)\b/gi, "")
+    .trim();
+  if (!cleaned) return "Working on it";
+  return cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Convert AI thinking text into a short, human-friendly status message */
+function humanizeThinking(text: string): string {
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  // Filter out technical/system content
+  if (lower.includes("powershell") || lower.includes("bash") || lower.includes("shell")) return "";
+  if (lower.includes("layout") || lower.includes("structure") || lower.includes("page")) return "Planning the layout";
+  if (lower.includes("component") || lower.includes("button") || lower.includes("card")) return "Designing components";
+  if (lower.includes("style") || lower.includes("css") || lower.includes("tailwind") || lower.includes("color") || lower.includes("font")) return "Styling your design";
+  if (lower.includes("api") || lower.includes("fetch") || lower.includes("data") || lower.includes("state")) return "Setting up data flow";
+  if (lower.includes("install") || lower.includes("package") || lower.includes("dependency") || lower.includes("npm")) return "Setting up dependencies";
+  if (lower.includes("route") || lower.includes("navigation") || lower.includes("link")) return "Configuring navigation";
+  if (lower.includes("fix") || lower.includes("error") || lower.includes("bug") || lower.includes("issue")) return "Fixing an issue";
+  if (lower.includes("image") || lower.includes("icon") || lower.includes("asset")) return "Adding visual elements";
+  if (lower.includes("responsive") || lower.includes("mobile") || lower.includes("breakpoint")) return "Making it responsive";
+  if (lower.includes("animation") || lower.includes("transition") || lower.includes("motion")) return "Adding animations";
+  if (lower.includes("form") || lower.includes("input") || lower.includes("validation")) return "Building form logic";
+  return "";
 }
 
 /** Brief fallback shown for ~2s while AI suggestions load */
@@ -726,6 +780,10 @@ export default function EditorPage() {
 
   // Duplicate state
   const [isDuplicating, setIsDuplicating] = useState(false);
+
+  // ─── Live status for AI activity ─────────────────────────
+  const [liveStatus, setLiveStatus] = useState<string>("");
+  const previewRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -974,11 +1032,14 @@ export default function EditorPage() {
     }
   }, [selectedFile, scaffoldStatus, loadFileContent]);
 
-  // Cleanup autosave timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       if (autosaveTimerRef.current) {
         clearTimeout(autosaveTimerRef.current);
+      }
+      if (previewRefreshTimer.current) {
+        clearTimeout(previewRefreshTimer.current);
       }
     };
   }, []);
@@ -1015,28 +1076,65 @@ export default function EditorPage() {
     }
   }, [messages, resolvedProjectId]);
 
-  // Handle the "new project" flow — auto-send prompt from query params.
-  // Only fires ONCE per project (not on refresh) by checking both the ref
-  // and whether messages already exist for this project.
+  // Load chat history from API (database-backed) on mount
   useEffect(() => {
-    if (!isNewProject || autoSentRef.current) return;
-    // Don't auto-send if messages already exist (page was refreshed)
-    if (messages.length > 0) {
-      autoSentRef.current = true;
-      return;
-    }
-    // Wait until scaffold is ready (or at least started) before sending
-    if (scaffoldStatus !== "ready" && scaffoldStatus !== "starting") return;
-    const prompt = searchParams.get("prompt");
-    if (!prompt) return;
-    autoSentRef.current = true;
-    // Delay slightly so the UI renders first
-    const timer = setTimeout(() => {
-      sendMessage(prompt);
-    }, 300);
-    return () => clearTimeout(timer);
+    const loadFromApi = async () => {
+      try {
+        const res = await fetch(`${API_URL}/projects/${resolvedProjectId}/chat/history`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (Array.isArray(json.data) && json.data.length > 0) {
+          const apiMessages: ChatMsg[] = json.data
+            .filter((m: any) => m.role === "user" || m.role === "assistant")
+            .map((m: any) => ({
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content || "",
+              timestamp: new Date(m.created_at).toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+              }),
+              isStreaming: false,
+              toolActions: m.tool_actions || undefined,
+              suggestions: m.suggestions || undefined,
+            }));
+          setMessages(apiMessages);
+          // Also update suggestions from the last assistant message
+          const lastAssistant = [...apiMessages].reverse().find(m => m.role === "assistant");
+          if (lastAssistant?.suggestions && lastAssistant.suggestions.length > 0) {
+            setAiSuggestions(lastAssistant.suggestions);
+          }
+        }
+      } catch {
+        // API load failed — localStorage fallback already loaded
+      }
+    };
+    loadFromApi();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNewProject, searchParams, scaffoldStatus]);
+  }, [resolvedProjectId]);
+
+  // Auto-send prompt from dashboard navigation.
+  // Reads from sessionStorage (primary) or URL query param (fallback).
+  // The backend auto-scaffolds on chat, so we don't need to wait for
+  // frontend scaffold status — just send once the component is mounted.
+  useEffect(() => {
+    if (autoSentRef.current) return;
+    autoSentRef.current = true;
+    // Read from sessionStorage first (most reliable), then fall back to URL
+    const storageKey = `doable_initial_prompt_${resolvedProjectId}`;
+    const stored = sessionStorage.getItem(storageKey);
+    const fromUrl = new URLSearchParams(window.location.search).get("prompt");
+    const prompt = stored || fromUrl;
+    if (stored) sessionStorage.removeItem(storageKey);
+    if (!prompt) return;
+    // Don't auto-send if messages already exist (page was refreshed with localStorage history)
+    if (messages.length > 0) return;
+    // Small delay so the UI renders the chat panel first
+    setTimeout(() => {
+      sendMessage(prompt);
+    }, 500);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Handle panel resize
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -1094,9 +1192,13 @@ export default function EditorPage() {
   // Whether the current tab is a full panel view
   const isPanelView = PANEL_TABS.includes(activeTab);
 
-  // ─── Handle tool started — add "running" card ─────────────
+  // ─── Handle tool started — add "running" card + update live status ──
   const handleToolStarted = useCallback(
     (toolName: string, _args: Record<string, unknown>) => {
+      // Update live status with human-friendly description
+      const description = describeToolAction(toolName, _args);
+      setLiveStatus(description);
+
       setMessages((prev) => {
         const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
         if (!lastAssistant) return prev;
@@ -1106,7 +1208,7 @@ export default function EditorPage() {
         const action: ToolAction = {
           id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           toolName,
-          description: describeToolAction(toolName, _args),
+          description,
           isExpanded: false,
           isBookmarked: false,
           filePath,
@@ -1199,12 +1301,24 @@ export default function EditorPage() {
           loadFileContent(selectedFile);
         }
 
-        // Auto-refresh preview when files change
-        setTimeout(() => {
-          if (iframeRef.current && previewUrl) {
-            iframeRef.current.src = previewUrl;
+        // Debounced preview refresh — coalesce rapid file changes into one reload
+        if (previewRefreshTimer.current) {
+          clearTimeout(previewRefreshTimer.current);
+        }
+        previewRefreshTimer.current = setTimeout(() => {
+          previewRefreshTimer.current = null;
+          if (iframeRef.current) {
+            try {
+              // Try soft reload (faster, preserves scroll position)
+              iframeRef.current.contentWindow?.location.reload();
+            } catch {
+              // Cross-origin fallback: reset src with cache-bust
+              if (previewUrl) {
+                iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+              }
+            }
           }
-        }, 500);
+        }, 300);
       }
     },
     [loadFileTree, selectedFile, loadFileContent, previewUrl],
@@ -1237,16 +1351,20 @@ export default function EditorPage() {
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setInputValue("");
       setIsStreaming(true);
+      setLiveStatus("Understanding your request...");
 
       // Abort any previous stream
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
+      // Auto-detect visual edit mode from [Visual Edit] prefix
+      const effectiveMode: ChatMode = trimmed.startsWith("[Visual Edit]") ? "visual-edit" : chatMode;
+
       streamChat(
         resolvedProjectId,
         trimmed,
-        chatMode,
+        effectiveMode,
         // onChunk — append text to the streaming assistant message
         (chunk: string) => {
           setMessages((prev) =>
@@ -1256,6 +1374,8 @@ export default function EditorPage() {
                 : m
             )
           );
+          // Once text starts flowing, update status
+          setLiveStatus("Writing response...");
         },
         // onDone
         () => {
@@ -1267,18 +1387,29 @@ export default function EditorPage() {
             )
           );
           setIsStreaming(false);
+          setLiveStatus("");
           // Refresh file tree after AI response completes (may have created files)
           loadFileTree();
           if (selectedFile) {
             delete fileContentsCache.current[selectedFile];
             loadFileContent(selectedFile);
           }
-          // Auto-refresh preview after AI makes changes
-          setTimeout(() => {
-            if (iframeRef.current && previewUrl) {
-              iframeRef.current.src = previewUrl;
+          // Final preview refresh after AI makes changes
+          if (previewRefreshTimer.current) {
+            clearTimeout(previewRefreshTimer.current);
+          }
+          previewRefreshTimer.current = setTimeout(() => {
+            previewRefreshTimer.current = null;
+            if (iframeRef.current) {
+              try {
+                iframeRef.current.contentWindow?.location.reload();
+              } catch {
+                if (previewUrl) {
+                  iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+                }
+              }
             }
-          }, 500); // Small delay to let Vite process changes
+          }, 500);
 
           // Fetch AI-powered suggestions based on what was just built
           setAiSuggestions(FALLBACK_SUGGESTIONS); // Show fallback immediately
@@ -1290,7 +1421,17 @@ export default function EditorPage() {
                 resolvedProjectId,
                 trimmed,
                 lastAssistant.content,
-              ).then((s) => setAiSuggestions(s));
+              ).then((s) => {
+                setAiSuggestions(s);
+                // Also persist suggestions on the assistant message
+                if (s.length > 0) {
+                  setMessages((prev2) =>
+                    prev2.map((m) =>
+                      m.id === assistantId ? { ...m, suggestions: s } : m
+                    )
+                  );
+                }
+              });
             }
             return prev; // Don't modify state
           });
@@ -1310,12 +1451,26 @@ export default function EditorPage() {
             )
           );
           setIsStreaming(false);
+          setLiveStatus("");
         },
         // onToolCompleted
         handleToolCompleted,
         // onToolStarted
         handleToolStarted,
         controller.signal,
+        // onThinking — convert AI thinking to human-friendly status
+        (thinkingText: string) => {
+          // If it already looks like a friendly message (e.g. from friendlyMessage), use directly
+          if (thinkingText.length < 60 && !thinkingText.includes("\n")) {
+            setLiveStatus(thinkingText);
+            return;
+          }
+          // Otherwise humanize the raw thinking text
+          const humanized = humanizeThinking(thinkingText);
+          if (humanized) {
+            setLiveStatus(humanized);
+          }
+        },
       );
     },
     [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, handleToolStarted, loadFileTree, selectedFile, loadFileContent, previewUrl]
@@ -1325,6 +1480,43 @@ export default function EditorPage() {
   const handleSend = useCallback(() => {
     sendMessage(inputValue);
   }, [inputValue, sendMessage]);
+
+  // ─── Visual Edit Hook ─────────────────────────────────────
+  const isDesignMode = activeTab === "design";
+  const visualEdit = useVisualEdit({ iframeRef, projectId: resolvedProjectId, onSendMessage: sendMessage });
+
+  // Auto-activate visual edit when entering design mode
+  const prevActiveTabRef = useRef(activeTab);
+  useEffect(() => {
+    if (activeTab === "design" && prevActiveTabRef.current !== "design") {
+      visualEdit.activateVisualEdit();
+    }
+    if (activeTab !== "design" && prevActiveTabRef.current === "design") {
+      visualEdit.deactivateVisualEdit();
+    }
+    prevActiveTabRef.current = activeTab;
+  }, [activeTab, visualEdit.activateVisualEdit, visualEdit.deactivateVisualEdit]);
+
+  // Get iframe rect for floating toolbar positioning
+  const [iframeRect, setIframeRect] = useState<DOMRect | null>(null);
+  useEffect(() => {
+    if (!isDesignMode || !iframeRef.current) {
+      setIframeRect(null);
+      return;
+    }
+    const updateRect = () => {
+      if (iframeRef.current) {
+        setIframeRect(iframeRef.current.getBoundingClientRect());
+      }
+    };
+    updateRect();
+    const interval = setInterval(updateRect, 500);
+    window.addEventListener("resize", updateRect);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("resize", updateRect);
+    };
+  }, [isDesignMode]);
 
   // Stop streaming handler
   const handleStopStreaming = useCallback(() => {
@@ -1338,6 +1530,7 @@ export default function EditorPage() {
       )
     );
     setIsStreaming(false);
+    setLiveStatus("");
   }, []);
 
   // Toggle feedback on a message
@@ -1849,9 +2042,9 @@ export default function EditorPage() {
   }, [handleToggleFullscreen, shareDialogOpen, publishModalOpen, publishStatus, deleteConfirmOpen, isDeleting, githubDialogOpen, shortcutsDialogOpen]);
 
   // Determine what panels to show based on active tab
-  const showChat = activeTab === "chat" || activeTab === "preview" || activeTab === "history" || isPanelView;
+  const showChat = activeTab === "chat" || activeTab === "preview" || activeTab === "history" || isPanelView || isDesignMode;
   const showCode = activeTab === "code";
-  const showPreview = (activeTab === "preview" || activeTab === "chat" || activeTab === "history") && !isPanelView;
+  const showPreview = ((activeTab === "preview" || activeTab === "chat" || activeTab === "history") && !isPanelView) || isDesignMode;
 
   // ─── Scaffold loading overlay ─────────────────────────────
   const renderScaffoldOverlay = () => {
@@ -1880,22 +2073,28 @@ export default function EditorPage() {
       );
     }
 
-    // Loading states
+    // Loading states with friendly messaging
     const statusMsg =
       scaffoldStatus === "scaffolding"
-        ? "Getting ready..."
+        ? "Setting up your workspace..."
         : scaffoldStatus === "starting"
-          ? "Starting dev server..."
-          : "Getting ready...";
+          ? "Preparing live preview..."
+          : "Getting things ready...";
+
+    const subtitleMsg =
+      scaffoldStatus === "scaffolding"
+        ? "Installing tools and configuring your project"
+        : "Starting the live preview so you can see changes instantly";
 
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-8">
-        <Loader2 className="h-8 w-8 animate-spin text-purple-400 mb-4" />
-        <h3 className="text-sm font-medium text-zinc-300 mb-1">{statusMsg}</h3>
+        <div className="relative mb-5">
+          <div className="h-10 w-10 rounded-full border-2 border-zinc-700 border-t-purple-400 animate-spin" />
+          <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-purple-400" />
+        </div>
+        <h3 className="text-sm font-medium text-zinc-300 mb-1.5">{statusMsg}</h3>
         <p className="text-[13px] text-zinc-600 max-w-[280px]">
-          {scaffoldStatus === "scaffolding"
-            ? "Installing dependencies and configuring the project"
-            : "Waiting for the Vite dev server to start"}
+          {subtitleMsg}
         </p>
       </div>
     );
@@ -1964,11 +2163,13 @@ export default function EditorPage() {
             )}
             {/* Preview status subtitle */}
             <span className="text-[11px] text-[#9b9a97] leading-tight truncate">
-              {scaffoldStatus === "ready"
-                ? "Previewing last saved version"
-                : scaffoldStatus === "error"
-                  ? "Preview unavailable"
-                  : "Loading Live Preview..."}
+              {isStreaming && liveStatus
+                ? liveStatus
+                : scaffoldStatus === "ready"
+                  ? "Previewing last saved version"
+                  : scaffoldStatus === "error"
+                    ? "Preview unavailable"
+                    : "Loading Live Preview..."}
             </span>
           </div>
 
@@ -2254,6 +2455,31 @@ export default function EditorPage() {
               minWidth: "320px",
             }}
           >
+            {/* ─── Design Mode: Show DesignPanel ─────────────── */}
+            {isDesignMode ? (
+              <DesignPanel
+                projectId={resolvedProjectId}
+                onClose={handlePanelClose}
+                onSendMessage={sendMessage}
+                mode={visualEdit.mode}
+                selectedElement={visualEdit.selectedElement}
+                onActivate={visualEdit.activateVisualEdit}
+                onDeactivate={visualEdit.deactivateVisualEdit}
+                onSelectParent={visualEdit.selectParent}
+                onDeselectElement={visualEdit.deselectElement}
+                onApplyLiveStyle={visualEdit.applyLiveStyle}
+                onApplyLiveText={visualEdit.applyLiveText}
+                hasPendingChanges={visualEdit.hasPendingChanges}
+                onCommitChanges={() => {
+                  visualEdit.commitChanges();
+                  setActiveTab("chat");
+                }}
+                onDiscardChanges={visualEdit.discardChanges}
+                onDirectSave={visualEdit.directSave}
+                isSaving={visualEdit.isSaving}
+              />
+            ) : (
+            <>
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin">
               {messages.length === 0 && (
@@ -2345,7 +2571,14 @@ export default function EditorPage() {
                           <span className="text-[10px] text-zinc-700">
                             {msg.timestamp}
                           </span>
-                          {msg.isStreaming && (
+                          {msg.isStreaming && !msg.content && (
+                            <span className="flex items-center gap-1">
+                              <span className="status-dot-1 h-1 w-1 rounded-full bg-purple-400" />
+                              <span className="status-dot-2 h-1 w-1 rounded-full bg-purple-400" />
+                              <span className="status-dot-3 h-1 w-1 rounded-full bg-purple-400" />
+                            </span>
+                          )}
+                          {msg.isStreaming && msg.content && (
                             <Loader2 className="h-3 w-3 animate-spin text-purple-400" />
                           )}
                         </div>
@@ -2434,7 +2667,7 @@ export default function EditorPage() {
                                           <span className="text-zinc-300 truncate">
                                             {action.description}
                                             {action.status === "running" && (
-                                              <span className="ml-1.5 text-[11px] text-blue-400">Running...</span>
+                                              <span className="ml-1.5 text-[11px] text-purple-400/70 animate-pulse">in progress</span>
                                             )}
                                           </span>
                                           {action.filePath && (
@@ -2488,10 +2721,18 @@ export default function EditorPage() {
                           {msg.content
                             ? formatContent(msg.content)
                             : msg.isStreaming && (
-                                <span className="inline-flex items-center gap-1 text-zinc-500">
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                  Thinking...
-                                </span>
+                                <div className="status-shimmer-bg rounded-lg px-3 py-2.5 -mx-1">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-1">
+                                      <span className="status-dot-1 h-1.5 w-1.5 rounded-full bg-purple-400" />
+                                      <span className="status-dot-2 h-1.5 w-1.5 rounded-full bg-purple-400" />
+                                      <span className="status-dot-3 h-1.5 w-1.5 rounded-full bg-purple-400" />
+                                    </div>
+                                    <span key={liveStatus || "default"} className="status-text-enter text-[13px] text-zinc-400">
+                                      {liveStatus || "Understanding your request..."}
+                                    </span>
+                                  </div>
+                                </div>
                               )}
                           {msg.isStreaming && msg.content && (
                             <span className="inline-block w-1.5 h-4 bg-purple-400 animate-pulse ml-0.5 align-middle rounded-sm" />
@@ -2587,10 +2828,10 @@ export default function EditorPage() {
                           !msg.isError &&
                           msg.content &&
                           !isStreaming &&
-                          msgIdx === messages.length - 1 && (
+                          (msgIdx === messages.length - 1 || (msg.suggestions && msg.suggestions.length > 0)) && (
                             <div className="mt-3 -mx-1 overflow-x-auto scrollbar-thin">
                               <div className="flex gap-2 px-1 pb-1">
-                                {aiSuggestions.map((suggestion) => (
+                                {(msgIdx === messages.length - 1 && aiSuggestions.length > 0 ? aiSuggestions : (msg.suggestions || [])).map((suggestion) => (
                                   <button
                                     key={suggestion}
                                     onClick={() => sendMessage(suggestion)}
@@ -2693,7 +2934,13 @@ export default function EditorPage() {
 
                       {/* Visual edits button (pill) */}
                       <button
-                        className="flex items-center gap-1.5 rounded-full border border-zinc-600/40 px-2.5 h-7 text-[13px] text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
+                        onClick={() => setActiveTab("design")}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-full border px-2.5 h-7 text-[13px] transition-colors",
+                          isDesignMode
+                            ? "border-purple-500/50 bg-purple-500/10 text-purple-300"
+                            : "border-zinc-600/40 text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
+                        )}
                         title="Visual edits"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
@@ -2775,6 +3022,8 @@ export default function EditorPage() {
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
         )}
 
@@ -3020,16 +3269,35 @@ export default function EditorPage() {
                   />
                 </div>
               )}
+              {/* ─── Visual Edit Floating Toolbar ────────────── */}
+              {isDesignMode && visualEdit.selectedElement && (
+                <VisualEditToolbar
+                  elementRect={visualEdit.selectedElement.boundingRect}
+                  iframeRect={iframeRect}
+                  hasPendingChanges={visualEdit.hasPendingChanges}
+                  onSubmitPrompt={(prompt) => {
+                    visualEdit.sendElementPrompt(prompt);
+                    // Switch to chat so user sees the AI working
+                    setActiveTab("chat");
+                  }}
+                  onSelectParent={visualEdit.selectParent}
+                  onViewCode={() => {
+                    setActiveTab("code");
+                  }}
+                  onDelete={() => {
+                    visualEdit.deleteElement();
+                    // Switch to chat so user sees the AI working
+                    setActiveTab("chat");
+                  }}
+                />
+              )}
             </div>
           </div>
         )}
 
-        {/* ─── Full Panel Views (Design, Cloud, Analytics, Files, Security, Speed) ── */}
+        {/* ─── Full Panel Views (Cloud, Analytics, Files, Security, Speed) ── */}
         {isPanelView && (
           <div className="flex flex-1 flex-col overflow-hidden bg-[#1C1C1C]">
-            {activeTab === "design" && (
-              <DesignPanel projectId={resolvedProjectId} onClose={handlePanelClose} onSendMessage={sendMessage} />
-            )}
             {activeTab === "cloud" && (
               <CloudPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
             )}

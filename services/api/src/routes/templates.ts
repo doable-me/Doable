@@ -6,6 +6,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { sql } from "../db/index.js";
 import { getTemplates, getTemplate, getCategories } from "../templates/registry.js";
 import { scaffolder } from "../templates/scaffolder.js";
+import { buildTemplatePreviewHtml } from "../templates/preview-builder.js";
 
 export const templateRoutes = new Hono<AuthEnv>();
 
@@ -23,6 +24,29 @@ templateRoutes.get("/", async (c) => {
   const categories = getCategories();
 
   return c.json({ data: { templates, categories } });
+});
+
+/**
+ * GET /templates/:id/preview
+ * Returns a fully rendered HTML page showing the template's React app.
+ * Designed to be loaded in an iframe for the template preview modal.
+ */
+templateRoutes.get("/:id/preview", async (c) => {
+  const id = c.req.param("id");
+  const template = getTemplate(id!);
+
+  if (!template) {
+    return c.json({ error: "Template not found" }, 404);
+  }
+
+  const html = buildTemplatePreviewHtml(template);
+
+  return c.html(html, 200, {
+    "Access-Control-Allow-Origin": "http://localhost:3000",
+    "Access-Control-Allow-Methods": "GET",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Cache-Control": "public, max-age=300",
+  });
 });
 
 /**

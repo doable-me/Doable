@@ -68,17 +68,21 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Folder } from "@doable/shared";
+import { TemplateCard as NewTemplateCard } from "@/components/templates/template-card";
+import { TemplatePreviewModal } from "@/components/templates/template-preview-modal";
+import { UseTemplateDialog } from "@/components/templates/use-template-dialog";
+import { ArrowRight } from "lucide-react";
 
 // ---- Constants ----
 
 const VIEW_MODE_KEY = "doable_dashboard_view";
 
 const GREETINGS = [
-  "Got an idea",
-  "What will you build",
-  "Ready to create",
-  "Feeling inspired",
-  "Something on your mind",
+  "Let's make it Doable",
+  "What's Doable today",
+  "Ready to get it done",
+  "Dream it. Do it",
+  "What will you ship",
 ];
 
 type ViewMode = "grid" | "list";
@@ -901,6 +905,10 @@ export default function DashboardPage() {
   const [sortKey, setSortKey] = useState<SortKey>("updated_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  // Template preview/remix state
+  const [previewTemplate, setPreviewTemplate] = useState<ApiTemplate | null>(null);
+  const [remixTemplate, setRemixTemplate] = useState<ApiTemplate | null>(null);
+
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -1036,6 +1044,9 @@ export default function DashboardPage() {
         description: prompt.trim(),
         prompt: prompt.trim(),
       });
+      // Store prompt in sessionStorage so the editor can reliably pick it up
+      // (query params + useSearchParams can be unreliable across navigations)
+      sessionStorage.setItem(`doable_initial_prompt_${res.data.id}`, prompt.trim());
       router.push(`/editor/${res.data.id}?prompt=${encodeURIComponent(prompt.trim())}`);
     } catch (err) {
       console.error("Failed to create project:", err);
@@ -1255,30 +1266,28 @@ export default function DashboardPage() {
 
   return (
     <div className="relative min-h-screen">
-      {/* Gradient background */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-20 left-1/4 h-[600px] w-[600px] rounded-full bg-blue-600/[0.08] blur-[120px]" />
-        <div className="absolute top-1/3 right-1/4 h-[500px] w-[500px] rounded-full bg-purple-600/[0.06] blur-[120px]" />
-        <div className="absolute bottom-0 left-1/3 h-[400px] w-[400px] rounded-full bg-pink-600/[0.06] blur-[120px]" />
-      </div>
-
       {/* Content */}
-      <div className="relative z-10 mx-auto max-w-5xl px-6 pt-12 pb-10">
+      <div className="relative z-10 mx-auto max-w-5xl px-6 pt-0 pb-10">
         {/* Greeting + Chat Input (only when no folder/filter active) */}
         {!activeFolderId && sidebarFilter === "all" && (
-          <div className="relative overflow-hidden rounded-2xl mb-8">
-            {/* Gradient background */}
-            <div className="absolute inset-0 bg-gradient-to-br from-violet-600/40 via-pink-500/30 to-orange-400/20" />
-            {/* Secondary gradient layer for richness */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-purple-700/20 via-transparent to-rose-500/15" />
-            {/* Animated orbs */}
-            <div className="absolute -top-20 -left-20 h-60 w-60 rounded-full bg-violet-500/20 blur-3xl animate-float-slow" />
-            <div className="absolute -bottom-20 -right-20 h-60 w-60 rounded-full bg-pink-500/20 blur-3xl animate-float-medium" />
-            <div className="absolute top-10 right-1/4 h-40 w-40 rounded-full bg-orange-400/15 blur-3xl animate-float-fast" />
+          <div className="relative overflow-hidden mb-8 -mx-6" style={{ minHeight: "340px" }}>
+            {/* Animated gradient background - smooth blend like Lovable's pre-rendered image */}
+            <div className="pointer-events-none absolute inset-0 overflow-hidden">
+              {/* Smooth blend using Lovable's exact sampled colors: black → periwinkle blue → pink */}
+              <div className="absolute inset-0 animate-pulse-drift" style={{
+                width: "130%",
+                height: "130%",
+                top: "-15%",
+                left: "-15%",
+                background: "linear-gradient(180deg, #000000 0%, #000000 12%, #0d1030 22%, #2a55b0 38%, #4c8ffc 50%, #7a6bea 62%, #c84a90 74%, #fe2771 85%, #a38bfb 95%, #000000 100%)",
+              }} />
+            </div>
             {/* Bottom fade into dark background */}
-            <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[hsl(240,10%,4%)] to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 h-24 z-[1]" style={{
+              background: "linear-gradient(to top, #0a0a0a 0%, #0a0a0ae0 50%, transparent 100%)",
+            }} />
             {/* Content */}
-            <div className="relative z-10 px-8 py-12">
+            <div className="relative z-10 px-8 py-16 max-w-5xl mx-auto">
               <div className="text-center mb-6">
                 <h1 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight transition-all duration-500">
                   {greeting}
@@ -1357,6 +1366,16 @@ export default function DashboardPage() {
                   {tab.label}
                 </button>
               ))}
+              {/* Browse all templates link */}
+              {activeTab === "templates" && (
+                <button
+                  onClick={() => router.push("/dashboard/templates")}
+                  className="ml-auto flex items-center gap-1 text-sm text-zinc-500 hover:text-white transition-colors"
+                >
+                  Browse all
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
 
             {/* Search */}
@@ -1612,7 +1631,7 @@ export default function DashboardPage() {
               <p className="text-sm text-zinc-500">Loading templates...</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               {templates
                 .filter((t) =>
                   searchQuery.trim()
@@ -1621,24 +1640,10 @@ export default function DashboardPage() {
                     : true
                 )
                 .map((template) => (
-                <TemplateCard
+                <NewTemplateCard
                   key={template.id}
                   template={template}
-                  onClick={async () => {
-                    setIsCreating(true);
-                    try {
-                      const res = await apiCreateProject({
-                        name: template.name,
-                        description: template.description,
-                        templateId: template.id,
-                      });
-                      router.push(`/editor/${res.data.id}`);
-                    } catch (err) {
-                      console.error("Failed to create project from template:", err);
-                      setError("Failed to create project from template. Please try again.");
-                      setIsCreating(false);
-                    }
-                  }}
+                  onClick={() => setPreviewTemplate(template)}
                 />
               ))}
               {templates.length === 0 && (
@@ -1867,6 +1872,26 @@ export default function DashboardPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Template Preview Modal */}
+      <TemplatePreviewModal
+        template={previewTemplate}
+        onClose={() => setPreviewTemplate(null)}
+        onUseTemplate={() => {
+          setRemixTemplate(previewTemplate);
+          setPreviewTemplate(null);
+        }}
+      />
+
+      {/* Use Template / Remix Dialog */}
+      <UseTemplateDialog
+        template={remixTemplate}
+        onClose={() => setRemixTemplate(null)}
+        onCreated={(projectId) => {
+          setRemixTemplate(null);
+          router.push(`/editor/${projectId}`);
+        }}
+      />
     </div>
   );
 }

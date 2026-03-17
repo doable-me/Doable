@@ -88,6 +88,8 @@ export interface AiMessageRow {
   role: AiMessageRole;
   content: string | null;
   tool_calls: Record<string, unknown>[] | null;
+  suggestions: string[] | null;
+  tool_actions: Record<string, unknown>[] | null;
   created_at: Date;
 }
 

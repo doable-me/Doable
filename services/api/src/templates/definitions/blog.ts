@@ -14,8 +14,6 @@ export const blogTemplate: TemplateDefinition = {
     "package.json": blankTemplate.codeFiles["package.json"]!,
     "vite.config.ts": blankTemplate.codeFiles["vite.config.ts"]!,
     "tsconfig.json": blankTemplate.codeFiles["tsconfig.json"]!,
-    "tailwind.config.ts": blankTemplate.codeFiles["tailwind.config.ts"]!,
-    "postcss.config.js": blankTemplate.codeFiles["postcss.config.js"]!,
     "index.html": blankTemplate.codeFiles["index.html"]!,
     "src/main.tsx": blankTemplate.codeFiles["src/main.tsx"]!,
     "src/index.css": blankTemplate.codeFiles["src/index.css"]!,
@@ -28,7 +26,7 @@ import { PostDetail } from "@/components/post-detail";
 import { Sidebar } from "@/components/sidebar";
 import { POSTS } from "@/data/posts";
 
-export const App = () => {
+export default function App() {
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
@@ -71,7 +69,7 @@ export const App = () => {
       </div>
     </div>
   );
-};
+}
 `,
 
     "src/data/posts.ts": `export interface Post {

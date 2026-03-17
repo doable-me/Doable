@@ -14,8 +14,6 @@ export const ecommerceStoreTemplate: TemplateDefinition = {
     "package.json": blankTemplate.codeFiles["package.json"]!,
     "vite.config.ts": blankTemplate.codeFiles["vite.config.ts"]!,
     "tsconfig.json": blankTemplate.codeFiles["tsconfig.json"]!,
-    "tailwind.config.ts": blankTemplate.codeFiles["tailwind.config.ts"]!,
-    "postcss.config.js": blankTemplate.codeFiles["postcss.config.js"]!,
     "index.html": blankTemplate.codeFiles["index.html"]!,
     "src/main.tsx": blankTemplate.codeFiles["src/main.tsx"]!,
     "src/index.css": blankTemplate.codeFiles["src/index.css"]!,
@@ -37,7 +35,7 @@ const PRODUCTS: Product[] = [
   { id: "6", name: "Backpack", price: 79.99, image: "", category: "Accessories", description: "Water-resistant with padded laptop compartment.", rating: 4.4, reviews: 198 },
 ];
 
-export const App = () => {
+export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -116,7 +114,7 @@ export const App = () => {
       )}
     </div>
   );
-};
+}
 `,
 
     "src/types.ts": `export interface Product {

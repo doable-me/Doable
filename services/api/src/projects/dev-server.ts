@@ -12,6 +12,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer as createTcpServer } from "node:net";
 import { getProjectPath } from "../ai/project-files.js";
+import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
 
 // ─── Configuration ───────────────────────────────────────
 
@@ -133,6 +134,13 @@ export async function startDevServer(
     resolveReady = resolve;
     rejectReady = reject;
   });
+
+  // Ensure the source annotations Vite plugin is installed for visual editing
+  try {
+    ensureSourceAnnotationsPlugin(projectPath);
+  } catch (err) {
+    console.warn("[DevServer] Failed to inject source annotations plugin:", err);
+  }
 
   // Tell Vite to use the proxy prefix as its base path so all generated
   // asset URLs (/@vite/client, /src/main.tsx, etc.) include the prefix.
