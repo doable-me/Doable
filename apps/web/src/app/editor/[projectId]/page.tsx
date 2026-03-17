@@ -390,6 +390,7 @@ async function streamChat(
   onToolStarted?: (toolName: string, args: Record<string, unknown>) => void,
   signal?: AbortSignal,
   onThinking?: (text: string) => void,
+  onStatusChange?: (status: string) => void,
 ) {
   const { accessToken } = getStoredTokens();
 
@@ -515,6 +516,22 @@ async function streamChat(
             if (thinkingContent) {
               onThinking(thinkingContent);
             }
+          }
+
+          // Handle status events from auto-fix system
+          if (parsed.type === "status" && onStatusChange) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const statusMsg = (d?.message as string) ?? "";
+            if (statusMsg) {
+              onStatusChange(statusMsg);
+            }
+          }
+
+          // Handle auto-fix completion
+          if (parsed.type === "auto_fix_complete" && onStatusChange) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const success = d?.success as boolean;
+            onStatusChange(success ? "All issues resolved" : "");
           }
 
           // Extract text content from various SSE event shapes
@@ -1044,6 +1061,185 @@ export default function EditorPage() {
     };
   }, []);
 
+  // ─── Preview Error Listener ──────────────────────────────
+  // Listen for runtime errors reported by the preview iframe via postMessage.
+  // Automatically triggers a fix request to the AI when errors are detected.
+  const autoFixInFlightRef = useRef(false);
+  const lastAutoFixTimeRef = useRef(0);
+
+  useEffect(() => {
+    const handlePreviewMessage = (event: MessageEvent) => {
+      if (!event.data || typeof event.data !== "object") return;
+
+      // Handle preview error reports
+      if (event.data.type === "doable-preview-error") {
+        const errors = event.data.errors as Array<{
+          message: string;
+          source?: string;
+          stack?: string;
+        }>;
+        if (!errors || errors.length === 0) return;
+
+        // Debounce: don't auto-fix more than once every 10 seconds
+        const now = Date.now();
+        if (now - lastAutoFixTimeRef.current < 10_000) return;
+        // Don't auto-fix if already streaming or fix in flight
+        if (isStreaming || autoFixInFlightRef.current) return;
+
+        lastAutoFixTimeRef.current = now;
+        autoFixInFlightRef.current = true;
+
+        // Collect unique error messages (max 3)
+        const uniqueErrors = [...new Set(errors.map((e) => e.message))].slice(0, 3);
+        const errorSummary = uniqueErrors.join("\n");
+
+        console.log("[Doable] Preview error detected, auto-fixing:", errorSummary);
+
+        // Show status immediately
+        setLiveStatus("Found a preview issue — fixing it...");
+
+        // Auto-send fix request via the fix-error endpoint
+        const { accessToken } = getStoredTokens();
+        fetch(`${API_URL}/projects/${resolvedProjectId}/chat/fix-error`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({
+            error: errorSummary,
+            context: errors[0]?.stack?.slice(0, 500) || "",
+          }),
+        })
+          .then(async (res) => {
+            if (!res.ok) {
+              console.warn("[Doable] Auto-fix request failed:", res.status);
+              autoFixInFlightRef.current = false;
+              setLiveStatus("");
+              return;
+            }
+
+            // Create an assistant message for the fix
+            const fixId = `fix-${Date.now()}`;
+            const fixMsg: ChatMsg = {
+              id: fixId,
+              role: "assistant",
+              content: "",
+              timestamp: nowTimestamp(),
+              isStreaming: true,
+            };
+            setMessages((prev) => [...prev, fixMsg]);
+            setIsStreaming(true);
+            setLiveStatus("Fixing preview issue...");
+
+            // Stream the fix response
+            const reader = res.body?.getReader();
+            if (!reader) {
+              autoFixInFlightRef.current = false;
+              setIsStreaming(false);
+              setLiveStatus("");
+              return;
+            }
+
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop() ?? "";
+
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (!trimmed || !trimmed.startsWith("data: ")) continue;
+                  const payload = trimmed.slice(6);
+                  if (payload === "[DONE]") break;
+
+                  try {
+                    const parsed = JSON.parse(payload) as Record<string, unknown>;
+                    // Handle text
+                    if (parsed.type === "text_delta") {
+                      const text = typeof parsed.data === "string" ? parsed.data : "";
+                      if (text) {
+                        setMessages((prev) =>
+                          prev.map((m) =>
+                            m.id === fixId ? { ...m, content: m.content + text } : m
+                          )
+                        );
+                      }
+                    }
+                    // Handle status from auto-fix
+                    if (parsed.type === "status") {
+                      const d = parsed.data as Record<string, unknown>;
+                      const msg = (d?.message as string) ?? "";
+                      if (msg) setLiveStatus(msg);
+                    }
+                    // Handle tool completion — refresh preview
+                    if (parsed.type === "tool_result" || parsed.type === "tool_call") {
+                      const d = parsed.data as Record<string, unknown>;
+                      const friendly = (d?.friendlyMessage as string) ?? "";
+                      if (friendly) setLiveStatus(friendly);
+                    }
+                  } catch {
+                    // Skip malformed JSON
+                  }
+                }
+              }
+            } catch {
+              // Stream error — ignore
+            }
+
+            // Mark message as done
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === fixId ? { ...m, isStreaming: false } : m
+              )
+            );
+            setIsStreaming(false);
+            setLiveStatus("");
+            autoFixInFlightRef.current = false;
+
+            // Refresh preview + file tree after fix
+            loadFileTree();
+            if (selectedFile) {
+              delete fileContentsCache.current[selectedFile];
+              loadFileContent(selectedFile);
+            }
+            setTimeout(() => {
+              if (iframeRef.current) {
+                try {
+                  iframeRef.current.contentWindow?.location.reload();
+                } catch {
+                  if (previewUrl) {
+                    iframeRef.current.src = previewUrl + "?t=" + Date.now();
+                  }
+                }
+              }
+            }, 800);
+          })
+          .catch(() => {
+            autoFixInFlightRef.current = false;
+            setLiveStatus("");
+          });
+      }
+
+      // Handle preview loaded event
+      if (event.data.type === "doable-preview-loaded") {
+        // Preview loaded successfully — clear any error status
+        if (liveStatus.includes("issue") || liveStatus.includes("error") || liveStatus.includes("Fixing")) {
+          setLiveStatus("");
+        }
+      }
+    };
+
+    window.addEventListener("message", handlePreviewMessage);
+    return () => window.removeEventListener("message", handlePreviewMessage);
+  }, [resolvedProjectId, isStreaming, liveStatus, loadFileTree, selectedFile, loadFileContent, previewUrl]);
+
   // Ctrl+W to close current tab
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1469,6 +1665,12 @@ export default function EditorPage() {
           const humanized = humanizeThinking(thinkingText);
           if (humanized) {
             setLiveStatus(humanized);
+          }
+        },
+        // onStatusChange — backend auto-fix status updates
+        (status: string) => {
+          if (status) {
+            setLiveStatus(status);
           }
         },
       );

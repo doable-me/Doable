@@ -69,43 +69,140 @@ async function buildProjectContext(projectId: string): Promise<string> {
   }
 }
 
+/** Structured error info returned by detectPreviewError */
+interface PreviewErrorInfo {
+  /** Human-readable error summary */
+  message: string;
+  /** The source of the error (file path or "preview page") */
+  source: string;
+  /** Raw error text (trimmed) */
+  raw: string;
+}
+
+/**
+ * Detect if HTML contains Vite's error overlay markup.
+ * Returns the extracted error message or null.
+ */
+function extractViteErrorOverlay(html: string): string | null {
+  // Vite injects a custom element <vite-error-overlay> or a <pre class="message">
+  if (
+    html.includes("vite-error-overlay") ||
+    html.includes('pre class="message"') ||
+    html.includes("Internal Server Error") ||
+    html.includes("504 (Outdated Optimize Dep)")
+  ) {
+    // Try to extract the error message from the overlay
+    const preMatch = html.match(/<pre[^>]*class="message"[^>]*>([\s\S]*?)<\/pre>/);
+    if (preMatch) return preMatch[1].trim().slice(0, 800);
+
+    // Try extracting from err-message or similar divs
+    const errMatch = html.match(/class="err-message"[^>]*>([\s\S]*?)<\//);
+    if (errMatch) return errMatch[1].trim().slice(0, 800);
+
+    // Fallback: strip tags and return a portion
+    const clean = html
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 800);
+    return clean;
+  }
+  return null;
+}
+
 /**
  * Check whether the Vite dev server can successfully transform
- * the project's key source files. Returns an error string if
- * Vite reports a transform/resolve error, or null if everything is OK.
+ * the project's key source files AND whether the preview page
+ * shows Vite's error overlay. Returns structured error info if
+ * something is broken, or null if everything is OK.
  */
-async function detectPreviewError(projectId: string): Promise<string | null> {
+async function detectPreviewError(projectId: string): Promise<PreviewErrorInfo | null> {
   try {
     const internalUrl = getDevServerInternalUrl(projectId);
     if (!internalUrl) return null;
 
     const base = `${internalUrl}/preview/${projectId}`;
 
-    // Check key entry-point modules — Vite returns 500 when transform fails
-    for (const file of ["src/main.tsx", "src/App.tsx"]) {
+    // 1. Check key entry-point modules — Vite returns 500 when transform fails
+    for (const file of ["src/main.tsx", "src/App.tsx", "index.html", "src/index.tsx", "src/main.ts"]) {
       try {
-        const res = await fetch(`${base}/${file}`, {
-          headers: { Accept: "application/javascript" },
-        });
+        const headers: Record<string, string> =
+          file === "index.html"
+            ? { Accept: "text/html" }
+            : { Accept: "application/javascript" };
+        const res = await fetch(`${base}/${file}`, { headers });
         if (!res.ok) {
           const body = await res.text();
-          // Strip HTML tags for a cleaner error message
           const clean = body
             .replace(/<[^>]+>/g, " ")
             .replace(/\s+/g, " ")
             .trim()
             .slice(0, 800);
-          return `Error in ${file}: ${clean}`;
+          return {
+            message: `Error in ${file}: ${clean}`,
+            source: file,
+            raw: clean,
+          };
         }
       } catch {
         // Network error — dev server might be restarting, not a code error
       }
     }
 
+    // 2. Fetch the root preview page and check for Vite error overlay
+    try {
+      const pageRes = await fetch(`${base}/`, {
+        headers: { Accept: "text/html" },
+      });
+      if (pageRes.ok) {
+        const pageHtml = await pageRes.text();
+        const overlayError = extractViteErrorOverlay(pageHtml);
+        if (overlayError) {
+          return {
+            message: `Preview page shows error overlay: ${overlayError}`,
+            source: "preview page",
+            raw: overlayError,
+          };
+        }
+      } else {
+        const body = await pageRes.text();
+        const clean = body
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 800);
+        return {
+          message: `Preview page returned ${pageRes.status}: ${clean}`,
+          source: "preview page",
+          raw: clean,
+        };
+      }
+    } catch {
+      // Network error on page fetch — not a code error
+    }
+
     return null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Build a targeted, structured prompt for the AI to fix a preview error.
+ */
+function buildAutoFixPrompt(error: string): string {
+  return (
+    `URGENT: The live preview has an error that users can see. You MUST fix this now.\n\n` +
+    `Error details:\n${error}\n\n` +
+    `RULES for fixing:\n` +
+    `1. Read the file that has the error FIRST\n` +
+    `2. If it's "Failed to resolve import 'X'" → install the package with install_package, then re-save the importing file\n` +
+    `3. If it's a syntax error → read the file, find the exact issue, rewrite the COMPLETE file\n` +
+    `4. If it's "X is not exported" → read the exporting file and fix the export\n` +
+    `5. If it's a runtime error → read src/App.tsx and any mentioned files, fix the logic\n` +
+    `6. After fixing, verify by reading the file again\n\n` +
+    `Fix it now. Do NOT explain — just fix.`
+  );
 }
 
 // ─── In-memory session mapping (projectId → copilot sessionId) ─
@@ -307,33 +404,67 @@ CRITICAL RULES — violating these will break the live preview:
 
         // ── Auto-detect and fix preview errors ─────────────
         if (hadToolCalls && isProjectScaffolded(projectId)) {
-          const MAX_FIX_ATTEMPTS = 2;
+          const MAX_FIX_ATTEMPTS = 3;
+          let fixedSuccessfully = false;
+
           for (let attempt = 0; attempt < MAX_FIX_ATTEMPTS; attempt++) {
-            // Give Vite time to process file changes
-            await new Promise((r) => setTimeout(r, 2500));
+            // Status: checking
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "status",
+                data: { phase: "checking", message: "Checking preview for errors..." },
+              }),
+            });
+
+            // Give Vite time to process file changes (1.5s is enough for HMR)
+            await new Promise((r) => setTimeout(r, 1500));
             const previewError = await detectPreviewError(projectId);
-            if (!previewError) break;
+            if (!previewError) {
+              if (attempt > 0) {
+                // We fixed a previous error — notify
+                await stream.writeSSE({
+                  data: JSON.stringify({
+                    type: "status",
+                    data: { phase: "fixed", message: "Error fixed successfully" },
+                  }),
+                });
+                await stream.writeSSE({
+                  data: JSON.stringify({
+                    type: "auto_fix_complete",
+                    data: { success: true },
+                  }),
+                });
+              }
+              fixedSuccessfully = true;
+              break;
+            }
 
             console.log(
-              `[Chat] Preview error detected (attempt ${attempt + 1}/${MAX_FIX_ATTEMPTS}): ${previewError.slice(0, 200)}`,
+              `[Chat] Preview error detected (attempt ${attempt + 1}/${MAX_FIX_ATTEMPTS}): ${previewError.message.slice(0, 200)}`,
             );
+
+            // Status: fixing
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "status",
+                data: {
+                  phase: "fixing",
+                  message: "Found an error — fixing it automatically...",
+                  attempt: attempt + 1,
+                },
+              }),
+            });
             await stream.writeSSE({
               data: JSON.stringify({
                 type: "text_delta",
-                data: `\n\n---\n**Preview error detected — auto-fixing (attempt ${attempt + 1})...**\n\n`,
+                data: `\n\n---\n**Preview error detected — auto-fixing (attempt ${attempt + 1}/${MAX_FIX_ATTEMPTS})...**\n\n`,
               }),
             });
 
             try {
               for await (const event of engine.sendMessage(
                 sessionId!,
-                `URGENT: The live preview is showing an error. Fix it immediately.\n\n` +
-                  `Error:\n${previewError}\n\n` +
-                  `Common fixes:\n` +
-                  `- "Failed to resolve import 'X'" → call install_package to install the missing package, then re-save the file that imports it\n` +
-                  `- "X is not exported from Y" → read file Y and fix the export\n` +
-                  `- Syntax error → read the file, find the syntax issue, rewrite the file correctly\n\n` +
-                  `Read the affected file(s) and fix the error now.`,
+                buildAutoFixPrompt(previewError.message),
               )) {
                 const sseData = mapEventToSSE(event);
                 if (sseData) {
@@ -346,6 +477,41 @@ CRITICAL RULES — violating these will break the live preview:
                 fixErr,
               );
               break;
+            }
+
+            // Status: verifying
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "status",
+                data: { phase: "verifying", message: "Verifying the fix..." },
+              }),
+            });
+          }
+
+          // If we exhausted all attempts, do a final check
+          if (!fixedSuccessfully) {
+            await new Promise((r) => setTimeout(r, 1500));
+            const finalError = await detectPreviewError(projectId);
+            if (!finalError) {
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: "status",
+                  data: { phase: "fixed", message: "Error fixed successfully" },
+                }),
+              });
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: "auto_fix_complete",
+                  data: { success: true },
+                }),
+              });
+            } else {
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: "auto_fix_complete",
+                  data: { success: false, error: finalError.message },
+                }),
+              });
             }
           }
         }
@@ -529,6 +695,146 @@ chatRoutes.post("/projects/:id/chat/abort", async (c) => {
 
   return c.json({ data: { aborted: true } });
 });
+
+// ─── POST /projects/:id/chat/fix-error ─ Fix runtime errors from preview ──
+const fixErrorSchema = z.object({
+  error: z.string().min(1).max(16_000),
+  context: z.string().max(4000).optional(),
+});
+
+chatRoutes.post(
+  "/projects/:id/chat/fix-error",
+  zValidator("json", fixErrorSchema),
+  async (c) => {
+    const projectId = c.req.param("id");
+    const { error, context } = c.req.valid("json");
+    const userId = c.get("userId")!;
+
+    // Must have an active session for this project
+    const sessionId = projectSessions.get(projectId);
+    if (!sessionId) {
+      return c.json(
+        { error: "No active chat session for this project. Send a chat message first." },
+        400,
+      );
+    }
+
+    if (!isProjectScaffolded(projectId)) {
+      return c.json({ error: "Project is not scaffolded." }, 400);
+    }
+
+    const engine = await getCopilotEngine();
+
+    return streamSSE(c, async (stream) => {
+      let hadToolCalls = false;
+
+      try {
+        // Build a structured error fix message
+        const fixMessage =
+          `URGENT: The live preview has a runtime error that the user can see in their browser. You MUST fix this now.\n\n` +
+          `Error details:\n${error}\n` +
+          (context ? `\nContext:\n${context}\n` : "") +
+          `\nRULES for fixing:\n` +
+          `1. Read the file that has the error FIRST\n` +
+          `2. If it's "Failed to resolve import 'X'" → install the package with install_package, then re-save the importing file\n` +
+          `3. If it's a syntax error → read the file, find the exact issue, rewrite the COMPLETE file\n` +
+          `4. If it's "X is not exported" → read the exporting file and fix the export\n` +
+          `5. If it's a runtime error → read src/App.tsx and any mentioned files, fix the logic\n` +
+          `6. After fixing, verify by reading the file again\n\n` +
+          `Fix it now. Do NOT explain — just fix.`;
+
+        // Status: starting fix
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: "status",
+            data: { phase: "fixing", message: "Found an error — fixing it automatically...", attempt: 1 },
+          }),
+        });
+
+        // Stream the AI response
+        const pendingToolNames: string[] = [];
+        for await (const event of engine.sendMessage(sessionId, fixMessage)) {
+          const sseData = mapEventToSSE(event);
+          if (sseData) {
+            if (sseData.type === "tool_call") {
+              const toolData = sseData.data as Record<string, unknown>;
+              if (toolData?.name) pendingToolNames.push(toolData.name as string);
+            }
+            if (sseData.type === "tool_result") {
+              hadToolCalls = true;
+              const resultData = sseData.data as Record<string, unknown>;
+              if (!resultData?.name && pendingToolNames.length > 0) {
+                resultData.name = pendingToolNames.shift();
+              }
+            }
+            await stream.writeSSE({ data: JSON.stringify(sseData) });
+          }
+        }
+
+        // After AI finishes, check if the fix actually worked
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: "status",
+            data: { phase: "verifying", message: "Verifying the fix..." },
+          }),
+        });
+
+        await new Promise((r) => setTimeout(r, 1500));
+        const remainingError = await detectPreviewError(projectId);
+
+        if (!remainingError) {
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: "status",
+              data: { phase: "fixed", message: "Error fixed successfully" },
+            }),
+          });
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: "auto_fix_complete",
+              data: { success: true },
+            }),
+          });
+        } else {
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: "auto_fix_complete",
+              data: { success: false, error: remainingError.message },
+            }),
+          });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await stream.writeSSE({
+          data: JSON.stringify({ type: "error", data: msg }),
+        });
+      }
+
+      // Auto-create a version snapshot after AI finishes making changes
+      if (hadToolCalls && isProjectScaffolded(projectId)) {
+        try {
+          const projectPath = getProjectPath(projectId);
+          await autoVersion(
+            projectId,
+            projectPath,
+            `Fix runtime error: ${error.slice(0, 80)}`,
+            userId,
+          );
+        } catch (vErr) {
+          console.warn("[Chat] Auto-version after fix-error failed:", vErr);
+        }
+
+        try {
+          await sql`UPDATE projects SET updated_at = NOW() WHERE id = ${projectId}`;
+        } catch {
+          // Non-critical
+        }
+      }
+
+      await stream.writeSSE({ data: "[DONE]" });
+    });
+  },
+);
 
 // ─── GET /ai/models ─ List available models ─────────────────
 chatRoutes.get("/ai/models", async (c) => {

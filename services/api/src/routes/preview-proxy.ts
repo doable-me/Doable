@@ -105,10 +105,94 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
     responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     responseHeaders.set("Access-Control-Allow-Headers", "*");
 
-    // Inject analytics + visual edit bridge script into HTML responses
+    // Inject error capture, analytics, and visual edit bridge scripts into HTML responses
     const contentType = resp.headers.get("content-type") ?? "";
     if (contentType.includes("text/html")) {
       const html = await resp.text();
+
+      // Error capture script — injected FIRST so it catches errors from all subsequent scripts.
+      // Catches uncaught errors, unhandled promise rejections, console.error calls,
+      // and Vite error overlays, then batches them to the parent frame via postMessage.
+      const errorCaptureSnippet = `<script>
+(function() {
+  var errors = [];
+  var DEBOUNCE_MS = 500;
+  var debounceTimer = null;
+
+  function reportErrors() {
+    if (errors.length === 0) return;
+    var batch = errors.splice(0, errors.length);
+    window.parent.postMessage({
+      type: 'doable-preview-error',
+      errors: batch
+    }, '*');
+  }
+
+  function captureError(msg, source, line, col, stack) {
+    if (msg && (msg.includes('ResizeObserver') || msg.includes('Script error') && !source)) return;
+    errors.push({
+      message: String(msg || 'Unknown error'),
+      source: source || '',
+      line: line || 0,
+      column: col || 0,
+      stack: stack || '',
+      timestamp: Date.now()
+    });
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(reportErrors, DEBOUNCE_MS);
+  }
+
+  window.onerror = function(msg, source, line, col, error) {
+    captureError(msg, source, line, col, error ? error.stack : '');
+  };
+
+  window.onunhandledrejection = function(event) {
+    var reason = event.reason;
+    var msg = reason instanceof Error ? reason.message : String(reason);
+    var stack = reason instanceof Error ? reason.stack : '';
+    captureError('Unhandled Promise: ' + msg, '', 0, 0, stack);
+  };
+
+  var origError = console.error;
+  console.error = function() {
+    var args = Array.from(arguments);
+    var msg = args.map(function(a) {
+      if (a instanceof Error) return a.message;
+      if (typeof a === 'object') try { return JSON.stringify(a).slice(0, 200); } catch(e) { return String(a); }
+      return String(a);
+    }).join(' ');
+    if (!msg.includes('Warning:') && !msg.includes('Download the React DevTools')) {
+      captureError('Console Error: ' + msg.slice(0, 500), '', 0, 0, '');
+    }
+    origError.apply(console, arguments);
+  };
+
+  var observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(m) {
+      m.addedNodes.forEach(function(node) {
+        if (node.tagName === 'VITE-ERROR-OVERLAY' || (node.shadowRoot && node.tagName && node.tagName.toLowerCase().includes('error'))) {
+          var text = node.shadowRoot ? node.shadowRoot.textContent : node.textContent;
+          if (text) {
+            captureError('Vite Error: ' + text.slice(0, 800), '', 0, 0, '');
+          }
+        }
+      });
+    });
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'doable-refresh') {
+      window.location.reload();
+    }
+  });
+
+  window.addEventListener('load', function() {
+    window.parent.postMessage({ type: 'doable-preview-loaded' }, '*');
+  });
+})();
+</script>`;
+
       // Analytics meta + script go in <head>
       const headSnippet =
         `<meta name="doable-project-id" content="${projectId}">` +
@@ -119,7 +203,7 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
 
       let injected = html;
       if (injected.includes("</head>")) {
-        injected = injected.replace("</head>", `${headSnippet}</head>`);
+        injected = injected.replace("</head>", `${errorCaptureSnippet}${headSnippet}</head>`);
       }
       if (injected.includes("</body>")) {
         injected = injected.replace("</body>", `${bodySnippet}</body>`);
