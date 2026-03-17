@@ -327,3 +327,141 @@ export async function apiListTemplates(category?: string): Promise<{ data: { tem
   const qs = category ? `?category=${encodeURIComponent(category)}` : "";
   return apiFetch(`/templates${qs}`);
 }
+
+// ─── AI Settings API Methods ────────────────────────────────
+
+export interface ApiGitHubCopilotAccount {
+  id: string;
+  workspace_id: string;
+  label: string;
+  github_login: string;
+  github_id: string | null;
+  is_valid: boolean;
+  added_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiAiProvider {
+  id: string;
+  workspace_id: string;
+  label: string;
+  provider_type: "openai" | "azure" | "anthropic";
+  base_url: string;
+  azure_api_version: string | null;
+  is_valid: boolean;
+  added_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiWorkspaceAiDefaults {
+  workspace_id: string;
+  default_copilot_account_id: string | null;
+  default_provider_id: string | null;
+  default_model: string | null;
+  updated_by: string | null;
+}
+
+export async function apiListCopilotAccounts(workspaceId: string): Promise<{ data: ApiGitHubCopilotAccount[] }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/copilot-accounts`);
+}
+
+export async function apiAddCopilotAccount(
+  workspaceId: string,
+  data: { label: string; githubToken: string }
+): Promise<{ data: ApiGitHubCopilotAccount }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/copilot-accounts`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function apiDeleteCopilotAccount(workspaceId: string, id: string): Promise<void> {
+  await apiFetch(`/workspaces/${workspaceId}/ai-settings/copilot-accounts/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function apiValidateCopilotAccount(
+  workspaceId: string,
+  id: string
+): Promise<{ data: { valid: boolean } }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/copilot-accounts/${id}/validate`, {
+    method: "POST",
+  });
+}
+
+export async function apiListAiProviders(workspaceId: string): Promise<{ data: ApiAiProvider[] }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/providers`);
+}
+
+export async function apiAddAiProvider(
+  workspaceId: string,
+  data: {
+    label: string;
+    providerType: "openai" | "azure" | "anthropic";
+    baseUrl: string;
+    apiKey?: string;
+    bearerToken?: string;
+    azureApiVersion?: string;
+  }
+): Promise<{ data: ApiAiProvider }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/providers`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function apiUpdateAiProvider(
+  workspaceId: string,
+  id: string,
+  data: { label?: string; baseUrl?: string; apiKey?: string }
+): Promise<{ data: ApiAiProvider }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/providers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function apiDeleteAiProvider(workspaceId: string, id: string): Promise<void> {
+  await apiFetch(`/workspaces/${workspaceId}/ai-settings/providers/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function apiValidateAiProvider(
+  workspaceId: string,
+  id: string
+): Promise<{ data: { valid: boolean; error?: string } }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/providers/${id}/validate`, {
+    method: "POST",
+  });
+}
+
+export async function apiGetAiDefaults(workspaceId: string): Promise<{ data: ApiWorkspaceAiDefaults }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/defaults`);
+}
+
+export async function apiUpdateAiDefaults(
+  workspaceId: string,
+  data: {
+    defaultCopilotAccountId?: string | null;
+    defaultProviderId?: string | null;
+    defaultModel?: string | null;
+  }
+): Promise<{ data: ApiWorkspaceAiDefaults }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/defaults`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function apiListAiModels(workspaceId: string): Promise<{
+  data: {
+    copilotAccounts: { id: string; label: string; githubLogin: string; isValid: boolean }[];
+    providers: { id: string; label: string; providerType: string; isValid: boolean }[];
+  };
+}> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/models`);
+}

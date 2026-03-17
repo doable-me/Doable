@@ -33,6 +33,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Bot,
   Home,
   Search,
   BookOpen,
@@ -727,6 +728,13 @@ export function DashboardSidebar() {
               >
                 <Settings className="mr-2 h-4 w-4" />
                 Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-zinc-300 focus:bg-white/5 focus:text-white"
+                onClick={() => router.push("/ai-settings")}
+              >
+                <Bot className="mr-2 h-4 w-4" />
+                AI Settings
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="text-zinc-300 focus:bg-white/5 focus:text-white"

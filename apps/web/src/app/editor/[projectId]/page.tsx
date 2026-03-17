@@ -5,6 +5,9 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { getStoredTokens, apiUpdateProject, apiDeleteProject, apiDuplicateProject } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-attachments";
+import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/components/editor-model-selector";
 import {
   ArrowUp,
   ArrowLeft,
@@ -148,6 +151,7 @@ interface ChatMsg {
   toolActions?: ToolAction[];
   feedbackGiven?: "up" | "down" | null;
   suggestions?: string[];  // AI-generated next-step suggestions
+  attachments?: { type: string; data: string; name: string }[];
 }
 
 type TaskCardTab = "details" | "preview";
@@ -391,6 +395,10 @@ async function streamChat(
   signal?: AbortSignal,
   onThinking?: (text: string) => void,
   onStatusChange?: (status: string) => void,
+  attachments?: { type: string; data: string; name: string }[],
+  modelOverride?: string,
+  providerIdOverride?: string | null,
+  copilotAccountIdOverride?: string | null,
 ) {
   const { accessToken } = getStoredTokens();
 
@@ -402,7 +410,14 @@ async function streamChat(
         "Content-Type": "application/json",
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
-      body: JSON.stringify({ content: message, mode }),
+      body: JSON.stringify({
+        content: message,
+        mode,
+        ...(attachments?.length ? { attachments } : {}),
+        ...(modelOverride ? { model: modelOverride } : {}),
+        ...(providerIdOverride ? { providerId: providerIdOverride } : {}),
+        ...(copilotAccountIdOverride ? { copilotAccountId: copilotAccountIdOverride } : {}),
+      }),
       signal,
     });
   } catch (err: unknown) {
@@ -532,6 +547,15 @@ async function streamChat(
             const d = parsed.data as Record<string, unknown> | undefined;
             const success = d?.success as boolean;
             onStatusChange(success ? "All issues resolved" : "");
+          }
+
+          // Handle error events from the backend
+          if (parsed.type === "error") {
+            const errMsg = typeof parsed.data === "string"
+              ? parsed.data
+              : "An unknown error occurred.";
+            onError(errMsg);
+            return;
           }
 
           // Extract text content from various SSE event shapes
@@ -731,6 +755,33 @@ export default function EditorPage() {
   // ─── UI state ─────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
   const [chatMode, setChatMode] = useState<ChatMode>("agent");
+
+  // ── AI Model Selection ──
+  const [selectedModelId, setSelectedModelId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("doable_selected_model") ?? "";
+  });
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("doable_selected_provider_id") ?? null;
+  });
+  const [selectedCopilotAccountId, setSelectedCopilotAccountId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("doable_selected_copilot_account") ?? null;
+  });
+  const [availableModels] = useState<ModelOption[]>([]);
+
+  const handleModelSelect = useCallback((modelId: string, providerId: string | null, copilotAccountId: string | null) => {
+    setSelectedModelId(modelId);
+    setSelectedProviderId(providerId);
+    setSelectedCopilotAccountId(copilotAccountId);
+    localStorage.setItem("doable_selected_model", modelId);
+    if (providerId) localStorage.setItem("doable_selected_provider_id", providerId);
+    else localStorage.removeItem("doable_selected_provider_id");
+    if (copilotAccountId) localStorage.setItem("doable_selected_copilot_account", copilotAccountId);
+    else localStorage.removeItem("doable_selected_copilot_account");
+  }, []);
+
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
   const [messages, setMessages] = useState<ChatMsg[]>(() => {
     // Restore chat history from localStorage on mount
@@ -749,6 +800,12 @@ export default function EditorPage() {
   });
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+
+  // Voice input & image attachments
+  const speechRecognition = useSpeechRecognition((transcript: string) => {
+    setInputValue((prev) => (prev ? prev + " " + transcript : transcript));
+  });
+  const imageAttachments = useImageAttachments();
   const [projectName, setProjectName] = useState(() => {
     const prompt = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("prompt") : null;
     if (prompt) return deriveProjectName(prompt);
@@ -1322,14 +1379,31 @@ export default function EditorPage() {
     const storageKey = `doable_initial_prompt_${resolvedProjectId}`;
     const stored = sessionStorage.getItem(storageKey);
     const fromUrl = new URLSearchParams(window.location.search).get("prompt");
-    const prompt = stored || fromUrl;
     if (stored) sessionStorage.removeItem(storageKey);
+
+    // Parse stored value — may be JSON { prompt, attachments } or plain string
+    let prompt: string | null = null;
+    let storedAttachments: ImageAttachment[] | undefined;
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === "object" && "prompt" in parsed) {
+          prompt = parsed.prompt;
+          storedAttachments = parsed.attachments;
+        } else {
+          prompt = stored; // plain string fallback
+        }
+      } catch {
+        prompt = stored; // not JSON, use as-is
+      }
+    }
+    if (!prompt) prompt = fromUrl;
     if (!prompt) return;
     // Don't auto-send if messages already exist (page was refreshed with localStorage history)
     if (messages.length > 0) return;
     // Small delay so the UI renders the chat panel first
     setTimeout(() => {
-      sendMessage(prompt);
+      sendMessage(prompt!, storedAttachments);
     }, 500);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1524,7 +1598,7 @@ export default function EditorPage() {
 
   // ─── Send message to real API ──────────────────────────────
   const sendMessage = useCallback(
-    (text: string) => {
+    (text: string, msgAttachments?: ImageAttachment[]) => {
       const trimmed = text.trim();
       if (!trimmed || isStreaming) return;
 
@@ -1534,6 +1608,7 @@ export default function EditorPage() {
         role: "user",
         content: trimmed,
         timestamp: nowTimestamp(),
+        ...(msgAttachments?.length ? { attachments: msgAttachments } : {}),
       };
 
       // Add placeholder assistant message for streaming
@@ -1683,15 +1758,22 @@ export default function EditorPage() {
             setLiveStatus(status);
           }
         },
+        msgAttachments,
+        selectedModelId || undefined,
+        selectedProviderId,
+        selectedCopilotAccountId,
       );
     },
-    [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, handleToolStarted, loadFileTree, selectedFile, loadFileContent, previewUrl]
+    [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, handleToolStarted, loadFileTree, selectedFile, loadFileContent, previewUrl, selectedModelId, selectedProviderId, selectedCopilotAccountId]
   );
 
   // Send message handler (from input)
   const handleSend = useCallback(() => {
-    sendMessage(inputValue);
-  }, [inputValue, sendMessage]);
+    const text = inputValue.trim() || (imageAttachments.attachments.length > 0 ? "See attached image(s)" : "");
+    if (!text) return;
+    sendMessage(text, imageAttachments.attachments.length > 0 ? imageAttachments.attachments : undefined);
+    imageAttachments.clearAll();
+  }, [inputValue, sendMessage, imageAttachments]);
 
   // ─── Visual Edit Hook ─────────────────────────────────────
   const isDesignMode = activeTab === "design";
@@ -2755,6 +2837,18 @@ export default function EditorPage() {
                           </span>
                         </div>
                         <div className="rounded-2xl rounded-br-sm bg-zinc-700/80 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
+                          {msg.attachments && msg.attachments.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-2">
+                              {msg.attachments.map((att, ai) => (
+                                <img
+                                  key={ai}
+                                  src={att.data}
+                                  alt={att.name}
+                                  className="h-20 w-20 rounded-lg object-cover border border-zinc-600"
+                                />
+                              ))}
+                            </div>
+                          )}
                           {msg.content}
                         </div>
                       </div>
@@ -3133,11 +3227,43 @@ export default function EditorPage() {
                     className="w-full resize-none bg-transparent px-1 pt-0 pb-1 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none disabled:opacity-50"
                   />
 
+                  {/* Image preview thumbnails */}
+                  {imageAttachments.attachments.length > 0 && (
+                    <div className="flex items-center gap-2 px-1 pb-2">
+                      {imageAttachments.attachments.map((att, i) => (
+                        <div key={i} className="relative group/thumb">
+                          <img
+                            src={att.data}
+                            alt={att.name}
+                            className="h-16 w-16 rounded-lg object-cover border border-zinc-600"
+                          />
+                          <button
+                            onClick={() => imageAttachments.removeImage(i)}
+                            className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 border border-zinc-600 text-zinc-400 hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100"
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Hidden file input for image attachments */}
+                  <input
+                    ref={imageAttachments.fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={imageAttachments.handleFileChange}
+                  />
+
                   {/* Bottom toolbar row */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1">
                       {/* + button (rounded-full) */}
                       <button
+                        onClick={imageAttachments.openFilePicker}
                         className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-600/40 text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
                         title="Attach image"
                       >
@@ -3158,6 +3284,15 @@ export default function EditorPage() {
                         <Sparkles className="h-3.5 w-3.5" />
                         <span>Visual edits</span>
                       </button>
+
+                      {/* Model selector */}
+                      <EditorModelSelector
+                        selectedModelId={selectedModelId}
+                        selectedProviderId={selectedProviderId}
+                        selectedCopilotAccountId={selectedCopilotAccountId}
+                        onSelect={handleModelSelect}
+                        models={availableModels}
+                      />
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -3190,13 +3325,20 @@ export default function EditorPage() {
                         </button>
                       </div>
 
-                      {/* Mic button (rounded-full) */}
-                      <button
-                        className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors"
-                        title="Voice input (coming soon)"
-                      >
-                        <Mic className="h-3.5 w-3.5" />
-                      </button>
+                      {/* Mic button (rounded-full) — hidden on unsupported browsers */}
+                      {speechRecognition.isSupported && (
+                        <button
+                          onClick={speechRecognition.toggle}
+                          className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                            speechRecognition.isListening
+                              ? "text-red-400 bg-red-500/10 animate-pulse"
+                              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50"
+                          }`}
+                          title={speechRecognition.isListening ? "Stop recording" : "Voice input"}
+                        >
+                          <Mic className="h-3.5 w-3.5" />
+                        </button>
+                      )}
 
                       {/* Send / Stop button */}
                       {isStreaming ? (
@@ -3210,7 +3352,7 @@ export default function EditorPage() {
                       ) : (
                         <button
                           onClick={handleSend}
-                          disabled={!inputValue.trim()}
+                          disabled={!inputValue.trim() && imageAttachments.attachments.length === 0}
                           className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#FCFBF8] text-[#1C1C1C] transition-all hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           <ArrowUp className="h-3.5 w-3.5" />

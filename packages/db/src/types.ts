@@ -8,6 +8,7 @@ import type {
   ApiKeyEnvironment,
   ConnectorType,
   ConnectorStatus,
+  AiProviderType,
 } from "@doable/shared";
 
 // ─── Database Row Types ─────────────────────────────────────
@@ -177,4 +178,42 @@ export interface GitHubCommitRow {
   direction: "push" | "pull";
   version_id: string | null;
   created_at: Date;
+}
+
+export interface GitHubCopilotAccountRow {
+  id: string;
+  workspace_id: string;
+  label: string;
+  github_login: string;
+  github_id: string | null;
+  encrypted_token: string;
+  is_valid: boolean;
+  added_by: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface AiProviderRow {
+  id: string;
+  workspace_id: string;
+  label: string;
+  provider_type: AiProviderType;
+  base_url: string;
+  encrypted_api_key: string | null;
+  encrypted_bearer_token: string | null;
+  azure_api_version: string | null;
+  is_valid: boolean;
+  added_by: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface WorkspaceAiSettingsRow {
+  workspace_id: string;
+  default_copilot_account_id: string | null;
+  default_provider_id: string | null;
+  default_model: string | null;
+  updated_by: string | null;
+  created_at: Date;
+  updated_at: Date;
 }

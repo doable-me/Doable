@@ -8,6 +8,8 @@ import {
   createDoableTools,
   type ByokProviderConfig,
 } from "../ai/providers/copilot.js";
+import { getCopilotManager } from "../ai/providers/copilot-manager.js";
+import { aiSettingsQueries } from "@doable/db";
 import {
   createProject,
   isProjectScaffolded,
@@ -25,6 +27,7 @@ import { autoVersion } from "../version-control/manager.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 
 export const chatRoutes = new Hono<AuthEnv>();
+const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
 
 // Require authentication for all chat and AI routes
 chatRoutes.use("/projects/:id/chat", authMiddleware);
@@ -223,6 +226,18 @@ const sendMessageSchema = z.object({
       apiKey: z.string().optional(),
     })
     .optional(),
+  providerId: z.string().uuid().optional(),
+  copilotAccountId: z.string().uuid().optional(),
+  attachments: z
+    .array(
+      z.object({
+        type: z.string(),
+        data: z.string(),
+        name: z.string(),
+      })
+    )
+    .max(3)
+    .optional(),
 });
 
 chatRoutes.post(
@@ -230,8 +245,17 @@ chatRoutes.post(
   zValidator("json", sendMessageSchema),
   async (c) => {
     const projectId = c.req.param("id");
-    const { content, mode, model, provider } = c.req.valid("json");
+    const { content, mode, model, provider, providerId, copilotAccountId, attachments } = c.req.valid("json");
     const userId = c.get("userId")!;
+
+    // Augment prompt with image attachment markers (AI can't see images yet, but gets notified)
+    let augmentedContent = content;
+    if (attachments && attachments.length > 0) {
+      const markers = attachments
+        .map((a) => `[User attached image: ${a.name}]`)
+        .join("\n");
+      augmentedContent = `${markers}\n${content}`;
+    }
 
     try {
       // Auto-scaffold the project if it hasn't been created yet
@@ -260,7 +284,43 @@ chatRoutes.post(
         }
       }
 
-      const engine = await getCopilotEngine();
+      // ── Resolve AI engine: provider/account from request or workspace defaults ──
+      let resolvedProvider = provider as ByokProviderConfig | undefined;
+      let resolvedModel = model;
+      let githubToken: string | undefined;
+
+      // If providerId is set, decrypt the API key from the database
+      if (providerId && !resolvedProvider) {
+        try {
+          const providerData = await aiSettingsDb.getProviderWithKey(providerId);
+          if (providerData) {
+            resolvedProvider = {
+              type: providerData.row.provider_type as "openai" | "azure" | "anthropic",
+              baseUrl: providerData.row.base_url,
+              apiKey: providerData.apiKey ?? undefined,
+              bearerToken: providerData.bearerToken ?? undefined,
+              ...(providerData.row.azure_api_version
+                ? { azure: { apiVersion: providerData.row.azure_api_version } }
+                : {}),
+            };
+          }
+        } catch (err) {
+          console.error("[Chat] Failed to resolve providerId:", err);
+        }
+      }
+
+      // If copilotAccountId is set, decrypt the GitHub token
+      if (copilotAccountId) {
+        try {
+          githubToken = (await aiSettingsDb.getCopilotAccountToken(copilotAccountId)) ?? undefined;
+        } catch (err) {
+          console.error("[Chat] Failed to resolve copilotAccountId:", err);
+        }
+      }
+
+      // Get engine via manager (pools by token)
+      const manager = getCopilotManager();
+      const engine = await manager.getEngine(githubToken);
 
       // Get or create session for this project.
       // Visual-edit mode uses a separate session key so it doesn't
@@ -418,7 +478,7 @@ ERROR RECOVERY — if you encounter errors:
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let assistantToolCalls: any[] = [];
         try {
-          for await (const event of engine.sendMessage(sessionId!, content)) {
+          for await (const event of engine.sendMessage(sessionId!, augmentedContent)) {
             const sseData = mapEventToSSE(event);
             if (sseData) {
               // When a tool_call is emitted, record the name for pairing

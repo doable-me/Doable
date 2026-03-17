@@ -25,7 +25,8 @@ export function getGitHubAuthUrl(state?: string): string {
 }
 
 export async function exchangeGitHubCode(
-  code: string
+  code: string,
+  redirectUri?: string,
 ): Promise<{ accessToken: string; user: GitHubUser }> {
   // Exchange code for token
   const tokenRes = await fetch(
@@ -40,7 +41,7 @@ export async function exchangeGitHubCode(
         client_id: GITHUB_CLIENT_ID,
         client_secret: GITHUB_CLIENT_SECRET,
         code,
-        redirect_uri: GITHUB_REDIRECT_URI,
+        redirect_uri: redirectUri ?? GITHUB_REDIRECT_URI,
       }),
     }
   );
@@ -79,6 +80,21 @@ export async function exchangeGitHubCode(
   }
 
   return { accessToken: tokenData.access_token, user };
+}
+
+// ─── GitHub OAuth for Copilot Account Connection ──────────
+export const GITHUB_COPILOT_REDIRECT_URI =
+  process.env.GITHUB_COPILOT_REDIRECT_URI ??
+  "http://localhost:4000/auth/github/copilot/callback";
+
+export function getGitHubCopilotAuthUrl(state?: string): string {
+  const params = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    redirect_uri: GITHUB_COPILOT_REDIRECT_URI,
+    scope: "read:user user:email",
+    ...(state ? { state } : {}),
+  });
+  return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
 
 // ─── Google OAuth ──────────────────────────────────────────

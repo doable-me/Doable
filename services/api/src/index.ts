@@ -21,6 +21,7 @@ import { projectFileRoutes } from "./routes/project-files.js";
 import { previewRoutes } from "./routes/preview-proxy.js";
 import { thumbnailRoutes } from "./routes/thumbnails.js";
 import { analyticsRoutes } from "./routes/analytics.js";
+import { aiSettingsRoutes } from "./routes/ai-settings.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 
@@ -318,6 +319,7 @@ app.route("/", chatRoutes);
 app.route("/", editorRoutes);
 app.route("/projects", projectRoutes);
 app.route("/workspaces", workspaceRoutes);
+app.route("/workspaces", aiSettingsRoutes);
 app.route("/folders", folderRoutes);
 app.route("/billing", billingRoutes);
 app.route("/deploy", deployRoutes);

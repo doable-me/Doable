@@ -6,7 +6,7 @@ import { authQueries } from "@doable/db/queries/auth.js";
 import { userQueries } from "@doable/db/queries/users.js";
 import { workspaceQueries } from "@doable/db/queries/workspaces.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt.js";
-import { getGitHubAuthUrl, exchangeGitHubCode, getGoogleAuthUrl, exchangeGoogleCode } from "../lib/oauth.js";
+import { getGitHubAuthUrl, exchangeGitHubCode, getGitHubCopilotAuthUrl, GITHUB_COPILOT_REDIRECT_URI, getGoogleAuthUrl, exchangeGoogleCode } from "../lib/oauth.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const auth = authQueries(sql);
@@ -289,5 +289,48 @@ authRoutes.get("/google/callback", async (c) => {
   } catch (err) {
     console.error("[OAuth] Google callback error:", err);
     return c.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
+  }
+});
+
+// ─── GET /auth/github/copilot ─ Initiate Copilot account connection ─
+// No authMiddleware — this is a browser redirect, not an API call.
+authRoutes.get("/github/copilot", (c) => {
+  // Pass workspace info via state parameter
+  const workspaceId = c.req.query("workspaceId");
+  const state = JSON.stringify({ type: "copilot", workspaceId, nonce: crypto.randomUUID() });
+  const encodedState = Buffer.from(state).toString("base64url");
+  return c.redirect(getGitHubCopilotAuthUrl(encodedState));
+});
+
+// ─── GET /auth/github/copilot/callback ─ Handle Copilot account OAuth ─
+authRoutes.get("/github/copilot/callback", async (c) => {
+  const code = c.req.query("code");
+  const stateParam = c.req.query("state");
+
+  if (!code) return c.redirect(`${FRONTEND_URL}/ai-settings?error=missing_code`);
+
+  let workspaceId: string | undefined;
+  try {
+    const decoded = JSON.parse(Buffer.from(stateParam ?? "", "base64url").toString());
+    workspaceId = decoded.workspaceId;
+  } catch {
+    return c.redirect(`${FRONTEND_URL}/ai-settings?error=invalid_state`);
+  }
+
+  try {
+    const { accessToken: githubToken, user: ghUser } = await exchangeGitHubCode(code, GITHUB_COPILOT_REDIRECT_URI);
+
+    // Redirect back to frontend with the token info — the frontend will call
+    // the API to store it (we can't call the DB here without the user's JWT).
+    const params = new URLSearchParams({
+      githubToken,
+      githubLogin: ghUser.login,
+      githubId: String(ghUser.id),
+      ...(workspaceId ? { workspaceId } : {}),
+    });
+    return c.redirect(`${FRONTEND_URL}/ai-settings/callback?${params.toString()}`);
+  } catch (err) {
+    console.error("[OAuth] GitHub Copilot callback error:", err);
+    return c.redirect(`${FRONTEND_URL}/ai-settings?error=oauth_failed`);
   }
 });

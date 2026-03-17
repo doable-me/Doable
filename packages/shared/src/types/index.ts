@@ -8,6 +8,7 @@ export type AiMessageRole = "user" | "assistant" | "system" | "tool";
 export type ApiKeyEnvironment = "test" | "live";
 export type ConnectorType = "shared" | "personal" | "custom";
 export type ConnectorStatus = "active" | "inactive" | "error";
+export type AiProviderType = "openai" | "azure" | "anthropic";
 
 // ─── Core Entities ──────────────────────────────────────────
 export interface User {
@@ -182,4 +183,40 @@ export interface GitHubCommit {
   direction: "push" | "pull";
   versionId: string | null;
   createdAt: string;
+}
+
+// ─── AI Settings ──────────────────────────────────────────
+export interface GitHubCopilotAccount {
+  id: string;
+  workspaceId: string;
+  label: string;
+  githubLogin: string;
+  githubId: string | null;
+  isValid: boolean;
+  addedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiProvider {
+  id: string;
+  workspaceId: string;
+  label: string;
+  providerType: AiProviderType;
+  baseUrl: string;
+  azureApiVersion: string | null;
+  isValid: boolean;
+  addedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceAiSettings {
+  workspaceId: string;
+  defaultCopilotAccountId: string | null;
+  defaultProviderId: string | null;
+  defaultModel: string | null;
+  updatedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -31,6 +31,8 @@ export interface CopilotEngineConfig {
   cliUrl?: string;
   /** Default model to use */
   model?: string;
+  /** GitHub OAuth token — when set, authenticates as this user instead of gh CLI */
+  githubToken?: string;
 }
 
 /** BYOK provider configuration — passed directly to the Copilot SDK */
@@ -83,6 +85,7 @@ export class CopilotEngine {
     this.client = new CopilotClient({
       ...(this.config.cliPath ? { cliPath: this.config.cliPath } : {}),
       ...(this.config.cliUrl ? { cliUrl: this.config.cliUrl } : {}),
+      ...(this.config.githubToken ? { githubToken: this.config.githubToken } : {}),
     });
 
     await this.client.start();
