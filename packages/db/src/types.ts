@@ -213,6 +213,9 @@ export interface WorkspaceAiSettingsRow {
   default_copilot_account_id: string | null;
   default_provider_id: string | null;
   default_model: string | null;
+  suggestion_copilot_account_id: string | null;
+  suggestion_provider_id: string | null;
+  suggestion_model: string | null;
   updated_by: string | null;
   created_at: Date;
   updated_at: Date;

@@ -368,6 +368,9 @@ aiSettingsRoutes.get("/:workspaceId/ai-settings/defaults", async (c) => {
       default_copilot_account_id: null,
       default_provider_id: null,
       default_model: null,
+      suggestion_copilot_account_id: null,
+      suggestion_provider_id: null,
+      suggestion_model: null,
       updated_by: null,
     },
   });
@@ -377,6 +380,9 @@ const updateDefaultsSchema = z.object({
   defaultCopilotAccountId: z.string().uuid().nullable().optional(),
   defaultProviderId: z.string().uuid().nullable().optional(),
   defaultModel: z.string().max(100).nullable().optional(),
+  suggestionCopilotAccountId: z.string().uuid().nullable().optional(),
+  suggestionProviderId: z.string().uuid().nullable().optional(),
+  suggestionModel: z.string().max(100).nullable().optional(),
 });
 
 // PUT /workspaces/:workspaceId/ai-settings/defaults
@@ -396,6 +402,9 @@ aiSettingsRoutes.put(
       defaultCopilotAccountId: body.defaultCopilotAccountId,
       defaultProviderId: body.defaultProviderId,
       defaultModel: body.defaultModel,
+      suggestionCopilotAccountId: body.suggestionCopilotAccountId,
+      suggestionProviderId: body.suggestionProviderId,
+      suggestionModel: body.suggestionModel,
       updatedBy: userId,
     });
 

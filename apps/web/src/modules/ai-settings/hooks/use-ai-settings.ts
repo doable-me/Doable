@@ -130,6 +130,9 @@ export function useWorkspaceAISettings(workspaceId: string | null) {
     defaultCopilotAccountId?: string | null;
     defaultProviderId?: string | null;
     defaultModel?: string | null;
+    suggestionCopilotAccountId?: string | null;
+    suggestionProviderId?: string | null;
+    suggestionModel?: string | null;
   }) => {
     if (!workspaceId) return;
     const res = await apiUpdateAiDefaults(workspaceId, data);

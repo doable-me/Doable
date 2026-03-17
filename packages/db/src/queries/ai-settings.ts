@@ -210,23 +210,33 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
       defaultCopilotAccountId?: string | null;
       defaultProviderId?: string | null;
       defaultModel?: string | null;
+      suggestionCopilotAccountId?: string | null;
+      suggestionProviderId?: string | null;
+      suggestionModel?: string | null;
       updatedBy: string;
     }): Promise<WorkspaceAiSettingsRow> {
       const [row] = await sql<WorkspaceAiSettingsRow[]>`
         INSERT INTO workspace_ai_settings (
           workspace_id, default_copilot_account_id, default_provider_id,
-          default_model, updated_by
+          default_model, suggestion_copilot_account_id, suggestion_provider_id,
+          suggestion_model, updated_by
         ) VALUES (
           ${data.workspaceId},
           ${data.defaultCopilotAccountId ?? null},
           ${data.defaultProviderId ?? null},
           ${data.defaultModel ?? null},
+          ${data.suggestionCopilotAccountId ?? null},
+          ${data.suggestionProviderId ?? null},
+          ${data.suggestionModel ?? null},
           ${data.updatedBy}
         )
         ON CONFLICT (workspace_id) DO UPDATE SET
           default_copilot_account_id = COALESCE(${data.defaultCopilotAccountId ?? null}, workspace_ai_settings.default_copilot_account_id),
           default_provider_id = COALESCE(${data.defaultProviderId ?? null}, workspace_ai_settings.default_provider_id),
           default_model = COALESCE(${data.defaultModel ?? null}, workspace_ai_settings.default_model),
+          suggestion_copilot_account_id = COALESCE(${data.suggestionCopilotAccountId ?? null}, workspace_ai_settings.suggestion_copilot_account_id),
+          suggestion_provider_id = COALESCE(${data.suggestionProviderId ?? null}, workspace_ai_settings.suggestion_provider_id),
+          suggestion_model = COALESCE(${data.suggestionModel ?? null}, workspace_ai_settings.suggestion_model),
           updated_by = ${data.updatedBy}
         RETURNING *
       `;

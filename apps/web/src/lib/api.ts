@@ -360,6 +360,9 @@ export interface ApiWorkspaceAiDefaults {
   default_copilot_account_id: string | null;
   default_provider_id: string | null;
   default_model: string | null;
+  suggestion_copilot_account_id: string | null;
+  suggestion_provider_id: string | null;
+  suggestion_model: string | null;
   updated_by: string | null;
 }
 
@@ -449,6 +452,9 @@ export async function apiUpdateAiDefaults(
     defaultCopilotAccountId?: string | null;
     defaultProviderId?: string | null;
     defaultModel?: string | null;
+    suggestionCopilotAccountId?: string | null;
+    suggestionProviderId?: string | null;
+    suggestionModel?: string | null;
   }
 ): Promise<{ data: ApiWorkspaceAiDefaults }> {
   return apiFetch(`/workspaces/${workspaceId}/ai-settings/defaults`, {

@@ -1002,13 +1002,48 @@ chatRoutes.post(
     const { lastAssistantMessage, userPrompt } = c.req.valid("json");
 
     try {
-      const engine = await getCopilotEngine();
+      // Resolve suggestion model from workspace settings
+      let suggestionModel = "gpt-4o-mini";
+      let suggestionGithubToken: string | undefined;
+      let suggestionProvider: ByokProviderConfig | undefined;
 
-      // Create a lightweight session with a fast/cheap model for suggestions
+      // Try to get project's workspace for suggestion settings
+      try {
+        const [project] = await sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`;
+        if (project?.workspace_id) {
+          const settings = await aiSettingsDb.getSettings(project.workspace_id);
+          if (settings?.suggestion_model) {
+            suggestionModel = settings.suggestion_model;
+          }
+          if (settings?.suggestion_copilot_account_id) {
+            suggestionGithubToken = (await aiSettingsDb.getCopilotAccountToken(settings.suggestion_copilot_account_id)) ?? undefined;
+          }
+          if (settings?.suggestion_provider_id) {
+            const providerData = await aiSettingsDb.getProviderWithKey(settings.suggestion_provider_id);
+            if (providerData) {
+              suggestionProvider = {
+                type: providerData.row.provider_type as "openai" | "azure" | "anthropic",
+                baseUrl: providerData.row.base_url,
+                apiKey: providerData.apiKey ?? undefined,
+                bearerToken: providerData.bearerToken ?? undefined,
+                ...(providerData.row.azure_api_version ? { azure: { apiVersion: providerData.row.azure_api_version } } : {}),
+              };
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[Chat] Failed to resolve suggestion settings:", err);
+      }
+
+      const manager = getCopilotManager();
+      const engine = await manager.getEngine(suggestionGithubToken);
+
+      // Create a lightweight session with the configured suggestion model
       const sessionId = await engine.createSession({
         projectId: "suggestions",
         userId: "system",
-        model: "gpt-4o-mini", // Fast, cheap model for simple text generation
+        model: suggestionModel,
+        ...(suggestionProvider ? { provider: suggestionProvider } : {}),
         systemPrompt: `You generate short, contextual next-step suggestion chips for an AI app builder. Given the user's last prompt and the AI's response, return exactly 4 suggestions as a JSON array of strings. Each suggestion should be 2-6 words, actionable, and relevant to what was just built. Do NOT include generic suggestions. Focus on what the user would logically want to do next with THIS specific app. Return ONLY the JSON array, no other text.`,
       });
 

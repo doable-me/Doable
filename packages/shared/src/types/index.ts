@@ -216,6 +216,9 @@ export interface WorkspaceAiSettings {
   defaultCopilotAccountId: string | null;
   defaultProviderId: string | null;
   defaultModel: string | null;
+  suggestionCopilotAccountId: string | null;
+  suggestionProviderId: string | null;
+  suggestionModel: string | null;
   updatedBy: string | null;
   createdAt: string;
   updatedAt: string;

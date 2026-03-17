@@ -3,15 +3,14 @@
 import { useState, useEffect } from "react";
 import { apiListWorkspaces, type ApiWorkspace } from "@/lib/api";
 import { useGitHubAccounts, useCustomProviders, useWorkspaceAISettings } from "../hooks/use-ai-settings";
-import { GitHubAccountsTab } from "./github-accounts-tab";
-import { CustomProvidersTab } from "./custom-providers-tab";
-import { ModelDefaultsTab } from "./model-defaults-tab";
-import { Bot, Github, Key, Settings } from "lucide-react";
+import { ConnectionsTab } from "./connections-tab";
+import { ModelConfigTab } from "./model-config-tab";
+import { Link2, Bot, Settings } from "lucide-react";
 
-type Tab = "github" | "providers" | "defaults" | "access";
+type Tab = "connections" | "models" | "access";
 
 export function AiSettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("github");
+  const [activeTab, setActiveTab] = useState<Tab>("models");
   const [workspaces, setWorkspaces] = useState<ApiWorkspace[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
 
@@ -29,9 +28,8 @@ export function AiSettingsPage() {
   const aiDefaults = useWorkspaceAISettings(activeWorkspaceId);
 
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
-    { key: "github", label: "GitHub Accounts", icon: Github },
-    { key: "providers", label: "Custom Providers", icon: Key },
-    { key: "defaults", label: "Default Model", icon: Bot },
+    { key: "models", label: "Model Configuration", icon: Bot },
+    { key: "connections", label: "Connections", icon: Link2 },
     { key: "access", label: "Access Control", icon: Settings },
   ];
 
@@ -40,7 +38,7 @@ export function AiSettingsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">AI Settings</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Configure AI providers, connect GitHub accounts, and set workspace defaults.
+          Configure which AI models power your workspace.
         </p>
       </div>
 
@@ -63,38 +61,29 @@ export function AiSettingsPage() {
       </div>
 
       {/* Tab content */}
-      {activeTab === "github" && (
-        <GitHubAccountsTab
-          workspaceId={activeWorkspaceId}
-          accounts={githubAccounts.accounts}
-          loading={githubAccounts.loading}
-          activeAccountId={aiDefaults.defaults?.default_copilot_account_id ?? null}
-          onAdd={githubAccounts.add}
-          onRemove={githubAccounts.remove}
-          onValidate={githubAccounts.validate}
-          onSetActive={async (id) => {
-            await aiDefaults.update({ defaultCopilotAccountId: id });
-          }}
-        />
-      )}
-      {activeTab === "providers" && (
-        <CustomProvidersTab
-          workspaceId={activeWorkspaceId}
-          providers={providers.providers}
-          loading={providers.loading}
-          onAdd={providers.add}
-          onRemove={providers.remove}
-          onValidate={providers.validate}
-        />
-      )}
-      {activeTab === "defaults" && (
-        <ModelDefaultsTab
+      {activeTab === "models" && (
+        <ModelConfigTab
           workspaceId={activeWorkspaceId}
           defaults={aiDefaults.defaults}
           loading={aiDefaults.loading}
           accounts={githubAccounts.accounts}
           providers={providers.providers}
           onUpdate={aiDefaults.update}
+        />
+      )}
+      {activeTab === "connections" && (
+        <ConnectionsTab
+          workspaceId={activeWorkspaceId}
+          accounts={githubAccounts.accounts}
+          accountsLoading={githubAccounts.loading}
+          providers={providers.providers}
+          providersLoading={providers.loading}
+          onAddAccount={githubAccounts.add}
+          onRemoveAccount={githubAccounts.remove}
+          onValidateAccount={githubAccounts.validate}
+          onAddProvider={providers.add}
+          onRemoveProvider={providers.remove}
+          onValidateProvider={providers.validate}
         />
       )}
       {activeTab === "access" && (
