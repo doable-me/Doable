@@ -193,7 +193,22 @@ export async function createProject(
   let files: Array<[string, string]>;
 
   if (templateFiles && Object.keys(templateFiles).length > 0) {
-    // Use template files
+    // Use template files — but ensure they contain required entries
+    const required = ["index.html", "package.json"];
+    const templateKeys = Object.keys(templateFiles);
+    const missingRequired = required.filter((r) => !templateKeys.includes(r));
+    if (missingRequired.length > 0) {
+      console.warn(
+        `[FileManager] Template is missing required files [${missingRequired.join(", ")}] — ` +
+        `falling back to default scaffold to prevent blank preview`,
+      );
+      // Fall back to default scaffold instead of using the incomplete template
+      templateFiles = undefined;
+    }
+  }
+
+  if (templateFiles && Object.keys(templateFiles).length > 0) {
+    // Use template files (validated above)
     files = Object.entries(templateFiles);
   } else {
     // Default blank scaffold
@@ -215,8 +230,32 @@ export async function createProject(
     createdFiles.push(filePath);
   }
 
+  // Validate that critical scaffold files exist on disk.
+  // Without these, Vite will show a blank/default page.
+  const criticalFiles = ["index.html", "package.json"];
+  const missingCritical: string[] = [];
+  for (const cf of criticalFiles) {
+    if (!existsSync(projectPath + "/" + cf)) {
+      missingCritical.push(cf);
+    }
+  }
+  if (missingCritical.length > 0) {
+    throw new Error(
+      `Scaffold validation failed: missing critical files [${missingCritical.join(", ")}] in ${projectPath}. ` +
+      `This would cause a blank preview. Created files: [${createdFiles.join(", ")}]`,
+    );
+  }
+
   // Run pnpm install
   const installOutput = await runPnpmInstall(projectPath);
+
+  // Verify node_modules was actually created (npm install can "succeed"
+  // with exit code 0 but not create node_modules in edge cases)
+  if (!existsSync(projectPath + "/node_modules")) {
+    console.warn(
+      `[FileManager] npm install completed but node_modules was not created for project ${projectId}`,
+    );
+  }
 
   return {
     projectPath,
@@ -298,8 +337,20 @@ function runPnpmInstall(cwd: string): Promise<string> {
 
     // Timeout after 3 minutes
     setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error("pnpm install timed out after 3 minutes"));
+      // On Windows, shell: true means child is cmd.exe; SIGTERM doesn't
+      // propagate. Use taskkill to kill the entire process tree.
+      if (process.platform === "win32" && child.pid) {
+        try {
+          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+            stdio: "ignore",
+          });
+        } catch {
+          child.kill("SIGTERM");
+        }
+      } else {
+        child.kill("SIGTERM");
+      }
+      reject(new Error("npm install timed out after 3 minutes"));
     }, 180_000);
   });
 }

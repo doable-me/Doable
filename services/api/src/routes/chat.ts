@@ -239,8 +239,14 @@ chatRoutes.post(
         try {
           console.log(`[Chat] Auto-scaffolding project ${projectId}`);
           await createProject(projectId);
-        } catch (err) {
-          console.warn(`[Chat] Scaffold failed (may already exist):`, err);
+        } catch (err: unknown) {
+          // "Project already exists" is benign (race condition with frontend scaffold).
+          // Any other error is a real problem — log it but continue so the AI can
+          // still operate on whatever files exist.
+          const isAlreadyExists = err instanceof Error && err.message.includes("already scaffolded");
+          if (!isAlreadyExists) {
+            console.error(`[Chat] Scaffold failed for project ${projectId}:`, err);
+          }
         }
       }
 
@@ -250,7 +256,7 @@ chatRoutes.post(
           console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
           await startDevServer(projectId);
         } catch (err) {
-          console.warn(`[Chat] Dev server start failed:`, err);
+          console.error(`[Chat] Dev server start failed for project ${projectId}:`, err);
         }
       }
 

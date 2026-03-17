@@ -38,10 +38,34 @@ export const projectFileRoutes = new Hono<AuthEnv>();
 // Require authentication for all project file operations
 projectFileRoutes.use("/projects/:id/*", authMiddleware);
 
+// In-flight scaffold locks — prevents two concurrent scaffold calls from
+// double-creating a project (e.g. frontend mount + chat auto-scaffold).
+// The value is a promise that resolves when the first caller finishes.
+const scaffoldLocks = new Map<string, Promise<void>>();
+
 // ─── POST /projects/:id/scaffold ─ Create project scaffold ──
 
 projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
   const projectId = c.req.param("id");
+
+  // If a scaffold is already in-flight for this project, wait for it to
+  // finish and then handle this request normally (which will hit the
+  // ProjectExistsError path and just start the dev server).
+  const existingLock = scaffoldLocks.get(projectId);
+  if (existingLock) {
+    try {
+      await existingLock;
+    } catch {
+      // Previous scaffold failed — we'll try again below
+    }
+  }
+
+  // Create a lock for this scaffold operation
+  let releaseLock: () => void;
+  const lockPromise = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  scaffoldLocks.set(projectId, lockPromise);
 
   try {
     // Check if this project has a template_id — if so, use template files
@@ -118,6 +142,9 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
       });
     }
     throw err;
+  } finally {
+    releaseLock!();
+    scaffoldLocks.delete(projectId);
   }
 });
 

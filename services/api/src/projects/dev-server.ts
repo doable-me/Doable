@@ -39,6 +39,12 @@ const servers = new Map<string, DevServerInstance>();
 const usedPorts = new Set<number>();
 
 /**
+ * In-flight start promises. Prevents two concurrent startDevServer()
+ * calls for the same project from spawning two Vite processes.
+ */
+const startingServers = new Map<string, Promise<{ url: string; port: number }>>();
+
+/**
  * Check if a port is actually free on the system.
  * This catches orphaned Vite processes from previous API server runs
  * that are still occupying ports even though our in-memory set is empty.
@@ -96,6 +102,7 @@ function releasePort(port: number): void {
 /**
  * Start a Vite dev server for the given project.
  * If already running, returns the existing server info.
+ * If a start is already in-flight, waits for that instead of spawning a duplicate.
  */
 export async function startDevServer(
   projectId: string,
@@ -116,6 +123,29 @@ export async function startDevServer(
     cleanup(projectId);
   }
 
+  // If another caller is already starting this project, wait for that
+  const inflight = startingServers.get(projectId);
+  if (inflight) {
+    return inflight;
+  }
+
+  const startPromise = doStartDevServer(projectId);
+  startingServers.set(projectId, startPromise);
+
+  try {
+    return await startPromise;
+  } finally {
+    startingServers.delete(projectId);
+  }
+}
+
+/**
+ * Internal: actually spawns the Vite process. Called only from startDevServer
+ * after the in-flight guard.
+ */
+async function doStartDevServer(
+  projectId: string,
+): Promise<{ url: string; port: number }> {
   const port = await allocatePort();
   const projectPath = getProjectPath(projectId);
   // Internal URL for the reverse proxy to forward to (always localhost)
@@ -263,6 +293,44 @@ export async function startDevServer(
     .catch(() => clearTimeout(startupTimeout));
 
   await readyPromise;
+
+  // Health check: verify the server actually responds to HTTP before
+  // declaring it ready. Vite may print "ready in" before it can serve
+  // requests (e.g. during dependency optimization).
+  const healthUrl = `http://localhost:${port}/preview/${projectId}/`;
+  const maxHealthChecks = 10;
+  let healthy = false;
+  for (let i = 0; i < maxHealthChecks; i++) {
+    try {
+      const res = await fetch(healthUrl, {
+        headers: { Accept: "text/html" },
+        signal: AbortSignal.timeout(2000),
+      });
+      if (res.ok || res.status === 304) {
+        healthy = true;
+        break;
+      }
+    } catch {
+      // Server not responding yet — wait and retry
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  if (!healthy) {
+    // Process may have died during health checks
+    if (child.exitCode !== null) {
+      cleanup(projectId);
+      throw new Error(
+        `Dev server process exited (code ${child.exitCode}) during health check.`,
+      );
+    }
+    // Server is alive but not responding — log a warning but continue,
+    // since it may start responding shortly after
+    console.warn(
+      `[DevServer] Health check failed for project ${projectId} on port ${port} — proceeding anyway`,
+    );
+  }
+
   // Return the proxy-based URL (relative path) — the frontend prepends the API base
   return { url: `/preview/${projectId}/`, port };
 }
