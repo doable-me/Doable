@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getStoredTokens, apiUpdateProject, apiDeleteProject, apiDuplicateProject } from "@/lib/api";
+import { getStoredTokens, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, type ApiEffectiveAiConfig } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-attachments";
@@ -736,6 +736,10 @@ export default function EditorPage() {
   const [scaffoldError, setScaffoldError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
+  // ─── Workspace / AI enforcement state ────────────────────
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [effectiveAiConfig, setEffectiveAiConfig] = useState<ApiEffectiveAiConfig | null>(null);
+
   // ─── File tree state ──────────────────────────────────────
   const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
   const [fileTreeLoading, setFileTreeLoading] = useState(false);
@@ -772,6 +776,8 @@ export default function EditorPage() {
   const [availableModels] = useState<ModelOption[]>([]);
 
   const handleModelSelect = useCallback((modelId: string, providerId: string | null, copilotAccountId: string | null) => {
+    // Block user changes when AI enforcement is active
+    if (effectiveAiConfig?.enforce_ai) return;
     setSelectedModelId(modelId);
     setSelectedProviderId(providerId);
     setSelectedCopilotAccountId(copilotAccountId);
@@ -780,7 +786,7 @@ export default function EditorPage() {
     else localStorage.removeItem("doable_selected_provider_id");
     if (copilotAccountId) localStorage.setItem("doable_selected_copilot_account", copilotAccountId);
     else localStorage.removeItem("doable_selected_copilot_account");
-  }, []);
+  }, [effectiveAiConfig?.enforce_ai]);
 
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
   const [messages, setMessages] = useState<ChatMsg[]>(() => {
@@ -875,6 +881,47 @@ export default function EditorPage() {
       window.history.replaceState({}, "", newUrl);
     }
   }, [isNewProject, resolvedProjectId]);
+
+  // ─── Fetch workspace_id from project ──────────────────────
+  useEffect(() => {
+    if (!resolvedProjectId) return;
+    apiGetProject(resolvedProjectId)
+      .then((res) => setWorkspaceId(res.data.workspace_id))
+      .catch(console.error);
+  }, [resolvedProjectId]);
+
+  // ─── Fetch effective AI config for enforcement + user prefs ─
+  useEffect(() => {
+    if (!workspaceId) return;
+    apiGetEffectiveAiConfig(workspaceId)
+      .then((res) => setEffectiveAiConfig(res.data))
+      .catch(console.error);
+  }, [workspaceId]);
+
+  // ─── Apply AI enforcement or server-side user preferences ──
+  useEffect(() => {
+    if (!effectiveAiConfig) return;
+    if (effectiveAiConfig.enforce_ai) {
+      // Enforced — override all model selection state
+      setSelectedModelId(effectiveAiConfig.enforced_model ?? "");
+      setSelectedProviderId(effectiveAiConfig.enforced_provider_id ?? null);
+      setSelectedCopilotAccountId(effectiveAiConfig.enforced_copilot_account_id ?? null);
+    } else {
+      // Not enforced — use server-side user preferences as source of truth if available
+      if (effectiveAiConfig.user_model) {
+        setSelectedModelId(effectiveAiConfig.user_model);
+        localStorage.setItem("doable_selected_model", effectiveAiConfig.user_model);
+      }
+      if (effectiveAiConfig.user_provider_id) {
+        setSelectedProviderId(effectiveAiConfig.user_provider_id);
+        localStorage.setItem("doable_selected_provider_id", effectiveAiConfig.user_provider_id);
+      }
+      if (effectiveAiConfig.user_copilot_account_id) {
+        setSelectedCopilotAccountId(effectiveAiConfig.user_copilot_account_id);
+        localStorage.setItem("doable_selected_copilot_account", effectiveAiConfig.user_copilot_account_id);
+      }
+    }
+  }, [effectiveAiConfig]);
 
   // ─── Scaffold + preview URL on mount ──────────────────────
   useEffect(() => {
@@ -3292,6 +3339,8 @@ export default function EditorPage() {
                         selectedCopilotAccountId={selectedCopilotAccountId}
                         onSelect={handleModelSelect}
                         models={availableModels}
+                        disabled={effectiveAiConfig?.enforce_ai ?? false}
+                        enforcedLabel={effectiveAiConfig?.enforce_ai ? `Enforced: ${effectiveAiConfig.enforced_model ?? 'Default'}` : undefined}
                       />
                     </div>
 

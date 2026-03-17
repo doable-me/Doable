@@ -13,9 +13,13 @@ import {
   apiGetAiDefaults,
   apiUpdateAiDefaults,
   apiListAiModels,
+  apiGetUserAiPreferences,
+  apiUpdateUserAiPreferences,
   type ApiGitHubCopilotAccount,
   type ApiAiProvider,
   type ApiWorkspaceAiDefaults,
+  type ApiUserAiPreferences,
+  type ApiEnforcementStatus,
 } from "@/lib/api";
 
 export function useGitHubAccounts(workspaceId: string | null) {
@@ -133,6 +137,10 @@ export function useWorkspaceAISettings(workspaceId: string | null) {
     suggestionCopilotAccountId?: string | null;
     suggestionProviderId?: string | null;
     suggestionModel?: string | null;
+    enforceAi?: boolean;
+    enforcedCopilotAccountId?: string | null;
+    enforcedProviderId?: string | null;
+    enforcedModel?: string | null;
   }) => {
     if (!workspaceId) return;
     const res = await apiUpdateAiDefaults(workspaceId, data);
@@ -140,6 +148,40 @@ export function useWorkspaceAISettings(workspaceId: string | null) {
   };
 
   return { defaults, loading, refresh, update };
+}
+
+export function useUserAiPreferences(workspaceId: string | undefined) {
+  const [preferences, setPreferences] = useState<ApiUserAiPreferences | null>(null);
+  const [enforcement, setEnforcement] = useState<ApiEnforcementStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    if (!workspaceId) return;
+    setLoading(true);
+    try {
+      const res = await apiGetUserAiPreferences(workspaceId);
+      setPreferences(res.data.preferences);
+      setEnforcement(res.data.enforcement);
+    } catch (err) {
+      console.error("Failed to load user AI preferences:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const update = useCallback(async (data: {
+    copilotAccountId?: string | null;
+    providerId?: string | null;
+    model?: string | null;
+  }) => {
+    if (!workspaceId) return;
+    const res = await apiUpdateUserAiPreferences(workspaceId, data);
+    setPreferences(res.data);
+  }, [workspaceId]);
+
+  return { preferences, enforcement, loading, update, refresh };
 }
 
 export function useAvailableModels(workspaceId: string | null) {

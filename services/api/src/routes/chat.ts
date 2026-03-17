@@ -7,6 +7,7 @@ import {
   getCopilotEngine,
   createDoableTools,
   type ByokProviderConfig,
+  type CopilotEngine,
 } from "../ai/providers/copilot.js";
 import { getCopilotManager } from "../ai/providers/copilot-manager.js";
 import { aiSettingsQueries } from "@doable/db";
@@ -33,6 +34,116 @@ const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
 chatRoutes.use("/projects/:id/chat", authMiddleware);
 chatRoutes.use("/projects/:id/chat/*", authMiddleware);
 chatRoutes.use("/ai/*", authMiddleware);
+
+// ─── AI provider resolution ─────────────────────────────
+
+/**
+ * Resolve which AI engine, model, and provider to use for a request.
+ *
+ * Priority chain:
+ *   1. Admin enforcement — workspace_ai_settings.enforce_ai = true
+ *   2. Explicit request params — copilotAccountId / providerId / model from body
+ *   3. User preferences — from user_ai_preferences table
+ *   4. Workspace defaults — from workspace_ai_settings
+ *   5. System default — gh CLI auth (no token)
+ */
+async function resolveAiEngine(
+  projectId: string,
+  userId: string,
+  overrides: {
+    copilotAccountId?: string;
+    providerId?: string;
+    provider?: ByokProviderConfig;
+    model?: string;
+  },
+): Promise<{
+  engine: CopilotEngine;
+  model?: string;
+  provider?: ByokProviderConfig;
+}> {
+  let resolvedProvider: ByokProviderConfig | undefined = overrides.provider;
+  let resolvedModel: string | undefined = overrides.model;
+  let githubToken: string | undefined;
+
+  // Track whether we picked a copilot account / provider through any tier
+  let selectedCopilotAccountId: string | undefined = overrides.copilotAccountId;
+  let selectedProviderId: string | undefined = overrides.providerId;
+
+  try {
+    // Look up the project's workspace
+    const [project] = await sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`;
+    if (project?.workspace_id) {
+      const config = await aiSettingsDb.getEffectiveAiConfig(project.workspace_id, userId);
+
+      if (config) {
+        // ── Tier 1: Admin enforcement ──
+        if (config.enforce_ai) {
+          selectedCopilotAccountId = config.enforced_copilot_account_id ?? undefined;
+          selectedProviderId = config.enforced_provider_id ?? undefined;
+          resolvedModel = config.enforced_model ?? resolvedModel;
+          // Enforcement overrides any request-level provider/copilot values
+          resolvedProvider = undefined;
+        } else if (!selectedCopilotAccountId && !selectedProviderId && !resolvedProvider) {
+          // No enforcement and no explicit overrides — walk down the chain
+
+          // ── Tier 3: User preferences ──
+          if (config.user_copilot_account_id || config.user_provider_id) {
+            selectedCopilotAccountId = config.user_copilot_account_id ?? undefined;
+            selectedProviderId = config.user_provider_id ?? undefined;
+            if (!resolvedModel && config.user_model) {
+              resolvedModel = config.user_model;
+            }
+          }
+          // ── Tier 4: Workspace defaults ──
+          else {
+            selectedCopilotAccountId = config.default_copilot_account_id ?? undefined;
+            selectedProviderId = config.default_provider_id ?? undefined;
+            if (!resolvedModel && config.default_model) {
+              resolvedModel = config.default_model;
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Chat] Failed to resolve workspace/user AI config:", err);
+  }
+
+  // ── Decrypt selected provider key ──
+  if (selectedProviderId && !resolvedProvider) {
+    try {
+      const providerData = await aiSettingsDb.getProviderWithKey(selectedProviderId);
+      if (providerData) {
+        resolvedProvider = {
+          type: providerData.row.provider_type as "openai" | "azure" | "anthropic",
+          baseUrl: providerData.row.base_url,
+          apiKey: providerData.apiKey ?? undefined,
+          bearerToken: providerData.bearerToken ?? undefined,
+          ...(providerData.row.azure_api_version
+            ? { azure: { apiVersion: providerData.row.azure_api_version } }
+            : {}),
+        };
+      }
+    } catch (err) {
+      console.error("[Chat] Failed to decrypt provider key:", err);
+    }
+  }
+
+  // ── Decrypt selected copilot account token ──
+  if (selectedCopilotAccountId) {
+    try {
+      githubToken = (await aiSettingsDb.getCopilotAccountToken(selectedCopilotAccountId)) ?? undefined;
+    } catch (err) {
+      console.error("[Chat] Failed to decrypt copilot account token:", err);
+    }
+  }
+
+  // ── Tier 5: System default (no token → gh CLI auth) ──
+  const manager = getCopilotManager();
+  const engine = await manager.getEngine(githubToken);
+
+  return { engine, model: resolvedModel, provider: resolvedProvider };
+}
 
 // ─── Helpers: project context & error detection ─────────
 
@@ -284,43 +395,17 @@ chatRoutes.post(
         }
       }
 
-      // ── Resolve AI engine: provider/account from request or workspace defaults ──
-      let resolvedProvider = provider as ByokProviderConfig | undefined;
-      let resolvedModel = model;
-      let githubToken: string | undefined;
-
-      // If providerId is set, decrypt the API key from the database
-      if (providerId && !resolvedProvider) {
-        try {
-          const providerData = await aiSettingsDb.getProviderWithKey(providerId);
-          if (providerData) {
-            resolvedProvider = {
-              type: providerData.row.provider_type as "openai" | "azure" | "anthropic",
-              baseUrl: providerData.row.base_url,
-              apiKey: providerData.apiKey ?? undefined,
-              bearerToken: providerData.bearerToken ?? undefined,
-              ...(providerData.row.azure_api_version
-                ? { azure: { apiVersion: providerData.row.azure_api_version } }
-                : {}),
-            };
-          }
-        } catch (err) {
-          console.error("[Chat] Failed to resolve providerId:", err);
-        }
-      }
-
-      // If copilotAccountId is set, decrypt the GitHub token
-      if (copilotAccountId) {
-        try {
-          githubToken = (await aiSettingsDb.getCopilotAccountToken(copilotAccountId)) ?? undefined;
-        } catch (err) {
-          console.error("[Chat] Failed to resolve copilotAccountId:", err);
-        }
-      }
-
-      // Get engine via manager (pools by token)
-      const manager = getCopilotManager();
-      const engine = await manager.getEngine(githubToken);
+      // ── Resolve AI engine via fallback chain ──
+      const {
+        engine,
+        model: resolvedModel,
+        provider: resolvedProvider,
+      } = await resolveAiEngine(projectId, userId, {
+        copilotAccountId,
+        providerId,
+        provider: provider as ByokProviderConfig | undefined,
+        model,
+      });
 
       // Get or create session for this project.
       // Visual-edit mode uses a separate session key so it doesn't
@@ -425,8 +510,8 @@ ERROR RECOVERY — if you encounter errors:
         sessionId = await engine.createSession({
           projectId,
           userId,
-          model,
-          provider: provider as ByokProviderConfig | undefined,
+          model: resolvedModel,
+          provider: resolvedProvider,
           workingDirectory: projectPath,
           systemPrompt,
           tools: createDoableTools(projectId),
@@ -1002,32 +1087,56 @@ chatRoutes.post(
     const { lastAssistantMessage, userPrompt } = c.req.valid("json");
 
     try {
-      // Resolve suggestion model from workspace settings
-      let suggestionModel = "gpt-4o-mini";
+      // Resolve suggestion AI config with enforcement support
+      let suggestionModel: string | undefined = "gpt-4o-mini";
       let suggestionGithubToken: string | undefined;
       let suggestionProvider: ByokProviderConfig | undefined;
 
-      // Try to get project's workspace for suggestion settings
       try {
         const [project] = await sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`;
         if (project?.workspace_id) {
           const settings = await aiSettingsDb.getSettings(project.workspace_id);
-          if (settings?.suggestion_model) {
-            suggestionModel = settings.suggestion_model;
-          }
-          if (settings?.suggestion_copilot_account_id) {
-            suggestionGithubToken = (await aiSettingsDb.getCopilotAccountToken(settings.suggestion_copilot_account_id)) ?? undefined;
-          }
-          if (settings?.suggestion_provider_id) {
-            const providerData = await aiSettingsDb.getProviderWithKey(settings.suggestion_provider_id);
-            if (providerData) {
-              suggestionProvider = {
-                type: providerData.row.provider_type as "openai" | "azure" | "anthropic",
-                baseUrl: providerData.row.base_url,
-                apiKey: providerData.apiKey ?? undefined,
-                bearerToken: providerData.bearerToken ?? undefined,
-                ...(providerData.row.azure_api_version ? { azure: { apiVersion: providerData.row.azure_api_version } } : {}),
-              };
+          if (settings) {
+            // ── Enforcement overrides everything ──
+            if (settings.enforce_ai) {
+              if (settings.enforced_copilot_account_id) {
+                suggestionGithubToken = (await aiSettingsDb.getCopilotAccountToken(settings.enforced_copilot_account_id)) ?? undefined;
+              }
+              if (settings.enforced_provider_id) {
+                const providerData = await aiSettingsDb.getProviderWithKey(settings.enforced_provider_id);
+                if (providerData) {
+                  suggestionProvider = {
+                    type: providerData.row.provider_type as "openai" | "azure" | "anthropic",
+                    baseUrl: providerData.row.base_url,
+                    apiKey: providerData.apiKey ?? undefined,
+                    bearerToken: providerData.bearerToken ?? undefined,
+                    ...(providerData.row.azure_api_version ? { azure: { apiVersion: providerData.row.azure_api_version } } : {}),
+                  };
+                }
+              }
+              if (settings.enforced_model) {
+                suggestionModel = settings.enforced_model;
+              }
+            } else {
+              // ── No enforcement: use suggestion-specific workspace settings ──
+              if (settings.suggestion_model) {
+                suggestionModel = settings.suggestion_model;
+              }
+              if (settings.suggestion_copilot_account_id) {
+                suggestionGithubToken = (await aiSettingsDb.getCopilotAccountToken(settings.suggestion_copilot_account_id)) ?? undefined;
+              }
+              if (settings.suggestion_provider_id) {
+                const providerData = await aiSettingsDb.getProviderWithKey(settings.suggestion_provider_id);
+                if (providerData) {
+                  suggestionProvider = {
+                    type: providerData.row.provider_type as "openai" | "azure" | "anthropic",
+                    baseUrl: providerData.row.base_url,
+                    apiKey: providerData.apiKey ?? undefined,
+                    bearerToken: providerData.bearerToken ?? undefined,
+                    ...(providerData.row.azure_api_version ? { azure: { apiVersion: providerData.row.azure_api_version } } : {}),
+                  };
+                }
+              }
             }
           }
         }

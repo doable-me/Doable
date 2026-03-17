@@ -216,7 +216,34 @@ export interface WorkspaceAiSettingsRow {
   suggestion_copilot_account_id: string | null;
   suggestion_provider_id: string | null;
   suggestion_model: string | null;
+  enforce_ai: boolean;
+  enforced_copilot_account_id: string | null;
+  enforced_provider_id: string | null;
+  enforced_model: string | null;
   updated_by: string | null;
   created_at: Date;
   updated_at: Date;
+}
+
+export interface UserAiPreferencesRow {
+  workspace_id: string;
+  user_id: string;
+  copilot_account_id: string | null;
+  provider_id: string | null;
+  model: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface EffectiveAiConfigRow {
+  enforce_ai: boolean;
+  enforced_copilot_account_id: string | null;
+  enforced_provider_id: string | null;
+  enforced_model: string | null;
+  default_copilot_account_id: string | null;
+  default_provider_id: string | null;
+  default_model: string | null;
+  user_copilot_account_id: string | null;
+  user_provider_id: string | null;
+  user_model: string | null;
 }

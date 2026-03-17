@@ -371,6 +371,10 @@ aiSettingsRoutes.get("/:workspaceId/ai-settings/defaults", async (c) => {
       suggestion_copilot_account_id: null,
       suggestion_provider_id: null,
       suggestion_model: null,
+      enforce_ai: false,
+      enforced_copilot_account_id: null,
+      enforced_provider_id: null,
+      enforced_model: null,
       updated_by: null,
     },
   });
@@ -383,6 +387,10 @@ const updateDefaultsSchema = z.object({
   suggestionCopilotAccountId: z.string().uuid().nullable().optional(),
   suggestionProviderId: z.string().uuid().nullable().optional(),
   suggestionModel: z.string().max(100).nullable().optional(),
+  enforceAi: z.boolean().optional(),
+  enforcedCopilotAccountId: z.string().uuid().nullable().optional(),
+  enforcedProviderId: z.string().uuid().nullable().optional(),
+  enforcedModel: z.string().max(100).nullable().optional(),
 });
 
 // PUT /workspaces/:workspaceId/ai-settings/defaults
@@ -405,9 +413,104 @@ aiSettingsRoutes.put(
       suggestionCopilotAccountId: body.suggestionCopilotAccountId,
       suggestionProviderId: body.suggestionProviderId,
       suggestionModel: body.suggestionModel,
+      enforceAi: body.enforceAi,
+      enforcedCopilotAccountId: body.enforcedCopilotAccountId,
+      enforcedProviderId: body.enforcedProviderId,
+      enforcedModel: body.enforcedModel,
       updatedBy: userId,
     });
 
     return c.json({ data: settings });
   }
 );
+
+// ─── User AI Preferences ─────────────────────────────────
+
+// GET /workspaces/:workspaceId/ai-settings/user-preferences
+aiSettingsRoutes.get("/:workspaceId/ai-settings/user-preferences", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const userId = c.get("userId");
+
+  const err = await requireMember(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  const [preferences, settings] = await Promise.all([
+    aiSettings.getUserPreferences(workspaceId, userId),
+    aiSettings.getSettings(workspaceId),
+  ]);
+
+  return c.json({
+    data: {
+      preferences: preferences ?? null,
+      enforcement: {
+        enforce_ai: settings?.enforce_ai ?? false,
+        enforced_copilot_account_id: settings?.enforced_copilot_account_id ?? null,
+        enforced_provider_id: settings?.enforced_provider_id ?? null,
+        enforced_model: settings?.enforced_model ?? null,
+      },
+    },
+  });
+});
+
+const updateUserPreferencesSchema = z.object({
+  copilotAccountId: z.string().uuid().nullable().optional(),
+  providerId: z.string().uuid().nullable().optional(),
+  model: z.string().max(100).nullable().optional(),
+});
+
+// PUT /workspaces/:workspaceId/ai-settings/user-preferences
+aiSettingsRoutes.put(
+  "/:workspaceId/ai-settings/user-preferences",
+  zValidator("json", updateUserPreferencesSchema),
+  async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    const userId = c.get("userId");
+    const body = c.req.valid("json");
+
+    const err = await requireMember(workspaceId, userId);
+    if (err) return c.json({ error: err }, 403);
+
+    // Check if enforcement is active
+    const settings = await aiSettings.getSettings(workspaceId);
+    if (settings?.enforce_ai) {
+      return c.json({ error: "AI model is enforced by workspace admin" }, 403);
+    }
+
+    const result = await aiSettings.upsertUserPreferences({
+      workspaceId,
+      userId,
+      copilotAccountId: body.copilotAccountId ?? null,
+      providerId: body.providerId ?? null,
+      model: body.model ?? null,
+    });
+
+    return c.json({ data: result });
+  }
+);
+
+// ─── Effective AI Config ─────────────────────────────────
+
+// GET /workspaces/:workspaceId/ai-settings/effective
+aiSettingsRoutes.get("/:workspaceId/ai-settings/effective", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const userId = c.get("userId");
+
+  const err = await requireMember(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  const config = await aiSettings.getEffectiveAiConfig(workspaceId, userId);
+  return c.json({
+    data: config ?? {
+      enforce_ai: false,
+      enforced_copilot_account_id: null,
+      enforced_provider_id: null,
+      enforced_model: null,
+      default_copilot_account_id: null,
+      default_provider_id: null,
+      default_model: null,
+      user_copilot_account_id: null,
+      user_provider_id: null,
+      user_model: null,
+    },
+  });
+});

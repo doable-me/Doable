@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-attachments";
 import {
   apiListProjects,
   apiListStarredProjects,
@@ -23,7 +25,6 @@ import {
 } from "@/components/dashboard/sidebar";
 import {
   Plus,
-  MessageSquare,
   Mic,
   ArrowUp,
   MoreHorizontal,
@@ -294,11 +295,23 @@ function ChatInput({
   onChange,
   onSubmit,
   isCreating,
+  attachments,
+  onOpenFilePicker,
+  onRemoveImage,
+  isListening,
+  isMicSupported,
+  onToggleMic,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSubmit: () => void;
   isCreating: boolean;
+  attachments: ImageAttachment[];
+  onOpenFilePicker: () => void;
+  onRemoveImage: (index: number) => void;
+  isListening: boolean;
+  isMicSupported: boolean;
+  onToggleMic: () => void;
 }) {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -311,6 +324,7 @@ function ChatInput({
   );
 
   const placeholder = useTypingPlaceholder();
+  const hasContent = value.trim() || attachments.length > 0;
 
   return (
     <div className="w-full max-w-2xl mx-auto">
@@ -326,24 +340,55 @@ function ChatInput({
             disabled={isCreating}
           />
         </div>
+        {/* Image preview thumbnails */}
+        {attachments.length > 0 && (
+          <div className="flex items-center gap-2 px-4 pb-2">
+            {attachments.map((att, i) => (
+              <div key={i} className="relative group/thumb">
+                <img
+                  src={att.data}
+                  alt={att.name}
+                  className="h-16 w-16 rounded-lg object-cover border border-zinc-700"
+                />
+                <button
+                  onClick={() => onRemoveImage(i)}
+                  className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 border border-zinc-600 text-zinc-400 hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex items-center justify-between border-t border-zinc-800/60 px-3 py-2">
           <div className="flex items-center gap-1">
-            <button className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/5 hover:text-zinc-300 transition-colors">
+            <button
+              onClick={onOpenFilePicker}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/5 hover:text-zinc-300 transition-colors"
+              title="Attach image"
+            >
               <Plus className="h-4 w-4" />
-            </button>
-            <button className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/5 hover:text-zinc-300 transition-colors">
-              <MessageSquare className="h-4 w-4" />
             </button>
           </div>
           <div className="flex items-center gap-1">
-            <button className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/5 hover:text-zinc-300 transition-colors">
-              <Mic className="h-4 w-4" />
-            </button>
+            {isMicSupported && (
+              <button
+                onClick={onToggleMic}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+                  isListening
+                    ? "text-red-400 bg-red-500/10 animate-pulse"
+                    : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+                }`}
+                title={isListening ? "Stop recording" : "Voice input"}
+              >
+                <Mic className="h-4 w-4" />
+              </button>
+            )}
             <button
               onClick={onSubmit}
-              disabled={!value.trim() || isCreating}
+              disabled={!hasContent || isCreating}
               className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
-                value.trim() && !isCreating
+                hasContent && !isCreating
                   ? "bg-violet-600 text-white hover:bg-violet-500"
                   : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
               }`}
@@ -890,6 +935,14 @@ export default function DashboardPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Voice input
+  const speechRecognition = useSpeechRecognition((transcript: string) => {
+    setPrompt((prev) => (prev ? prev + " " + transcript : transcript));
+  });
+
+  // Image attachments
+  const imageAttachments = useImageAttachments();
+
   // UI state
   const [prompt, setPrompt] = useState("");
   const [activeTab, setActiveTab] = useState<"recent" | "projects" | "templates">("recent");
@@ -1035,19 +1088,25 @@ export default function DashboardPage() {
   // ---- Actions ----
 
   const handleSubmit = async () => {
-    if (!prompt.trim() || isCreating) return;
+    const hasContent = prompt.trim() || imageAttachments.attachments.length > 0;
+    if (!hasContent || isCreating) return;
     setIsCreating(true);
     try {
-      const projectName = prompt.trim().slice(0, 100);
+      const text = prompt.trim() || "See attached image(s)";
+      const projectName = text.slice(0, 100);
       const res = await apiCreateProject({
         name: projectName,
-        description: prompt.trim(),
-        prompt: prompt.trim(),
+        description: text,
+        prompt: text,
       });
-      // Store prompt in sessionStorage so the editor can reliably pick it up
-      // (query params + useSearchParams can be unreliable across navigations)
-      sessionStorage.setItem(`doable_initial_prompt_${res.data.id}`, prompt.trim());
-      router.push(`/editor/${res.data.id}?prompt=${encodeURIComponent(prompt.trim())}`);
+      // Store prompt + attachments in sessionStorage as JSON
+      const payload = JSON.stringify({
+        prompt: text,
+        attachments: imageAttachments.attachments,
+      });
+      sessionStorage.setItem(`doable_initial_prompt_${res.data.id}`, payload);
+      imageAttachments.clearAll();
+      router.push(`/editor/${res.data.id}?prompt=${encodeURIComponent(text)}`);
     } catch (err) {
       console.error("Failed to create project:", err);
       setError("Failed to create project. Please try again.");
@@ -1299,6 +1358,20 @@ export default function DashboardPage() {
                   onChange={setPrompt}
                   onSubmit={handleSubmit}
                   isCreating={isCreating}
+                  attachments={imageAttachments.attachments}
+                  onOpenFilePicker={imageAttachments.openFilePicker}
+                  onRemoveImage={imageAttachments.removeImage}
+                  isListening={speechRecognition.isListening}
+                  isMicSupported={speechRecognition.isSupported}
+                  onToggleMic={speechRecognition.toggle}
+                />
+                <input
+                  ref={imageAttachments.fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={imageAttachments.handleFileChange}
                 />
               </div>
             </div>

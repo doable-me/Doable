@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { apiListWorkspaces, type ApiWorkspace } from "@/lib/api";
-import { useGitHubAccounts, useCustomProviders, useWorkspaceAISettings } from "../hooks/use-ai-settings";
+import { useGitHubAccounts, useCustomProviders, useWorkspaceAISettings, useUserAiPreferences } from "../hooks/use-ai-settings";
 import { ConnectionsTab } from "./connections-tab";
 import { ModelConfigTab } from "./model-config-tab";
-import { Link2, Bot, Settings } from "lucide-react";
+import { AccessControlTab } from "./access-control-tab";
+import { Link2, Bot, Shield } from "lucide-react";
 
 type Tab = "connections" | "models" | "access";
 
@@ -26,11 +27,12 @@ export function AiSettingsPage() {
   const githubAccounts = useGitHubAccounts(activeWorkspaceId);
   const providers = useCustomProviders(activeWorkspaceId);
   const aiDefaults = useWorkspaceAISettings(activeWorkspaceId);
+  const userPrefs = useUserAiPreferences(activeWorkspaceId ?? undefined);
 
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
     { key: "models", label: "Model Configuration", icon: Bot },
     { key: "connections", label: "Connections", icon: Link2 },
-    { key: "access", label: "Access Control", icon: Settings },
+    { key: "access", label: "Access Control", icon: Shield },
   ];
 
   return (
@@ -69,6 +71,9 @@ export function AiSettingsPage() {
           accounts={githubAccounts.accounts}
           providers={providers.providers}
           onUpdate={aiDefaults.update}
+          userPreferences={userPrefs.preferences}
+          enforcement={userPrefs.enforcement}
+          onUserPreferenceUpdate={userPrefs.update}
         />
       )}
       {activeTab === "connections" && (
@@ -87,13 +92,15 @@ export function AiSettingsPage() {
         />
       )}
       {activeTab === "access" && (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-8 text-center">
-          <Settings className="mx-auto h-10 w-10 text-zinc-600 mb-3" />
-          <h3 className="text-lg font-medium text-zinc-300 mb-1">Access Control</h3>
-          <p className="text-sm text-zinc-500">
-            Role-based access control for AI settings is coming soon.
-          </p>
-        </div>
+        <AccessControlTab
+          defaults={aiDefaults.defaults}
+          accounts={githubAccounts.accounts}
+          providers={providers.providers}
+          onUpdate={async (data) => {
+            await aiDefaults.update(data);
+            await userPrefs.refresh();
+          }}
+        />
       )}
     </div>
   );

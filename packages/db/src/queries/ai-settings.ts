@@ -3,6 +3,8 @@ import type {
   GitHubCopilotAccountRow,
   AiProviderRow,
   WorkspaceAiSettingsRow,
+  UserAiPreferencesRow,
+  EffectiveAiConfigRow,
 } from "../types.js";
 
 export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev-encryption-key") {
@@ -213,13 +215,18 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
       suggestionCopilotAccountId?: string | null;
       suggestionProviderId?: string | null;
       suggestionModel?: string | null;
+      enforceAi?: boolean | null;
+      enforcedCopilotAccountId?: string | null;
+      enforcedProviderId?: string | null;
+      enforcedModel?: string | null;
       updatedBy: string;
     }): Promise<WorkspaceAiSettingsRow> {
       const [row] = await sql<WorkspaceAiSettingsRow[]>`
         INSERT INTO workspace_ai_settings (
           workspace_id, default_copilot_account_id, default_provider_id,
           default_model, suggestion_copilot_account_id, suggestion_provider_id,
-          suggestion_model, updated_by
+          suggestion_model, enforce_ai, enforced_copilot_account_id,
+          enforced_provider_id, enforced_model, updated_by
         ) VALUES (
           ${data.workspaceId},
           ${data.defaultCopilotAccountId ?? null},
@@ -228,6 +235,10 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
           ${data.suggestionCopilotAccountId ?? null},
           ${data.suggestionProviderId ?? null},
           ${data.suggestionModel ?? null},
+          ${data.enforceAi ?? false},
+          ${data.enforcedCopilotAccountId ?? null},
+          ${data.enforcedProviderId ?? null},
+          ${data.enforcedModel ?? null},
           ${data.updatedBy}
         )
         ON CONFLICT (workspace_id) DO UPDATE SET
@@ -237,10 +248,78 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
           suggestion_copilot_account_id = COALESCE(${data.suggestionCopilotAccountId ?? null}, workspace_ai_settings.suggestion_copilot_account_id),
           suggestion_provider_id = COALESCE(${data.suggestionProviderId ?? null}, workspace_ai_settings.suggestion_provider_id),
           suggestion_model = COALESCE(${data.suggestionModel ?? null}, workspace_ai_settings.suggestion_model),
+          enforce_ai = EXCLUDED.enforce_ai,
+          enforced_copilot_account_id = EXCLUDED.enforced_copilot_account_id,
+          enforced_provider_id = EXCLUDED.enforced_provider_id,
+          enforced_model = EXCLUDED.enforced_model,
           updated_by = ${data.updatedBy}
         RETURNING *
       `;
       return row!;
+    },
+
+    // ─── User AI Preferences ──────────────────────────────────
+
+    async getUserPreferences(
+      workspaceId: string,
+      userId: string
+    ): Promise<UserAiPreferencesRow | null> {
+      const [row] = await sql<UserAiPreferencesRow[]>`
+        SELECT * FROM user_ai_preferences
+        WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+      `;
+      return row ?? null;
+    },
+
+    async upsertUserPreferences(data: {
+      workspaceId: string;
+      userId: string;
+      copilotAccountId?: string | null;
+      providerId?: string | null;
+      model?: string | null;
+    }): Promise<UserAiPreferencesRow> {
+      const [row] = await sql<UserAiPreferencesRow[]>`
+        INSERT INTO user_ai_preferences (
+          workspace_id, user_id, copilot_account_id, provider_id, model
+        ) VALUES (
+          ${data.workspaceId},
+          ${data.userId},
+          ${data.copilotAccountId ?? null},
+          ${data.providerId ?? null},
+          ${data.model ?? null}
+        )
+        ON CONFLICT (workspace_id, user_id) DO UPDATE SET
+          copilot_account_id = EXCLUDED.copilot_account_id,
+          provider_id = EXCLUDED.provider_id,
+          model = EXCLUDED.model,
+          updated_at = now()
+        RETURNING *
+      `;
+      return row!;
+    },
+
+    async getEffectiveAiConfig(
+      workspaceId: string,
+      userId: string
+    ): Promise<EffectiveAiConfigRow | null> {
+      const [row] = await sql<EffectiveAiConfigRow[]>`
+        SELECT
+          was.enforce_ai,
+          was.enforced_copilot_account_id,
+          was.enforced_provider_id,
+          was.enforced_model,
+          was.default_copilot_account_id,
+          was.default_provider_id,
+          was.default_model,
+          uap.copilot_account_id AS user_copilot_account_id,
+          uap.provider_id AS user_provider_id,
+          uap.model AS user_model
+        FROM workspace_ai_settings was
+        LEFT JOIN user_ai_preferences uap
+          ON uap.workspace_id = was.workspace_id AND uap.user_id = ${userId}
+        WHERE was.workspace_id = ${workspaceId}
+      `;
+      return row ?? null;
     },
   };
 }

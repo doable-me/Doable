@@ -363,7 +363,40 @@ export interface ApiWorkspaceAiDefaults {
   suggestion_copilot_account_id: string | null;
   suggestion_provider_id: string | null;
   suggestion_model: string | null;
+  enforce_ai: boolean;
+  enforced_copilot_account_id: string | null;
+  enforced_provider_id: string | null;
+  enforced_model: string | null;
   updated_by: string | null;
+}
+
+export interface ApiUserAiPreferences {
+  workspace_id: string;
+  user_id: string;
+  copilot_account_id: string | null;
+  provider_id: string | null;
+  model: string | null;
+  updated_at: string;
+}
+
+export interface ApiEnforcementStatus {
+  enforce_ai: boolean;
+  enforced_copilot_account_id: string | null;
+  enforced_provider_id: string | null;
+  enforced_model: string | null;
+}
+
+export interface ApiEffectiveAiConfig {
+  enforce_ai: boolean;
+  enforced_copilot_account_id: string | null;
+  enforced_provider_id: string | null;
+  enforced_model: string | null;
+  default_copilot_account_id: string | null;
+  default_provider_id: string | null;
+  default_model: string | null;
+  user_copilot_account_id: string | null;
+  user_provider_id: string | null;
+  user_model: string | null;
 }
 
 export async function apiListCopilotAccounts(workspaceId: string): Promise<{ data: ApiGitHubCopilotAccount[] }> {
@@ -455,12 +488,42 @@ export async function apiUpdateAiDefaults(
     suggestionCopilotAccountId?: string | null;
     suggestionProviderId?: string | null;
     suggestionModel?: string | null;
+    enforceAi?: boolean;
+    enforcedCopilotAccountId?: string | null;
+    enforcedProviderId?: string | null;
+    enforcedModel?: string | null;
   }
 ): Promise<{ data: ApiWorkspaceAiDefaults }> {
   return apiFetch(`/workspaces/${workspaceId}/ai-settings/defaults`, {
     method: "PUT",
     body: JSON.stringify(data),
   });
+}
+
+export async function apiGetUserAiPreferences(workspaceId: string) {
+  return apiFetch<{ data: { preferences: ApiUserAiPreferences | null; enforcement: ApiEnforcementStatus } }>(
+    `/workspaces/${workspaceId}/ai-settings/user-preferences`
+  );
+}
+
+export async function apiUpdateUserAiPreferences(
+  workspaceId: string,
+  data: {
+    copilotAccountId?: string | null;
+    providerId?: string | null;
+    model?: string | null;
+  }
+) {
+  return apiFetch<{ data: ApiUserAiPreferences }>(
+    `/workspaces/${workspaceId}/ai-settings/user-preferences`,
+    { method: "PUT", body: JSON.stringify(data) }
+  );
+}
+
+export async function apiGetEffectiveAiConfig(workspaceId: string): Promise<{ data: ApiEffectiveAiConfig }> {
+  return apiFetch<{ data: ApiEffectiveAiConfig }>(
+    `/workspaces/${workspaceId}/ai-settings/effective`
+  );
 }
 
 export async function apiListAiModels(workspaceId: string): Promise<{
