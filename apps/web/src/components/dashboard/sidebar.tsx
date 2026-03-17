@@ -462,14 +462,14 @@ export function DashboardSidebar() {
     <>
       <aside className="flex h-screen w-[260px] shrink-0 flex-col border-r border-zinc-800 bg-[#0a0a0a]">
         {/* Logo */}
-        <div className="flex items-center gap-2.5 px-5 pt-5 pb-4">
+        <a href="/dashboard" className="flex items-center gap-2.5 px-5 pt-5 pb-4 hover:opacity-80 transition-opacity cursor-pointer">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-purple-700 shadow-sm shadow-violet-900/30">
             <span className="text-sm font-bold text-white">D</span>
           </div>
           <span className="text-lg font-semibold tracking-tight text-white">
             Doable
           </span>
-        </div>
+        </a>
 
         {/* Workspace Selector */}
         <div className="mx-3 mb-4 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
