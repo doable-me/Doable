@@ -18,6 +18,7 @@ import {
   FileNotFoundError,
   FileAccessError,
 } from "../ai/project-files.js";
+import { blankTemplate } from "../templates/definitions/blank.js";
 
 // Re-export for convenience
 export {
@@ -29,140 +30,6 @@ export {
   FileNotFoundError,
   FileAccessError,
 };
-
-// ─── Scaffold Templates ──────────────────────────────────
-
-function packageJson(): string {
-  return JSON.stringify(
-    {
-      name: "doable-project",
-      private: true,
-      version: "0.0.0",
-      type: "module",
-      scripts: {
-        dev: "vite",
-        build: "tsc -b && vite build",
-        preview: "vite preview",
-      },
-      dependencies: {
-        react: "^19.0.0",
-        "react-dom": "^19.0.0",
-      },
-      devDependencies: {
-        "@tailwindcss/vite": "^4.0.0",
-        "@types/react": "^19.0.0",
-        "@types/react-dom": "^19.0.0",
-        "@vitejs/plugin-react": "^4.3.0",
-        tailwindcss: "^4.0.0",
-        typescript: "^5.7.0",
-        vite: "^6.0.0",
-      },
-    },
-    null,
-    2,
-  );
-}
-
-function viteConfig(): string {
-  return `import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
-
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  server: {
-    host: true,
-    allowedHosts: true,
-  },
-});
-`;
-}
-
-function tsConfig(): string {
-  return JSON.stringify(
-    {
-      compilerOptions: {
-        target: "ES2020",
-        useDefineForClassFields: true,
-        lib: ["ES2020", "DOM", "DOM.Iterable"],
-        module: "ESNext",
-        skipLibCheck: true,
-        moduleResolution: "bundler",
-        allowImportingTsExtensions: true,
-        isolatedModules: true,
-        moduleDetection: "force",
-        noEmit: true,
-        jsx: "react-jsx",
-        strict: true,
-        noFallthroughCasesInSwitch: true,
-        noUncheckedSideEffectImports: true,
-      },
-      include: ["src"],
-    },
-    null,
-    2,
-  );
-}
-
-function indexHtml(): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Doable App</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
-`;
-}
-
-function mainTsx(): string {
-  return `import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import "./index.css";
-import App from "./App.tsx";
-
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
-`;
-}
-
-function appTsx(): string {
-  return `function App() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-white">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-indigo-600 mb-4">
-          Hello from Doable
-        </h1>
-        <p className="text-gray-600 text-lg">
-          Start building your app by chatting with the AI assistant.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-export default App;
-`;
-}
-
-function indexCss(): string {
-  return `@import "tailwindcss";
-`;
-}
-
-function viteEnvDts(): string {
-  return `/// <reference types="vite/client" />
-`;
-}
 
 // ─── Scaffold Function ───────────────────────────────────
 
@@ -211,17 +78,9 @@ export async function createProject(
     // Use template files (validated above)
     files = Object.entries(templateFiles);
   } else {
-    // Default blank scaffold
-    files = [
-      ["package.json", packageJson()],
-      ["vite.config.ts", viteConfig()],
-      ["tsconfig.json", tsConfig()],
-      ["index.html", indexHtml()],
-      ["src/main.tsx", mainTsx()],
-      ["src/App.tsx", appTsx()],
-      ["src/index.css", indexCss()],
-      ["src/vite-env.d.ts", viteEnvDts()],
-    ];
+    // Default blank scaffold — sourced from the blank template so they
+    // stay in sync automatically.
+    files = Object.entries(blankTemplate.codeFiles);
   }
 
   const createdFiles: string[] = [];

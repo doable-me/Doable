@@ -800,6 +800,8 @@ export default function EditorPage() {
 
   // ─── Live status for AI activity ─────────────────────────
   const [liveStatus, setLiveStatus] = useState<string>("");
+  // Track first generation to show loading overlay instead of default template
+  const [isFirstGeneration, setIsFirstGeneration] = useState(false);
   const previewRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1544,7 +1546,13 @@ export default function EditorPage() {
         isStreaming: true,
       };
 
-      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      // If this is the very first message, show loading overlay over preview
+      setMessages((prev) => {
+        if (prev.length === 0) {
+          setIsFirstGeneration(true);
+        }
+        return [...prev, userMsg, assistantMsg];
+      });
       setInputValue("");
       setIsStreaming(true);
       setLiveStatus("Understanding your request...");
@@ -1584,6 +1592,7 @@ export default function EditorPage() {
           );
           setIsStreaming(false);
           setLiveStatus("");
+          setIsFirstGeneration(false);
           // Refresh file tree after AI response completes (may have created files)
           loadFileTree();
           if (selectedFile) {
@@ -1648,6 +1657,7 @@ export default function EditorPage() {
           );
           setIsStreaming(false);
           setLiveStatus("");
+          setIsFirstGeneration(false);
         },
         // onToolCompleted
         handleToolCompleted,
@@ -3442,7 +3452,7 @@ export default function EditorPage() {
         {showPreview && !showCode && (
           <div className="flex flex-1 flex-col overflow-hidden bg-[#1C1C1C]">
             {/* Preview iframe or loading state */}
-            <div className="flex flex-1 items-center justify-center overflow-hidden bg-[#141412] p-2">
+            <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-[#141412] p-2">
               {scaffoldStatus !== "ready" || !previewUrl ? (
                 renderScaffoldOverlay()
               ) : (
@@ -3469,6 +3479,24 @@ export default function EditorPage() {
                     title="App Preview"
                     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
                   />
+                </div>
+              )}
+              {/* ─── First Generation Loading Overlay ──────────── */}
+              {isFirstGeneration && (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#141412]">
+                  <div className="relative mb-6">
+                    <div className="h-12 w-12 rounded-full border-2 border-zinc-700 border-t-purple-400 animate-spin" />
+                    <Sparkles className="absolute inset-0 m-auto h-5 w-5 text-purple-400" />
+                  </div>
+                  <h3 className="text-base font-medium text-zinc-200 mb-2">Building your app...</h3>
+                  <p className="text-sm text-zinc-500 max-w-[280px] text-center mb-4">
+                    {liveStatus || "Setting things up"}
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="status-dot-1 h-1.5 w-1.5 rounded-full bg-purple-400" />
+                    <span className="status-dot-2 h-1.5 w-1.5 rounded-full bg-purple-400" />
+                    <span className="status-dot-3 h-1.5 w-1.5 rounded-full bg-purple-400" />
+                  </div>
                 </div>
               )}
               {/* ─── Visual Edit Floating Toolbar ────────────── */}

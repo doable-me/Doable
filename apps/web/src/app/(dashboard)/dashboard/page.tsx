@@ -403,7 +403,7 @@ function ProjectCard({
       <div className={`relative h-36 rounded-t-xl overflow-hidden ${imgFailed ? `bg-gradient-to-br ${PROJECT_GRADIENTS[colorIdx]}` : ''}`}>
         {!imgFailed ? (
           <img
-            src={`${project.thumbnail_url || `${API_URL}/thumbnails/${project.id}.png`}?v=${encodeURIComponent(project.updated_at)}`}
+            src={`${project.thumbnail_url ? `${API_URL}${project.thumbnail_url}` : `${API_URL}/thumbnails/${project.id}.png`}?v=${encodeURIComponent(project.updated_at)}`}
             alt={project.name}
             className="h-full w-full object-cover object-top rounded-t-xl"
             onError={() => setImgFailed(true)}

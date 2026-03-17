@@ -607,6 +607,17 @@ ERROR RECOVERY — if you encounter errors:
               .then(({ captureProjectThumbnail }) => {
                 setTimeout(() => {
                   captureProjectThumbnail(projectId, previewUrl)
+                    .then(async (filePath) => {
+                      if (filePath) {
+                        // Save thumbnail URL to database so dashboard can display it
+                        try {
+                          const thumbnailUrl = `/thumbnails/${projectId}.png`;
+                          await sql`UPDATE projects SET thumbnail_url = ${thumbnailUrl} WHERE id = ${projectId}`;
+                        } catch (e) {
+                          console.warn("[Thumbnail] Failed to save URL to DB:", e);
+                        }
+                      }
+                    })
                     .finally(() => captureInProgress.delete(projectId))
                     .catch(console.warn);
                 }, 3000); // 3s delay for Vite HMR to settle
