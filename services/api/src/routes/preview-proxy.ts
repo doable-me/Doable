@@ -48,7 +48,40 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
 
   const devUrl = getDevServerInternalUrl(projectId);
   if (!devUrl) {
-    return c.text("Preview not available. Project may still be starting.", 503);
+    // Return a styled HTML page that auto-retries instead of plain text.
+    // This prevents the "blank page" experience — the user sees a loading
+    // indicator and the page refreshes automatically when the server is ready.
+    const retryHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Starting preview...</title>
+  <style>
+    body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+           background:linear-gradient(135deg,#faf5ff,#eff6ff); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+    .box { text-align:center; background:#fff; border-radius:16px; padding:40px 32px; max-width:380px;
+           box-shadow:0 4px 24px rgba(0,0,0,.08); border:1px solid rgba(0,0,0,.06); }
+    .spinner { width:36px; height:36px; border:3px solid #e5e7eb; border-top-color:#6366f1;
+               border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 16px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    h2 { font-size:18px; font-weight:600; color:#1f2937; margin:0 0 8px; }
+    p  { font-size:14px; color:#6b7280; margin:0; line-height:1.5; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="spinner"></div>
+    <h2>Starting preview...</h2>
+    <p>The dev server is warming up. This page will refresh automatically.</p>
+  </div>
+  <script>setTimeout(function(){ window.location.reload(); }, 3000);</script>
+</body>
+</html>`;
+    return c.html(retryHtml, 503, {
+      "Retry-After": "3",
+      "Cache-Control": "no-store",
+    });
   }
 
   // Build the target URL — keep the full /preview/{projectId}/... path
@@ -204,6 +237,12 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       let injected = html;
       if (injected.includes("</head>")) {
         injected = injected.replace("</head>", `${errorCaptureSnippet}${headSnippet}</head>`);
+      } else if (injected.includes("<body")) {
+        // No </head> tag — inject head snippets right before <body>
+        injected = injected.replace(/<body/i, `${errorCaptureSnippet}${headSnippet}<body`);
+      } else {
+        // No </head> or <body> — prepend head snippets at the very start
+        injected = `${errorCaptureSnippet}${headSnippet}${injected}`;
       }
       if (injected.includes("</body>")) {
         injected = injected.replace("</body>", `${bodySnippet}</body>`);

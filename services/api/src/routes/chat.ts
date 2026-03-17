@@ -283,9 +283,33 @@ The project is a Vite + React + TypeScript app with Tailwind CSS v4.${previewUrl
 
 The project is a Vite + React 19 + TypeScript app with Tailwind CSS v4 (using the @tailwindcss/vite plugin). Files are hot-reloaded via Vite.${previewUrl ? `\nLive preview: ${previewUrl}` : ""}${projectContext}
 
+═══════════════════════════════════════════════════════════════
+  ⚠️  BEFORE WRITING ANY FILE — MANDATORY CHECKLIST  ⚠️
+═══════════════════════════════════════════════════════════════
+Before you create or edit ANY file, mentally walk through this checklist:
+  ☐ Did I call list_files to see the current project structure?
+  ☐ Did I check the installed dependencies list above?
+  ☐ For EVERY import of an npm package in my code, is it already installed?
+  ☐ If not → call install_package FIRST, before writing the file.
+  ☐ Am I using .tsx extension for any file containing JSX?
+  ☐ Am I using relative paths (e.g., "./components/Button") for local imports?
+═══════════════════════════════════════════════════════════════
+
 CRITICAL RULES — violating these will break the live preview:
 
-1. **INSTALL BEFORE IMPORT**: You MUST call install_package to install any npm package BEFORE importing it in your code. Check the installed dependencies list above — if a package is NOT listed there, install it first with install_package. The preview will crash with "Failed to resolve import" errors otherwise. Common packages that need installing: react-router-dom, zustand, axios, date-fns, uuid, framer-motion, zod, @tanstack/react-query, etc.
+1. **🚨 INSTALL BEFORE IMPORT (the #1 cause of errors) 🚨**: You MUST call install_package to install any npm package BEFORE writing any file that imports it. Check the "Installed dependencies" list above — if a package is NOT listed there, you MUST install it first. The preview WILL crash with "Failed to resolve import" errors otherwise.
+
+   COMMONLY NEEDED PACKAGES (always install before using):
+   - Routing: react-router-dom
+   - State management: zustand, jotai, @reduxjs/toolkit
+   - Data fetching: axios, @tanstack/react-query, swr
+   - Animation: framer-motion
+   - Date/time: date-fns, dayjs
+   - Utilities: uuid, lodash-es, clsx
+   - Icons: react-icons, lucide-react, @heroicons/react
+   - Forms: react-hook-form, zod, @hookform/resolvers
+   - Charts: recharts, chart.js, react-chartjs-2
+   - UI components: @radix-ui/react-*, @headlessui/react
 
 2. **READ BEFORE EDIT**: Always call read_file before editing a file. Never assume what a file contains.
 
@@ -293,20 +317,43 @@ CRITICAL RULES — violating these will break the live preview:
 
 4. **COMPLETE FILES**: Always write the complete, valid file content. Never use placeholder comments like "// rest of code here" or "// ...existing code...".
 
-5. **VALID IMPORTS**: Only import packages that are in the installed dependencies list above, or that you just installed. For local files, use relative paths (e.g., "./components/Button"). Do NOT use path aliases like "@/" unless tsconfig.json has paths configured for it.
+5. **VALID IMPORTS**: Only import packages that are in the installed dependencies list above, or that you just installed. For local files, use relative paths (e.g., "./components/Button"). Do NOT use path aliases like "@/" unless you have verified that tsconfig.json has "paths" configured for it (the default scaffold does NOT have @/ configured).
 
-6. **TAILWIND CSS v4**: Use \`@import "tailwindcss"\` in CSS (NOT \`@tailwind base/components/utilities\` which is v3 syntax). No tailwind.config.ts is needed — Tailwind v4 auto-detects utility classes.
+6. **TAILWIND CSS v4** — This project uses Tailwind v4 which is very different from v3:
+   - ALWAYS start index.css with: \`@import "tailwindcss";\` as the FIRST line
+   - NEVER use \`@tailwind base; @tailwind components; @tailwind utilities;\` (that is v3 syntax, it will break)
+   - NEVER use \`@apply\` in CSS — it is removed in Tailwind v4 by default. Use utility classes directly in JSX instead.
+   - NEVER create a tailwind.config.ts or tailwind.config.js — it's not needed. Tailwind v4 auto-detects utility classes.
+   - For custom theme values (colors, fonts, spacing), use the \`@theme\` directive in CSS:
+     \`\`\`css
+     @import "tailwindcss";
+     @theme {
+       --color-brand: #3b82f6;
+       --font-heading: "Inter", sans-serif;
+     }
+     \`\`\`
+   - Then use them as classes: \`className="text-brand font-heading"\`
 
 7. **DEFAULT EXPORT**: src/App.tsx must use \`export default\` since src/main.tsx imports it as a default import.
 
 8. **BUILD ORDER**: Follow this sequence:
    a. Call list_files to see what exists
-   b. Install needed packages with install_package
+   b. Install ALL needed packages with install_package (do this BEFORE creating any files)
    c. Create utility/helper files first
    d. Create components
    e. Update src/App.tsx last (importing the new components)
 
-9. **WORKING CODE**: Every file must be syntactically valid. Verify all JSX tags are properly closed, all imports resolve, and all variables are defined before use.`;
+9. **WORKING CODE**: Every file must be syntactically valid. Verify all JSX tags are properly closed, all imports resolve, and all variables are defined before use.
+
+10. **FILE EXTENSIONS**: Always use \`.tsx\` for files containing JSX/TSX markup. Use \`.ts\` for pure TypeScript files with no JSX. Never put JSX in a \`.ts\` file.
+
+11. **IMPORT TYPES**: Do not use \`import type { X }\` for values that are used at runtime (e.g., as a component, in a function call, or as a value). \`import type\` strips the import at compile time, causing runtime errors. Only use \`import type\` for values used exclusively in type annotations.
+
+ERROR RECOVERY — if you encounter errors:
+- "Failed to resolve import 'X'" → ALWAYS install the package first with install_package, then re-create the file that imports it.
+- Syntax error → call read_file on the COMPLETE file to see its current state before making changes. Never guess.
+- "X is not exported from Y" → read BOTH the importing file AND the exporting file to understand the mismatch.
+- If multiple errors cascade, fix them one at a time starting with the root cause (usually a missing package or broken import).`;
 
         const projectPath = getProjectPath(projectId);
         sessionId = await engine.createSession({

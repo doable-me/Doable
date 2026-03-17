@@ -31,9 +31,16 @@ venv/
 .DS_Store
 Thumbs.db
 
+# Claude Code worktrees
+.claude/worktrees/
+
 # Data
 /data/
 /sites/
+
+# Generated project data (user projects, thumbnails)
+services/api/projects/
+services/api/thumbnails/
 
 # Logs
 *.log
