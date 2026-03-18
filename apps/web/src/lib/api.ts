@@ -367,6 +367,7 @@ export interface ApiWorkspaceAiDefaults {
   enforced_copilot_account_id: string | null;
   enforced_provider_id: string | null;
   enforced_model: string | null;
+  show_model_selector: boolean;
   updated_by: string | null;
 }
 
@@ -391,6 +392,7 @@ export interface ApiEffectiveAiConfig {
   enforced_copilot_account_id: string | null;
   enforced_provider_id: string | null;
   enforced_model: string | null;
+  show_model_selector: boolean;
   default_copilot_account_id: string | null;
   default_provider_id: string | null;
   default_model: string | null;
@@ -492,6 +494,7 @@ export async function apiUpdateAiDefaults(
     enforcedCopilotAccountId?: string | null;
     enforcedProviderId?: string | null;
     enforcedModel?: string | null;
+    showModelSelector?: boolean;
   }
 ): Promise<{ data: ApiWorkspaceAiDefaults }> {
   return apiFetch(`/workspaces/${workspaceId}/ai-settings/defaults`, {

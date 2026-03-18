@@ -237,8 +237,16 @@ async function detectPreviewError(projectId: string): Promise<PreviewErrorInfo |
 
     const base = `${internalUrl}/preview/${projectId}`;
 
-    // 1. Check key entry-point modules — Vite returns 500 when transform fails
-    for (const file of ["src/main.tsx", "src/App.tsx", "index.html", "src/index.tsx", "src/main.ts"]) {
+    // 1. Check key entry-point modules — Vite returns 500 when transform fails.
+    //    Only check files that actually exist in the project to avoid false
+    //    positives (e.g. reporting src/index.tsx as broken when the real
+    //    entry point is src/main.tsx).
+    const CANDIDATE_FILES = ["src/main.tsx", "src/App.tsx", "index.html", "src/index.tsx", "src/main.ts"];
+    const projectFiles = await listFiles(projectId).catch(() => [] as string[]);
+    const projectFileSet = new Set(projectFiles.map((f) => f.replace(/\\/g, "/")));
+    const filesToCheck = CANDIDATE_FILES.filter((f) => projectFileSet.has(f));
+
+    for (const file of filesToCheck) {
       try {
         const headers: Record<string, string> =
           file === "index.html"

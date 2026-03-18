@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { ApiGitHubCopilotAccount, ApiAiProvider, ApiWorkspaceAiDefaults } from "@/lib/api";
-import { Shield, Loader2, Check } from "lucide-react";
+import { Shield, Loader2, Check, Eye } from "lucide-react";
 
 interface AccessControlTabProps {
   defaults: ApiWorkspaceAiDefaults | null;
@@ -13,6 +13,7 @@ interface AccessControlTabProps {
     enforcedCopilotAccountId?: string | null;
     enforcedProviderId?: string | null;
     enforcedModel?: string | null;
+    showModelSelector?: boolean;
   }) => Promise<void>;
 }
 
@@ -34,6 +35,7 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
   const [copilotAccountId, setCopilotAccountId] = useState("");
   const [providerId, setProviderId] = useState("");
   const [model, setModel] = useState("");
+  const [showModelSelector, setShowModelSelector] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -41,6 +43,7 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
   useEffect(() => {
     if (defaults) {
       setEnforceAi(defaults.enforce_ai);
+      setShowModelSelector(defaults.show_model_selector);
       const hasProvider = !!defaults.enforced_provider_id;
       setSource(hasProvider ? "custom" : "copilot");
       setCopilotAccountId(defaults.enforced_copilot_account_id ?? "");
@@ -60,6 +63,7 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
         enforcedCopilotAccountId: enforceAi && source === "copilot" ? (copilotAccountId || null) : null,
         enforcedProviderId: enforceAi && source === "custom" ? (providerId || null) : null,
         enforcedModel: enforceAi ? (model || null) : null,
+        showModelSelector,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -199,6 +203,38 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
             </div>
           </div>
         )}
+      </div>
+
+      {/* Model Selector Visibility */}
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5">
+        <div className="flex items-center gap-2.5 mb-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600/15">
+            <Eye className="h-4 w-4 text-blue-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-200">Model Selector Visibility</h3>
+            <p className="text-xs text-zinc-500">Control whether users can see the model selection dropdown</p>
+          </div>
+        </div>
+
+        <label className="flex items-center gap-3 cursor-pointer">
+          <button
+            onClick={() => setShowModelSelector(!showModelSelector)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              showModelSelector ? "bg-blue-600" : "bg-zinc-700"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                showModelSelector ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+          <span className="text-sm text-zinc-200">Allow users to see the model selector</span>
+        </label>
+        <p className="text-xs text-zinc-500 mt-2 ml-14">
+          When disabled, users will not see the model dropdown in the editor. The workspace default or enforced model will be used silently.
+        </p>
       </div>
 
       <button

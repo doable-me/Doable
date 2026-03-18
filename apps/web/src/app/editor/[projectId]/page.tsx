@@ -777,8 +777,13 @@ function humanizeThinking(text: string): string {
   return "";
 }
 
-/** Brief fallback shown for ~2s while AI suggestions load */
-const FALLBACK_SUGGESTIONS: string[] = [];
+/** Shown while AI suggestions load, or if the suggestions API fails */
+const FALLBACK_SUGGESTIONS: string[] = [
+  "Improve the styling",
+  "Add responsive design",
+  "Add more features",
+  "Fix any issues",
+];
 
 /**
  * Fetch AI-generated contextual suggestions from the API.
@@ -790,10 +795,17 @@ async function fetchAISuggestions(
   lastAssistantMessage: string,
 ): Promise<string[]> {
   try {
+    const { accessToken } = getStoredTokens();
     const res = await fetch(`${API_URL}/projects/${projectId}/chat/suggestions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userPrompt, lastAssistantMessage }),
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({
+        userPrompt: userPrompt.slice(0, 4000),
+        lastAssistantMessage: lastAssistantMessage.slice(0, 4000),
+      }),
     });
     if (!res.ok) return FALLBACK_SUGGESTIONS;
     const json = (await res.json()) as { data: string[] };
@@ -3226,13 +3238,13 @@ export default function EditorPage() {
                           msg.content &&
                           !isStreaming &&
                           (msgIdx === messages.length - 1 || (msg.suggestions && msg.suggestions.length > 0)) && (
-                            <div className="mt-3 -mx-1 overflow-x-auto scrollbar-thin">
-                              <div className="flex gap-2 px-1 pb-1">
+                            <div className="mt-3 -mx-1">
+                              <div className="flex flex-wrap gap-2 px-1 pb-1">
                                 {(msgIdx === messages.length - 1 && aiSuggestions.length > 0 ? aiSuggestions : (msg.suggestions || [])).map((suggestion) => (
                                   <button
                                     key={suggestion}
                                     onClick={() => sendMessage(suggestion)}
-                                    className="flex-shrink-0 rounded-full border border-zinc-700/50 bg-zinc-800/60 px-3.5 py-1.5 text-[13px] text-zinc-300 hover:bg-zinc-700/60 hover:text-white hover:border-zinc-600 transition-all"
+                                    className="rounded-full border border-zinc-700/50 bg-zinc-800/60 px-3.5 py-1.5 text-[13px] text-zinc-300 hover:bg-zinc-700/60 hover:text-white hover:border-zinc-600 transition-all"
                                   >
                                     {suggestion}
                                   </button>
@@ -3376,16 +3388,18 @@ export default function EditorPage() {
                         <span>Visual edits</span>
                       </button>
 
-                      {/* Model selector */}
-                      <EditorModelSelector
-                        selectedModelId={selectedModelId}
-                        selectedProviderId={selectedProviderId}
-                        selectedCopilotAccountId={selectedCopilotAccountId}
-                        onSelect={handleModelSelect}
-                        models={availableModels}
-                        disabled={effectiveAiConfig?.enforce_ai ?? false}
-                        enforcedLabel={effectiveAiConfig?.enforce_ai ? `Enforced: ${effectiveAiConfig.enforced_model ?? 'Default'}` : undefined}
-                      />
+                      {/* Model selector — hidden unless admin enables it */}
+                      {(effectiveAiConfig?.show_model_selector ?? false) && (
+                        <EditorModelSelector
+                          selectedModelId={selectedModelId}
+                          selectedProviderId={selectedProviderId}
+                          selectedCopilotAccountId={selectedCopilotAccountId}
+                          onSelect={handleModelSelect}
+                          models={availableModels}
+                          disabled={effectiveAiConfig?.enforce_ai ?? false}
+                          enforcedLabel={effectiveAiConfig?.enforce_ai ? `Enforced: ${effectiveAiConfig.enforced_model ?? 'Default'}` : undefined}
+                        />
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1">

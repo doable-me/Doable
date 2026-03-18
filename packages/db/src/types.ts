@@ -220,6 +220,7 @@ export interface WorkspaceAiSettingsRow {
   enforced_copilot_account_id: string | null;
   enforced_provider_id: string | null;
   enforced_model: string | null;
+  show_model_selector: boolean;
   updated_by: string | null;
   created_at: Date;
   updated_at: Date;
@@ -240,6 +241,7 @@ export interface EffectiveAiConfigRow {
   enforced_copilot_account_id: string | null;
   enforced_provider_id: string | null;
   enforced_model: string | null;
+  show_model_selector: boolean;
   default_copilot_account_id: string | null;
   default_provider_id: string | null;
   default_model: string | null;

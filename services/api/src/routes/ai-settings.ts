@@ -375,6 +375,7 @@ aiSettingsRoutes.get("/:workspaceId/ai-settings/defaults", async (c) => {
       enforced_copilot_account_id: null,
       enforced_provider_id: null,
       enforced_model: null,
+      show_model_selector: false,
       updated_by: null,
     },
   });
@@ -391,6 +392,7 @@ const updateDefaultsSchema = z.object({
   enforcedCopilotAccountId: z.string().uuid().nullable().optional(),
   enforcedProviderId: z.string().uuid().nullable().optional(),
   enforcedModel: z.string().max(100).nullable().optional(),
+  showModelSelector: z.boolean().optional(),
 });
 
 // PUT /workspaces/:workspaceId/ai-settings/defaults
@@ -417,6 +419,7 @@ aiSettingsRoutes.put(
       enforcedCopilotAccountId: body.enforcedCopilotAccountId,
       enforcedProviderId: body.enforcedProviderId,
       enforcedModel: body.enforcedModel,
+      showModelSelector: body.showModelSelector,
       updatedBy: userId,
     });
 
@@ -505,6 +508,7 @@ aiSettingsRoutes.get("/:workspaceId/ai-settings/effective", async (c) => {
       enforced_copilot_account_id: null,
       enforced_provider_id: null,
       enforced_model: null,
+      show_model_selector: false,
       default_copilot_account_id: null,
       default_provider_id: null,
       default_model: null,

@@ -219,6 +219,7 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
       enforcedCopilotAccountId?: string | null;
       enforcedProviderId?: string | null;
       enforcedModel?: string | null;
+      showModelSelector?: boolean | null;
       updatedBy: string;
     }): Promise<WorkspaceAiSettingsRow> {
       const [row] = await sql<WorkspaceAiSettingsRow[]>`
@@ -226,7 +227,7 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
           workspace_id, default_copilot_account_id, default_provider_id,
           default_model, suggestion_copilot_account_id, suggestion_provider_id,
           suggestion_model, enforce_ai, enforced_copilot_account_id,
-          enforced_provider_id, enforced_model, updated_by
+          enforced_provider_id, enforced_model, show_model_selector, updated_by
         ) VALUES (
           ${data.workspaceId},
           ${data.defaultCopilotAccountId ?? null},
@@ -239,6 +240,7 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
           ${data.enforcedCopilotAccountId ?? null},
           ${data.enforcedProviderId ?? null},
           ${data.enforcedModel ?? null},
+          ${data.showModelSelector ?? false},
           ${data.updatedBy}
         )
         ON CONFLICT (workspace_id) DO UPDATE SET
@@ -252,6 +254,7 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
           enforced_copilot_account_id = EXCLUDED.enforced_copilot_account_id,
           enforced_provider_id = EXCLUDED.enforced_provider_id,
           enforced_model = EXCLUDED.enforced_model,
+          show_model_selector = EXCLUDED.show_model_selector,
           updated_by = ${data.updatedBy}
         RETURNING *
       `;
@@ -308,6 +311,7 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
           was.enforced_copilot_account_id,
           was.enforced_provider_id,
           was.enforced_model,
+          was.show_model_selector,
           was.default_copilot_account_id,
           was.default_provider_id,
           was.default_model,

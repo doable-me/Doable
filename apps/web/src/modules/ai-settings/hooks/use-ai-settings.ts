@@ -141,6 +141,7 @@ export function useWorkspaceAISettings(workspaceId: string | null) {
     enforcedCopilotAccountId?: string | null;
     enforcedProviderId?: string | null;
     enforcedModel?: string | null;
+    showModelSelector?: boolean;
   }) => {
     if (!workspaceId) return;
     const res = await apiUpdateAiDefaults(workspaceId, data);
