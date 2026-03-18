@@ -24,6 +24,8 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   isStreaming?: boolean;
+  thinkingContent?: string;
+  liveStatus?: string;
 }
 
 export type EditorMode = "agent" | "plan";
@@ -85,6 +87,7 @@ interface EditorState {
   // Actions - Chat
   addMessage: (message: ChatMessage) => void;
   updateMessage: (id: string, content: string) => void;
+  updateMessageFields: (id: string, fields: Partial<ChatMessage>) => void;
   setStreaming: (streaming: boolean) => void;
   setMode: (mode: EditorMode) => void;
   clearMessages: () => void;
@@ -165,6 +168,12 @@ export const useEditorStore = create<EditorState>()(
         set((state) => ({
           messages: state.messages.map((m) =>
             m.id === id ? { ...m, content } : m
+          ),
+        })),
+      updateMessageFields: (id, fields) =>
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.id === id ? { ...m, ...fields } : m
           ),
         })),
       setStreaming: (streaming) => set({ isStreaming: streaming }),

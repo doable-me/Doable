@@ -1,7 +1,7 @@
 "use client";
 
-import { memo, useCallback, useState } from "react";
-import { Bot, User, Copy, Check, Loader2 } from "lucide-react";
+import { memo, useCallback, useState, useMemo } from "react";
+import { Bot, User, Copy, Check, Loader2, Brain, Wrench } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "../hooks/use-editor-store";
 
 // ─── Simple Markdown Renderer ───────────────────────────────
@@ -62,6 +62,31 @@ function CodeBlockCopyButton({ content }: { content: string }) {
   );
 }
 
+// ─── Streaming Status Indicator ─────────────────────────────
+function StreamingStatus({ status }: { status?: string }) {
+  if (!status) return null;
+
+  const icon = status === "thinking" ? (
+    <Brain className="h-3 w-3 text-purple-400 animate-pulse" />
+  ) : status === "tool_call" || status === "tool_result" ? (
+    <Wrench className="h-3 w-3 text-blue-400 animate-spin" />
+  ) : (
+    <Loader2 className="h-3 w-3 text-purple-400 animate-spin" />
+  );
+
+  const label = status === "thinking" ? "Thinking..." :
+    status === "tool_call" ? "Running tool..." :
+    status === "tool_result" ? "Processing result..." :
+    status;
+
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
+      {icon}
+      <span>{label}</span>
+    </div>
+  );
+}
+
 // ─── Message Component ──────────────────────────────────────
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -71,7 +96,14 @@ export const ChatMessage = memo(function ChatMessage({
   message,
 }: ChatMessageProps) {
   const isUser = message.role === "user";
-  const isStreaming = message.isStreaming && !message.content;
+  const isWaiting = message.isStreaming && !message.content;
+  const isActivelyStreaming = message.isStreaming && !!message.content;
+
+  // Memoize rendered markdown — only recompute when content changes
+  const renderedHtml = useMemo(
+    () => (message.content ? renderMarkdown(message.content) : ""),
+    [message.content]
+  );
 
   return (
     <div
@@ -106,19 +138,40 @@ export const ChatMessage = memo(function ChatMessage({
               minute: "2-digit",
             })}
           </span>
+          {isActivelyStreaming && (
+            <Loader2 className="h-3 w-3 animate-spin text-purple-500" />
+          )}
         </div>
 
-        {isStreaming ? (
+        {/* Thinking content — show inline when AI is thinking */}
+        {message.thinkingContent && message.isStreaming && (
+          <details className="mb-2 rounded-md border border-border/50 bg-muted/20 text-xs">
+            <summary className="cursor-pointer select-none px-2.5 py-1.5 text-muted-foreground hover:text-foreground flex items-center gap-1.5">
+              <Brain className="h-3 w-3 text-purple-400 animate-pulse" />
+              Thinking...
+            </summary>
+            <div className="px-2.5 pb-2 text-muted-foreground/70 whitespace-pre-wrap max-h-32 overflow-y-auto text-[11px] leading-relaxed">
+              {message.thinkingContent}
+            </div>
+          </details>
+        )}
+
+        {/* Live status indicator */}
+        {message.isStreaming && <StreamingStatus status={message.liveStatus} />}
+
+        {isWaiting ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             <span>Thinking...</span>
           </div>
-        ) : (
-          <div
-            className="prose-editor text-sm leading-relaxed text-foreground"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-          />
-        )}
+        ) : message.content ? (
+          <div className="prose-editor text-sm leading-relaxed text-foreground">
+            <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+            {isActivelyStreaming && (
+              <span className="inline-block w-1.5 h-4 bg-purple-500 animate-pulse ml-0.5 align-middle rounded-sm" />
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );

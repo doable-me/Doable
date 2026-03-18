@@ -18,6 +18,7 @@ export function useChat(projectId: string | null) {
     isStreaming,
     addMessage,
     updateMessage,
+    updateMessageFields,
     setStreaming,
     clearMessages,
   } = useEditorStore();
@@ -72,26 +73,74 @@ export function useChat(projectId: string | null) {
 
         const decoder = new TextDecoder();
         let accumulated = "";
+        let thinkingAccumulated = "";
+        let buffer = ""; // SSE line buffer across chunks
+        let rafHandle: number | null = null;
+        let pendingFlush = false;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        const flushToState = () => {
+          rafHandle = null;
+          pendingFlush = false;
+          updateMessage(assistantId, accumulated);
+        };
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
+        const scheduleFlush = () => {
+          if (!pendingFlush) {
+            pendingFlush = true;
+            rafHandle = requestAnimationFrame(flushToState);
+          }
+        };
 
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6);
-              if (data === "[DONE]") break;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? ""; // Keep incomplete line in buffer
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+              const data = trimmed.slice(6);
+              if (data === "[DONE]") {
+                // Final flush
+                if (rafHandle) cancelAnimationFrame(rafHandle);
+                updateMessage(assistantId, accumulated);
+                break;
+              }
 
               try {
                 const parsed = JSON.parse(data);
                 if (parsed.type === "text_delta") {
-                  accumulated += parsed.data;
-                  updateMessage(assistantId, accumulated);
+                  const text = typeof parsed.data === "string" ? parsed.data : "";
+                  accumulated += text;
+                  scheduleFlush();
+                } else if (parsed.type === "thinking") {
+                  const text = typeof parsed.data === "string" ? parsed.data : "";
+                  thinkingAccumulated += text;
+                  updateMessageFields(assistantId, {
+                    thinkingContent: thinkingAccumulated,
+                    liveStatus: "thinking",
+                  });
+                } else if (parsed.type === "tool_call") {
+                  updateMessageFields(assistantId, {
+                    liveStatus: "tool_call",
+                  });
+                } else if (parsed.type === "tool_result") {
+                  updateMessageFields(assistantId, {
+                    liveStatus: "tool_result",
+                  });
+                } else if (parsed.type === "status") {
+                  const status = typeof parsed.data === "string" ? parsed.data : "";
+                  updateMessageFields(assistantId, {
+                    liveStatus: status,
+                  });
                 } else if (parsed.type === "error") {
-                  accumulated += `\n\n**Error:** ${parsed.data}`;
+                  accumulated += `\n\n**Error:** ${typeof parsed.data === "string" ? parsed.data : "Unknown error"}`;
+                  if (rafHandle) cancelAnimationFrame(rafHandle);
                   updateMessage(assistantId, accumulated);
                 }
               } catch {
@@ -99,6 +148,10 @@ export function useChat(projectId: string | null) {
               }
             }
           }
+        } finally {
+          // Ensure final content is flushed
+          if (rafHandle) cancelAnimationFrame(rafHandle);
+          if (accumulated) updateMessage(assistantId, accumulated);
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
@@ -112,7 +165,7 @@ export function useChat(projectId: string | null) {
         abortRef.current = null;
       }
     },
-    [projectId, mode, isStreaming, addMessage, updateMessage, setStreaming]
+    [projectId, mode, isStreaming, addMessage, updateMessage, updateMessageFields, setStreaming]
   );
 
   const stopStreaming = useCallback(() => {

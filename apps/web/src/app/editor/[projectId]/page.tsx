@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, memo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { getStoredTokens, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, type ApiEffectiveAiConfig } from "@/lib/api";
@@ -152,6 +152,7 @@ interface ChatMsg {
   feedbackGiven?: "up" | "down" | null;
   suggestions?: string[];  // AI-generated next-step suggestions
   attachments?: { type: string; data: string; name: string }[];
+  thinkingContent?: string;
 }
 
 type TaskCardTab = "details" | "preview";
@@ -598,6 +599,109 @@ async function streamChat(
   onDone();
 }
 
+// ─── Markdown Rendering (static — outside component for memoization) ────
+
+function formatInlineStatic(text: string): React.ReactNode {
+  const segments = text.split(/(\*\*.*?\*\*|`[^`]+`)/g);
+  return segments.map((seg, j) => {
+    if (seg.startsWith("**") && seg.endsWith("**")) {
+      return (
+        <strong key={j} className="font-semibold text-white">
+          {seg.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (seg.startsWith("`") && seg.endsWith("`")) {
+      return (
+        <code
+          key={j}
+          className="rounded bg-zinc-800 px-1.5 py-0.5 text-[13px] text-purple-300"
+        >
+          {seg.slice(1, -1)}
+        </code>
+      );
+    }
+    return seg;
+  });
+}
+
+function formatContent(content: string) {
+  const parts = content.split(/(```[\s\S]*?```)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("```")) {
+      const lines = part.split("\n");
+      const lang = (lines[0] ?? "").replace("```", "").trim();
+      const code = lines.slice(1, -1).join("\n");
+      return (
+        <div
+          key={i}
+          className="my-3 overflow-hidden rounded-lg border border-zinc-700/50"
+        >
+          {lang && (
+            <div className="bg-zinc-800/80 px-3 py-1.5 text-[11px] font-medium text-zinc-400 border-b border-zinc-700/50">
+              {lang}
+            </div>
+          )}
+          <pre className="overflow-x-auto bg-zinc-900/60 p-3 text-[13px] leading-relaxed text-zinc-300">
+            <code>{code}</code>
+          </pre>
+        </div>
+      );
+    }
+
+    const textLines = part.split("\n");
+    const elements: React.ReactNode[] = [];
+    let listBuffer: { ordered: boolean; items: React.ReactNode[] } | null = null;
+
+    const flushList = () => {
+      if (!listBuffer) return;
+      if (listBuffer.ordered) {
+        elements.push(
+          <ol key={`ol-${elements.length}`} className="my-1.5 ml-4 list-decimal space-y-0.5 text-zinc-300">
+            {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
+          </ol>
+        );
+      } else {
+        elements.push(
+          <ul key={`ul-${elements.length}`} className="my-1.5 ml-4 list-disc space-y-0.5 text-zinc-300">
+            {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
+          </ul>
+        );
+      }
+      listBuffer = null;
+    };
+
+    for (let li = 0; li < textLines.length; li++) {
+      const line = textLines[li]!;
+      const ulMatch = line.match(/^\s*[-*]\s+(.*)/);
+      const olMatch = line.match(/^\s*\d+\.\s+(.*)/);
+
+      if (ulMatch) {
+        if (!listBuffer || listBuffer.ordered) { flushList(); listBuffer = { ordered: false, items: [] }; }
+        listBuffer.items.push(formatInlineStatic(ulMatch[1] ?? ""));
+      } else if (olMatch) {
+        if (!listBuffer || !listBuffer.ordered) { flushList(); listBuffer = { ordered: true, items: [] }; }
+        listBuffer.items.push(formatInlineStatic(olMatch[1] ?? ""));
+      } else {
+        flushList();
+        elements.push(
+          <span key={`line-${i}-${li}`} className="whitespace-pre-wrap">
+            {formatInlineStatic(line)}
+            {li < textLines.length - 1 ? "\n" : ""}
+          </span>
+        );
+      }
+    }
+    flushList();
+    return <span key={i}>{elements}</span>;
+  });
+}
+
+/** Memoized message content renderer — prevents re-parsing markdown for unchanged messages */
+const MemoizedMessageContent = memo(function MemoizedMessageContent({ content }: { content: string }) {
+  return <>{formatContent(content)}</>;
+});
+
 // ─── Helpers ────────────────────────────────────────────────
 
 /** Derive a project name from the user prompt (capitalize first letter of each word, max ~6 words) */
@@ -871,6 +975,8 @@ export default function EditorPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const chunkBufferRef = useRef("");
+  const rafIdRef = useRef<number | null>(null);
   const autoSentRef = useRef(false);
   const scaffoldInitRef = useRef(false);
 
@@ -1691,20 +1797,48 @@ export default function EditorPage() {
         resolvedProjectId,
         trimmed,
         effectiveMode,
-        // onChunk — append text to the streaming assistant message
+        // onChunk — append text to the streaming assistant message (RAF-batched)
         (chunk: string) => {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? { ...m, content: m.content + chunk }
-                : m
-            )
-          );
-          // Once text starts flowing, update status
-          setLiveStatus("Writing response...");
+          // Only set status once when text first starts flowing
+          if (!chunkBufferRef.current && rafIdRef.current === null) {
+            setLiveStatus("Writing response...");
+          }
+          chunkBufferRef.current += chunk;
+          if (rafIdRef.current === null) {
+            rafIdRef.current = requestAnimationFrame(() => {
+              const buffered = chunkBufferRef.current;
+              chunkBufferRef.current = "";
+              rafIdRef.current = null;
+              if (buffered) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, content: m.content + buffered }
+                      : m
+                  )
+                );
+              }
+            });
+          }
         },
         // onDone
         () => {
+          // Flush any remaining buffered chunks before marking done
+          if (rafIdRef.current !== null) {
+            cancelAnimationFrame(rafIdRef.current);
+            rafIdRef.current = null;
+          }
+          if (chunkBufferRef.current) {
+            const remaining = chunkBufferRef.current;
+            chunkBufferRef.current = "";
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: m.content + remaining }
+                  : m
+              )
+            );
+          }
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
@@ -1765,6 +1899,12 @@ export default function EditorPage() {
         },
         // onError
         (error: string) => {
+          // Flush RAF buffer on error
+          if (rafIdRef.current !== null) {
+            cancelAnimationFrame(rafIdRef.current);
+            rafIdRef.current = null;
+          }
+          chunkBufferRef.current = "";
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
@@ -1788,6 +1928,14 @@ export default function EditorPage() {
         controller.signal,
         // onThinking — convert AI thinking to human-friendly status
         (thinkingText: string) => {
+          // Accumulate thinking content into the assistant message for inline display
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, thinkingContent: (m.thinkingContent || "") + thinkingText }
+                : m
+            )
+          );
           // If it already looks like a friendly message (e.g. from friendlyMessage), use directly
           if (thinkingText.length < 60 && !thinkingText.includes("\n")) {
             setLiveStatus(thinkingText);
@@ -1990,125 +2138,8 @@ export default function EditorPage() {
     });
   };
 
-  // Format message content with markdown (bold, code blocks, inline code, lists)
-  const formatContent = (content: string) => {
-    const parts = content.split(/(```[\s\S]*?```)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith("```")) {
-        const lines = part.split("\n");
-        const lang = (lines[0] ?? "").replace("```", "").trim();
-        const code = lines.slice(1, -1).join("\n");
-        return (
-          <div
-            key={i}
-            className="my-3 overflow-hidden rounded-lg border border-zinc-700/50"
-          >
-            {lang && (
-              <div className="bg-zinc-800/80 px-3 py-1.5 text-[11px] font-medium text-zinc-400 border-b border-zinc-700/50">
-                {lang}
-              </div>
-            )}
-            <pre className="overflow-x-auto bg-zinc-900/60 p-3 text-[13px] leading-relaxed text-zinc-300">
-              <code>{code}</code>
-            </pre>
-          </div>
-        );
-      }
-
-      // Process non-code-block text line by line to handle lists
-      const textLines = part.split("\n");
-      const elements: React.ReactNode[] = [];
-      let listBuffer: { ordered: boolean; items: React.ReactNode[] } | null =
-        null;
-
-      const flushList = () => {
-        if (!listBuffer) return;
-        if (listBuffer.ordered) {
-          elements.push(
-            <ol
-              key={`ol-${elements.length}`}
-              className="my-1.5 ml-4 list-decimal space-y-0.5 text-zinc-300"
-            >
-              {listBuffer.items.map((item, idx) => (
-                <li key={idx}>{item}</li>
-              ))}
-            </ol>
-          );
-        } else {
-          elements.push(
-            <ul
-              key={`ul-${elements.length}`}
-              className="my-1.5 ml-4 list-disc space-y-0.5 text-zinc-300"
-            >
-              {listBuffer.items.map((item, idx) => (
-                <li key={idx}>{item}</li>
-              ))}
-            </ul>
-          );
-        }
-        listBuffer = null;
-      };
-
-      for (let li = 0; li < textLines.length; li++) {
-        const line = textLines[li]!;
-
-        // Unordered list item: - or *
-        const ulMatch = line.match(/^\s*[-*]\s+(.*)/);
-        // Ordered list item: 1. 2. etc.
-        const olMatch = line.match(/^\s*\d+\.\s+(.*)/);
-
-        if (ulMatch) {
-          if (!listBuffer || listBuffer.ordered) {
-            flushList();
-            listBuffer = { ordered: false, items: [] };
-          }
-          listBuffer.items.push(formatInline(ulMatch[1] ?? ""));
-        } else if (olMatch) {
-          if (!listBuffer || !listBuffer.ordered) {
-            flushList();
-            listBuffer = { ordered: true, items: [] };
-          }
-          listBuffer.items.push(formatInline(olMatch[1] ?? ""));
-        } else {
-          flushList();
-          elements.push(
-            <span key={`line-${i}-${li}`} className="whitespace-pre-wrap">
-              {formatInline(line)}
-              {li < textLines.length - 1 ? "\n" : ""}
-            </span>
-          );
-        }
-      }
-      flushList();
-
-      return <span key={i}>{elements}</span>;
-    });
-  };
-
-  // Inline markdown formatting: bold, inline code
-  const formatInline = (text: string): React.ReactNode => {
-    const segments = text.split(/(\*\*.*?\*\*|`[^`]+`)/g);
-    return segments.map((seg, j) => {
-      if (seg.startsWith("**") && seg.endsWith("**")) {
-        return (
-          <strong key={j} className="font-semibold text-white">
-            {seg.slice(2, -2)}
-          </strong>
-        );
-      }
-      if (seg.startsWith("`") && seg.endsWith("`")) {
-        return (
-          <code
-            key={j}
-            className="rounded bg-zinc-800 px-1.5 py-0.5 text-[13px] text-purple-300"
-          >
-            {seg.slice(1, -1)}
-          </code>
-        );
-      }
-      return seg;
-    });
-  };
+  // Use the memoized static formatContent (defined outside component)
+  // This avoids re-creating the function on every render
 
   // Retry scaffold
   const retryScaffold = useCallback(() => {
@@ -3064,6 +3095,19 @@ export default function EditorPage() {
                           </div>
                         )}
 
+                        {/* Inline thinking indicator */}
+                        {msg.thinkingContent && msg.isStreaming && (
+                          <details className="mb-2 rounded-lg border border-zinc-700/40 bg-zinc-900/30 text-[13px]">
+                            <summary className="cursor-pointer select-none px-3 py-1.5 text-zinc-500 hover:text-zinc-400 flex items-center gap-2">
+                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-purple-400 animate-pulse" />
+                              Thinking...
+                            </summary>
+                            <div className="px-3 pb-2 text-zinc-500 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                              {msg.thinkingContent}
+                            </div>
+                          </details>
+                        )}
+
                         <div
                           className={`text-[14px] leading-relaxed ${
                             msg.isError
@@ -3072,7 +3116,7 @@ export default function EditorPage() {
                           }`}
                         >
                           {msg.content
-                            ? formatContent(msg.content)
+                            ? <MemoizedMessageContent content={msg.content} />
                             : msg.isStreaming && (
                                 <div className="status-shimmer-bg rounded-lg px-3 py-2.5 -mx-1">
                                   <div className="flex items-center gap-3">
