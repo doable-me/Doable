@@ -564,6 +564,18 @@ ERROR RECOVERY — if you encounter errors:
         let assistantToolCalls: any[] = [];
         try {
           for await (const event of engine.sendMessage(sessionId!, augmentedContent)) {
+            const evtType = (event as Record<string, unknown>).type as string;
+            const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
+
+            // Capture full assistant.message for DB persistence (even though we skip it for SSE)
+            if (evtType === "assistant.message" && evtData?.content) {
+              const fullContent = evtData.content as string;
+              // Use the complete message for DB if we somehow missed deltas
+              if (!assistantContent && fullContent) {
+                assistantContent = fullContent;
+              }
+            }
+
             const sseData = mapEventToSSE(event);
             if (sseData) {
               // When a tool_call is emitted, record the name for pairing
@@ -1262,21 +1274,42 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
   const data = event.data as Record<string, unknown> | undefined;
 
   switch (type) {
-    // ─── Text content ─────────────────────────────────────
-    case "text_delta":
-      // Already in the right format — pass through
-      return { type: "text_delta", data: data?.content ?? data ?? "" };
-    case "assistant.message":
-      return { type: "text_delta", data: data?.content ?? "" };
+    // ─── Streaming text deltas (token-by-token from SDK) ──
+    case "assistant.message_delta": {
+      // SDK streaming: { deltaContent: "token" } — this is the real streaming event
+      const delta = (data?.deltaContent ?? "") as string;
+      if (!delta) return null;
+      return { type: "text_delta", data: delta };
+    }
 
-    // ─── Thinking / reasoning ─────────────────────────────
-    case "assistant.thinking":
+    // ─── Final complete message (sent after streaming ends) ─
+    case "assistant.message":
+      // When streaming is enabled, deltas already sent all text.
+      // Skip to avoid duplicating content. Only emit if no deltas were sent
+      // (fallback for non-streaming mode).
+      return null;
+
+    // ─── Legacy / direct provider text events ─────────────
+    case "text_delta":
+      return { type: "text_delta", data: data?.content ?? data ?? "" };
+
+    // ─── Streaming reasoning deltas (token-by-token thinking) ──
+    case "assistant.reasoning_delta": {
+      const reasoningDelta = (data?.deltaContent ?? "") as string;
+      if (!reasoningDelta) return null;
+      return { type: "thinking", data: reasoningDelta };
+    }
+
+    // ─── Final reasoning block ────────────────────────────
     case "assistant.reasoning":
+      // Skip — deltas already sent thinking content
+      return null;
+
+    // ─── Thinking / reasoning (legacy events) ─────────────
+    case "assistant.thinking":
       return { type: "thinking", data: data?.content ?? "" };
 
     // ─── Tool calls (starting) ────────────────────────────
-    // Only emit from tool.execution_start — external_tool.requested
-    // is a duplicate for the same tool invocation.
     case "tool.running":
     case "tool.execution_start": {
       const toolName = (data?.toolName ?? data?.name) as string | undefined;
@@ -1294,8 +1327,6 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
       return null; // Skip — duplicate of tool.execution_start
 
     // ─── Tool results (completed) ─────────────────────────
-    // Only emit from tool.execution_complete — external_tool.completed
-    // is a duplicate for the same tool invocation.
     case "tool.completed":
     case "tool.execution_complete":
       return {

@@ -140,6 +140,7 @@ export class CopilotEngine {
 
     const sessionConfig: SessionConfig = {
       onPermissionRequest: approveAll,
+      streaming: true, // Enable token-by-token streaming (assistant.message_delta events)
       ...(config.workingDirectory ? { workingDirectory: config.workingDirectory } : {}),
       ...(config.model || this.config.model
         ? { model: config.model ?? this.config.model }
