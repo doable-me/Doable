@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { ApiGitHubCopilotAccount, ApiAiProvider, ApiWorkspaceAiDefaults, ApiUserAiPreferences, ApiEnforcementStatus } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { Bot, Sparkles, Loader2, Check, Lock, User } from "lucide-react";
 
 interface Props {
@@ -33,8 +34,6 @@ const FALLBACK_MODELS = [
   { id: "gpt-4o", label: "GPT-4o" },
 ];
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
 function useCopilotModels() {
   const [models, setModels] = useState<{ id: string; label: string }[]>(FALLBACK_MODELS);
   const [loadingModels, setLoadingModels] = useState(true);
@@ -43,11 +42,9 @@ function useCopilotModels() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/ai/models`, { credentials: "include" });
-        if (!res.ok) throw new Error("Failed to fetch models");
-        const json = await res.json();
+        const json = await apiFetch<{ data: { id: string; name: string }[] }>("/ai/models");
         if (cancelled) return;
-        const fetched: { id: string; name: string }[] = json.data ?? [];
+        const fetched = json.data ?? [];
         if (fetched.length > 0) {
           setModels([
             { id: "", label: "Auto (recommended)" },

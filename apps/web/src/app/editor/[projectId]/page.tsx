@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, memo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getStoredTokens, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, type ApiEffectiveAiConfig } from "@/lib/api";
+import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, type ApiEffectiveAiConfig } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-attachments";
@@ -895,11 +895,9 @@ export default function EditorPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/ai/models`, { credentials: "include" });
-        if (!res.ok) return;
-        const json = await res.json();
+        const json = await apiFetch<{ data: { id: string; name: string }[] }>("/ai/models");
         if (cancelled) return;
-        const fetched: { id: string; name: string }[] = json.data ?? [];
+        const fetched = json.data ?? [];
         if (fetched.length > 0) {
           setAvailableModels(fetched.map((m) => ({ id: m.id, label: m.name, group: "copilot" as const })));
         }
