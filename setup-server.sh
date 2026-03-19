@@ -77,8 +77,8 @@ info "Step 1/10: Installing system packages..."
 export DEBIAN_FRONTEND=noninteractive
 
 # Node.js 20 LTS
-if ! command -v node &>/dev/null; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+if ! command -v node &>/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 22 ]]; then
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y nodejs
 fi
 
