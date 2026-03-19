@@ -805,6 +805,7 @@ export function DashboardSidebar() {
                 <Settings className="mr-2 h-4 w-4" />
                 Settings
               </DropdownMenuItem>
+              {(activeWorkspace?.userRole === "owner" || activeWorkspace?.userRole === "admin") && (
               <DropdownMenuItem
                 className="text-zinc-300 focus:bg-white/5 focus:text-white"
                 onClick={() => router.push("/ai-settings")}
@@ -812,6 +813,7 @@ export function DashboardSidebar() {
                 <Bot className="mr-2 h-4 w-4" />
                 AI Settings
               </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 className="text-zinc-300 focus:bg-white/5 focus:text-white"
                 onClick={() => router.push("/billing")}

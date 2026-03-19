@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { apiListWorkspaces, type ApiWorkspace } from "@/lib/api";
 import { useGitHubAccounts, useCustomProviders, useWorkspaceAISettings, useUserAiPreferences } from "../hooks/use-ai-settings";
 import { ConnectionsTab } from "./connections-tab";
@@ -11,9 +12,11 @@ import { Link2, Bot, Shield } from "lucide-react";
 type Tab = "connections" | "models" | "access";
 
 export function AiSettingsPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>("models");
   const [workspaces, setWorkspaces] = useState<ApiWorkspace[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     apiListWorkspaces().then(({ data }) => {
@@ -21,11 +24,21 @@ export function AiSettingsPage() {
       const persisted = localStorage.getItem("doable_active_workspace_id");
       const found = data.find((w) => w.id === persisted);
       setActiveWorkspaceId(found ? found.id : data[0]?.id ?? null);
-    }).catch(() => {});
+      setLoaded(true);
+    }).catch(() => { setLoaded(true); });
   }, []);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const isAdmin = activeWorkspace?.userRole === "owner" || activeWorkspace?.userRole === "admin";
+
+  // Redirect non-admins away from this page
+  useEffect(() => {
+    if (loaded && activeWorkspace && !isAdmin) {
+      router.replace("/");
+    }
+  }, [loaded, activeWorkspace, isAdmin, router]);
+
+  if (!loaded || (activeWorkspace && !isAdmin)) return null;
 
   const githubAccounts = useGitHubAccounts(activeWorkspaceId);
   const providers = useCustomProviders(activeWorkspaceId);
