@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { request as httpRequest } from "node:http";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -19,6 +20,7 @@ import { versionRoutes } from "./routes/versions.js";
 import { githubRoutes } from "./routes/github.js";
 import { projectFileRoutes } from "./routes/project-files.js";
 import { previewRoutes } from "./routes/preview-proxy.js";
+import { getDevServerInternalUrl } from "./projects/dev-server.js";
 import { thumbnailRoutes } from "./routes/thumbnails.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { aiSettingsRoutes } from "./routes/ai-settings.js";
@@ -354,10 +356,63 @@ const host = process.env.API_HOST ?? "0.0.0.0";
 
 console.log(`Doable API starting on ${host}:${port}`);
 
-serve({
+const server = serve({
   fetch: app.fetch,
   port,
   hostname: host,
+});
+
+// ─── WebSocket Proxy for Vite HMR ─────────────────────────────
+// Proxies WebSocket upgrade requests on /preview/:projectId/...
+// to the project's Vite dev server so HMR works through any
+// reverse proxy (Cloudflare, nginx, etc.) without special config.
+server.on("upgrade", (req, socket, head) => {
+  const url = req.url ?? "";
+  const match = url.match(/^\/preview\/([^/]+)\//);
+  if (!match) return socket.destroy();
+
+  const projectId = match[1];
+  const devUrl = getDevServerInternalUrl(projectId);
+  if (!devUrl) return socket.destroy();
+
+  // Parse the Vite dev server's host:port
+  const target = new URL(devUrl);
+
+  const proxyReq = httpRequest({
+    hostname: target.hostname,
+    port: target.port,
+    path: url,
+    method: "GET",
+    headers: req.headers,
+  });
+
+  proxyReq.on("upgrade", (_proxyRes, proxySocket, proxyHead) => {
+    // Send the 101 Switching Protocols response back to the client
+    socket.write(
+      "HTTP/1.1 101 Switching Protocols\r\n" +
+      "Upgrade: websocket\r\n" +
+      "Connection: Upgrade\r\n" +
+      `Sec-WebSocket-Accept: ${_proxyRes.headers["sec-websocket-accept"]}\r\n` +
+      (_proxyRes.headers["sec-websocket-protocol"]
+        ? `Sec-WebSocket-Protocol: ${_proxyRes.headers["sec-websocket-protocol"]}\r\n`
+        : "") +
+      "\r\n"
+    );
+
+    // Write any buffered data
+    if (proxyHead.length > 0) socket.write(proxyHead);
+    if (head.length > 0) proxySocket.write(head);
+
+    // Pipe bidirectionally
+    proxySocket.pipe(socket);
+    socket.pipe(proxySocket);
+
+    proxySocket.on("error", () => socket.destroy());
+    socket.on("error", () => proxySocket.destroy());
+  });
+
+  proxyReq.on("error", () => socket.destroy());
+  proxyReq.end();
 });
 
 export default app;
