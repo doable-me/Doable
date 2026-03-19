@@ -333,6 +333,45 @@ const projectSessions = new Map<string, string>();
 // ─── Debounce guard for thumbnail captures ─
 const captureInProgress = new Set<string>();
 
+/**
+ * Schedule a thumbnail capture for a project. Debounced — only one
+ * capture runs at a time per project. Waits for Vite HMR to settle
+ * before taking the screenshot.
+ *
+ * @param projectId - The project to capture
+ * @param delayMs - How long to wait for Vite HMR to settle (default: 3000)
+ */
+function scheduleThumbnailCapture(projectId: string, delayMs = 3000): void {
+  if (captureInProgress.has(projectId)) return;
+  captureInProgress.add(projectId);
+
+  const internalUrl = getDevServerInternalUrl(projectId);
+  if (!internalUrl) {
+    captureInProgress.delete(projectId);
+    return;
+  }
+
+  const previewUrl = `${internalUrl}/preview/${projectId}/`;
+  setTimeout(() => {
+    import("../thumbnails/capture.js")
+      .then(({ captureProjectThumbnail }) =>
+        captureProjectThumbnail(projectId, previewUrl)
+      )
+      .then(async (filePath) => {
+        if (filePath) {
+          try {
+            const thumbnailUrl = `/thumbnails/${projectId}.png`;
+            await sql`UPDATE projects SET thumbnail_url = ${thumbnailUrl} WHERE id = ${projectId}`;
+          } catch (e) {
+            console.warn("[Thumbnail] Failed to save URL to DB:", e);
+          }
+        }
+      })
+      .finally(() => captureInProgress.delete(projectId))
+      .catch(console.warn);
+  }, delayMs);
+}
+
 // ─── POST /projects/:id/chat ─ SSE streaming response ───────
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(32_000),
@@ -757,43 +796,8 @@ ERROR RECOVERY — if you encounter errors:
         }
 
         // Capture thumbnail asynchronously (don't block the response)
-        if (hadToolCalls && !captureInProgress.has(projectId)) {
-          captureInProgress.add(projectId);
-          const { getDevServerInternalUrl } = await import(
-            "../projects/dev-server.js"
-          );
-          const internalUrl = getDevServerInternalUrl(projectId);
-          if (internalUrl) {
-            // The Vite base path is /preview/{projectId}/ — Puppeteer
-            // needs the full internal URL with that path.
-            const previewUrl = `${internalUrl}/preview/${projectId}/`;
-            // Fire and forget — wait for Vite to process changes, then capture
-            import("../thumbnails/capture.js")
-              .then(({ captureProjectThumbnail }) => {
-                setTimeout(() => {
-                  captureProjectThumbnail(projectId, previewUrl)
-                    .then(async (filePath) => {
-                      if (filePath) {
-                        // Save thumbnail URL to database so dashboard can display it
-                        try {
-                          const thumbnailUrl = `/thumbnails/${projectId}.png`;
-                          await sql`UPDATE projects SET thumbnail_url = ${thumbnailUrl} WHERE id = ${projectId}`;
-                        } catch (e) {
-                          console.warn("[Thumbnail] Failed to save URL to DB:", e);
-                        }
-                      }
-                    })
-                    .finally(() => captureInProgress.delete(projectId))
-                    .catch(console.warn);
-                }, 3000); // 3s delay for Vite HMR to settle
-              })
-              .catch((err) => {
-                captureInProgress.delete(projectId);
-                console.warn("[Thumbnail] Import failed:", err);
-              });
-          } else {
-            captureInProgress.delete(projectId);
-          }
+        if (hadToolCalls) {
+          scheduleThumbnailCapture(projectId);
         }
 
         // Save assistant message to database
@@ -1058,6 +1062,9 @@ chatRoutes.post(
         } catch {
           // Non-critical
         }
+
+        // Re-capture thumbnail after fix (the previous one may show an error overlay)
+        scheduleThumbnailCapture(projectId);
       }
 
       await stream.writeSSE({ data: "[DONE]" });

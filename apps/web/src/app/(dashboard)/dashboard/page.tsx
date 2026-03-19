@@ -21,6 +21,7 @@ import {
 import {
   DASHBOARD_EVENTS,
   emitDashboardEvent,
+  PROJECT_DRAG_TYPE,
   type DashboardFilter,
 } from "@/components/dashboard/sidebar";
 import {
@@ -441,6 +442,11 @@ function ProjectCard({
           ? "border-violet-500 bg-violet-500/5 ring-1 ring-violet-500/30"
           : "border-zinc-800 bg-zinc-900/80 hover:border-zinc-700 hover:bg-zinc-900"
       }`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
       onClick={onClick}
       onContextMenu={onContextMenu}
     >
@@ -450,6 +456,7 @@ function ProjectCard({
           <img
             src={`${project.thumbnail_url ? `${API_URL}${project.thumbnail_url}` : `${API_URL}/thumbnails/${project.id}.png`}?v=${encodeURIComponent(project.updated_at)}`}
             alt={project.name}
+            draggable={false}
             className="h-full w-full object-cover object-top rounded-t-xl"
             onError={() => setImgFailed(true)}
           />
@@ -622,6 +629,11 @@ function ProjectRow({
       className={`group border-b border-zinc-800/50 transition-colors cursor-pointer ${
         selected ? "bg-violet-500/5" : "hover:bg-white/[0.02]"
       }`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
       onClick={onClick}
       onContextMenu={onContextMenu}
     >
@@ -1057,7 +1069,6 @@ export default function DashboardPage() {
     const handleSearchFocus = () => {
       searchRef.current?.focus();
     };
-
     window.addEventListener(DASHBOARD_EVENTS.NAVIGATE_FILTER, handleFilter);
     window.addEventListener(DASHBOARD_EVENTS.NAVIGATE_FOLDER, handleFolder);
     window.addEventListener(DASHBOARD_EVENTS.SEARCH_FOCUS, handleSearchFocus);
@@ -1083,6 +1094,18 @@ export default function DashboardPage() {
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
+  }, []);
+
+  // ---- Drag-and-drop: move project to folder ----
+  const moveToFolderRef = useRef<((projectId: string, folderId: string | null) => void) | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { projectId, folderId } = (e as CustomEvent<{ projectId: string; folderId: string | null }>).detail;
+      if (projectId) moveToFolderRef.current?.(projectId, folderId);
+    };
+    window.addEventListener(DASHBOARD_EVENTS.MOVE_PROJECT_TO_FOLDER, handler);
+    return () => window.removeEventListener(DASHBOARD_EVENTS.MOVE_PROJECT_TO_FOLDER, handler);
   }, []);
 
   // ---- Actions ----
@@ -1197,6 +1220,7 @@ export default function DashboardPage() {
       console.error("Failed to move project:", err);
     }
   };
+  moveToFolderRef.current = handleMoveToFolder;
 
   const handleBulkMoveToFolder = async (folderId: string | null) => {
     const ids: string[] = Array.from(selectedIds);

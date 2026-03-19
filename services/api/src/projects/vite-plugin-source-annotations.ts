@@ -143,6 +143,17 @@ function processLine(line, filePath, lineNum) {
       continue;
     }
 
+    // Skip TypeScript generic type parameters:
+    // If the character before < is a word character (letter/digit/_),
+    // it's a generic like Array<T>, ChangeEvent<HTMLInputElement>, etc.
+    // JSX tags always follow non-word chars: whitespace, (, {, =, etc.
+    if (matchStart > 0) {
+      const prevChar = line[matchStart - 1];
+      if (/[a-zA-Z0-9_]/.test(prevChar)) {
+        continue;
+      }
+    }
+
     // Skip certain tags that shouldn't get annotations
     // (fragments, generic type params, etc.)
     if (tagName === "T" || tagName === "K" || tagName === "V" || tagName === "P") {

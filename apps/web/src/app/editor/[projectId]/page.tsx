@@ -1417,12 +1417,17 @@ export default function EditorPage() {
               // Stream error — ignore
             }
 
-            // Mark message as done
-            setMessages((prev) =>
-              prev.map((m) =>
+            // Mark message as done — remove it entirely if it has no visible content
+            setMessages((prev) => {
+              const msg = prev.find((m) => m.id === fixId);
+              if (msg && !msg.content.trim()) {
+                // No text content was produced — drop the blank message
+                return prev.filter((m) => m.id !== fixId);
+              }
+              return prev.map((m) =>
                 m.id === fixId ? { ...m, isStreaming: false } : m
-              )
-            );
+              );
+            });
             setIsStreaming(false);
             setLiveStatus("");
             autoFixInFlightRef.current = false;

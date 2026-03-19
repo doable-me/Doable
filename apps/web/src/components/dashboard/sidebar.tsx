@@ -66,7 +66,10 @@ export const DASHBOARD_EVENTS = {
   SEARCH_FOCUS: "dashboard:search-focus",
   FOLDERS_CHANGED: "dashboard:folders-changed",
   PROJECTS_CHANGED: "dashboard:projects-changed",
+  MOVE_PROJECT_TO_FOLDER: "dashboard:move-project-to-folder",
 } as const;
+
+export const PROJECT_DRAG_TYPE = "application/x-doable-project";
 
 export type DashboardFilter = "all" | "starred" | "created-by-me" | "shared";
 
@@ -174,21 +177,56 @@ function FolderNode({
   onDelete: (folder: Folder) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const hasChildren = folder.children.length > 0;
   const isActive = activeFolder === folder.id;
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes(PROJECT_DRAG_TYPE)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear if leaving the element itself (not entering a child)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const projectId = e.dataTransfer.getData(PROJECT_DRAG_TYPE);
+    if (projectId) {
+      emitDashboardEvent(DASHBOARD_EVENTS.MOVE_PROJECT_TO_FOLDER, {
+        projectId,
+        folderId: folder.id,
+      });
+    }
+  }, [folder.id]);
+
   return (
     <div>
-      <div className="group relative">
+      <div
+        className="group relative"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <button
           onClick={() => {
             onSelect(folder.id);
             if (hasChildren) setExpanded(!expanded);
           }}
           className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${
-            isActive
-              ? "bg-white/10 text-white"
-              : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+            isDragOver
+              ? "bg-violet-500/20 text-violet-300 ring-1 ring-violet-500/40"
+              : isActive
+                ? "bg-white/10 text-white"
+                : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
           }`}
           style={{ paddingLeft: `${12 + depth * 16}px` }}
         >
@@ -264,6 +302,7 @@ export function DashboardSidebar() {
   const [recentOpen, setRecentOpen] = useState(true);
   const [foldersOpen, setFoldersOpen] = useState(true);
   const [activeFilter, setActiveFilter] = useState<DashboardFilter>("all");
+  const [allProjectsDragOver, setAllProjectsDragOver] = useState(false);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
 
   // Folder management
@@ -542,13 +581,40 @@ export function DashboardSidebar() {
           {/* Projects Section */}
           <SectionHeader label="Projects" />
           <div className="space-y-0.5">
-            <NavItem
-              icon={FolderOpen}
-              label="All projects"
-              active={activeFilter === "all" && !activeFolder}
-              onClick={() => handleFilterClick("all")}
-              count={totalProjects}
-            />
+            <div
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes(PROJECT_DRAG_TYPE)) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  setAllProjectsDragOver(true);
+                }
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setAllProjectsDragOver(false);
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setAllProjectsDragOver(false);
+                const projectId = e.dataTransfer.getData(PROJECT_DRAG_TYPE);
+                if (projectId) {
+                  emitDashboardEvent(DASHBOARD_EVENTS.MOVE_PROJECT_TO_FOLDER, {
+                    projectId,
+                    folderId: null,
+                  });
+                }
+              }}
+              className={allProjectsDragOver ? "rounded-lg ring-1 ring-violet-500/40 bg-violet-500/10" : ""}
+            >
+              <NavItem
+                icon={FolderOpen}
+                label="All projects"
+                active={activeFilter === "all" && !activeFolder}
+                onClick={() => handleFilterClick("all")}
+                count={totalProjects}
+              />
+            </div>
             <NavItem
               icon={Star}
               label="Starred"
@@ -584,6 +650,11 @@ export function DashboardSidebar() {
                 {starredProjects.slice(0, 3).map((project) => (
                   <button
                     key={project.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id);
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
                     onClick={() => router.push(`/editor/${project.id}`)}
                     className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-colors"
                   >
@@ -618,6 +689,11 @@ export function DashboardSidebar() {
                 {recentProjects.map((project) => (
                   <button
                     key={project.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id);
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
                     onClick={() => router.push(`/editor/${project.id}`)}
                     className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-colors"
                   >

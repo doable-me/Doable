@@ -13,11 +13,15 @@
 import { Hono } from "hono";
 import { readFile, stat } from "node:fs/promises";
 import {
+  captureProjectThumbnail,
   getThumbnailPath,
   thumbnailExists,
 } from "../thumbnails/capture.js";
+import { getDevServerInternalUrl } from "../projects/dev-server.js";
+import { sql } from "../db/index.js";
+import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 
-export const thumbnailRoutes = new Hono();
+export const thumbnailRoutes = new Hono<AuthEnv>();
 
 // GET /thumbnails/:filename — serve a project thumbnail
 // Expects filename like "proj-123.png"
@@ -58,4 +62,33 @@ thumbnailRoutes.get("/:filename", async (c) => {
   } catch {
     return c.notFound();
   }
+});
+
+// POST /thumbnails/:projectId/regenerate — force re-capture a project thumbnail
+thumbnailRoutes.post("/:projectId/regenerate", authMiddleware, async (c) => {
+  const projectId = c.req.param("projectId");
+
+  const internalUrl = getDevServerInternalUrl(projectId);
+  if (!internalUrl) {
+    return c.json({ error: "Project dev server is not running" }, 400);
+  }
+
+  const previewUrl = `${internalUrl}/preview/${projectId}/`;
+  const filePath = await captureProjectThumbnail(projectId, previewUrl, {
+    retries: 2,
+    retryDelayMs: 3000,
+  });
+
+  if (!filePath) {
+    return c.json({ error: "Failed to capture thumbnail — preview may have errors" }, 500);
+  }
+
+  try {
+    const thumbnailUrl = `/thumbnails/${projectId}.png`;
+    await sql`UPDATE projects SET thumbnail_url = ${thumbnailUrl}, updated_at = NOW() WHERE id = ${projectId}`;
+  } catch {
+    // Non-critical — file was saved even if DB update fails
+  }
+
+  return c.json({ data: { success: true, url: `/thumbnails/${projectId}.png` } });
 });
