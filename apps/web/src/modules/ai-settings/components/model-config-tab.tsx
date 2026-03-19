@@ -27,15 +27,44 @@ interface Props {
   }) => Promise<void>;
 }
 
-const COPILOT_MODELS = [
+const FALLBACK_MODELS = [
   { id: "", label: "Auto (recommended)" },
   { id: "claude-sonnet-4", label: "Claude Sonnet 4" },
-  { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
   { id: "gpt-4o", label: "GPT-4o" },
-  { id: "gpt-4o-mini", label: "GPT-4o Mini" },
-  { id: "o3-mini", label: "o3-mini" },
-  { id: "o4-mini", label: "o4-mini" },
 ];
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+function useCopilotModels() {
+  const [models, setModels] = useState<{ id: string; label: string }[]>(FALLBACK_MODELS);
+  const [loadingModels, setLoadingModels] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/ai/models`, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch models");
+        const json = await res.json();
+        if (cancelled) return;
+        const fetched: { id: string; name: string }[] = json.data ?? [];
+        if (fetched.length > 0) {
+          setModels([
+            { id: "", label: "Auto (recommended)" },
+            ...fetched.map((m) => ({ id: m.id, label: m.name })),
+          ]);
+        }
+      } catch {
+        // keep fallback models
+      } finally {
+        if (!cancelled) setLoadingModels(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return { models, loadingModels };
+}
 
 type Source = "copilot" | "custom";
 
@@ -67,6 +96,7 @@ function ModelSection({
   onChange,
   accounts,
   providers,
+  copilotModels,
 }: {
   title: string;
   description: string;
@@ -75,6 +105,7 @@ function ModelSection({
   onChange: (state: ModelSectionState) => void;
   accounts: ApiGitHubCopilotAccount[];
   providers: ApiAiProvider[];
+  copilotModels: { id: string; label: string }[];
 }) {
   const validAccounts = accounts.filter((a) => a.is_valid);
   const validProviders = providers.filter((p) => p.is_valid);
@@ -147,7 +178,7 @@ function ModelSection({
                 onChange={(e) => onChange({ ...state, model: e.target.value })}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
               >
-                {COPILOT_MODELS.map((m) => (
+                {copilotModels.map((m) => (
                   <option key={m.id} value={m.id}>{m.label}</option>
                 ))}
               </select>
@@ -180,6 +211,7 @@ function ModelSection({
 }
 
 export function ModelConfigTab({ workspaceId, defaults, loading, accounts, providers, onUpdate, userPreferences, enforcement, onUserPreferenceUpdate }: Props) {
+  const { models: copilotModels } = useCopilotModels();
   const [primary, setPrimary] = useState<ModelSectionState>(() => deriveSource(defaults, "default"));
   const [suggestions, setSuggestions] = useState<ModelSectionState>(() => deriveSource(defaults, "suggestion"));
   const [saving, setSaving] = useState(false);
@@ -331,7 +363,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
                         onChange={(e) => setUserModel(e.target.value)}
                         className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
                       >
-                        {COPILOT_MODELS.map((m) => (
+                        {copilotModels.map((m) => (
                           <option key={m.id} value={m.id}>{m.label}</option>
                         ))}
                       </select>
@@ -399,6 +431,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
         onChange={setPrimary}
         accounts={accounts}
         providers={providers}
+        copilotModels={copilotModels}
       />
 
       <ModelSection
@@ -409,6 +442,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
         onChange={setSuggestions}
         accounts={accounts}
         providers={providers}
+        copilotModels={copilotModels}
       />
 
       <button

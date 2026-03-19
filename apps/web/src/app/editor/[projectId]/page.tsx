@@ -889,7 +889,24 @@ export default function EditorPage() {
     if (typeof window === "undefined") return null;
     return localStorage.getItem("doable_selected_copilot_account") ?? null;
   });
-  const [availableModels] = useState<ModelOption[]>([]);
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/ai/models`, { credentials: "include" });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (cancelled) return;
+        const fetched: { id: string; name: string }[] = json.data ?? [];
+        if (fetched.length > 0) {
+          setAvailableModels(fetched.map((m) => ({ id: m.id, label: m.name, group: "copilot" as const })));
+        }
+      } catch { /* use fallback */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleModelSelect = useCallback((modelId: string, providerId: string | null, copilotAccountId: string | null) => {
     // Block user changes when AI enforcement is active
