@@ -24,16 +24,20 @@ export function AiSettingsPage() {
     }).catch(() => {});
   }, []);
 
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
+  const isAdmin = activeWorkspace?.userRole === "owner" || activeWorkspace?.userRole === "admin";
+
   const githubAccounts = useGitHubAccounts(activeWorkspaceId);
   const providers = useCustomProviders(activeWorkspaceId);
   const aiDefaults = useWorkspaceAISettings(activeWorkspaceId);
   const userPrefs = useUserAiPreferences(activeWorkspaceId ?? undefined);
 
-  const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
+  const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
     { key: "models", label: "Model Configuration", icon: Bot },
-    { key: "connections", label: "Connections", icon: Link2 },
-    { key: "access", label: "Access Control", icon: Shield },
+    { key: "connections", label: "Connections", icon: Link2, adminOnly: true },
+    { key: "access", label: "Access Control", icon: Shield, adminOnly: true },
   ];
+  const tabs = allTabs.filter((t) => !t.adminOnly || isAdmin);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">

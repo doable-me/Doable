@@ -219,6 +219,7 @@ export interface ApiWorkspace {
   plan: string;
   created_at: string;
   updated_at: string;
+  userRole: "owner" | "admin" | "member" | "viewer";
   memberCount: number;
   credits: {
     dailyRemaining: number;

@@ -18,15 +18,17 @@ workspaceRoutes.get("/", async (c) => {
   const userId = c.get("userId");
   const rows = await workspaces.listByUser(userId);
 
-  // Enrich each workspace with member count and credits
+  // Enrich each workspace with member count, credits, and user's role
   const data = await Promise.all(
     rows.map(async (ws) => {
-      const [members, credits] = await Promise.all([
+      const [members, credits, userRole] = await Promise.all([
         workspaces.listMembers(ws.id),
         workspaces.getCredits(ws.id),
+        workspaces.getMemberRole(ws.id, userId),
       ]);
       return {
         ...ws,
+        userRole: userRole ?? "member",
         memberCount: members.length,
         credits: credits
           ? {
