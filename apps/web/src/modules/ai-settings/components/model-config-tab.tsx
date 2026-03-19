@@ -34,15 +34,17 @@ const FALLBACK_MODELS = [
   { id: "gpt-4o", label: "GPT-4o" },
 ];
 
-function useCopilotModels() {
+function useCopilotModels(copilotAccountId?: string) {
   const [models, setModels] = useState<{ id: string; label: string }[]>(FALLBACK_MODELS);
   const [loadingModels, setLoadingModels] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+    setLoadingModels(true);
     (async () => {
       try {
-        const json = await apiFetch<{ data: { id: string; name: string }[] }>("/ai/models");
+        const qs = copilotAccountId ? `?copilotAccountId=${copilotAccountId}` : "";
+        const json = await apiFetch<{ data: { id: string; name: string }[] }>(`/ai/models${qs}`);
         if (cancelled) return;
         const fetched = json.data ?? [];
         if (fetched.length > 0) {
@@ -50,15 +52,17 @@ function useCopilotModels() {
             { id: "", label: "Auto (recommended)" },
             ...fetched.map((m) => ({ id: m.id, label: m.name })),
           ]);
+        } else {
+          setModels(FALLBACK_MODELS);
         }
       } catch {
-        // keep fallback models
+        setModels(FALLBACK_MODELS);
       } finally {
         if (!cancelled) setLoadingModels(false);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [copilotAccountId]);
 
   return { models, loadingModels };
 }
@@ -208,11 +212,14 @@ function ModelSection({
 }
 
 export function ModelConfigTab({ workspaceId, defaults, loading, accounts, providers, onUpdate, userPreferences, enforcement, onUserPreferenceUpdate }: Props) {
-  const { models: copilotModels } = useCopilotModels();
   const [primary, setPrimary] = useState<ModelSectionState>(() => deriveSource(defaults, "default"));
   const [suggestions, setSuggestions] = useState<ModelSectionState>(() => deriveSource(defaults, "suggestion"));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Fetch models dynamically based on selected copilot account
+  const activeCopilotAccountId = primary.source === "copilot" ? primary.copilotAccountId : "";
+  const { models: copilotModels } = useCopilotModels(activeCopilotAccountId || undefined);
 
   // User preferences local state
   const [userSource, setUserSource] = useState<Source>("copilot");

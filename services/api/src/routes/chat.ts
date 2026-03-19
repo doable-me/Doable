@@ -1075,7 +1075,15 @@ chatRoutes.post(
 // ─── GET /ai/models ─ List available models ─────────────────
 chatRoutes.get("/ai/models", async (c) => {
   try {
-    const engine = await getCopilotEngine();
+    const copilotAccountId = c.req.query("copilotAccountId");
+    let githubToken: string | undefined;
+
+    if (copilotAccountId) {
+      githubToken = (await aiSettingsDb.getCopilotAccountToken(copilotAccountId)) ?? undefined;
+    }
+
+    const manager = getCopilotManager();
+    const engine = await manager.getEngine(githubToken);
     const models = await engine.listModels();
     return c.json({ data: models });
   } catch (err) {
