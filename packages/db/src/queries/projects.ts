@@ -76,6 +76,13 @@ export function projectQueries(sql: postgres.Sql) {
       return project!;
     },
 
+    async findBySubdomain(subdomain: string): Promise<ProjectRow | undefined> {
+      const [project] = await sql<ProjectRow[]>`
+        SELECT * FROM projects WHERE subdomain = ${subdomain} AND deleted_at IS NULL
+      `;
+      return project;
+    },
+
     async update(
       id: string,
       data: Partial<{
@@ -85,6 +92,7 @@ export function projectQueries(sql: postgres.Sql) {
         visibility: ProjectVisibility;
         githubRepoUrl: string;
         publishedUrl: string;
+        subdomain: string;
         thumbnailUrl: string;
         folderId: string | null;
       }>
@@ -97,6 +105,7 @@ export function projectQueries(sql: postgres.Sql) {
       if (data.visibility !== undefined) values.visibility = data.visibility;
       if (data.githubRepoUrl !== undefined) values.github_repo_url = data.githubRepoUrl;
       if (data.publishedUrl !== undefined) values.published_url = data.publishedUrl;
+      if (data.subdomain !== undefined) values.subdomain = data.subdomain;
       if (data.thumbnailUrl !== undefined) values.thumbnail_url = data.thumbnailUrl;
       if (data.folderId !== undefined) values.folder_id = data.folderId;
 

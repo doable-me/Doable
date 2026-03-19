@@ -55,6 +55,7 @@ export interface ProjectRow {
   visibility: ProjectVisibility;
   github_repo_url: string | null;
   published_url: string | null;
+  subdomain: string | null;
   thumbnail_url: string | null;
   template_id: string | null;
   folder_id: string | null;

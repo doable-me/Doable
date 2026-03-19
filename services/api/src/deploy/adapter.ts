@@ -2,6 +2,7 @@ export interface DeployInput {
   projectId: string;
   projectSlug: string;
   workspaceSlug: string;
+  subdomain: string;
   buildOutputDir: string;
   environment: "preview" | "production";
 }

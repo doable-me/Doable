@@ -72,7 +72,7 @@ read -rp "Proceed? [Y/n]: " CONFIRM
 [[ "${CONFIRM,,}" == "n" ]] && exit 0
 
 # ─── Step 1: System packages ───────────────────────────────────
-info "Step 1/10: Installing system packages..."
+info "Step 1/11: Installing system packages..."
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -110,6 +110,14 @@ apt-get install -y \
   libxshmfence1 libnspr4 libnss3 libdrm2 libxkbcommon0 \
   fonts-liberation 2>/dev/null || true
 
+# Caddy (static file server for published sites)
+if ! command -v caddy &>/dev/null; then
+  apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+  apt-get update -qq && apt-get install -y caddy
+fi
+
 # cloudflared
 if ! command -v cloudflared &>/dev/null; then
   curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
@@ -124,7 +132,7 @@ systemctl start postgresql redis-server
 ok "Packages installed: node $(node -v), pnpm $(pnpm -v), psql $(psql --version | awk '{print $3}'), redis $(redis-cli -v | awk '{print $2}'), cloudflared $(cloudflared --version 2>&1 | awk '{print $3}')"
 
 # ─── Step 2: Swap ──────────────────────────────────────────────
-info "Step 2/10: Configuring swap..."
+info "Step 2/11: Configuring swap..."
 
 if ! swapon --show | grep -q '/swapfile'; then
   TOTAL_RAM=$(free -m | awk '/^Mem:/{print $2}')
@@ -140,7 +148,7 @@ else
 fi
 
 # ─── Step 3: PostgreSQL setup ──────────────────────────────────
-info "Step 3/10: Setting up PostgreSQL..."
+info "Step 3/11: Setting up PostgreSQL..."
 
 sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='doable'" | grep -q 1 \
   || sudo -u postgres psql -c "CREATE USER doable WITH PASSWORD '${DB_PASS}' CREATEDB;"
@@ -153,7 +161,7 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE doable TO doable;" &>
 ok "Database ready (user: doable, db: doable)"
 
 # ─── Step 4: GitHub CLI auth ──────────────────────────────────
-info "Step 4/10: GitHub authentication..."
+info "Step 4/11: GitHub authentication..."
 
 if ! command -v gh &>/dev/null; then
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null
@@ -178,7 +186,7 @@ fi
 ok "GitHub CLI authenticated"
 
 # ─── Step 5: Clone repo ───────────────────────────────────────
-info "Step 5/10: Cloning repository..."
+info "Step 5/11: Cloning repository..."
 
 INSTALL_DIR="/root/doable"
 
@@ -196,7 +204,7 @@ fi
 ok "Repo cloned to $INSTALL_DIR"
 
 # ─── Step 6: Environment files ────────────────────────────────
-info "Step 6/10: Writing environment files..."
+info "Step 6/11: Writing environment files..."
 
 cat > "${INSTALL_DIR}/.env" << ENVEOF
 # ─── Database ───────────────────────────────────────────────
@@ -257,6 +265,11 @@ STRIPE_PRO_YEARLY_PRICE_ID=
 STRIPE_BUSINESS_MONTHLY_PRICE_ID=
 STRIPE_BUSINESS_YEARLY_PRICE_ID=
 
+# ─── Publish / Hosting ────────────────────────────────────
+PROJECTS_ROOT=${INSTALL_DIR}/services/api/projects
+SITES_ROOT=${INSTALL_DIR}/sites
+DOABLE_DOMAIN=${DOMAIN}
+
 # ─── Environment ───────────────────────────────────────────
 NODE_ENV=development
 ENVEOF
@@ -271,7 +284,7 @@ WEBENVEOF
 ok "Environment files created (.env + apps/web/.env.local)"
 
 # ─── Step 7: Install deps & migrate ──────────────────────────
-info "Step 7/10: Installing dependencies..."
+info "Step 7/11: Installing dependencies..."
 
 cd "$INSTALL_DIR"
 pnpm install
@@ -284,7 +297,7 @@ done
 ok "Dependencies installed & database migrated"
 
 # ─── Step 8: Cloudflare Tunnel ────────────────────────────────
-info "Step 8/10: Setting up Cloudflare Tunnel..."
+info "Step 8/11: Setting up Cloudflare Tunnel..."
 
 if [[ ! -f /root/.cloudflared/cert.pem ]]; then
   warn "You need to authenticate with Cloudflare."
@@ -315,12 +328,12 @@ else
   ok "Created tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
 fi
 
-# DNS routes
-for HOSTNAME in "$DOMAIN" "$API_DOMAIN" "$WS_DOMAIN"; do
+# DNS routes (including wildcard for published sites)
+for HOSTNAME in "$DOMAIN" "$API_DOMAIN" "$WS_DOMAIN" "*.${DOMAIN}"; do
   cloudflared tunnel route dns "$TUNNEL_NAME" "$HOSTNAME" 2>&1 | grep -v "already exists" || true
 done
 
-ok "DNS routes configured for ${DOMAIN}, ${API_DOMAIN}, ${WS_DOMAIN}"
+ok "DNS routes configured for ${DOMAIN}, ${API_DOMAIN}, ${WS_DOMAIN}, *.${DOMAIN}"
 
 # Tunnel config
 CREDS_FILE=$(find /root/.cloudflared -name "${TUNNEL_ID}.json" 2>/dev/null | head -1)
@@ -343,13 +356,55 @@ ingress:
     service: http://localhost:3000
     originRequest:
       noTLSVerify: true
+  - hostname: "*.${DOMAIN}"
+    service: http://localhost:8080
+    originRequest:
+      noTLSVerify: true
   - service: http_status:404
 CFGEOF
 
 ok "Tunnel config written"
 
-# ─── Step 9: Systemd services ────────────────────────────────
-info "Step 9/10: Creating systemd services..."
+# ─── Step 9: Publish infrastructure (Caddy + sites) ─────────
+info "Step 9/11: Setting up publish infrastructure..."
+
+# Create sites directory for published projects
+mkdir -p "${INSTALL_DIR}/sites"
+chmod 755 /root
+chmod -R 755 "${INSTALL_DIR}/sites"
+
+# Caddyfile: serves *.domain from /sites/{subdomain}/
+cat > /etc/caddy/Caddyfile << CADDYEOF
+:8080 {
+    @has_subdomain {
+        header_regexp subdomain Host ^([a-z0-9][-a-z0-9]*)\.${DOMAIN//./\\.}\$
+    }
+
+    handle @has_subdomain {
+        root * ${INSTALL_DIR}/sites/{re.subdomain.1}
+        try_files {path} /index.html
+        file_server
+        header {
+            X-Frame-Options SAMEORIGIN
+            X-Content-Type-Options nosniff
+            Referrer-Policy strict-origin-when-cross-origin
+        }
+        encode gzip
+    }
+
+    handle {
+        respond "Not Found" 404
+    }
+}
+CADDYEOF
+
+systemctl enable caddy
+systemctl restart caddy
+
+ok "Caddy configured on :8080 for *.${DOMAIN} → ${INSTALL_DIR}/sites/"
+
+# ─── Step 10: Systemd services ────────────────────────────────
+info "Step 10/11: Creating systemd services..."
 
 # Doable tmux startup script
 cat > "${INSTALL_DIR}/start.sh" << 'STARTEOF'
@@ -395,8 +450,8 @@ systemctl enable doable.service cloudflared 2>/dev/null
 
 ok "Systemd services created and enabled"
 
-# ─── Step 10: Start everything ────────────────────────────────
-info "Step 10/10: Starting services..."
+# ─── Step 11: Start everything ────────────────────────────────
+info "Step 11/11: Starting services..."
 
 systemctl start cloudflared 2>/dev/null || systemctl restart cloudflared
 systemctl start doable.service

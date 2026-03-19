@@ -5,7 +5,7 @@ import { projectQueries } from "@doable/db/queries/projects";
 import { workspaceQueries } from "@doable/db/queries/workspaces";
 import { runBuild } from "./builder.js";
 import type { DeployAdapter } from "./adapter.js";
-import { DoableCloudAdapter } from "./adapters/doable-cloud.js";
+import { DoableCloudAdapter, generateSubdomain } from "./adapters/doable-cloud.js";
 
 const deployments = deploymentQueries(sql);
 const projects = projectQueries(sql);
@@ -49,11 +49,12 @@ export interface PipelineResult {
 
 /**
  * Orchestrates the full deploy pipeline:
- * 1. Create deployment record (queued)
- * 2. Run Vite build
- * 3. Copy to serving directory via adapter
- * 4. Update deployment status
- * 5. Update project published URL
+ * 1. Ensure project has a subdomain (generate if first publish)
+ * 2. Create deployment record (queued)
+ * 3. Run Vite build
+ * 4. Copy to serving directory via adapter
+ * 5. Update deployment status
+ * 6. Update project published URL
  */
 export async function runPipeline(input: PipelineInput): Promise<PipelineResult> {
   const { projectId, userId, environment, adapterName = "doable-cloud" } = input;
@@ -71,6 +72,26 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   }
 
   const adapter = getAdapter(adapterName);
+
+  // ── Ensure subdomain exists (generate on first publish) ──
+  let subdomain = project.subdomain;
+  if (!subdomain) {
+    // Generate a short subdomain and persist it
+    const MAX_RETRIES = 5;
+    for (let i = 0; i < MAX_RETRIES; i++) {
+      const candidate = generateSubdomain(project.name);
+      const existing = await projects.findBySubdomain(candidate);
+      if (!existing) {
+        subdomain = candidate;
+        break;
+      }
+    }
+    if (!subdomain) {
+      // Fallback: use projectId prefix
+      subdomain = projectId.slice(0, 8);
+    }
+    await projects.update(projectId, { subdomain });
+  }
 
   // 1. Create deployment record
   const deployment = await deployments.create({
@@ -111,6 +132,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
       projectId,
       projectSlug: project.slug,
       workspaceSlug: workspace.slug,
+      subdomain,
       buildOutputDir: buildResult.outputDir,
       environment,
     });

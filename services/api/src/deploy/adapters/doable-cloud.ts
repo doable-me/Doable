@@ -7,18 +7,28 @@ const SITES_ROOT = process.env.SITES_ROOT ?? path.join(process.cwd(), "sites");
 const DOMAIN = process.env.DOABLE_DOMAIN ?? "doable.app";
 
 /**
- * Default deploy adapter: copies build output to a local /sites/[slug]/ directory
- * and generates a *.doable.app URL.
+ * Default deploy adapter: copies build output to a local /sites/[subdomain]/ directory
+ * and generates a *.doable.me URL.
  *
- * On the local dev path, the URL points to the sites directory served by a
- * static file server or reverse proxy. In production, a CDN or edge server
- * would serve the files from the same directory structure.
+ * Subdomains are short and user-friendly (e.g. "bean-brew-a7k2").
+ * The subdomain is generated once and stored in the project record,
+ * then reused for every subsequent publish.
  */
 export class DoableCloudAdapter implements DeployAdapter {
   readonly name = "doable-cloud";
 
   async deploy(input: DeployInput): Promise<DeployResult> {
-    const { projectId, projectSlug, workspaceSlug, buildOutputDir, environment } = input;
+    const { projectId, buildOutputDir, environment } = input;
+
+    // Subdomain must be provided by the pipeline (generated + stored in DB)
+    const subdomain = (input as DeployInput & { subdomain?: string }).subdomain;
+    if (!subdomain) {
+      throw new Error("subdomain is required for doable-cloud adapter");
+    }
+
+    // For preview, prefix with "p-"
+    const siteSubdomain =
+      environment === "preview" ? `p-${subdomain}` : subdomain;
 
     // Validate build output exists and contains files
     if (!existsSync(buildOutputDir)) {
@@ -44,31 +54,18 @@ export class DoableCloudAdapter implements DeployAdapter {
       );
     }
 
-    // Sanitize slugs to prevent path traversal
-    const safeProjectSlug = projectSlug.replace(/[^a-z0-9-]/gi, "-");
-    const safeWorkspaceSlug = workspaceSlug.replace(/[^a-z0-9-]/gi, "-");
-
-    const subdomain =
-      environment === "preview"
-        ? `preview-${safeProjectSlug}-${safeWorkspaceSlug}`
-        : `${safeProjectSlug}-${safeWorkspaceSlug}`;
-
-    const targetDir = path.join(SITES_ROOT, subdomain);
+    const targetDir = path.join(SITES_ROOT, siteSubdomain);
 
     try {
-      // Ensure the sites root directory exists
       await mkdir(SITES_ROOT, { recursive: true });
 
-      // Clean existing deployment
       if (existsSync(targetDir)) {
         await rm(targetDir, { recursive: true, force: true });
       }
 
-      // Create target directory and copy build output
       await mkdir(targetDir, { recursive: true });
       await cp(buildOutputDir, targetDir, { recursive: true });
 
-      // Verify the copy succeeded
       const copiedFiles = await readdir(targetDir);
       if (copiedFiles.length === 0) {
         throw new Error("Copy completed but target directory is empty");
@@ -79,23 +76,22 @@ export class DoableCloudAdapter implements DeployAdapter {
         `(${environment}) to ${targetDir}`
       );
     } catch (err) {
-      // Wrap filesystem errors with more context
       if (err instanceof Error && err.message.includes("Copy completed")) {
-        throw err; // Re-throw our own errors
+        throw err;
       }
       throw new Error(
         `Failed to deploy to ${targetDir}: ${err instanceof Error ? err.message : String(err)}`
       );
     }
 
-    const url = `https://${subdomain}.${DOMAIN}`;
+    const url = `https://${siteSubdomain}.${DOMAIN}`;
 
     return {
       url,
       adapter: this.name,
       metadata: {
         targetDir,
-        subdomain,
+        subdomain: siteSubdomain,
         domain: DOMAIN,
         filesDeployed: buildFiles.length,
       },
@@ -107,18 +103,12 @@ export class DoableCloudAdapter implements DeployAdapter {
       `[doable-cloud] Teardown requested for project=${projectId} env=${environment}`
     );
 
-    // Attempt to find and remove the deployment directory.
-    // In production, this would look up the subdomain from the DB.
     try {
       if (!existsSync(SITES_ROOT)) return;
 
       const entries = await readdir(SITES_ROOT);
-      // Find directories that match this project's pattern
-      // (We don't have the slug here, but we can match by projectId in metadata later)
       for (const entry of entries) {
         const dirPath = path.join(SITES_ROOT, entry);
-        // For now, log and skip — a full implementation would track
-        // projectId -> subdomain in the database
         console.log(`[doable-cloud] Found deployment dir: ${dirPath}`);
       }
     } catch (err) {
@@ -129,3 +119,41 @@ export class DoableCloudAdapter implements DeployAdapter {
     }
   }
 }
+
+// ── Subdomain generation ─────────────────────────────────
+const RANDOM_SUFFIX_LEN = 5;
+
+/**
+ * Generate a short, human-friendly subdomain from a project name.
+ * Example: "Build A Simple Portfolio Page" → "portfolio-page-x7k2m"
+ *
+ * Takes the last two meaningful words (more recognizable than the first)
+ * and appends a random suffix for uniqueness.
+ */
+export function generateSubdomain(projectName: string): string {
+  const slug = projectName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+
+  // Take last 2 meaningful words (or whatever is available)
+  const words = slug.slice(-2).join("-") || "app";
+
+  // Random alphanumeric suffix
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let suffix = "";
+  for (let i = 0; i < RANDOM_SUFFIX_LEN; i++) {
+    suffix += chars[Math.floor(Math.random() * chars.length)];
+  }
+
+  // Keep total under 30 chars for readability
+  const base = words.slice(0, 30 - RANDOM_SUFFIX_LEN - 1);
+  return `${base}-${suffix}`.replace(/--+/g, "-");
+}
+
+const STOP_WORDS = new Set([
+  "the", "for", "and", "with", "that", "this", "from",
+  "create", "build", "make", "simple", "basic", "new",
+]);
