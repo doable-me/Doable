@@ -30,7 +30,7 @@ export function PricingCards({
             className={cn(
               "rounded-md px-4 py-2 text-sm font-medium transition-all",
               interval === "monthly"
-                ? "bg-violet-600 text-white shadow-sm"
+                ? "bg-brand-600 text-white shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200"
             )}
           >
@@ -41,7 +41,7 @@ export function PricingCards({
             className={cn(
               "rounded-md px-4 py-2 text-sm font-medium transition-all",
               interval === "yearly"
-                ? "bg-violet-600 text-white shadow-sm"
+                ? "bg-brand-600 text-white shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200"
             )}
           >
@@ -67,14 +67,14 @@ export function PricingCards({
               className={cn(
                 "relative flex flex-col rounded-xl border p-6 transition-all",
                 isPopular
-                  ? "border-violet-500/50 bg-violet-500/5 shadow-lg shadow-violet-500/10"
+                  ? "border-brand-500/50 bg-brand-500/5 shadow-lg shadow-brand-500/10"
                   : "border-zinc-800 bg-zinc-900/50",
-                isCurrent && "ring-1 ring-violet-500/30"
+                isCurrent && "ring-1 ring-brand-500/30"
               )}
             >
               {isPopular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <div className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-3 py-1 text-xs font-medium text-white shadow-sm">
+                  <div className="inline-flex items-center gap-1 rounded-full bg-brand-600 px-3 py-1 text-xs font-medium text-white shadow-sm">
                     <Sparkles className="h-3 w-3" />
                     Most Popular
                   </div>
@@ -110,7 +110,7 @@ export function PricingCards({
               <ul className="mb-6 flex-1 space-y-2.5">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-2.5 text-sm">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
                     <span className="text-zinc-300">{feature}</span>
                   </li>
                 ))}
@@ -121,10 +121,10 @@ export function PricingCards({
                 disabled={isCurrent || loading || plan.id === "free"}
                 className={cn(
                   "w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-all",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500",
                   "disabled:pointer-events-none disabled:opacity-50",
                   isPopular
-                    ? "bg-violet-600 text-white hover:bg-violet-500 shadow-sm"
+                    ? "bg-brand-600 text-white hover:bg-brand-500 shadow-sm"
                     : "border border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:text-white"
                 )}
               >

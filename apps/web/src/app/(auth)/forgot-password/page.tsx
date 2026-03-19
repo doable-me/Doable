@@ -65,14 +65,14 @@ export default function ForgotPasswordPage() {
               setIsSubmitted(false);
               setEmail("");
             }}
-            className="font-medium text-[hsl(263,70%,50%)] hover:underline"
+            className="font-medium text-brand-700 hover:underline"
           >
             try again
           </button>
         </p>
         <Link
           href="/login"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-[hsl(263,70%,50%)] hover:underline"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to sign in
@@ -84,8 +84,8 @@ export default function ForgotPasswordPage() {
   return (
     <>
       <div className="mb-6 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[hsl(263,70%,50%)]/10">
-          <Mail className="h-6 w-6 text-[hsl(263,70%,50%)]" />
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-brand-700/10">
+          <Mail className="h-6 w-6 text-brand-700" />
         </div>
         <h2 className="text-xl font-semibold text-[hsl(var(--foreground))]">
           Forgot your password?
@@ -126,7 +126,7 @@ export default function ForgotPasswordPage() {
 
         <Button
           type="submit"
-          className="w-full rounded-xl bg-[hsl(263,70%,50%)] text-white hover:bg-[hsl(263,70%,45%)]"
+          className="w-full rounded-xl bg-brand-700 text-white hover:bg-brand-800"
           disabled={isLoading}
         >
           {isLoading ? (

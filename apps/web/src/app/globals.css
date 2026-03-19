@@ -2,6 +2,79 @@
 @config "../../tailwind.config.ts";
 
 @layer base {
+  /* ─── Brand color palettes ─────────────────────────── */
+  :root,
+  [data-brand="purple"] {
+    --brand-50: 250 100% 98%;
+    --brand-100: 251 91% 95%;
+    --brand-200: 251 95% 92%;
+    --brand-300: 253 95% 85%;
+    --brand-400: 255 92% 76%;
+    --brand-500: 258 90% 66%;
+    --brand-600: 262 83% 58%;
+    --brand-700: 263 70% 50%;
+    --brand-800: 263 69% 42%;
+    --brand-900: 264 67% 35%;
+    --brand-950: 261 73% 23%;
+  }
+
+  [data-brand="sunset"] {
+    --brand-50: 33 100% 96%;
+    --brand-100: 34 100% 92%;
+    --brand-200: 32 98% 83%;
+    --brand-300: 31 97% 72%;
+    --brand-400: 27 96% 61%;
+    --brand-500: 25 95% 53%;
+    --brand-600: 21 90% 48%;
+    --brand-700: 17 88% 40%;
+    --brand-800: 15 79% 34%;
+    --brand-900: 15 75% 28%;
+    --brand-950: 13 81% 15%;
+  }
+
+  [data-brand="ocean"] {
+    --brand-50: 204 100% 97%;
+    --brand-100: 204 94% 94%;
+    --brand-200: 201 94% 86%;
+    --brand-300: 199 95% 74%;
+    --brand-400: 198 93% 60%;
+    --brand-500: 199 89% 48%;
+    --brand-600: 200 98% 39%;
+    --brand-700: 201 96% 32%;
+    --brand-800: 201 90% 27%;
+    --brand-900: 202 80% 24%;
+    --brand-950: 204 80% 16%;
+  }
+
+  [data-brand="emerald"] {
+    --brand-50: 152 81% 96%;
+    --brand-100: 149 80% 90%;
+    --brand-200: 152 76% 80%;
+    --brand-300: 156 72% 67%;
+    --brand-400: 158 64% 52%;
+    --brand-500: 160 84% 39%;
+    --brand-600: 161 94% 30%;
+    --brand-700: 163 94% 24%;
+    --brand-800: 163 88% 20%;
+    --brand-900: 164 86% 16%;
+    --brand-950: 166 91% 9%;
+  }
+
+  [data-brand="rose"] {
+    --brand-50: 356 100% 97%;
+    --brand-100: 356 100% 95%;
+    --brand-200: 353 96% 90%;
+    --brand-300: 353 96% 82%;
+    --brand-400: 351 95% 71%;
+    --brand-500: 349 89% 60%;
+    --brand-600: 346 77% 50%;
+    --brand-700: 345 83% 41%;
+    --brand-800: 343 80% 35%;
+    --brand-900: 342 75% 30%;
+    --brand-950: 343 88% 16%;
+  }
+
+  /* ─── Light theme ──────────────────────────────────── */
   :root {
     --background: 40 33% 98%;
     --foreground: 240 10% 3.9%;
@@ -9,7 +82,7 @@
     --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
-    --primary: 263 70% 50%;
+    --primary: var(--brand-700);
     --primary-foreground: 0 0% 100%;
     --secondary: 260 10% 95%;
     --secondary-foreground: 240 5.9% 10%;
@@ -21,10 +94,11 @@
     --destructive-foreground: 0 0% 98%;
     --border: 40 10% 90%;
     --input: 40 10% 88%;
-    --ring: 263 70% 50%;
+    --ring: var(--brand-700);
     --radius: 0.75rem;
   }
 
+  /* ─── Dark theme ───────────────────────────────────── */
   .dark {
     --background: 240 10% 4%;
     --foreground: 0 0% 95%;
@@ -32,7 +106,7 @@
     --card-foreground: 0 0% 95%;
     --popover: 240 10% 6%;
     --popover-foreground: 0 0% 95%;
-    --primary: 263 70% 58%;
+    --primary: var(--brand-500);
     --primary-foreground: 0 0% 100%;
     --secondary: 240 4% 16%;
     --secondary-foreground: 0 0% 95%;
@@ -44,7 +118,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: 240 4% 16%;
     --input: 240 4% 16%;
-    --ring: 263 70% 58%;
+    --ring: var(--brand-500);
   }
 }
 
@@ -165,7 +239,7 @@
 
 /* Gradient text utility */
 .text-gradient {
-  background: linear-gradient(135deg, #7C3AED, #a78bfa, #7C3AED);
+  background: linear-gradient(135deg, hsl(var(--brand-600)), hsl(var(--brand-400)), hsl(var(--brand-600)));
   background-size: 200% 200%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -207,7 +281,7 @@
 }
 
 .status-shimmer-bg {
-  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.06), transparent);
+  background: linear-gradient(90deg, transparent, hsl(var(--brand-500) / 0.06), transparent);
   background-size: 200% 100%;
   animation: status-shimmer 2s ease-in-out infinite;
 }

@@ -87,7 +87,7 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
           </a>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 transition-colors"
+            className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-500 transition-colors"
           >
             <Plus className="h-4 w-4" />
             Add Token
@@ -102,14 +102,14 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
             placeholder="Label (e.g. 'Work Account')"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
           />
           <input
             type="password"
             placeholder="GitHub Personal Access Token"
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
           />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2 justify-end">
@@ -122,7 +122,7 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
             <button
               onClick={handleAdd}
               disabled={submitting || !label.trim() || !token.trim()}
-              className="flex items-center gap-2 rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50"
             >
               {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
               Add Account
@@ -148,21 +148,21 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
                 key={account.id}
                 className={`flex items-center justify-between rounded-lg border p-4 transition-colors ${
                   isActive
-                    ? "border-violet-500/50 bg-violet-500/5"
+                    ? "border-brand-500/50 bg-brand-500/5"
                     : "border-zinc-800 bg-zinc-900/50"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
-                    isActive ? "bg-violet-600/20" : "bg-zinc-800"
+                    isActive ? "bg-brand-600/20" : "bg-zinc-800"
                   }`}>
-                    <Github className={`h-5 w-5 ${isActive ? "text-violet-400" : "text-zinc-400"}`} />
+                    <Github className={`h-5 w-5 ${isActive ? "text-brand-400" : "text-zinc-400"}`} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-zinc-200">{account.label}</p>
                       {isActive && (
-                        <span className="rounded-full bg-violet-600/20 px-2 py-0.5 text-[10px] font-semibold text-violet-300 uppercase tracking-wider">
+                        <span className="rounded-full bg-brand-600/20 px-2 py-0.5 text-[10px] font-semibold text-brand-300 uppercase tracking-wider">
                           Active
                         </span>
                       )}
@@ -181,7 +181,7 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
                     disabled={settingActive === account.id}
                     className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
                       isActive
-                        ? "bg-violet-600/20 text-violet-300 hover:bg-violet-600/30"
+                        ? "bg-brand-600/20 text-brand-300 hover:bg-brand-600/30"
                         : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
                     }`}
                     title={isActive ? "Remove as default" : "Set as default"}
@@ -189,7 +189,7 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
                     {settingActive === account.id ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <Star className={`h-3.5 w-3.5 ${isActive ? "fill-violet-400" : ""}`} />
+                      <Star className={`h-3.5 w-3.5 ${isActive ? "fill-brand-400" : ""}`} />
                     )}
                     {isActive ? "Default" : "Set default"}
                   </button>

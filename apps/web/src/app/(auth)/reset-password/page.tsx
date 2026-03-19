@@ -76,7 +76,7 @@ function ResetPasswordForm() {
         </p>
         <Link
           href="/forgot-password"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-[hsl(263,70%,50%)] hover:underline"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline"
         >
           Request new reset link
         </Link>
@@ -97,7 +97,7 @@ function ResetPasswordForm() {
           Your password has been updated. You can now sign in with your new password.
         </p>
         <Button
-          className="w-full rounded-xl bg-[hsl(263,70%,50%)] text-white hover:bg-[hsl(263,70%,45%)]"
+          className="w-full rounded-xl bg-brand-700 text-white hover:bg-brand-800"
           onClick={() => router.push("/login")}
         >
           Sign in
@@ -151,8 +151,8 @@ function ResetPasswordForm() {
   return (
     <>
       <div className="mb-6 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[hsl(263,70%,50%)]/10">
-          <Lock className="h-6 w-6 text-[hsl(263,70%,50%)]" />
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-brand-700/10">
+          <Lock className="h-6 w-6 text-brand-700" />
         </div>
         <h2 className="text-xl font-semibold text-[hsl(var(--foreground))]">
           Set new password
@@ -296,7 +296,7 @@ function ResetPasswordForm() {
 
         <Button
           type="submit"
-          className="w-full rounded-xl bg-[hsl(263,70%,50%)] text-white hover:bg-[hsl(263,70%,45%)]"
+          className="w-full rounded-xl bg-brand-700 text-white hover:bg-brand-800"
           disabled={isLoading}
         >
           {isLoading ? (
@@ -328,8 +328,8 @@ export default function ResetPasswordPage() {
     <Suspense
       fallback={
         <div className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[hsl(263,70%,50%)]/10">
-            <Lock className="h-6 w-6 text-[hsl(263,70%,50%)]" />
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-brand-700/10">
+            <Lock className="h-6 w-6 text-brand-700" />
           </div>
           <h2 className="text-xl font-semibold text-[hsl(var(--foreground))]">
             Set new password

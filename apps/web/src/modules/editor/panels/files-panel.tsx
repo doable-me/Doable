@@ -186,7 +186,7 @@ function getFileIconColor(name: string): string {
     js: "text-yellow-400",
     jsx: "text-yellow-400",
     json: "text-yellow-300",
-    css: "text-purple-400",
+    css: "text-brand-400",
     scss: "text-pink-400",
     html: "text-orange-400",
     htm: "text-orange-400",
@@ -709,7 +709,7 @@ export function FilesPanel({ projectId, onClose }: Props) {
                 if (e.key === "Escape") setRenamingPath(null);
               }}
               onBlur={handleRename}
-              className="flex-1 min-w-0 bg-zinc-800 border border-purple-500/60 rounded px-1.5 py-0.5 text-[12px] text-zinc-200 outline-none"
+              className="flex-1 min-w-0 bg-zinc-800 border border-brand-500/60 rounded px-1.5 py-0.5 text-[12px] text-zinc-200 outline-none"
               autoFocus
             />
           </div>
@@ -728,7 +728,7 @@ export function FilesPanel({ projectId, onClose }: Props) {
             }
             className={`group flex w-full items-center gap-1.5 py-1 pr-2 text-[12px] transition-colors rounded-sm ${
               isSelected && !isFolder
-                ? "bg-purple-500/15 text-purple-300"
+                ? "bg-brand-500/15 text-brand-300"
                 : isDragOver && isFolder
                   ? "bg-blue-500/15 text-blue-300"
                   : "text-zinc-400 hover:bg-white/5 hover:text-zinc-300"
@@ -845,7 +845,7 @@ export function FilesPanel({ projectId, onClose }: Props) {
                 setError(null);
                 fetchTree();
               }}
-              className="text-[11px] text-purple-400 hover:text-purple-300 underline"
+              className="text-[11px] text-brand-400 hover:text-brand-300 underline"
             >
               Retry
             </button>
@@ -888,7 +888,7 @@ export function FilesPanel({ projectId, onClose }: Props) {
       {/* ─── Operation Loading Overlay ──────────────────────── */}
       {operationLoading && (
         <div className="absolute inset-0 bg-black/20 flex items-center justify-center z-30">
-          <Loader2 className="h-5 w-5 animate-spin text-purple-400" />
+          <Loader2 className="h-5 w-5 animate-spin text-brand-400" />
         </div>
       )}
 
@@ -1000,7 +1000,7 @@ export function FilesPanel({ projectId, onClose }: Props) {
                 if (e.key === "Escape") setShowNewFileDialog(false);
               }}
               placeholder="src/components/MyComponent.tsx"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-[13px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-purple-500/60"
+              className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-[13px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-brand-500/60"
             />
             <div className="flex justify-end gap-2 mt-4">
               <button
@@ -1012,7 +1012,7 @@ export function FilesPanel({ projectId, onClose }: Props) {
               <button
                 onClick={handleCreateFile}
                 disabled={!newFilePath.trim() || operationLoading}
-                className="rounded-md bg-purple-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="rounded-md bg-brand-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {operationLoading ? "Creating..." : "Create"}
               </button>
@@ -1044,7 +1044,7 @@ export function FilesPanel({ projectId, onClose }: Props) {
                 if (e.key === "Escape") setShowNewFolderDialog(false);
               }}
               placeholder="src/components"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-[13px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-purple-500/60"
+              className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-[13px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-brand-500/60"
             />
             <div className="flex justify-end gap-2 mt-4">
               <button
@@ -1056,7 +1056,7 @@ export function FilesPanel({ projectId, onClose }: Props) {
               <button
                 onClick={handleCreateFolder}
                 disabled={!newFolderPath.trim() || operationLoading}
-                className="rounded-md bg-purple-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="rounded-md bg-brand-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {operationLoading ? "Creating..." : "Create"}
               </button>

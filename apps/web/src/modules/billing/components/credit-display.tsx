@@ -87,7 +87,7 @@ export function CreditDisplay({ credits, loading, className }: CreditDisplayProp
     <div className={cn("space-y-5 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6", className)}>
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">Credits</h3>
-        <div className="rounded-full bg-violet-500/10 border border-violet-500/20 px-3 py-1 text-sm font-medium text-violet-400">
+        <div className="rounded-full bg-brand-500/10 border border-brand-500/20 px-3 py-1 text-sm font-medium text-brand-400">
           {totalAvailable} available
         </div>
       </div>
@@ -104,7 +104,7 @@ export function CreditDisplay({ credits, loading, className }: CreditDisplayProp
             label="Monthly Credits"
             remaining={credits.monthly_remaining}
             total={monthlyTotal}
-            color="bg-purple-500"
+            color="bg-brand-500"
           />
         )}
         {credits.rollover_credits > 0 && (

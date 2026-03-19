@@ -237,7 +237,7 @@ export function DesignPanel({
           <div className="flex flex-col items-center px-6 pt-12">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60">
               {mode === "selecting" ? (
-                <Crosshair className="h-6 w-6 text-purple-400 animate-pulse" />
+                <Crosshair className="h-6 w-6 text-brand-400 animate-pulse" />
               ) : (
                 <Sparkles className="h-6 w-6 text-zinc-500" />
               )}
@@ -252,14 +252,14 @@ export function DesignPanel({
             {mode === "idle" && (
               <button
                 onClick={onActivate}
-                className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-purple-500 transition-colors shadow-md shadow-purple-900/30"
+                className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-500 transition-colors shadow-md shadow-brand-900/30"
               >
                 <MousePointer2 className="h-4 w-4" />
                 Start selecting
               </button>
             )}
             {mode === "selecting" && (
-              <p className="text-xs text-purple-400 animate-pulse">
+              <p className="text-xs text-brand-400 animate-pulse">
                 Click an element in the preview...
               </p>
             )}
@@ -372,7 +372,7 @@ export function DesignPanel({
                   <button
                     onClick={onCommitChanges}
                     disabled={isSaving}
-                    className="flex items-center justify-center gap-2 rounded-lg bg-purple-600/80 px-3 py-2 text-xs font-medium text-white hover:bg-purple-500 transition-all disabled:opacity-50"
+                    className="flex items-center justify-center gap-2 rounded-lg bg-brand-600/80 px-3 py-2 text-xs font-medium text-white hover:bg-brand-500 transition-all disabled:opacity-50"
                     title="Send changes to AI for smarter code updates"
                   >
                     <Sparkles className="h-3.5 w-3.5" />
@@ -396,7 +396,7 @@ export function DesignPanel({
           {selectedElement && (
             <>
               <span className="text-zinc-600 text-[11px]">›</span>
-              <span className="flex items-center gap-1 rounded-md bg-purple-500/15 px-2 py-1 text-[11px] font-medium text-purple-300">
+              <span className="flex items-center gap-1 rounded-md bg-brand-500/15 px-2 py-1 text-[11px] font-medium text-brand-300">
                 {selectedElement.tagName}
               </span>
             </>

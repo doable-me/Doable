@@ -212,7 +212,7 @@ function getFileIconColor(name: string): string {
     js: "text-yellow-400",
     jsx: "text-yellow-400",
     json: "text-yellow-300",
-    css: "text-purple-400",
+    css: "text-brand-400",
     scss: "text-pink-400",
     html: "text-orange-400",
     md: "text-zinc-400",

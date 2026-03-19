@@ -36,6 +36,7 @@ import {
   AlertTriangle,
   Palette,
 } from "lucide-react";
+import { useBrandTheme, BRAND_THEMES } from "@/hooks/use-brand-theme";
 
 // ─── Password Strength ──────────────────────────────────────
 
@@ -112,6 +113,7 @@ export default function SettingsPage() {
     if (typeof window === "undefined") return "dark";
     return (localStorage.getItem("doable_theme") as "dark" | "light" | "system") ?? "dark";
   });
+  const { brandTheme, changeBrandTheme } = useBrandTheme();
 
   // Delete account
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -291,7 +293,7 @@ export default function SettingsPage() {
                 {user?.avatarUrl ? (
                   <AvatarImage src={user.avatarUrl} alt={user.displayName} />
                 ) : null}
-                <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-lg font-medium text-white">
+                <AvatarFallback className="bg-gradient-to-br from-brand-500 to-brand-600 text-lg font-medium text-white">
                   {initials}
                 </AvatarFallback>
               </Avatar>
@@ -338,7 +340,7 @@ export default function SettingsPage() {
                 type="submit"
                 size="sm"
                 disabled={profileSaving}
-                className="rounded-lg bg-[hsl(263,70%,50%)] text-white hover:bg-[hsl(263,70%,45%)]"
+                className="rounded-lg bg-brand-700 text-white hover:bg-brand-800"
               >
                 {profileSaving ? (
                   <>
@@ -491,7 +493,7 @@ export default function SettingsPage() {
                 type="submit"
                 size="sm"
                 disabled={passwordSaving}
-                className="rounded-lg bg-[hsl(263,70%,50%)] text-white hover:bg-[hsl(263,70%,45%)]"
+                className="rounded-lg bg-brand-700 text-white hover:bg-brand-800"
               >
                 {passwordSaving ? (
                   <>
@@ -523,7 +525,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  twoFactorEnabled ? "bg-[hsl(263,70%,50%)]" : "bg-zinc-700"
+                  twoFactorEnabled ? "bg-brand-700" : "bg-zinc-700"
                 }`}
                 onClick={() => {
                   // Placeholder - 2FA not yet implemented
@@ -591,35 +593,64 @@ export default function SettingsPage() {
           title="Appearance"
           description="Customize how Doable looks"
         >
-          <div className="space-y-3">
-            <Label className="text-zinc-300">Theme</Label>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { value: "light" as const, label: "Light", icon: Sun },
-                { value: "dark" as const, label: "Dark", icon: Moon },
-                {
-                  value: "system" as const,
-                  label: "System",
-                  icon: Monitor,
-                },
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => handleThemeChange(option.value)}
-                  className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-colors ${
-                    theme === option.value
-                      ? "border-[hsl(263,70%,50%)] bg-[hsl(263,70%,50%)]/10 text-white"
-                      : "border-zinc-800 bg-zinc-800/30 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"
-                  }`}
-                >
-                  <option.icon className="h-5 w-5" />
-                  <span className="text-xs font-medium">{option.label}</span>
-                  {theme === option.value && (
-                    <Check className="h-3.5 w-3.5 text-[hsl(263,70%,50%)]" />
-                  )}
-                </button>
-              ))}
+          <div className="space-y-5">
+            <div className="space-y-3">
+              <Label className="text-zinc-300">Theme</Label>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { value: "light" as const, label: "Light", icon: Sun },
+                  { value: "dark" as const, label: "Dark", icon: Moon },
+                  {
+                    value: "system" as const,
+                    label: "System",
+                    icon: Monitor,
+                  },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => handleThemeChange(option.value)}
+                    className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-colors ${
+                      theme === option.value
+                        ? "border-brand-600 bg-brand-600/10 text-white"
+                        : "border-zinc-800 bg-zinc-800/30 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"
+                    }`}
+                  >
+                    <option.icon className="h-5 w-5" />
+                    <span className="text-xs font-medium">{option.label}</span>
+                    {theme === option.value && (
+                      <Check className="h-3.5 w-3.5 text-brand-600" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-zinc-300">Brand Color</Label>
+              <div className="flex flex-wrap gap-3">
+                {BRAND_THEMES.map((bt) => (
+                  <button
+                    key={bt.value}
+                    type="button"
+                    onClick={() => changeBrandTheme(bt.value)}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
+                      brandTheme === bt.value
+                        ? "border-brand-600 bg-brand-600/10 text-white"
+                        : "border-zinc-800 bg-zinc-800/30 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"
+                    }`}
+                  >
+                    <span
+                      className="h-4 w-4 rounded-full"
+                      style={{ backgroundColor: bt.preview }}
+                    />
+                    <span className="text-xs font-medium">{bt.label}</span>
+                    {brandTheme === bt.value && (
+                      <Check className="h-3.5 w-3.5 text-brand-600" />
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </SettingsSection>

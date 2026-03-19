@@ -298,7 +298,7 @@ function fileIcon(type: string) {
     case "image":
       return <Image className="h-3.5 w-3.5 text-emerald-400" />;
     case "font":
-      return <FileText className="h-3.5 w-3.5 text-purple-400" />;
+      return <FileText className="h-3.5 w-3.5 text-brand-400" />;
     default:
       return <FileText className="h-3.5 w-3.5 text-zinc-400" />;
   }
@@ -868,7 +868,7 @@ export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
                           </p>
                           <button
                             onClick={() => onSendMessage(rec.fixPrompt)}
-                            className="flex items-center gap-1.5 rounded-md bg-purple-600/20 border border-purple-500/30 px-3 py-1.5 text-[11px] font-medium text-purple-300 hover:bg-purple-600/30 transition-colors"
+                            className="flex items-center gap-1.5 rounded-md bg-brand-600/20 border border-brand-500/30 px-3 py-1.5 text-[11px] font-medium text-brand-300 hover:bg-brand-600/30 transition-colors"
                           >
                             <Zap className="h-3 w-3" />
                             Fix with AI

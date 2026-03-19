@@ -80,28 +80,28 @@ function DashboardPreview() {
 
 function LandingPagePreview() {
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-t-xl bg-gradient-to-b from-violet-950 to-slate-900">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-t-xl bg-gradient-to-b from-brand-950 to-slate-900">
       {/* Nav */}
       <div className="flex items-center justify-between px-4 py-2.5">
         <div className="flex items-center gap-1.5">
-          <div className="h-4 w-4 rounded bg-violet-500/60" />
+          <div className="h-4 w-4 rounded bg-brand-500/60" />
           <div className="h-2 w-12 rounded bg-white/20" />
         </div>
         <div className="flex items-center gap-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-1.5 w-8 rounded bg-white/15" />
           ))}
-          <div className="h-4 w-14 rounded-full bg-violet-500/50" />
+          <div className="h-4 w-14 rounded-full bg-brand-500/50" />
         </div>
       </div>
       {/* Hero */}
       <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-        <div className="mb-2 h-3 w-24 rounded-full bg-violet-500/20 border border-violet-500/30" />
+        <div className="mb-2 h-3 w-24 rounded-full bg-brand-500/20 border border-brand-500/30" />
         <div className="mb-1.5 h-3 w-44 rounded bg-white/30" />
         <div className="mb-1 h-3 w-36 rounded bg-white/25" />
         <div className="mb-3 h-2 w-48 rounded bg-white/10" />
         <div className="flex gap-2">
-          <div className="h-5 w-18 rounded-full bg-violet-500/60" />
+          <div className="h-5 w-18 rounded-full bg-brand-500/60" />
           <div className="h-5 w-18 rounded-full border border-white/20 bg-white/5" />
         </div>
       </div>
@@ -112,7 +112,7 @@ function LandingPagePreview() {
             key={i}
             className="rounded-lg border border-white/5 bg-white/5 p-2"
           >
-            <div className="mb-1.5 h-4 w-4 rounded bg-violet-500/30" />
+            <div className="mb-1.5 h-4 w-4 rounded bg-brand-500/30" />
             <div className="mb-1 h-1.5 w-full rounded bg-white/15" />
             <div className="h-1.5 w-3/4 rounded bg-white/10" />
           </div>
@@ -151,7 +151,7 @@ function EcommercePreview() {
           "bg-sky-900/30",
           "bg-amber-900/30",
           "bg-emerald-900/30",
-          "bg-violet-900/30",
+          "bg-brand-900/30",
           "bg-pink-900/30",
         ].map((bg, i) => (
           <div key={i} className="flex flex-col gap-1">
@@ -379,7 +379,7 @@ function getCategoryBadgeClasses(category: string): string {
   if (key === "dashboard" || key === "saas-dashboard")
     return "bg-indigo-500/15 text-indigo-400 border-indigo-500/20";
   if (key === "marketing" || key === "landing-page")
-    return "bg-violet-500/15 text-violet-400 border-violet-500/20";
+    return "bg-brand-500/15 text-brand-400 border-brand-500/20";
   if (key === "ecommerce" || key === "ecommerce-store")
     return "bg-amber-500/15 text-amber-400 border-amber-500/20";
   if (key === "portfolio")
@@ -414,9 +414,9 @@ export function TemplateCard({ template, onClick }: TemplateCardProps) {
 
         {/* Official badge */}
         {template.isOfficial && (
-          <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-black/70 backdrop-blur-sm border border-violet-500/30 px-2 py-0.5">
-            <Shield className="h-3 w-3 text-violet-400" />
-            <span className="text-[10px] font-medium text-violet-300">
+          <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-black/70 backdrop-blur-sm border border-brand-500/30 px-2 py-0.5">
+            <Shield className="h-3 w-3 text-brand-400" />
+            <span className="text-[10px] font-medium text-brand-300">
               Official
             </span>
           </div>

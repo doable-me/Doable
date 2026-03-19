@@ -42,7 +42,7 @@ export default function CopilotOAuthCallback() {
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
       {status === "processing" && (
         <>
-          <Loader2 className="h-8 w-8 animate-spin text-violet-400" />
+          <Loader2 className="h-8 w-8 animate-spin text-brand-400" />
           <p className="text-zinc-300">Connecting your GitHub account...</p>
         </>
       )}

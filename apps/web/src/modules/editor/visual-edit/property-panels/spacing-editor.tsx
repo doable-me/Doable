@@ -48,7 +48,7 @@ function SpacingInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         title={label}
-        className="w-full rounded border border-zinc-700/60 bg-zinc-800/80 px-1 py-1 text-center text-[11px] text-zinc-300 outline-none font-mono focus:border-purple-500/50 transition-colors"
+        className="w-full rounded border border-zinc-700/60 bg-zinc-800/80 px-1 py-1 text-center text-[11px] text-zinc-300 outline-none font-mono focus:border-brand-500/50 transition-colors"
       />
     </div>
   );

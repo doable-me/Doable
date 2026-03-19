@@ -24,7 +24,7 @@ const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
     loading: () => (
       <div className="flex h-full items-center justify-center bg-[#1e1e1e]">
         <div className="flex flex-col items-center gap-2">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-purple-400" />
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-brand-400" />
           <span className="text-xs text-zinc-500">Loading editor...</span>
         </div>
       </div>
@@ -174,7 +174,7 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
               <FileCode2 className="h-3 w-3 flex-none text-zinc-500" />
               <span className="truncate max-w-[120px]">{tab.name}</span>
               {tab.isDirty && (
-                <Circle className="h-2 w-2 flex-none fill-current text-purple-400" />
+                <Circle className="h-2 w-2 flex-none fill-current text-brand-400" />
               )}
               <button
                 onClick={(e) => handleCloseTab(e, tab.path)}
@@ -193,7 +193,7 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
             onClick={() => setShowMinimap((v) => !v)}
             className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
               showMinimap
-                ? "text-purple-400 bg-zinc-800"
+                ? "text-brand-400 bg-zinc-800"
                 : "text-zinc-600 hover:text-zinc-400"
             }`}
             title={showMinimap ? "Hide minimap" : "Show minimap"}
@@ -219,7 +219,7 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
           <span className="text-[11px] text-amber-400">
             Read-only mode.
           </span>
-          <button className="ml-auto flex items-center gap-1 rounded-md bg-purple-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-purple-500 transition-colors">
+          <button className="ml-auto flex items-center gap-1 rounded-md bg-brand-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-brand-500 transition-colors">
             <Sparkles className="h-3 w-3" />
             Upgrade to edit
           </button>

@@ -349,7 +349,7 @@ export default function SignupPage() {
             type="checkbox"
             checked={agreedToTerms}
             onChange={(e) => setAgreedToTerms(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-[hsl(var(--border))] bg-transparent text-[hsl(263,70%,50%)] focus:ring-[hsl(263,70%,50%)] focus:ring-offset-0"
+            className="mt-0.5 h-4 w-4 rounded border-[hsl(var(--border))] bg-transparent text-brand-700 focus:ring-brand-700 focus:ring-offset-0"
           />
           <label
             htmlFor="terms"
@@ -358,7 +358,7 @@ export default function SignupPage() {
             I agree to the{" "}
             <a
               href="/terms"
-              className="font-medium text-[hsl(263,70%,50%)] hover:underline"
+              className="font-medium text-brand-700 hover:underline"
               target="_blank"
             >
               Terms of Service
@@ -366,7 +366,7 @@ export default function SignupPage() {
             and{" "}
             <a
               href="/privacy"
-              className="font-medium text-[hsl(263,70%,50%)] hover:underline"
+              className="font-medium text-brand-700 hover:underline"
               target="_blank"
             >
               Privacy Policy
@@ -376,7 +376,7 @@ export default function SignupPage() {
 
         <Button
           type="submit"
-          className="w-full rounded-xl bg-[hsl(263,70%,50%)] text-white hover:bg-[hsl(263,70%,45%)]"
+          className="w-full rounded-xl bg-brand-700 text-white hover:bg-brand-800"
           disabled={isFormDisabled || !agreedToTerms}
         >
           {isLoading ? (
@@ -394,7 +394,7 @@ export default function SignupPage() {
         Already have an account?{" "}
         <Link
           href="/login"
-          className="font-medium text-[hsl(263,70%,50%)] hover:underline"
+          className="font-medium text-brand-700 hover:underline"
         >
           Sign in
         </Link>

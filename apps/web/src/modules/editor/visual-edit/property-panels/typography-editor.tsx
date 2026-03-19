@@ -88,7 +88,7 @@ export function TypographyEditor({
           <select
             value={matchedSize ? fontSize : ""}
             onChange={(e) => onFontSizeChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-purple-500/50 transition-colors"
+            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-brand-500/50 transition-colors"
           >
             {!matchedSize && (
               <option value="" disabled>
@@ -109,7 +109,7 @@ export function TypographyEditor({
           <select
             value={fontStyle}
             onChange={(e) => onFontStyleChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-purple-500/50 transition-colors"
+            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-brand-500/50 transition-colors"
           >
             {FONT_STYLE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -125,7 +125,7 @@ export function TypographyEditor({
           <select
             value={FONT_WEIGHT_OPTIONS.find((o) => o.value === fontWeight) ? fontWeight : ""}
             onChange={(e) => onFontWeightChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-purple-500/50 transition-colors"
+            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-brand-500/50 transition-colors"
           >
             {!FONT_WEIGHT_OPTIONS.find((o) => o.value === fontWeight) && fontWeight && (
               <option value="" disabled>
@@ -152,7 +152,7 @@ export function TypographyEditor({
                 className={cn(
                   "rounded p-1.5 transition-colors",
                   textAlign === value
-                    ? "bg-purple-500/20 text-purple-400"
+                    ? "bg-brand-500/20 text-brand-400"
                     : "text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300"
                 )}
               >

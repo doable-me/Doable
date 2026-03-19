@@ -118,7 +118,7 @@ function CallbackHandler() {
           <div className="space-y-3">
             <button
               onClick={() => router.replace("/login")}
-              className="inline-flex w-full items-center justify-center rounded-xl bg-[hsl(263,70%,50%)] px-4 py-2.5 text-sm font-medium text-white hover:bg-[hsl(263,70%,45%)] transition-colors"
+              className="inline-flex w-full items-center justify-center rounded-xl bg-brand-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-800 transition-colors"
             >
               Back to sign in
             </button>
@@ -140,9 +140,9 @@ function CallbackHandler() {
         {/* Animated logo */}
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center">
           <div className="relative">
-            <div className="h-12 w-12 rounded-full border-2 border-zinc-700 border-t-[hsl(263,70%,50%)] animate-spin" />
+            <div className="h-12 w-12 rounded-full border-2 border-zinc-700 border-t-brand-700 animate-spin" />
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-sm font-bold text-[hsl(263,70%,50%)]">
+              <span className="text-sm font-bold text-brand-700">
                 D
               </span>
             </div>
@@ -159,15 +159,15 @@ function CallbackHandler() {
         {/* Progress dots */}
         <div className="mt-6 flex justify-center gap-1.5">
           <div
-            className="h-1.5 w-1.5 rounded-full bg-[hsl(263,70%,50%)] animate-pulse"
+            className="h-1.5 w-1.5 rounded-full bg-brand-700 animate-pulse"
             style={{ animationDelay: "0ms" }}
           />
           <div
-            className="h-1.5 w-1.5 rounded-full bg-[hsl(263,70%,50%)] animate-pulse"
+            className="h-1.5 w-1.5 rounded-full bg-brand-700 animate-pulse"
             style={{ animationDelay: "300ms" }}
           />
           <div
-            className="h-1.5 w-1.5 rounded-full bg-[hsl(263,70%,50%)] animate-pulse"
+            className="h-1.5 w-1.5 rounded-full bg-brand-700 animate-pulse"
             style={{ animationDelay: "600ms" }}
           />
         </div>
@@ -182,9 +182,9 @@ function CallbackFallback() {
       <div className="text-center">
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center">
           <div className="relative">
-            <div className="h-12 w-12 rounded-full border-2 border-zinc-700 border-t-[hsl(263,70%,50%)] animate-spin" />
+            <div className="h-12 w-12 rounded-full border-2 border-zinc-700 border-t-brand-700 animate-spin" />
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-sm font-bold text-[hsl(263,70%,50%)]">
+              <span className="text-sm font-bold text-brand-700">
                 D
               </span>
             </div>

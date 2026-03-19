@@ -213,7 +213,7 @@ export default function LoginPage() {
             type="checkbox"
             checked={rememberMe}
             onChange={(e) => setRememberMe(e.target.checked)}
-            className="h-4 w-4 rounded border-[hsl(var(--border))] bg-transparent text-[hsl(263,70%,50%)] focus:ring-[hsl(263,70%,50%)] focus:ring-offset-0"
+            className="h-4 w-4 rounded border-[hsl(var(--border))] bg-transparent text-brand-700 focus:ring-brand-700 focus:ring-offset-0"
           />
           <label
             htmlFor="remember"
@@ -225,7 +225,7 @@ export default function LoginPage() {
 
         <Button
           type="submit"
-          className="w-full rounded-xl bg-[hsl(263,70%,50%)] text-white hover:bg-[hsl(263,70%,45%)]"
+          className="w-full rounded-xl bg-brand-700 text-white hover:bg-brand-800"
           disabled={isFormDisabled}
         >
           {isLoading ? (
@@ -243,7 +243,7 @@ export default function LoginPage() {
         Don&apos;t have an account?{" "}
         <Link
           href="/signup"
-          className="font-medium text-[hsl(263,70%,50%)] hover:underline"
+          className="font-medium text-brand-700 hover:underline"
         >
           Sign up
         </Link>

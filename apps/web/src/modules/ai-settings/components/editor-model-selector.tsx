@@ -97,7 +97,7 @@ export function EditorModelSelector({
               }}
               className={`flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
                 selectedModelId === m.id && !selectedProviderId
-                  ? "bg-violet-600/20 text-violet-300"
+                  ? "bg-brand-600/20 text-brand-300"
                   : "text-zinc-300 hover:bg-white/5"
               }`}
             >
@@ -121,7 +121,7 @@ export function EditorModelSelector({
                   }}
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
                     selectedModelId === m.id && selectedProviderId === m.providerId
-                      ? "bg-violet-600/20 text-violet-300"
+                      ? "bg-brand-600/20 text-brand-300"
                       : "text-zinc-300 hover:bg-white/5"
                   }`}
                 >

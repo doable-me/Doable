@@ -21,6 +21,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var b=localStorage.getItem("doable_brand_theme");if(b)document.documentElement.setAttribute("data-brand",b)}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body
         className={`${inter.variable} font-sans antialiased`}
         style={{ fontFamily: "var(--font-inter), system-ui, sans-serif" }}
