@@ -95,7 +95,7 @@ type SortDir = "asc" | "desc";
 // ---- Project Card Gradient Helpers ----
 
 const PROJECT_GRADIENTS = [
-  "from-violet-500/20 to-purple-600/20",
+  "from-orange-500/20 to-orange-600/20",
   "from-blue-500/20 to-cyan-600/20",
   "from-emerald-500/20 to-teal-600/20",
   "from-orange-500/20 to-amber-600/20",
@@ -106,7 +106,7 @@ const PROJECT_GRADIENTS = [
 ];
 
 const PROJECT_ACCENT_COLORS = [
-  "bg-violet-500/30",
+  "bg-orange-500/30",
   "bg-blue-500/30",
   "bg-emerald-500/30",
   "bg-orange-500/30",
@@ -129,7 +129,7 @@ const TEMPLATE_CATEGORY_COLORS: Record<string, { bg: string; accent: string; hig
   marketing: { bg: "bg-amber-50", accent: "bg-amber-100", highlight: "bg-amber-200" },
   ecommerce: { bg: "bg-emerald-50", accent: "bg-emerald-100", highlight: "bg-emerald-200" },
   blog: { bg: "bg-rose-50", accent: "bg-rose-100", highlight: "bg-rose-200" },
-  social: { bg: "bg-violet-50", accent: "bg-violet-100", highlight: "bg-violet-200" },
+  social: { bg: "bg-orange-50", accent: "bg-orange-100", highlight: "bg-orange-200" },
   productivity: { bg: "bg-cyan-50", accent: "bg-cyan-100", highlight: "bg-cyan-200" },
   portfolio: { bg: "bg-indigo-50", accent: "bg-indigo-100", highlight: "bg-indigo-200" },
 };
@@ -390,7 +390,7 @@ function ChatInput({
               disabled={!hasContent || isCreating}
               className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
                 hasContent && !isCreating
-                  ? "bg-violet-600 text-white hover:bg-violet-500"
+                  ? "bg-orange-600 text-white hover:bg-orange-500"
                   : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
               }`}
             >
@@ -439,7 +439,7 @@ function ProjectCard({
     <div
       className={`group relative flex flex-col overflow-hidden rounded-xl border transition-all duration-200 cursor-pointer ${
         selected
-          ? "border-violet-500 bg-violet-500/5 ring-1 ring-violet-500/30"
+          ? "border-orange-500 bg-orange-500/5 ring-1 ring-orange-500/30"
           : "border-zinc-800 bg-zinc-900/80 hover:border-zinc-700 hover:bg-zinc-900"
       }`}
       draggable
@@ -491,7 +491,7 @@ function ProjectCard({
         <button
           className={`absolute top-2.5 left-2.5 flex h-6 w-6 items-center justify-center rounded transition-all ${
             selected
-              ? "bg-violet-600 text-white opacity-100"
+              ? "bg-orange-600 text-white opacity-100"
               : "bg-black/30 backdrop-blur-sm text-white/70 opacity-0 group-hover:opacity-100"
           }`}
           onClick={(e) => {
@@ -576,7 +576,7 @@ function ProjectCard({
 
       {/* Info */}
       <div className="flex items-center gap-2.5 p-3">
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-purple-600 text-[10px] font-semibold text-white">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-600 text-[10px] font-semibold text-white">
           {project.name?.charAt(0)?.toUpperCase() ?? "U"}
         </div>
         <div className="flex flex-col gap-0.5 min-w-0 flex-1">
@@ -627,7 +627,7 @@ function ProjectRow({
   return (
     <tr
       className={`group border-b border-zinc-800/50 transition-colors cursor-pointer ${
-        selected ? "bg-violet-500/5" : "hover:bg-white/[0.02]"
+        selected ? "bg-orange-500/5" : "hover:bg-white/[0.02]"
       }`}
       draggable
       onDragStart={(e) => {
@@ -646,7 +646,7 @@ function ProjectRow({
           }}
           className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
             selected
-              ? "bg-violet-600 text-white"
+              ? "bg-orange-600 text-white"
               : "text-zinc-600 hover:text-zinc-400"
           }`}
         >
@@ -786,7 +786,7 @@ function TemplateCard({
                 <div className="flex gap-2 mb-2">
                   <div className="h-10 flex-1 bg-blue-100/60 rounded" />
                   <div className="h-10 flex-1 bg-green-100/60 rounded" />
-                  <div className="h-10 flex-1 bg-purple-100/60 rounded" />
+                  <div className="h-10 flex-1 bg-orange-100/60 rounded" />
                 </div>
                 <div className={`h-12 w-full ${catColors.accent} rounded`} />
               </div>
@@ -1341,9 +1341,9 @@ export default function DashboardPage() {
   const SortIcon = ({ col }: { col: SortKey }) => {
     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3 w-3 opacity-30" />;
     return sortDir === "asc" ? (
-      <ChevronUp className="ml-1 h-3 w-3 text-violet-400" />
+      <ChevronUp className="ml-1 h-3 w-3 text-orange-400" />
     ) : (
-      <ChevronDown className="ml-1 h-3 w-3 text-violet-400" />
+      <ChevronDown className="ml-1 h-3 w-3 text-orange-400" />
     );
   };
 
@@ -1582,8 +1582,8 @@ export default function DashboardPage() {
 
           {/* Bulk Actions Bar */}
           {selectedIds.size > 0 && (
-            <div className="flex items-center gap-3 rounded-lg border border-violet-500/30 bg-violet-500/5 px-4 py-2">
-              <span className="text-sm text-violet-300 font-medium">
+            <div className="flex items-center gap-3 rounded-lg border border-orange-500/30 bg-orange-500/5 px-4 py-2">
+              <span className="text-sm text-orange-300 font-medium">
                 {selectedIds.size} selected
               </span>
               <div className="flex items-center gap-1 ml-auto">
@@ -1785,7 +1785,7 @@ export default function DashboardPage() {
                   setStatusFilter("all");
                   setStarredFilter(false);
                 }}
-                className="mt-4 text-sm text-violet-400 hover:text-violet-300 transition-colors"
+                className="mt-4 text-sm text-orange-400 hover:text-orange-300 transition-colors"
               >
                 Clear all filters
               </button>
@@ -1923,7 +1923,7 @@ export default function DashboardPage() {
             <Button
               onClick={handleRename}
               disabled={!renameValue.trim()}
-              className="bg-violet-600 text-white hover:bg-violet-500"
+              className="bg-orange-600 text-white hover:bg-orange-500"
             >
               Rename
             </Button>

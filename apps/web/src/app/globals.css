@@ -9,19 +9,19 @@
     --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
-    --primary: 263 70% 50%;
+    --primary: 16 90% 55%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 260 10% 95%;
+    --secondary: 20 15% 95%;
     --secondary-foreground: 240 5.9% 10%;
     --muted: 40 20% 94%;
     --muted-foreground: 240 3.8% 46.1%;
-    --accent: 260 10% 95%;
+    --accent: 20 15% 95%;
     --accent-foreground: 240 5.9% 10%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --border: 40 10% 90%;
     --input: 40 10% 88%;
-    --ring: 263 70% 50%;
+    --ring: 16 90% 55%;
     --radius: 0.75rem;
   }
 
@@ -32,7 +32,7 @@
     --card-foreground: 0 0% 95%;
     --popover: 240 10% 6%;
     --popover-foreground: 0 0% 95%;
-    --primary: 263 70% 58%;
+    --primary: 16 90% 60%;
     --primary-foreground: 0 0% 100%;
     --secondary: 240 4% 16%;
     --secondary-foreground: 0 0% 95%;
@@ -44,7 +44,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: 240 4% 16%;
     --input: 240 4% 16%;
-    --ring: 263 70% 58%;
+    --ring: 16 90% 60%;
   }
 }
 
@@ -165,7 +165,7 @@
 
 /* Gradient text utility */
 .text-gradient {
-  background: linear-gradient(135deg, #7C3AED, #a78bfa, #7C3AED);
+  background: linear-gradient(135deg, #EA580C, #FB923C, #EA580C);
   background-size: 200% 200%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -207,7 +207,7 @@
 }
 
 .status-shimmer-bg {
-  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.06), transparent);
+  background: linear-gradient(90deg, transparent, rgba(249, 115, 22, 0.06), transparent);
   background-size: 200% 100%;
   animation: status-shimmer 2s ease-in-out infinite;
 }

@@ -93,7 +93,7 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 transition-colors"
+          className="flex items-center gap-2 rounded-lg bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-500 transition-colors"
         >
           <Plus className="h-4 w-4" />
           Add Provider
@@ -110,7 +110,7 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
                 onClick={() => handleTypeChange(type)}
                 className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                   providerType === type
-                    ? "bg-violet-600 text-white"
+                    ? "bg-orange-600 text-white"
                     : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
                 }`}
               >
@@ -123,21 +123,21 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
             placeholder="Label"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500"
           />
           <input
             type="text"
             placeholder="Base URL"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500"
           />
           <input
             type="password"
             placeholder="API Key"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500"
           />
           {providerType === "azure" && (
             <input
@@ -145,7 +145,7 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
               placeholder="API Version (e.g. 2024-02-15-preview)"
               value={azureApiVersion}
               onChange={(e) => setAzureApiVersion(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500"
             />
           )}
           {error && <p className="text-sm text-red-400">{error}</p>}
@@ -156,7 +156,7 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
             <button
               onClick={handleAdd}
               disabled={submitting || !label.trim() || !baseUrl.trim()}
-              className="flex items-center gap-2 rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-orange-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50"
             >
               {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
               Add Provider

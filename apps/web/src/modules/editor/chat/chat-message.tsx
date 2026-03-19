@@ -67,11 +67,11 @@ function StreamingStatus({ status }: { status?: string }) {
   if (!status) return null;
 
   const icon = status === "thinking" ? (
-    <Brain className="h-3 w-3 text-purple-400 animate-pulse" />
+    <Brain className="h-3 w-3 text-orange-400 animate-pulse" />
   ) : status === "tool_call" || status === "tool_result" ? (
     <Wrench className="h-3 w-3 text-blue-400 animate-spin" />
   ) : (
-    <Loader2 className="h-3 w-3 text-purple-400 animate-spin" />
+    <Loader2 className="h-3 w-3 text-orange-400 animate-spin" />
   );
 
   const label = status === "thinking" ? "Thinking..." :
@@ -116,7 +116,7 @@ export const ChatMessage = memo(function ChatMessage({
         className={`flex h-7 w-7 flex-none items-center justify-center rounded-full ${
           isUser
             ? "bg-primary text-primary-foreground"
-            : "bg-gradient-to-br from-purple-500 to-blue-500 text-white"
+            : "bg-gradient-to-br from-orange-500 to-red-500 text-white"
         }`}
       >
         {isUser ? (
@@ -139,7 +139,7 @@ export const ChatMessage = memo(function ChatMessage({
             })}
           </span>
           {isActivelyStreaming && (
-            <Loader2 className="h-3 w-3 animate-spin text-purple-500" />
+            <Loader2 className="h-3 w-3 animate-spin text-orange-500" />
           )}
         </div>
 
@@ -147,7 +147,7 @@ export const ChatMessage = memo(function ChatMessage({
         {message.thinkingContent && message.isStreaming && (
           <details className="mb-2 rounded-md border border-border/50 bg-muted/20 text-xs">
             <summary className="cursor-pointer select-none px-2.5 py-1.5 text-muted-foreground hover:text-foreground flex items-center gap-1.5">
-              <Brain className="h-3 w-3 text-purple-400 animate-pulse" />
+              <Brain className="h-3 w-3 text-orange-400 animate-pulse" />
               Thinking...
             </summary>
             <div className="px-2.5 pb-2 text-muted-foreground/70 whitespace-pre-wrap max-h-32 overflow-y-auto text-[11px] leading-relaxed">
@@ -168,7 +168,7 @@ export const ChatMessage = memo(function ChatMessage({
           <div className="prose-editor text-sm leading-relaxed text-foreground">
             <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
             {isActivelyStreaming && (
-              <span className="inline-block w-1.5 h-4 bg-purple-500 animate-pulse ml-0.5 align-middle rounded-sm" />
+              <span className="inline-block w-1.5 h-4 bg-orange-500 animate-pulse ml-0.5 align-middle rounded-sm" />
             )}
           </div>
         ) : null}

@@ -38,7 +38,7 @@ export default function HomePage() {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-pink-500">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-500 to-red-500">
               <span className="text-sm font-bold text-white">D</span>
             </div>
             <span className="text-lg font-semibold tracking-tight text-white">
@@ -99,7 +99,7 @@ export default function HomePage() {
           {/* Top: deep blue/purple */}
           <div className="absolute inset-0 bg-gradient-to-b from-[#1a1a3e] via-[#0a0a0a] to-transparent opacity-80" />
           {/* Center: purple/pink glow */}
-          <div className="absolute left-1/2 top-1/3 h-[600px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-purple-600/15 blur-[120px]" />
+          <div className="absolute left-1/2 top-1/3 h-[600px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-600/15 blur-[120px]" />
           {/* Bottom: pink/orange gradient */}
           <div className="absolute bottom-0 left-0 right-0 h-[50vh]">
             <div className="absolute inset-0 bg-gradient-to-t from-[#e84393]/20 via-[#fd79a8]/10 to-transparent" />
@@ -221,7 +221,7 @@ export default function HomePage() {
             ].map((step) => (
               <div key={step.title} className="text-center">
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-800">
-                  <step.icon className="h-7 w-7 text-purple-400" />
+                  <step.icon className="h-7 w-7 text-orange-400" />
                 </div>
                 <h3 className="mb-2 text-xl font-semibold">{step.title}</h3>
                 <p className="text-sm leading-relaxed text-gray-400">
@@ -272,7 +272,7 @@ export default function HomePage() {
                 className="rounded-2xl border border-gray-800 bg-[#111] p-6 transition-colors hover:border-gray-700"
               >
                 <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-gray-800">
-                  <item.icon className="h-5 w-5 text-purple-400" />
+                  <item.icon className="h-5 w-5 text-orange-400" />
                 </div>
                 <h3 className="mb-1 font-semibold">{item.title}</h3>
                 <p className="text-sm leading-relaxed text-gray-400">
@@ -289,7 +289,7 @@ export default function HomePage() {
         <div className="relative mx-auto max-w-3xl px-4 text-center">
           {/* Background glow */}
           <div className="pointer-events-none absolute inset-0">
-            <div className="absolute left-1/2 top-1/2 h-[300px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-purple-600/10 blur-[100px]" />
+            <div className="absolute left-1/2 top-1/2 h-[300px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-600/10 blur-[100px]" />
           </div>
 
           <div className="relative">
@@ -329,7 +329,7 @@ export default function HomePage() {
             {/* Brand column */}
             <div className="lg:col-span-2">
               <Link href="/" className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-purple-500 to-pink-500">
+                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-orange-500 to-red-500">
                   <span className="text-xs font-bold text-white">D</span>
                 </div>
                 <span className="text-base font-semibold text-white">

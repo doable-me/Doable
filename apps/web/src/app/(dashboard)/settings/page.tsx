@@ -291,7 +291,7 @@ export default function SettingsPage() {
                 {user?.avatarUrl ? (
                   <AvatarImage src={user.avatarUrl} alt={user.displayName} />
                 ) : null}
-                <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-lg font-medium text-white">
+                <AvatarFallback className="bg-gradient-to-br from-orange-500 to-orange-600 text-lg font-medium text-white">
                   {initials}
                 </AvatarFallback>
               </Avatar>

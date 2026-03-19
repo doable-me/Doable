@@ -114,8 +114,8 @@ function ModelSection({
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5">
       <div className="flex items-center gap-2.5 mb-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600/15">
-          <Icon className="h-4 w-4 text-violet-400" />
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-600/15">
+          <Icon className="h-4 w-4 text-orange-400" />
         </div>
         <div>
           <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
@@ -131,7 +131,7 @@ function ModelSection({
             onClick={() => onChange({ ...state, source: "copilot", providerId: "" })}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               state.source === "copilot"
-                ? "bg-violet-600 text-white"
+                ? "bg-orange-600 text-white"
                 : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
             }`}
           >
@@ -141,7 +141,7 @@ function ModelSection({
             onClick={() => onChange({ ...state, source: "custom", copilotAccountId: "" })}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               state.source === "custom"
-                ? "bg-violet-600 text-white"
+                ? "bg-orange-600 text-white"
                 : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
             }`}
           >
@@ -160,7 +160,7 @@ function ModelSection({
               <select
                 value={state.copilotAccountId}
                 onChange={(e) => onChange({ ...state, copilotAccountId: e.target.value })}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-orange-500"
               >
                 <option value="">Default (gh CLI)</option>
                 {validAccounts.map((a) => (
@@ -177,7 +177,7 @@ function ModelSection({
               <select
                 value={state.model}
                 onChange={(e) => onChange({ ...state, model: e.target.value })}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-orange-500"
               >
                 {copilotModels.map((m) => (
                   <option key={m.id} value={m.id}>{m.label}</option>
@@ -193,7 +193,7 @@ function ModelSection({
               <select
                 value={state.providerId}
                 onChange={(e) => onChange({ ...state, providerId: e.target.value })}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-orange-500"
               >
                 <option value="">Select a provider...</option>
                 {validProviders.map((p) => (
@@ -296,8 +296,8 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
       {onUserPreferenceUpdate && (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5">
           <div className="flex items-center gap-2.5 mb-4">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600/15">
-              <User className="h-4 w-4 text-violet-400" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-600/15">
+              <User className="h-4 w-4 text-orange-400" />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-zinc-200">My AI Preferences</h3>
@@ -322,7 +322,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
                     onClick={() => { setUserSource("copilot"); setUserProviderId(""); }}
                     className={`px-4 py-2 text-sm font-medium transition-colors ${
                       userSource === "copilot"
-                        ? "bg-violet-600 text-white"
+                        ? "bg-orange-600 text-white"
                         : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
                     }`}
                   >
@@ -332,7 +332,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
                     onClick={() => { setUserSource("custom"); setUserCopilotAccountId(""); }}
                     className={`px-4 py-2 text-sm font-medium transition-colors ${
                       userSource === "custom"
-                        ? "bg-violet-600 text-white"
+                        ? "bg-orange-600 text-white"
                         : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
                     }`}
                   >
@@ -349,7 +349,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
                       <select
                         value={userCopilotAccountId}
                         onChange={(e) => setUserCopilotAccountId(e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-orange-500"
                       >
                         <option value="">Default (gh CLI)</option>
                         {validAccounts.map((a) => (
@@ -365,7 +365,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
                       <select
                         value={userModel}
                         onChange={(e) => setUserModel(e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-orange-500"
                       >
                         {copilotModels.map((m) => (
                           <option key={m.id} value={m.id}>{m.label}</option>
@@ -380,7 +380,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
                       <select
                         value={userProviderId}
                         onChange={(e) => setUserProviderId(e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-orange-500"
                       >
                         <option value="">Select a provider...</option>
                         {validProviders.map((p) => (
@@ -398,7 +398,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
                         value={userModel}
                         onChange={(e) => setUserModel(e.target.value)}
                         placeholder="e.g. gpt-4o"
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500"
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500"
                       />
                     </div>
                   </>
@@ -408,7 +408,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
               <button
                 onClick={handleUserPrefSave}
                 disabled={userSaving}
-                className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50 transition-colors"
+                className="flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50 transition-colors"
               >
                 {userSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : userSaved ? <Check className="h-4 w-4" /> : <User className="h-4 w-4" />}
                 {userSaved ? "Saved!" : "Save Preferences"}
@@ -452,7 +452,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
       <button
         onClick={handleSave}
         disabled={saving}
-        className="flex items-center gap-2 rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50 transition-colors"
+        className="flex items-center gap-2 rounded-lg bg-orange-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50 transition-colors"
       >
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
         {saved ? "Saved!" : "Save Configuration"}

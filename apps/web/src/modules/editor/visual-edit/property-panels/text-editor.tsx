@@ -29,7 +29,7 @@ export function TextEditor({ value, onChange }: TextEditorProps) {
           value={value}
           onChange={(e) => onChange(e.target.value)}
           rows={3}
-          className="w-full resize-none rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2.5 py-2 text-[12px] text-zinc-300 outline-none placeholder:text-zinc-600 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-all font-mono leading-relaxed"
+          className="w-full resize-none rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2.5 py-2 text-[12px] text-zinc-300 outline-none placeholder:text-zinc-600 focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/20 transition-all font-mono leading-relaxed"
           placeholder="Element text content..."
         />
       </div>

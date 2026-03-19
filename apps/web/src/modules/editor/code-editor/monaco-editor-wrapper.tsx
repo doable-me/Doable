@@ -158,7 +158,7 @@ export function MonacoEditorWrapper({
       loading={
         <div className="flex h-full items-center justify-center bg-[#1e1e1e]">
           <div className="flex flex-col items-center gap-2">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-purple-400" />
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-orange-400" />
             <span className="text-xs text-zinc-500">Loading editor...</span>
           </div>
         </div>

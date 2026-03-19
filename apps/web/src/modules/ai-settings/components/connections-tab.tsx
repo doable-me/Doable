@@ -125,7 +125,7 @@ export function ConnectionsTab({
             </a>
             <button
               onClick={() => setShowAccountForm(!showAccountForm)}
-              className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg bg-orange-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-orange-500 transition-colors"
             >
               <Plus className="h-3.5 w-3.5" /> Token
             </button>
@@ -136,15 +136,15 @@ export function ConnectionsTab({
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-2 mb-3">
             <input type="text" placeholder="Label (e.g. 'Work Account')" value={accountLabel}
               onChange={(e) => setAccountLabel(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500" />
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500" />
             <input type="password" placeholder="GitHub Personal Access Token" value={accountToken}
               onChange={(e) => setAccountToken(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500" />
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500" />
             {accountError && <p className="text-xs text-red-400">{accountError}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setShowAccountForm(false)} className="px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
               <button onClick={handleAddAccount} disabled={accountSubmitting || !accountLabel.trim() || !accountToken.trim()}
-                className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg bg-orange-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-orange-500 disabled:opacity-50">
                 {accountSubmitting && <Loader2 className="h-3 w-3 animate-spin" />} Add
               </button>
             </div>
@@ -195,7 +195,7 @@ export function ConnectionsTab({
             <p className="text-xs text-zinc-500 mt-0.5">Bring your own API keys for OpenAI, Anthropic, or Azure.</p>
           </div>
           <button onClick={() => setShowProviderForm(!showProviderForm)}
-            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500 transition-colors">
+            className="flex items-center gap-1.5 rounded-lg bg-orange-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-orange-500 transition-colors">
             <Plus className="h-3.5 w-3.5" /> Add Provider
           </button>
         </div>
@@ -205,26 +205,26 @@ export function ConnectionsTab({
             <div className="flex gap-1.5">
               {(["openai", "anthropic", "azure"] as const).map((t) => (
                 <button key={t} onClick={() => handleProviderTypeChange(t)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${providerType === t ? "bg-violet-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}>
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${providerType === t ? "bg-orange-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}>
                   {PROVIDER_DEFAULTS[t].label}
                 </button>
               ))}
             </div>
             <input type="text" placeholder="Label" value={providerLabel} onChange={(e) => setProviderLabel(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500" />
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500" />
             <input type="text" placeholder="Base URL" value={providerBaseUrl} onChange={(e) => setProviderBaseUrl(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500" />
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500" />
             <input type="password" placeholder="API Key" value={providerApiKey} onChange={(e) => setProviderApiKey(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500" />
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500" />
             {providerType === "azure" && (
               <input type="text" placeholder="API Version" value={providerAzureVersion} onChange={(e) => setProviderAzureVersion(e.target.value)}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500" />
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-orange-500" />
             )}
             {providerError && <p className="text-xs text-red-400">{providerError}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setShowProviderForm(false)} className="px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
               <button onClick={handleAddProvider} disabled={providerSubmitting || !providerLabel.trim() || !providerBaseUrl.trim()}
-                className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg bg-orange-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-orange-500 disabled:opacity-50">
                 {providerSubmitting && <Loader2 className="h-3 w-3 animate-spin" />} Add
               </button>
             </div>

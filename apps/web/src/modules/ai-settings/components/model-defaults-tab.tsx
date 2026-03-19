@@ -72,7 +72,7 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-orange-500"
           >
             <option value="">Default (auto)</option>
             {COMMON_MODELS.map((m) => (
@@ -88,7 +88,7 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
             <select
               value={copilotAccountId}
               onChange={(e) => setCopilotAccountId(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-orange-500"
             >
               <option value="">Default (gh CLI)</option>
               {accounts.filter((a) => a.is_valid).map((a) => (
@@ -107,7 +107,7 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
             <select
               value={providerId}
               onChange={(e) => setProviderId(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-500"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-orange-500"
             >
               <option value="">None (use Copilot)</option>
               {providers.filter((p) => p.is_valid).map((p) => (
@@ -122,7 +122,7 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50 transition-colors"
+          className="flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50 transition-colors"
         >
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />

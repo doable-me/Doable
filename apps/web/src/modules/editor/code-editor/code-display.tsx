@@ -76,17 +76,17 @@ function getPatterns(language: string): [RegExp, string][] {
     case "jsx":
       return [
         ...common,
-        [tsKeywords, "text-purple-600 dark:text-purple-400"],
+        [tsKeywords, "text-orange-600 dark:text-orange-400"],
         [/^<\/?[\w.-]+/, "text-rose-600 dark:text-rose-400"], // JSX tags
         [/^\/>/, "text-rose-600 dark:text-rose-400"],
-        [/^=>/, "text-purple-600 dark:text-purple-400"],
+        [/^=>/, "text-orange-600 dark:text-orange-400"],
         [/^[{}()\[\];,.]/, "text-muted-foreground"],
       ];
 
     case "css":
       return [
         ...common,
-        [cssKeywords, "text-purple-600 dark:text-purple-400"],
+        [cssKeywords, "text-orange-600 dark:text-orange-400"],
         [/^[.#][\w-]+/, "text-rose-600 dark:text-rose-400"], // selectors
         [/^[\w-]+(?=\s*:)/, "text-blue-600 dark:text-blue-400"], // properties
         [/^[{}();,:]/, "text-muted-foreground"],
@@ -96,7 +96,7 @@ function getPatterns(language: string): [RegExp, string][] {
       return [
         [/^"(?:[^"\\]|\\.)*"\s*(?=:)/, "text-blue-600 dark:text-blue-400"], // keys
         [/^"(?:[^"\\]|\\.)*"/, "text-amber-600 dark:text-amber-400"], // values
-        [jsonKeywords, "text-purple-600 dark:text-purple-400"],
+        [jsonKeywords, "text-orange-600 dark:text-orange-400"],
         [/^\d+(?:\.\d+)?/, "text-blue-600 dark:text-blue-400"],
         [/^[{}()\[\],:]/, "text-muted-foreground"],
       ];

@@ -134,7 +134,7 @@ export function VisualEditToolbar({
         type="button"
         onClick={handleSubmit}
         disabled={!prompt.trim()}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-purple-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-orange-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
         title="Send prompt"
       >
         <ArrowUp className="h-3.5 w-3.5" />
