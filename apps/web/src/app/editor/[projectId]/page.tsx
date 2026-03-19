@@ -1456,7 +1456,7 @@ export default function EditorPage() {
             setTimeout(() => {
               if (iframeRef.current) {
                 try {
-                  iframeRef.current.contentWindow?.location.reload();
+                  iframeRef.current.contentWindow?.postMessage({ type: "doable-refresh" }, "*");
                 } catch {
                   if (previewUrl) {
                     iframeRef.current.src = previewUrl + "?t=" + Date.now();
@@ -1766,10 +1766,11 @@ export default function EditorPage() {
           previewRefreshTimer.current = null;
           if (iframeRef.current) {
             try {
-              // Try soft reload (faster, preserves scroll position)
-              iframeRef.current.contentWindow?.location.reload();
+              // Use postMessage to trigger reload via injected doable-refresh listener
+              // This works cross-origin (Cloudflare tunnel) without a full src reset
+              iframeRef.current.contentWindow?.postMessage({ type: "doable-refresh" }, "*");
             } catch {
-              // Cross-origin fallback: reset src with cache-bust
+              // Final fallback: reset src with cache-bust
               if (previewUrl) {
                 iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
               }
@@ -1895,7 +1896,7 @@ export default function EditorPage() {
             previewRefreshTimer.current = null;
             if (iframeRef.current) {
               try {
-                iframeRef.current.contentWindow?.location.reload();
+                iframeRef.current.contentWindow?.postMessage({ type: "doable-refresh" }, "*");
               } catch {
                 if (previewUrl) {
                   iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
