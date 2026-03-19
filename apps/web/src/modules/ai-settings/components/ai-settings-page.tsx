@@ -69,7 +69,7 @@ export function AiSettingsPage() {
             onClick={() => setActiveTab(key)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
               activeTab === key
-                ? "border-orange-500 text-white"
+                ? "border-violet-500 text-white"
                 : "border-transparent text-zinc-400 hover:text-zinc-200"
             }`}
           >

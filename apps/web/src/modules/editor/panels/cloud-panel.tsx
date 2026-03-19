@@ -239,7 +239,7 @@ function ConnectionDialog({
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://your-project.supabase.co"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30"
+              className="w-full rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30"
             />
           </div>
 
@@ -253,7 +253,7 @@ function ConnectionDialog({
               value={anonKey}
               onChange={(e) => setAnonKey(e.target.value)}
               placeholder="eyJhbGciOiJIUzI1NiIs..."
-              className="w-full rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder-zinc-600 font-mono outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30"
+              className="w-full rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-white placeholder-zinc-600 font-mono outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30"
             />
           </div>
 
@@ -271,7 +271,7 @@ function ConnectionDialog({
                 value={serviceRoleKey}
                 onChange={(e) => setServiceRoleKey(e.target.value)}
                 placeholder="eyJhbGciOiJIUzI1NiIs..."
-                className="w-full rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 pr-10 text-sm text-white placeholder-zinc-600 font-mono outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30"
+                className="w-full rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 pr-10 text-sm text-white placeholder-zinc-600 font-mono outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30"
               />
               <button
                 onClick={() => setShowServiceKey((v) => !v)}
@@ -328,7 +328,7 @@ function ConnectionDialog({
             <button
               onClick={handleSave}
               disabled={saving || !url.trim() || !anonKey.trim()}
-              className="flex items-center gap-1.5 rounded-md bg-orange-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {saving && <Loader2 className="h-3 w-3 animate-spin" />}
               Save & Connect
@@ -487,7 +487,7 @@ function DatabaseSection({
                         )}
                         {col.name}
                       </span>
-                      <span className="font-mono text-orange-400/80">{col.type}</span>
+                      <span className="font-mono text-purple-400/80">{col.type}</span>
                       <span className="text-zinc-600">{col.nullable ? "YES" : "NO"}</span>
                     </div>
                   ))}
@@ -509,12 +509,12 @@ function DatabaseSection({
             onChange={(e) => setSqlQuery(e.target.value)}
             placeholder="SELECT * FROM users LIMIT 10;"
             rows={3}
-            className="w-full rounded-md border border-zinc-700 bg-zinc-900/60 px-3 py-2 text-[12px] font-mono text-zinc-300 placeholder-zinc-700 resize-none outline-none focus:border-orange-500/50"
+            className="w-full rounded-md border border-zinc-700 bg-zinc-900/60 px-3 py-2 text-[12px] font-mono text-zinc-300 placeholder-zinc-700 resize-none outline-none focus:border-purple-500/50"
           />
           <button
             onClick={handleRunQuery}
             disabled={running || !sqlQuery.trim()}
-            className="absolute right-2 bottom-2 flex items-center gap-1 rounded bg-orange-600/80 px-2 py-1 text-[11px] font-medium text-white hover:bg-orange-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="absolute right-2 bottom-2 flex items-center gap-1 rounded bg-purple-600/80 px-2 py-1 text-[11px] font-medium text-white hover:bg-purple-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             {running ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -666,7 +666,7 @@ function StorageSection({
                 ? "bg-red-500"
                 : usagePct > 70
                   ? "bg-amber-500"
-                  : "bg-orange-500"
+                  : "bg-purple-500"
             }`}
             style={{ width: `${Math.min(100, usagePct)}%` }}
           />
@@ -903,7 +903,7 @@ export function CloudPanel({ projectId, onClose }: CloudPanelProps) {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
           <div className="flex items-center gap-2.5">
-            <Database className="h-4 w-4 text-orange-400" />
+            <Database className="h-4 w-4 text-purple-400" />
             <h2 className="text-sm font-semibold text-white">Cloud</h2>
           </div>
           <button
@@ -946,7 +946,7 @@ export function CloudPanel({ projectId, onClose }: CloudPanelProps) {
             ) : (
               <button
                 onClick={() => setShowDialog(true)}
-                className="flex items-center gap-1.5 rounded-md bg-orange-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-orange-500 transition-colors"
+                className="flex items-center gap-1.5 rounded-md bg-purple-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-purple-500 transition-colors"
               >
                 <Database className="h-3 w-3" />
                 Connect Supabase

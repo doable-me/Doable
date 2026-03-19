@@ -67,8 +67,8 @@ export function ChatPanel() {
 function EmptyState() {
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-orange-500/10 to-amber-500/10">
-        <Sparkles className="h-6 w-6 text-orange-500" />
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-purple-500/10 to-blue-500/10">
+        <Sparkles className="h-6 w-6 text-purple-500" />
       </div>
       <h3 className="mt-4 text-sm font-semibold text-foreground">
         Start building with AI

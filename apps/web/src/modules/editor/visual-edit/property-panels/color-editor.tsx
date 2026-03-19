@@ -105,7 +105,7 @@ function ColorRow({
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={handleKeyDown}
                   autoFocus
-                  className="w-full rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1.5 text-[11px] text-zinc-300 outline-none font-mono focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/20 transition-all"
+                  className="w-full rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1.5 text-[11px] text-zinc-300 outline-none font-mono focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-all"
                   placeholder="#000000 or color name"
                 />
               </div>
@@ -127,7 +127,7 @@ function ColorRow({
               <div className="flex items-center gap-2 pt-1">
                 <button
                   onClick={handleCommit}
-                  className="flex-1 rounded-md bg-orange-500/20 px-2 py-1.5 text-[11px] font-medium text-orange-400 transition-colors hover:bg-orange-500/30"
+                  className="flex-1 rounded-md bg-purple-500/20 px-2 py-1.5 text-[11px] font-medium text-purple-400 transition-colors hover:bg-purple-500/30"
                 >
                   Apply
                 </button>

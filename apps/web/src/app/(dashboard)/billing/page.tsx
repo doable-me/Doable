@@ -81,7 +81,7 @@ export default function BillingPage() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+          <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
           <p className="text-sm text-zinc-400">Loading billing...</p>
         </div>
       </div>
@@ -99,7 +99,7 @@ export default function BillingPage() {
           </p>
           <button
             onClick={() => router.push("/login")}
-            className="mt-4 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 transition-colors"
+            className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 transition-colors"
           >
             Sign in
           </button>
@@ -176,7 +176,7 @@ export default function BillingPage() {
         <button
           onClick={() => topUp(100)}
           disabled={actionLoading || !WORKSPACE_ID}
-          className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
           Buy 100 Credits

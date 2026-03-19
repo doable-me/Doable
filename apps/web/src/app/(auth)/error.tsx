@@ -27,7 +27,7 @@ export default function AuthError({
         </button>
         <Link
           href="/login"
-          className="rounded-lg bg-orange-600 px-4 py-2 text-sm text-white hover:bg-orange-500 transition-colors"
+          className="rounded-lg bg-violet-600 px-4 py-2 text-sm text-white hover:bg-violet-500 transition-colors"
         >
           Back to Login
         </Link>

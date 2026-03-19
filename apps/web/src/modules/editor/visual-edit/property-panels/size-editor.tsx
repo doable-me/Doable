@@ -39,7 +39,7 @@ export function SizeEditor({
             type="text"
             value={width}
             onChange={(e) => onWidthChange(e.target.value)}
-            className="w-full rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/20 transition-colors"
+            className="w-full rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-colors"
             placeholder="auto"
           />
         </div>
@@ -54,7 +54,7 @@ export function SizeEditor({
             type="text"
             value={height}
             onChange={(e) => onHeightChange(e.target.value)}
-            className="w-full rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/20 transition-colors"
+            className="w-full rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-colors"
             placeholder="auto"
           />
         </div>

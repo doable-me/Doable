@@ -87,7 +87,7 @@ export function BorderEditor({
           <select
             value={matchedWidth ? borderWidth : ""}
             onChange={(e) => onBorderWidthChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-orange-500/50 transition-colors"
+            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-purple-500/50 transition-colors"
           >
             {!matchedWidth && (
               <option value="" disabled>
@@ -123,7 +123,7 @@ export function BorderEditor({
                 onBlur={handleColorCommit}
                 onKeyDown={handleColorKeyDown}
                 autoFocus
-                className="flex-1 rounded-md border border-orange-500/50 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:ring-1 focus:ring-orange-500/20"
+                className="flex-1 rounded-md border border-purple-500/50 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:ring-1 focus:ring-purple-500/20"
                 placeholder="#000000"
               />
             ) : (
@@ -143,7 +143,7 @@ export function BorderEditor({
           <select
             value={borderStyle}
             onChange={(e) => onBorderStyleChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-orange-500/50 transition-colors"
+            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-purple-500/50 transition-colors"
           >
             {!BORDER_STYLE_OPTIONS.find((o) => o.value === borderStyle) && (
               <option value={borderStyle} disabled>
@@ -165,7 +165,7 @@ export function BorderEditor({
             type="text"
             value={borderRadius}
             onChange={(e) => onBorderRadiusChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/20 transition-colors"
+            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-colors"
             placeholder="0px"
           />
         </div>

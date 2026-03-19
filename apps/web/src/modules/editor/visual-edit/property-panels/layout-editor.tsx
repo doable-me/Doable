@@ -105,7 +105,7 @@ export function LayoutEditor({
                 className={cn(
                   "flex items-center gap-1 rounded px-2 py-1.5 text-[11px] transition-colors",
                   flexDirection === value
-                    ? "bg-orange-500/20 text-orange-400"
+                    ? "bg-purple-500/20 text-purple-400"
                     : "text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300"
                 )}
               >
@@ -128,7 +128,7 @@ export function LayoutEditor({
                 className={cn(
                   "rounded p-1.5 transition-colors",
                   alignItems === value
-                    ? "bg-orange-500/20 text-orange-400"
+                    ? "bg-purple-500/20 text-purple-400"
                     : "text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300"
                 )}
               >
@@ -145,7 +145,7 @@ export function LayoutEditor({
             type="text"
             value={gap}
             onChange={(e) => onGapChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/20 transition-colors"
+            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-colors"
             placeholder="0px"
           />
         </div>

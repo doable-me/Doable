@@ -284,7 +284,7 @@ function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
             className={cn(
               "px-2.5 py-1 text-xs font-medium transition-colors rounded-l-md",
               metric === "visitors"
-                ? "bg-orange-500/20 text-orange-400"
+                ? "bg-purple-500/20 text-purple-400"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -295,7 +295,7 @@ function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
             className={cn(
               "px-2.5 py-1 text-xs font-medium transition-colors rounded-r-md",
               metric === "pageViews"
-                ? "bg-orange-500/20 text-orange-400"
+                ? "bg-purple-500/20 text-purple-400"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -313,8 +313,8 @@ function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
         >
           <defs>
             <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgb(249, 115, 22)" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="rgb(249, 115, 22)" stopOpacity="0" />
+              <stop offset="0%" stopColor="rgb(168, 85, 247)" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="rgb(168, 85, 247)" stopOpacity="0" />
             </linearGradient>
           </defs>
 
@@ -350,7 +350,7 @@ function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
           <path
             d={linePath}
             fill="none"
-            stroke="rgb(249, 115, 22)"
+            stroke="rgb(168, 85, 247)"
             strokeWidth="2"
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -364,7 +364,7 @@ function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
                 y1={padding.top}
                 x2={points[hoveredIndex].x}
                 y2={height - padding.bottom}
-                stroke="rgb(249, 115, 22)"
+                stroke="rgb(168, 85, 247)"
                 strokeWidth="1"
                 strokeDasharray="4 2"
                 opacity="0.4"
@@ -373,7 +373,7 @@ function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
                 cx={points[hoveredIndex].x}
                 cy={points[hoveredIndex].y}
                 r="4"
-                fill="rgb(249, 115, 22)"
+                fill="rgb(168, 85, 247)"
                 stroke="hsl(var(--card))"
                 strokeWidth="2"
               />
@@ -564,7 +564,7 @@ function ReferrersSection({ referrers }: { referrers: ReferrerData[] }) {
   const typeBadgeColor: Record<string, string> = {
     direct: "bg-blue-500/10 text-blue-400",
     search: "bg-emerald-500/10 text-emerald-400",
-    social: "bg-orange-500/10 text-orange-400",
+    social: "bg-violet-500/10 text-violet-400",
     referral: "bg-amber-500/10 text-amber-400",
     other: "bg-muted text-muted-foreground",
   };
@@ -597,7 +597,7 @@ function ReferrersSection({ referrers }: { referrers: ReferrerData[] }) {
             </div>
             <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-orange-500 to-orange-400 transition-all duration-500"
+                className="h-full rounded-full bg-gradient-to-r from-purple-500 to-violet-400 transition-all duration-500"
                 style={{ width: `${ref.percent}%` }}
               />
             </div>
@@ -621,9 +621,9 @@ function DeviceBreakdownChart({ devices }: { devices: DeviceData[] }) {
   }
 
   const deviceColors: Record<string, { bg: string; css: string }> = {
-    desktop: { bg: "bg-orange-500", css: "rgb(249, 115, 22)" },
-    mobile: { bg: "bg-orange-400", css: "rgb(251, 146, 60)" },
-    tablet: { bg: "bg-orange-300", css: "rgb(253, 186, 116)" },
+    desktop: { bg: "bg-purple-500", css: "rgb(168, 85, 247)" },
+    mobile: { bg: "bg-violet-400", css: "rgb(167, 139, 250)" },
+    tablet: { bg: "bg-purple-300", css: "rgb(196, 181, 253)" },
   };
 
   const deviceIcons: Record<string, typeof Monitor> = {
@@ -640,7 +640,7 @@ function DeviceBreakdownChart({ devices }: { devices: DeviceData[] }) {
         device: d.device,
         start,
         end: start + d.percent * 3.6,
-        color: deviceColors[key]?.css || "rgb(249, 115, 22)",
+        color: deviceColors[key]?.css || "rgb(168, 85, 247)",
       });
       return acc;
     },
@@ -672,7 +672,7 @@ function DeviceBreakdownChart({ devices }: { devices: DeviceData[] }) {
           {devices.map((d) => {
             const key = d.device.toLowerCase();
             const Icon = deviceIcons[key] || Monitor;
-            const bgColor = deviceColors[key]?.bg || "bg-orange-500";
+            const bgColor = deviceColors[key]?.bg || "bg-purple-500";
             return (
               <div key={d.device} className="flex items-center gap-2.5">
                 <div className={cn("h-2.5 w-2.5 rounded-sm", bgColor)} />
@@ -728,7 +728,7 @@ function HorizontalBarSection({
             </div>
             <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-orange-500 to-orange-400 transition-all duration-500"
+                className="h-full rounded-full bg-gradient-to-r from-purple-500 to-violet-400 transition-all duration-500"
                 style={{ width: `${(item.percent / maxPercent) * 100}%` }}
               />
             </div>
@@ -1051,9 +1051,9 @@ export function AnalyticsPanel({ projectId, onClose }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-orange-500" />
+          <BarChart3 className="h-4 w-4 text-purple-500" />
           <h2 className="text-sm font-semibold text-foreground">Analytics</h2>
-          <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-medium text-orange-400">
+          <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-400">
             <Zap className="h-2.5 w-2.5" />
             Built-in analytics
           </span>
@@ -1081,7 +1081,7 @@ export function AnalyticsPanel({ projectId, onClose }: Props) {
                     range === "7d" && "rounded-l-md",
                     range === "90d" && "rounded-r-md",
                     dateRange === range
-                      ? "bg-orange-500/20 text-orange-400"
+                      ? "bg-purple-500/20 text-purple-400"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -1123,7 +1123,7 @@ export function AnalyticsPanel({ projectId, onClose }: Props) {
                 settingsLoading || togglingEnabled
                   ? "opacity-50 cursor-not-allowed"
                   : "",
-                settings?.enabled ? "bg-orange-500" : "bg-muted"
+                settings?.enabled ? "bg-purple-500" : "bg-muted"
               )}
               role="switch"
               aria-checked={settings?.enabled ?? false}
@@ -1165,7 +1165,7 @@ export function AnalyticsPanel({ projectId, onClose }: Props) {
                   <p className="text-xs text-muted-foreground mb-3">{error}</p>
                   <button
                     onClick={handleRetry}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-orange-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-600 transition-colors"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-purple-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-600 transition-colors"
                   >
                     <RefreshCw className="h-3 w-3" />
                     Retry
