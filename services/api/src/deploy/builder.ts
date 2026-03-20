@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { existsSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 
-const BUILD_TIMEOUT_MS = 60_000;
+const BUILD_TIMEOUT_MS = 120_000;
 
 export interface BuildResult {
   success: boolean;
@@ -12,21 +13,32 @@ export interface BuildResult {
   error?: string;
 }
 
+export type BuildLogCallback = (chunk: string) => void | Promise<void>;
+
 /**
- * Run a Vite build for a project directory.
- * Returns the build output directory path and build log.
- * Enforces a 60-second timeout.
+ * Run a Vite production build for a project directory.
+ *
+ * Uses `npx vite build` with --outDir dist.
+ * Captures stdout/stderr and supports an optional streaming callback
+ * for sending real-time build logs to the client.
+ *
+ * Enforces a 120-second timeout.
  */
-export async function runBuild(projectDir: string): Promise<BuildResult> {
+export async function runBuild(
+  projectDir: string,
+  onLog?: BuildLogCallback
+): Promise<BuildResult> {
   const start = Date.now();
 
   if (!existsSync(projectDir)) {
+    const error = `Project directory not found: ${projectDir}`;
+    onLog?.(`ERROR: ${error}\n`);
     return {
       success: false,
       outputDir: "",
       log: "",
       durationMs: Date.now() - start,
-      error: `Project directory not found: ${projectDir}`,
+      error,
     };
   }
 
@@ -47,21 +59,27 @@ export async function runBuild(projectDir: string): Promise<BuildResult> {
 
     const timeout = setTimeout(() => {
       proc.kill("SIGTERM");
+      const error = `Build timed out after ${BUILD_TIMEOUT_MS / 1000}s`;
+      onLog?.(`\nERROR: ${error}\n`);
       resolve({
         success: false,
         outputDir,
         log: chunks.join(""),
         durationMs: Date.now() - start,
-        error: `Build timed out after ${BUILD_TIMEOUT_MS / 1000}s`,
+        error,
       });
     }, BUILD_TIMEOUT_MS);
 
     proc.stdout.on("data", (data: Buffer) => {
-      chunks.push(data.toString());
+      const text = data.toString();
+      chunks.push(text);
+      onLog?.(text);
     });
 
     proc.stderr.on("data", (data: Buffer) => {
-      chunks.push(data.toString());
+      const text = data.toString();
+      chunks.push(text);
+      onLog?.(text);
     });
 
     proc.on("close", (code) => {
@@ -70,20 +88,24 @@ export async function runBuild(projectDir: string): Promise<BuildResult> {
       const durationMs = Date.now() - start;
 
       if (code === 0) {
+        onLog?.(`\nBuild completed successfully in ${(durationMs / 1000).toFixed(1)}s\n`);
         resolve({ success: true, outputDir, log, durationMs });
       } else {
+        const error = `Build exited with code ${code}`;
+        onLog?.(`\nERROR: ${error}\n`);
         resolve({
           success: false,
           outputDir,
           log,
           durationMs,
-          error: `Build exited with code ${code}`,
+          error,
         });
       }
     });
 
     proc.on("error", (err) => {
       clearTimeout(timeout);
+      onLog?.(`\nERROR: ${err.message}\n`);
       resolve({
         success: false,
         outputDir,
@@ -93,4 +115,51 @@ export async function runBuild(projectDir: string): Promise<BuildResult> {
       });
     });
   });
+}
+
+/**
+ * Validate that a build output directory exists and contains files.
+ */
+export async function validateBuildOutput(
+  outputDir: string
+): Promise<{ valid: boolean; fileCount: number; totalSize: number; error?: string }> {
+  if (!existsSync(outputDir)) {
+    return { valid: false, fileCount: 0, totalSize: 0, error: `Build output not found: ${outputDir}` };
+  }
+
+  try {
+    const { count, size } = await countFiles(outputDir);
+    if (count === 0) {
+      return { valid: false, fileCount: 0, totalSize: 0, error: "Build output directory is empty" };
+    }
+    return { valid: true, fileCount: count, totalSize: size };
+  } catch (err) {
+    return {
+      valid: false,
+      fileCount: 0,
+      totalSize: 0,
+      error: `Cannot read build output: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
+async function countFiles(
+  dir: string
+): Promise<{ count: number; size: number }> {
+  let count = 0;
+  let size = 0;
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const sub = await countFiles(fullPath);
+      count += sub.count;
+      size += sub.size;
+    } else {
+      count++;
+      const s = await stat(fullPath);
+      size += s.size;
+    }
+  }
+  return { count, size };
 }

@@ -11,10 +11,21 @@ export interface DeploymentRow {
   version_number: number | null;
   adapter: string;
   deployed_by: string;
+  build_time_ms: number | null;
+  deploy_time_ms: number | null;
   started_at: Date | null;
   completed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+}
+
+export interface DeploymentArtifactRow {
+  id: string;
+  deployment_id: string;
+  file_path: string;
+  file_size: number;
+  content_hash: string | null;
+  created_at: Date;
 }
 
 export function deploymentQueries(sql: postgres.Sql) {
@@ -75,11 +86,18 @@ export function deploymentQueries(sql: postgres.Sql) {
     async updateStatus(
       id: string,
       status: string,
-      extra?: { url?: string; buildLog?: string; errorMessage?: string }
+      extra?: {
+        url?: string;
+        buildLog?: string;
+        errorMessage?: string;
+        buildTimeMs?: number;
+        deployTimeMs?: number;
+      }
     ): Promise<DeploymentRow | undefined> {
       const now = new Date();
       const startedAt = status === "building" ? now : undefined;
-      const completedAt = status === "live" || status === "failed" ? now : undefined;
+      const completedAt =
+        status === "live" || status === "failed" ? now : undefined;
 
       const [row] = await sql<DeploymentRow[]>`
         UPDATE deployments
@@ -87,6 +105,8 @@ export function deploymentQueries(sql: postgres.Sql) {
             url = COALESCE(${extra?.url ?? null}, url),
             build_log = COALESCE(${extra?.buildLog ?? null}, build_log),
             error_message = COALESCE(${extra?.errorMessage ?? null}, error_message),
+            build_time_ms = COALESCE(${extra?.buildTimeMs ?? null}, build_time_ms),
+            deploy_time_ms = COALESCE(${extra?.deployTimeMs ?? null}, deploy_time_ms),
             started_at = COALESCE(${startedAt ?? null}, started_at),
             completed_at = COALESCE(${completedAt ?? null}, completed_at)
         WHERE id = ${id}
@@ -112,7 +132,7 @@ export function deploymentQueries(sql: postgres.Sql) {
 
     async rollback(
       deploymentId: string,
-      rolledBackBy: string
+      _rolledBackBy: string
     ): Promise<DeploymentRow | undefined> {
       const [row] = await sql<DeploymentRow[]>`
         UPDATE deployments
@@ -121,6 +141,37 @@ export function deploymentQueries(sql: postgres.Sql) {
         RETURNING *
       `;
       return row;
+    },
+
+    // ─── Artifact Tracking ──────────────────────────────────
+
+    async createArtifacts(
+      deploymentId: string,
+      files: Array<{ path: string; size: number; hash: string }>
+    ): Promise<void> {
+      if (files.length === 0) return;
+
+      // Batch insert artifacts
+      await sql`
+        INSERT INTO deployment_artifacts ${sql(
+          files.map((f) => ({
+            deployment_id: deploymentId,
+            file_path: f.path,
+            file_size: f.size,
+            content_hash: f.hash,
+          }))
+        )}
+      `;
+    },
+
+    async listArtifacts(
+      deploymentId: string
+    ): Promise<DeploymentArtifactRow[]> {
+      return sql<DeploymentArtifactRow[]>`
+        SELECT * FROM deployment_artifacts
+        WHERE deployment_id = ${deploymentId}
+        ORDER BY file_path
+      `;
     },
   };
 }
