@@ -124,6 +124,7 @@ export interface AiMessageRow {
   created_at: Date;
 }
 
+/** Computed workspace-level credit summary (aggregated from credit_balances) */
 export interface CreditsRow {
   id: string;
   workspace_id: string;

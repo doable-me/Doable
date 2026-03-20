@@ -61,9 +61,15 @@ export function workspaceQueries(sql: postgres.Sql) {
         VALUES (${workspace!.id}, ${data.ownerId}, 'owner')
       `;
 
+      // Initialize credit balance for the workspace owner
       await q`
-        INSERT INTO credits (workspace_id, daily_remaining, monthly_remaining)
-        VALUES (${workspace!.id}, ${limits.dailyCredits}, ${limits.monthlyCredits})
+        INSERT INTO credit_balances (user_id, workspace_id, daily_credits, monthly_credits, rollover_credits, plan_type, daily_reset_at, monthly_reset_at)
+        VALUES (
+          ${data.ownerId}, ${workspace!.id},
+          ${limits.dailyCredits}, ${limits.monthlyCredits}, 0, ${plan},
+          now() + interval '1 day', now() + interval '1 month'
+        )
+        ON CONFLICT (user_id, workspace_id) DO NOTHING
       `;
 
       // Initialize default AI settings for the workspace
@@ -301,22 +307,31 @@ export function workspaceQueries(sql: postgres.Sql) {
       return invite!;
     },
 
-    // ─── Credits ──────────────────────────────────────────────
+    // ─── Credits (reads from credit_balances — the single source of truth) ──
     async getCredits(workspaceId: string): Promise<CreditsRow | undefined> {
-      const [credits] = await sql<CreditsRow[]>`
-        SELECT * FROM credits WHERE workspace_id = ${workspaceId}
-      `;
-      return credits;
-    },
-
-    async decrementCredits(workspaceId: string): Promise<boolean> {
-      const result = await sql`
-        UPDATE credits
-        SET daily_remaining = daily_remaining - 1
+      // Aggregate credit balances across all workspace members
+      // Returns a workspace-level summary compatible with the old interface
+      const [row] = await sql<CreditsRow[]>`
+        SELECT
+          gen_random_uuid() as id,
+          ${workspaceId}::uuid as workspace_id,
+          COALESCE(SUM(daily_credits - daily_credits_used), 0)::int as daily_remaining,
+          COALESCE(SUM(monthly_credits - monthly_credits_used), 0)::int as monthly_remaining,
+          COALESCE(SUM(rollover_credits), 0)::int as rollover_credits,
+          MIN(daily_reset_at) as last_daily_reset,
+          MIN(monthly_reset_at) as last_monthly_reset
+        FROM credit_balances
         WHERE workspace_id = ${workspaceId}
-          AND daily_remaining > 0
       `;
-      return result.count > 0;
+      // If no rows, return undefined (workspace has no members with balances yet)
+      if (row && row.daily_remaining === 0 && row.monthly_remaining === 0 && row.rollover_credits === 0) {
+        // Check if there are actually any rows
+        const [count] = await sql<[{ n: string }]>`
+          SELECT count(*)::text as n FROM credit_balances WHERE workspace_id = ${workspaceId}
+        `;
+        if (count?.n === "0") return undefined;
+      }
+      return row;
     },
   };
 }
