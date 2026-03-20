@@ -13,3 +13,4 @@ export * from "./queries/analytics.js";
 export * from "./queries/chat.js";
 export * from "./queries/ai-settings.js";
 export * from "./queries/feature-flags.js";
+export * from "./queries/security.js";

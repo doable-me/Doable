@@ -1,17 +1,21 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import * as argon2 from "argon2";
+import { randomBytes, createHash } from "node:crypto";
 import { sql } from "../db/index.js";
 import { authQueries } from "@doable/db/queries/auth.js";
 import { userQueries } from "@doable/db/queries/users.js";
 import { workspaceQueries } from "@doable/db/queries/workspaces.js";
+import { securityQueries } from "@doable/db/queries/security.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt.js";
 import { getGitHubAuthUrl, exchangeGitHubCode, getGitHubCopilotAuthUrl, GITHUB_COPILOT_REDIRECT_URI, getGoogleAuthUrl, exchangeGoogleCode } from "../lib/oauth.js";
 import { authMiddleware } from "../middleware/auth.js";
+import { sendTemplatedEmail } from "../lib/email.js";
 
 const auth = authQueries(sql);
 const users = userQueries(sql);
 const workspaces = workspaceQueries(sql);
+const securityDb = securityQueries(sql);
 export const authRoutes = new Hono();
 const FRONTEND_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
@@ -206,9 +210,42 @@ authRoutes.get("/me", authMiddleware, async (c) => {
 authRoutes.post("/forgot-password", async (c) => {
   const { email } = (await c.req.json()) as { email?: string };
   if (!email) return c.json({ error: "Email is required" }, 400);
+
   // Always return success to prevent email enumeration
-  // TODO: Implement email sending with password reset link
-  return c.json({ message: "If an account with that email exists, a reset link has been sent." });
+  const successMessage = "If an account with that email exists, a reset link has been sent.";
+
+  try {
+    const user = await auth.findUserByEmail(email);
+    if (!user) {
+      // Don't reveal whether the email exists
+      return c.json({ message: successMessage });
+    }
+
+    // Generate a secure random reset token
+    const rawToken = randomBytes(32).toString("hex");
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await securityDb.createPasswordResetToken({
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+    });
+
+    // Build the reset URL with the raw token (not the hash)
+    const resetUrl = `${FRONTEND_URL}/reset-password?token=${rawToken}`;
+    const displayName = user.display_name ?? user.email.split("@")[0] ?? "there";
+
+    await sendTemplatedEmail(user.email, "password-reset", {
+      resetUrl,
+      userName: displayName,
+    });
+  } catch (err) {
+    console.error("[Auth] Forgot password error:", err);
+    // Don't reveal errors to the client
+  }
+
+  return c.json({ message: successMessage });
 });
 
 // ─── POST /auth/reset-password ─────────────────────────────
@@ -218,14 +255,28 @@ authRoutes.post("/reset-password", async (c) => {
     return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
   }
   const { token, password } = parsed.data;
+
   try {
-    const payload = await verifyRefreshToken(token);
+    // Hash the raw token to look it up in DB
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const resetToken = await securityDb.findValidResetToken(tokenHash);
+
+    if (!resetToken) {
+      return c.json({ error: "Invalid or expired reset token" }, 400);
+    }
+
+    // Update the user's password
     const passwordHash = await argon2.hash(password, ARGON2_OPTS);
-    const user = await auth.updateUserPassword(payload.sub, passwordHash);
+    const user = await auth.updateUserPassword(resetToken.user_id, passwordHash);
     if (!user) return c.json({ error: "User not found" }, 404);
-    await auth.deleteAllRefreshTokensForUser(payload.sub);
+
+    // Mark token as used and revoke all refresh tokens
+    await securityDb.markResetTokenUsed(tokenHash);
+    await auth.deleteAllRefreshTokensForUser(resetToken.user_id);
+
     return c.json({ message: "Password has been reset successfully" });
-  } catch {
+  } catch (err) {
+    console.error("[Auth] Reset password error:", err);
     return c.json({ error: "Invalid or expired reset token" }, 400);
   }
 });

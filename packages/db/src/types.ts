@@ -255,6 +255,42 @@ export interface UserFeatureOverrideRow {
   enabled: boolean;
 }
 
+export interface SecurityScanRow {
+  id: string;
+  project_id: string;
+  scan_type: string;
+  status: string;
+  findings_count: number;
+  started_at: Date | null;
+  completed_at: Date | null;
+  created_at: Date;
+}
+
+export interface SecurityFindingRow {
+  id: string;
+  scan_id: string;
+  severity: "critical" | "high" | "medium" | "low";
+  category: string;
+  title: string;
+  description: string | null;
+  file_path: string | null;
+  line_number: number | null;
+  code_snippet: string | null;
+  fix_suggestion: string | null;
+  dismissed: boolean;
+  dismissed_by: string | null;
+  created_at: Date;
+}
+
+export interface PasswordResetTokenRow {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  expires_at: Date;
+  used_at: Date | null;
+  created_at: Date;
+}
+
 export interface EffectiveAiConfigRow {
   enforce_ai: boolean;
   enforced_copilot_account_id: string | null;
