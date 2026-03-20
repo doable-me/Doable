@@ -150,9 +150,48 @@ Accessible under **Project Settings → Analytics** for published projects:
 
 ---
 
-## 6. Data Protection
+## 6. Workspace Audit Logs (Enterprise)
 
-### 6.1 Per-Plan Data Policies
+### 6.1 Overview
+Searchable history of all workspace activity, providing full visibility into who did what and when.
+
+### 6.2 Audited Events
+| Category | Events Tracked |
+|----------|---------------|
+| **Membership** | Member added, removed, role changed, invitation sent/revoked |
+| **Project activity** | Project created, deleted, transferred, visibility changed, published |
+| **Authentication** | Login, logout, SSO sign-in, failed attempts, 2FA events |
+| **Settings** | Workspace settings changed, connectors configured, billing changes |
+| **Security** | Security scan results, vulnerability dismissed, secrets added/removed |
+
+### 6.3 Features
+| Feature | Description |
+|---------|-------------|
+| **Search** | Full-text search across audit entries |
+| **Filter** | Filter by user, event type, date range |
+| **Export** | Export logs as CSV/JSON for compliance |
+| **Retention** | Configurable retention period (default: 1 year) |
+| **Real-time** | New events appear immediately |
+| **API access** | Programmatic access to audit logs via API |
+
+---
+
+## 7. Per-Project Cloud Usage
+
+### 7.1 Usage Breakdown
+| Feature | Description |
+|---------|-------------|
+| **Per-project metrics** | Shows percentage distribution of resource consumption by project |
+| **Resource types** | Database, storage, edge function executions, bandwidth |
+| **Visualization** | Charts showing usage trends per project |
+| **Cost attribution** | Understand which projects drive cloud costs |
+| **Admin access** | Available to workspace admins in Settings → Billing → Usage |
+
+---
+
+## 8. Data Protection
+
+### 8.1 Per-Plan Data Policies
 | Feature | Plan |
 |---------|------|
 | **Data training opt-out** | Business+ |
@@ -160,7 +199,7 @@ Accessible under **Project Settings → Analytics** for published projects:
 | **GDPR compliance** | All plans (basic), Enterprise (advanced) |
 | **SOC 2 compliance** | Enterprise |
 
-### 6.2 Privacy Controls
+### 8.2 Privacy Controls
 - Project data isolated per workspace
 - No cross-workspace data access
 - User data deletion on account removal
@@ -168,9 +207,9 @@ Accessible under **Project Settings → Analytics** for published projects:
 
 ---
 
-## 7. Monitoring & Observability
+## 9. Monitoring & Observability
 
-### 7.1 Edge Function Monitoring
+### 9.1 Edge Function Monitoring
 | Feature | Description |
 |---------|-------------|
 | **Execution logs** | Full request/response logging |
@@ -178,7 +217,7 @@ Accessible under **Project Settings → Analytics** for published projects:
 | **Performance** | Execution time, memory usage |
 | **Agent access** | AI reads logs for debugging |
 
-### 7.2 Application Monitoring
+### 9.2 Application Monitoring
 | Feature | Description |
 |---------|-------------|
 | **Build logs** | Vite build output |

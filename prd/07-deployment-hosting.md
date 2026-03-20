@@ -231,10 +231,26 @@ Custom domains are **entirely optional**. The default `*.doable.app` subdomain w
 |----------------|-------------|
 | **Code changes** | Frontend build + edge functions pushed to target environment |
 | **Database schema** | Migration scripts run against target database |
-| **Non-code changes** | Secrets, storage buckets, settings deploy directly to Live |
+| **Non-code changes** | Secrets, storage buckets, settings deploy directly to Live **without requiring a code change** |
 | **Data** | Never migrated between environments |
 
-### 4.4 Pricing
+### 4.4 Non-Code Deployments
+| Feature | Description |
+|---------|-------------|
+| **Secrets** | Update environment variables and deploy to Live without code commit |
+| **Storage config** | Storage bucket changes deploy independently |
+| **Settings** | Configuration changes deploy without triggering a build |
+| **Immediate** | Non-code changes take effect immediately, no build pipeline needed |
+
+### 4.5 Publishing Access Controls
+| Feature | Description | Plan |
+|---------|-------------|------|
+| **Anyone can publish** | All editors and above can publish | Default |
+| **Admin-only publishing** | Restrict external publishing to admins/owners only | Enterprise |
+| **Workspace-only publishing** | Published app requires authentication; only workspace members can access | Business+ |
+| **Publish approval** | Optional approval workflow before publishing to Live | Enterprise |
+
+### 4.6 Pricing
 - Free during beta period
 - Will be part of standard plan pricing
 

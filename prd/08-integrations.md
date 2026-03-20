@@ -306,6 +306,15 @@ Some shared connectors use a **secure gateway** between the Doable app and the t
 | **Doable Cloud** | Cannot be disabled at workspace level |
 | **Custom MCP servers** | Business/Enterprise can connect custom MCP servers as personal connectors |
 
+### 1.6 Notion Workspace Integration
+| Feature | Description |
+|---------|-------------|
+| **Workspace-level connection** | Connect a Notion workspace to Doable for shared context |
+| **AI context** | Agent accesses Notion pages as context during development — PRDs, design specs, technical docs |
+| **Embedded apps** | Embed Doable apps directly in Notion pages alongside project plans |
+| **Scope** | Available to all workspace members once admin connects |
+| **Type** | Shared connector or personal connector (user connects own Notion) |
+
 ---
 
 ## 2. GitHub Integration

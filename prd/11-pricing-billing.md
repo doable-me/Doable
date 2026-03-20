@@ -17,7 +17,7 @@ Doable uses a credit-based pricing model where credits power AI generations. Sub
 | **Max monthly** | ~30 (5/day cap) | ~150 (100 + 5/day) | ~150 (100 + 5/day) | Custom |
 | **Credit rollover** | ❌ | ✅ (up to plan limit) | ✅ (up to plan limit) | ✅ |
 | **Top-up credits** | ❌ | ✅ (on-demand) | ✅ (on-demand) | ✅ |
-| **Team members** | Unlimited | Unlimited | Unlimited | Unlimited |
+| **Team members** | Up to 20 | Up to 20 | Unlimited | Unlimited |
 | **Projects** | Unlimited | Unlimited | Unlimited | Unlimited |
 | **Project visibility** | Public only | Public + Restricted | Public + Restricted | Public + Restricted |
 | **Custom domains** | ❌ | ✅ | ✅ | ✅ |
@@ -99,7 +99,10 @@ Doable uses a credit-based pricing model where credits power AI generations. Sub
 | **Credits remaining** | Available credits |
 | **Rollover balance** | Rolled-over credits from previous periods |
 | **Usage history** | Graph of credits consumed over time |
-| **Per-project** | Breakdown by project (optional) |
+| **Per-project** | Breakdown by project |
+| **Per-member** | Credit consumption per workspace collaborator |
+| **Per-member limits** | Admins can set maximum credit usage per collaborator |
+| **Cloud usage per-project** | % distribution of cloud resource consumption by project |
 
 ---
 

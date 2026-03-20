@@ -26,13 +26,25 @@ Authentication operates at two levels:
 | **Redirect URI** | `https://auth.doable.dev/__/auth/handler` |
 | **Configuration** | Admin configures in Workspace Settings |
 | **Enforcement** | Can require SSO for all workspace members |
+| **SSO-only enforcement** | Enterprise plans can prevent sign-in through non-SSO auth methods (email/password, OAuth disabled) |
+| **Simplified SAML setup** | Import IdP metadata via URL — auto-extracts entity ID, endpoints, and certificates (Business/Enterprise) |
 
-### 1.3 Two-Factor Authentication
+### 1.3 SCIM Provisioning (Enterprise)
+| Feature | Description |
+|---------|-------------|
+| **Auto-provisioning** | Automatically create Doable accounts when users are added in IdP (Okta, Azure AD, etc.) |
+| **Auto-deprovisioning** | Automatically remove/disable accounts when users are removed from IdP |
+| **Group mapping** | Map IdP groups to workspace roles |
+| **Just-in-time** | Users provisioned on first SSO login if not pre-provisioned |
+| **Protocol** | SCIM 2.0 standard |
+| **Sync** | Real-time sync of user attributes (name, email, role) from IdP |
+
+### 1.4 Two-Factor Authentication
 - Banner encouraging email+password users to enable 2FA
 - TOTP (authenticator app) support
 - Recovery codes
 
-### 1.4 Account Security
+### 1.5 Account Security
 | Feature | Description |
 |---------|-------------|
 | **2FA** | Optional TOTP-based second factor |
