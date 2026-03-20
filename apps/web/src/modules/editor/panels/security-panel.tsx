@@ -19,8 +19,10 @@ import {
   Sparkles,
   ExternalLink,
   ArrowUpRight,
+  EyeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
 import { useChat } from "../hooks/use-chat";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -32,24 +34,36 @@ interface Props {
 
 type Severity = "critical" | "high" | "medium" | "low";
 
-interface Vulnerability {
+interface Finding {
   id: string;
-  package: string;
-  version: string;
   severity: Severity;
+  category: string;
   title: string;
-  description: string;
-  fixAvailable: boolean;
-  patchedVersion?: string;
+  description: string | null;
+  filePath: string | null;
+  lineNumber: number | null;
+  codeSnippet: string | null;
+  fixSuggestion: string | null;
+  dismissed: boolean;
+  createdAt: string;
 }
 
-interface SecretFinding {
+interface ScanResult {
   id: string;
-  type: string;
-  pattern: string;
-  filePath: string;
-  line: number;
-  preview: string;
+  projectId: string;
+  scanType: string;
+  status: string;
+  findingsCount: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+interface ScanResponse {
+  scan: ScanResult | null;
+  findings: Finding[];
+  filesScanned?: number;
+  duration?: number;
 }
 
 interface ScanCategory {
@@ -67,129 +81,6 @@ type ScanPhase =
   | "code-quality"
   | "https"
   | "complete";
-
-// ─── Mock Data ──────────────────────────────────────────────
-
-const MOCK_VULNERABILITIES: Vulnerability[] = [
-  {
-    id: "vuln-1",
-    package: "lodash",
-    version: "4.17.19",
-    severity: "critical",
-    title: "Prototype Pollution",
-    description:
-      "Versions before 4.17.21 are vulnerable to prototype pollution via the template function. An attacker can inject properties onto Object.prototype through crafted template strings.",
-    fixAvailable: true,
-    patchedVersion: "4.17.21",
-  },
-  {
-    id: "vuln-2",
-    package: "axios",
-    version: "0.21.1",
-    severity: "high",
-    title: "Server-Side Request Forgery",
-    description:
-      "An attacker can bypass the proxy configuration and send requests to arbitrary URLs by using a relative URL that starts with two slashes.",
-    fixAvailable: true,
-    patchedVersion: "0.21.4",
-  },
-  {
-    id: "vuln-3",
-    package: "node-fetch",
-    version: "2.6.1",
-    severity: "medium",
-    title: "Exposure of Sensitive Information",
-    description:
-      "node-fetch forwards secure HTTP headers to untrusted destinations when following a redirect from HTTPS to HTTP.",
-    fixAvailable: true,
-    patchedVersion: "2.6.7",
-  },
-  {
-    id: "vuln-4",
-    package: "minimist",
-    version: "1.2.5",
-    severity: "low",
-    title: "Prototype Pollution",
-    description:
-      "Minimist <=1.2.5 is vulnerable to prototype pollution when passing an object as the opts argument.",
-    fixAvailable: true,
-    patchedVersion: "1.2.6",
-  },
-  {
-    id: "vuln-5",
-    package: "jsonwebtoken",
-    version: "8.5.1",
-    severity: "high",
-    title: "Unrestricted Key Type",
-    description:
-      "Versions before 9.0.0 could be tricked into interpreting insecure key types, allowing attackers to forge tokens with algorithms not intended by the developer.",
-    fixAvailable: true,
-    patchedVersion: "9.0.0",
-  },
-];
-
-const MOCK_SECRETS: SecretFinding[] = [
-  {
-    id: "secret-1",
-    type: "API Key",
-    pattern: "STRIPE_SECRET_KEY",
-    filePath: "src/lib/payments.ts",
-    line: 12,
-    preview: 'const key = "sk_live_51Hx...redacted";',
-  },
-  {
-    id: "secret-2",
-    type: "Database URL",
-    pattern: "DATABASE_URL",
-    filePath: "src/config/db.ts",
-    line: 5,
-    preview: 'const dbUrl = "postgresql://user:pass@host:5432/db";',
-  },
-  {
-    id: "secret-3",
-    type: "JWT Secret",
-    pattern: "JWT_SECRET",
-    filePath: "src/auth/token.ts",
-    line: 3,
-    preview: 'const secret = "my-super-secret-jwt-key-2024";',
-  },
-];
-
-const MOCK_CATEGORIES: ScanCategory[] = [
-  {
-    id: "dependencies",
-    label: "Dependencies",
-    icon: Package,
-    status: "fail",
-    summary: "5 vulnerabilities found",
-    details: "1 critical, 2 high, 1 medium, 1 low",
-  },
-  {
-    id: "secrets",
-    label: "Secrets Detection",
-    icon: KeyRound,
-    status: "fail",
-    summary: "3 hardcoded secrets found",
-    details: "API keys, database URLs, and JWT secrets detected in source code",
-  },
-  {
-    id: "code-quality",
-    label: "Code Quality",
-    icon: Code2,
-    status: "warn",
-    summary: "TypeScript strict mode disabled",
-    details:
-      "2 unused variables, 1 any type usage, strict mode not enabled in tsconfig",
-  },
-  {
-    id: "https",
-    label: "HTTPS / SSL",
-    icon: Lock,
-    status: "pass",
-    summary: "All endpoints use HTTPS",
-    details: "SSL/TLS properly configured, HSTS headers present",
-  },
-];
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -223,30 +114,91 @@ const SEVERITY_CONFIG: Record<
   },
 };
 
-function getSeverityCount(
-  vulns: Vulnerability[],
-  severity: Severity
-): number {
-  return vulns.filter((v) => v.severity === severity).length;
+function getSeverityCount(findings: Finding[], severity: Severity): number {
+  return findings.filter((f) => f.severity === severity && !f.dismissed).length;
 }
 
-function computeScore(
-  vulns: Vulnerability[],
-  secrets: SecretFinding[],
-  categories: ScanCategory[]
-): number {
+function computeScore(findings: Finding[]): number {
+  const active = findings.filter((f) => !f.dismissed);
   let score = 100;
-  // Deduct for vulnerabilities
-  score -= getSeverityCount(vulns, "critical") * 15;
-  score -= getSeverityCount(vulns, "high") * 10;
-  score -= getSeverityCount(vulns, "medium") * 5;
-  score -= getSeverityCount(vulns, "low") * 2;
-  // Deduct for secrets
-  score -= secrets.length * 8;
-  // Deduct for warnings
-  const warnings = categories.filter((c) => c.status === "warn").length;
-  score -= warnings * 5;
+  score -= active.filter((f) => f.severity === "critical").length * 15;
+  score -= active.filter((f) => f.severity === "high").length * 10;
+  score -= active.filter((f) => f.severity === "medium").length * 5;
+  score -= active.filter((f) => f.severity === "low").length * 2;
   return Math.max(0, Math.min(100, score));
+}
+
+function buildCategories(findings: Finding[]): ScanCategory[] {
+  const active = findings.filter((f) => !f.dismissed);
+  const deps = active.filter((f) => f.category === "dependency");
+  const secrets = active.filter((f) => f.category === "secret");
+  const codeQuality = active.filter((f) => f.category === "code-quality");
+
+  return [
+    {
+      id: "dependencies",
+      label: "Dependencies",
+      icon: Package,
+      status: deps.some((f) => f.severity === "critical" || f.severity === "high")
+        ? "fail"
+        : deps.length > 0
+          ? "warn"
+          : "pass",
+      summary: deps.length > 0
+        ? `${deps.length} ${deps.length === 1 ? "vulnerability" : "vulnerabilities"} found`
+        : "No vulnerabilities found",
+      details: deps.length > 0
+        ? [
+            getSeverityCount(findings, "critical") > 0 && `${getSeverityCount(findings, "critical")} critical`,
+            getSeverityCount(findings, "high") > 0 && `${getSeverityCount(findings, "high")} high`,
+            getSeverityCount(findings, "medium") > 0 && `${getSeverityCount(findings, "medium")} medium`,
+            getSeverityCount(findings, "low") > 0 && `${getSeverityCount(findings, "low")} low`,
+          ].filter(Boolean).join(", ")
+        : "All dependencies are up to date",
+    },
+    {
+      id: "secrets",
+      label: "Secrets Detection",
+      icon: KeyRound,
+      status: secrets.length > 0 ? "fail" : "pass",
+      summary: secrets.length > 0
+        ? `${secrets.length} hardcoded ${secrets.length === 1 ? "secret" : "secrets"} found`
+        : "No hardcoded secrets found",
+      details: secrets.length > 0
+        ? "API keys, passwords, or tokens detected in source code"
+        : "No sensitive data found in source files",
+    },
+    {
+      id: "code-quality",
+      label: "Code Quality",
+      icon: Code2,
+      status: codeQuality.some((f) => f.severity === "high" || f.severity === "critical")
+        ? "fail"
+        : codeQuality.length > 0
+          ? "warn"
+          : "pass",
+      summary: codeQuality.length > 0
+        ? `${codeQuality.length} ${codeQuality.length === 1 ? "issue" : "issues"} found`
+        : "No security anti-patterns found",
+      details: codeQuality.length > 0
+        ? "Review code for eval(), innerHTML, SQL injection, and other patterns"
+        : "Code follows security best practices",
+    },
+    {
+      id: "https",
+      label: "HTTPS / SSL",
+      icon: Lock,
+      status: active.some((f) => f.title.includes("Insecure HTTP"))
+        ? "warn"
+        : "pass",
+      summary: active.some((f) => f.title.includes("Insecure HTTP"))
+        ? "Non-HTTPS URLs detected"
+        : "All endpoints use HTTPS",
+      details: active.some((f) => f.title.includes("Insecure HTTP"))
+        ? "Some URLs use http:// instead of https://"
+        : "SSL/TLS properly configured",
+    },
+  ];
 }
 
 const SCAN_PHASES: { phase: ScanPhase; label: string; duration: number }[] = [
@@ -264,16 +216,19 @@ export function SecurityPanel({ projectId, onClose }: Props) {
   const [isScanning, setIsScanning] = useState(false);
   const [scanPhase, setScanPhase] = useState<ScanPhase | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
-  const [expandedVulns, setExpandedVulns] = useState<Set<string>>(new Set());
+  const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
   const [scanDuration, setScanDuration] = useState(0);
+  const [findings, setFindings] = useState<Finding[]>([]);
+  const [filesScanned, setFilesScanned] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { sendMessage } = useChat(projectId);
 
-  const score = hasScanned
-    ? computeScore(MOCK_VULNERABILITIES, MOCK_SECRETS, MOCK_CATEGORIES)
-    : 0;
+  const activeFindings = findings.filter((f) => !f.dismissed);
+  const score = hasScanned ? computeScore(findings) : 0;
+  const categories = hasScanned ? buildCategories(findings) : [];
 
   const scoreColor =
     score >= 80
@@ -288,44 +243,55 @@ export function SecurityPanel({ projectId, onClose }: Props) {
         ? "stroke-amber-400"
         : "stroke-red-400";
 
-  // ─── Scan animation ─────────────────────────────────────
+  // ─── Scan animation + API call ────────────────────────────
 
-  const runScan = useCallback(() => {
+  const runScan = useCallback(async () => {
     setIsScanning(true);
     setScanProgress(0);
     setScanPhase("dependencies");
+    setError(null);
 
-    const startTime = Date.now();
+    // Start progress animation
     let phaseIndex = 0;
     let elapsed = 0;
     const totalDuration = SCAN_PHASES.reduce((s, p) => s + p.duration, 0);
 
     const advancePhase = () => {
-      if (phaseIndex >= SCAN_PHASES.length - 1) {
-        setIsScanning(false);
-        setHasScanned(true);
-        setScanPhase("complete");
-        setScanProgress(100);
-        setLastScanTime(new Date());
-        setScanDuration(Math.round((Date.now() - startTime) / 1000));
-        return;
-      }
-
+      if (phaseIndex >= SCAN_PHASES.length - 1) return;
       const currentPhase = SCAN_PHASES[phaseIndex]!;
       setScanPhase(currentPhase.phase);
       elapsed += currentPhase.duration;
       const pct = Math.round((elapsed / totalDuration) * 100);
-      setScanProgress(Math.min(pct, 99));
-
+      setScanProgress(Math.min(pct, 95));
       phaseIndex++;
       setTimeout(advancePhase, currentPhase.duration);
     };
-
     advancePhase();
-  }, []);
 
-  const toggleVuln = useCallback((id: string) => {
-    setExpandedVulns((prev: Set<string>) => {
+    // Call the real API
+    try {
+      const result = await apiFetch<ScanResponse>(
+        `/projects/${projectId}/security/scan`,
+        { method: "POST" }
+      );
+
+      setFindings(result.findings);
+      setFilesScanned(result.filesScanned ?? 0);
+      setScanDuration(Math.round((result.duration ?? 0) / 1000));
+      setLastScanTime(new Date());
+      setHasScanned(true);
+    } catch (err) {
+      console.error("[SecurityPanel] Scan failed:", err);
+      setError(err instanceof Error ? err.message : "Scan failed");
+    } finally {
+      setIsScanning(false);
+      setScanPhase("complete");
+      setScanProgress(100);
+    }
+  }, [projectId]);
+
+  const toggleFinding = useCallback((id: string) => {
+    setExpandedFindings((prev: Set<string>) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -333,27 +299,50 @@ export function SecurityPanel({ projectId, onClose }: Props) {
     });
   }, []);
 
-  const handleFixVuln = useCallback(
-    (vuln: Vulnerability) => {
-      void sendMessage(
-        `Fix vulnerability in ${vuln.package}@${vuln.version}: ${vuln.title}. ` +
-          `Update to ${vuln.patchedVersion ?? "latest"} and verify no breaking changes.`
-      );
+  const handleFixFinding = useCallback(
+    (finding: Finding) => {
+      const msg = finding.fixSuggestion
+        ? `Fix security issue: ${finding.title}. ${finding.fixSuggestion}`
+        : `Fix security issue: ${finding.title} in ${finding.filePath ?? "the project"}.`;
+      void sendMessage(msg);
     },
     [sendMessage]
   );
 
   const handleMoveToEnv = useCallback(
-    (secret: SecretFinding) => {
+    (finding: Finding) => {
       void sendMessage(
-        `Move the hardcoded ${secret.type} (${secret.pattern}) found in ${secret.filePath}:${secret.line} ` +
+        `Move the hardcoded secret found in ${finding.filePath ?? "source code"}${finding.lineNumber ? `:${finding.lineNumber}` : ""} ` +
           `to environment variables. Update the code to read from process.env and add the variable name to .env.example.`
       );
     },
     [sendMessage]
   );
 
+  const handleDismiss = useCallback(
+    async (findingId: string) => {
+      try {
+        await apiFetch(
+          `/projects/${projectId}/security/dismiss/${findingId}`,
+          { method: "POST" }
+        );
+        setFindings((prev) =>
+          prev.map((f) =>
+            f.id === findingId ? { ...f, dismissed: true } : f
+          )
+        );
+      } catch (err) {
+        console.error("[SecurityPanel] Dismiss failed:", err);
+      }
+    },
+    [projectId]
+  );
+
   // ─── Render ─────────────────────────────────────────────
+
+  const depFindings = activeFindings.filter((f) => f.category === "dependency");
+  const secretFindings = activeFindings.filter((f) => f.category === "secret");
+  const codeFindings = activeFindings.filter((f) => f.category === "code-quality");
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -397,13 +386,29 @@ export function SecurityPanel({ projectId, onClose }: Props) {
           </div>
         )}
 
+        {/* Error state */}
+        {error && !isScanning && (
+          <div className="p-4">
+            <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4 text-center">
+              <ShieldAlert className="mx-auto h-6 w-6 text-red-400" />
+              <p className="mt-2 text-sm text-red-400">{error}</p>
+              <button
+                onClick={runScan}
+                className="mt-3 text-xs text-primary hover:underline"
+              >
+                Try again
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Empty state - before first scan */}
-        {!hasScanned && !isScanning && (
+        {!hasScanned && !isScanning && !error && (
           <EmptyState onRunScan={runScan} />
         )}
 
         {/* Results */}
-        {hasScanned && !isScanning && (
+        {hasScanned && !isScanning && !error && (
           <div className="space-y-0">
             {/* Score */}
             <SecurityScore score={score} scoreColor={scoreColor} trackColor={scoreTrackColor} />
@@ -414,53 +419,91 @@ export function SecurityPanel({ projectId, onClose }: Props) {
                 Scan Results
               </h4>
               <div className="grid grid-cols-2 gap-2">
-                {MOCK_CATEGORIES.map((cat) => (
+                {categories.map((cat) => (
                   <CategoryCard key={cat.id} category={cat} />
                 ))}
               </div>
             </div>
 
-            {/* Vulnerability list */}
-            <div className="border-b border-border px-4 py-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Vulnerabilities
-                </h4>
-                <div className="flex items-center gap-1.5">
-                  <SeverityPill severity="critical" count={getSeverityCount(MOCK_VULNERABILITIES, "critical")} />
-                  <SeverityPill severity="high" count={getSeverityCount(MOCK_VULNERABILITIES, "high")} />
-                  <SeverityPill severity="medium" count={getSeverityCount(MOCK_VULNERABILITIES, "medium")} />
-                  <SeverityPill severity="low" count={getSeverityCount(MOCK_VULNERABILITIES, "low")} />
+            {/* Dependency findings */}
+            {depFindings.length > 0 && (
+              <div className="border-b border-border px-4 py-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Vulnerabilities
+                  </h4>
+                  <div className="flex items-center gap-1.5">
+                    <SeverityPill severity="critical" count={getSeverityCount(findings, "critical")} />
+                    <SeverityPill severity="high" count={getSeverityCount(findings, "high")} />
+                    <SeverityPill severity="medium" count={getSeverityCount(findings, "medium")} />
+                    <SeverityPill severity="low" count={getSeverityCount(findings, "low")} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  {depFindings.map((finding) => (
+                    <FindingRow
+                      key={finding.id}
+                      finding={finding}
+                      expanded={expandedFindings.has(finding.id)}
+                      onToggle={() => toggleFinding(finding.id)}
+                      onFix={() => handleFixFinding(finding)}
+                      onDismiss={() => handleDismiss(finding.id)}
+                    />
+                  ))}
                 </div>
               </div>
-              <div className="space-y-1.5">
-                {MOCK_VULNERABILITIES.map((vuln) => (
-                  <VulnerabilityRow
-                    key={vuln.id}
-                    vuln={vuln}
-                    expanded={expandedVulns.has(vuln.id)}
-                    onToggle={() => toggleVuln(vuln.id)}
-                    onFix={() => handleFixVuln(vuln)}
-                  />
-                ))}
-              </div>
-            </div>
+            )}
 
-            {/* Secrets scanner */}
-            <div className="border-b border-border px-4 py-4">
-              <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Secrets Detected
-              </h4>
-              <div className="space-y-1.5">
-                {MOCK_SECRETS.map((secret) => (
-                  <SecretRow
-                    key={secret.id}
-                    secret={secret}
-                    onMoveToEnv={() => handleMoveToEnv(secret)}
-                  />
-                ))}
+            {/* Secret findings */}
+            {secretFindings.length > 0 && (
+              <div className="border-b border-border px-4 py-4">
+                <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Secrets Detected
+                </h4>
+                <div className="space-y-1.5">
+                  {secretFindings.map((finding) => (
+                    <SecretFindingRow
+                      key={finding.id}
+                      finding={finding}
+                      onMoveToEnv={() => handleMoveToEnv(finding)}
+                      onDismiss={() => handleDismiss(finding.id)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* Code quality findings */}
+            {codeFindings.length > 0 && (
+              <div className="border-b border-border px-4 py-4">
+                <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Code Quality Issues
+                </h4>
+                <div className="space-y-1.5">
+                  {codeFindings.map((finding) => (
+                    <FindingRow
+                      key={finding.id}
+                      finding={finding}
+                      expanded={expandedFindings.has(finding.id)}
+                      onToggle={() => toggleFinding(finding.id)}
+                      onFix={() => handleFixFinding(finding)}
+                      onDismiss={() => handleDismiss(finding.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* All clear message */}
+            {activeFindings.length === 0 && (
+              <div className="px-4 py-8 text-center">
+                <ShieldCheck className="mx-auto h-8 w-8 text-emerald-400" />
+                <p className="mt-2 text-sm font-medium text-foreground">All clear!</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  No security issues found in your project.
+                </p>
+              </div>
+            )}
 
             {/* Last scan info */}
             {lastScanTime && (
@@ -482,7 +525,7 @@ export function SecurityPanel({ projectId, onClose }: Props) {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <FileSearch className="h-3 w-3" />
-                    <span>47 files scanned</span>
+                    <span>{filesScanned} files scanned</span>
                   </div>
                 </div>
               </div>
@@ -719,18 +762,20 @@ function SeverityPill({
   );
 }
 
-function VulnerabilityRow({
-  vuln,
+function FindingRow({
+  finding,
   expanded,
   onToggle,
   onFix,
+  onDismiss,
 }: {
-  vuln: Vulnerability;
+  finding: Finding;
   expanded: boolean;
   onToggle: () => void;
   onFix: () => void;
+  onDismiss: () => void;
 }) {
-  const config = SEVERITY_CONFIG[vuln.severity];
+  const config = SEVERITY_CONFIG[finding.severity];
   const Chevron = expanded ? ChevronDown : ChevronRight;
 
   return (
@@ -757,39 +802,60 @@ function VulnerabilityRow({
           {config.label}
         </span>
         <span className="flex-1 truncate text-xs font-medium text-foreground">
-          {vuln.package}
-          <span className="ml-1 font-normal text-muted-foreground">
-            @{vuln.version}
-          </span>
+          {finding.title}
         </span>
-        {vuln.fixAvailable && (
+        <div className="flex shrink-0 items-center gap-1">
+          {finding.fixSuggestion && (
+            <button
+              onClick={(e: React.MouseEvent) => {
+                e.stopPropagation();
+                onFix();
+              }}
+              className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
+            >
+              <Sparkles className="h-2.5 w-2.5" />
+              Fix
+            </button>
+          )}
           <button
             onClick={(e: React.MouseEvent) => {
               e.stopPropagation();
-              onFix();
+              onDismiss();
             }}
-            className="flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
+            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted transition-colors"
+            title="Dismiss"
           >
-            <Sparkles className="h-2.5 w-2.5" />
-            Fix
+            <EyeOff className="h-2.5 w-2.5" />
           </button>
-        )}
+        </div>
       </button>
 
       {/* Expanded details */}
       {expanded && (
         <div className="border-t border-border/50 px-3 py-2.5">
-          <p className="text-xs font-medium text-foreground">{vuln.title}</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-            {vuln.description}
-          </p>
-          {vuln.patchedVersion && (
+          {finding.description && (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              {finding.description}
+            </p>
+          )}
+          {finding.filePath && (
+            <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+              <FileSearch className="h-3 w-3 text-muted-foreground" />
+              <span className="font-mono text-muted-foreground">
+                {finding.filePath}
+                {finding.lineNumber ? `:${finding.lineNumber}` : ""}
+              </span>
+            </div>
+          )}
+          {finding.codeSnippet && (
+            <div className="mt-1.5 rounded bg-muted/50 px-2 py-1.5">
+              <code className="text-[10px] text-foreground/80">{finding.codeSnippet}</code>
+            </div>
+          )}
+          {finding.fixSuggestion && (
             <div className="mt-2 flex items-center gap-1.5 text-[11px]">
               <ArrowUpRight className="h-3 w-3 text-emerald-400" />
-              <span className="text-muted-foreground">Patched in</span>
-              <span className="font-mono font-medium text-emerald-400">
-                {vuln.patchedVersion}
-              </span>
+              <span className="text-muted-foreground">{finding.fixSuggestion}</span>
             </div>
           )}
         </div>
@@ -798,12 +864,14 @@ function VulnerabilityRow({
   );
 }
 
-function SecretRow({
-  secret,
+function SecretFindingRow({
+  finding,
   onMoveToEnv,
+  onDismiss,
 }: {
-  secret: SecretFinding;
+  finding: Finding;
   onMoveToEnv: () => void;
+  onDismiss: () => void;
 }) {
   return (
     <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
@@ -812,30 +880,41 @@ function SecretRow({
           <KeyRound className="h-3.5 w-3.5 flex-none text-red-400" />
           <div>
             <span className="text-xs font-medium text-foreground">
-              {secret.type}
-            </span>
-            <span className="ml-1.5 text-[11px] text-muted-foreground">
-              {secret.pattern}
+              {finding.title}
             </span>
           </div>
         </div>
-        <button
-          onClick={onMoveToEnv}
-          className="flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
-        >
-          <ExternalLink className="h-2.5 w-2.5" />
-          Move to .env
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onMoveToEnv}
+            className="flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
+          >
+            <ExternalLink className="h-2.5 w-2.5" />
+            Move to .env
+          </button>
+          <button
+            onClick={onDismiss}
+            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted transition-colors"
+            title="Dismiss"
+          >
+            <EyeOff className="h-2.5 w-2.5" />
+          </button>
+        </div>
       </div>
-      <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <FileSearch className="h-3 w-3" />
-        <span className="font-mono">
-          {secret.filePath}:{secret.line}
-        </span>
-      </div>
-      <div className="mt-1.5 rounded bg-muted/50 px-2 py-1.5">
-        <code className="text-[10px] text-red-400/80">{secret.preview}</code>
-      </div>
+      {finding.filePath && (
+        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <FileSearch className="h-3 w-3" />
+          <span className="font-mono">
+            {finding.filePath}
+            {finding.lineNumber ? `:${finding.lineNumber}` : ""}
+          </span>
+        </div>
+      )}
+      {finding.codeSnippet && (
+        <div className="mt-1.5 rounded bg-muted/50 px-2 py-1.5">
+          <code className="text-[10px] text-red-400/80">{finding.codeSnippet}</code>
+        </div>
+      )}
     </div>
   );
 }
