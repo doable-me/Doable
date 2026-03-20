@@ -14,6 +14,10 @@ import {
   errorEvent,
 } from "../streaming.js";
 import { updateContextFile } from "../context/index.js";
+import { sql } from "../../db/index.js";
+import { contextManager } from "../../context/manager.js";
+
+const ctxManager = contextManager(sql);
 
 // Tools allowed in plan mode (read-only + list + search)
 const PLAN_MODE_TOOLS = new Set([
@@ -103,11 +107,18 @@ export async function* runPlanMode(
       if (fullText) {
         conversationMessages.push({ role: "assistant", content: fullText });
 
-        // Extract and save plan to .doable/plan.md
+        // Extract and save plan to .doable/plan.md (file system + database)
         const plan = extractPlan(fullText);
         if (plan) {
           try {
+            // Save to file system
             await updateContextFile(toolCtx.projectId, "plan.md", plan);
+            // Also save to database-backed context
+            try {
+              await ctxManager.updateContextFile(toolCtx.projectId, "plan.md", plan);
+            } catch {
+              // DB save is secondary — file system is the source of truth for the engine
+            }
             yield textEvent("\n\n_Plan saved to `.doable/plan.md`_");
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);

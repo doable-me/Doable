@@ -31,6 +31,17 @@ const createBody = z.object({ content: contentSchema.optional() });
 // ─── Routes ─────────────────────────────────────────────────
 
 /**
+ * POST /projects/:id/context/initialize
+ * Initialize context files for a project (creates defaults if missing).
+ */
+contextRoutes.post("/initialize", async (c) => {
+  const projectId = c.req.param("id");
+  const files = await ctx.initializeContext(projectId!);
+  const stats = getContextStats(files);
+  return c.json({ data: { files, stats } }, 201);
+});
+
+/**
  * GET /projects/:id/context
  * List all context files for a project, plus stats.
  */

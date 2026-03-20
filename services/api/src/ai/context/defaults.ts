@@ -1,92 +1,152 @@
 import type { DoableContextFile } from "@doable/shared/types/ai.js";
 
 // ─── Default .doable/ File Contents ───────────────────────
+// These defaults are used when reading context files from the file system
+// (the legacy path). The canonical defaults are in services/api/src/context/defaults.ts
+// which powers the database-backed context system.
 
 export const CONTEXT_DEFAULTS: Record<DoableContextFile, string> = {
-  "knowledge.md": `# Project Knowledge
+  "knowledge.md": `# Knowledge Base
 
 ## Tech Stack
-- Framework: React + Vite
-- Language: TypeScript
-- Styling: Tailwind CSS
+<!-- List your frameworks, libraries, and tools -->
+- Frontend: React + Vite + Tailwind CSS
+- UI Components: shadcn/ui
+- Language: TypeScript (strict mode)
 
-## Architecture
-- Single-page application
-- Component-based architecture
-- File-based routing (optional)
+## Architecture Decisions
+<!-- Key decisions and why they were made -->
 
-## Conventions
-- Use functional components with hooks
-- Prefer named exports
-- Keep components under 200 lines
+## Domain Glossary
+<!-- Define project-specific terms so the AI uses them correctly -->
+
+## File Structure Conventions
+<!-- Where things live and why -->
+- \`src/components/\` — Reusable UI components
+- \`src/pages/\` — Route-level page components
+- \`src/lib/\` — Utilities and helpers
+- \`src/hooks/\` — Custom React hooks
 `,
 
   "instructions.md": `# Instructions
 
-## How to Work
-- Read existing code before making changes
-- Follow the project's existing patterns and conventions
-- Write TypeScript with strict types (no \`any\`)
-- Add comments for complex logic only
-- Keep functions focused and small
+## Code Style
+- Use TypeScript strict mode — no \`any\` unless absolutely necessary
+- Prefer named exports over default exports
+- Use \`const\` arrow functions for React components
+- Destructure props in function parameters
 
-## Testing
-- Run the build after significant changes
-- Fix all TypeScript errors before moving on
-- Test edge cases
+## Component Patterns
+- Use shadcn/ui components when available
+- Keep components under 150 lines — extract sub-components
+- Co-locate styles with components using Tailwind classes
+- Use \`cn()\` utility for conditional class merging
 
-## File Organization
-- Components in src/components/
-- Pages in src/pages/
-- Utilities in src/lib/
-- Types in src/types/
+## State Management
+- Local state with \`useState\` for UI-only state
+- React Context for shared component state
+- Server state patterns for API data
+
+## Error Handling
+- Always handle loading and error states in UI
+- Use try/catch with meaningful error messages
+- Never swallow errors silently
+
+## Do NOT
+- Add comments explaining obvious code
+- Use CSS modules or styled-components
+- Create barrel files (index.ts re-exports) unless requested
+- Import from node_modules directly when a wrapper exists
 `,
 
-  "identity.md": `# Identity
+  "identity.md": `# Project Identity
 
-You are Doable, an AI coding assistant specialized in building web applications.
-You help users create, edit, and ship web projects quickly and confidently.
-You write clean, modern TypeScript and React code.
+## Name
+<!-- Your project's name -->
+
+## Purpose
+<!-- One sentence: what does this project do and who is it for? -->
+
+## Personality & Tone
+<!-- How should the AI communicate when working on this project? -->
+- Professional but approachable
+- Concise explanations, no filler
+- Show, don't tell — prefer code examples over descriptions
 `,
 
   "soul.md": `# Soul
 
-## Personality
-- Helpful and direct
-- Concise but thorough
-- Pragmatic over theoretical
-- Encouraging but honest about tradeoffs
+## Design Philosophy
+<!-- What feeling should the UI evoke? What's the visual identity? -->
+- Clean and minimal — every element earns its place
+- Consistent spacing using an 8px grid
+- Subtle animations that feel responsive, never distracting
 
-## Communication Style
-- Lead with action, explain after
-- Use code examples over lengthy descriptions
-- Acknowledge the user's intent before diving in
-- Surface potential issues proactively
+## Color Strategy
+<!-- Your palette and when to use each color -->
+- Neutral backgrounds, bold accents for actions
+- Use semantic colors: success (green), warning (amber), error (red)
+
+## Typography
+- Inter for UI text, monospace for code
+- Clear hierarchy: headings, body, captions
+
+## Inspiration
+<!-- Reference apps, sites, or design systems you admire -->
 `,
 
   "memory.md": `# Memory
 
-## Session Notes
-_This file stores important context across conversations._
+## Completed
+<!-- Features and changes that are done -->
 
-## Decisions Made
-_Record key architectural or design decisions here._
+## In Progress
+<!-- What's currently being worked on -->
 
 ## Known Issues
-_Track bugs or limitations discovered during development._
+<!-- Bugs or problems that need fixing -->
+
+## Attempted & Reverted
+<!-- Things that were tried but didn't work, and why -->
+
+## Session Notes
+<!-- The AI appends observations here during sessions -->
 `,
 
   "user.md": `# User Preferences
 
-## Coding Style
-_User preferences will be learned and recorded here._
+## Skill Level
+<!-- Helps the AI calibrate explanation depth -->
+- Comfortable with: TypeScript, React, CSS
+- Learning: (technologies you're exploring)
+- Avoid deep explanations of: (things you already know well)
+
+## Working Style
+- Prefer small, incremental changes over large rewrites
+- Show diffs when modifying existing code
+- Ask before making architectural changes
 
 ## Communication
-_How the user prefers to interact._
+- Be direct — skip pleasantries in code discussions
+- Explain trade-offs when there are multiple approaches
+- Flag potential performance issues proactively
 `,
 
   "plan.md": `# Plan
 
-_No active plan. Use plan mode to generate a structured development plan._
+## Current Milestone
+<!-- What's the immediate goal? -->
+
+## Next Steps
+<!-- Ordered list of what to build next -->
+1.
+2.
+3.
+
+## Backlog
+<!-- Ideas and features for later -->
+
+## Non-Goals
+<!-- Things explicitly NOT being built (prevents scope creep) -->
 `,
 };

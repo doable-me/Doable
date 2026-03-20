@@ -136,6 +136,34 @@ export function contextManager(sql: postgres.Sql) {
     },
 
     /**
+     * Append a note to the memory.md context file.
+     * Used by the AI engine to persist learned facts after sessions.
+     */
+    async appendToMemory(
+      projectId: string,
+      note: string
+    ): Promise<void> {
+      const existing = await this.readContextFile(projectId, "memory.md");
+      const currentContent = existing?.content ?? "";
+
+      const timestamp = new Date().toISOString().split("T")[0];
+      const entry = `\n- [${timestamp}] ${note}`;
+
+      // Append under "## Session Notes" if it exists, otherwise at the end
+      let updatedContent: string;
+      if (currentContent.includes("## Session Notes")) {
+        updatedContent = currentContent.replace(
+          "## Session Notes",
+          `## Session Notes${entry}`
+        );
+      } else {
+        updatedContent = `${currentContent.trimEnd()}\n\n## Session Notes${entry}\n`;
+      }
+
+      await this.updateContextFile(projectId, "memory.md", updatedContent);
+    },
+
+    /**
      * Build the full context for injection into an AI prompt.
      * Selects and orders files based on mode, respects token budget.
      */
@@ -144,7 +172,8 @@ export function contextManager(sql: postgres.Sql) {
       mode: AiSessionMode
     ): Promise<string> {
       const { buildContextPrompt } = await import("./injector.js");
-      const files = await this.readContext(projectId);
+      // Ensure context is initialized first
+      const files = await this.initializeContext(projectId);
       return buildContextPrompt(files, mode);
     },
   };
