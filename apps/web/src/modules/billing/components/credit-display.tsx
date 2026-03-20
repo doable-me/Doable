@@ -6,6 +6,7 @@ import type { Credits } from "../hooks/use-billing";
 interface CreditDisplayProps {
   credits: Credits | null;
   loading?: boolean;
+  onUpgrade?: () => void;
   className?: string;
 }
 
