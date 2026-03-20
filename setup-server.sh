@@ -495,8 +495,16 @@ chmod 755 /root
 chmod -R 755 "${INSTALL_DIR}/sites"
 
 # Caddyfile: serves *.domain from /sites/{subdomain}/
+# Bound to 127.0.0.1 — only reachable via Cloudflare Tunnel
 cat > /etc/caddy/Caddyfile << CADDYEOF
+{
+    auto_https off
+    admin 127.0.0.1:2019
+}
+
 :8080 {
+    bind 127.0.0.1
+
     @has_subdomain {
         header_regexp subdomain Host ^([a-z0-9][-a-z0-9]*)\.${DOMAIN//./\\.}\$
     }
