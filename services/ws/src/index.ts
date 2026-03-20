@@ -284,6 +284,32 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       }
       break;
     }
+
+    case "yjs:sync-request": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          const stateUpdate = room.getYjsState();
+          const encoded = Buffer.from(stateUpdate).toString("base64");
+          send(ws, { type: "yjs:sync-response", data: encoded });
+        }
+      }
+      break;
+    }
+
+    case "yjs:update": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          // Decode and apply to server doc
+          const update = Buffer.from(msg.data, "base64");
+          room.applyYjsUpdate(new Uint8Array(update));
+          // Broadcast to all other room members
+          room.broadcast({ type: "yjs:update", userId: state.userId, data: msg.data }, state.userId);
+        }
+      }
+      break;
+    }
   }
 }
 

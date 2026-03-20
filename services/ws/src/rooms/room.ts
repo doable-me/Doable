@@ -1,4 +1,5 @@
 import type { WebSocket } from "ws";
+import * as Y from "yjs";
 
 // ─── Local WS Types (until promoted to @doable/shared) ──
 export interface PresenceUser {
@@ -34,7 +35,9 @@ export type WsServerMessage =
   | { type: "chat:user_typing"; userId: string; typing: boolean }
   | { type: "awareness:files_open"; data: Record<string, string[]> }
   | { type: "awareness:user_selection"; userId: string; data: SelectionData }
-  | { type: "cursor:move"; userId: string; displayName: string; color: string; filePath: string; line: number; column: number };
+  | { type: "cursor:move"; userId: string; displayName: string; color: string; filePath: string; line: number; column: number }
+  | { type: "yjs:sync-response"; data: string }
+  | { type: "yjs:update"; userId: string; data: string };
 
 export interface ChatMessage {
   id: string;
@@ -59,7 +62,9 @@ export type WsClientMessage =
   | { type: "awareness:file_open"; filePath: string }
   | { type: "awareness:file_close"; filePath: string }
   | { type: "awareness:selection"; data: SelectionData }
-  | { type: "cursor:move"; filePath: string; line: number; column: number };
+  | { type: "cursor:move"; filePath: string; line: number; column: number }
+  | { type: "yjs:sync-request" }
+  | { type: "yjs:update"; data: string };
 
 // ─── User Color ──────────────────────────────────────────
 const COLORS = [
@@ -96,9 +101,19 @@ interface RoomMember {
 export class Room {
   readonly projectId: string;
   private members = new Map<string, RoomMember>();
+  private yjsDoc: Y.Doc;
 
   constructor(projectId: string) {
     this.projectId = projectId;
+    this.yjsDoc = new Y.Doc();
+  }
+
+  getYjsState(): Uint8Array {
+    return Y.encodeStateAsUpdate(this.yjsDoc);
+  }
+
+  applyYjsUpdate(update: Uint8Array): void {
+    Y.applyUpdate(this.yjsDoc, update);
   }
 
   join(ws: WebSocket, userId: string, displayName: string | null, avatarUrl: string | null): PresenceUser[] {

@@ -64,6 +64,9 @@ export interface CollaborationContextValue {
   sendCursorMove: (filePath: string, line: number, column: number) => void;
   subscribe: (handler: (msg: any) => void) => () => void;
   send: (msg: Record<string, unknown>) => void;
+
+  // CRDT (Yjs)
+  yjsProvider: any; // YjsWsProvider | null
 }
 
 export const CollaborationContext = createContext<CollaborationContextValue | null>(null);
@@ -92,6 +95,7 @@ export function useCollaboration(): CollaborationContextValue {
       sendCursorMove: () => {},
       subscribe: () => () => {},
       send: () => {},
+      yjsProvider: null,
     };
   }
   return ctx;
