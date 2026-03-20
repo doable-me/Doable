@@ -8,7 +8,7 @@
     "build:cf": "npx @opennextjs/cloudflare build",
     "preview:cf": "npx wrangler dev",
     "deploy:cf": "npx wrangler pages deploy",
-    "start": "next start",
+    "start": "next start -H 127.0.0.1",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf .next .turbo node_modules"
