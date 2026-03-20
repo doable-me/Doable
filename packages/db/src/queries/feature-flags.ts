@@ -107,6 +107,61 @@ export function featureFlagQueries(sql: postgres.Sql) {
       `;
     },
 
+    // ─── Feature Access Check ───────────────────────────────
+    /**
+     * Check if a user has access to a feature, considering:
+     * 1. Per-user override (highest priority)
+     * 2. Global flag enabled/disabled
+     * 3. min_role check (if set)
+     * Returns { allowed, reason }
+     */
+    async isFeatureAllowed(
+      userId: string,
+      featureKey: string,
+      userWorkspaceRole?: string | null,
+      userPlan?: string | null,
+    ): Promise<{ allowed: boolean; reason: string }> {
+      // 1. Check per-user override first
+      const [override] = await sql<{ enabled: boolean }[]>`
+        SELECT enabled FROM user_feature_overrides
+        WHERE user_id = ${userId} AND feature_key = ${featureKey}
+      `;
+      if (override) {
+        return { allowed: override.enabled, reason: override.enabled ? "user_override_granted" : "user_override_denied" };
+      }
+
+      // 2. Check global flag
+      const [flag] = await sql<{ enabled: boolean; min_plan: string | null; min_role: string | null }[]>`
+        SELECT enabled, min_plan, min_role FROM feature_flags WHERE feature_key = ${featureKey}
+      `;
+      if (!flag) return { allowed: false, reason: "feature_not_found" };
+      if (!flag.enabled) return { allowed: false, reason: "feature_disabled" };
+
+      // 3. Check min_role
+      if (flag.min_role && userWorkspaceRole) {
+        const roleHierarchy = ["viewer", "member", "admin", "owner"];
+        const requiredLevel = roleHierarchy.indexOf(flag.min_role);
+        const userLevel = roleHierarchy.indexOf(userWorkspaceRole);
+        if (userLevel < requiredLevel) {
+          return { allowed: false, reason: "insufficient_role" };
+        }
+      } else if (flag.min_role && !userWorkspaceRole) {
+        return { allowed: false, reason: "role_required" };
+      }
+
+      // 4. Check min_plan
+      if (flag.min_plan && userPlan) {
+        const planHierarchy = ["free", "pro", "business", "enterprise"];
+        const requiredLevel = planHierarchy.indexOf(flag.min_plan);
+        const userLevel = planHierarchy.indexOf(userPlan);
+        if (userLevel < requiredLevel) {
+          return { allowed: false, reason: "insufficient_plan" };
+        }
+      }
+
+      return { allowed: true, reason: "allowed" };
+    },
+
     // ─── Platform Admin ────────────────────────────────────
     async isPlatformAdmin(userId: string): Promise<boolean> {
       const [user] = await sql<{ is_platform_admin: boolean }[]>`

@@ -95,6 +95,8 @@ These components are designed in [PRD 12 Section 8.10](12-architecture.md) as pr
 | 13 | [mobile-native.md](13-mobile-native.md) | Mobile/native app path, PWA, Capacitor, App Store strategy |
 | 14 | [context-system-templates.md](14-context-system-templates.md) | `.doable/` context files (20+ files, OpenClaw-inspired), workspace templates, MCPs, enterprise white-label workspaces, Copilot SDK boundaries, hosting architecture |
 | 15 | [development-phases.md](15-development-phases.md) | MVP → Enterprise development phases, Phase 0-5 roadmap, ship criteria, dependency map |
+| 16 | [copilot-sdk-core.md](16-copilot-sdk-core.md) | Copilot SDK as the core engine, custom tools, authentication |
+| 17 | [multi-user-infrastructure.md](17-multi-user-infrastructure.md) | Multi-user concurrency, tenant isolation, workspace authorization, AI session isolation, dev server lifecycle, build/deploy concurrency, CRDT real-time collaboration, rate limiting, resource management |
 
 ---
 

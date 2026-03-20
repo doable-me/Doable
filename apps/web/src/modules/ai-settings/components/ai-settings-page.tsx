@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { apiListWorkspaces, type ApiWorkspace } from "@/lib/api";
+import { apiListWorkspaces, apiFetch, type ApiWorkspace } from "@/lib/api";
 import { useGitHubAccounts, useCustomProviders, useWorkspaceAISettings, useUserAiPreferences } from "../hooks/use-ai-settings";
 import { ConnectionsTab } from "./connections-tab";
 import { ModelConfigTab } from "./model-config-tab";
 import { AccessControlTab } from "./access-control-tab";
-import { Link2, Bot, Shield } from "lucide-react";
+import { Link2, Bot, Shield, ShieldAlert } from "lucide-react";
 
 type Tab = "connections" | "models" | "access";
 
@@ -17,6 +17,8 @@ export function AiSettingsPage() {
   const [workspaces, setWorkspaces] = useState<ApiWorkspace[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [featureAllowed, setFeatureAllowed] = useState<boolean | null>(null);
+  const [featureDeniedReason, setFeatureDeniedReason] = useState<string | null>(null);
 
   useEffect(() => {
     apiListWorkspaces().then(({ data }) => {
@@ -28,6 +30,22 @@ export function AiSettingsPage() {
     }).catch(() => { setLoaded(true); });
   }, []);
 
+  // Check feature flag access for this user
+  useEffect(() => {
+    if (!loaded || !activeWorkspaceId) return;
+    apiFetch<{ allowed: boolean; reason: string }>(
+      `/admin/features/check/ai_settings?workspaceId=${activeWorkspaceId}`
+    )
+      .then((res) => {
+        setFeatureAllowed(res.allowed);
+        if (!res.allowed) setFeatureDeniedReason(res.reason);
+      })
+      .catch(() => {
+        // If check fails, fall back to workspace role check
+        setFeatureAllowed(null);
+      });
+  }, [loaded, activeWorkspaceId]);
+
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const isAdmin = activeWorkspace?.userRole === "owner" || activeWorkspace?.userRole === "admin";
 
@@ -37,14 +55,44 @@ export function AiSettingsPage() {
   const aiDefaults = useWorkspaceAISettings(activeWorkspaceId);
   const userPrefs = useUserAiPreferences(activeWorkspaceId ?? undefined);
 
-  // Redirect non-admins away from this page
+  // Determine access: feature flag takes priority, fall back to role check
+  const hasAccess = featureAllowed !== null ? featureAllowed : isAdmin;
+
+  // Redirect denied users
   useEffect(() => {
-    if (loaded && activeWorkspace && !isAdmin) {
+    if (loaded && featureAllowed !== null && !hasAccess) {
       router.replace("/");
     }
-  }, [loaded, activeWorkspace, isAdmin, router]);
+  }, [loaded, featureAllowed, hasAccess, router]);
 
-  if (!loaded || (activeWorkspace && !isAdmin)) return null;
+  if (!loaded) return null;
+
+  // Feature explicitly denied by platform admin
+  if (featureAllowed === false) {
+    return (
+      <div className="mx-auto max-w-4xl px-6 py-10">
+        <div className="flex flex-col items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
+          <ShieldAlert className="h-12 w-12 text-zinc-600 mb-4" />
+          <h2 className="text-lg font-semibold text-white">Access Restricted</h2>
+          <p className="mt-2 text-sm text-zinc-400 max-w-md">
+            {featureDeniedReason === "insufficient_role"
+              ? "You need admin access to this workspace to view AI Settings."
+              : featureDeniedReason === "feature_disabled"
+              ? "AI Settings has been disabled by a platform administrator."
+              : featureDeniedReason === "user_override_denied"
+              ? "Your access to AI Settings has been restricted by a platform administrator."
+              : "You don't have permission to access AI Settings. Contact your administrator."}
+          </p>
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="mt-6 rounded-lg bg-zinc-800 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
     { key: "models", label: "Model Configuration", icon: Bot },

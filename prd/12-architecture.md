@@ -958,12 +958,42 @@ This is what Doable generates for users. NOT what Doable itself runs on.
 | **WebSocket** | Sticky sessions + Redis pub/sub for multi-node |
 
 ### 9.2 Resource Isolation
-| Level | Isolation |
-|-------|-----------|
-| **Workspace** | Data isolation via RLS |
-| **Project** | Preview sandbox isolation |
-| **Edge Function** | Container isolation |
-| **Database (user project)** | Schema or database-level isolation |
+
+> **Full specification**: See [PRD 17 — Multi-User Infrastructure](17-multi-user-infrastructure.md) for complete isolation, concurrency, and resource management requirements.
+
+| Level | Isolation | Enforcement |
+|-------|-----------|-------------|
+| **Workspace** | Data isolation — no cross-workspace access | Workspace auth middleware + DB query filtering + RLS (Phase 2) |
+| **User** | AI sessions, rate limits, undo stacks | Sessions keyed by `projectId + userId + mode` |
+| **Project** | Preview sandbox, file system, deploy pipeline | Per-project dev server, deploy mutex, file locking |
+| **Edge Function** | Container isolation | Sandboxed execution |
+| **Database (user project)** | Schema or database-level isolation | RLS policies |
+
+### 9.3 Concurrency Controls
+
+| Resource | Control | Description |
+|----------|---------|-------------|
+| **AI Sessions** | Per-user isolation | Each user gets independent AI state per project per mode |
+| **Dev Servers** | Shared per-project, LRU eviction | One Vite process per project, idle timeout, max cap |
+| **Builds/Deploys** | Per-project mutex | One build at a time per project, global concurrency limit |
+| **File Writes** | Atomic writes (Phase 0), optimistic concurrency (Phase 2), CRDT (Phase 2+) | Progressive strategy matching team size |
+| **WebSocket Connections** | Per-user and per-project caps | Prevent connection exhaustion |
+| **Rate Limits** | Per-user sliding window | Plan-based limits, keyed by userId |
+| **Credits** | Transactional deduction with row lock | `FOR UPDATE` prevents race conditions |
+
+### 9.4 Real-Time Collaboration Architecture
+
+> See [PRD 17 Section 6](17-multi-user-infrastructure.md#6-real-time-collaborative-editing) for full specification.
+
+| Component | Technology | Phase |
+|-----------|-----------|-------|
+| **CRDT Engine** | Yjs | Phase 2 |
+| **Editor Binding** | y-monaco | Phase 2 |
+| **Transport** | y-websocket | Phase 2 |
+| **Presence** | Yjs Awareness protocol | Phase 2 |
+| **Persistence** | y-leveldb or custom flush-to-filesystem | Phase 2 |
+
+**Key design decision**: Real-time collaborative editing (multi-cursor, presence, CRDT) is a **Phase 2 priority** — not Phase 4. Businesses paying for team plans expect this as a core feature.
 
 ---
 
