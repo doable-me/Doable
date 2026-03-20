@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CreditCard, Zap, ExternalLink, Loader2, CheckCircle2, XCircle, AlertTriangle, X } from "lucide-react";
+import { ArrowLeft, CreditCard, Zap, ExternalLink, Loader2, CheckCircle2, XCircle, AlertTriangle, X, Clock, Shield } from "lucide-react";
 import { PricingCards } from "@/modules/billing/components/pricing-cards";
 import { CreditDisplay } from "@/modules/billing/components/credit-display";
 import {
@@ -12,6 +12,7 @@ import {
   useUsage,
   useBillingActions,
   useCurrentPlan,
+  useSubscription,
 } from "@/modules/billing/hooks/use-billing";
 import { apiFetch, type ApiWorkspace } from "@/lib/api";
 
@@ -75,6 +76,7 @@ export default function BillingPage() {
   const { subscribe, openPortal, topUp, loading: actionLoading, error: actionError, clearError } =
     useBillingActions(WORKSPACE_ID);
   const { plan: currentPlan } = useCurrentPlan(WORKSPACE_ID);
+  const { subscription, loading: subscriptionLoading } = useSubscription(WORKSPACE_ID);
 
   // Show loading spinner while resolving workspace
   if (wsLoading) {
@@ -160,14 +162,63 @@ export default function BillingPage() {
         </div>
       )}
 
+      {/* Current Subscription */}
+      {subscriptionLoading ? (
+        <div className="h-32 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+      ) : subscription ? (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Shield className="h-5 w-5 text-brand-400" />
+              <div>
+                <h3 className="text-lg font-semibold text-white">
+                  {subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1)} Plan
+                </h3>
+                <div className="mt-1 flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                      subscription.status === "active"
+                        ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                        : subscription.status === "past_due"
+                          ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                          : subscription.status === "canceled"
+                            ? "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
+                            : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
+                    }`}
+                  >
+                    {subscription.status === "past_due" ? "Past Due" : subscription.status.charAt(0).toUpperCase() + subscription.status.slice(1)}
+                  </span>
+                  {subscription.cancel_at && (
+                    <span className="text-xs text-yellow-400">
+                      Cancels {new Date(subscription.cancel_at).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              {subscription.current_period_end && (
+                <div className="flex items-center gap-1.5 text-sm text-zinc-400">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>
+                    {subscription.status === "active" ? "Renews" : "Ends"}{" "}
+                    {new Date(subscription.current_period_end).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Credits Overview */}
-      <CreditDisplay credits={credits} loading={creditsLoading} />
+      <CreditDisplay credits={credits} currentPlan={currentPlan} loading={creditsLoading} />
 
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-3">
         <button
           onClick={() => openPortal()}
-          disabled={actionLoading || !WORKSPACE_ID}
+          disabled={actionLoading || !WORKSPACE_ID || currentPlan === "free"}
           className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}

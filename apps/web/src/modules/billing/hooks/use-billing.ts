@@ -41,8 +41,11 @@ export interface Plan {
 export interface Subscription {
   plan: string;
   status: string;
+  current_period_start: string | null;
   current_period_end: string | null;
   cancel_at: string | null;
+  canceled_at: string | null;
+  stripe_subscription_id: string | null;
 }
 
 function getAuthHeaders(): HeadersInit {
@@ -141,6 +144,32 @@ export function useCurrentPlan(workspaceId: string | undefined) {
   }, [workspaceId]);
 
   return { plan, loading };
+}
+
+export function useSubscription(workspaceId: string | undefined) {
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(() => {
+    if (!workspaceId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    fetch(`${API_URL}/billing/subscription?workspaceId=${workspaceId}`, {
+      headers: getAuthHeaders(),
+    })
+      .then((r) => r.json())
+      .then((res) => setSubscription(res.data ?? null))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [workspaceId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { subscription, loading, refresh };
 }
 
 export function useBillingActions(workspaceId: string | undefined) {

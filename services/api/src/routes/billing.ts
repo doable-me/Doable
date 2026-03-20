@@ -64,8 +64,25 @@ billingRoutes.post("/webhook", async (c) => {
         const credits = parseInt(session.metadata.credits ?? "0", 10);
         if (credits > 0) {
           await billing.addCredits(workspaceId, { rollover: credits });
+          await billing.recordTransaction({
+            workspaceId,
+            amount: credits,
+            type: "top_up",
+            description: `Purchased ${credits} credits`,
+          });
         }
         break;
+      }
+
+      // Store stripe customer id on user if available
+      if (session.customer) {
+        const userId = session.metadata?.userId;
+        if (userId) {
+          await billing.setUserStripeCustomerId(
+            userId,
+            session.customer as string
+          );
+        }
       }
       break;
     }
@@ -103,6 +120,14 @@ billingRoutes.post("/webhook", async (c) => {
         const limits = PLAN_LIMITS[plan.id];
         await billing.resetDailyCredits(workspaceId, limits.dailyCredits);
         await billing.resetMonthlyCredits(workspaceId, limits.monthlyCredits);
+
+        // Record credit transaction for subscription reset
+        await billing.recordTransaction({
+          workspaceId,
+          amount: limits.dailyCredits + limits.monthlyCredits,
+          type: "subscription_reset",
+          description: `Plan updated to ${plan.name} — credits reset`,
+        });
       }
       break;
     }
@@ -126,6 +151,37 @@ billingRoutes.post("/webhook", async (c) => {
       const freeLimits = PLAN_LIMITS.free;
       await billing.resetDailyCredits(workspaceId, freeLimits.dailyCredits);
       await billing.resetMonthlyCredits(workspaceId, freeLimits.monthlyCredits);
+
+      await billing.recordTransaction({
+        workspaceId,
+        amount: 0,
+        type: "subscription_reset",
+        description: "Subscription canceled — reverted to Free plan",
+      });
+      break;
+    }
+
+    case "invoice.payment_failed": {
+      const invoice = event.data.object;
+      const customerId = invoice.customer as string;
+      if (!customerId) break;
+
+      // Find the subscription by customer ID
+      const sub = await billing.getSubscriptionByCustomerId(customerId);
+      if (!sub) break;
+
+      // Mark subscription as past_due
+      await billing.upsertSubscription({
+        workspaceId: sub.workspace_id,
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: sub.stripe_subscription_id,
+        plan: sub.plan,
+        status: "past_due",
+      });
+
+      console.warn(
+        `[Stripe Webhook] Payment failed for workspace ${sub.workspace_id}, invoice ${invoice.id}`
+      );
       break;
     }
   }
@@ -149,6 +205,38 @@ billingRoutes.get("/credits", async (c) => {
   }
 
   return c.json({ data: credits });
+});
+
+// ─── GET /billing/subscription ────────────────────────────
+billingRoutes.get("/subscription", async (c) => {
+  const workspaceId = c.req.query("workspaceId");
+  if (!workspaceId) {
+    return c.json({ error: "workspaceId query param required" }, 400);
+  }
+
+  const subscription = await billing.getSubscription(workspaceId);
+  if (!subscription) {
+    return c.json({
+      data: {
+        plan: "free",
+        status: "active",
+        current_period_end: null,
+        cancel_at: null,
+      },
+    });
+  }
+
+  return c.json({
+    data: {
+      plan: subscription.plan,
+      status: subscription.status,
+      current_period_start: subscription.current_period_start,
+      current_period_end: subscription.current_period_end,
+      cancel_at: subscription.cancel_at,
+      canceled_at: subscription.canceled_at,
+      stripe_subscription_id: subscription.stripe_subscription_id,
+    },
+  });
 });
 
 // ─── GET /billing/usage ────────────────────────────────────
@@ -204,6 +292,7 @@ billingRoutes.post("/subscribe", async (c) => {
   }
 
   // Get or create Stripe customer
+  const userId = c.get("userId");
   let subscription = await billing.getSubscription(workspaceId);
   let customerId = subscription?.stripe_customer_id;
 
@@ -214,6 +303,8 @@ billingRoutes.post("/subscribe", async (c) => {
       workspaceId,
     });
     customerId = customer.id;
+    // Store the Stripe customer ID on the user for future lookups
+    await billing.setUserStripeCustomerId(userId, customerId);
   }
 
   const origin = c.req.header("origin") ?? "http://localhost:3000";
@@ -266,6 +357,7 @@ billingRoutes.post("/top-up", async (c) => {
   const pricePerCredit = 5; // 5 cents per credit
   const amount = credits * pricePerCredit;
 
+  const topUpUserId = c.get("userId");
   let subscription = await billing.getSubscription(workspaceId);
   let customerId = subscription?.stripe_customer_id;
 
@@ -273,6 +365,7 @@ billingRoutes.post("/top-up", async (c) => {
     const userEmail = c.get("userEmail");
     const customer = await createCustomer({ email: userEmail, workspaceId });
     customerId = customer.id;
+    await billing.setUserStripeCustomerId(topUpUserId, customerId);
   }
 
   const origin = c.req.header("origin") ?? "http://localhost:3000";

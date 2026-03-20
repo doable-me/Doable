@@ -5,6 +5,7 @@ import type { Credits } from "../hooks/use-billing";
 
 interface CreditDisplayProps {
   credits: Credits | null;
+  currentPlan?: string;
   loading?: boolean;
   className?: string;
 }
@@ -14,12 +15,14 @@ const PLAN_DAILY_LIMITS: Record<string, number> = {
   free: 5,
   pro: 50,
   business: 200,
+  enterprise: 999,
 };
 
 const PLAN_MONTHLY_LIMITS: Record<string, number> = {
   free: 0,
-  pro: 100,
-  business: 100,
+  pro: 500,
+  business: 3000,
+  enterprise: 99999,
 };
 
 function CreditBar({
@@ -55,7 +58,7 @@ function CreditBar({
   );
 }
 
-export function CreditDisplay({ credits, loading, className }: CreditDisplayProps) {
+export function CreditDisplay({ credits, currentPlan = "free", loading, className }: CreditDisplayProps) {
   if (loading) {
     return (
       <div className={cn("space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6", className)}>
@@ -79,9 +82,9 @@ export function CreditDisplay({ credits, loading, className }: CreditDisplayProp
   const totalAvailable =
     credits.daily_remaining + credits.monthly_remaining + credits.rollover_credits;
 
-  // Determine plan limits from workspace context
-  const dailyTotal = PLAN_DAILY_LIMITS.free ?? 5;
-  const monthlyTotal = PLAN_MONTHLY_LIMITS.pro ?? 100;
+  // Determine plan limits from workspace subscription
+  const dailyTotal = PLAN_DAILY_LIMITS[currentPlan] ?? PLAN_DAILY_LIMITS.free ?? 5;
+  const monthlyTotal = PLAN_MONTHLY_LIMITS[currentPlan] ?? PLAN_MONTHLY_LIMITS.free ?? 0;
 
   return (
     <div className={cn("space-y-5 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6", className)}>

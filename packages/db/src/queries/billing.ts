@@ -27,6 +27,16 @@ export interface CreditUsageRow {
   created_at: Date;
 }
 
+export interface CreditTransactionRow {
+  id: string;
+  user_id: string | null;
+  workspace_id: string;
+  amount: number;
+  type: string;
+  description: string | null;
+  created_at: Date;
+}
+
 export function billingQueries(sql: postgres.Sql) {
   return {
     // ─── Credits ───────────────────────────────────────────
@@ -245,6 +255,105 @@ export function billingQueries(sql: postgres.Sql) {
         DELETE FROM subscriptions WHERE workspace_id = ${workspaceId}
       `;
       return result.count > 0;
+    },
+
+    async getSubscriptionByCustomerId(
+      stripeCustomerId: string
+    ): Promise<SubscriptionRow | undefined> {
+      const [row] = await sql<SubscriptionRow[]>`
+        SELECT * FROM subscriptions
+        WHERE stripe_customer_id = ${stripeCustomerId}
+      `;
+      return row;
+    },
+
+    // ─── Credit Transactions ──────────────────────────────────
+
+    async recordTransaction(data: {
+      userId?: string | null;
+      workspaceId: string;
+      amount: number;
+      type: string;
+      description?: string;
+    }): Promise<CreditTransactionRow> {
+      const [row] = await sql<CreditTransactionRow[]>`
+        INSERT INTO credit_transactions (user_id, workspace_id, amount, type, description)
+        VALUES (
+          ${data.userId ?? null},
+          ${data.workspaceId},
+          ${data.amount},
+          ${data.type},
+          ${data.description ?? null}
+        )
+        RETURNING *
+      `;
+      return row!;
+    },
+
+    async getTransactions(
+      workspaceId: string,
+      opts?: { limit?: number; offset?: number }
+    ): Promise<{ rows: CreditTransactionRow[]; total: number }> {
+      const limit = opts?.limit ?? 50;
+      const offset = opts?.offset ?? 0;
+
+      const [countResult] = await sql<[{ count: string }]>`
+        SELECT count(*)::text FROM credit_transactions
+        WHERE workspace_id = ${workspaceId}
+      `;
+
+      const rows = await sql<CreditTransactionRow[]>`
+        SELECT * FROM credit_transactions
+        WHERE workspace_id = ${workspaceId}
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+
+      return { rows, total: parseInt(countResult!.count, 10) };
+    },
+
+    // ─── User Stripe Customer ID ──────────────────────────────
+
+    async setUserStripeCustomerId(
+      userId: string,
+      stripeCustomerId: string
+    ): Promise<void> {
+      await sql`
+        UPDATE users
+        SET stripe_customer_id = ${stripeCustomerId}
+        WHERE id = ${userId}
+      `;
+    },
+
+    async getUserByStripeCustomerId(
+      stripeCustomerId: string
+    ): Promise<{ id: string; email: string } | undefined> {
+      const [row] = await sql<{ id: string; email: string }[]>`
+        SELECT id, email FROM users
+        WHERE stripe_customer_id = ${stripeCustomerId}
+      `;
+      return row;
+    },
+
+    // ─── Ensure credits row exists ────────────────────────────
+
+    async ensureCredits(
+      workspaceId: string,
+      dailyCredits: number,
+      monthlyCredits: number
+    ): Promise<CreditsRow> {
+      const [row] = await sql<CreditsRow[]>`
+        INSERT INTO credits (workspace_id, daily_remaining, monthly_remaining)
+        VALUES (${workspaceId}, ${dailyCredits}, ${monthlyCredits})
+        ON CONFLICT (workspace_id) DO NOTHING
+        RETURNING *
+      `;
+      if (row) return row;
+      // Row already existed
+      const [existing] = await sql<CreditsRow[]>`
+        SELECT * FROM credits WHERE workspace_id = ${workspaceId}
+      `;
+      return existing!;
     },
   };
 }
