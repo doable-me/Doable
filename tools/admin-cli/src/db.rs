@@ -52,7 +52,55 @@ pub async fn connect(db_url: &str) -> Result<Client, Box<dyn std::error::Error>>
             eprintln!("DB connection error: {e}");
         }
     });
+    ensure_schema(&client).await?;
     Ok(client)
+}
+
+/// Ensure the columns/tables the admin CLI depends on exist.
+/// Uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS so it's safe to re-run.
+async fn ensure_schema(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
+    client
+        .batch_execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_platform_admin boolean NOT NULL DEFAULT false;
+
+             CREATE TABLE IF NOT EXISTS feature_flags (
+                 feature_key   text        PRIMARY KEY,
+                 label         text        NOT NULL,
+                 description   text,
+                 enabled       boolean     NOT NULL DEFAULT true,
+                 min_plan      text,
+                 min_role      text,
+                 created_at    timestamptz NOT NULL DEFAULT now(),
+                 updated_at    timestamptz NOT NULL DEFAULT now()
+             );
+
+             CREATE TABLE IF NOT EXISTS user_feature_overrides (
+                 user_id       uuid    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                 feature_key   text    NOT NULL REFERENCES feature_flags(feature_key) ON DELETE CASCADE,
+                 enabled       boolean NOT NULL,
+                 PRIMARY KEY (user_id, feature_key)
+             );
+
+             INSERT INTO feature_flags (feature_key, label, description, enabled, min_plan, min_role) VALUES
+               ('ai_chat',           'AI Chat',              'AI chat and code generation',                        true,  null,   null),
+               ('ai_settings',       'AI Settings',          'Configure AI models, providers, and enforcement',    true,  null,   'admin'),
+               ('visual_editor',     'Visual Editor',        'Click-to-edit visual editing in preview',            true,  null,   null),
+               ('code_editor',       'Code Editor',          'Monaco code editor (Dev Mode)',                      true,  'pro',  null),
+               ('github_sync',       'GitHub Sync',          'Connect and sync projects with GitHub',              true,  null,   null),
+               ('publish',           'Publish / Deploy',     'Publish projects to doable.app or custom domains',   true,  null,   null),
+               ('custom_domains',    'Custom Domains',       'Use your own domain for published apps',             true,  'pro',  null),
+               ('templates',         'Templates',            'Create projects from templates',                     true,  null,   null),
+               ('analytics',         'Analytics',            'Built-in analytics for published apps',              true,  null,   null),
+               ('billing',           'Billing & Credits',    'Manage subscriptions and credits',                   true,  null,   'owner'),
+               ('version_history',   'Version History',      'View and restore previous versions',                 true,  null,   null),
+               ('workspaces',        'Workspaces',           'Create and manage workspaces',                       true,  null,   null),
+               ('workspace_members', 'Workspace Members',    'Invite and manage workspace members',                true,  null,   'admin'),
+               ('connectors',        'Connectors',           'Configure integrations and MCP servers',             true,  'pro',  null),
+               ('security_center',   'Security Center',      'Security scanning and vulnerability management',     true,  'business', 'admin')
+             ON CONFLICT (feature_key) DO NOTHING;",
+        )
+        .await?;
+    Ok(())
 }
 
 // ─── Queries ──────────────────────────────────────────────
@@ -88,7 +136,7 @@ pub async fn toggle_admin(
 ) -> Result<(), Box<dyn std::error::Error>> {
     client
         .execute(
-            "UPDATE users SET is_platform_admin = $1 WHERE id = $2::uuid",
+            "UPDATE users SET is_platform_admin = $1 WHERE id::text = $2",
             &[&val, &user_id],
         )
         .await?;
@@ -193,7 +241,7 @@ pub async fn change_role(
     client
         .execute(
             "UPDATE workspace_members SET role = $1
-             WHERE workspace_id = $2::uuid AND user_id = $3::uuid",
+             WHERE workspace_id::text = $2 AND user_id::text = $3",
             &[&role, &workspace_id, &user_id],
         )
         .await?;
@@ -218,7 +266,7 @@ pub async fn is_already_member(
     let rows = client
         .query(
             "SELECT 1 FROM workspace_members
-             WHERE workspace_id = $1::uuid AND user_id = $2::uuid",
+             WHERE workspace_id::text = $1 AND user_id::text = $2",
             &[&workspace_id, &user_id],
         )
         .await?;
@@ -234,7 +282,7 @@ pub async fn add_member(
     client
         .execute(
             "INSERT INTO workspace_members (workspace_id, user_id, role)
-             VALUES ($1::uuid, $2::uuid, $3)",
+             VALUES (($1::text)::uuid, ($2::text)::uuid, $3)",
             &[&workspace_id, &user_id, &role],
         )
         .await?;
@@ -249,7 +297,7 @@ pub async fn remove_member(
     client
         .execute(
             "DELETE FROM workspace_members
-             WHERE workspace_id = $1::uuid AND user_id = $2::uuid",
+             WHERE workspace_id::text = $1 AND user_id::text = $2",
             &[&workspace_id, &user_id],
         )
         .await?;
@@ -263,7 +311,7 @@ pub async fn fetch_ai_settings(
     let rows = client
         .query(
             "SELECT enforce_ai, enforced_model, show_model_selector, default_model
-             FROM workspace_ai_settings WHERE workspace_id = $1::uuid",
+             FROM workspace_ai_settings WHERE workspace_id::text = $1",
             &[&workspace_id],
         )
         .await?;
@@ -283,7 +331,7 @@ pub async fn set_ai_enforcement(
     client
         .execute(
             "UPDATE workspace_ai_settings SET enforce_ai = $1
-             WHERE workspace_id = $2::uuid",
+             WHERE workspace_id::text = $2",
             &[&val, &workspace_id],
         )
         .await?;
@@ -298,7 +346,7 @@ pub async fn set_model_selector(
     client
         .execute(
             "UPDATE workspace_ai_settings SET show_model_selector = $1
-             WHERE workspace_id = $2::uuid",
+             WHERE workspace_id::text = $2",
             &[&val, &workspace_id],
         )
         .await?;

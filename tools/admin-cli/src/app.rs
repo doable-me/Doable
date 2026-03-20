@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use ratatui::widgets::TableState;
 use tokio_postgres::Client;
@@ -149,28 +149,53 @@ impl App {
     // ── Data loading ────────────────────────────────────
 
     pub async fn load_all_data(&mut self) {
-        self.users = db::fetch_users(&self.client).await.unwrap_or_default();
-        self.flags = db::fetch_flags(&self.client).await.unwrap_or_default();
-        self.members = db::fetch_members(&self.client).await.unwrap_or_default();
-        self.workspaces = db::fetch_workspaces(&self.client).await.unwrap_or_default();
+        match db::fetch_users(&self.client).await {
+            Ok(v) => self.users = v,
+            Err(e) => { self.toast(format!("Failed to load users: {e}"), StatusKind::Error); }
+        }
+        match db::fetch_flags(&self.client).await {
+            Ok(v) => self.flags = v,
+            Err(e) => { self.toast(format!("Failed to load flags: {e}"), StatusKind::Error); }
+        }
+        match db::fetch_members(&self.client).await {
+            Ok(v) => self.members = v,
+            Err(e) => { self.toast(format!("Failed to load members: {e}"), StatusKind::Error); }
+        }
+        match db::fetch_workspaces(&self.client).await {
+            Ok(v) => self.workspaces = v,
+            Err(e) => { self.toast(format!("Failed to load workspaces: {e}"), StatusKind::Error); }
+        }
     }
 
     async fn reload_current(&mut self) {
         match self.screen {
             Screen::Users => {
-                self.users = db::fetch_users(&self.client).await.unwrap_or_default();
+                match db::fetch_users(&self.client).await {
+                    Ok(v) => self.users = v,
+                    Err(e) => { self.toast(format!("Failed to load users: {e}"), StatusKind::Error); }
+                }
             }
             Screen::Flags => {
-                self.flags = db::fetch_flags(&self.client).await.unwrap_or_default();
+                match db::fetch_flags(&self.client).await {
+                    Ok(v) => self.flags = v,
+                    Err(e) => { self.toast(format!("Failed to load flags: {e}"), StatusKind::Error); }
+                }
             }
             Screen::Members => {
-                self.members = db::fetch_members(&self.client).await.unwrap_or_default();
-                self.workspaces =
-                    db::fetch_workspaces(&self.client).await.unwrap_or_default();
+                match db::fetch_members(&self.client).await {
+                    Ok(v) => self.members = v,
+                    Err(e) => { self.toast(format!("Failed to load members: {e}"), StatusKind::Error); }
+                }
+                match db::fetch_workspaces(&self.client).await {
+                    Ok(v) => self.workspaces = v,
+                    Err(e) => { self.toast(format!("Failed to load workspaces: {e}"), StatusKind::Error); }
+                }
             }
             Screen::AiSettings => {
-                self.workspaces =
-                    db::fetch_workspaces(&self.client).await.unwrap_or_default();
+                match db::fetch_workspaces(&self.client).await {
+                    Ok(v) => self.workspaces = v,
+                    Err(e) => { self.toast(format!("Failed to load workspaces: {e}"), StatusKind::Error); }
+                }
                 self.load_ai_for_ws().await;
             }
         }
@@ -252,6 +277,13 @@ impl App {
     // ── Key handling ────────────────────────────────────
 
     pub async fn handle_key(&mut self, key: KeyEvent) {
+        // Only handle actual key presses — ignore Release and Repeat events.
+        // On Windows, crossterm emits Press + Release (and sometimes Repeat)
+        // for every single keystroke, which causes double/triple input.
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+
         // Ctrl+C always quits
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.running = false;
