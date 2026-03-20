@@ -269,7 +269,7 @@ function InviteDialog({
             <label className="text-sm font-medium">Role</label>
             <div className="flex gap-2">
               {ASSIGNABLE_ROLES.map((r) => {
-                const Icon = ROLE_ICONS[r];
+                const Icon = ROLE_ICONS[r] ?? Users;
                 return (
                   <button
                     key={r}
@@ -500,7 +500,7 @@ function MemberRow({
             />
             <div className="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg border bg-background py-1 shadow-lg">
               {ASSIGNABLE_ROLES.map((r) => {
-                const Icon = ROLE_ICONS[r];
+                const Icon = ROLE_ICONS[r] ?? Users;
                 return (
                   <button
                     key={r}
