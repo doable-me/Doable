@@ -322,6 +322,190 @@ async fn action_remove_member(client: &Client) -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
+// ─── Platform Admin Actions ───────────────────────────────
+
+async fn action_list_platform_admins(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
+    let rows = client
+        .query(
+            "SELECT email, display_name, is_platform_admin, created_at
+             FROM users ORDER BY is_platform_admin DESC, email",
+            &[],
+        )
+        .await?;
+
+    if rows.is_empty() {
+        println!("\n  {}", "No users found.".dimmed());
+        return Ok(());
+    }
+
+    println!("\n  {}", "Platform Users".bold().underline());
+    for r in &rows {
+        let email: String = r.get("email");
+        let name: Option<String> = r.get("display_name");
+        let is_admin: bool = r.get("is_platform_admin");
+        let label = name.unwrap_or_else(|| email.split('@').next().unwrap_or("").to_string());
+
+        if is_admin {
+            println!(
+                "  {} {} {} {}",
+                "★".bright_yellow(),
+                label.bright_white().bold(),
+                format!("<{email}>").dimmed(),
+                "PLATFORM ADMIN".bright_yellow().bold()
+            );
+        } else {
+            println!(
+                "    {} {}",
+                label.white(),
+                format!("<{email}>").dimmed(),
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn action_toggle_platform_admin(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
+    let rows = client
+        .query(
+            "SELECT id::text, email, display_name, is_platform_admin FROM users ORDER BY email",
+            &[],
+        )
+        .await?;
+
+    if rows.is_empty() {
+        println!("\n  {}", "No users found.".dimmed());
+        return Ok(());
+    }
+
+    let options: Vec<String> = rows
+        .iter()
+        .map(|r| {
+            let email: String = r.get("email");
+            let is_admin: bool = r.get("is_platform_admin");
+            if is_admin {
+                format!("{email}  ★ ADMIN")
+            } else {
+                email
+            }
+        })
+        .collect();
+
+    let choice = Select::new("Select user:", options.clone()).prompt()?;
+    let idx = options.iter().position(|o| o == &choice).unwrap();
+    let row = &rows[idx];
+    let user_id: String = row.get("id");
+    let email: String = row.get("email");
+    let is_admin: bool = row.get("is_platform_admin");
+
+    let action = if is_admin {
+        Select::new(
+            &format!("Revoke platform admin from {email}?"),
+            vec!["No", "Yes, revoke"],
+        )
+        .prompt()?
+    } else {
+        Select::new(
+            &format!("Grant platform admin to {email}?"),
+            vec!["No", "Yes, grant"],
+        )
+        .prompt()?
+    };
+
+    if action == "No" {
+        println!("  {}", "Cancelled.".dimmed());
+        return Ok(());
+    }
+
+    let new_val = !is_admin;
+    client
+        .execute(
+            "UPDATE users SET is_platform_admin = $1 WHERE id = $2::uuid",
+            &[&new_val, &user_id],
+        )
+        .await?;
+
+    if new_val {
+        println!("\n  {} {} is now a {}", "✓".green(), email, "platform admin".bright_yellow().bold());
+    } else {
+        println!("\n  {} {} platform admin access {}", "✓".green(), email, "revoked".red());
+    }
+    Ok(())
+}
+
+async fn action_manage_feature_flags(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
+    let rows = client
+        .query(
+            "SELECT feature_key, label, enabled, min_plan, min_role FROM feature_flags ORDER BY label",
+            &[],
+        )
+        .await?;
+
+    if rows.is_empty() {
+        println!("\n  {}", "No feature flags found. Run migration 012.".dimmed());
+        return Ok(());
+    }
+
+    // Display current flags
+    println!("\n  {}", "Feature Flags".bold().underline());
+    for r in &rows {
+        let key: String = r.get("feature_key");
+        let label: String = r.get("label");
+        let enabled: bool = r.get("enabled");
+        let min_plan: Option<String> = r.get("min_plan");
+        let min_role: Option<String> = r.get("min_role");
+
+        let status = if enabled { "ON".green().bold().to_string() } else { "OFF".red().bold().to_string() };
+        let restrictions = match (min_plan.as_deref(), min_role.as_deref()) {
+            (Some(p), Some(r)) => format!(" [{}+ / {}+]", p, r).dimmed().to_string(),
+            (Some(p), None) => format!(" [{}+]", p).dimmed().to_string(),
+            (None, Some(r)) => format!(" [{}+]", r).dimmed().to_string(),
+            (None, None) => String::new(),
+        };
+
+        println!("  {} {:<25} {}{}", status, label, key.dimmed(), restrictions);
+    }
+
+    // Select a flag to toggle
+    let options: Vec<String> = rows
+        .iter()
+        .map(|r| {
+            let label: String = r.get("label");
+            let enabled: bool = r.get("enabled");
+            format!("{} {label}", if enabled { "ON " } else { "OFF" })
+        })
+        .collect();
+
+    let mut opts_with_back = options.clone();
+    opts_with_back.push("Back".to_string());
+
+    let choice = Select::new("Toggle feature:", opts_with_back.clone()).prompt()?;
+    if choice == "Back" {
+        return Ok(());
+    }
+
+    let idx = options.iter().position(|o| o == &choice).unwrap();
+    let row = &rows[idx];
+    let key: String = row.get("feature_key");
+    let enabled: bool = row.get("enabled");
+    let new_val = !enabled;
+
+    client
+        .execute(
+            "UPDATE feature_flags SET enabled = $1, updated_at = now() WHERE feature_key = $2",
+            &[&new_val, &key],
+        )
+        .await?;
+
+    let label: String = row.get("label");
+    println!(
+        "\n  {} {} is now {}",
+        "✓".green(),
+        label,
+        if new_val { "ON".green().bold().to_string() } else { "OFF".red().bold().to_string() }
+    );
+    Ok(())
+}
+
 async fn action_ai_settings(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
     let workspaces = list_workspaces(client).await?;
     if workspaces.is_empty() {
@@ -443,15 +627,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "\n{}",
-        "  ╔══════════════════════════════════════╗".bright_blue()
+        "  ╔════════════════════════════════════════╗".bright_blue()
     );
     println!(
         "{}",
-        "  ║     Doable Admin — Workspace Manager ║".bright_blue()
+        "  ║     Doable Admin — System Management   ║".bright_blue()
     );
     println!(
         "{}",
-        "  ╚══════════════════════════════════════╝".bright_blue()
+        "  ╚════════════════════════════════════════╝".bright_blue()
     );
     println!(
         "  {}\n",
@@ -466,24 +650,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         let choices = vec![
-            "List all members & roles",
-            "Change a member's role",
-            "Add member to workspace",
-            "Remove member from workspace",
-            "AI settings & enforcement",
+            "── Platform ──────────────",
+            "  Platform admins",
+            "  Grant/revoke platform admin",
+            "  Feature flags",
+            "── Workspaces ────────────",
+            "  List all members & roles",
+            "  Change a member's role",
+            "  Add member to workspace",
+            "  Remove member from workspace",
+            "  AI settings & enforcement",
             "Exit",
         ];
 
         let action = Select::new("doable-admin >", choices).prompt()?;
 
         match action {
-            "List all members & roles" => action_list_members(&client).await?,
-            "Change a member's role" => action_change_role(&client).await?,
-            "Add member to workspace" => action_add_member(&client).await?,
-            "Remove member from workspace" => action_remove_member(&client).await?,
-            "AI settings & enforcement" => action_ai_settings(&client).await?,
+            "  Platform admins" => action_list_platform_admins(&client).await?,
+            "  Grant/revoke platform admin" => action_toggle_platform_admin(&client).await?,
+            "  Feature flags" => action_manage_feature_flags(&client).await?,
+            "  List all members & roles" => action_list_members(&client).await?,
+            "  Change a member's role" => action_change_role(&client).await?,
+            "  Add member to workspace" => action_add_member(&client).await?,
+            "  Remove member from workspace" => action_remove_member(&client).await?,
+            "  AI settings & enforcement" => action_ai_settings(&client).await?,
             "Exit" => break,
-            _ => {}
+            _ => {} // section headers — no-op
         }
         println!();
     }
