@@ -13,6 +13,7 @@ export interface TemplateDefinition {
   name: string;
   description: string;
   category: string;
+  tags: string[];
   previewImageUrl: string | null;
   isOfficial: boolean;
   /** File path -> file content */
@@ -26,6 +27,7 @@ export interface TemplateSummary {
   name: string;
   description: string;
   category: string;
+  tags: string[];
   previewImageUrl: string | null;
   isOfficial: boolean;
   fileCount: number;
@@ -49,12 +51,25 @@ const BUILT_IN_TEMPLATES = new Map<string, TemplateDefinition>([
  */
 export function getTemplates(filter?: {
   category?: string;
+  search?: string;
 }): TemplateSummary[] {
   const templates = Array.from(BUILT_IN_TEMPLATES.values());
 
-  const filtered = filter?.category
-    ? templates.filter((t) => t.category === filter.category)
-    : templates;
+  let filtered = templates;
+
+  if (filter?.category) {
+    filtered = filtered.filter((t) => t.category === filter.category);
+  }
+
+  if (filter?.search) {
+    const q = filter.search.toLowerCase();
+    filtered = filtered.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.description.toLowerCase().includes(q) ||
+        t.tags.some((tag) => tag.toLowerCase().includes(q))
+    );
+  }
 
   return filtered.map(toSummary);
 }
@@ -85,6 +100,7 @@ function toSummary(t: TemplateDefinition): TemplateSummary {
     name: t.name,
     description: t.description,
     category: t.category,
+    tags: t.tags,
     previewImageUrl: t.previewImageUrl,
     isOfficial: t.isOfficial,
     fileCount: Object.keys(t.codeFiles).length,

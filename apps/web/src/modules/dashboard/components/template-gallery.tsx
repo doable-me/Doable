@@ -8,7 +8,11 @@ import {
   BarChart3,
   Sparkles,
   Loader2,
-  ArrowRight,
+  Search,
+  ShoppingBag,
+  BookOpen,
+  User,
+  CheckSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +23,7 @@ interface TemplateSummary {
   name: string;
   description: string;
   category: string;
+  tags?: string[];
   previewImageUrl: string | null;
   isOfficial: boolean;
   fileCount: number;
@@ -39,10 +44,10 @@ const CATEGORY_CONFIG: Record<
   starter: { label: "Starters", icon: FileCode },
   dashboard: { label: "Dashboards", icon: BarChart3 },
   marketing: { label: "Marketing", icon: Layout },
-  ecommerce: { label: "E-commerce", icon: Rocket },
-  content: { label: "Content", icon: FileCode },
-  personal: { label: "Personal", icon: Layout },
-  productivity: { label: "Productivity", icon: BarChart3 },
+  ecommerce: { label: "E-commerce", icon: ShoppingBag },
+  content: { label: "Content", icon: BookOpen },
+  personal: { label: "Personal", icon: User },
+  productivity: { label: "Productivity", icon: CheckSquare },
 };
 
 // ─── Component ──────────────────────────────────────────────
@@ -54,6 +59,7 @@ export const TemplateGallery = ({
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [activeCategory, setActiveCategory] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [scaffolding, setScaffolding] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +70,10 @@ export const TemplateGallery = ({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/templates`);
+      const params = new URLSearchParams();
+      if (searchQuery) params.set("search", searchQuery);
+      const qs = params.toString();
+      const res = await fetch(`${apiBaseUrl}/templates${qs ? `?${qs}` : ""}`);
       if (!res.ok) throw new Error("Failed to load templates");
       const json = (await res.json()) as {
         data: { templates: TemplateSummary[]; categories: string[] };
@@ -76,7 +85,7 @@ export const TemplateGallery = ({
     } finally {
       setLoading(false);
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, searchQuery]);
 
   useEffect(() => {
     void fetchTemplates();
@@ -94,11 +103,24 @@ export const TemplateGallery = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Start a Project</h2>
-        <p className="text-muted-foreground mt-1">
-          Choose a template or start from scratch.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Start a Project</h2>
+          <p className="text-muted-foreground mt-1">
+            Choose a template or start from scratch.
+          </p>
+        </div>
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search templates..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-9 w-64 rounded-md border border-input bg-background pl-9 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
       </div>
 
       {/* Category tabs */}
@@ -210,6 +232,20 @@ const TemplateCard = ({
             {template.description}
           </p>
         </div>
+
+        {/* Tags */}
+        {template.tags && template.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {template.tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">

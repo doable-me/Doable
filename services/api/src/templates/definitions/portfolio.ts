@@ -7,6 +7,7 @@ export const portfolioTemplate: TemplateDefinition = {
   description:
     "Personal portfolio with hero section, project gallery, skills display, and contact form. Clean, professional design.",
   category: "personal",
+  tags: ["react", "portfolio", "personal", "projects", "skills", "contact"],
   previewImageUrl: null,
   isOfficial: true,
 

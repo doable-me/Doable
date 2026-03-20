@@ -7,6 +7,7 @@ export const blogTemplate: TemplateDefinition = {
   description:
     "Blog with posts list, full article view, categories sidebar, and comment section. Clean reading experience.",
   category: "content",
+  tags: ["react", "blog", "content", "articles", "comments", "categories"],
   previewImageUrl: null,
   isOfficial: true,
 

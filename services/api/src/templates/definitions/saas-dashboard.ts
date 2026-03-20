@@ -6,6 +6,7 @@ export const saasDashboardTemplate: TemplateDefinition = {
   name: "SaaS Dashboard",
   description: "Dashboard with sidebar navigation, auth pages, settings, and analytics placeholder. Built for B2B SaaS apps.",
   category: "dashboard",
+  tags: ["react", "dashboard", "saas", "analytics", "sidebar", "b2b"],
   previewImageUrl: null,
   isOfficial: true,
 

@@ -26,6 +26,7 @@ import { analyticsRoutes } from "./routes/analytics.js";
 import { aiSettingsRoutes } from "./routes/ai-settings.js";
 import { adminRoutes } from "./routes/admin.js";
 import { securityRoutes } from "./routes/security.js";
+import { communityRoutes } from "./routes/community.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 
@@ -144,6 +145,7 @@ app.route("/thumbnails", thumbnailRoutes);
 app.route("/analytics", analyticsRoutes);
 app.route("/admin", adminRoutes);
 app.route("/projects", securityRoutes);
+app.route("/community", communityRoutes);
 
 // ─── 404 Fallback ───────────────────────────────────────────
 app.notFound((c) => {

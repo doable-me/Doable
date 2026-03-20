@@ -7,6 +7,7 @@ export const ecommerceStoreTemplate: TemplateDefinition = {
   description:
     "Product grid with shopping cart, product detail modal, and checkout flow. Built with React state management.",
   category: "ecommerce",
+  tags: ["react", "ecommerce", "store", "cart", "checkout", "products"],
   previewImageUrl: null,
   isOfficial: true,
 
