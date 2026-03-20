@@ -5,7 +5,7 @@ import { RoomManager } from "./rooms/room-manager.js";
 import { type WsClientMessage, type WsServerMessage, type PresenceUser, userColor } from "./rooms/room.js";
 
 const PORT = parseInt(process.env.WS_PORT ?? "4001", 10);
-const HOST = process.env.WS_HOST ?? "0.0.0.0";
+const HOST = process.env.WS_HOST ?? "127.0.0.1";
 const JWT_SECRET = process.env.JWT_SECRET ?? "fallback-dev-secret-change-me";
 const JWT_ISSUER = process.env.JWT_ISSUER ?? "doable";
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "internal-dev-secret";

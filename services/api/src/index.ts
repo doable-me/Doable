@@ -169,7 +169,7 @@ app.onError((err, c) => {
 
 // ─── Start Server ───────────────────────────────────────────
 const port = parseInt(process.env.API_PORT ?? "4000", 10);
-const host = process.env.API_HOST ?? "0.0.0.0";
+const host = process.env.API_HOST ?? "127.0.0.1";
 
 console.log(`Doable API starting on ${host}:${port}`);
 

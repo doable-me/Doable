@@ -18,7 +18,7 @@ import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.
 
 const PORT_RANGE_START = 3100;
 const PORT_RANGE_END = 3200;
-const DEV_SERVER_HOST = process.env.DEV_SERVER_HOST ?? "0.0.0.0";
+const DEV_SERVER_HOST = process.env.DEV_SERVER_HOST ?? "127.0.0.1";
 const STARTUP_TIMEOUT_MS = 30_000;
 
 // ─── Types ───────────────────────────────────────────────
@@ -59,7 +59,7 @@ function isPortFree(port: number): Promise<boolean> {
     server.once("listening", () => {
       server.close(() => resolve(true));
     });
-    server.listen(port, "0.0.0.0");
+    server.listen(port, DEV_SERVER_HOST);
   });
 }
 

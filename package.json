@@ -21,6 +21,7 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^0.1.32"
+    "@github/copilot-sdk": "^0.1.32",
+    "yjs": "^13.6.30"
   }
 }
