@@ -90,5 +90,5 @@ const PRESENCE_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", 
 export function userColor(userId: string): string {
   let hash = 0;
   for (const char of userId) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
-  return PRESENCE_COLORS[Math.abs(hash) % PRESENCE_COLORS.length];
+  return PRESENCE_COLORS[Math.abs(hash) % PRESENCE_COLORS.length] ?? "#FF6B6B";
 }

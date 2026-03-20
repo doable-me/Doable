@@ -435,7 +435,7 @@ function MemberRow({
   return (
     <div className="flex items-center gap-4 rounded-lg border p-4 transition-colors hover:bg-muted/30">
       <MemberAvatar
-        name={displayName}
+        name={displayName ?? "User"}
         avatarUrl={member.avatar_url}
       />
 
