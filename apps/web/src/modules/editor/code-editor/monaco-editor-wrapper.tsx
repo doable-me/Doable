@@ -34,6 +34,8 @@ export interface MonacoEditorWrapperProps {
   onChange?: (value: string) => void;
   onSave?: (value: string) => void;
   showMinimap?: boolean;
+  onEditorMount?: (editor: MonacoEditor.IStandaloneCodeEditor) => void;
+  onCursorChange?: (line: number, column: number) => void;
 }
 
 export function MonacoEditorWrapper({
@@ -44,6 +46,8 @@ export function MonacoEditorWrapper({
   onChange,
   onSave,
   showMinimap = false,
+  onEditorMount,
+  onCursorChange,
 }: MonacoEditorWrapperProps) {
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const valueRef = useRef(value);
@@ -87,10 +91,18 @@ export function MonacoEditorWrapper({
         onSave?.(editor.getValue());
       });
 
+      // Expose the editor instance to parent
+      onEditorMount?.(editor);
+
+      // Notify parent of cursor position changes
+      editor.onDidChangeCursorPosition((e: any) => {
+        onCursorChange?.(e.position.lineNumber, e.position.column);
+      });
+
       // Focus the editor
       editor.focus();
     },
-    [onSave],
+    [onSave, onEditorMount, onCursorChange],
   );
 
   const handleChange: OnChange = useCallback(

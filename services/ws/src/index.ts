@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { jwtVerify } from "jose";
 import { RoomManager } from "./rooms/room-manager.js";
-import type { WsClientMessage, WsServerMessage, PresenceUser } from "./rooms/room.js";
+import { type WsClientMessage, type WsServerMessage, type PresenceUser, userColor } from "./rooms/room.js";
 
 const PORT = parseInt(process.env.WS_PORT ?? "4001", 10);
 const HOST = process.env.WS_HOST ?? "0.0.0.0";
@@ -263,6 +263,24 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
     case "awareness:selection": {
       if (state.projectId) {
         rooms.get(state.projectId)?.updateSelection(state.userId, msg.data);
+      }
+      break;
+    }
+
+    case "cursor:move": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.broadcast({
+            type: "cursor:move",
+            userId: state.userId,
+            displayName: state.displayName ?? "User",
+            color: userColor(state.userId),
+            filePath: msg.filePath,
+            line: msg.line,
+            column: msg.column,
+          }, state.userId);
+        }
       }
       break;
     }

@@ -58,6 +58,12 @@ export interface CollaborationContextValue {
   filesOpen: Record<string, string[]>;
   sendFileOpen: (filePath: string) => void;
   sendFileClose: (filePath: string) => void;
+
+  // Cursors
+  cursors: Map<string, any>;
+  sendCursorMove: (filePath: string, line: number, column: number) => void;
+  subscribe: (handler: (msg: any) => void) => () => void;
+  send: (msg: Record<string, unknown>) => void;
 }
 
 export const CollaborationContext = createContext<CollaborationContextValue | null>(null);
@@ -82,6 +88,10 @@ export function useCollaboration(): CollaborationContextValue {
       filesOpen: {},
       sendFileOpen: () => {},
       sendFileClose: () => {},
+      cursors: new Map(),
+      sendCursorMove: () => {},
+      subscribe: () => () => {},
+      send: () => {},
     };
   }
   return ctx;

@@ -33,7 +33,8 @@ export type WsServerMessage =
   | { type: "chat:history"; messages: ChatMessage[] }
   | { type: "chat:user_typing"; userId: string; typing: boolean }
   | { type: "awareness:files_open"; data: Record<string, string[]> }
-  | { type: "awareness:user_selection"; userId: string; data: SelectionData };
+  | { type: "awareness:user_selection"; userId: string; data: SelectionData }
+  | { type: "cursor:move"; userId: string; displayName: string; color: string; filePath: string; line: number; column: number };
 
 export interface ChatMessage {
   id: string;
@@ -57,7 +58,8 @@ export type WsClientMessage =
   | { type: "chat:typing"; typing: boolean }
   | { type: "awareness:file_open"; filePath: string }
   | { type: "awareness:file_close"; filePath: string }
-  | { type: "awareness:selection"; data: SelectionData };
+  | { type: "awareness:selection"; data: SelectionData }
+  | { type: "cursor:move"; filePath: string; line: number; column: number };
 
 // ─── User Color ──────────────────────────────────────────
 const COLORS = [
@@ -67,7 +69,7 @@ const COLORS = [
   "#FFB74D", "#FF8A65", "#A1887F", "#90A4AE",
 ];
 
-function userColor(userId: string): string {
+export function userColor(userId: string): string {
   let hash = 0;
   for (let i = 0; i < userId.length; i++) {
     hash = (hash * 31 + userId.charCodeAt(i)) | 0;

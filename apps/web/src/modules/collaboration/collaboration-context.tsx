@@ -5,6 +5,7 @@ import { useProjectRoom } from "./hooks/use-project-room";
 import { usePresence } from "./hooks/use-presence";
 import { useTeamChat } from "./hooks/use-team-chat";
 import { useActivity } from "./hooks/use-activity";
+import { useRemoteCursors } from "./cursors";
 import type { PresenceUser } from "@doable/shared";
 
 interface CollaborationContextValue {
@@ -23,6 +24,11 @@ interface CollaborationContextValue {
   dismissToast: ReturnType<typeof useActivity>["dismissToast"];
   // Connection
   connectionState: string;
+  // Cursors
+  cursors: Map<string, any>;
+  sendCursorMove: (filePath: string, line: number, column: number) => void;
+  subscribe: (handler: (msg: any) => void) => () => void;
+  send: (msg: Record<string, unknown>) => void;
 }
 
 const CollaborationContext = createContext<CollaborationContextValue | null>(null);
@@ -39,6 +45,7 @@ export function CollaborationProvider({ projectId, userId, children }: ProviderP
   const presence = usePresence(room.send, room.joined);
   const chat = useTeamChat(room.subscribe, room.send, room.joined);
   const activity = useActivity(room.subscribe, room.joined, userId);
+  const { cursors, sendCursorMove } = useRemoteCursors(room.subscribe, room.send, room.joined, userId);
 
   const value: CollaborationContextValue = {
     members: room.members as PresenceUser[],
@@ -52,6 +59,10 @@ export function CollaborationProvider({ projectId, userId, children }: ProviderP
     toasts: activity.toasts,
     dismissToast: activity.dismissToast,
     connectionState: room.connectionState,
+    cursors,
+    sendCursorMove,
+    subscribe: room.subscribe,
+    send: room.send,
   };
 
   return (

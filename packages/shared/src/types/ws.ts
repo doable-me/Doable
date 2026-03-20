@@ -66,7 +66,8 @@ export type WsClientMessage =
   | { type: "chat:typing"; typing: boolean }
   | { type: "awareness:file_open"; filePath: string }
   | { type: "awareness:file_close"; filePath: string }
-  | { type: "awareness:selection"; data: SelectionData };
+  | { type: "awareness:selection"; data: SelectionData }
+  | { type: "cursor:move"; filePath: string; line: number; column: number };
 
 // ─── Server → Client Messages ───────────────────────────
 export type WsServerMessage =
@@ -83,7 +84,8 @@ export type WsServerMessage =
   | { type: "awareness:files_open"; data: Record<string, string[]> }
   | { type: "awareness:user_selection"; userId: string; data: SelectionData }
   | { type: "heartbeat_ack" }
-  | { type: "error"; code: string; message: string };
+  | { type: "error"; code: string; message: string }
+  | { type: "cursor:move"; userId: string; displayName: string; color: string; filePath: string; line: number; column: number };
 
 // ─── Helpers ────────────────────────────────────────────
 const PRESENCE_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7DC6F"];

@@ -6,6 +6,7 @@ import { useProjectRoom } from "./hooks/use-project-room";
 import { usePresence } from "./hooks/use-presence";
 import { useTeamChat } from "./hooks/use-team-chat";
 import { useActivity } from "./hooks/use-activity";
+import { useRemoteCursors } from "./cursors";
 
 interface Props {
   projectId: string | null;
@@ -19,6 +20,9 @@ export function CollaborationProvider({ projectId, userId, displayName, children
   const { updateFile, updateView } = usePresence(send, joined);
   const { messages, typingUsers, sendMessage, sendTyping } = useTeamChat(subscribe, send, joined);
   const { events, toasts, dismissToast } = useActivity(subscribe, joined, userId);
+
+  // Remote cursors
+  const { cursors, sendCursorMove } = useRemoteCursors(subscribe, send, joined, userId);
 
   // File awareness state
   const [filesOpen, setFilesOpen] = useState<Record<string, string[]>>({});
@@ -57,10 +61,15 @@ export function CollaborationProvider({ projectId, userId, displayName, children
     filesOpen,
     sendFileOpen,
     sendFileClose,
+    cursors,
+    sendCursorMove,
+    subscribe,
+    send,
   }), [
     connectionState, joined, members, updateFile, updateView,
     messages, typingUsers, sendMessage, sendTyping,
     events, toasts, dismissToast, filesOpen, sendFileOpen, sendFileClose,
+    cursors, sendCursorMove, subscribe, send,
   ]);
 
   return (

@@ -12,6 +12,8 @@ import { CollabHeaderItems } from "@/modules/collaboration/components/collab-hea
 import { CollabActivityOverlay } from "@/modules/collaboration/components/collab-activity-overlay";
 import { CollabTeamChatWrapper } from "@/modules/collaboration/components/collab-team-chat-wrapper";
 import { CollabPresenceSync } from "@/modules/collaboration/components/collab-presence-sync";
+import { FileTabPresenceDots } from "@/modules/collaboration/components/file-tab-presence-dots";
+import { CollabFileTabSync } from "@/modules/collaboration/components/collab-file-tab-sync";
 import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-attachments";
 import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/components/editor-model-selector";
 import {
@@ -100,6 +102,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import type { MonacoEditorWrapperProps } from "@/modules/editor/code-editor/monaco-editor-wrapper";
+import { CollaborativeMonacoWrapper } from "@/modules/editor/code-editor/collaborative-monaco-wrapper";
 import { useVisualEdit } from "@/modules/editor/visual-edit/use-visual-edit";
 import { VisualEditToolbar } from "@/modules/editor/visual-edit/visual-edit-toolbar";
 
@@ -3615,6 +3618,7 @@ export default function EditorPage() {
                       >
                         <FileCode2 className="h-3 w-3 flex-none text-zinc-500" />
                         <span className="truncate max-w-[120px]">{tab.name}</span>
+                        <FileTabPresenceDots filePath={tab.path} currentUserId={authUser?.id ?? ""} />
                         {tab.isDirty && (
                           <Circle className="h-2 w-2 flex-none fill-current text-brand-400" />
                         )}
@@ -3705,7 +3709,8 @@ export default function EditorPage() {
                 </div>
               ) : fileContent !== null ? (
                 <div className="flex-1 overflow-hidden">
-                  <MonacoEditorWrapper
+                  <CollaborativeMonacoWrapper
+                    EditorComponent={MonacoEditorWrapper}
                     value={fileContent}
                     language={detectLanguage(selectedFile.split("/").pop() ?? "")}
                     filePath={selectedFile}
@@ -4282,6 +4287,7 @@ export default function EditorPage() {
       </Dialog>
     </div>
     <CollabPresenceSync activeTab={activeTab} selectedFile={selectedFile} />
+    <CollabFileTabSync openFilePaths={openFileTabs.map((t: any) => t.path)} />
     <CollabActivityOverlay />
     </CollaborationProvider>
   );
