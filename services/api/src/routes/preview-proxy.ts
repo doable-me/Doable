@@ -138,6 +138,11 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
     responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     responseHeaders.set("Access-Control-Allow-Headers", "*");
 
+    // Prevent browser caching of dev server responses — CSS/JS change on every reload
+    responseHeaders.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    responseHeaders.delete("etag");
+    responseHeaders.delete("last-modified");
+
     // Inject error capture, analytics, and visual edit bridge scripts into HTML responses
     const contentType = resp.headers.get("content-type") ?? "";
     if (contentType.includes("text/html")) {
