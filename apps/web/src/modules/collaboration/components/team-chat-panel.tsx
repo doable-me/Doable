@@ -103,7 +103,7 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
                 style={{ backgroundColor: member?.color ?? "#666" }}
               >
-                {(msg.displayName ?? "?")[0].toUpperCase()}
+                {(msg.displayName ?? "?").charAt(0).toUpperCase()}
               </div>
               <div className={`max-w-[75%] ${isMe ? "text-right" : ""}`}>
                 <div className="flex items-center gap-2 mb-0.5">
