@@ -161,7 +161,14 @@ export default function BillingPage() {
       )}
 
       {/* Credits Overview */}
-      <CreditDisplay credits={credits} loading={creditsLoading} />
+      <CreditDisplay
+        credits={credits}
+        loading={creditsLoading}
+        onUpgrade={() => {
+          const plansSection = document.querySelector("[data-plans-section]");
+          plansSection?.scrollIntoView({ behavior: "smooth" });
+        }}
+      />
 
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-3">
@@ -184,7 +191,7 @@ export default function BillingPage() {
       </div>
 
       {/* Plans */}
-      <section>
+      <section data-plans-section>
         <h2 className="mb-4 text-xl font-semibold text-white">Plans</h2>
         {plansLoading ? (
           <div className="grid gap-6 md:grid-cols-3">

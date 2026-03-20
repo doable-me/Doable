@@ -4,6 +4,7 @@ import type { AuthEnv } from "../middleware/auth.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { sql } from "../db/index.js";
 import { billingQueries } from "@doable/db/queries/billing";
+import { creditQueries } from "@doable/db/queries/credits";
 import {
   PLANS,
   getPlanById,
@@ -16,6 +17,7 @@ import {
 import { PLAN_LIMITS } from "@doable/shared";
 
 const billing = billingQueries(sql);
+const creditsDb = creditQueries(sql);
 
 export const billingRoutes = new Hono<AuthEnv>();
 
@@ -64,6 +66,12 @@ billingRoutes.post("/webhook", async (c) => {
         const credits = parseInt(session.metadata.credits ?? "0", 10);
         if (credits > 0) {
           await billing.addCredits(workspaceId, { rollover: credits });
+          // Also add to user-level credit balances
+          try {
+            await creditsDb.addRolloverCredits(workspaceId, credits);
+          } catch (err) {
+            console.warn("[Webhook] Failed to add rollover to user credits:", err);
+          }
         }
         break;
       }
@@ -99,10 +107,17 @@ billingRoutes.post("/webhook", async (c) => {
         await sql`
           UPDATE workspaces SET plan = ${plan.id} WHERE id = ${workspaceId}
         `;
-        // Reset credits for new plan
+        // Reset credits for new plan (workspace-level)
         const limits = PLAN_LIMITS[plan.id];
         await billing.resetDailyCredits(workspaceId, limits.dailyCredits);
         await billing.resetMonthlyCredits(workspaceId, limits.monthlyCredits);
+
+        // Update user-level credit balances for the new plan
+        try {
+          await creditsDb.updateWorkspacePlanCredits(workspaceId, plan.id as "free" | "pro" | "business" | "enterprise");
+        } catch (err) {
+          console.warn("[Webhook] Failed to update user credit balances:", err);
+        }
       }
       break;
     }
@@ -126,6 +141,13 @@ billingRoutes.post("/webhook", async (c) => {
       const freeLimits = PLAN_LIMITS.free;
       await billing.resetDailyCredits(workspaceId, freeLimits.dailyCredits);
       await billing.resetMonthlyCredits(workspaceId, freeLimits.monthlyCredits);
+
+      // Update user-level credit balances to free plan
+      try {
+        await creditsDb.updateWorkspacePlanCredits(workspaceId, "free");
+      } catch (err) {
+        console.warn("[Webhook] Failed to update user credit balances:", err);
+      }
       break;
     }
   }
@@ -137,21 +159,51 @@ billingRoutes.post("/webhook", async (c) => {
 billingRoutes.use("/*", authMiddleware);
 
 // ─── GET /billing/credits ──────────────────────────────────
+// Returns user-level credit balance (with auto-initialization and reset)
 billingRoutes.get("/credits", async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) {
     return c.json({ error: "workspaceId query param required" }, 400);
   }
 
-  const credits = await billing.getCredits(workspaceId);
-  if (!credits) {
-    return c.json({ error: "Credits not found" }, 404);
+  const userId = c.get("userId");
+
+  try {
+    const balance = await creditsDb.getCreditBalance(userId, workspaceId);
+    return c.json({ data: balance });
+  } catch (err) {
+    console.error("[Billing] Failed to get credit balance:", err);
+    // Fallback to workspace-level credits
+    const credits = await billing.getCredits(workspaceId);
+    if (!credits) {
+      return c.json({ error: "Credits not found" }, 404);
+    }
+    return c.json({ data: credits });
+  }
+});
+
+// ─── GET /billing/credits/usage ─────────────────────────────
+// Detailed usage history with daily breakdown
+billingRoutes.get("/credits/usage", async (c) => {
+  const workspaceId = c.req.query("workspaceId");
+  if (!workspaceId) {
+    return c.json({ error: "workspaceId query param required" }, 400);
   }
 
-  return c.json({ data: credits });
+  const userId = c.get("userId");
+  const days = parseInt(c.req.query("days") ?? "30", 10);
+
+  try {
+    const history = await creditsDb.getCreditUsageHistory(userId, workspaceId, days);
+    return c.json({ data: history });
+  } catch (err) {
+    console.error("[Billing] Failed to get credit usage history:", err);
+    return c.json({ data: { rows: [], total: 0, dailyBreakdown: [] } });
+  }
 });
 
 // ─── GET /billing/usage ────────────────────────────────────
+// Legacy workspace-level usage (kept for backwards compatibility)
 billingRoutes.get("/usage", async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) {

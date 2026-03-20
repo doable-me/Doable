@@ -14,8 +14,14 @@ import {
   Check,
   Pencil,
 } from "lucide-react";
+import { CreditToolbarIndicator } from "@/modules/billing/components/credit-display";
+import { useCredits } from "@/modules/billing/hooks/use-billing";
 
-export function EditorToolbar() {
+interface EditorToolbarProps {
+  workspaceId?: string | null;
+}
+
+export function EditorToolbar({ workspaceId: workspaceIdProp }: EditorToolbarProps = {}) {
   const {
     projectName,
     viewMode,
@@ -24,6 +30,12 @@ export function EditorToolbar() {
     setViewMode,
     toggleSidebar,
   } = useEditorStore();
+
+  // Resolve workspace ID from prop or localStorage
+  const resolvedWorkspaceId = workspaceIdProp ?? (
+    typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") : null
+  ) ?? undefined;
+  const { credits, loading: creditsLoading } = useCredits(resolvedWorkspaceId);
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(projectName);
@@ -115,6 +127,13 @@ export function EditorToolbar() {
           </button>
         ))}
       </div>
+
+      {/* Credit indicator */}
+      <CreditToolbarIndicator
+        credits={credits}
+        loading={creditsLoading}
+        onUpgrade={() => window.open("/billing", "_blank")}
+      />
 
       {/* Right actions */}
       <div className="flex items-center gap-1">

@@ -5,13 +5,20 @@ import { useState, useEffect, useCallback } from "react";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export interface Credits {
-  id: string;
-  workspace_id: string;
+  id?: string;
+  workspace_id?: string;
   daily_remaining: number;
+  daily_total: number;
   monthly_remaining: number;
+  monthly_total: number;
   rollover_credits: number;
-  last_daily_reset: string | null;
-  last_monthly_reset: string | null;
+  total_available: number;
+  daily_reset_at: string | null;
+  monthly_reset_at: string | null;
+  plan_type: string;
+  // Legacy fields for backward compat
+  last_daily_reset?: string | null;
+  last_monthly_reset?: string | null;
 }
 
 export interface UsageEntry {
@@ -20,9 +27,20 @@ export interface UsageEntry {
   user_id: string;
   project_id: string | null;
   credits_used: number;
+  credits_consumed?: number;
   action: string;
+  action_type?: string;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  model?: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
+}
+
+export interface CreditUsageHistory {
+  rows: UsageEntry[];
+  total: number;
+  dailyBreakdown: { date: string; total: number }[];
 }
 
 export interface Plan {
@@ -114,6 +132,32 @@ export function useUsage(workspaceId: string | undefined) {
   }, [workspaceId]);
 
   return { usage, loading };
+}
+
+export function useCreditUsage(workspaceId: string | undefined, days: number = 30) {
+  const [data, setData] = useState<CreditUsageHistory | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(() => {
+    if (!workspaceId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    fetch(`${API_URL}/billing/credits/usage?workspaceId=${workspaceId}&days=${days}`, {
+      headers: getAuthHeaders(),
+    })
+      .then((r) => r.json())
+      .then((res) => setData(res.data ?? null))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [workspaceId, days]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { data, loading, refresh };
 }
 
 export function useCurrentPlan(workspaceId: string | undefined) {
