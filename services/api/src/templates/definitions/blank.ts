@@ -5,6 +5,7 @@ export const blankTemplate: TemplateDefinition = {
   name: "Blank Project",
   description: "Minimal React + Vite + Tailwind CSS v4 + shadcn/ui starter. Clean slate with best-practice defaults.",
   category: "starter",
+  tags: ["react", "vite", "tailwind", "typescript", "starter"],
   previewImageUrl: null,
   isOfficial: true,
 

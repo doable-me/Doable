@@ -16,11 +16,12 @@ const scaffold = scaffolder(sql);
 
 /**
  * GET /templates
- * List all available templates. Optionally filter by category.
+ * List all available templates. Optionally filter by category and search.
  */
 templateRoutes.get("/", async (c) => {
   const category = c.req.query("category") ?? undefined;
-  const templates = getTemplates({ category });
+  const search = c.req.query("search") ?? undefined;
+  const templates = getTemplates({ category, search });
   const categories = getCategories();
 
   return c.json({ data: { templates, categories } });
@@ -68,6 +69,7 @@ templateRoutes.get("/:id", async (c) => {
       name: template.name,
       description: template.description,
       category: template.category,
+      tags: template.tags,
       previewImageUrl: template.previewImageUrl,
       isOfficial: template.isOfficial,
       files: Object.keys(template.codeFiles),
@@ -121,5 +123,142 @@ templateRoutes.post(
     });
 
     return c.json({ data: result }, 201);
+  }
+);
+
+/**
+ * POST /templates/:id/use
+ * Create a new project from a template directly.
+ * Combines project creation + scaffolding in one step.
+ */
+templateRoutes.post(
+  "/:id/use",
+  authMiddleware,
+  zValidator(
+    "json",
+    z.object({
+      projectName: z.string().min(1).max(128),
+      workspaceId: z.string().uuid().optional(),
+    })
+  ),
+  async (c) => {
+    const templateId = c.req.param("id");
+    const userId = c.get("userId");
+    const { projectName, workspaceId } = c.req.valid("json");
+
+    const template = getTemplate(templateId!);
+    if (!template) {
+      return c.json({ error: "Template not found" }, 404);
+    }
+
+    // Get the user's workspace (use provided or default)
+    let wsId = workspaceId;
+    if (!wsId) {
+      const [ws] = await sql<{ workspace_id: string }[]>`
+        SELECT workspace_id FROM workspace_members
+        WHERE user_id = ${userId}
+        ORDER BY joined_at ASC
+        LIMIT 1
+      `;
+      if (!ws) {
+        return c.json({ error: "No workspace found" }, 400);
+      }
+      wsId = ws.workspace_id;
+    }
+
+    // Create the project
+    const [project] = await sql<{ id: string }[]>`
+      INSERT INTO projects (name, description, workspace_id, template_id)
+      VALUES (${projectName}, ${template.description}, ${wsId}, ${templateId})
+      RETURNING id
+    `;
+
+    if (!project) {
+      return c.json({ error: "Failed to create project" }, 500);
+    }
+
+    // Scaffold it
+    const result = await scaffold.scaffoldFromTemplate({
+      projectId: project.id,
+      templateId: templateId!,
+      projectName,
+    });
+
+    return c.json({
+      data: {
+        projectId: project.id,
+        ...result,
+      },
+    }, 201);
+  }
+);
+
+/**
+ * POST /templates/save-as-template
+ * Save an existing project as a user-created template (Business+ plan).
+ */
+templateRoutes.post(
+  "/save-as-template",
+  authMiddleware,
+  zValidator(
+    "json",
+    z.object({
+      projectId: z.string().uuid(),
+      name: z.string().min(1).max(128),
+      description: z.string().max(500).optional(),
+      category: z.string().max(50).optional(),
+    })
+  ),
+  async (c) => {
+    const userId = c.get("userId");
+    const { projectId, name, description, category } = c.req.valid("json");
+
+    // Verify project ownership
+    const [project] = await sql<{ id: string; workspace_id: string }[]>`
+      SELECT p.id, p.workspace_id FROM projects p
+      INNER JOIN workspace_members wm ON wm.workspace_id = p.workspace_id
+      WHERE p.id = ${projectId}
+        AND wm.user_id = ${userId}
+        AND p.deleted_at IS NULL
+    `;
+
+    if (!project) {
+      return c.json({ error: "Project not found or access denied" }, 404);
+    }
+
+    // Check for Business+ plan
+    const [workspace] = await sql<{ plan: string }[]>`
+      SELECT plan FROM workspaces WHERE id = ${project.workspace_id}
+    `;
+
+    if (!workspace || !["business", "enterprise"].includes(workspace.plan)) {
+      return c.json(
+        { error: "Saving as template requires a Business or Enterprise plan" },
+        403
+      );
+    }
+
+    // Get project files
+    const files = await sql<{ file_path: string; content: string }[]>`
+      SELECT file_path, content FROM project_files
+      WHERE project_id = ${projectId}
+        AND file_path NOT LIKE '.doable/%'
+    `;
+
+    const codeFiles: Record<string, string> = {};
+    for (const f of files) {
+      codeFiles[f.file_path] = f.content;
+    }
+
+    // Save as template in DB
+    const [template] = await sql<{ id: string }[]>`
+      INSERT INTO templates (name, description, category, code_files, is_official, created_by)
+      VALUES (${name}, ${description ?? null}, ${category ?? null}, ${sql.json(codeFiles)}, false, ${userId})
+      RETURNING id
+    `;
+
+    return c.json({
+      data: { templateId: template!.id, name, fileCount: files.length },
+    }, 201);
   }
 );

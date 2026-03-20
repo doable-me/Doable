@@ -57,6 +57,8 @@ import {
   Pencil,
   Trash2,
   Shield,
+  Compass,
+  LayoutTemplate,
 } from "lucide-react";
 import type { Folder } from "@doable/shared";
 
@@ -575,6 +577,18 @@ export function DashboardSidebar() {
               label="Search"
               shortcut="\u2318K"
               onClick={() => emitDashboardEvent(DASHBOARD_EVENTS.SEARCH_FOCUS)}
+            />
+            <NavItem
+              icon={LayoutTemplate}
+              label="Templates"
+              active={pathname === "/dashboard/templates"}
+              onClick={() => router.push("/dashboard/templates")}
+            />
+            <NavItem
+              icon={Compass}
+              label="Discover"
+              active={pathname === "/discover"}
+              onClick={() => router.push("/discover")}
             />
             <NavItem icon={BookOpen} label="Resources" />
           </div>

@@ -268,3 +268,24 @@ export interface EffectiveAiConfigRow {
   user_provider_id: string | null;
   user_model: string | null;
 }
+
+export interface PublicProjectRow {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  category: string | null;
+  thumbnail_url: string | null;
+  remix_count: number;
+  view_count: number;
+  featured: boolean;
+  published_at: Date;
+}
+
+export interface ProjectRemixRow {
+  id: string;
+  source_project_id: string;
+  forked_project_id: string;
+  forked_by: string;
+  created_at: Date;
+}

@@ -7,6 +7,7 @@ export const todoAppTemplate: TemplateDefinition = {
   description:
     "Simple todo list with full CRUD, filters, priority levels, due dates, and local storage persistence.",
   category: "productivity",
+  tags: ["react", "todo", "productivity", "crud", "local-storage"],
   previewImageUrl: null,
   isOfficial: true,
 

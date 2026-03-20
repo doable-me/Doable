@@ -42,7 +42,11 @@ export function scaffolder(sql: postgres.Sql) {
 
     /**
      * Scaffold a project from a template.
-     * Creates code files in the project's file store and initializes context.
+     * Creates the full project directory structure including:
+     * - All source files from the template definition
+     * - .doable/ context files (knowledge.md, instructions.md, identity.md)
+     * - package.json with correct dependencies
+     * - Vite config, tsconfig, tailwind config
      */
     async scaffoldFromTemplate(
       options: ScaffoldOptions
@@ -74,13 +78,21 @@ export function scaffolder(sql: postgres.Sql) {
         }
       }
 
-      // 4. Update template usage count
+      // 4. Ensure .doable/ context files are written as project files too
+      // so they appear in the file tree for user visibility
+      await writeDoableContextFiles(
+        sql,
+        options.projectId,
+        template
+      );
+
+      // 5. Update template usage count
       await sql`
         UPDATE templates
         SET usage_count = usage_count + 1
         WHERE id = ${options.templateId}
       `.catch(() => {
-        // Template might not exist in DB (built-in only) — that's fine
+        // Template might not exist in DB (built-in only) -- that's fine
       });
 
       return {
@@ -98,6 +110,13 @@ export function scaffolder(sql: postgres.Sql) {
     getInstallCommand(templateId: string): string {
       // All current templates use npm/pnpm
       return "npm install";
+    },
+
+    /**
+     * Get the dev server start command for a template.
+     */
+    getDevCommand(templateId: string): string {
+      return "npm run dev";
     },
   };
 }
@@ -131,6 +150,76 @@ async function writeCodeFiles(
   }
 
   return paths;
+}
+
+/**
+ * Write .doable/ context files as project files so they appear
+ * in the project file tree.
+ */
+async function writeDoableContextFiles(
+  sql: postgres.Sql,
+  projectId: string,
+  template: TemplateDefinition
+): Promise<void> {
+  // Build context content from overrides or defaults
+  const contextFiles: Record<string, string> = {};
+
+  // Start with defaults for all standard context files
+  for (const def of DEFAULT_CONTEXT_FILES) {
+    contextFiles[def.filename] = def.defaultContent;
+  }
+
+  // Override with template-specific content
+  if (template.contextOverrides) {
+    for (const [filename, content] of Object.entries(
+      template.contextOverrides
+    )) {
+      contextFiles[filename] = content;
+    }
+  }
+
+  // Ensure instructions.md always exists with template-specific guidance
+  if (!contextFiles["instructions.md"]) {
+    contextFiles["instructions.md"] = buildInstructionsContent(template);
+  }
+
+  // Write each context file as a .doable/ project file
+  for (const [filename, content] of Object.entries(contextFiles)) {
+    const filePath = `.doable/${filename}`;
+    await sql`
+      INSERT INTO project_files (project_id, file_path, content)
+      VALUES (${projectId}, ${filePath}, ${content})
+      ON CONFLICT (project_id, file_path)
+      DO UPDATE SET content = ${content}, updated_at = now()
+    `;
+  }
+}
+
+function buildInstructionsContent(template: TemplateDefinition): string {
+  return `# Coding Instructions
+
+## Template: ${template.name}
+
+### General Rules
+- Use TypeScript strict mode
+- Follow existing code patterns and naming conventions
+- Use Tailwind CSS for styling (no inline styles unless necessary)
+- Prefer functional React components with hooks
+- Use path alias \`@/\` for imports from \`src/\`
+
+### Component Guidelines
+- Export components as named exports
+- Keep components focused and single-responsibility
+- Use \`cn()\` utility for conditional class merging
+- Follow shadcn/ui patterns for UI components
+
+### File Organization
+- Place page components in \`src/pages/\` or \`src/app/\`
+- Place reusable components in \`src/components/\`
+- Place hooks in \`src/hooks/\`
+- Place utilities in \`src/lib/\`
+- Place types in \`src/types.ts\` or co-locate with components
+`;
 }
 
 function slugify(name: string): string {

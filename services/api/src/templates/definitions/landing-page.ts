@@ -6,6 +6,7 @@ export const landingPageTemplate: TemplateDefinition = {
   name: "Landing Page",
   description: "Marketing landing page with hero, features grid, pricing table, testimonials, and footer. Conversion-optimized.",
   category: "marketing",
+  tags: ["react", "landing-page", "marketing", "hero", "pricing", "conversion"],
   previewImageUrl: null,
   isOfficial: true,
 
