@@ -1367,7 +1367,7 @@ export default function DashboardPage() {
             background: "linear-gradient(to top, #0a0a0a 0%, #0a0a0ae0 50%, transparent 100%)",
           }} />
           {/* Content */}
-          <div className="relative z-10 px-8 py-16 max-w-5xl mx-auto">
+          <div className="relative z-10 px-8 py-16 max-w-7xl mx-auto">
             <div className="text-center mb-6">
               <h1 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight transition-all duration-500">
                 {greeting}
@@ -1400,7 +1400,7 @@ export default function DashboardPage() {
       )}
 
       {/* Content */}
-      <div className="relative z-10 mx-auto max-w-5xl px-6 pt-0 pb-10">
+      <div className="relative z-10 mx-auto max-w-7xl px-6 pt-0 pb-10">
         {/* Folder/Filter breadcrumb */}
         {(activeFolderId || sidebarFilter !== "all") && (
           <div className="mb-6">
