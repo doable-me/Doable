@@ -35,10 +35,38 @@ export interface Workspace {
 }
 
 export interface WorkspaceMember {
+  id: string;
   workspaceId: string;
   userId: string;
   role: WorkspaceRole;
+  invitedBy: string | null;
   joinedAt: string;
+}
+
+export interface WorkspaceMemberWithUser extends WorkspaceMember {
+  email: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+export interface WorkspaceInvite {
+  id: string;
+  workspaceId: string;
+  email: string;
+  role: string;
+  token: string;
+  invitedBy: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+  createdAt: string;
+}
+
+export interface ProjectCollaborator {
+  id: string;
+  projectId: string;
+  userId: string;
+  role: "owner" | "admin" | "editor" | "viewer";
+  addedAt: string;
 }
 
 export interface Project {
