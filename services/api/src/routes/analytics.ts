@@ -4,7 +4,12 @@ import { analyticsQueries } from "@doable/db";
 import { projectQueries } from "@doable/db";
 import { sql } from "../db/index.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
-import { getTrackingScript } from "../analytics/tracker.js";
+import {
+  getTrackingScript,
+  getTrackingSnippet,
+  generateVisitorId,
+  parseUserAgent,
+} from "../analytics/tracker.js";
 
 const analytics = analyticsQueries(sql);
 const projects = projectQueries(sql);
@@ -37,64 +42,6 @@ function parseDateRange(range?: string): { startDate: Date; endDate: Date } {
   }
 
   return { startDate, endDate };
-}
-
-// ─── User-Agent Parsing ───────────────────────────────────────
-
-function parseUserAgent(ua: string): {
-  deviceType: string;
-  browser: string;
-  os: string;
-} {
-  // Device type detection
-  let deviceType = "Desktop";
-  if (/tablet|ipad|playbook|silk/i.test(ua)) {
-    deviceType = "Tablet";
-  } else if (
-    /mobile|iphone|ipod|android.*mobile|windows.*phone|blackberry/i.test(ua)
-  ) {
-    deviceType = "Mobile";
-  }
-
-  // Browser detection (order matters — more specific first)
-  let browser = "Unknown";
-  if (/edg(e|a)?\/\d/i.test(ua)) {
-    browser = "Edge";
-  } else if (/opr\/|opera/i.test(ua)) {
-    browser = "Opera";
-  } else if (/vivaldi/i.test(ua)) {
-    browser = "Vivaldi";
-  } else if (/brave/i.test(ua)) {
-    browser = "Brave";
-  } else if (/firefox|fxios/i.test(ua)) {
-    browser = "Firefox";
-  } else if (/crios|chrome/i.test(ua) && !/chromium/i.test(ua)) {
-    browser = "Chrome";
-  } else if (/chromium/i.test(ua)) {
-    browser = "Chromium";
-  } else if (/safari/i.test(ua) && !/chrome|chromium|crios/i.test(ua)) {
-    browser = "Safari";
-  } else if (/msie|trident/i.test(ua)) {
-    browser = "Internet Explorer";
-  }
-
-  // OS detection (iOS must come before macOS — modern iPads send "Macintosh" in UA)
-  let os = "Unknown";
-  if (/iphone|ipad|ipod/i.test(ua)) {
-    os = "iOS";
-  } else if (/android/i.test(ua)) {
-    os = "Android";
-  } else if (/windows nt/i.test(ua)) {
-    os = "Windows";
-  } else if (/macintosh|mac os x/i.test(ua)) {
-    os = "macOS";
-  } else if (/cros/i.test(ua)) {
-    os = "Chrome OS";
-  } else if (/linux/i.test(ua)) {
-    os = "Linux";
-  }
-
-  return { deviceType, browser, os };
 }
 
 // ─── Rate Limiter for Track Endpoint ──────────────────────────
@@ -140,6 +87,7 @@ analyticsRoutes.get("/script.js", async (c) => {
 });
 
 // ─── POST /track — Track analytics event (no auth) ───────────
+// This endpoint must be FAST: no auth, minimal processing, async DB writes.
 
 const trackEventSchema = z.object({
   projectId: z.string().min(1),
@@ -154,6 +102,7 @@ const trackEventSchema = z.object({
   screenWidth: z.number().int().optional(),
   screenHeight: z.number().int().optional(),
   duration: z.number().int().min(0).optional(),
+  eventData: z.record(z.unknown()).nullable().optional(),
 });
 
 const trackBatchSchema = z.object({
@@ -162,9 +111,9 @@ const trackBatchSchema = z.object({
 
 analyticsRoutes.post("/track", async (c) => {
   try {
-    // Rate limit by IP
+    // Rate limit by IP — fast check before any processing
     const ip =
-      c.req.header("x-forwarded-for") ??
+      c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ??
       c.req.header("x-real-ip") ??
       "unknown";
 
@@ -189,6 +138,10 @@ analyticsRoutes.post("/track", async (c) => {
 
     const body = payload as Record<string, unknown>;
 
+    // Generate anonymous visitor ID server-side (privacy-friendly, no cookies)
+    const serverUA = c.req.header("user-agent") ?? "";
+    const visitorId = generateVisitorId({ ip, userAgent: serverUA });
+
     // Determine if batch or single event
     if (body.events && Array.isArray(body.events)) {
       // Batch mode
@@ -196,8 +149,6 @@ analyticsRoutes.post("/track", async (c) => {
       if (!parsed.success) {
         return c.json({ error: "Validation failed" }, 400);
       }
-
-      const serverUA = c.req.header("user-agent") ?? "";
 
       // Validate all project IDs exist and have analytics enabled
       const projectIds = [...new Set(parsed.data.events.map((e) => e.projectId))];
@@ -212,12 +163,41 @@ analyticsRoutes.post("/track", async (c) => {
         }
       }
 
-      const events = parsed.data.events.map((e) => {
+      // Process events: insert page_views + analytics_events
+      const analyticsEvents = [];
+      for (const e of parsed.data.events) {
         const ua = e.userAgent || serverUA;
-        const uaParsed = ua ? parseUserAgent(ua) : { deviceType: "Unknown", browser: "Unknown", os: "Unknown" };
+        const uaParsed = ua ? parseUserAgent(ua) : { deviceType: "desktop" as const, browser: "Unknown", os: "Unknown" };
 
-        return {
+        if (e.eventType === "page_view") {
+          // Insert into page_views table (fast path)
+          analytics.insertPageView({
+            projectId: e.projectId,
+            visitorId,
+            sessionId: e.sessionId,
+            path: e.path,
+            referrer: e.referrer,
+            userAgent: ua || undefined,
+            deviceType: e.deviceType || uaParsed.deviceType,
+            durationMs: e.duration ?? 0,
+          }).catch((err) => {
+            console.error("[analytics] Failed to insert page view:", err);
+          });
+        } else if (e.eventType === "page_leave") {
+          // Update duration on the existing page_view record
+          analytics.updatePageViewDuration({
+            sessionId: e.sessionId,
+            path: e.path,
+            durationMs: e.duration ?? 0,
+          }).catch((err) => {
+            console.error("[analytics] Failed to update page view duration:", err);
+          });
+        }
+
+        // Always record in analytics_events for full event history
+        analyticsEvents.push({
           projectId: e.projectId,
+          visitorId,
           sessionId: e.sessionId,
           eventType: e.eventType,
           path: e.path,
@@ -229,10 +209,15 @@ analyticsRoutes.post("/track", async (c) => {
           screenWidth: e.screenWidth ?? undefined,
           screenHeight: e.screenHeight ?? undefined,
           duration: e.duration ?? 0,
-        };
+          eventData: e.eventData ?? undefined,
+        });
+      }
+
+      // Batch insert analytics_events (fire-and-forget for speed)
+      analytics.trackEvents(analyticsEvents).catch((err) => {
+        console.error("[analytics] Failed to batch insert events:", err);
       });
 
-      await analytics.trackEvents(events);
       return c.body(null, 204);
     } else {
       // Single event mode
@@ -255,13 +240,39 @@ analyticsRoutes.post("/track", async (c) => {
         return c.json({ error: "Analytics disabled for this project" }, 403);
       }
 
-      // Parse user-agent server-side if device info not provided
-      const serverUA = c.req.header("user-agent") ?? "";
+      // Parse user-agent server-side
       const ua = event.userAgent || serverUA;
-      const uaParsed = ua ? parseUserAgent(ua) : { deviceType: "Unknown", browser: "Unknown", os: "Unknown" };
+      const uaParsed = ua ? parseUserAgent(ua) : { deviceType: "desktop" as const, browser: "Unknown", os: "Unknown" };
 
-      await analytics.trackEvent({
+      // Insert into page_views table for page_view events
+      if (event.eventType === "page_view") {
+        analytics.insertPageView({
+          projectId: event.projectId,
+          visitorId,
+          sessionId: event.sessionId,
+          path: event.path,
+          referrer: event.referrer,
+          userAgent: ua || undefined,
+          deviceType: event.deviceType || uaParsed.deviceType,
+          durationMs: event.duration ?? 0,
+        }).catch((err) => {
+          console.error("[analytics] Failed to insert page view:", err);
+        });
+      } else if (event.eventType === "page_leave") {
+        // Update duration on the existing page_view record
+        analytics.updatePageViewDuration({
+          sessionId: event.sessionId,
+          path: event.path,
+          durationMs: event.duration ?? 0,
+        }).catch((err) => {
+          console.error("[analytics] Failed to update page view duration:", err);
+        });
+      }
+
+      // Always record in analytics_events (fire-and-forget for speed)
+      analytics.trackEvent({
         projectId: event.projectId,
+        visitorId,
         sessionId: event.sessionId,
         eventType: event.eventType,
         path: event.path,
@@ -273,6 +284,9 @@ analyticsRoutes.post("/track", async (c) => {
         screenWidth: event.screenWidth ?? undefined,
         screenHeight: event.screenHeight ?? undefined,
         duration: event.duration ?? 0,
+        eventData: event.eventData ?? undefined,
+      }).catch((err) => {
+        console.error("[analytics] Failed to insert event:", err);
       });
 
       return c.body(null, 204);
@@ -343,11 +357,54 @@ analyticsRoutes.get("/projects/:id/timeseries", async (c) => {
   const { startDate, endDate } = parseDateRange(range);
 
   try {
-    const data = await analytics.getTimeseries(projectId, startDate, endDate);
+    const data = await analytics.getPageViewTimeline(projectId, startDate, endDate);
     return c.json({ data });
   } catch (err) {
     console.error("[analytics] Timeseries query failed:", err);
     return c.json({ error: "Failed to fetch timeseries" }, 500);
+  }
+});
+
+// ─── GET /projects/:id/pageviews — Page views with date range filter
+analyticsRoutes.get("/projects/:id/pageviews", async (c) => {
+  const projectId = c.req.param("id");
+  const range = c.req.query("range");
+
+  const project = await projects.findById(projectId);
+  if (!project) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  const { startDate, endDate } = parseDateRange(range);
+
+  try {
+    const data = await analytics.getPageViewTimeline(projectId, startDate, endDate);
+    return c.json({ data });
+  } catch (err) {
+    console.error("[analytics] Pageviews query failed:", err);
+    return c.json({ error: "Failed to fetch pageviews" }, 500);
+  }
+});
+
+// ─── GET /projects/:id/events — Custom events ────────────────
+analyticsRoutes.get("/projects/:id/events", async (c) => {
+  const projectId = c.req.param("id");
+  const range = c.req.query("range");
+  const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)));
+
+  const project = await projects.findById(projectId);
+  if (!project) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  const { startDate, endDate } = parseDateRange(range);
+
+  try {
+    const data = await analytics.getCustomEvents(projectId, startDate, endDate, limit);
+    return c.json({ data });
+  } catch (err) {
+    console.error("[analytics] Events query failed:", err);
+    return c.json({ error: "Failed to fetch events" }, 500);
   }
 });
 
@@ -386,7 +443,7 @@ analyticsRoutes.get("/projects/:id/referrers", async (c) => {
   const { startDate, endDate } = parseDateRange(range);
 
   try {
-    const data = await analytics.getReferrers(projectId, startDate, endDate);
+    const data = await analytics.getTopReferrers(projectId, startDate, endDate);
     return c.json({ data });
   } catch (err) {
     console.error("[analytics] Referrers query failed:", err);
@@ -407,7 +464,7 @@ analyticsRoutes.get("/projects/:id/devices", async (c) => {
   const { startDate, endDate } = parseDateRange(range);
 
   try {
-    const items = await analytics.getDevices(projectId, startDate, endDate);
+    const items = await analytics.getDeviceBreakdown(projectId, startDate, endDate);
     const data = items.map((item) => ({
       device: item.name,
       count: item.count,
@@ -513,6 +570,7 @@ analyticsRoutes.get("/projects/:id/settings", async (c) => {
     return c.json({
       data: {
         enabled: settings?.enabled ?? false,
+        trackingSnippet: getTrackingSnippet(apiUrl, projectId),
       },
     });
   } catch (err) {
