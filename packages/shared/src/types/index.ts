@@ -185,6 +185,24 @@ export interface GitHubCommit {
   createdAt: string;
 }
 
+// ─── Feature Flags ────────────────────────────────────────
+export interface FeatureFlag {
+  featureKey: string;
+  label: string;
+  description: string | null;
+  enabled: boolean;
+  minPlan: WorkspacePlan | null;
+  minRole: WorkspaceRole | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserFeatureOverride {
+  userId: string;
+  featureKey: string;
+  enabled: boolean;
+}
+
 // ─── AI Settings ──────────────────────────────────────────
 export interface GitHubCopilotAccount {
   id: string;

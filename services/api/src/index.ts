@@ -24,6 +24,7 @@ import { getDevServerInternalUrl } from "./projects/dev-server.js";
 import { thumbnailRoutes } from "./routes/thumbnails.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { aiSettingsRoutes } from "./routes/ai-settings.js";
+import { adminRoutes } from "./routes/admin.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 
@@ -331,6 +332,7 @@ app.route("/projects", versionRoutes);
 app.route("/", githubRoutes);
 app.route("/thumbnails", thumbnailRoutes);
 app.route("/analytics", analyticsRoutes);
+app.route("/admin", adminRoutes);
 
 // ─── 404 Fallback ───────────────────────────────────────────
 app.notFound((c) => {

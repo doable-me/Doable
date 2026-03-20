@@ -22,6 +22,7 @@ export interface UserRow {
   avatar_url: string | null;
   github_id: string | null;
   google_id: string | null;
+  is_platform_admin: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -235,6 +236,23 @@ export interface UserAiPreferencesRow {
   model: string | null;
   created_at: Date;
   updated_at: Date;
+}
+
+export interface FeatureFlagRow {
+  feature_key: string;
+  label: string;
+  description: string | null;
+  enabled: boolean;
+  min_plan: string | null;
+  min_role: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface UserFeatureOverrideRow {
+  user_id: string;
+  feature_key: string;
+  enabled: boolean;
 }
 
 export interface EffectiveAiConfigRow {

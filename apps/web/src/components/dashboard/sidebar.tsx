@@ -56,6 +56,7 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
+  Shield,
 } from "lucide-react";
 import type { Folder } from "@doable/shared";
 
@@ -821,6 +822,15 @@ export function DashboardSidebar() {
                 <CreditCard className="mr-2 h-4 w-4" />
                 Billing
               </DropdownMenuItem>
+              {user?.isPlatformAdmin && (
+              <DropdownMenuItem
+                className="text-amber-400 focus:bg-amber-500/10 focus:text-amber-300"
+                onClick={() => router.push("/admin")}
+              >
+                <Shield className="mr-2 h-4 w-4" />
+                System Admin
+              </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator className="bg-zinc-800" />
               <DropdownMenuItem
                 className="text-red-400 focus:bg-red-500/10 focus:text-red-400"

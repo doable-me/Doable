@@ -26,6 +26,7 @@ export interface AuthUser {
   email: string;
   displayName: string;
   avatarUrl: string | null;
+  isPlatformAdmin?: boolean;
 }
 
 interface LoginData {
