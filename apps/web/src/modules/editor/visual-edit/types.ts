@@ -76,7 +76,8 @@ export type IframeToBridgeMessage =
   | { type: "visual-edit:deselect" }
   | { type: "visual-edit:apply-style"; property: string; value: string }
   | { type: "visual-edit:apply-text"; text: string }
-  | { type: "visual-edit:revert-changes" };
+  | { type: "visual-edit:revert-changes" }
+  | { type: "visual-edit:highlight-element"; selector: string };
 
 export type BridgeToParentMessage =
   | { type: "visual-edit:ready" }
@@ -97,3 +98,13 @@ export interface PropertyChange {
 // ─── Visual Edit State ───────────────────────────────────────
 
 export type VisualEditMode = "idle" | "selecting" | "editing";
+
+// ─── Preview Device Mode ────────────────────────────────────
+
+export type DeviceMode = "desktop" | "tablet" | "mobile";
+
+export const DEVICE_WIDTHS: Record<DeviceMode, string> = {
+  desktop: "100%",
+  tablet: "768px",
+  mobile: "375px",
+};

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   RefreshCw,
   Maximize2,
@@ -10,9 +10,17 @@ import {
   Smartphone,
   Tablet,
   Globe,
+  MousePointer2,
+  ChevronDown,
 } from "lucide-react";
+import type { DeviceMode } from "@/modules/editor/visual-edit/types";
 
-type DeviceMode = "desktop" | "tablet" | "mobile";
+// ─── Types ──────────────────────────────────────────────────
+
+interface RouteEntry {
+  label: string;
+  path: string;
+}
 
 interface PreviewToolbarProps {
   url: string;
@@ -23,13 +31,23 @@ interface PreviewToolbarProps {
   onDeviceModeChange: (mode: DeviceMode) => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
+  // Visual edit
+  visualEditActive?: boolean;
+  onToggleVisualEdit?: () => void;
+  // Route navigation
+  routes?: RouteEntry[];
+  onNavigate?: (path: string) => void;
 }
+
+// ─── Device Definitions ─────────────────────────────────────
 
 const devices: { mode: DeviceMode; icon: typeof Monitor; label: string }[] = [
   { mode: "desktop", icon: Monitor, label: "Desktop" },
-  { mode: "tablet", icon: Tablet, label: "Tablet" },
-  { mode: "mobile", icon: Smartphone, label: "Mobile" },
+  { mode: "tablet", icon: Tablet, label: "Tablet (768px)" },
+  { mode: "mobile", icon: Smartphone, label: "Mobile (375px)" },
 ];
+
+// ─── Component ──────────────────────────────────────────────
 
 export function PreviewToolbar({
   url,
@@ -40,7 +58,47 @@ export function PreviewToolbar({
   onDeviceModeChange,
   isFullscreen,
   onToggleFullscreen,
+  visualEditActive = false,
+  onToggleVisualEdit,
+  routes = [],
+  onNavigate,
 }: PreviewToolbarProps) {
+  const [showRouteDropdown, setShowRouteDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showRouteDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowRouteDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showRouteDropdown]);
+
+  const handleRouteSelect = useCallback(
+    (path: string) => {
+      setShowRouteDropdown(false);
+      onNavigate?.(path);
+    },
+    [onNavigate],
+  );
+
+  // Extract the displayed path from the URL
+  const displayPath = (() => {
+    if (!url) return "";
+    try {
+      const parsed = new URL(url);
+      // Strip /preview/:projectId prefix if present
+      const path = parsed.pathname.replace(/^\/preview\/[^/]+/, "") || "/";
+      return path;
+    } catch {
+      return url;
+    }
+  })();
+
   return (
     <div className="flex h-10 items-center gap-2 border-b border-border bg-muted/20 px-2">
       {/* Refresh */}
@@ -54,12 +112,40 @@ export function PreviewToolbar({
         />
       </button>
 
-      {/* URL display */}
-      <div className="flex flex-1 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 min-w-0">
-        <Globe className="h-3 w-3 flex-none text-muted-foreground" />
-        <span className="truncate text-[11px] text-muted-foreground font-mono">
-          {url || "No preview available"}
-        </span>
+      {/* URL display / Route navigation */}
+      <div className="relative flex flex-1 min-w-0" ref={dropdownRef}>
+        <button
+          type="button"
+          onClick={() => {
+            if (routes.length > 0) setShowRouteDropdown(!showRouteDropdown);
+          }}
+          className="flex w-full items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 min-w-0 hover:bg-accent/50 transition-colors"
+        >
+          <Globe className="h-3 w-3 flex-none text-muted-foreground" />
+          <span className="truncate text-[11px] text-muted-foreground font-mono flex-1 text-left">
+            {displayPath || url || "No preview available"}
+          </span>
+          {routes.length > 0 && (
+            <ChevronDown className="h-3 w-3 flex-none text-muted-foreground" />
+          )}
+        </button>
+
+        {/* Route dropdown */}
+        {showRouteDropdown && routes.length > 0 && (
+          <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
+            {routes.map((route) => (
+              <button
+                key={route.path}
+                type="button"
+                onClick={() => handleRouteSelect(route.path)}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent transition-colors"
+              >
+                <span className="font-mono text-muted-foreground">{route.path}</span>
+                <span className="text-foreground truncate">{route.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Device toggle */}
@@ -79,6 +165,21 @@ export function PreviewToolbar({
           </button>
         ))}
       </div>
+
+      {/* Visual edit toggle */}
+      {onToggleVisualEdit && (
+        <button
+          onClick={onToggleVisualEdit}
+          className={`flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors ${
+            visualEditActive
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          }`}
+          title={visualEditActive ? "Disable visual editing" : "Enable visual editing"}
+        >
+          <MousePointer2 className="h-3.5 w-3.5" />
+        </button>
+      )}
 
       {/* Fullscreen */}
       <button

@@ -26,6 +26,7 @@ interface UseVisualEditReturn {
   deleteElement: () => void;
   sendElementPrompt: (prompt: string) => void;
   injectBridge: () => void;
+  highlightElement: (selector: string) => void;
   applyLiveStyle: (property: string, value: string) => void;
   applyLiveText: (text: string) => void;
   revertChanges: () => void;
@@ -168,6 +169,14 @@ export function useVisualEdit({ iframeRef, projectId, onSendMessage }: UseVisual
 
   // No-op injectBridge — bridge is now injected by the API server
   const injectBridge = useCallback(() => {}, []);
+
+  // ─── Highlight element by selector ────────────────────────
+  const highlightElement = useCallback(
+    (selector: string) => {
+      sendToIframe({ type: "visual-edit:highlight-element", selector });
+    },
+    [sendToIframe],
+  );
 
   // ─── Live DOM editing (Phase 1: instant preview) ──────────
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
@@ -336,6 +345,7 @@ export function useVisualEdit({ iframeRef, projectId, onSendMessage }: UseVisual
     deleteElement,
     sendElementPrompt,
     injectBridge,
+    highlightElement,
     applyLiveStyle,
     applyLiveText,
     revertChanges,
@@ -347,4 +357,3 @@ export function useVisualEdit({ iframeRef, projectId, onSendMessage }: UseVisual
     isSaving,
   };
 }
-// force recompile 1773693522

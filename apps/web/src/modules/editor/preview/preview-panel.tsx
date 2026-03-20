@@ -1,32 +1,98 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect, useRef, useMemo } from "react";
 import { useEditorStore } from "../hooks/use-editor-store";
 import { usePreview } from "../hooks/use-preview";
 import { PreviewToolbar } from "./preview-toolbar";
 import { Eye, Loader2, AlertTriangle } from "lucide-react";
+import type { DeviceMode } from "@/modules/editor/visual-edit/types";
+import { DEVICE_WIDTHS } from "@/modules/editor/visual-edit/types";
 
-type DeviceMode = "desktop" | "tablet" | "mobile";
-
-const DEVICE_WIDTHS: Record<DeviceMode, string> = {
-  desktop: "100%",
-  tablet: "768px",
-  mobile: "375px",
-};
+// ─── Component ──────────────────────────────────────────────
 
 export function PreviewPanel() {
   const projectId = useEditorStore((s) => s.projectId);
-  const { iframeRef, previewUrl, previewLoading, refresh, onLoad, openExternal } =
+  const fileTree = useEditorStore((s) => s.fileTree);
+  const isStreaming = useEditorStore((s) => s.isStreaming);
+  const { iframeRef, previewUrl, previewLoading, refresh, navigate, onLoad, openExternal } =
     usePreview(projectId);
 
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const prevStreamingRef = useRef(isStreaming);
+
+  // ─── Auto-refresh after AI code generation ──────────────────
+  // When streaming transitions from true -> false, the AI finished generating code.
+  // Auto-refresh the preview after a short delay to pick up the changes.
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming) {
+      // AI just finished — refresh preview
+      const timer = setTimeout(() => {
+        setHasError(false);
+        refresh();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+    prevStreamingRef.current = isStreaming;
+  }, [isStreaming, refresh]);
+
+  // ─── Route detection from file tree ─────────────────────────
+  const routes = useMemo(() => {
+    const entries: { label: string; path: string }[] = [];
+    function walk(nodes: typeof fileTree) {
+      for (const node of nodes) {
+        if (node.type === "directory" && node.children) {
+          walk(node.children);
+        }
+        if (node.type !== "file") continue;
+        const lowerPath = node.path.toLowerCase().replace(/\\/g, "/");
+        if (lowerPath.includes("src/pages/")) {
+          const ext = node.name.split(".").pop()?.toLowerCase() ?? "";
+          if (!["tsx", "jsx", "ts", "js"].includes(ext)) continue;
+          const baseName = node.name.replace(/\.[^.]+$/, "");
+          const lower = baseName.toLowerCase();
+          const route =
+            lower === "home" || lower === "index"
+              ? "/"
+              : `/${baseName.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase()}`;
+          entries.push({ label: baseName, path: route });
+        }
+      }
+    }
+    walk(fileTree);
+    // Always include root
+    if (!entries.some((e) => e.path === "/")) {
+      entries.unshift({ label: "Home", path: "/" });
+    }
+    entries.sort((a, b) => {
+      if (a.path === "/") return -1;
+      if (b.path === "/") return 1;
+      return a.label.localeCompare(b.label);
+    });
+    return entries;
+  }, [fileTree]);
+
+  // ─── Fullscreen toggle ──────────────────────────────────────
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleToggleFullscreen = useCallback(() => {
-    setIsFullscreen((prev) => !prev);
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {});
+    }
   }, []);
 
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  // ─── Event handlers ─────────────────────────────────────────
   const handleRefresh = useCallback(() => {
     setHasError(false);
     refresh();
@@ -36,6 +102,16 @@ export function PreviewPanel() {
     setHasError(true);
   }, []);
 
+  const handleNavigate = useCallback(
+    (path: string) => {
+      const routePath = path === "/" ? "" : path;
+      navigate(routePath);
+    },
+    [navigate],
+  );
+
+  // ─── Render ─────────────────────────────────────────────────
+
   const containerClass = isFullscreen
     ? "fixed inset-0 z-50 bg-background flex flex-col"
     : "flex h-full flex-col";
@@ -44,8 +120,12 @@ export function PreviewPanel() {
     return <EmptyPreview />;
   }
 
+  const isMobileDevice = deviceMode === "mobile";
+  const isTabletDevice = deviceMode === "tablet";
+  const isSmallDevice = isMobileDevice || isTabletDevice;
+
   return (
-    <div className={containerClass}>
+    <div ref={containerRef} className={containerClass}>
       <PreviewToolbar
         url={previewUrl}
         loading={previewLoading}
@@ -55,17 +135,34 @@ export function PreviewPanel() {
         onDeviceModeChange={setDeviceMode}
         isFullscreen={isFullscreen}
         onToggleFullscreen={handleToggleFullscreen}
+        routes={routes}
+        onNavigate={handleNavigate}
       />
 
       {/* Preview frame */}
       <div className="flex flex-1 items-center justify-center overflow-hidden bg-muted/10 p-2">
+        {/* Device frame wrapper for mobile/tablet */}
         <div
-          className="relative h-full overflow-hidden rounded-md border border-border bg-white shadow-sm transition-all duration-300"
+          className={`relative h-full overflow-hidden transition-all duration-300 ${
+            isMobileDevice
+              ? "rounded-[24px] border-4 border-zinc-800 shadow-2xl shadow-black/40"
+              : isTabletDevice
+                ? "rounded-2xl border-[3px] border-zinc-800 shadow-xl shadow-black/30"
+                : "rounded-md border border-border shadow-sm"
+          } bg-white`}
           style={{
             width: DEVICE_WIDTHS[deviceMode],
             maxWidth: "100%",
+            maxHeight: isMobileDevice ? "calc(100% - 16px)" : undefined,
           }}
         >
+          {/* Mobile notch */}
+          {isMobileDevice && (
+            <div className="absolute top-0 left-1/2 z-20 -translate-x-1/2">
+              <div className="h-[22px] w-[120px] rounded-b-xl bg-zinc-800" />
+            </div>
+          )}
+
           {/* Loading overlay */}
           {previewLoading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
@@ -75,6 +172,14 @@ export function PreviewPanel() {
                   Loading preview...
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* Streaming indicator */}
+          {isStreaming && !previewLoading && (
+            <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-primary/90 px-2.5 py-1 shadow-md">
+              <div className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+              <span className="text-[10px] font-medium text-white">AI generating...</span>
             </div>
           )}
 
@@ -99,14 +204,14 @@ export function PreviewPanel() {
             </div>
           )}
 
-          {/* iframe */}
+          {/* iframe — bridge script is auto-injected by the API preview proxy */}
           <iframe
             ref={iframeRef}
             src={previewUrl}
             onLoad={onLoad}
             onError={handleError}
             className="h-full w-full border-0"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
             title="Project preview"
           />
         </div>
@@ -114,6 +219,8 @@ export function PreviewPanel() {
     </div>
   );
 }
+
+// ─── Empty State ──────────────────────────────────────────────
 
 function EmptyPreview() {
   return (
