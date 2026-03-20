@@ -135,6 +135,38 @@ export function CreditDisplay({ credits, loading, className }: CreditDisplayProp
   );
 }
 
+/** Compact credit indicator for the editor toolbar */
+export function CreditToolbarIndicator({
+  credits,
+  loading,
+  onUpgrade,
+}: {
+  credits: Credits | null;
+  loading?: boolean;
+  onUpgrade?: () => void;
+}) {
+  if (loading || !credits) return null;
+
+  const total = credits.daily_remaining + credits.monthly_remaining + credits.rollover_credits;
+  const isLow = credits.daily_remaining <= 1 && total <= 2;
+
+  return (
+    <button
+      onClick={onUpgrade}
+      className={cn(
+        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+        isLow
+          ? "bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
+          : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+      )}
+      title={`${total} credits remaining`}
+    >
+      <span className="tabular-nums">{total}</span>
+      <span className="text-zinc-500">credits</span>
+    </button>
+  );
+}
+
 function CreditStat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg bg-zinc-800/50 border border-zinc-700/30 p-3 text-center">
