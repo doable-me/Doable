@@ -26,9 +26,12 @@ import {
 } from "../projects/dev-server.js";
 import { autoVersion } from "../version-control/manager.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { contextManager } from "../context/manager.js";
+import { buildContextPrompt } from "../context/injector.js";
 
 export const chatRoutes = new Hono<AuthEnv>();
 const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
+const ctxManager = contextManager(sql);
 
 // Require authentication for all chat and AI routes
 chatRoutes.use("/projects/:id/chat", authMiddleware);
@@ -153,15 +156,30 @@ async function resolveAiEngine(
  * knows what already exists before it starts generating code.
  */
 async function buildProjectContext(projectId: string): Promise<string> {
-  if (!isProjectScaffolded(projectId)) return "";
+  let context = "";
+
+  // ── .doable/ context files (always load, even before scaffold) ──
+  try {
+    const contextFiles = await ctxManager.initializeContext(projectId);
+    if (contextFiles.length > 0) {
+      // Build the context prompt using the injector (mode defaults to agent)
+      const contextPrompt = buildContextPrompt(contextFiles, "agent");
+      if (contextPrompt) {
+        context += `\n\n${contextPrompt}`;
+      }
+    }
+  } catch (err) {
+    console.warn("[Chat] Failed to load .doable/ context files:", err);
+  }
+
+  // ── File listing and package info ──
+  if (!isProjectScaffolded(projectId)) return context;
 
   try {
     const [files, pkgContent] = await Promise.all([
       listFiles(projectId).catch(() => [] as string[]),
       readFile(projectId, "package.json").catch(() => ""),
     ]);
-
-    let context = "";
 
     if (files.length > 0) {
       context += `\n\nCurrent project files:\n${files.join("\n")}`;
@@ -179,8 +197,93 @@ async function buildProjectContext(projectId: string): Promise<string> {
 
     return context;
   } catch {
-    return "";
+    return context;
   }
+}
+
+/**
+ * Build project context with mode-specific injection.
+ * Uses the context injector to select the right files per mode.
+ */
+async function buildProjectContextForMode(
+  projectId: string,
+  mode: "agent" | "plan" | "chat" | "visual-edit"
+): Promise<string> {
+  let context = "";
+
+  // Map visual-edit to agent mode for context purposes
+  const contextMode = mode === "visual-edit" ? "agent" : mode;
+
+  // ── .doable/ context files ──
+  try {
+    const contextFiles = await ctxManager.initializeContext(projectId);
+    if (contextFiles.length > 0) {
+      const contextPrompt = buildContextPrompt(contextFiles, contextMode);
+      if (contextPrompt) {
+        context += `\n\n${contextPrompt}`;
+      }
+    }
+  } catch (err) {
+    console.warn("[Chat] Failed to load .doable/ context files:", err);
+  }
+
+  // ── File listing and package info ──
+  if (!isProjectScaffolded(projectId)) return context;
+
+  try {
+    const [files, pkgContent] = await Promise.all([
+      listFiles(projectId).catch(() => [] as string[]),
+      readFile(projectId, "package.json").catch(() => ""),
+    ]);
+
+    if (files.length > 0) {
+      context += `\n\nCurrent project files:\n${files.join("\n")}`;
+    }
+
+    if (pkgContent) {
+      try {
+        const pkg = JSON.parse(pkgContent);
+        const deps = Object.keys(pkg.dependencies || {});
+        const devDeps = Object.keys(pkg.devDependencies || {});
+        context += `\n\nInstalled dependencies: ${deps.join(", ") || "(none)"}`;
+        context += `\nInstalled devDependencies: ${devDeps.join(", ") || "(none)"}`;
+      } catch { /* ignore parse errors */ }
+    }
+
+    return context;
+  } catch {
+    return context;
+  }
+}
+
+/**
+ * Extract a plan from the AI's response text.
+ * Looks for markdown plan structure and wraps it appropriately.
+ */
+function extractPlanFromResponse(text: string): string | null {
+  // Look for a markdown plan header
+  const planHeaderPattern = /^#\s+Plan/m;
+  if (planHeaderPattern.test(text)) {
+    const match = text.match(planHeaderPattern);
+    if (match?.index !== undefined) {
+      return text.slice(match.index).trim();
+    }
+  }
+
+  // If the response looks like a structured plan, wrap it
+  if (
+    text.includes("##") &&
+    (text.includes("Step") || text.includes("Task") || text.includes("Phase"))
+  ) {
+    return `# Plan\n\n${text.trim()}`;
+  }
+
+  // Fallback: if substantial text, treat it all as a plan
+  if (text.trim().length > 200) {
+    return `# Plan\n\n${text.trim()}`;
+  }
+
+  return null;
 }
 
 /** Structured error info returned by detectPreviewError */
@@ -461,7 +564,7 @@ chatRoutes.post(
       let sessionId = projectSessions.get(sessionKey);
       if (!sessionId) {
         const previewUrl = getDevServerUrl(projectId);
-        const projectContext = await buildProjectContext(projectId);
+        const projectContext = await buildProjectContextForMode(projectId, mode);
 
         const systemPrompt =
           mode === "plan"
@@ -793,6 +896,17 @@ ERROR RECOVERY — if you encounter errors:
           } catch {
             // Non-critical — don't break the chat if DB update fails
           }
+
+          // Update .doable/memory.md with a summary of what was done
+          try {
+            const summary = content.slice(0, 120).replace(/\n/g, " ");
+            await ctxManager.appendToMemory(
+              projectId,
+              `User asked: "${summary}${content.length > 120 ? "..." : ""}" — AI made file changes.`
+            );
+          } catch {
+            // Non-critical — don't break if memory update fails
+          }
         }
 
         // Capture thumbnail asynchronously (don't block the response)
@@ -816,6 +930,18 @@ ERROR RECOVERY — if you encounter errors:
             }
           } catch (e) {
             console.warn("[Chat] Failed to save assistant message:", e);
+          }
+        }
+
+        // In plan mode, save the assistant response as .doable/plan.md
+        if (mode === "plan" && assistantContent) {
+          try {
+            const planContent = extractPlanFromResponse(assistantContent);
+            if (planContent) {
+              await ctxManager.updateContextFile(projectId, "plan.md", planContent);
+            }
+          } catch {
+            // Non-critical — don't break if plan save fails
           }
         }
 

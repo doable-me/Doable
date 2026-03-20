@@ -18,6 +18,11 @@ import {
   thinkingEvent,
 } from "./streaming.js";
 import { getProjectPath } from "./project-files.js";
+import { sql } from "../db/index.js";
+import { contextManager } from "../context/manager.js";
+import { buildContextPrompt } from "../context/injector.js";
+
+const ctxManager = contextManager(sql);
 
 // ─── AI Engine ────────────────────────────────────────────
 
@@ -46,13 +51,29 @@ export class AIEngine {
     const startTime = Date.now();
 
     try {
-      // Load project context
+      // Load project context from file system (legacy)
       const context = await loadProjectContext(projectId);
+
+      // Also load DB-backed context files and merge into system prompt
+      let dbContextBlock = "";
+      try {
+        const dbFiles = await ctxManager.initializeContext(projectId);
+        if (dbFiles.length > 0) {
+          // Map AiMode to AiSessionMode for the injector
+          dbContextBlock = buildContextPrompt(dbFiles, mode);
+        }
+      } catch {
+        // DB context is optional — fall back to file-based context
+      }
+
       const systemPrompt = buildSystemPrompt(context, mode);
+      const fullSystemPrompt = dbContextBlock
+        ? `${systemPrompt}\n\n${dbContextBlock}`
+        : systemPrompt;
 
       // Build conversation messages
       const messages: ConversationMessage[] = [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: fullSystemPrompt },
         ...trimHistory(history),
         { role: "user", content: message },
       ];
@@ -69,6 +90,19 @@ export class AIEngine {
       const handler = this.getHandler(mode);
 
       yield* handler(this.provider, messages, toolCtx, this.options);
+
+      // Post-processing: update memory after agent completes
+      if (mode === "agent") {
+        try {
+          const summary = message.slice(0, 120).replace(/\n/g, " ");
+          await ctxManager.appendToMemory(
+            projectId,
+            `User asked: "${summary}${message.length > 120 ? "..." : ""}" — AI completed task.`
+          );
+        } catch {
+          // Non-critical
+        }
+      }
 
       // Emit done event
       yield doneEvent(Date.now() - startTime);
