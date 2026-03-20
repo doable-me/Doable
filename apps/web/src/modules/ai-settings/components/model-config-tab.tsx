@@ -217,15 +217,21 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Fetch models dynamically based on selected copilot account
-  const activeCopilotAccountId = primary.source === "copilot" ? primary.copilotAccountId : "";
-  const { models: copilotModels } = useCopilotModels(activeCopilotAccountId || undefined);
+  // Fetch models dynamically based on selected copilot account (per-section)
+  const activePrimaryCopilotId = primary.source === "copilot" ? primary.copilotAccountId : "";
+  const activeSuggestionCopilotId = suggestions.source === "copilot" ? suggestions.copilotAccountId : "";
+  const { models: primaryCopilotModels } = useCopilotModels(activePrimaryCopilotId || undefined);
+  const { models: suggestionCopilotModels } = useCopilotModels(activeSuggestionCopilotId || undefined);
+  // Unified alias — primary models used for general dropdown, suggestion models for suggestion dropdown
+  const copilotModels = primaryCopilotModels;
 
   // User preferences local state
   const [userSource, setUserSource] = useState<Source>("copilot");
   const [userCopilotAccountId, setUserCopilotAccountId] = useState("");
   const [userProviderId, setUserProviderId] = useState("");
   const [userModel, setUserModel] = useState("");
+  const activeUserCopilotId = userSource === "copilot" ? userCopilotAccountId : "";
+  const { models: userCopilotModels } = useCopilotModels(activeUserCopilotId || undefined);
   const [userSaving, setUserSaving] = useState(false);
   const [userSaved, setUserSaved] = useState(false);
 
@@ -367,7 +373,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
                         onChange={(e) => setUserModel(e.target.value)}
                         className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
                       >
-                        {copilotModels.map((m) => (
+                        {userCopilotModels.map((m) => (
                           <option key={m.id} value={m.id}>{m.label}</option>
                         ))}
                       </select>
