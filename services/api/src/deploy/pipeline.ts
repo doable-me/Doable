@@ -3,9 +3,12 @@ import { sql } from "../db/index.js";
 import { deploymentQueries } from "@doable/db/queries/deployments";
 import { projectQueries } from "@doable/db/queries/projects";
 import { workspaceQueries } from "@doable/db/queries/workspaces";
-import { runBuild } from "./builder.js";
+import { runBuild, type BuildLogCallback } from "./builder.js";
 import type { DeployAdapter } from "./adapter.js";
-import { DoableCloudAdapter, generateSubdomain } from "./adapters/doable-cloud.js";
+import {
+  DoableCloudAdapter,
+  generateSubdomain,
+} from "./adapters/doable-cloud.js";
 
 const deployments = deploymentQueries(sql);
 const projects = projectQueries(sql);
@@ -36,6 +39,8 @@ export interface PipelineInput {
   userId: string;
   environment: "preview" | "production";
   adapterName?: string;
+  /** Optional callback for streaming build logs to the client */
+  onBuildLog?: BuildLogCallback;
 }
 
 export interface PipelineResult {
@@ -43,24 +48,34 @@ export interface PipelineResult {
   url: string;
   status: "live" | "failed";
   buildLog: string;
+  buildTimeMs: number;
+  deployTimeMs: number;
   durationMs: number;
   error?: string;
 }
 
 /**
  * Orchestrates the full deploy pipeline:
- * 1. Ensure project has a subdomain (generate if first publish)
+ * 1. Validate project exists and has a subdomain (generate if first publish)
  * 2. Create deployment record (queued)
  * 3. Run Vite build
  * 4. Copy to serving directory via adapter
- * 5. Update deployment status
- * 6. Update project published URL
+ * 5. Track deployed artifacts
+ * 6. Update deployment status and project published URL
  */
-export async function runPipeline(input: PipelineInput): Promise<PipelineResult> {
-  const { projectId, userId, environment, adapterName = "doable-cloud" } = input;
-  const start = Date.now();
+export async function runPipeline(
+  input: PipelineInput
+): Promise<PipelineResult> {
+  const {
+    projectId,
+    userId,
+    environment,
+    adapterName = "doable-cloud",
+    onBuildLog,
+  } = input;
+  const pipelineStart = Date.now();
 
-  // Validate project exists
+  // ── 0. Validate project exists ──────────────────────────
   const project = await projects.findById(projectId);
   if (!project) {
     throw new Error(`Project not found: ${projectId}`);
@@ -73,10 +88,9 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
 
   const adapter = getAdapter(adapterName);
 
-  // ── Ensure subdomain exists (generate on first publish) ──
+  // ── 1. Ensure subdomain exists (generate on first publish) ──
   let subdomain = project.subdomain;
   if (!subdomain) {
-    // Generate a short subdomain and persist it
     const MAX_RETRIES = 5;
     for (let i = 0; i < MAX_RETRIES; i++) {
       const candidate = generateSubdomain(project.name);
@@ -93,7 +107,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
     await projects.update(projectId, { subdomain });
   }
 
-  // 1. Create deployment record
+  // ── 2. Create deployment record ────────────────────────
   const deployment = await deployments.create({
     projectId,
     environment,
@@ -102,17 +116,20 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   });
 
   try {
-    // 2. Update status to building
+    // ── 3. Build ─────────────────────────────────────────
     await deployments.updateStatus(deployment.id, "building");
+    onBuildLog?.("Starting build...\n");
 
-    // 3. Run build
+    const buildStart = Date.now();
     const projectDir = path.join(PROJECTS_ROOT, projectId);
-    const buildResult = await runBuild(projectDir);
+    const buildResult = await runBuild(projectDir, onBuildLog);
+    const buildTimeMs = Date.now() - buildStart;
 
     if (!buildResult.success) {
       await deployments.updateStatus(deployment.id, "failed", {
         buildLog: buildResult.log,
         errorMessage: buildResult.error,
+        buildTimeMs,
       });
 
       return {
@@ -120,14 +137,18 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
         url: "",
         status: "failed",
         buildLog: buildResult.log,
-        durationMs: Date.now() - start,
+        buildTimeMs,
+        deployTimeMs: 0,
+        durationMs: Date.now() - pipelineStart,
         error: buildResult.error,
       };
     }
 
-    // 4. Deploy via adapter
-    await deployments.updateStatus(deployment.id, "deploying");
+    // ── 4. Deploy via adapter ────────────────────────────
+    await deployments.updateStatus(deployment.id, "deploying", { buildTimeMs });
+    onBuildLog?.("Deploying...\n");
 
+    const deployStart = Date.now();
     const deployResult = await adapter.deploy({
       projectId,
       projectSlug: project.slug,
@@ -136,14 +157,30 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
       buildOutputDir: buildResult.outputDir,
       environment,
     });
+    const deployTimeMs = Date.now() - deployStart;
 
-    // 5. Update deployment to live
+    // ── 5. Track artifacts ───────────────────────────────
+    if (deployResult.files && deployResult.files.length > 0) {
+      try {
+        await deployments.createArtifacts(deployment.id, deployResult.files);
+      } catch (err) {
+        // Non-fatal: artifact tracking failure should not break deployment
+        console.warn(
+          `[pipeline] Failed to track artifacts for deployment ${deployment.id}:`,
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+
+    // ── 6. Update deployment to live ─────────────────────
     await deployments.updateStatus(deployment.id, "live", {
       url: deployResult.url,
       buildLog: buildResult.log,
+      buildTimeMs,
+      deployTimeMs,
     });
 
-    // 6. Update project published URL (production only)
+    // ── 7. Update project published URL (production only) ─
     if (environment === "production") {
       await projects.update(projectId, {
         publishedUrl: deployResult.url,
@@ -151,15 +188,20 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
       });
     }
 
+    onBuildLog?.(`\nDeployed to ${deployResult.url}\n`);
+
     return {
       deploymentId: deployment.id,
       url: deployResult.url,
       status: "live",
       buildLog: buildResult.log,
-      durationMs: Date.now() - start,
+      buildTimeMs,
+      deployTimeMs,
+      durationMs: Date.now() - pipelineStart,
     };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
+    onBuildLog?.(`\nERROR: ${errorMessage}\n`);
 
     await deployments.updateStatus(deployment.id, "failed", {
       errorMessage,
@@ -170,7 +212,9 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
       url: "",
       status: "failed",
       buildLog: "",
-      durationMs: Date.now() - start,
+      buildTimeMs: 0,
+      deployTimeMs: 0,
+      durationMs: Date.now() - pipelineStart,
       error: errorMessage,
     };
   }

@@ -19,9 +19,9 @@ export function PublishButton({
   className,
 }: PublishButtonProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [status, setStatus] = useState<"idle" | "publishing" | "success" | "error">(
-    "idle"
-  );
+  const [status, setStatus] = useState<
+    "idle" | "publishing" | "success" | "error"
+  >("idle");
 
   const statusIcon = {
     idle: <Rocket className="h-4 w-4" />,
@@ -60,7 +60,13 @@ export function PublishButton({
 
       <PublishDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          // Reset status back to idle when dialog closes after success
+          if (!open && status === "success") {
+            setTimeout(() => setStatus("idle"), 2000);
+          }
+        }}
         projectId={projectId}
         projectName={projectName}
         onStatusChange={setStatus}

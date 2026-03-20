@@ -10,6 +10,10 @@ export interface DeployInput {
 export interface DeployResult {
   url: string;
   adapter: string;
+  /** Total bytes deployed */
+  totalSize?: number;
+  /** Individual file info for artifact tracking */
+  files?: Array<{ path: string; size: number; hash: string }>;
   metadata?: Record<string, unknown>;
 }
 
@@ -27,7 +31,7 @@ export interface DeployAdapter {
   deploy(input: DeployInput): Promise<DeployResult>;
 
   /**
-   * Optional: tear down a deployment.
+   * Optional: tear down a deployment (remove deployed files).
    */
   teardown?(projectId: string, environment: string): Promise<void>;
 }
