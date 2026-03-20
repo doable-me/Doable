@@ -1,171 +1,146 @@
-import { createServer } from "node:http";
-import { WebSocketServer, type WebSocket } from "ws";
-import * as jose from "jose";
+import { createServer, type IncomingMessage } from "node:http";
+import { WebSocketServer, WebSocket } from "ws";
+import { jwtVerify } from "jose";
+import { RoomManager } from "./rooms/room-manager.js";
+import type { WsClientMessage, WsServerMessage, PresenceUser } from "./rooms/room.js";
 
-// ─── Types ──────────────────────────────────────────────────
-interface AuthenticatedClient {
-  ws: WebSocket;
-  userId: string;
-  projectId?: string;
-  joinedAt: Date;
-}
-
-type IncomingMessage =
-  | { type: "join_project"; projectId: string }
-  | { type: "leave_project" }
-  | { type: "cursor_move"; data: { x: number; y: number; file: string } }
-  | { type: "file_change"; data: { path: string; content: string } }
-  | { type: "ping" };
-
-// ─── State ──────────────────────────────────────────────────
-const clients = new Map<WebSocket, AuthenticatedClient>();
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? "fallback-dev-secret-change-me"
-);
+const PORT = parseInt(process.env.WS_PORT ?? "4001", 10);
+const HOST = process.env.WS_HOST ?? "0.0.0.0";
+const JWT_SECRET = process.env.JWT_SECRET ?? "fallback-dev-secret-change-me";
 const JWT_ISSUER = process.env.JWT_ISSUER ?? "doable";
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "internal-dev-secret";
 
-// ─── Auth Helper ────────────────────────────────────────────
-async function authenticateToken(token: string): Promise<string | null> {
+// ─── State ──────────────────────────────────────────────
+const rooms = new RoomManager();
+
+interface ClientState {
+  userId: string;
+  displayName: string | null;
+  projectId: string | null;
+}
+const clients = new Map<WebSocket, ClientState>();
+
+// ─── JWT Verification ───────────────────────────────────
+async function verifyToken(token: string): Promise<{ sub: string; email: string; display_name?: string } | null> {
   try {
-    const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
+    const secret = new TextEncoder().encode(JWT_SECRET);
+    const { payload } = await jwtVerify(token, secret, {
       issuer: JWT_ISSUER,
     });
-    return (payload.sub as string) ?? null;
+    if (!payload.sub || !payload.email) return null;
+    return payload as { sub: string; email: string; display_name?: string };
   } catch {
     return null;
   }
 }
 
-// ─── Broadcast ──────────────────────────────────────────────
-function broadcastToProject(
-  projectId: string,
-  message: object,
-  exclude?: WebSocket
-) {
-  const payload = JSON.stringify(message);
-  for (const [ws, client] of clients) {
-    if (client.projectId === projectId && ws !== exclude && ws.readyState === ws.OPEN) {
-      ws.send(payload);
-    }
+// ─── HTTP Server ────────────────────────────────────────
+const server = createServer(async (req, res) => {
+  // CORS headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Internal-Secret");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
   }
-}
 
-// ─── Server Setup ───────────────────────────────────────────
-const port = parseInt(process.env.WS_PORT ?? "4001", 10);
-const host = process.env.WS_HOST ?? "0.0.0.0";
-
-const server = createServer((req, res) => {
-  // Handle HTTP requests through Hono
-  if (req.url === "/health") {
+  if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "healthy", connections: clients.size, timestamp: new Date().toISOString() }));
-  } else {
-    res.writeHead(404);
-    res.end("Not Found");
+    res.end(JSON.stringify({ status: "ok", rooms: rooms.getRoomCount(), users: rooms.getTotalUsers() }));
+    return;
   }
+
+  // Internal broadcast endpoint — used by API server to push events
+  if (req.method === "POST" && req.url === "/internal/broadcast") {
+    const secret = req.headers["x-internal-secret"];
+    if (secret !== INTERNAL_SECRET) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
+
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      try {
+        const { projectId, message } = JSON.parse(body) as { projectId: string; message: WsServerMessage };
+        const room = rooms.get(projectId);
+        if (room) {
+          room.broadcast(message);
+        }
+        res.writeHead(200);
+        res.end("ok");
+      } catch {
+        res.writeHead(400);
+        res.end("Invalid JSON");
+      }
+    });
+    return;
+  }
+
+  // Presence REST fallback
+  if (req.method === "GET" && req.url?.startsWith("/internal/presence/")) {
+    const projectId = req.url.split("/internal/presence/")[1];
+    const room = rooms.get(projectId ?? "");
+    const users: PresenceUser[] = room ? room.getPresenceUsers() : [];
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ users }));
+    return;
+  }
+
+  res.writeHead(404);
+  res.end("Not Found");
 });
 
+// ─── WebSocket Server ───────────────────────────────────
 const wss = new WebSocketServer({ server });
 
-wss.on("connection", async (ws, req) => {
-  // Extract token from query string: ?token=xxx
+wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
+  // Extract token from query string
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   const token = url.searchParams.get("token");
 
   if (!token) {
-    ws.close(4001, "Authentication required");
+    ws.close(4001, "Missing token");
     return;
   }
 
-  const userId = await authenticateToken(token);
-  if (!userId) {
-    ws.close(4001, "Invalid token");
+  const payload = await verifyToken(token);
+  if (!payload) {
+    ws.close(4002, "Invalid token");
     return;
   }
 
-  const client: AuthenticatedClient = {
-    ws,
-    userId,
-    joinedAt: new Date(),
+  const state: ClientState = {
+    userId: payload.sub,
+    displayName: payload.display_name ?? payload.email.split("@")[0] ?? null,
+    projectId: null,
   };
-  clients.set(ws, client);
+  clients.set(ws, state);
 
-  ws.send(JSON.stringify({ type: "connected", userId }));
+  // Send connected acknowledgment
+  send(ws, { type: "connected", userId: payload.sub, resumeToken: "" });
 
   ws.on("message", (raw) => {
     try {
-      const message = JSON.parse(raw.toString()) as IncomingMessage;
-
-      switch (message.type) {
-        case "join_project": {
-          client.projectId = message.projectId;
-          broadcastToProject(
-            message.projectId,
-            { type: "user_joined", userId: client.userId },
-            ws
-          );
-          break;
-        }
-
-        case "leave_project": {
-          if (client.projectId) {
-            broadcastToProject(
-              client.projectId,
-              { type: "user_left", userId: client.userId },
-              ws
-            );
-            client.projectId = undefined;
-          }
-          break;
-        }
-
-        case "cursor_move": {
-          if (client.projectId) {
-            broadcastToProject(
-              client.projectId,
-              {
-                type: "cursor_move",
-                userId: client.userId,
-                data: message.data,
-              },
-              ws
-            );
-          }
-          break;
-        }
-
-        case "file_change": {
-          if (client.projectId) {
-            broadcastToProject(
-              client.projectId,
-              {
-                type: "file_change",
-                userId: client.userId,
-                data: message.data,
-              },
-              ws
-            );
-          }
-          break;
-        }
-
-        case "ping": {
-          ws.send(JSON.stringify({ type: "pong" }));
-          break;
-        }
-      }
+      const msg = JSON.parse(raw.toString()) as WsClientMessage;
+      handleMessage(ws, state, msg);
     } catch {
-      ws.send(JSON.stringify({ type: "error", message: "Invalid message format" }));
+      send(ws, { type: "error", code: "PARSE_ERROR", message: "Invalid JSON" });
     }
   });
 
   ws.on("close", () => {
-    if (client.projectId) {
-      broadcastToProject(client.projectId, {
-        type: "user_left",
-        userId: client.userId,
-      });
+    // Leave room if in one
+    if (state.projectId) {
+      const room = rooms.get(state.projectId);
+      if (room) {
+        room.leave(state.userId);
+        if (room.isEmpty) rooms.remove(state.projectId);
+      }
     }
     clients.delete(ws);
   });
@@ -175,6 +150,117 @@ wss.on("connection", async (ws, req) => {
   });
 });
 
-server.listen(port, host, () => {
-  console.log(`Doable WebSocket server started on ${host}:${port}`);
+// ─── Message Handler ────────────────────────────────────
+function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage): void {
+  switch (msg.type) {
+    case "room:join": {
+      // Leave previous room if any
+      if (state.projectId) {
+        const oldRoom = rooms.get(state.projectId);
+        if (oldRoom) {
+          oldRoom.leave(state.userId);
+          if (oldRoom.isEmpty) rooms.remove(state.projectId);
+        }
+      }
+      state.projectId = msg.projectId;
+      const room = rooms.getOrCreate(msg.projectId);
+      const members = room.join(ws, state.userId, state.displayName, null);
+      send(ws, { type: "room:joined", projectId: msg.projectId, members });
+      break;
+    }
+
+    case "room:leave": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.leave(state.userId);
+          if (room.isEmpty) rooms.remove(state.projectId);
+        }
+        state.projectId = null;
+      }
+      break;
+    }
+
+    case "heartbeat": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        room?.heartbeat(state.userId);
+      }
+      send(ws, { type: "heartbeat_ack" });
+      break;
+    }
+
+    case "presence:update": {
+      if (state.projectId) {
+        rooms.get(state.projectId)?.updatePresence(state.userId, msg.data);
+      }
+      break;
+    }
+
+    case "chat:send": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          const chatMsg = {
+            id: crypto.randomUUID(),
+            projectId: state.projectId,
+            userId: state.userId,
+            displayName: state.displayName,
+            avatarUrl: null,
+            content: msg.data.content,
+            messageType: "user" as const,
+            mentions: msg.data.mentions ?? [],
+            parentId: msg.data.parentId ?? null,
+            createdAt: new Date().toISOString(),
+          };
+          // Broadcast to entire room including sender
+          room.broadcast({ type: "chat:message", message: chatMsg });
+          // TODO: Persist to database via internal API call
+        }
+      }
+      break;
+    }
+
+    case "chat:typing": {
+      if (state.projectId) {
+        rooms.get(state.projectId)?.setTyping(state.userId, msg.typing);
+      }
+      break;
+    }
+
+    case "awareness:file_open": {
+      if (state.projectId) {
+        rooms.get(state.projectId)?.updateFileOpen(state.userId, msg.filePath);
+      }
+      break;
+    }
+
+    case "awareness:file_close": {
+      if (state.projectId) {
+        rooms.get(state.projectId)?.updateFileClose(state.userId, msg.filePath);
+      }
+      break;
+    }
+
+    case "awareness:selection": {
+      if (state.projectId) {
+        rooms.get(state.projectId)?.updateSelection(state.userId, msg.data);
+      }
+      break;
+    }
+  }
+}
+
+function send(ws: WebSocket, msg: WsServerMessage): void {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
+// ─── Heartbeat Tick ─────────────────────────────────────
+setInterval(() => rooms.tick(), 30_000);
+
+// ─── Start ──────────────────────────────────────────────
+server.listen(PORT, HOST, () => {
+  console.log(`[ws] WebSocket server listening on ${HOST}:${PORT}`);
 });
