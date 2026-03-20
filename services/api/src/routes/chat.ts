@@ -26,9 +26,12 @@ import {
 } from "../projects/dev-server.js";
 import { autoVersion } from "../version-control/manager.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { requireCredits } from "../middleware/credits.js";
+import { creditQueries } from "@doable/db/queries/credits";
 
 export const chatRoutes = new Hono<AuthEnv>();
 const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
+const creditsDb = creditQueries(sql);
 
 // Require authentication for all chat and AI routes
 chatRoutes.use("/projects/:id/chat", authMiddleware);
@@ -405,6 +408,44 @@ chatRoutes.post(
     const projectId = c.req.param("id");
     const { content, mode, model, provider, providerId, copilotAccountId, attachments } = c.req.valid("json");
     const userId = c.get("userId")!;
+
+    // ── Credit check before AI processing ──────────────────
+    let creditWorkspaceId: string | undefined;
+    try {
+      const [project] = await sql<[{ workspace_id: string }]>`
+        SELECT workspace_id FROM projects WHERE id = ${projectId}
+      `;
+      creditWorkspaceId = project?.workspace_id;
+    } catch {
+      // Will be handled downstream
+    }
+
+    if (creditWorkspaceId) {
+      try {
+        const balance = await creditsDb.getCreditBalance(userId, creditWorkspaceId);
+        if (balance.plan_type !== "enterprise" && balance.total_available < 1) {
+          return c.json(
+            {
+              error: "Insufficient credits",
+              credits: {
+                daily_remaining: balance.daily_remaining,
+                daily_total: balance.daily_total,
+                monthly_remaining: balance.monthly_remaining,
+                monthly_total: balance.monthly_total,
+                rollover_credits: balance.rollover_credits,
+                total_available: balance.total_available,
+                daily_reset_at: balance.daily_reset_at.toISOString(),
+                monthly_reset_at: balance.monthly_reset_at.toISOString(),
+                plan_type: balance.plan_type,
+              },
+            },
+            429
+          );
+        }
+      } catch (err) {
+        console.warn("[Chat] Credit check failed, allowing request:", err);
+      }
+    }
 
     // Augment prompt with image attachment markers (AI can't see images yet, but gets notified)
     let augmentedContent = content;
@@ -816,6 +857,28 @@ ERROR RECOVERY — if you encounter errors:
             }
           } catch (e) {
             console.warn("[Chat] Failed to save assistant message:", e);
+          }
+        }
+
+        // ── Consume credits after AI response ──────────────────
+        if (creditWorkspaceId && assistantContent) {
+          try {
+            const actionType = mode === "plan" ? "ai_plan" : mode === "visual-edit" ? "ai_visual_edit" : "ai_chat";
+            const result = await creditsDb.consumeCredits(userId, creditWorkspaceId, 1, {
+              projectId,
+              actionType,
+              model: resolvedModel,
+            });
+
+            // Send remaining credits in a special SSE event
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "credits",
+                data: { remaining: result.remaining, consumed: 1 },
+              }),
+            });
+          } catch (err) {
+            console.warn("[Chat] Failed to consume credits:", err);
           }
         }
 
