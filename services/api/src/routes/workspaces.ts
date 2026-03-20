@@ -3,6 +3,7 @@ import { z } from "zod";
 import { sql } from "../db/index.js";
 import { workspaceQueries, userQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { requireRole } from "../middleware/workspace-role.js";
 import { SLUG_REGEX, SLUG_MIN_LENGTH, SLUG_MAX_LENGTH } from "@doable/shared";
 
 const workspaces = workspaceQueries(sql);
@@ -76,6 +77,32 @@ workspaceRoutes.post("/", async (c) => {
   return c.json({ data: workspace }, 201);
 });
 
+// ─── Accept Invite (must be before /:id routes) ────────────
+const acceptInviteSchema = z.object({
+  token: z.string().min(1),
+});
+
+workspaceRoutes.post("/invite/accept", async (c) => {
+  const userId = c.get("userId");
+  const body = await c.req.json();
+  const parsed = acceptInviteSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(
+      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+      400
+    );
+  }
+
+  const result = await workspaces.acceptInvite(parsed.data.token, userId);
+
+  if (!result) {
+    return c.json({ error: "Invalid, expired, or already accepted invite" }, 400);
+  }
+
+  return c.json({ data: result });
+});
+
 // ─── Get Workspace ──────────────────────────────────────────
 workspaceRoutes.get("/:id", async (c) => {
   const id = c.req.param("id");
@@ -95,7 +122,7 @@ const updateSchema = z.object({
   avatarUrl: z.string().url().optional(),
 });
 
-workspaceRoutes.patch("/:id", async (c) => {
+workspaceRoutes.patch("/:id", requireRole("admin"), async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
   const parsed = updateSchema.safeParse(body);
@@ -116,7 +143,58 @@ workspaceRoutes.patch("/:id", async (c) => {
   return c.json({ data: workspace });
 });
 
-// ─── List Members ───────────────────────────────────────────
+// ─── Delete Workspace ───────────────────────────────────────
+workspaceRoutes.delete("/:id", requireRole("owner"), async (c) => {
+  const id = c.req.param("id");
+  const deleted = await workspaces.delete(id);
+
+  if (!deleted) {
+    return c.json({ error: "Workspace not found" }, 404);
+  }
+
+  return c.json({ data: { id, deleted: true } });
+});
+
+// ─── Transfer Ownership ────────────────────────────────────
+const transferSchema = z.object({
+  newOwnerId: z.string().uuid(),
+});
+
+workspaceRoutes.post("/:id/transfer", requireRole("owner"), async (c) => {
+  const workspaceId = c.req.param("id");
+  const callerId = c.get("userId");
+  const body = await c.req.json();
+  const parsed = transferSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(
+      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+      400
+    );
+  }
+
+  const { newOwnerId } = parsed.data;
+
+  // Verify new owner is a member
+  const newOwnerRole = await workspaces.getMemberRole(workspaceId, newOwnerId);
+  if (!newOwnerRole) {
+    return c.json({ error: "User is not a member of this workspace" }, 400);
+  }
+
+  // Update workspace owner_id
+  await sql`UPDATE workspaces SET owner_id = ${newOwnerId} WHERE id = ${workspaceId}`;
+
+  // Set new owner role
+  await workspaces.updateMemberRole(workspaceId, newOwnerId, "owner");
+
+  // Demote current owner to admin
+  await workspaces.updateMemberRole(workspaceId, callerId, "admin");
+
+  const workspace = await workspaces.findById(workspaceId);
+  return c.json({ data: workspace });
+});
+
+// ─── List Members (with user details) ──────────────────────
 workspaceRoutes.get("/:id/members", async (c) => {
   const id = c.req.param("id");
   const workspace = await workspaces.findById(id);
@@ -125,18 +203,18 @@ workspaceRoutes.get("/:id/members", async (c) => {
     return c.json({ error: "Workspace not found" }, 404);
   }
 
-  const members = await workspaces.listMembers(id);
+  const members = await workspaces.getWorkspaceMembers(id);
 
   return c.json({ data: members });
 });
 
-// ─── Invite Member ──────────────────────────────────────────
+// ─── Invite Member (by email) ──────────────────────────────
 const inviteSchema = z.object({
   email: z.string().email(),
   role: z.enum(["admin", "member", "viewer"]),
 });
 
-workspaceRoutes.post("/:id/members/invite", async (c) => {
+workspaceRoutes.post("/:id/members/invite", requireRole("admin"), async (c) => {
   const workspaceId = c.req.param("id");
   const userId = c.get("userId");
   const body = await c.req.json();
@@ -149,43 +227,97 @@ workspaceRoutes.post("/:id/members/invite", async (c) => {
     );
   }
 
-  // Verify caller has permission
-  const callerRole = await workspaces.getMemberRole(workspaceId, userId);
-  if (!callerRole || !["owner", "admin"].includes(callerRole)) {
-    return c.json({ error: "Insufficient permissions" }, 403);
+  // Check if user is already a member
+  const existingUser = await users.findByEmail(parsed.data.email);
+  if (existingUser) {
+    const existingRole = await workspaces.getMemberRole(workspaceId, existingUser.id);
+    if (existingRole) {
+      return c.json({ error: "User is already a member of this workspace" }, 409);
+    }
   }
 
-  // Find the user by email
-  const invitee = await users.findByEmail(parsed.data.email);
-  if (!invitee) {
-    return c.json({ error: "User not found with this email" }, 404);
-  }
-
-  const member = await workspaces.addMember(
+  // Create invite
+  const invite = await workspaces.createInvite(
     workspaceId,
-    invitee.id,
-    parsed.data.role
+    parsed.data.email,
+    parsed.data.role,
+    userId
   );
 
-  return c.json({ data: member }, 201);
+  return c.json({ data: invite }, 201);
+});
+
+// ─── List Pending Invites ──────────────────────────────────
+workspaceRoutes.get("/:id/invites", requireRole("admin"), async (c) => {
+  const workspaceId = c.req.param("id");
+  const invites = await workspaces.listInvites(workspaceId);
+  return c.json({ data: invites });
+});
+
+// ─── Revoke Invite ─────────────────────────────────────────
+workspaceRoutes.delete("/:id/invites/:inviteId", requireRole("admin"), async (c) => {
+  const workspaceId = c.req.param("id");
+  const inviteId = c.req.param("inviteId");
+
+  const revoked = await workspaces.revokeInvite(workspaceId, inviteId);
+
+  if (!revoked) {
+    return c.json({ error: "Invite not found" }, 404);
+  }
+
+  return c.json({ data: { inviteId, revoked: true } });
+});
+
+// ─── Generate Shareable Invite Link ────────────────────────
+const inviteLinkSchema = z.object({
+  role: z.enum(["admin", "member", "viewer"]),
+});
+
+workspaceRoutes.post("/:id/invite-link", requireRole("admin"), async (c) => {
+  const workspaceId = c.req.param("id");
+  const userId = c.get("userId");
+  const body = await c.req.json();
+  const parsed = inviteLinkSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(
+      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+      400
+    );
+  }
+
+  const invite = await workspaces.createInviteLink(
+    workspaceId,
+    parsed.data.role,
+    userId
+  );
+
+  return c.json({ data: invite }, 201);
 });
 
 // ─── Remove Member ──────────────────────────────────────────
-workspaceRoutes.delete("/:id/members/:userId", async (c) => {
+workspaceRoutes.delete("/:id/members/:userId", requireRole("admin"), async (c) => {
   const workspaceId = c.req.param("id");
   const targetUserId = c.req.param("userId");
   const callerId = c.get("userId");
 
-  // Verify caller has permission
-  const callerRole = await workspaces.getMemberRole(workspaceId, callerId);
-  if (!callerRole || !["owner", "admin"].includes(callerRole)) {
-    return c.json({ error: "Insufficient permissions" }, 403);
+  // Prevent removing yourself (use leave instead)
+  if (targetUserId === callerId) {
+    return c.json({ error: "Cannot remove yourself. Use leave workspace instead." }, 400);
   }
 
   // Prevent removing the owner
   const workspace = await workspaces.findById(workspaceId);
   if (workspace?.owner_id === targetUserId) {
     return c.json({ error: "Cannot remove the workspace owner" }, 400);
+  }
+
+  // Admins can't remove other admins — only owners can
+  const callerRole = await workspaces.getMemberRole(workspaceId, callerId);
+  const targetRole = await workspaces.getMemberRole(workspaceId, targetUserId);
+
+  if (callerRole !== "owner" && targetRole === "admin") {
+    return c.json({ error: "Only workspace owners can remove admins" }, 403);
   }
 
   const removed = await workspaces.removeMember(workspaceId, targetUserId);
@@ -202,7 +334,7 @@ const updateRoleSchema = z.object({
   role: z.enum(["admin", "member", "viewer"]),
 });
 
-workspaceRoutes.patch("/:id/members/:userId", async (c) => {
+workspaceRoutes.patch("/:id/members/:userId", requireRole("owner"), async (c) => {
   const workspaceId = c.req.param("id");
   const targetUserId = c.req.param("userId");
   const callerId = c.get("userId");
@@ -216,17 +348,20 @@ workspaceRoutes.patch("/:id/members/:userId", async (c) => {
     );
   }
 
-  // Verify caller has permission
-  const callerRole = await workspaces.getMemberRole(workspaceId, callerId);
-  if (!callerRole || callerRole !== "owner") {
-    return c.json({ error: "Only workspace owners can change roles" }, 403);
+  // Cannot change own role
+  if (targetUserId === callerId) {
+    return c.json({ error: "Cannot change your own role" }, 400);
   }
 
-  const member = await workspaces.addMember(
+  const member = await workspaces.updateMemberRole(
     workspaceId,
     targetUserId,
     parsed.data.role
   );
+
+  if (!member) {
+    return c.json({ error: "Member not found" }, 404);
+  }
 
   return c.json({ data: member });
 });

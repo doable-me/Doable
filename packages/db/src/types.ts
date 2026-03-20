@@ -40,10 +40,38 @@ export interface WorkspaceRow {
 }
 
 export interface WorkspaceMemberRow {
+  id: string;
   workspace_id: string;
   user_id: string;
   role: WorkspaceRole;
+  invited_by: string | null;
   joined_at: Date;
+}
+
+export interface WorkspaceMemberWithUserRow extends WorkspaceMemberRow {
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+export interface WorkspaceInviteRow {
+  id: string;
+  workspace_id: string;
+  email: string;
+  role: string;
+  token: string;
+  invited_by: string;
+  expires_at: Date;
+  accepted_at: Date | null;
+  created_at: Date;
+}
+
+export interface ProjectCollaboratorRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  role: string;
+  added_at: Date;
 }
 
 export interface ProjectRow {
