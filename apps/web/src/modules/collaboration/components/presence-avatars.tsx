@@ -25,7 +25,7 @@ export function PresenceAvatars({ users, maxVisible = 4 }: Props) {
               style={{ backgroundColor: user.color }}
               title={`${user.displayName ?? "User"} — ${user.status}`}
             >
-              {(user.displayName ?? "?")[0].toUpperCase()}
+              {(user.displayName ?? "?").charAt(0).toUpperCase()}
             </div>
             {/* Status dot */}
             <span
