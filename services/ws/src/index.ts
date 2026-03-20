@@ -166,6 +166,18 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       const room = rooms.getOrCreate(msg.projectId);
       const members = room.join(ws, state.userId, state.displayName, null);
       send(ws, { type: "room:joined", projectId: msg.projectId, members });
+      // Send chat history
+      const API_URL = process.env.API_URL ?? "http://localhost:4000";
+      fetch(`${API_URL}/team-chat/${msg.projectId}/internal?limit=50`, {
+        headers: { "X-Internal-Secret": INTERNAL_SECRET },
+      }).then(r => r.json()).then(data => {
+        if (data.data) send(ws, { type: "chat:history", messages: data.data.map((m: any) => ({
+          id: m.id, projectId: m.project_id, userId: m.user_id,
+          displayName: m.display_name, avatarUrl: null, content: m.content,
+          messageType: m.message_type, mentions: m.mentions ?? [],
+          parentId: m.parent_id, createdAt: m.created_at,
+        })) });
+      }).catch(() => {});
       break;
     }
 
@@ -215,7 +227,13 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
           };
           // Broadcast to entire room including sender
           room.broadcast({ type: "chat:message", message: chatMsg });
-          // TODO: Persist to database via internal API call
+          // Persist to database via internal API call
+          const API_URL = process.env.API_URL ?? "http://localhost:4000";
+          fetch(`${API_URL}/team-chat/${state.projectId}/internal`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Internal-Secret": INTERNAL_SECRET },
+            body: JSON.stringify(chatMsg),
+          }).catch((err) => console.error("[ws] Failed to persist chat:", err));
         }
       }
       break;

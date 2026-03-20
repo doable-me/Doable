@@ -10,6 +10,8 @@ import {
 } from "../version-control/manager.js";
 import { getProjectPath, isProjectScaffolded } from "../projects/file-manager.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { sql } from "../db/index.js";
+import { emitActivity } from "../lib/activity.js";
 
 export const versionRoutes = new Hono<AuthEnv>();
 
@@ -61,6 +63,13 @@ versionRoutes.post("/:projectId/versions", async (c) => {
     const version = await createVersion(projectId, body.projectPath, {
       description: body.description,
       createdBy: body.createdBy,
+    });
+
+    emitActivity(sql, {
+      projectId,
+      userId: c.get("userId"),
+      eventType: "version_create",
+      summary: "created a version snapshot",
     });
 
     return c.json({ data: version }, 201);
@@ -115,6 +124,13 @@ versionRoutes.post("/:projectId/versions/auto", async (c) => {
       body.description ?? "AI-generated changes",
       body.createdBy
     );
+
+    emitActivity(sql, {
+      projectId,
+      userId: c.get("userId"),
+      eventType: "version_create",
+      summary: "created a version snapshot",
+    });
 
     return c.json({ data: version }, 201);
   } catch (err) {

@@ -9,8 +9,10 @@ export interface PresenceUser {
   avatarUrl: string | null;
   status: "active" | "idle" | "away";
   currentFile: string | null;
-  currentView: string | null;
+  currentView: "code" | "preview" | "chat" | "team";
   joinedAt: string;
+  lastActiveAt: string;
+  color: string;
 }
 
 export function useProjectRoom(projectId: string | null) {

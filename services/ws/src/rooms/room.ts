@@ -30,6 +30,7 @@ export type WsServerMessage =
   | { type: "presence:user_left"; userId: string }
   | { type: "presence:user_updated"; user: PresenceUser }
   | { type: "chat:message"; message: ChatMessage }
+  | { type: "chat:history"; messages: ChatMessage[] }
   | { type: "chat:user_typing"; userId: string; typing: boolean }
   | { type: "awareness:files_open"; data: Record<string, string[]> }
   | { type: "awareness:user_selection"; userId: string; data: SelectionData };
