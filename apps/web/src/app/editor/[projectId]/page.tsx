@@ -13,6 +13,7 @@ import {
   ArrowLeft,
   RefreshCw,
   Smartphone,
+  Tablet,
   Monitor,
   ExternalLink,
   Globe,
@@ -129,7 +130,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 // ─── Types ──────────────────────────────────────────────────
 type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed";
 type ChatMode = "agent" | "plan" | "visual-edit";
-type DeviceMode = "desktop" | "mobile";
+type DeviceMode = "desktop" | "tablet" | "mobile";
 
 interface ToolAction {
   id: string;
@@ -2713,13 +2714,26 @@ export default function EditorPage() {
             <Globe className="h-3 w-3 text-zinc-500" />
             <span className="text-[11px] text-zinc-400 font-mono">/</span>
           </div>
-          <button
-            onClick={() => setDeviceMode(deviceMode === "desktop" ? "mobile" : "desktop")}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-[#272725] hover:text-zinc-300 transition-colors"
-            title={deviceMode === "desktop" ? "Switch to mobile" : "Switch to desktop"}
-          >
-            {deviceMode === "desktop" ? <Monitor className="h-3.5 w-3.5" /> : <Smartphone className="h-3.5 w-3.5" />}
-          </button>
+          <div className="flex items-center rounded-full bg-[#272725] border border-zinc-700/40 p-0.5">
+            {([
+              { mode: "desktop" as DeviceMode, Icon: Monitor, label: "Desktop" },
+              { mode: "tablet" as DeviceMode, Icon: Tablet, label: "Tablet (768px)" },
+              { mode: "mobile" as DeviceMode, Icon: Smartphone, label: "Mobile (375px)" },
+            ]).map(({ mode, Icon, label }) => (
+              <button
+                key={mode}
+                onClick={() => setDeviceMode(mode)}
+                className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors ${
+                  deviceMode === mode
+                    ? "bg-zinc-600 text-zinc-100"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+                title={label}
+              >
+                <Icon className="h-3 w-3" />
+              </button>
+            ))}
+          </div>
           <button
             onClick={() => {
               if (iframeRef.current && previewUrl) {
@@ -3727,21 +3741,33 @@ export default function EditorPage() {
                 renderScaffoldOverlay()
               ) : (
                 <div
-                  className={`h-full overflow-hidden rounded-2xl border-none bg-white transition-all duration-300 ${
+                  className={`h-full overflow-hidden bg-white transition-all duration-300 ${
                     deviceMode === "mobile"
-                      ? "w-[375px] shadow-2xl shadow-black/40"
-                      : "w-full"
+                      ? "w-[375px] rounded-[24px] shadow-2xl shadow-black/40"
+                      : deviceMode === "tablet"
+                        ? "w-[768px] rounded-2xl shadow-xl shadow-black/30"
+                        : "w-full rounded-2xl"
                   }`}
                   style={
                     deviceMode === "mobile"
                       ? {
                           maxHeight: "calc(100% - 16px)",
-                          borderRadius: "24px",
                           border: "4px solid #1e1e2e",
                         }
-                      : {}
+                      : deviceMode === "tablet"
+                        ? {
+                            maxWidth: "100%",
+                            border: "3px solid #1e1e2e",
+                          }
+                        : {}
                   }
                 >
+                  {/* Mobile notch mockup */}
+                  {deviceMode === "mobile" && (
+                    <div className="absolute top-0 left-1/2 z-20 -translate-x-1/2">
+                      <div className="h-[22px] w-[120px] rounded-b-xl bg-[#1e1e2e]" />
+                    </div>
+                  )}
                   <iframe
                     ref={iframeRef}
                     src={previewUrl}

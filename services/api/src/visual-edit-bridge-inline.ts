@@ -263,6 +263,23 @@ export const VISUAL_EDIT_BRIDGE_INLINE = `
         window.__veOriginalTextEl = undefined;
         if (selectedElement) updateSelectedOverlay();
         break;
+      case 'visual-edit:highlight-element':
+        if (msg.selector) {
+          try {
+            var targetEl = document.querySelector(msg.selector);
+            if (targetEl && !shouldIgnore(targetEl)) {
+              selectedElement = targetEl;
+              hoveredElement = null;
+              hideOverlays();
+              var hr = targetEl.getBoundingClientRect();
+              positionOverlay(selectOverlay, hr);
+              var hinfo = extractElementInfo(targetEl);
+              positionTagLabel(hr, hinfo.tagName);
+              window.parent.postMessage({ type: 'visual-edit:element-selected', element: hinfo }, '*');
+            }
+          } catch (qe) { /* invalid selector, ignore */ }
+        }
+        break;
     }
   });
 
