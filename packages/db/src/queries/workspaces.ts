@@ -66,6 +66,13 @@ export function workspaceQueries(sql: postgres.Sql) {
         VALUES (${workspace!.id}, ${limits.dailyCredits}, ${limits.monthlyCredits})
       `;
 
+      // Initialize default AI settings for the workspace
+      await q`
+        INSERT INTO workspace_ai_settings (workspace_id, show_model_selector)
+        VALUES (${workspace!.id}, true)
+        ON CONFLICT (workspace_id) DO NOTHING
+      `;
+
       return workspace!;
     },
 
