@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiListWorkspaces, apiFetch, type ApiWorkspace } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
 import { useGitHubAccounts, useCustomProviders, useWorkspaceAISettings, useUserAiPreferences } from "../hooks/use-ai-settings";
 import { ConnectionsTab } from "./connections-tab";
 import { ModelConfigTab } from "./model-config-tab";
@@ -13,6 +14,7 @@ type Tab = "connections" | "models" | "access";
 
 export function AiSettingsPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("models");
   const [workspaces, setWorkspaces] = useState<ApiWorkspace[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
@@ -47,7 +49,7 @@ export function AiSettingsPage() {
   }, [loaded, activeWorkspaceId]);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
-  const isAdmin = activeWorkspace?.userRole === "owner" || activeWorkspace?.userRole === "admin";
+  const isPlatformAdmin = !!user?.isPlatformAdmin;
 
   // All hooks must be called before any conditional returns
   const githubAccounts = useGitHubAccounts(activeWorkspaceId);
@@ -55,8 +57,8 @@ export function AiSettingsPage() {
   const aiDefaults = useWorkspaceAISettings(activeWorkspaceId);
   const userPrefs = useUserAiPreferences(activeWorkspaceId ?? undefined);
 
-  // Determine access: feature flag takes priority, fall back to role check
-  const hasAccess = featureAllowed !== null ? featureAllowed : isAdmin;
+  // Only platform admins can access AI settings
+  const hasAccess = featureAllowed !== null ? featureAllowed : isPlatformAdmin;
 
   // Redirect denied users
   useEffect(() => {
@@ -99,7 +101,7 @@ export function AiSettingsPage() {
     { key: "connections", label: "Connections", icon: Link2, adminOnly: true },
     { key: "access", label: "Access Control", icon: Shield, adminOnly: true },
   ];
-  const tabs = allTabs.filter((t) => !t.adminOnly || isAdmin);
+  const tabs = allTabs.filter((t) => !t.adminOnly || isPlatformAdmin);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">

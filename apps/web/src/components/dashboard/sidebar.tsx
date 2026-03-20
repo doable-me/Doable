@@ -820,7 +820,7 @@ export function DashboardSidebar() {
                 <Settings className="mr-2 h-4 w-4" />
                 Settings
               </DropdownMenuItem>
-              {(activeWorkspace?.userRole === "owner" || activeWorkspace?.userRole === "admin") && (
+              {user?.isPlatformAdmin && (
               <DropdownMenuItem
                 className="text-zinc-300 focus:bg-white/5 focus:text-white"
                 onClick={() => router.push("/ai-settings")}
