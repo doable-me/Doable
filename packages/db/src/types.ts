@@ -255,6 +255,16 @@ export interface UserFeatureOverrideRow {
   enabled: boolean;
 }
 
+export interface GitHubUserTokenRow {
+  user_id: string;
+  github_username: string;
+  github_id: string | null;
+  access_token: string;
+  scopes: string;
+  connected_at: Date;
+  updated_at: Date;
+}
+
 export interface EffectiveAiConfigRow {
   enforce_ai: boolean;
   enforced_copilot_account_id: string | null;

@@ -1,5 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { sql } from "../db/index.js";
+import { githubQueries } from "@doable/db/queries/github.js";
+
+const db = githubQueries(sql);
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -65,13 +68,7 @@ export async function handlePushEvent(
   const repoName = payload.repository.name;
 
   // Find the connection for this repo
-  const [conn] = await sql<
-    [{ id: string; project_id: string; webhook_secret: string | null } | undefined]
-  >`
-    SELECT id, project_id, webhook_secret
-    FROM github_connections
-    WHERE repo_owner = ${repoOwner} AND repo_name = ${repoName}
-  `;
+  const conn = await db.findConnectionByRepo(repoOwner, repoName);
 
   if (!conn) {
     return {
@@ -81,31 +78,24 @@ export async function handlePushEvent(
     };
   }
 
-  // Extract branch from ref (refs/heads/main → main)
+  // Extract branch from ref (refs/heads/main -> main)
   const branch = payload.ref.replace("refs/heads/", "");
 
   // Log commits
   const headCommit = payload.head_commit;
   if (headCommit) {
-    await sql`
-      INSERT INTO github_commits (connection_id, sha, message, author, branch, direction)
-      VALUES (
-        ${conn.id},
-        ${headCommit.id},
-        ${headCommit.message},
-        ${headCommit.author.name},
-        ${branch},
-        'pull'
-      )
-    `;
+    await db.createCommit({
+      connectionId: conn.id,
+      sha: headCommit.id,
+      message: headCommit.message,
+      author: headCommit.author.name,
+      branch,
+      direction: "pull",
+    });
   }
 
   // Update sync status to indicate remote has new changes
-  await sql`
-    UPDATE github_connections
-    SET sync_status = 'behind'
-    WHERE id = ${conn.id}
-  `;
+  await db.updateConnection(conn.project_id, { syncStatus: "behind" });
 
   const totalChanges = payload.commits.reduce(
     (sum, c) => sum + c.added.length + c.removed.length + c.modified.length,
@@ -140,13 +130,7 @@ export async function processWebhook(
   const repoName = payload.repository.name;
 
   // Look up webhook secret for this repo
-  const [conn] = await sql<
-    [{ webhook_secret: string | null } | undefined]
-  >`
-    SELECT webhook_secret
-    FROM github_connections
-    WHERE repo_owner = ${repoOwner} AND repo_name = ${repoName}
-  `;
+  const conn = await db.findConnectionByRepo(repoOwner, repoName);
 
   // Verify signature if secret is set
   if (conn?.webhook_secret) {

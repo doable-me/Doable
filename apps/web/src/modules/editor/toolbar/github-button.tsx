@@ -6,20 +6,24 @@ import { useState, useCallback } from "react";
 
 interface SyncStatus {
   connected: boolean;
-  status: "synced" | "ahead" | "behind" | "diverged" | "disconnected";
+  status: "synced" | "ahead" | "behind" | "diverged" | "conflict" | "disconnected";
   lastSyncedAt: string | null;
   repoUrl: string | null;
   branch: string;
+  repoOwner: string | null;
+  repoName: string | null;
 }
 
 interface GitHubButtonProps {
   status: SyncStatus | null;
   pushing: boolean;
   pulling: boolean;
-  onPush: (message: string) => Promise<void>;
+  onPush: (message: string, force?: boolean) => Promise<void>;
   onPull: () => Promise<void>;
   onConnect: () => void;
   onDisconnect: () => void;
+  error: string | null;
+  onClearError: () => void;
 }
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -40,6 +44,7 @@ function getStatusIndicator(status: SyncStatus | null): {
     case "behind":
       return { color: "bg-amber-500", label: "Behind" };
     case "diverged":
+    case "conflict":
       return { color: "bg-red-500", label: "Diverged" };
     default:
       return { color: "bg-gray-400", label: "Disconnected" };
@@ -71,20 +76,25 @@ export function GitHubButton({
   onPull,
   onConnect,
   onDisconnect,
+  error,
+  onClearError,
 }: GitHubButtonProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [commitMessage, setCommitMessage] = useState("");
   const [showCommitInput, setShowCommitInput] = useState(false);
+  const [showForceOption, setShowForceOption] = useState(false);
 
   const indicator = getStatusIndicator(status);
   const isConnected = status?.connected ?? false;
   const isBusy = pushing || pulling;
+  const isDiverged = status?.status === "diverged" || status?.status === "conflict";
 
-  const handlePush = useCallback(async () => {
+  const handlePush = useCallback(async (force = false) => {
     if (!commitMessage.trim()) return;
-    await onPush(commitMessage);
+    await onPush(commitMessage, force);
     setCommitMessage("");
     setShowCommitInput(false);
+    setShowForceOption(false);
     setMenuOpen(false);
   }, [commitMessage, onPush]);
 
@@ -103,11 +113,12 @@ export function GitHubButton({
             onConnect();
           } else {
             setMenuOpen(!menuOpen);
+            if (error) onClearError();
           }
         }}
         disabled={isBusy}
       >
-        {/* GitHub icon (simple SVG) */}
+        {/* GitHub icon */}
         <svg
           className="h-4 w-4"
           viewBox="0 0 16 16"
@@ -154,6 +165,22 @@ export function GitHubButton({
             )}
           </div>
 
+          {/* Error message */}
+          {error && (
+            <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2">
+              <p className="text-xs text-red-800">{error}</p>
+            </div>
+          )}
+
+          {/* Diverged warning */}
+          {isDiverged && (
+            <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-xs text-amber-800">
+                Remote has changes not in your local project. Pull first, or force push to overwrite.
+              </p>
+            </div>
+          )}
+
           {/* Commit input */}
           {showCommitInput ? (
             <div className="mb-2 space-y-2 px-1">
@@ -177,6 +204,16 @@ export function GitHubButton({
                 >
                   {pushing ? "Pushing..." : "Push"}
                 </button>
+                {isDiverged && (
+                  <button
+                    className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                    onClick={() => void handlePush(true)}
+                    disabled={!commitMessage.trim() || pushing}
+                    title="Force push (overwrites remote)"
+                  >
+                    Force
+                  </button>
+                )}
                 <button
                   className="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent"
                   onClick={() => setShowCommitInput(false)}

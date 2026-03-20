@@ -97,6 +97,22 @@ export function getGitHubCopilotAuthUrl(state?: string): string {
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
 
+// ─── GitHub OAuth for Repo Connection (needs "repo" scope) ─
+
+export const GITHUB_REPO_REDIRECT_URI =
+  process.env.GITHUB_REPO_REDIRECT_URI ??
+  "http://localhost:4000/github/repo/callback";
+
+export function getGitHubRepoAuthUrl(state?: string): string {
+  const params = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    redirect_uri: GITHUB_REPO_REDIRECT_URI,
+    scope: "repo read:user",
+    ...(state ? { state } : {}),
+  });
+  return `https://github.com/login/oauth/authorize?${params.toString()}`;
+}
+
 // ─── Google OAuth ──────────────────────────────────────────
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";

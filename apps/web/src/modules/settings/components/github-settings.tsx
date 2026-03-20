@@ -3,16 +3,41 @@
 import { useState, useCallback, useEffect } from "react";
 
 // ─── Types ──────────────────────────────────────────────────
-interface SyncStatus { connected: boolean; status: string; lastSyncedAt: string | null; repoUrl: string | null; branch: string; }
-interface CommitEntry { id: string; sha: string; message: string; author: string; branch: string; direction: "push" | "pull"; createdAt: string; }
-interface GitHubSettingsProps { projectId: string; apiBase?: string; githubToken?: string; }
+
+interface SyncStatus {
+  connected: boolean;
+  status: string;
+  lastSyncedAt: string | null;
+  repoUrl: string | null;
+  branch: string;
+  repoOwner: string | null;
+  repoName: string | null;
+}
+
+interface CommitEntry {
+  id: string;
+  sha: string;
+  message: string;
+  author: string;
+  branch: string;
+  direction: "push" | "pull";
+  createdAt: string;
+}
+
+interface GitHubSettingsProps {
+  projectId: string;
+  accessToken: string;
+  apiBase?: string;
+}
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Component ──────────────────────────────────────────────
 
 export function GitHubSettings({
   projectId,
-  apiBase = "/api",
-  githubToken,
+  accessToken,
+  apiBase = API_URL,
 }: GitHubSettingsProps) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [commits, setCommits] = useState<CommitEntry[]>([]);
@@ -29,15 +54,15 @@ export function GitHubSettings({
         ...init,
         headers: {
           "Content-Type": "application/json",
-          ...(githubToken ? { "X-GitHub-Token": githubToken } : {}),
-          ...init?.headers,
+          Authorization: `Bearer ${accessToken}`,
+          ...((init?.headers as Record<string, string>) ?? {}),
         },
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message ?? json.error ?? "Request failed");
       return json.data as T;
     },
-    [apiBase, githubToken]
+    [apiBase, accessToken]
   );
 
   // ─── Load status ──────────────────────────────────────────
@@ -45,7 +70,7 @@ export function GitHubSettings({
   const loadStatus = useCallback(async () => {
     try {
       const data = await fetchJson<SyncStatus>(
-        `/projects/${projectId}/github/status`
+        `/${projectId}/github/status`
       );
       setStatus(data);
     } catch {
@@ -56,13 +81,28 @@ export function GitHubSettings({
     }
   }, [fetchJson, projectId]);
 
+  // ─── Load commit history ──────────────────────────────────
+
+  const loadCommits = useCallback(async () => {
+    try {
+      const data = await fetchJson<{
+        commits: CommitEntry[];
+        total: number;
+      }>(`/${projectId}/github/commits`);
+      setCommits(data.commits);
+    } catch {
+      // Silently fail
+    }
+  }, [fetchJson, projectId]);
+
   useEffect(() => {
     void loadStatus();
-  }, [loadStatus]);
+    void loadCommits();
+  }, [loadStatus, loadCommits]);
 
   // ─── Push ─────────────────────────────────────────────────
 
-  const handlePush = useCallback(async () => {
+  const handlePush = useCallback(async (force = false) => {
     if (!commitMessage.trim()) return;
 
     setPushing(true);
@@ -71,13 +111,13 @@ export function GitHubSettings({
 
     try {
       const result = await fetchJson<{ filesChanged: number; commitSha: string }>(
-        `/projects/${projectId}/github/push`,
+        `/${projectId}/github/push`,
         {
           method: "POST",
           body: JSON.stringify({
             message: commitMessage,
-            userId: "current-user", // Would come from auth context
             projectPath: `/projects/${projectId}/files`,
+            force,
           }),
         }
       );
@@ -87,12 +127,14 @@ export function GitHubSettings({
         `Pushed ${result.filesChanged} files (${result.commitSha.slice(0, 7)})`
       );
       await loadStatus();
+      await loadCommits();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Push failed");
+      const message = err instanceof Error ? err.message : "Push failed";
+      setError(message);
     } finally {
       setPushing(false);
     }
-  }, [commitMessage, fetchJson, projectId, loadStatus]);
+  }, [commitMessage, fetchJson, projectId, loadStatus, loadCommits]);
 
   // ─── Pull ─────────────────────────────────────────────────
 
@@ -103,11 +145,10 @@ export function GitHubSettings({
 
     try {
       const result = await fetchJson<{ filesChanged: number }>(
-        `/projects/${projectId}/github/pull`,
+        `/${projectId}/github/pull`,
         {
           method: "POST",
           body: JSON.stringify({
-            userId: "current-user",
             projectPath: `/projects/${projectId}/files`,
           }),
         }
@@ -115,19 +156,20 @@ export function GitHubSettings({
 
       setSuccessMessage(`Pulled ${result.filesChanged} files`);
       await loadStatus();
+      await loadCommits();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Pull failed");
     } finally {
       setPulling(false);
     }
-  }, [fetchJson, projectId, loadStatus]);
+  }, [fetchJson, projectId, loadStatus, loadCommits]);
 
   // ─── Disconnect ───────────────────────────────────────────
 
   const handleDisconnect = useCallback(async () => {
     setError(null);
     try {
-      await fetchJson(`/projects/${projectId}/github/connect`, {
+      await fetchJson(`/${projectId}/github/connect`, {
         method: "DELETE",
       });
       setStatus(null);
@@ -148,6 +190,8 @@ export function GitHubSettings({
     );
   }
 
+  const isDiverged = status?.status === "diverged" || status?.status === "conflict";
+
   return (
     <div className="space-y-6">
       <div>
@@ -161,6 +205,15 @@ export function GitHubSettings({
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 p-3">
           <p className="text-sm text-red-800">{error}</p>
+          {isDiverged && (
+            <button
+              className="mt-2 rounded-md border border-red-300 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+              onClick={() => void handlePush(true)}
+              disabled={pushing || !commitMessage.trim()}
+            >
+              Force Push (overwrite remote)
+            </button>
+          )}
         </div>
       )}
 
@@ -176,6 +229,9 @@ export function GitHubSettings({
           <h4 className="text-sm font-medium">Not connected to GitHub</h4>
           <p className="mt-1 text-xs text-muted-foreground">
             Connect to push and pull code, track changes, and collaborate.
+          </p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Use the GitHub button in the editor toolbar to connect this project.
           </p>
         </div>
       ) : (
@@ -193,7 +249,7 @@ export function GitHubSettings({
                     rel="noopener noreferrer"
                     className="mt-1 text-sm text-primary hover:underline"
                   >
-                    {status.repoUrl.replace("https://github.com/", "")}
+                    {status.repoOwner}/{status.repoName}
                   </a>
                 )}
               </div>
@@ -205,7 +261,9 @@ export function GitHubSettings({
                         ? "bg-green-500"
                         : status.status === "behind"
                           ? "bg-amber-500"
-                          : "bg-gray-400"
+                          : status.status === "diverged" || status.status === "conflict"
+                            ? "bg-red-500"
+                            : "bg-gray-400"
                     }`}
                   />
                   <span className="text-xs font-medium capitalize">
@@ -272,24 +330,50 @@ export function GitHubSettings({
           {commits.length > 0 && (
             <div className="rounded-lg border p-4">
               <h4 className="mb-3 text-sm font-medium">Recent Sync History</h4>
-              {commits.map((c) => (
-                <div key={c.id} className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2 mb-1">
-                  <div>
-                    <p className="text-sm">{c.message}</p>
-                    <p className="text-xs text-muted-foreground">{c.sha.slice(0, 7)} by {c.author}</p>
+              <div className="space-y-1">
+                {commits.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{c.message}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {c.sha.slice(0, 7)} by {c.author} &middot;{" "}
+                        {new Date(c.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <span
+                      className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                        c.direction === "push"
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-green-100 text-green-800"
+                      }`}
+                    >
+                      {c.direction}
+                    </span>
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c.direction === "push" ? "bg-blue-100 text-blue-800" : "bg-green-100 text-green-800"}`}>{c.direction}</span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
+
           {/* Disconnect */}
           <div className="flex items-center justify-between rounded-lg border border-red-200 p-4">
             <div>
-              <h4 className="text-sm font-medium text-red-800">Disconnect Repository</h4>
-              <p className="mt-1 text-xs text-muted-foreground">Removes the connection. Your code will not be deleted.</p>
+              <h4 className="text-sm font-medium text-red-800">
+                Disconnect Repository
+              </h4>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Removes the connection. Your code will not be deleted.
+              </p>
             </div>
-            <button className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50" onClick={() => void handleDisconnect()}>Disconnect</button>
+            <button
+              className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+              onClick={() => void handleDisconnect()}
+            >
+              Disconnect
+            </button>
           </div>
         </>
       )}

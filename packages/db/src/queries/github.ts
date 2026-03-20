@@ -1,5 +1,5 @@
 import type postgres from "postgres";
-import type { GitHubConnectionRow, GitHubCommitRow } from "../types.js";
+import type { GitHubConnectionRow, GitHubCommitRow, GitHubUserTokenRow } from "../types.js";
 
 export function githubQueries(sql: postgres.Sql) {
   return {
@@ -48,6 +48,13 @@ export function githubQueries(sql: postgres.Sql) {
           ${data.webhookSecret ?? null},
           ${data.createdBy}
         )
+        ON CONFLICT (project_id) DO UPDATE SET
+          repo_owner = EXCLUDED.repo_owner,
+          repo_name = EXCLUDED.repo_name,
+          default_branch = EXCLUDED.default_branch,
+          access_token = EXCLUDED.access_token,
+          webhook_secret = EXCLUDED.webhook_secret,
+          updated_at = now()
         RETURNING *
       `;
       return conn!;
@@ -75,7 +82,9 @@ export function githubQueries(sql: postgres.Sql) {
       if (data.syncStatus !== undefined) values.sync_status = data.syncStatus;
       if (data.lastSyncedAt !== undefined) values.last_synced_at = data.lastSyncedAt;
 
-      if (Object.keys(values).length === 0) {
+      values.updated_at = new Date();
+
+      if (Object.keys(values).length <= 1) {
         return this.findConnectionByProject(projectId);
       }
 
@@ -152,6 +161,53 @@ export function githubQueries(sql: postgres.Sql) {
         SELECT * FROM github_commits WHERE sha = ${sha}
       `;
       return commit;
+    },
+
+    // ─── User Tokens (OAuth-based GitHub connection per user) ──
+
+    async findUserToken(
+      userId: string
+    ): Promise<GitHubUserTokenRow | undefined> {
+      const [row] = await sql<GitHubUserTokenRow[]>`
+        SELECT * FROM github_user_tokens WHERE user_id = ${userId}
+      `;
+      return row;
+    },
+
+    async upsertUserToken(data: {
+      userId: string;
+      githubUsername: string;
+      githubId?: string;
+      accessToken: string;
+      scopes?: string;
+    }): Promise<GitHubUserTokenRow> {
+      const [row] = await sql<GitHubUserTokenRow[]>`
+        INSERT INTO github_user_tokens (
+          user_id, github_username, github_id, access_token, scopes
+        )
+        VALUES (
+          ${data.userId},
+          ${data.githubUsername},
+          ${data.githubId ?? null},
+          ${data.accessToken},
+          ${data.scopes ?? "repo"}
+        )
+        ON CONFLICT (user_id) DO UPDATE SET
+          github_username = EXCLUDED.github_username,
+          github_id = EXCLUDED.github_id,
+          access_token = EXCLUDED.access_token,
+          scopes = EXCLUDED.scopes,
+          updated_at = now()
+        RETURNING *
+      `;
+      return row!;
+    },
+
+    async deleteUserToken(userId: string): Promise<boolean> {
+      const result = await sql`
+        DELETE FROM github_user_tokens WHERE user_id = ${userId}
+      `;
+      return result.count > 0;
     },
   };
 }
