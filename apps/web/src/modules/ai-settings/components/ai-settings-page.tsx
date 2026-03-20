@@ -31,6 +31,12 @@ export function AiSettingsPage() {
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const isAdmin = activeWorkspace?.userRole === "owner" || activeWorkspace?.userRole === "admin";
 
+  // All hooks must be called before any conditional returns
+  const githubAccounts = useGitHubAccounts(activeWorkspaceId);
+  const providers = useCustomProviders(activeWorkspaceId);
+  const aiDefaults = useWorkspaceAISettings(activeWorkspaceId);
+  const userPrefs = useUserAiPreferences(activeWorkspaceId ?? undefined);
+
   // Redirect non-admins away from this page
   useEffect(() => {
     if (loaded && activeWorkspace && !isAdmin) {
@@ -39,11 +45,6 @@ export function AiSettingsPage() {
   }, [loaded, activeWorkspace, isAdmin, router]);
 
   if (!loaded || (activeWorkspace && !isAdmin)) return null;
-
-  const githubAccounts = useGitHubAccounts(activeWorkspaceId);
-  const providers = useCustomProviders(activeWorkspaceId);
-  const aiDefaults = useWorkspaceAISettings(activeWorkspaceId);
-  const userPrefs = useUserAiPreferences(activeWorkspaceId ?? undefined);
 
   const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
     { key: "models", label: "Model Configuration", icon: Bot },
