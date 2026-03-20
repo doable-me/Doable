@@ -12,7 +12,7 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const handlersRef = useRef<Set<MessageHandler>>(new Set());
   const queueRef = useRef<string[]>([]);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retriesRef = useRef(0);
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
 
@@ -54,7 +54,7 @@ export function useWebSocket() {
   useEffect(() => {
     connect();
     return () => {
-      clearTimeout(reconnectTimeoutRef.current);
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       wsRef.current?.close();
     };
   }, [connect]);
