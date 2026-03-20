@@ -233,6 +233,50 @@ export async function getBranches(
   }));
 }
 
+// ─── Repository Details ─────────────────────────────────────
+
+export async function getRepo(
+  token: string,
+  owner: string,
+  repo: string
+): Promise<GitHubRepo> {
+  const r = await request<{
+    id: number;
+    name: string;
+    full_name: string;
+    private: boolean;
+    html_url: string;
+    default_branch: string;
+    description: string | null;
+  }>(token, "GET", `/repos/${owner}/${repo}`);
+
+  return {
+    id: r.id,
+    name: r.name,
+    fullName: r.full_name,
+    private: r.private,
+    htmlUrl: r.html_url,
+    defaultBranch: r.default_branch,
+    description: r.description,
+  };
+}
+
+// ─── Latest Commit SHA ──────────────────────────────────────
+
+export async function getLatestCommitSha(
+  token: string,
+  owner: string,
+  repo: string,
+  branch: string
+): Promise<string> {
+  const refData = await request<{ object: { sha: string } }>(
+    token,
+    "GET",
+    `/repos/${owner}/${repo}/git/ref/heads/${branch}`
+  );
+  return refData.object.sha;
+}
+
 // ─── Contents ───────────────────────────────────────────────
 
 export async function getRepoContents(
