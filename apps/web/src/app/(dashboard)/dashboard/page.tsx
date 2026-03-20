@@ -1349,59 +1349,58 @@ export default function DashboardPage() {
 
   return (
     <div className="relative min-h-screen">
-      {/* Content */}
-      <div className="relative z-10 mx-auto max-w-5xl px-6 pt-0 pb-10">
-        {/* Greeting + Chat Input (only when no folder/filter active) */}
-        {!activeFolderId && sidebarFilter === "all" && (
-          <div className="relative overflow-hidden mb-8 -mx-6" style={{ minHeight: "340px" }}>
-            {/* Animated gradient background - smooth blend like Lovable's pre-rendered image */}
-            <div className="pointer-events-none absolute inset-0 overflow-hidden">
-              {/* Smooth blend using Lovable's exact sampled colors: black → periwinkle blue → pink */}
-              <div className="absolute inset-0 animate-pulse-drift" style={{
-                width: "130%",
-                height: "130%",
-                top: "-15%",
-                left: "-15%",
-                background: "linear-gradient(180deg, #000000 0%, #000000 12%, #0d1030 22%, #2a55b0 38%, #4c8ffc 50%, #7a6bea 62%, #c84a90 74%, #fe2771 85%, #a38bfb 95%, #000000 100%)",
-              }} />
-            </div>
-            {/* Bottom fade into dark background */}
-            <div className="absolute inset-x-0 bottom-0 h-24 z-[1]" style={{
-              background: "linear-gradient(to top, #0a0a0a 0%, #0a0a0ae0 50%, transparent 100%)",
+      {/* Full-width Greeting + Chat Input hero (only when no folder/filter active) */}
+      {!activeFolderId && sidebarFilter === "all" && (
+        <div className="relative w-full overflow-hidden" style={{ minHeight: "340px" }}>
+          {/* Animated gradient background - brand-aware */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div className="absolute inset-0 animate-pulse-drift" style={{
+              width: "130%",
+              height: "130%",
+              top: "-15%",
+              left: "-15%",
+              background: "linear-gradient(180deg, #000000 0%, #000000 12%, hsl(var(--brand-950)) 22%, hsl(var(--brand-700)) 38%, hsl(var(--brand-500)) 50%, hsl(var(--brand-400)) 62%, hsl(var(--brand-300)) 74%, hsl(var(--brand-500)) 85%, hsl(var(--brand-400)) 95%, #000000 100%)",
             }} />
-            {/* Content */}
-            <div className="relative z-10 px-8 py-16 max-w-5xl mx-auto">
-              <div className="text-center mb-6">
-                <h1 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight transition-all duration-500">
-                  {greeting}
-                </h1>
-              </div>
-              <div>
-                <ChatInput
-                  value={prompt}
-                  onChange={setPrompt}
-                  onSubmit={handleSubmit}
-                  isCreating={isCreating}
-                  attachments={imageAttachments.attachments}
-                  onOpenFilePicker={imageAttachments.openFilePicker}
-                  onRemoveImage={imageAttachments.removeImage}
-                  isListening={speechRecognition.isListening}
-                  isMicSupported={speechRecognition.isSupported}
-                  onToggleMic={speechRecognition.toggle}
-                />
-                <input
-                  ref={imageAttachments.fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={imageAttachments.handleFileChange}
-                />
-              </div>
+          </div>
+          {/* Bottom fade into dark background */}
+          <div className="absolute inset-x-0 bottom-0 h-24 z-[1]" style={{
+            background: "linear-gradient(to top, #0a0a0a 0%, #0a0a0ae0 50%, transparent 100%)",
+          }} />
+          {/* Content */}
+          <div className="relative z-10 px-8 py-16 max-w-5xl mx-auto">
+            <div className="text-center mb-6">
+              <h1 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight transition-all duration-500">
+                {greeting}
+              </h1>
+            </div>
+            <div>
+              <ChatInput
+                value={prompt}
+                onChange={setPrompt}
+                onSubmit={handleSubmit}
+                isCreating={isCreating}
+                attachments={imageAttachments.attachments}
+                onOpenFilePicker={imageAttachments.openFilePicker}
+                onRemoveImage={imageAttachments.removeImage}
+                isListening={speechRecognition.isListening}
+                isMicSupported={speechRecognition.isSupported}
+                onToggleMic={speechRecognition.toggle}
+              />
+              <input
+                ref={imageAttachments.fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={imageAttachments.handleFileChange}
+              />
             </div>
           </div>
-        )}
+        </div>
+      )}
 
+      {/* Content */}
+      <div className="relative z-10 mx-auto max-w-5xl px-6 pt-0 pb-10">
         {/* Folder/Filter breadcrumb */}
         {(activeFolderId || sidebarFilter !== "all") && (
           <div className="mb-6">
