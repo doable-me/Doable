@@ -1832,7 +1832,7 @@ export default function EditorPage() {
         role: "user",
         content: trimmed,
         timestamp: nowTimestamp(),
-        ...(msgAttachments?.length ? { attachments: msgAttachments.map((a) => ({ type: a.mimeType, data: a.data, name: a.name, preview: a.preview, fileType: a.type })) } : {}),
+        ...(msgAttachments?.length ? { attachments: msgAttachments.map((a) => ({ type: a.mimeType || (a as any).type || "application/octet-stream", data: a.data, name: a.name, preview: a.preview, fileType: a.type })) } : {}),
       };
 
       // Add placeholder assistant message for streaming
@@ -2024,7 +2024,7 @@ export default function EditorPage() {
             setLiveStatus(status);
           }
         },
-        msgAttachments?.map((a) => ({ type: a.mimeType, data: a.data, name: a.name })),
+        msgAttachments?.map((a) => ({ type: a.mimeType || (a as any).type || "application/octet-stream", data: a.data, name: a.name })),
         selectedModelId || undefined,
         selectedProviderId,
         selectedCopilotAccountId,
