@@ -56,7 +56,7 @@ export function ChatPopout({ currentUserId }: Props) {
 
   return (
     <div
-      className="fixed bottom-12 right-4 z-40 flex flex-col rounded-lg border border-zinc-700 bg-[#1C1C1C] shadow-2xl transition-all duration-200"
+      className="fixed bottom-4 right-4 z-40 flex flex-col rounded-lg border border-zinc-700 bg-[#1C1C1C] shadow-2xl transition-all duration-200"
       style={{ width: 350, height: minimized ? 40 : 450 }}
     >
       {/* Title bar */}

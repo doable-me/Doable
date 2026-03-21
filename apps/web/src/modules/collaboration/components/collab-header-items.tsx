@@ -4,7 +4,17 @@ import { useCollaboration } from "../collaboration-context";
 import { PresenceAvatars } from "./presence-avatars";
 
 export function CollabHeaderItems() {
-  const { members, joined } = useCollaboration();
+  const { members, joined, setChatPopoutOpen, setChatVisible } = useCollaboration();
   if (!joined) return null;
-  return <PresenceAvatars users={members} />;
+
+  const handleClick = () => {
+    setChatPopoutOpen(true);
+    setChatVisible(true);
+  };
+
+  return (
+    <div className="cursor-pointer" onClick={handleClick} title="Open team chat">
+      <PresenceAvatars users={members} />
+    </div>
+  );
 }
