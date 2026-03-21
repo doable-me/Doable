@@ -334,3 +334,50 @@ export function useVisualEditBroadcast({
     handlePreviewMouseMove,
   };
 }
+
+// ─── useRemoteVisualEdits ──────────────────────────────────────
+// Listens for remote style/text changes via WebSocket and applies
+// them to the local iframe so edits appear live for all collaborators.
+
+export function useRemoteVisualEdits(
+  iframeRef: React.RefObject<HTMLIFrameElement | null>,
+) {
+  const { subscribe, joined } = useCollaboration();
+
+  useEffect(() => {
+    if (!joined) return;
+
+    const unsub = subscribe((msg: any) => {
+      const iframe = iframeRef.current;
+      if (!iframe?.contentWindow) return;
+
+      switch (msg.type) {
+        case "visual-edit:style-change": {
+          // First select the element, then apply the style
+          iframe.contentWindow.postMessage(
+            { type: "visual-edit:select-element", selector: msg.selector },
+            "*",
+          );
+          iframe.contentWindow.postMessage(
+            { type: "visual-edit:apply-style", property: msg.property, value: msg.value },
+            "*",
+          );
+          break;
+        }
+        case "visual-edit:text-change": {
+          iframe.contentWindow.postMessage(
+            { type: "visual-edit:select-element", selector: msg.selector },
+            "*",
+          );
+          iframe.contentWindow.postMessage(
+            { type: "visual-edit:apply-text", text: msg.newText },
+            "*",
+          );
+          break;
+        }
+      }
+    });
+
+    return unsub;
+  }, [joined, subscribe, iframeRef]);
+}

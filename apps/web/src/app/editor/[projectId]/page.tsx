@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { CollaborationProvider } from "@/modules/collaboration";
 import { CollabHeaderItems } from "@/modules/collaboration/components/collab-header-items";
 import { CollabActivityOverlay } from "@/modules/collaboration/components/collab-activity-overlay";
-import { RemoteSelectionOverlays, RemoteVisualCursors, VisualEditConflictWarning, useVisualEditBroadcast } from "@/modules/collaboration/components/visual-edit-collab";
+import { RemoteSelectionOverlays, RemoteVisualCursors, VisualEditConflictWarning, useVisualEditBroadcast, useRemoteVisualEdits } from "@/modules/collaboration/components/visual-edit-collab";
 import { ChatPopout } from "@/modules/collaboration/components/chat-popout";
 import { ChatMessageToasts } from "@/modules/collaboration/components/chat-message-toast";
 import { CollabTeamChatWrapper } from "@/modules/collaboration/components/collab-team-chat-wrapper";
@@ -2044,6 +2044,22 @@ export default function EditorPage() {
   const isDesignMode = activeTab === "design";
   const visualEdit = useVisualEdit({ iframeRef, projectId: resolvedProjectId, onSendMessage: sendMessage });
   const visualEditBroadcast = useVisualEditBroadcast({ iframeRef });
+  useRemoteVisualEdits(iframeRef);
+
+  // Wrap applyLiveStyle/applyLiveText to also broadcast to collaborators
+  const applyLiveStyleCollab = useCallback((property: string, value: string) => {
+    visualEdit.applyLiveStyle(property, value);
+    if (visualEdit.selectedElement?.selector) {
+      visualEditBroadcast.broadcastStyleChange(visualEdit.selectedElement.selector, property, value);
+    }
+  }, [visualEdit.applyLiveStyle, visualEdit.selectedElement?.selector, visualEditBroadcast.broadcastStyleChange]);
+
+  const applyLiveTextCollab = useCallback((text: string) => {
+    visualEdit.applyLiveText(text);
+    if (visualEdit.selectedElement?.selector) {
+      visualEditBroadcast.broadcastTextChange(visualEdit.selectedElement.selector, text);
+    }
+  }, [visualEdit.applyLiveText, visualEdit.selectedElement?.selector, visualEditBroadcast.broadcastTextChange]);
 
   // Auto-activate visual edit when entering design mode
   const prevActiveTabRef = useRef(activeTab);
@@ -3133,8 +3149,8 @@ export default function EditorPage() {
                 onDeactivate={visualEdit.deactivateVisualEdit}
                 onSelectParent={visualEdit.selectParent}
                 onDeselectElement={visualEdit.deselectElement}
-                onApplyLiveStyle={visualEdit.applyLiveStyle}
-                onApplyLiveText={visualEdit.applyLiveText}
+                onApplyLiveStyle={applyLiveStyleCollab}
+                onApplyLiveText={applyLiveTextCollab}
                 hasPendingChanges={visualEdit.hasPendingChanges}
                 onCommitChanges={() => {
                   visualEdit.commitChanges();
