@@ -10,6 +10,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { CollaborationProvider } from "@/modules/collaboration";
 import { CollabHeaderItems } from "@/modules/collaboration/components/collab-header-items";
 import { CollabActivityOverlay } from "@/modules/collaboration/components/collab-activity-overlay";
+import { PresenceBar } from "@/modules/collaboration/components/presence-bar";
+import { ChatPopout } from "@/modules/collaboration/components/chat-popout";
+import { ChatMessageToasts } from "@/modules/collaboration/components/chat-message-toast";
 import { CollabTeamChatWrapper } from "@/modules/collaboration/components/collab-team-chat-wrapper";
 import { CollabPresenceSync } from "@/modules/collaboration/components/collab-presence-sync";
 import { FileTabPresenceDots } from "@/modules/collaboration/components/file-tab-presence-dots";
@@ -4574,10 +4577,13 @@ export default function EditorPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <PresenceBar />
     </div>
     <CollabPresenceSync activeTab={activeTab} selectedFile={selectedFile} />
     <CollabFileTabSync openFilePaths={openFileTabs.map((t: any) => t.path)} />
     <CollabActivityOverlay />
+    <ChatPopout currentUserId={authUser?.id ?? ""} />
+    <ChatMessageToasts />
     </>
     </CollaborationProvider>
   );

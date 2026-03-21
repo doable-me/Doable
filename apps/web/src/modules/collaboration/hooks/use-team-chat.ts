@@ -19,6 +19,8 @@ export function useTeamChat(
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
+  const [unreadCount, setUnreadCount] = useState(0);
+  const chatVisibleRef = useRef(false);
   const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
@@ -27,6 +29,9 @@ export function useTeamChat(
     const unsub = subscribe((msg: any) => {
       if (msg.type === "chat:message") {
         setMessages((prev) => [...prev, msg.message]);
+        if (!chatVisibleRef.current) {
+          setUnreadCount((c) => c + 1);
+        }
       }
       if (msg.type === "chat:history") {
         setMessages(msg.messages);
@@ -72,5 +77,14 @@ export function useTeamChat(
     send({ type: "chat:typing", typing: true });
   }, [send]);
 
-  return { messages, typingUsers, sendMessage, sendTyping };
+  const markAsRead = useCallback(() => {
+    setUnreadCount(0);
+  }, []);
+
+  const setChatVisible = useCallback((visible: boolean) => {
+    chatVisibleRef.current = visible;
+    if (visible) setUnreadCount(0);
+  }, []);
+
+  return { messages, typingUsers, sendMessage, sendTyping, unreadCount, markAsRead, setChatVisible };
 }

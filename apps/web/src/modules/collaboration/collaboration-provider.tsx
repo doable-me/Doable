@@ -19,7 +19,8 @@ interface Props {
 export function CollaborationProvider({ projectId, userId, displayName, children }: Props) {
   const { members, joined, send, subscribe, connectionState } = useProjectRoom(projectId);
   const { updateFile, updateView } = usePresence(send, joined);
-  const { messages, typingUsers, sendMessage, sendTyping } = useTeamChat(subscribe, send, joined);
+  const { messages, typingUsers, sendMessage, sendTyping, unreadCount, markAsRead, setChatVisible } = useTeamChat(subscribe, send, joined);
+  const [chatPopoutOpen, setChatPopoutOpen] = useState(false);
   const { events, toasts, dismissToast } = useActivity(subscribe, joined, userId);
 
   // Remote cursors
@@ -223,6 +224,11 @@ export function CollaborationProvider({ projectId, userId, displayName, children
     typingUsers,
     sendMessage,
     sendTyping,
+    unreadCount,
+    markAsRead,
+    setChatVisible,
+    chatPopoutOpen,
+    setChatPopoutOpen,
     events,
     toasts,
     dismissToast,
@@ -249,7 +255,7 @@ export function CollaborationProvider({ projectId, userId, displayName, children
     sendVisualEditCursorMove,
   }), [
     connectionState, joined, members, updateFile, updateView,
-    messages, typingUsers, sendMessage, sendTyping,
+    messages, typingUsers, sendMessage, sendTyping, unreadCount, markAsRead, setChatVisible, chatPopoutOpen, setChatPopoutOpen,
     events, toasts, dismissToast, filesOpen, sendFileOpen, sendFileClose,
     cursors, sendCursorMove, subscribe, send, yjsProvider,
     aiStreamChunks, aiTypingUsers, aiQueue, sendAiTyping,

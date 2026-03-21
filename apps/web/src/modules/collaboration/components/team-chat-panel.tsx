@@ -21,9 +21,10 @@ interface Props {
   onSend: (content: string) => void;
   onTyping: () => void;
   currentUserId: string;
+  hideHeader?: boolean;
 }
 
-export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping, currentUserId }: Props) {
+export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping, currentUserId, hideHeader }: Props) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -65,13 +66,15 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
   return (
     <div className="flex flex-col h-full bg-[#1C1C1C]">
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
-        <Users className="h-4 w-4 text-zinc-400" />
-        <span className="text-sm font-medium text-zinc-200">Team Chat</span>
-        <span className="text-[11px] text-zinc-500">
-          {members.length} online
-        </span>
-      </div>
+      {!hideHeader && (
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
+          <Users className="h-4 w-4 text-zinc-400" />
+          <span className="text-sm font-medium text-zinc-200">Team Chat</span>
+          <span className="text-[11px] text-zinc-500">
+            {members.length} online
+          </span>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">

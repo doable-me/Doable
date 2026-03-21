@@ -71,6 +71,11 @@ export interface CollaborationContextValue {
   typingUsers: Set<string>;
   sendMessage: (content: string, mentions?: string[]) => void;
   sendTyping: () => void;
+  unreadCount: number;
+  markAsRead: () => void;
+  setChatVisible: (visible: boolean) => void;
+  chatPopoutOpen: boolean;
+  setChatPopoutOpen: (open: boolean) => void;
 
   // Activity
   events: ActivityEvent[];
@@ -123,6 +128,11 @@ export function useCollaboration(): CollaborationContextValue {
       typingUsers: new Set(),
       sendMessage: () => {},
       sendTyping: () => {},
+      unreadCount: 0,
+      markAsRead: () => {},
+      setChatVisible: () => {},
+      chatPopoutOpen: false,
+      setChatPopoutOpen: () => {},
       events: [],
       toasts: [],
       dismissToast: () => {},
