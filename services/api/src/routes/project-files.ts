@@ -46,6 +46,37 @@ const scaffoldLocks = new Map<string, Promise<void>>();
 
 // ─── POST /projects/:id/scaffold ─ Create project scaffold ──
 
+// ─── Auto-join: add user as collaborator when they access a project ──
+projectFileRoutes.use("/projects/:id/*", async (c, next) => {
+  const projectId = c.req.param("id");
+  const userId = c.get("userId");
+  if (projectId && userId) {
+    try {
+      // Check if user is already the owner or a collaborator
+      const [existing] = await sql`
+        SELECT 1 FROM projects p
+        JOIN workspace_members wm ON wm.workspace_id = p.workspace_id AND wm.user_id = ${userId}
+        WHERE p.id = ${projectId}
+        UNION ALL
+        SELECT 1 FROM project_collaborators
+        WHERE project_id = ${projectId} AND user_id = ${userId}
+        LIMIT 1
+      `;
+      if (!existing) {
+        // Auto-add as editor collaborator (they have the link)
+        await sql`
+          INSERT INTO project_collaborators (project_id, user_id, role)
+          VALUES (${projectId}, ${userId}, 'editor')
+          ON CONFLICT DO NOTHING
+        `;
+      }
+    } catch {
+      // Non-critical — don't block the request
+    }
+  }
+  await next();
+});
+
 projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
   const projectId = c.req.param("id");
 

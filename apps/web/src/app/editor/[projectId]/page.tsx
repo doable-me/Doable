@@ -4132,6 +4132,32 @@ export default function EditorPage() {
           </DialogHeader>
 
           <div className="mt-4 space-y-4">
+            {/* Collaborate Link */}
+            <div>
+              <label className="text-sm font-medium text-zinc-300 mb-1.5 block">Invite to Collaborate</label>
+              <p className="text-xs text-zinc-500 mb-2">Anyone with this link can join and collaborate in real-time</p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-400 font-mono truncate">
+                  {`${typeof window !== "undefined" ? window.location.origin : ""}/editor/${resolvedProjectId}`}
+                </div>
+                <button
+                  onClick={() => {
+                    const link = `${window.location.origin}/editor/${resolvedProjectId}`;
+                    navigator.clipboard.writeText(link).then(() => {
+                      setShareCopied("collab");
+                      setTimeout(() => setShareCopied(null), 2000);
+                    });
+                  }}
+                  className="flex h-9 items-center gap-1.5 rounded-md bg-brand-600 hover:bg-brand-500 px-3 text-sm font-medium text-white transition-colors"
+                  title="Copy collaboration link"
+                >
+                  {shareCopied === "collab" ? <><Check className="h-4 w-4" /> Copied!</> : <><Copy className="h-4 w-4" /> Copy Link</>}
+                </button>
+              </div>
+            </div>
+
+            <div className="border-t border-zinc-700/50" />
+
             {/* Preview URL */}
             <div>
               <label className="text-sm font-medium text-zinc-300 mb-1.5 block">Preview URL</label>
