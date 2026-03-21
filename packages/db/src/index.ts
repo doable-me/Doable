@@ -16,3 +16,6 @@ export * from "./queries/feature-flags.js";
 export * from "./queries/credits.js";
 export * from "./queries/security.js";
 export * from "./queries/community.js";
+export * from "./queries/context.js";
+export * from "./queries/skills.js";
+export * from "./queries/connectors.js";

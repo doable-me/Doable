@@ -145,3 +145,77 @@ contextRoutes.delete("/:filename", async (c) => {
 
   return c.json({ data: { deleted: true } });
 });
+
+// ─── Workspace-level context ─────────────────────────────────
+// These are mounted separately under /workspaces/:wid/context/...
+
+export const workspaceContextRoutes = new Hono<AuthEnv>();
+workspaceContextRoutes.use("*", authMiddleware);
+
+/** GET /workspaces/:wid/context — list workspace context files */
+workspaceContextRoutes.get("/", async (c) => {
+  const workspaceId = c.req.param("wid");
+  const files = await ctx.getWorkspaceContext(workspaceId!);
+  const stats = getContextStats(files);
+  return c.json({ data: { files, stats } });
+});
+
+/** GET /workspaces/:wid/context/:filename */
+workspaceContextRoutes.get("/:filename", async (c) => {
+  const workspaceId = c.req.param("wid");
+  const filename = c.req.param("filename");
+
+  const files = await ctx.getWorkspaceContext(workspaceId!);
+  const file = files.find((f) => f.filename === filename);
+  if (!file) return c.json({ error: "Not found" }, 404);
+  return c.json({ data: file });
+});
+
+/** PUT /workspaces/:wid/context/:filename */
+workspaceContextRoutes.put(
+  "/:filename",
+  zValidator("json", updateBody),
+  async (c) => {
+    const workspaceId = c.req.param("wid");
+    const filename = c.req.param("filename");
+    const { content } = c.req.valid("json");
+
+    const parseResult = filenameSchema.safeParse(filename);
+    if (!parseResult.success) {
+      return c.json({ error: "Invalid filename" }, 400);
+    }
+
+    const file = await ctx.setWorkspaceContext(workspaceId!, filename!, content);
+    return c.json({ data: file });
+  }
+);
+
+// ─── User-level context overrides ────────────────────────────
+
+/** GET /workspaces/:wid/context/user — list user's overrides for this workspace */
+workspaceContextRoutes.get("/user/list", async (c) => {
+  const workspaceId = c.req.param("wid");
+  const userId = c.get("userId");
+  const files = await ctx.getUserContext(userId!, workspaceId!);
+  return c.json({ data: { files } });
+});
+
+/** PUT /workspaces/:wid/context/user/:filename */
+workspaceContextRoutes.put(
+  "/user/:filename",
+  zValidator("json", updateBody),
+  async (c) => {
+    const workspaceId = c.req.param("wid");
+    const filename = c.req.param("filename");
+    const userId = c.get("userId");
+    const { content } = c.req.valid("json");
+
+    const parseResult = filenameSchema.safeParse(filename);
+    if (!parseResult.success) {
+      return c.json({ error: "Invalid filename" }, 400);
+    }
+
+    const file = await ctx.setUserContext(userId!, workspaceId!, filename!, content);
+    return c.json({ data: file });
+  }
+);

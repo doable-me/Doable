@@ -1,4 +1,4 @@
-import type { AiSessionMode } from "@doable/shared";
+import type { AiSessionMode, ContextMergeStrategy } from "@doable/shared";
 import type { ContextFile } from "./manager.js";
 import { CONTEXT_FILE_MAP, DEFAULT_CONTEXT_FILES } from "./defaults.js";
 
@@ -8,8 +8,19 @@ import { CONTEXT_FILE_MAP, DEFAULT_CONTEXT_FILES } from "./defaults.js";
 const CHARS_PER_TOKEN = 4;
 
 /** Max tokens allocated for context injection */
-const MAX_CONTEXT_TOKENS = 8_000;
+const MAX_CONTEXT_TOKENS = 12_000;
 const MAX_CONTEXT_CHARS = MAX_CONTEXT_TOKENS * CHARS_PER_TOKEN;
+
+// ─── Priority Tiers ────────────────────────────────────────
+
+/**
+ * Priority tiers per PRD 14 Section 3.4:
+ * - P0 (always): identity, soul, user, instructions, knowledge, plan, memory
+ * - P0.5 (session start): boot, tools
+ * - P1 (task-based): design-system, schema, architecture, api-reference
+ * - P2 (scoped): rules/ files based on file being edited
+ * - P3 (on-demand): agents, heartbeat, bootstrap
+ */
 
 // ─── Mode Configuration ────────────────────────────────────
 
@@ -30,13 +41,25 @@ interface ModeConfig {
 const MODE_CONFIGS: Record<AiSessionMode, ModeConfig> = {
   agent: {
     include: [
+      // P0: Core (always)
       "identity.md",
-      "knowledge.md",
-      "instructions.md",
       "soul.md",
-      "memory.md",
       "user.md",
+      "instructions.md",
+      "knowledge.md",
       "plan.md",
+      "memory.md",
+      // P0.5: Session lifecycle
+      "boot.md",
+      "tools.md",
+      // P1: Architecture (task-based, included when non-empty)
+      "design-system.md",
+      "schema.md",
+      "architecture.md",
+      "api-reference.md",
+      // P3: On-demand
+      "agents.md",
+      "heartbeat.md",
     ],
     preamble:
       "You are working inside a project. Follow the project's identity, knowledge, and instructions precisely. Apply the design soul. Reference memory for prior context. Respect user preferences.",
@@ -47,6 +70,8 @@ const MODE_CONFIGS: Record<AiSessionMode, ModeConfig> = {
       "knowledge.md",
       "plan.md",
       "memory.md",
+      "architecture.md",
+      "schema.md",
     ],
     preamble:
       "You are helping plan the next steps for this project. Use the project identity and knowledge base to make informed suggestions. Reference the current plan and memory.",
@@ -57,11 +82,76 @@ const MODE_CONFIGS: Record<AiSessionMode, ModeConfig> = {
       "instructions.md",
       "memory.md",
       "user.md",
+      "knowledge.md",
     ],
     preamble:
       "You are answering questions about this project. Use the project identity and instructions to stay consistent. Check memory for recent context. Adapt to user preferences.",
   },
 };
+
+// ─── Multi-Scope Resolution ────────────────────────────────
+
+export interface ScopedContextFile extends ContextFile {
+  scope: "workspace" | "project" | "user";
+}
+
+/**
+ * Resolve effective context from multiple scopes.
+ * User overrides > project overrides > workspace defaults.
+ *
+ * For "replace" strategy: narrowest scope wins entirely.
+ * For "append" strategy: all scopes are concatenated (workspace + project + user).
+ */
+export function resolveMultiScopeContext(
+  workspaceFiles: ContextFile[],
+  projectFiles: ContextFile[],
+  userFiles: ContextFile[],
+): ContextFile[] {
+  const filesByName = new Map<string, { workspace?: ContextFile; project?: ContextFile; user?: ContextFile }>();
+
+  for (const f of workspaceFiles) {
+    if (!filesByName.has(f.filename)) filesByName.set(f.filename, {});
+    filesByName.get(f.filename)!.workspace = f;
+  }
+  for (const f of projectFiles) {
+    if (!filesByName.has(f.filename)) filesByName.set(f.filename, {});
+    filesByName.get(f.filename)!.project = f;
+  }
+  for (const f of userFiles) {
+    if (!filesByName.has(f.filename)) filesByName.set(f.filename, {});
+    filesByName.get(f.filename)!.user = f;
+  }
+
+  const resolved: ContextFile[] = [];
+
+  for (const [filename, scopes] of filesByName) {
+    const def = CONTEXT_FILE_MAP.get(filename);
+    const strategy: ContextMergeStrategy = def?.mergeStrategy ?? "replace";
+
+    if (strategy === "replace") {
+      // Narrowest non-empty scope wins
+      const winner = scopes.user ?? scopes.project ?? scopes.workspace;
+      if (winner) resolved.push(winner);
+    } else {
+      // Append: concatenate all scopes
+      const parts: string[] = [];
+      if (scopes.workspace?.content.trim()) parts.push(scopes.workspace.content.trim());
+      if (scopes.project?.content.trim()) parts.push(scopes.project.content.trim());
+      if (scopes.user?.content.trim()) parts.push(scopes.user.content.trim());
+
+      if (parts.length > 0) {
+        const latest = scopes.user ?? scopes.project ?? scopes.workspace;
+        resolved.push({
+          filename,
+          content: parts.join("\n\n---\n\n"),
+          updatedAt: latest!.updatedAt,
+        });
+      }
+    }
+  }
+
+  return resolved;
+}
 
 // ─── Builder ────────────────────────────────────────────────
 

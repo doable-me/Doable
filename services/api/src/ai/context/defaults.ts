@@ -5,7 +5,7 @@ import type { DoableContextFile } from "@doable/shared/types/ai.js";
 // (the legacy path). The canonical defaults are in services/api/src/context/defaults.ts
 // which powers the database-backed context system.
 
-export const CONTEXT_DEFAULTS: Record<DoableContextFile, string> = {
+export const CONTEXT_DEFAULTS: Partial<Record<DoableContextFile, string>> = {
   "knowledge.md": `# Knowledge Base
 
 ## Tech Stack

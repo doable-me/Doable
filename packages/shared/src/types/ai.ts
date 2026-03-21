@@ -115,13 +115,32 @@ export interface LLMCompletionOptions {
 // ─── Context Files ─────────────────────────────────────────
 
 export type DoableContextFile =
-  | "knowledge.md"
-  | "instructions.md"
+  // Core (always injected)
   | "identity.md"
   | "soul.md"
-  | "memory.md"
   | "user.md"
-  | "plan.md";
+  | "instructions.md"
+  | "knowledge.md"
+  | "plan.md"
+  | "memory.md"
+  // Session lifecycle
+  | "boot.md"
+  | "tools.md"
+  | "heartbeat.md"
+  | "bootstrap.md"
+  // Architecture & design
+  | "design-system.md"
+  | "schema.md"
+  | "architecture.md"
+  | "api-reference.md"
+  // Agent & skill definitions
+  | "agents.md";
+
+/** Scope levels for context files, skills, rules, and connectors */
+export type ContextScope = "workspace" | "project" | "user";
+
+/** Merge strategy when combining scopes */
+export type ContextMergeStrategy = "replace" | "append";
 
 export interface ProjectContext {
   projectId: string;
