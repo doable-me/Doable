@@ -2591,6 +2591,7 @@ export default function EditorPage() {
       userId={authUser?.id ?? ""}
       displayName={authUser?.displayName ?? ""}
     >
+    <>
     <CollabAiSync
       onRemoteUserMessage={handleRemoteUserMessage}
       onRemoteStreamChunk={handleRemoteStreamChunk}
@@ -4368,6 +4369,7 @@ export default function EditorPage() {
     <CollabPresenceSync activeTab={activeTab} selectedFile={selectedFile} />
     <CollabFileTabSync openFilePaths={openFileTabs.map((t: any) => t.path)} />
     <CollabActivityOverlay />
+    </>
     </CollaborationProvider>
   );
 }
