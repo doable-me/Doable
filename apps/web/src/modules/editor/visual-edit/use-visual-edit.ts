@@ -309,7 +309,7 @@ export function useVisualEdit({ iframeRef, projectId, onSendMessage }: UseVisual
       }
 
       // Notify collaborators to refresh their preview
-      window.dispatchEvent(new CustomEvent("doable:ve-saved"));
+      window.dispatchEvent(new CustomEvent("doable:preview-refresh"));
 
       return true;
     } catch (err) {

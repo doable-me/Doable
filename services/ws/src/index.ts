@@ -505,10 +505,12 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
     }
 
     case "visual-edit:preview-refresh": {
+      console.log("[ws] preview-refresh from", state.userId, "project", state.projectId);
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
           room.broadcast({ type: "visual-edit:preview-refresh" } as any, state.userId);
+          console.log("[ws] broadcast preview-refresh to room");
         }
       }
       break;

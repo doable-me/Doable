@@ -390,11 +390,13 @@ export function useRemoteVisualEdits(
 
   // Broadcast preview refresh when visual edits are saved
   useEffect(() => {
-    const onSaved = () => {
-      if (joined) send({ type: "visual-edit:preview-refresh" });
+    const onRefresh = () => {
+      if (joined) {
+        send({ type: "visual-edit:preview-refresh" });
+      }
     };
-    window.addEventListener("doable:ve-saved", onSaved);
-    return () => window.removeEventListener("doable:ve-saved", onSaved);
+    window.addEventListener("doable:preview-refresh", onRefresh);
+    return () => window.removeEventListener("doable:preview-refresh", onRefresh);
   }, [joined, send]);
 
   // Apply incoming remote edits to our iframe + handle preview refresh
