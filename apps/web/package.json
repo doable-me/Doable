@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev --turbopack --hostname 127.0.0.1",
     "build": "next build",
     "build:cf": "npx @opennextjs/cloudflare build",
     "preview:cf": "npx wrangler dev",
