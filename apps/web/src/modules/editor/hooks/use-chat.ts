@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useEffect } from "react";
 import { useEditorStore, type ChatMessage } from "./use-editor-store";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -9,8 +9,22 @@ function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function useChat(projectId: string | null) {
+/**
+ * @param projectId - Current project ID
+ * @param collabSubscribe - Optional WS subscribe from collaboration context.
+ *   When provided, the hook listens for ai:stream-chunk / ai:stream-end /
+ *   ai:message-sent events so that ALL collaborators see AI responses in
+ *   real-time — not just the user who sent the prompt.
+ */
+export function useChat(
+  projectId: string | null,
+  collabSubscribe?: (handler: (msg: any) => void) => () => void,
+) {
   const abortRef = useRef<AbortController | null>(null);
+  // Track which messageIds originated from THIS client so we don't double-render
+  const ownMessageIds = useRef<Set<string>>(new Set());
+  // Track remote streaming message IDs → assistant message IDs in the store
+  const remoteStreamMap = useRef<Map<string, string>>(new Map());
 
   const {
     messages,
@@ -23,9 +37,110 @@ export function useChat(projectId: string | null) {
     clearMessages,
   } = useEditorStore();
 
+  // ─── Listen for WS collaboration events ─────────────────
+  useEffect(() => {
+    if (!collabSubscribe) return;
+
+    const unsub = collabSubscribe((msg: any) => {
+      switch (msg.type) {
+        // Another user sent an AI message — show their prompt in chat
+        case "ai:message-sent": {
+          const msgId = msg.messageId as string;
+          // Skip if this is our own message
+          if (ownMessageIds.current.has(msgId)) break;
+
+          // Add the remote user's message to our chat
+          addMessage({
+            id: `remote_user_${msgId}`,
+            role: "user",
+            content: msg.content ?? "",
+            timestamp: new Date().toISOString(),
+            // Store sender info for attribution
+            senderName: msg.displayName,
+            senderId: msg.userId,
+          } as ChatMessage);
+
+          // Create a placeholder assistant message for the stream
+          const assistantId = `remote_ai_${msgId}`;
+          remoteStreamMap.current.set(msgId, assistantId);
+          addMessage({
+            id: assistantId,
+            role: "assistant",
+            content: "",
+            timestamp: new Date().toISOString(),
+            isStreaming: true,
+            liveStatus: "thinking",
+          });
+          break;
+        }
+
+        // AI stream chunk from another user's request
+        case "ai:stream-chunk": {
+          const msgId = msg.messageId as string;
+          if (ownMessageIds.current.has(msgId)) break;
+
+          let assistantId = remoteStreamMap.current.get(msgId);
+          if (!assistantId) {
+            // Stream started without a prior ai:message-sent (e.g. reconnection)
+            assistantId = `remote_ai_${msgId}`;
+            remoteStreamMap.current.set(msgId, assistantId);
+            addMessage({
+              id: assistantId,
+              role: "assistant",
+              content: "",
+              timestamp: new Date().toISOString(),
+              isStreaming: true,
+            });
+          }
+
+          const chunk = msg.chunk as string;
+          if (msg.isThinking) {
+            // Accumulate thinking content
+            const current = useEditorStore.getState().messages.find(
+              (m) => m.id === assistantId
+            );
+            updateMessageFields(assistantId, {
+              thinkingContent: (current?.thinkingContent ?? "") + chunk,
+              liveStatus: "thinking",
+            });
+          } else {
+            // Accumulate text content
+            const current = useEditorStore.getState().messages.find(
+              (m) => m.id === assistantId
+            );
+            updateMessage(assistantId, (current?.content ?? "") + chunk);
+          }
+          break;
+        }
+
+        // AI stream ended for another user's request
+        case "ai:stream-end": {
+          const msgId = msg.messageId as string;
+          if (ownMessageIds.current.has(msgId)) break;
+
+          const assistantId = remoteStreamMap.current.get(msgId);
+          if (assistantId) {
+            updateMessageFields(assistantId, {
+              isStreaming: false,
+              liveStatus: undefined,
+            });
+            remoteStreamMap.current.delete(msgId);
+          }
+          break;
+        }
+      }
+    });
+
+    return unsub;
+  }, [collabSubscribe, addMessage, updateMessage, updateMessageFields]);
+
   const sendMessage = useCallback(
     async (content: string) => {
       if (!projectId || !content.trim() || isStreaming) return;
+
+      // Generate a messageId we'll use for WS broadcast tracking
+      const broadcastMsgId = generateId();
+      ownMessageIds.current.add(broadcastMsgId);
 
       // Add user message
       const userMessage: ChatMessage = {
@@ -54,11 +169,17 @@ export function useChat(projectId: string | null) {
       abortRef.current = controller;
 
       try {
+        const { getStoredTokens } = await import("@/lib/api");
+        const { accessToken } = getStoredTokens();
+
         const response = await fetch(
           `${API_BASE}/projects/${projectId}/chat`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+            },
             body: JSON.stringify({ content: content.trim(), mode }),
             signal: controller.signal,
           }
@@ -169,6 +290,8 @@ export function useChat(projectId: string | null) {
       } finally {
         setStreaming(false);
         abortRef.current = null;
+        // Clean up own message tracking after a delay
+        setTimeout(() => ownMessageIds.current.delete(broadcastMsgId), 30_000);
       }
     },
     [projectId, mode, isStreaming, addMessage, updateMessage, updateMessageFields, setStreaming]
@@ -183,8 +306,14 @@ export function useChat(projectId: string | null) {
     if (!projectId) return;
 
     try {
+      const { getStoredTokens } = await import("@/lib/api");
+      const { accessToken } = getStoredTokens();
+
       const response = await fetch(
-        `${API_BASE}/projects/${projectId}/chat/history`
+        `${API_BASE}/projects/${projectId}/chat/history`,
+        {
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        },
       );
       if (!response.ok) return;
 
@@ -204,8 +333,12 @@ export function useChat(projectId: string | null) {
     if (!projectId) return;
 
     try {
+      const { getStoredTokens } = await import("@/lib/api");
+      const { accessToken } = getStoredTokens();
+
       await fetch(`${API_BASE}/projects/${projectId}/chat`, {
         method: "DELETE",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
       });
     } catch {
       // Silently fail

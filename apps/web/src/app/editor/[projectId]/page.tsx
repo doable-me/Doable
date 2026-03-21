@@ -14,6 +14,7 @@ import { CollabTeamChatWrapper } from "@/modules/collaboration/components/collab
 import { CollabPresenceSync } from "@/modules/collaboration/components/collab-presence-sync";
 import { FileTabPresenceDots } from "@/modules/collaboration/components/file-tab-presence-dots";
 import { CollabFileTabSync } from "@/modules/collaboration/components/collab-file-tab-sync";
+import { CollabAiSync } from "@/modules/collaboration/components/collab-ai-sync";
 import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-attachments";
 import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/components/editor-model-selector";
 import {
@@ -2522,12 +2523,79 @@ export default function EditorPage() {
     );
   };
 
+  // ─── Collaboration AI sync — show remote users' AI messages ──
+  const remoteStreamIdsRef = useRef<Record<string, string>>({});
+
+  const handleRemoteUserMessage = useCallback((data: { messageId: string; userId: string; displayName: string; content: string }) => {
+    // Don't show our own messages (we already added them locally)
+    if (data.userId === authUser?.id) return;
+
+    const userMsgId = `remote_user_${data.messageId}`;
+    const aiMsgId = `remote_ai_${data.messageId}`;
+    remoteStreamIdsRef.current[data.messageId] = aiMsgId;
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: userMsgId,
+        role: "user" as const,
+        content: `**${data.displayName}:** ${data.content}`,
+        timestamp: nowTimestamp(),
+      },
+      {
+        id: aiMsgId,
+        role: "assistant" as const,
+        content: "",
+        timestamp: nowTimestamp(),
+        isStreaming: true,
+      },
+    ]);
+  }, [authUser?.id]);
+
+  const handleRemoteStreamChunk = useCallback((data: { messageId: string; chunk: string; isThinking: boolean }) => {
+    const aiMsgId = remoteStreamIdsRef.current[data.messageId];
+    if (!aiMsgId) return;
+
+    if (data.isThinking) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsgId
+            ? { ...m, thinkingContent: (m.thinkingContent ?? "") + data.chunk }
+            : m
+        )
+      );
+    } else {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsgId ? { ...m, content: m.content + data.chunk } : m
+        )
+      );
+    }
+  }, []);
+
+  const handleRemoteStreamEnd = useCallback((data: { messageId: string; finalContent?: string }) => {
+    const aiMsgId = remoteStreamIdsRef.current[data.messageId];
+    if (!aiMsgId) return;
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === aiMsgId ? { ...m, isStreaming: false } : m
+      )
+    );
+    delete remoteStreamIdsRef.current[data.messageId];
+  }, []);
+
   return (
     <CollaborationProvider
       projectId={resolvedProjectId}
       userId={authUser?.id ?? ""}
       displayName={authUser?.displayName ?? ""}
     >
+    <CollabAiSync
+      onRemoteUserMessage={handleRemoteUserMessage}
+      onRemoteStreamChunk={handleRemoteStreamChunk}
+      onRemoteStreamEnd={handleRemoteStreamEnd}
+    />
     <div className="flex h-screen flex-col bg-[#1C1C1C] text-zinc-200">
       {/* ─── Top Bar ──────────────────────────────────────────── */}
       <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#1C1C1C] px-3">
