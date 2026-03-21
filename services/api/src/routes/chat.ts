@@ -40,31 +40,20 @@ chatRoutes.use("/projects/:id/chat", authMiddleware);
 chatRoutes.use("/projects/:id/chat/*", authMiddleware);
 chatRoutes.use("/ai/*", authMiddleware);
 
-// Auto-join: when a user accesses chat for a project, ensure they're a collaborator
+// Auto-join: when a user accesses chat, add as collaborator ONLY if link sharing enabled
 chatRoutes.use("/projects/:id/chat", async (c, next) => {
   const projectId = c.req.param("id");
   const userId = c.get("userId");
   if (projectId && userId) {
     try {
-      await sql`
-        INSERT INTO project_collaborators (project_id, user_id, role)
-        VALUES (${projectId}, ${userId}, 'editor')
-        ON CONFLICT DO NOTHING
-      `;
-    } catch { /* non-critical */ }
-  }
-  await next();
-});
-chatRoutes.use("/projects/:id/chat/*", async (c, next) => {
-  const projectId = c.req.param("id");
-  const userId = c.get("userId");
-  if (projectId && userId) {
-    try {
-      await sql`
-        INSERT INTO project_collaborators (project_id, user_id, role)
-        VALUES (${projectId}, ${userId}, 'editor')
-        ON CONFLICT DO NOTHING
-      `;
+      const [project] = await sql`SELECT visibility FROM projects WHERE id = ${projectId}`;
+      if (project?.visibility === 'public') {
+        await sql`
+          INSERT INTO project_collaborators (project_id, user_id, role)
+          VALUES (${projectId}, ${userId}, 'editor')
+          ON CONFLICT DO NOTHING
+        `;
+      }
     } catch { /* non-critical */ }
   }
   await next();

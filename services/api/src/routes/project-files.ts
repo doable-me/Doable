@@ -46,13 +46,13 @@ const scaffoldLocks = new Map<string, Promise<void>>();
 
 // ─── POST /projects/:id/scaffold ─ Create project scaffold ──
 
-// ─── Auto-join: add user as collaborator when they access a project ──
+// ─── Auto-join: add user as collaborator ONLY if project link sharing is enabled ──
 projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   const projectId = c.req.param("id");
   const userId = c.get("userId");
   if (projectId && userId) {
     try {
-      // Check if user is already the owner or a collaborator
+      // Check if user already has access (owner or collaborator)
       const [existing] = await sql`
         SELECT 1 FROM projects p
         JOIN workspace_members wm ON wm.workspace_id = p.workspace_id AND wm.user_id = ${userId}
@@ -63,12 +63,19 @@ projectFileRoutes.use("/projects/:id/*", async (c, next) => {
         LIMIT 1
       `;
       if (!existing) {
-        // Auto-add as editor collaborator (they have the link)
-        await sql`
-          INSERT INTO project_collaborators (project_id, user_id, role)
-          VALUES (${projectId}, ${userId}, 'editor')
-          ON CONFLICT DO NOTHING
+        // Only auto-add if the project has link sharing enabled (visibility = 'public')
+        const [project] = await sql`
+          SELECT visibility FROM projects WHERE id = ${projectId}
         `;
+        if (project?.visibility === 'public') {
+          await sql`
+            INSERT INTO project_collaborators (project_id, user_id, role)
+            VALUES (${projectId}, ${userId}, 'editor')
+            ON CONFLICT DO NOTHING
+          `;
+        }
+        // If private, user can still view but won't be auto-added as collaborator
+        // They need to be explicitly invited by the owner
       }
     } catch {
       // Non-critical — don't block the request

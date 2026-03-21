@@ -4132,29 +4132,63 @@ export default function EditorPage() {
           </DialogHeader>
 
           <div className="mt-4 space-y-4">
-            {/* Collaborate Link */}
-            <div>
-              <label className="text-sm font-medium text-zinc-300 mb-1.5 block">Invite to Collaborate</label>
-              <p className="text-xs text-zinc-500 mb-2">Anyone with this link can join and collaborate in real-time</p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-400 font-mono truncate">
-                  {`${typeof window !== "undefined" ? window.location.origin : ""}/editor/${resolvedProjectId}`}
+            {/* Link Sharing Toggle — controls whether anyone with the link can collaborate */}
+            <div className="flex items-center justify-between rounded-lg bg-zinc-800/50 border border-zinc-700/50 px-4 py-3">
+              <div className="flex items-center gap-3">
+                {projectVisibility === "public" ? (
+                  <Users className="h-4 w-4 text-brand-400" />
+                ) : (
+                  <Lock className="h-4 w-4 text-zinc-500" />
+                )}
+                <div>
+                  <p className="text-sm font-medium text-zinc-200">
+                    {projectVisibility === "public" ? "Link sharing enabled" : "Private project"}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {projectVisibility === "public"
+                      ? "Anyone with the link can join and collaborate"
+                      : "Only invited collaborators can access"}
+                  </p>
                 </div>
-                <button
-                  onClick={() => {
-                    const link = `${window.location.origin}/editor/${resolvedProjectId}`;
-                    navigator.clipboard.writeText(link).then(() => {
-                      setShareCopied("collab");
-                      setTimeout(() => setShareCopied(null), 2000);
-                    });
-                  }}
-                  className="flex h-9 items-center gap-1.5 rounded-md bg-brand-600 hover:bg-brand-500 px-3 text-sm font-medium text-white transition-colors"
-                  title="Copy collaboration link"
-                >
-                  {shareCopied === "collab" ? <><Check className="h-4 w-4" /> Copied!</> : <><Copy className="h-4 w-4" /> Copy Link</>}
-                </button>
               </div>
+              <button
+                onClick={handleToggleVisibility}
+                className={`relative h-6 w-11 rounded-full transition-colors ${
+                  projectVisibility === "public" ? "bg-brand-600" : "bg-zinc-600"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                    projectVisibility === "public" ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
             </div>
+
+            {/* Collaborate Link — only shown when link sharing is enabled */}
+            {projectVisibility === "public" && (
+              <div>
+                <label className="text-sm font-medium text-zinc-300 mb-1.5 block">Collaboration Link</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-400 font-mono truncate">
+                    {`${typeof window !== "undefined" ? window.location.origin : ""}/editor/${resolvedProjectId}`}
+                  </div>
+                  <button
+                    onClick={() => {
+                      const link = `${window.location.origin}/editor/${resolvedProjectId}`;
+                      navigator.clipboard.writeText(link).then(() => {
+                        setShareCopied("collab");
+                        setTimeout(() => setShareCopied(null), 2000);
+                      });
+                    }}
+                    className="flex h-9 items-center gap-1.5 rounded-md bg-brand-600 hover:bg-brand-500 px-3 text-sm font-medium text-white transition-colors"
+                    title="Copy collaboration link"
+                  >
+                    {shareCopied === "collab" ? <><Check className="h-4 w-4" /> Copied!</> : <><Copy className="h-4 w-4" /> Copy Link</>}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="border-t border-zinc-700/50" />
 
@@ -4176,38 +4210,7 @@ export default function EditorPage() {
               </div>
             </div>
 
-            {/* Visibility Toggle */}
-            <div className="flex items-center justify-between rounded-lg bg-zinc-800/50 border border-zinc-700/50 px-4 py-3">
-              <div className="flex items-center gap-3">
-                {projectVisibility === "public" ? (
-                  <Eye className="h-4 w-4 text-emerald-400" />
-                ) : (
-                  <EyeOff className="h-4 w-4 text-zinc-500" />
-                )}
-                <div>
-                  <p className="text-sm font-medium text-zinc-200">
-                    {projectVisibility === "public" ? "Public" : "Private"}
-                  </p>
-                  <p className="text-xs text-zinc-500">
-                    {projectVisibility === "public"
-                      ? "Anyone with the link can view"
-                      : "Only you can access this project"}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={handleToggleVisibility}
-                className={`relative h-6 w-11 rounded-full transition-colors ${
-                  projectVisibility === "public" ? "bg-emerald-600" : "bg-zinc-600"
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                    projectVisibility === "public" ? "translate-x-5" : "translate-x-0.5"
-                  }`}
-                />
-              </button>
-            </div>
+            {/* (Visibility toggle moved to top of dialog as Link Sharing control) */}
 
             {/* Embed Code */}
             <div>
