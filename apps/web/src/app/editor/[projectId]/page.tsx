@@ -281,41 +281,21 @@ function toAbsolutePreviewUrl(url: string | null): string | null {
 }
 
 async function scaffoldProject(projectId: string): Promise<string | null> {
-  const res = await fetch(`${API_URL}/projects/${projectId}/scaffold`, {
+  const json = await apiFetch<{ data: { previewUrl?: string | null } }>(`/projects/${projectId}/scaffold`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Scaffold failed (${res.status}): ${text || "Unknown error"}`);
-  }
-  const json = (await res.json()) as { data: { previewUrl?: string | null } };
   return toAbsolutePreviewUrl(json.data.previewUrl ?? null);
 }
 
 async function fetchPreviewUrl(projectId: string): Promise<string | null> {
-  const res = await fetch(`${API_URL}/projects/${projectId}/preview-url`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Failed to get preview URL (${res.status}): ${text || "Unknown error"}`);
-  }
-  const json = (await res.json()) as { data: { url: string | null; running: boolean } };
+  const json = await apiFetch<{ data: { url: string | null; running: boolean } }>(`/projects/${projectId}/preview-url`);
   // Return null if the server isn't running yet — caller will retry
   if (!json.data.url || !json.data.running) return null;
   return toAbsolutePreviewUrl(json.data.url);
 }
 
 async function fetchFileList(projectId: string): Promise<string[]> {
-  const res = await fetch(`${API_URL}/projects/${projectId}/files`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Failed to list files (${res.status}): ${text || "Unknown error"}`);
-  }
-  const json = (await res.json()) as { data: string[] };
+  const json = await apiFetch<{ data: string[] }>(`/projects/${projectId}/files`);
   return json.data;
 }
 
@@ -323,15 +303,9 @@ async function fetchFileContent(
   projectId: string,
   filePath: string,
 ): Promise<string> {
-  const res = await fetch(
-    `${API_URL}/projects/${projectId}/files/${encodeURIComponent(filePath)}`,
-    { headers: authHeaders() },
+  const json = await apiFetch<{ data: { path: string; content: string } }>(
+    `/projects/${projectId}/files/${encodeURIComponent(filePath)}`,
   );
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Failed to read file (${res.status}): ${text || "Unknown error"}`);
-  }
-  const json = (await res.json()) as { data: { path: string; content: string } };
   return json.data.content;
 }
 
@@ -340,18 +314,10 @@ async function saveFileContent(
   filePath: string,
   content: string,
 ): Promise<void> {
-  const res = await fetch(
-    `${API_URL}/projects/${projectId}/files/${encodeURIComponent(filePath)}`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ content }),
-    },
-  );
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Failed to save file (${res.status}): ${text || "Unknown error"}`);
-  }
+  await apiFetch(`/projects/${projectId}/files/${encodeURIComponent(filePath)}`, {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+  });
 }
 
 // ─── Build file tree from flat paths ────────────────────────
