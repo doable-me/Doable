@@ -26,6 +26,14 @@ export interface ChatMessage {
   isStreaming?: boolean;
   thinkingContent?: string;
   liveStatus?: string;
+  senderName?: string;
+  senderId?: string;
+  attachments?: Array<{
+    type: "image" | "text" | "pdf" | "code";
+    name: string;
+    mimeType: string;
+    preview?: string;
+  }>;
 }
 
 export type EditorMode = "agent" | "plan";

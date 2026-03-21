@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useEffect } from "react";
 import { useEditorStore, type ChatMessage } from "./use-editor-store";
+import type { Attachment } from "@/hooks/use-attachments";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -135,7 +136,7 @@ export function useChat(
   }, [collabSubscribe, addMessage, updateMessage, updateMessageFields]);
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, attachments?: Attachment[]) => {
       if (!projectId || !content.trim() || isStreaming) return;
 
       // Generate a messageId we'll use for WS broadcast tracking
@@ -148,6 +149,12 @@ export function useChat(
         role: "user",
         content: content.trim(),
         timestamp: new Date().toISOString(),
+        attachments: attachments?.map((a) => ({
+          type: a.type,
+          name: a.name,
+          mimeType: a.mimeType,
+          preview: a.preview,
+        })),
       };
       addMessage(userMessage);
 
@@ -180,7 +187,15 @@ export function useChat(
               "Content-Type": "application/json",
               ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
             },
-            body: JSON.stringify({ content: content.trim(), mode }),
+            body: JSON.stringify({
+              content: content.trim(),
+              mode,
+              attachments: attachments?.map((a) => ({
+                type: a.mimeType,
+                data: a.data,
+                name: a.name,
+              })),
+            }),
             signal: controller.signal,
           }
         );

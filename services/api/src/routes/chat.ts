@@ -30,6 +30,8 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { contextManager } from "../context/manager.js";
 import { buildContextPrompt } from "../context/injector.js";
 import { broadcastToRoom } from "../ai/yjs-bridge.js";
+import { processAttachments } from "../ai/attachments.js";
+import { bodyLimit } from "hono/body-limit";
 
 export const chatRoutes = new Hono<AuthEnv>();
 const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
@@ -511,7 +513,7 @@ function scheduleThumbnailCapture(projectId: string, delayMs = 3000): void {
 
 // ─── POST /projects/:id/chat ─ SSE streaming response ───────
 const sendMessageSchema = z.object({
-  content: z.string().min(1).max(32_000),
+  content: z.string().min(1).max(100_000),
   mode: z.enum(["agent", "plan", "visual-edit"]).default("agent"),
   model: z.string().optional(),
   provider: z
@@ -531,25 +533,27 @@ const sendMessageSchema = z.object({
         name: z.string(),
       })
     )
-    .max(3)
+    .max(5)
     .optional(),
 });
 
 chatRoutes.post(
   "/projects/:id/chat",
+  bodyLimit({ maxSize: 20 * 1024 * 1024 }), // 20 MB — accommodates base64-encoded image attachments
   zValidator("json", sendMessageSchema),
   async (c) => {
     const projectId = c.req.param("id");
     const { content, mode, model, provider, providerId, copilotAccountId, attachments } = c.req.valid("json");
     const userId = c.get("userId")!;
 
-    // Augment prompt with image attachment markers (AI can't see images yet, but gets notified)
+    // Process attachments: inline text/code into the prompt, save images as temp files for SDK
     let augmentedContent = content;
+    let fileAttachments: Array<{ type: "file"; path: string; displayName?: string }> = [];
+
     if (attachments && attachments.length > 0) {
-      const markers = attachments
-        .map((a) => `[User attached image: ${a.name}]`)
-        .join("\n");
-      augmentedContent = `${markers}\n${content}`;
+      const processed = processAttachments(attachments, content);
+      augmentedContent = processed.augmentedPrompt;
+      fileAttachments = processed.fileAttachments;
     }
 
     try {
@@ -779,7 +783,7 @@ ERROR RECOVERY — if you encounter errors:
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let assistantToolCalls: any[] = [];
         try {
-          for await (const event of engine.sendMessage(sessionId!, augmentedContent)) {
+          for await (const event of engine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined)) {
             const evtType = (event as Record<string, unknown>).type as string;
             const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
 

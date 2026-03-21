@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Send, Paperclip, Square } from "lucide-react";
 import { ModeToggle } from "./mode-toggle";
+import { useAttachments, ACCEPTED_EXTENSIONS, type Attachment } from "@/hooks/use-attachments";
+import { AttachmentPreviewStrip } from "./attachment-preview";
 
 const PLACEHOLDER_SUGGESTIONS = [
   "Build a SaaS landing page with pricing...",
@@ -64,7 +66,7 @@ function useRotatingPlaceholder(): string {
 }
 
 interface ChatInputProps {
-  onSend: (content: string) => void;
+  onSend: (content: string, attachments?: Attachment[]) => void;
   onStop?: () => void;
   isStreaming: boolean;
   disabled?: boolean;
@@ -77,20 +79,35 @@ export function ChatInput({
   disabled,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const placeholder = useRotatingPlaceholder();
 
+  const {
+    attachments,
+    fileInputRef,
+    openFilePicker,
+    handleFileChange,
+    handleDrop: onDrop,
+    handlePaste: onPaste,
+    removeAttachment,
+    clearAll,
+  } = useAttachments();
+
+  const hasContent = value.trim().length > 0 || attachments.length > 0;
+
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed || disabled) return;
-    onSend(trimmed);
+    if ((!trimmed && attachments.length === 0) || disabled) return;
+    onSend(trimmed || "(attachments)", attachments.length > 0 ? attachments : undefined);
     setValue("");
+    clearAll();
 
     // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [value, disabled, onSend]);
+  }, [value, attachments, disabled, onSend, clearAll]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -110,6 +127,26 @@ export function ChatInput({
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      setIsDragging(false);
+      onDrop(e);
+    },
+    [onDrop]
+  );
+
   return (
     <div className="border-t border-border bg-background p-3">
       {/* Mode toggle */}
@@ -117,48 +154,80 @@ export function ChatInput({
         <ModeToggle />
       </div>
 
-      {/* Input area */}
-      <div className="flex items-end gap-2 rounded-lg border border-border bg-muted/20 p-2 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring transition-shadow">
-        {/* Attachment */}
-        <button
-          className="flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          title="Attach file"
-        >
-          <Paperclip className="h-4 w-4" />
-        </button>
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={ACCEPTED_EXTENSIONS}
+        onChange={handleFileChange}
+        className="hidden"
+      />
 
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          placeholder={value ? "" : placeholder}
-          disabled={disabled}
-          rows={1}
-          className="max-h-[200px] min-h-[36px] flex-1 resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+      {/* Input area */}
+      <div
+        className={`rounded-lg border bg-muted/20 p-2 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring transition-shadow ${
+          isDragging ? "border-primary ring-1 ring-primary bg-primary/5" : "border-border"
+        }`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Attachment preview strip */}
+        <AttachmentPreviewStrip
+          attachments={attachments}
+          onRemove={removeAttachment}
         />
 
-        {/* Send / Stop */}
-        {isStreaming ? (
+        <div className="flex items-end gap-2">
+          {/* Attachment button */}
           <button
-            onClick={onStop}
-            className="flex h-8 w-8 flex-none items-center justify-center rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-            title="Stop generating"
+            onClick={openFilePicker}
+            className="relative flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            title="Attach file"
           >
-            <Square className="h-3.5 w-3.5" />
+            <Paperclip className="h-4 w-4" />
+            {attachments.length > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
+                {attachments.length}
+              </span>
+            )}
           </button>
-        ) : (
-          <button
-            onClick={handleSend}
-            disabled={!value.trim() || disabled}
-            className="flex h-8 w-8 flex-none items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Send message"
-          >
-            <Send className="h-3.5 w-3.5" />
-          </button>
-        )}
+
+          {/* Textarea */}
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onInput={handleInput}
+            onPaste={onPaste}
+            placeholder={value ? "" : placeholder}
+            disabled={disabled}
+            rows={1}
+            className="max-h-[200px] min-h-[36px] flex-1 resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+          />
+
+          {/* Send / Stop */}
+          {isStreaming ? (
+            <button
+              onClick={onStop}
+              className="flex h-8 w-8 flex-none items-center justify-center rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+              title="Stop generating"
+            >
+              <Square className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!hasContent || disabled}
+              className="flex h-8 w-8 flex-none items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Send message"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Hint */}

@@ -19,7 +19,7 @@ import { FileTabPresenceDots } from "@/modules/collaboration/components/file-tab
 import { CollabFileTabSync } from "@/modules/collaboration/components/collab-file-tab-sync";
 import { CollabAiSync } from "@/modules/collaboration/components/collab-ai-sync";
 import { CollabChatTyping } from "@/modules/collaboration/components/collab-chat-typing";
-import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-attachments";
+import { useAttachments, ACCEPTED_EXTENSIONS, type Attachment } from "@/hooks/use-attachments";
 import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/components/editor-model-selector";
 import {
   ArrowUp,
@@ -37,6 +37,7 @@ import {
   ChevronRight,
   ChevronDown,
   File,
+  FileText,
   Folder,
   FolderOpen,
   User,
@@ -172,7 +173,7 @@ interface ChatMsg {
   toolActions?: ToolAction[];
   feedbackGiven?: "up" | "down" | null;
   suggestions?: string[];  // AI-generated next-step suggestions
-  attachments?: { type: string; data: string; name: string }[];
+  attachments?: { type: string; data: string; name: string; preview?: string; fileType?: string }[];
   thinkingContent?: string;
   senderInfo?: { userId: string; displayName: string; color: string; isRemote: boolean };
   liveStatus?: string;
@@ -964,7 +965,7 @@ export default function EditorPage() {
   const speechRecognition = useSpeechRecognition((transcript: string) => {
     setInputValue((prev) => (prev ? prev + " " + transcript : transcript));
   });
-  const imageAttachments = useImageAttachments();
+  const fileAttachments = useAttachments();
   const [projectName, setProjectName] = useState(() => {
     const prompt = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("prompt") : null;
     if (prompt) return deriveProjectName(prompt);
@@ -1605,7 +1606,7 @@ export default function EditorPage() {
 
     // Parse stored value — may be JSON { prompt, attachments } or plain string
     let prompt: string | null = null;
-    let storedAttachments: ImageAttachment[] | undefined;
+    let storedAttachments: Attachment[] | undefined;
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
@@ -1821,7 +1822,7 @@ export default function EditorPage() {
 
   // ─── Send message to real API ──────────────────────────────
   const sendMessage = useCallback(
-    (text: string, msgAttachments?: ImageAttachment[]) => {
+    (text: string, msgAttachments?: Attachment[]) => {
       const trimmed = text.trim();
       if (!trimmed || isStreaming) return;
 
@@ -1831,7 +1832,7 @@ export default function EditorPage() {
         role: "user",
         content: trimmed,
         timestamp: nowTimestamp(),
-        ...(msgAttachments?.length ? { attachments: msgAttachments } : {}),
+        ...(msgAttachments?.length ? { attachments: msgAttachments.map((a) => ({ type: a.mimeType, data: a.data, name: a.name, preview: a.preview, fileType: a.type })) } : {}),
       };
 
       // Add placeholder assistant message for streaming
@@ -2023,7 +2024,7 @@ export default function EditorPage() {
             setLiveStatus(status);
           }
         },
-        msgAttachments,
+        msgAttachments?.map((a) => ({ type: a.mimeType, data: a.data, name: a.name })),
         selectedModelId || undefined,
         selectedProviderId,
         selectedCopilotAccountId,
@@ -2034,11 +2035,11 @@ export default function EditorPage() {
 
   // Send message handler (from input)
   const handleSend = useCallback(() => {
-    const text = inputValue.trim() || (imageAttachments.attachments.length > 0 ? "See attached image(s)" : "");
+    const text = inputValue.trim() || (fileAttachments.attachments.length > 0 ? "See attached file(s)" : "");
     if (!text) return;
-    sendMessage(text, imageAttachments.attachments.length > 0 ? imageAttachments.attachments : undefined);
-    imageAttachments.clearAll();
-  }, [inputValue, sendMessage, imageAttachments]);
+    sendMessage(text, fileAttachments.attachments.length > 0 ? fileAttachments.attachments : undefined);
+    fileAttachments.clearAll();
+  }, [inputValue, sendMessage, fileAttachments]);
 
   // ─── Visual Edit Hook ─────────────────────────────────────
   const isDesignMode = activeTab === "design";
@@ -3624,7 +3625,11 @@ export default function EditorPage() {
 
               {/* Chat input toolbar */}
               <div className="px-2 py-2">
-                <div className="rounded-3xl bg-[#272725] border border-[#40403F] p-3 focus-within:border-brand-500/50 focus-within:ring-1 focus-within:ring-brand-500/20 transition-all">
+                <div
+                  className="rounded-3xl bg-[#272725] border border-[#40403F] p-3 focus-within:border-brand-500/50 focus-within:ring-1 focus-within:ring-brand-500/20 transition-all"
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={fileAttachments.handleDrop}
+                >
                   {/* Textarea */}
                   <textarea
                     value={inputValue}
@@ -3638,24 +3643,32 @@ export default function EditorPage() {
                         handleSend();
                       }
                     }}
+                    onPaste={fileAttachments.handlePaste}
                     placeholder="Ask Doable..."
                     rows={2}
                     disabled={isStreaming}
                     className="w-full resize-none bg-transparent px-1 pt-0 pb-1 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none disabled:opacity-50"
                   />
 
-                  {/* Image preview thumbnails */}
-                  {imageAttachments.attachments.length > 0 && (
-                    <div className="flex items-center gap-2 px-1 pb-2">
-                      {imageAttachments.attachments.map((att, i) => (
-                        <div key={i} className="relative group/thumb">
-                          <img
-                            src={att.data}
-                            alt={att.name}
-                            className="h-16 w-16 rounded-lg object-cover border border-zinc-600"
-                          />
+                  {/* Attachment preview thumbnails */}
+                  {fileAttachments.attachments.length > 0 && (
+                    <div className="flex items-center gap-2 px-1 pb-2 overflow-x-auto">
+                      {fileAttachments.attachments.map((att) => (
+                        <div key={att.id} className="relative group/thumb flex-none">
+                          {att.type === "image" ? (
+                            <img
+                              src={att.preview || att.data}
+                              alt={att.name}
+                              className="h-16 w-16 rounded-lg object-cover border border-zinc-600"
+                            />
+                          ) : (
+                            <div className="flex h-16 items-center gap-1.5 rounded-lg border border-zinc-600 bg-zinc-800/50 px-2.5">
+                              <FileText className="h-4 w-4 flex-none text-zinc-400" />
+                              <span className="max-w-[80px] truncate text-xs text-zinc-400">{att.name}</span>
+                            </div>
+                          )}
                           <button
-                            onClick={() => imageAttachments.removeImage(i)}
+                            onClick={() => fileAttachments.removeAttachment(att.id)}
                             className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 border border-zinc-600 text-zinc-400 hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100"
                           >
                             <X className="h-2.5 w-2.5" />
@@ -3665,14 +3678,14 @@ export default function EditorPage() {
                     </div>
                   )}
 
-                  {/* Hidden file input for image attachments */}
+                  {/* Hidden file input for attachments */}
                   <input
-                    ref={imageAttachments.fileInputRef}
+                    ref={fileAttachments.fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept={ACCEPTED_EXTENSIONS}
                     multiple
                     className="hidden"
-                    onChange={imageAttachments.handleFileChange}
+                    onChange={fileAttachments.handleFileChange}
                   />
 
                   {/* Bottom toolbar row */}
@@ -3680,11 +3693,16 @@ export default function EditorPage() {
                     <div className="flex items-center gap-1">
                       {/* + button (rounded-full) */}
                       <button
-                        onClick={imageAttachments.openFilePicker}
-                        className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-600/40 text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
-                        title="Attach image"
+                        onClick={fileAttachments.openFilePicker}
+                        className="relative flex h-7 w-7 items-center justify-center rounded-full border border-zinc-600/40 text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
+                        title="Attach file (images, text, code, PDF)"
                       >
                         <Plus className="h-4 w-4" />
+                        {fileAttachments.attachments.length > 0 && (
+                          <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-brand-500 text-[9px] font-medium text-white">
+                            {fileAttachments.attachments.length}
+                          </span>
+                        )}
                       </button>
 
                       {/* Visual edits button (pill) */}
@@ -3773,7 +3791,7 @@ export default function EditorPage() {
                       ) : (
                         <button
                           onClick={handleSend}
-                          disabled={!inputValue.trim() && imageAttachments.attachments.length === 0}
+                          disabled={!inputValue.trim() && fileAttachments.attachments.length === 0}
                           className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#FCFBF8] text-[#1C1C1C] transition-all hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           <ArrowUp className="h-3.5 w-3.5" />

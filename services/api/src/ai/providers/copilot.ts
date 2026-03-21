@@ -202,6 +202,7 @@ export class CopilotEngine {
   async *sendMessage(
     sessionId: string,
     prompt: string,
+    fileAttachments?: Array<{ type: "file"; path: string; displayName?: string }>,
   ): AsyncGenerator<SessionEvent> {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -228,8 +229,15 @@ export class CopilotEngine {
       }
     });
 
+    // Build the message options — include file attachments if provided
+    const messageOptions: { prompt: string; attachments?: Array<{ type: "file"; path: string; displayName?: string }> } = { prompt };
+    if (fileAttachments && fileAttachments.length > 0) {
+      messageOptions.attachments = fileAttachments;
+      console.log(`[CopilotEngine] Sending message with ${fileAttachments.length} file attachment(s):`, fileAttachments.map(a => a.displayName ?? a.path));
+    }
+
     // Send the message (non-blocking)
-    session.send({ prompt }).catch((err) => {
+    session.send(messageOptions).catch((err) => {
       eventQueue.push({
         type: "session.error",
         data: { message: err instanceof Error ? err.message : String(err) },

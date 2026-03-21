@@ -56,7 +56,7 @@ export function ChatPanel() {
 
       {/* Input */}
       <ChatInput
-        onSend={sendMessage}
+        onSend={(content, attachments) => sendMessage(content, attachments)}
         onStop={stopStreaming}
         isStreaming={isStreaming}
       />

@@ -3,6 +3,7 @@
 import { memo, useCallback, useState, useMemo } from "react";
 import { Bot, User, Copy, Check, Loader2, Brain, Wrench } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "../hooks/use-editor-store";
+import { MessageAttachments } from "./attachment-preview";
 
 // ─── Simple Markdown Renderer ───────────────────────────────
 function renderMarkdown(text: string): string {
@@ -158,6 +159,11 @@ export const ChatMessage = memo(function ChatMessage({
             <Loader2 className="h-3 w-3 animate-spin text-brand-500" />
           )}
         </div>
+
+        {/* Attachments — show for user messages */}
+        {isUser && message.attachments && message.attachments.length > 0 && (
+          <MessageAttachments attachments={message.attachments} />
+        )}
 
         {/* Thinking content — show inline when AI is thinking */}
         {message.thinkingContent && message.isStreaming && (
