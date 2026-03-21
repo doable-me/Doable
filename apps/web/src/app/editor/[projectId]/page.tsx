@@ -15,6 +15,7 @@ import { CollabPresenceSync } from "@/modules/collaboration/components/collab-pr
 import { FileTabPresenceDots } from "@/modules/collaboration/components/file-tab-presence-dots";
 import { CollabFileTabSync } from "@/modules/collaboration/components/collab-file-tab-sync";
 import { CollabAiSync } from "@/modules/collaboration/components/collab-ai-sync";
+import { CollabChatTyping } from "@/modules/collaboration/components/collab-chat-typing";
 import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-attachments";
 import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/components/editor-model-selector";
 import {
@@ -957,6 +958,8 @@ export default function EditorPage() {
   });
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isInputTyping, setIsInputTyping] = useState(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Voice input & image attachments
   const speechRecognition = useSpeechRecognition((transcript: string) => {
@@ -3592,6 +3595,9 @@ export default function EditorPage() {
               </div>
             )}
 
+            {/* Typing indicator from collaborators */}
+            <CollabChatTyping isTyping={isInputTyping} />
+
             {/* Input area */}
             <div className="border-t border-zinc-800/60">
               {/* Credits bar */}
@@ -3625,7 +3631,12 @@ export default function EditorPage() {
                   {/* Textarea */}
                   <textarea
                     value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
+                    onChange={(e) => {
+                      setInputValue(e.target.value);
+                      setIsInputTyping(true);
+                      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+                      typingTimeoutRef.current = setTimeout(() => setIsInputTyping(false), 3000);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();

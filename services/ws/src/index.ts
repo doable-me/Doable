@@ -76,6 +76,8 @@ const server = createServer(async (req, res) => {
     try {
       const { projectId, message, excludeUserId } = JSON.parse(body) as { projectId: string; message: WsServerMessage; excludeUserId?: string };
       const room = rooms.get(projectId);
+      const msgType = (message as any)?.type ?? "unknown";
+      console.log(`[ws] broadcast projectId=${projectId} type=${msgType} roomSize=${room?.size ?? 0} exclude=${excludeUserId ?? "none"}`);
       if (room) {
         room.broadcast(message, excludeUserId);
       }
@@ -240,6 +242,7 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
 function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage): void {
   switch (msg.type) {
     case "room:join": {
+      console.log(`[ws] room:join userId=${state.userId} displayName=${state.displayName} projectId=${msg.projectId}`);
       // Leave previous room if any
       if (state.projectId) {
         const oldRoom = rooms.get(state.projectId);
