@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Minus, X, Users } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Minus, X, MessageCircle } from "lucide-react";
 import { useCollaboration } from "../collaboration-context";
 import { TeamChatPanel } from "./team-chat-panel";
 
@@ -21,6 +21,17 @@ export function ChatPopout({ currentUserId }: Props) {
     sendTyping,
   } = useCollaboration();
   const [minimized, setMinimized] = useState(false);
+
+  // Listen for open events from toolbar/other entry points
+  useEffect(() => {
+    const handler = () => {
+      setChatPopoutOpen(true);
+      setChatVisible(true);
+      setMinimized(false);
+    };
+    window.addEventListener("doable:open-chat-popout", handler);
+    return () => window.removeEventListener("doable:open-chat-popout", handler);
+  }, [setChatPopoutOpen, setChatVisible]);
 
   if (!chatPopoutOpen) return null;
 
@@ -54,7 +65,7 @@ export function ChatPopout({ currentUserId }: Props) {
         onClick={handleTitleClick}
       >
         <div className="flex items-center gap-2">
-          <Users className="h-3.5 w-3.5 text-zinc-400" />
+          <MessageCircle className="h-3.5 w-3.5 text-zinc-400" />
           <span className="text-xs font-medium text-zinc-200">Team Chat</span>
           <span className="text-[10px] text-zinc-500">{members.length} online</span>
         </div>

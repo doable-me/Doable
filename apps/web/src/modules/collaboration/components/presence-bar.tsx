@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 import { useCollaboration } from "../collaboration-context";
 
 export function PresenceBar() {
@@ -67,8 +67,8 @@ export function PresenceBar() {
         onClick={handleChatToggle}
         className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
       >
-        <MessageSquare className="h-3.5 w-3.5" />
-        <span>Team Chat</span>
+        <MessageCircle className="h-3.5 w-3.5" />
+        <span>Chat</span>
         {unreadCount > 0 && (
           <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
             {unreadCount > 99 ? "99+" : unreadCount}

@@ -2484,9 +2484,9 @@ export default function EditorPage() {
   }, [handleToggleFullscreen, shareDialogOpen, publishModalOpen, publishStatus, deleteConfirmOpen, isDeleting, githubDialogOpen, shortcutsDialogOpen]);
 
   // Determine what panels to show based on active tab
-  const showChat = activeTab === "chat" || activeTab === "preview" || activeTab === "history" || activeTab === "team" || isPanelView || isDesignMode;
+  const showChat = activeTab === "chat" || activeTab === "preview" || activeTab === "history" || isPanelView || isDesignMode;
   const showCode = activeTab === "code";
-  const showPreview = ((activeTab === "preview" || activeTab === "chat" || activeTab === "history" || activeTab === "team") && !isPanelView) || isDesignMode;
+  const showPreview = ((activeTab === "preview" || activeTab === "chat" || activeTab === "history") && !isPanelView) || isDesignMode;
 
   // ─── Scaffold loading overlay ─────────────────────────────
   const renderScaffoldOverlay = () => {
@@ -2820,15 +2820,18 @@ export default function EditorPage() {
             { key: "chat" as ActiveTab, icon: PanelLeftClose, label: "Toggle sidebar", isToggle: true },
             { key: "preview" as ActiveTab, icon: Globe, label: "Preview", isToggle: false },
             { key: "code" as ActiveTab, icon: Code2, label: "Code", isToggle: false },
-            { key: "team" as ActiveTab, icon: Users, label: "Team", isToggle: false },
-          ]).map(({ key, icon: Icon, label, isToggle }, idx) => {
-            const isActive = !isToggle && activeTab === key;
+            { key: "team" as ActiveTab, icon: Users, label: "Team", isToggle: false, isPopout: true },
+          ]).map(({ key, icon: Icon, label, isToggle, isPopout }, idx) => {
+            const isActive = !isToggle && !isPopout && activeTab === key;
             return (
               <button
                 key={`${key}-${idx}`}
                 onClick={() => {
                   if (isToggle) {
                     setShowSidebar((v) => !v);
+                  } else if (isPopout) {
+                    // Open the floating chat popout instead of switching tabs
+                    window.dispatchEvent(new CustomEvent("doable:open-chat-popout"));
                   } else {
                     setActiveTab(key);
                   }
@@ -3125,8 +3128,6 @@ export default function EditorPage() {
                 onDirectSave={visualEdit.directSave}
                 isSaving={visualEdit.isSaving}
               />
-            ) : activeTab === "team" ? (
-              <CollabTeamChatWrapper currentUserId={authUser?.id ?? ""} />
             ) : (
             <>
             {/* Messages */}
