@@ -503,6 +503,16 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       }
       break;
     }
+
+    case "visual-edit:preview-refresh": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.broadcast({ type: "visual-edit:preview-refresh" } as any, state.userId);
+        }
+      }
+      break;
+    }
   }
 }
 

@@ -347,6 +347,7 @@ export function useRemoteVisualEdits(
   const {
     subscribe,
     joined,
+    send,
     sendVisualEditStyleChange,
     sendVisualEditTextChange,
   } = useCollaboration();
@@ -387,7 +388,16 @@ export function useRemoteVisualEdits(
     };
   }, [sendVisualEditStyleChange, sendVisualEditTextChange]);
 
-  // Apply incoming remote edits to our iframe
+  // Broadcast preview refresh when visual edits are saved
+  useEffect(() => {
+    const onSaved = () => {
+      if (joined) send({ type: "visual-edit:preview-refresh" });
+    };
+    window.addEventListener("doable:ve-saved", onSaved);
+    return () => window.removeEventListener("doable:ve-saved", onSaved);
+  }, [joined, send]);
+
+  // Apply incoming remote edits to our iframe + handle preview refresh
   useEffect(() => {
     if (!joined) return;
 
@@ -416,6 +426,11 @@ export function useRemoteVisualEdits(
             { type: "visual-edit:apply-text", text: msg.newText },
             "*",
           );
+          break;
+        }
+        case "visual-edit:preview-refresh": {
+          // Another user saved — reload the preview iframe
+          setTimeout(() => { iframe.src = iframe.src; }, 500);
           break;
         }
       }

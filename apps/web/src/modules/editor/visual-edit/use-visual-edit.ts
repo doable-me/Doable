@@ -308,6 +308,9 @@ export function useVisualEdit({ iframeRef, projectId, onSendMessage }: UseVisual
         setTimeout(() => { iframe.src = iframe.src; }, 1000);
       }
 
+      // Notify collaborators to refresh their preview
+      window.dispatchEvent(new CustomEvent("doable:ve-saved"));
+
       return true;
     } catch (err) {
       console.error("[Visual Edit] Direct save failed:", err);
