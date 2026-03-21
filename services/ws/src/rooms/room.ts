@@ -42,6 +42,9 @@ export type WsServerMessage =
   // Phase B: AI stream events
   | { type: "ai:stream-chunk"; chunk: string; messageId: string; isThinking?: boolean }
   | { type: "ai:stream-end"; messageId: string; finalContent?: string }
+  | { type: "ai:tool-event"; messageId: string; event: "tool_call" | "tool_result"; data: Record<string, unknown> }
+  | { type: "ai:status"; messageId: string; data: unknown }
+  | { type: "ai:error"; messageId: string; error: unknown }
   | { type: "ai:queue-update"; queue: AiQueueItem[] }
   | { type: "ai:typing"; userId: string; displayName: string; isTyping: boolean }
   | { type: "ai:message-sent"; userId: string; displayName: string; content: string; messageId: string }

@@ -168,6 +168,7 @@ interface ChatMsg {
   suggestions?: string[];  // AI-generated next-step suggestions
   attachments?: { type: string; data: string; name: string }[];
   thinkingContent?: string;
+  senderInfo?: { userId: string; displayName: string; color: string; isRemote: boolean };
 }
 
 type TaskCardTab = "details" | "preview";
@@ -2530,6 +2531,12 @@ export default function EditorPage() {
     // Don't show our own messages (we already added them locally)
     if (data.userId === authUser?.id) return;
 
+    // Deterministic color from userId
+    const colors = ["#E57373","#F06292","#BA68C8","#9575CD","#7986CB","#64B5F6","#4FC3F7","#4DD0E1","#4DB6AC","#81C784","#AED581","#FFD54F","#FFB74D","#FF8A65","#A1887F","#90A4AE"];
+    let hash = 0;
+    for (let i = 0; i < data.userId.length; i++) hash = (hash * 31 + data.userId.charCodeAt(i)) | 0;
+    const color = colors[Math.abs(hash) % colors.length] ?? "#64B5F6";
+
     const userMsgId = `remote_user_${data.messageId}`;
     const aiMsgId = `remote_ai_${data.messageId}`;
     remoteStreamIdsRef.current[data.messageId] = aiMsgId;
@@ -2539,8 +2546,9 @@ export default function EditorPage() {
       {
         id: userMsgId,
         role: "user" as const,
-        content: `**${data.displayName}:** ${data.content}`,
+        content: data.content,
         timestamp: nowTimestamp(),
+        senderInfo: { userId: data.userId, displayName: data.displayName, color, isRemote: true },
       },
       {
         id: aiMsgId,
@@ -2585,6 +2593,69 @@ export default function EditorPage() {
     delete remoteStreamIdsRef.current[data.messageId];
   }, []);
 
+  const handleRemoteToolEvent = useCallback((data: { messageId: string; event: "tool_call" | "tool_result"; toolName: string; args: Record<string, unknown>; friendlyMessage?: string }) => {
+    const aiMsgId = remoteStreamIdsRef.current[data.messageId];
+    if (!aiMsgId) return;
+
+    if (data.event === "tool_call") {
+      // Add a running tool action card
+      const description = data.friendlyMessage || data.toolName.replace(/[_-]/g, " ");
+      const filePath = typeof (data.args?.path ?? data.args?.filePath) === "string"
+        ? (data.args?.path ?? data.args?.filePath) as string : undefined;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsgId
+            ? { ...m, toolActions: [...(m.toolActions ?? []), {
+                id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                toolName: data.toolName,
+                description,
+                isExpanded: false,
+                filePath,
+                status: "running" as const,
+              }] }
+            : m
+        )
+      );
+    } else if (data.event === "tool_result") {
+      // Mark the running tool action as completed
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== aiMsgId) return m;
+          const runningAction = m.toolActions?.find(
+            (a) => a.toolName === data.toolName && a.status === "running"
+          );
+          if (runningAction) {
+            return {
+              ...m,
+              toolActions: m.toolActions?.map((a) =>
+                a.id === runningAction.id ? { ...a, status: "completed" as const } : a
+              ),
+            };
+          }
+          return m;
+        })
+      );
+      // Also refresh file tree and preview for file-modifying tools
+      loadFileTree();
+    }
+  }, [loadFileTree]);
+
+  const handleRemoteStatus = useCallback((data: { messageId: string; status: string }) => {
+    const aiMsgId = remoteStreamIdsRef.current[data.messageId];
+    if (!aiMsgId) return;
+    setLiveStatus(data.status);
+  }, []);
+
+  const handleRemoteError = useCallback((data: { messageId: string; error: string }) => {
+    const aiMsgId = remoteStreamIdsRef.current[data.messageId];
+    if (!aiMsgId) return;
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === aiMsgId ? { ...m, content: `**Error:** ${data.error}`, isStreaming: false, isError: true } : m
+      )
+    );
+  }, []);
+
   return (
     <CollaborationProvider
       projectId={resolvedProjectId}
@@ -2596,6 +2667,9 @@ export default function EditorPage() {
       onRemoteUserMessage={handleRemoteUserMessage}
       onRemoteStreamChunk={handleRemoteStreamChunk}
       onRemoteStreamEnd={handleRemoteStreamEnd}
+      onRemoteToolEvent={handleRemoteToolEvent}
+      onRemoteStatus={handleRemoteStatus}
+      onRemoteError={handleRemoteError}
     />
     <div className="flex h-screen flex-col bg-[#1C1C1C] text-zinc-200">
       {/* ─── Top Bar ──────────────────────────────────────────── */}
@@ -3046,34 +3120,74 @@ export default function EditorPage() {
               {messages.map((msg, msgIdx) => (
                 <div key={msg.id} className="group">
                   {msg.role === "user" ? (
-                    /* ── User message: right-aligned dark bubble (iMessage style) ── */
-                    <div className="flex justify-end">
-                      <div className="max-w-[85%]">
-                        <div className="flex items-center justify-end gap-2 mb-1">
-                          <span className="text-[10px] text-zinc-700">
-                            {msg.timestamp}
-                          </span>
-                          <span className="text-xs font-medium text-zinc-400">
-                            You
-                          </span>
+                    msg.senderInfo?.isRemote ? (
+                      /* ── Remote collaborator message: left-aligned with user color ── */
+                      <div className="flex items-start gap-2.5">
+                        <div
+                          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white mt-0.5"
+                          style={{ backgroundColor: msg.senderInfo.color }}
+                        >
+                          {msg.senderInfo.displayName.charAt(0).toUpperCase()}
                         </div>
-                        <div className="rounded-2xl rounded-br-sm bg-zinc-700/80 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
-                          {msg.attachments && msg.attachments.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mb-2">
-                              {msg.attachments.map((att, ai) => (
-                                <img
-                                  key={ai}
-                                  src={att.data}
-                                  alt={att.name}
-                                  className="h-20 w-20 rounded-lg object-cover border border-zinc-600"
-                                />
-                              ))}
-                            </div>
-                          )}
-                          {msg.content}
+                        <div className="max-w-[85%]">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-medium" style={{ color: msg.senderInfo.color }}>
+                              {msg.senderInfo.displayName}
+                            </span>
+                            <span className="text-[10px] text-zinc-700">
+                              {msg.timestamp}
+                            </span>
+                          </div>
+                          <div
+                            className="rounded-2xl rounded-tl-sm bg-zinc-800/60 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-200"
+                            style={{ borderLeft: `3px solid ${msg.senderInfo.color}` }}
+                          >
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-2">
+                                {msg.attachments.map((att, ai) => (
+                                  <img
+                                    key={ai}
+                                    src={att.data}
+                                    alt={att.name}
+                                    className="h-20 w-20 rounded-lg object-cover border border-zinc-600"
+                                  />
+                                ))}
+                              </div>
+                            )}
+                            {msg.content}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      /* ── Own message: right-aligned dark bubble (iMessage style) ── */
+                      <div className="flex justify-end">
+                        <div className="max-w-[85%]">
+                          <div className="flex items-center justify-end gap-2 mb-1">
+                            <span className="text-[10px] text-zinc-700">
+                              {msg.timestamp}
+                            </span>
+                            <span className="text-xs font-medium text-zinc-400">
+                              You
+                            </span>
+                          </div>
+                          <div className="rounded-2xl rounded-br-sm bg-zinc-700/80 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-2">
+                                {msg.attachments.map((att, ai) => (
+                                  <img
+                                    key={ai}
+                                    src={att.data}
+                                    alt={att.name}
+                                    className="h-20 w-20 rounded-lg object-cover border border-zinc-600"
+                                  />
+                                ))}
+                              </div>
+                            )}
+                            {msg.content}
+                          </div>
+                        </div>
+                      </div>
+                    )
                   ) : (
                     /* ── Assistant message: left-aligned ── */
                     <div className="flex items-start gap-3">

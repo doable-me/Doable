@@ -810,6 +810,31 @@ ERROR RECOVERY — if you encounter errors:
                   isThinking: true,
                 }).catch(() => {});
               }
+              // Broadcast tool_call / tool_result events so collaborators see tool activity
+              if (sseData.type === "tool_call" || sseData.type === "tool_result") {
+                broadcastToRoom(projectId, {
+                  type: "ai:tool-event",
+                  messageId,
+                  event: sseData.type,
+                  data: (sseData.data ?? {}) as Record<string, unknown>,
+                }).catch(() => {});
+              }
+              // Broadcast status & auto_fix_complete events
+              if (sseData.type === "status" || sseData.type === "auto_fix_complete") {
+                broadcastToRoom(projectId, {
+                  type: "ai:status",
+                  messageId,
+                  data: sseData.data,
+                }).catch(() => {});
+              }
+              // Broadcast errors
+              if (sseData.type === "error") {
+                broadcastToRoom(projectId, {
+                  type: "ai:error",
+                  messageId,
+                  error: sseData.data,
+                }).catch(() => {});
+              }
               // Accumulate tool calls for DB persistence
               if (sseData.type === "tool_call") {
                 const toolData = sseData.data as Record<string, unknown>;
