@@ -188,7 +188,21 @@ export const VISUAL_EDIT_BRIDGE_INLINE = `
 
   window.addEventListener('message', function(e) {
     var msg = e.data;
-    if (!msg || !msg.type || typeof msg.type !== 'string' || msg.type.indexOf('visual-edit:') !== 0) return;
+    if (!msg || !msg.type || typeof msg.type !== 'string') return;
+
+    // Handle element rect queries for collaborative selection overlays
+    if (msg.type === '__doable_get_element_rect') {
+      var el = msg.selector ? document.querySelector(msg.selector) : null;
+      var rect = el ? el.getBoundingClientRect() : null;
+      window.parent.postMessage({
+        type: '__doable_element_rect_response',
+        userId: msg.userId,
+        rect: rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null
+      }, '*');
+      return;
+    }
+
+    if (msg.type.indexOf('visual-edit:') !== 0) return;
     switch(msg.type) {
       case 'visual-edit:enable-selection':
         selectionEnabled = true;
