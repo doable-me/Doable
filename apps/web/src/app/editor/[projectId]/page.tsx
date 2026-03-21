@@ -6,6 +6,14 @@ import dynamic from "next/dynamic";
 import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, type ApiEffectiveAiConfig } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useAuth } from "@/hooks/use-auth";
+import { CollaborationProvider } from "@/modules/collaboration";
+import { CollabHeaderItems } from "@/modules/collaboration/components/collab-header-items";
+import { CollabActivityOverlay } from "@/modules/collaboration/components/collab-activity-overlay";
+import { CollabTeamChatWrapper } from "@/modules/collaboration/components/collab-team-chat-wrapper";
+import { CollabPresenceSync } from "@/modules/collaboration/components/collab-presence-sync";
+import { FileTabPresenceDots } from "@/modules/collaboration/components/file-tab-presence-dots";
+import { CollabFileTabSync } from "@/modules/collaboration/components/collab-file-tab-sync";
 import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-attachments";
 import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/components/editor-model-selector";
 import {
@@ -77,6 +85,7 @@ import {
   Bot,
   ClipboardList,
   Plug,
+  Users,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -94,6 +103,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import type { MonacoEditorWrapperProps } from "@/modules/editor/code-editor/monaco-editor-wrapper";
+import { CollaborativeMonacoWrapper } from "@/modules/editor/code-editor/collaborative-monaco-wrapper";
 import { useVisualEdit } from "@/modules/editor/visual-edit/use-visual-edit";
 import { VisualEditToolbar } from "@/modules/editor/visual-edit/visual-edit-toolbar";
 
@@ -131,7 +141,7 @@ const SkillsPanel = dynamic(() => import("@/modules/skills/skills-panel").then(m
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Types ──────────────────────────────────────────────────
-type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "connectors" | "skills";
+type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "connectors" | "skills" | "team";
 type ChatMode = "agent" | "plan" | "visual-edit";
 type DeviceMode = "desktop" | "tablet" | "mobile";
 
@@ -852,6 +862,7 @@ export default function EditorPage() {
     return newId;
   });
   const isNewProject = rawProjectId === "new";
+  const { user: authUser } = useAuth();
 
   // ─── Scaffold / preview state ─────────────────────────────
   const [scaffoldStatus, setScaffoldStatus] = useState<ScaffoldStatus>("idle");
@@ -2453,9 +2464,9 @@ export default function EditorPage() {
   }, [handleToggleFullscreen, shareDialogOpen, publishModalOpen, publishStatus, deleteConfirmOpen, isDeleting, githubDialogOpen, shortcutsDialogOpen]);
 
   // Determine what panels to show based on active tab
-  const showChat = activeTab === "chat" || activeTab === "preview" || activeTab === "history" || isPanelView || isDesignMode;
+  const showChat = activeTab === "chat" || activeTab === "preview" || activeTab === "history" || activeTab === "team" || isPanelView || isDesignMode;
   const showCode = activeTab === "code";
-  const showPreview = ((activeTab === "preview" || activeTab === "chat" || activeTab === "history") && !isPanelView) || isDesignMode;
+  const showPreview = ((activeTab === "preview" || activeTab === "chat" || activeTab === "history" || activeTab === "team") && !isPanelView) || isDesignMode;
 
   // ─── Scaffold loading overlay ─────────────────────────────
   const renderScaffoldOverlay = () => {
@@ -2512,6 +2523,11 @@ export default function EditorPage() {
   };
 
   return (
+    <CollaborationProvider
+      projectId={resolvedProjectId}
+      userId={authUser?.id ?? ""}
+      displayName={authUser?.displayName ?? ""}
+    >
     <div className="flex h-screen flex-col bg-[#1C1C1C] text-zinc-200">
       {/* ─── Top Bar ──────────────────────────────────────────── */}
       <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#1C1C1C] px-3">
@@ -2601,6 +2617,7 @@ export default function EditorPage() {
             { key: "chat" as ActiveTab, icon: PanelLeftClose, label: "Toggle sidebar", isToggle: true },
             { key: "preview" as ActiveTab, icon: Globe, label: "Preview", isToggle: false },
             { key: "code" as ActiveTab, icon: Code2, label: "Code", isToggle: false },
+            { key: "team" as ActiveTab, icon: Users, label: "Team", isToggle: false },
           ]).map(({ key, icon: Icon, label, isToggle }, idx) => {
             const isActive = !isToggle && activeTab === key;
             return (
@@ -2827,6 +2844,9 @@ export default function EditorPage() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Collaboration presence avatars */}
+          <CollabHeaderItems />
+
           {/* Share: pill with muted bg, h-7 */}
           <button
             onClick={() => setShareDialogOpen(true)}
@@ -2902,6 +2922,8 @@ export default function EditorPage() {
                 onDirectSave={visualEdit.directSave}
                 isSaving={visualEdit.isSaving}
               />
+            ) : activeTab === "team" ? (
+              <CollabTeamChatWrapper currentUserId={authUser?.id ?? ""} />
             ) : (
             <>
             {/* Messages */}
@@ -3601,6 +3623,7 @@ export default function EditorPage() {
                       >
                         <FileCode2 className="h-3 w-3 flex-none text-zinc-500" />
                         <span className="truncate max-w-[120px]">{tab.name}</span>
+                        <FileTabPresenceDots filePath={tab.path} currentUserId={authUser?.id ?? ""} />
                         {tab.isDirty && (
                           <Circle className="h-2 w-2 flex-none fill-current text-brand-400" />
                         )}
@@ -3691,7 +3714,8 @@ export default function EditorPage() {
                 </div>
               ) : fileContent !== null ? (
                 <div className="flex-1 overflow-hidden">
-                  <MonacoEditorWrapper
+                  <CollaborativeMonacoWrapper
+                    EditorComponent={MonacoEditorWrapper}
                     value={fileContent}
                     language={detectLanguage(selectedFile.split("/").pop() ?? "")}
                     filePath={selectedFile}
@@ -4273,5 +4297,9 @@ export default function EditorPage() {
         </DialogContent>
       </Dialog>
     </div>
+    <CollabPresenceSync activeTab={activeTab} selectedFile={selectedFile} />
+    <CollabFileTabSync openFilePaths={openFileTabs.map((t: any) => t.path)} />
+    <CollabActivityOverlay />
+    </CollaborationProvider>
   );
 }

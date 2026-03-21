@@ -207,6 +207,47 @@ Searchable history of all workspace activity, providing full visibility into who
 
 ---
 
+## 9. Platform Tenant Isolation (PRD 17)
+
+> **Full specification**: See [PRD 17 — Multi-User Infrastructure](17-multi-user-infrastructure.md) for complete details.
+
+### 9.1 Workspace Authorization
+
+Every API route that accesses a workspace-scoped resource MUST verify the authenticated user is a member of the owning workspace. This is enforced via a dedicated **workspace authorization middleware** that runs after JWT auth and before the route handler.
+
+| Layer | Responsibility |
+|-------|----------------|
+| **Auth Middleware** | Verifies JWT, extracts `userId` |
+| **Workspace Auth Middleware** | Verifies `userId` membership in the workspace that owns the resource. Returns 403 if not. |
+| **Role Check** | Verifies user's role meets minimum required for the operation |
+| **DB Query Filtering** | All queries include `workspace_id` as defense-in-depth |
+
+### 9.2 Database-Level Security
+
+| Strategy | Phase | Description |
+|----------|-------|-------------|
+| **Query-level filtering** | Phase 0 | All `findById()` queries accept and filter by `workspaceId` |
+| **PostgreSQL Row-Level Security** | Phase 2 | RLS policies on all tenant-scoped tables |
+| **Connection-level context** | Phase 3 | `SET LOCAL app.current_workspace_id` per request |
+
+### 9.3 Security Invariants
+
+These MUST be true at all times, regardless of development phase:
+
+1. **No cross-workspace data access** — user cannot read, write, or infer resources in a workspace they don't belong to
+2. **No AI session bleed** — user's AI history and tool state never visible to another user
+3. **No credit theft** — user cannot consume credits from another workspace
+4. **No preview hijacking** — user cannot view another workspace's dev server preview
+5. **No deploy interference** — user cannot trigger or modify another workspace's deployment
+6. **Graceful degradation** — resource limits result in queuing or rejection, never crashes or corruption
+7. **Audit trail** — every cross-boundary access attempt (success or failure) is logged
+
+### 9.4 Per-User Rate Limiting
+
+Rate limits keyed by `userId` (not IP address) to prevent per-user abuse and avoid penalizing shared networks. See [PRD 17 Section 7](17-multi-user-infrastructure.md#7-rate-limiting) for complete specification.
+
+---
+
 ## 9. Monitoring & Observability
 
 ### 9.1 Edge Function Monitoring

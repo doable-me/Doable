@@ -29,6 +29,7 @@ import { autoVersion } from "../version-control/manager.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { contextManager } from "../context/manager.js";
 import { buildContextPrompt } from "../context/injector.js";
+import { broadcastToRoom } from "../ai/yjs-bridge.js";
 
 export const chatRoutes = new Hono<AuthEnv>();
 const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
@@ -690,12 +691,12 @@ ERROR RECOVERY — if you encounter errors:
         projectSessions.set(sessionKey, sessionId);
       }
 
-      // Persist session to database
+      // Persist session to database — shared per-project (not per-user)
       let dbSessionId: string | undefined;
       try {
         const [dbSession] = await sql`
           SELECT id FROM ai_sessions
-          WHERE project_id = ${projectId} AND user_id = ${userId}
+          WHERE project_id = ${projectId}
           ORDER BY created_at DESC LIMIT 1
         `;
         if (dbSession) {
@@ -712,17 +713,42 @@ ERROR RECOVERY — if you encounter errors:
         console.warn("[Chat] DB session lookup failed:", e);
       }
 
-      // Save user message to database
+      // Resolve user display info for message attribution
+      let senderDisplayName = "";
+      let senderColor = "";
+      try {
+        const [userRow] = await sql`SELECT display_name FROM users WHERE id = ${userId}`;
+        senderDisplayName = userRow?.display_name ?? "";
+      } catch { /* ignore */ }
+      // Deterministic color from userId hash
+      {
+        let hash = 0;
+        for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) | 0;
+        const colors = ["#E57373","#F06292","#BA68C8","#9575CD","#7986CB","#64B5F6","#4FC3F7","#4DD0E1","#4DB6AC","#81C784","#AED581","#FFD54F","#FFB74D","#FF8A65","#A1887F","#90A4AE"];
+        senderColor = colors[Math.abs(hash) % colors.length]!;
+      }
+
+      // Save user message to database with attribution
       if (dbSessionId) {
         try {
           await sql`
-            INSERT INTO ai_messages (session_id, role, content)
-            VALUES (${dbSessionId}, 'user', ${content})
+            INSERT INTO ai_messages (session_id, role, content, sent_by_user_id, display_name, user_color)
+            VALUES (${dbSessionId}, 'user', ${content}, ${userId}, ${senderDisplayName}, ${senderColor})
           `;
         } catch (e) {
           console.warn("[Chat] Failed to save user message:", e);
         }
       }
+
+      // Broadcast to other collaborators that a message was sent
+      const messageId = crypto.randomUUID();
+      broadcastToRoom(projectId, {
+        type: "ai:message-sent",
+        userId,
+        displayName: senderDisplayName,
+        content: content.slice(0, 200),
+        messageId,
+      }).catch(() => {});
 
       // Stream events via SSE
       return streamSSE(c, async (stream) => {
@@ -767,6 +793,22 @@ ERROR RECOVERY — if you encounter errors:
               // Accumulate assistant content for DB persistence
               if (sseData.type === "text_delta") {
                 assistantContent += typeof sseData.data === "string" ? sseData.data : "";
+                // Broadcast text chunks to other collaborators via WS
+                broadcastToRoom(projectId, {
+                  type: "ai:stream-chunk",
+                  chunk: typeof sseData.data === "string" ? sseData.data : "",
+                  messageId,
+                  isThinking: false,
+                }).catch(() => {});
+              }
+              // Broadcast thinking chunks too
+              if (sseData.type === "thinking") {
+                broadcastToRoom(projectId, {
+                  type: "ai:stream-chunk",
+                  chunk: typeof sseData.data === "string" ? sseData.data : "",
+                  messageId,
+                  isThinking: true,
+                }).catch(() => {});
               }
               // Accumulate tool calls for DB persistence
               if (sseData.type === "tool_call") {
@@ -935,6 +977,13 @@ ERROR RECOVERY — if you encounter errors:
           scheduleThumbnailCapture(projectId);
         }
 
+        // Broadcast stream end to collaborators
+        broadcastToRoom(projectId, {
+          type: "ai:stream-end",
+          messageId,
+          finalContent: assistantContent.slice(0, 500),
+        }).catch(() => {});
+
         // Save assistant message to database
         if (dbSessionId && assistantContent) {
           try {
@@ -992,10 +1041,10 @@ chatRoutes.get("/projects/:id/chat/history", async (c) => {
   const userId = c.get("userId")!;
 
   try {
-    // Load from database (source of truth)
+    // Load from database — shared session (all users see all messages)
     const [dbSession] = await sql`
       SELECT id FROM ai_sessions
-      WHERE project_id = ${projectId} AND user_id = ${userId}
+      WHERE project_id = ${projectId}
       ORDER BY created_at DESC LIMIT 1
     `;
 
@@ -1004,7 +1053,8 @@ chatRoutes.get("/projects/:id/chat/history", async (c) => {
     }
 
     const messages = await sql`
-      SELECT id, role, content, tool_calls, suggestions, tool_actions, created_at
+      SELECT id, role, content, tool_calls, suggestions, tool_actions,
+             sent_by_user_id, display_name, user_color, created_at
       FROM ai_messages
       WHERE session_id = ${dbSession.id}
       ORDER BY created_at ASC
@@ -1042,11 +1092,11 @@ chatRoutes.delete("/projects/:id/chat", async (c) => {
     projectSessions.delete(projectId);
   }
 
-  // Also clear database messages
+  // Also clear database messages (shared session — clears for all users)
   try {
     const [dbSession] = await sql`
       SELECT id FROM ai_sessions
-      WHERE project_id = ${projectId} AND user_id = ${userId}
+      WHERE project_id = ${projectId}
       ORDER BY created_at DESC LIMIT 1
     `;
     if (dbSession) {
@@ -1717,4 +1767,114 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
       return null;
   }
 }
+
+// ─── AI Message Queue ─────────────────────────────────────────
+
+chatRoutes.use("/projects/:id/chat/queue", authMiddleware);
+chatRoutes.use("/projects/:id/chat/queue/*", authMiddleware);
+
+// GET /projects/:id/chat/queue — list queued messages
+chatRoutes.get("/projects/:id/chat/queue", async (c) => {
+  const projectId = c.req.param("id");
+  try {
+    const queue = await sql`
+      SELECT id, user_id, display_name, user_color, content, position, status, created_at
+      FROM ai_message_queue
+      WHERE project_id = ${projectId} AND status = 'queued'
+      ORDER BY position ASC
+    `;
+    return c.json({ data: queue });
+  } catch (err) {
+    return c.json({ data: [], error: String(err) }, 500);
+  }
+});
+
+// POST /projects/:id/chat/queue — add message to queue
+chatRoutes.post(
+  "/projects/:id/chat/queue",
+  zValidator("json", z.object({
+    content: z.string().min(1).max(32_000),
+    displayName: z.string().optional(),
+    userColor: z.string().optional(),
+  })),
+  async (c) => {
+    const projectId = c.req.param("id");
+    const userId = c.get("userId")!;
+    const { content, displayName, userColor } = c.req.valid("json");
+
+    try {
+      // Get the next position
+      const [maxPos] = await sql`
+        SELECT COALESCE(MAX(position), 0) as max_pos
+        FROM ai_message_queue
+        WHERE project_id = ${projectId} AND status = 'queued'
+      `;
+      const position = (maxPos?.max_pos ?? 0) + 1;
+
+      const [queued] = await sql`
+        INSERT INTO ai_message_queue (project_id, user_id, display_name, user_color, content, position)
+        VALUES (${projectId}, ${userId}, ${displayName ?? ""}, ${userColor ?? ""}, ${content}, ${position})
+        RETURNING id, position
+      `;
+
+      // Broadcast queue update
+      const allQueued = await sql`
+        SELECT id, user_id, display_name, content, position
+        FROM ai_message_queue
+        WHERE project_id = ${projectId} AND status = 'queued'
+        ORDER BY position ASC
+      `;
+      broadcastToRoom(projectId, {
+        type: "ai:queue-update",
+        queue: allQueued.map((q: any) => ({
+          id: q.id,
+          userId: q.user_id,
+          displayName: q.display_name,
+          content: q.content.slice(0, 100),
+          position: q.position,
+        })),
+      }).catch(() => {});
+
+      return c.json({ data: { id: queued?.id, position: queued?.position } });
+    } catch (err) {
+      return c.json({ error: String(err) }, 500);
+    }
+  }
+);
+
+// DELETE /projects/:id/chat/queue/:queueId — cancel a queued message
+chatRoutes.delete("/projects/:id/chat/queue/:queueId", async (c) => {
+  const projectId = c.req.param("id");
+  const queueId = c.req.param("queueId");
+
+  try {
+    await sql`
+      UPDATE ai_message_queue
+      SET status = 'cancelled', completed_at = NOW()
+      WHERE id = ${queueId} AND project_id = ${projectId} AND status = 'queued'
+    `;
+
+    // Broadcast updated queue
+    const allQueued = await sql`
+      SELECT id, user_id, display_name, content, position
+      FROM ai_message_queue
+      WHERE project_id = ${projectId} AND status = 'queued'
+      ORDER BY position ASC
+    `;
+    broadcastToRoom(projectId, {
+      type: "ai:queue-update",
+      queue: allQueued.map((q: any) => ({
+        id: q.id,
+        userId: q.user_id,
+        displayName: q.display_name,
+        content: q.content.slice(0, 100),
+        position: q.position,
+      })),
+    }).catch(() => {});
+
+    return c.json({ data: { cancelled: true } });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
 

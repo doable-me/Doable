@@ -1,6 +1,7 @@
 import { readFile, writeFile, unlink, readdir, mkdir, stat } from "node:fs/promises";
 import { join, dirname, relative, resolve } from "node:path";
 import { existsSync } from "node:fs";
+import { writeFileThroughYjs } from "./yjs-bridge.js";
 
 // ─── Configuration ────────────────────────────────────────
 
@@ -76,12 +77,23 @@ export async function writeProjectFile(
   content: string,
 ): Promise<void> {
   validatePath(filePath);
-  const fullPath = resolveFilePath(projectId, filePath);
 
   if (Buffer.byteLength(content, "utf-8") > MAX_FILE_SIZE) {
     throw new FileAccessError("Content exceeds max file size");
   }
 
+  // Try to write through Yjs CRDT if collaboration is active
+  try {
+    const result = await writeFileThroughYjs(projectId, filePath, content);
+    if (result.handled) {
+      return; // CRDT handled the write — persistence is debounced
+    }
+  } catch {
+    // Fall through to direct write
+  }
+
+  // Direct filesystem write (no active collaboration)
+  const fullPath = resolveFilePath(projectId, filePath);
   await mkdir(dirname(fullPath), { recursive: true });
   await writeFile(fullPath, content, "utf-8");
 }

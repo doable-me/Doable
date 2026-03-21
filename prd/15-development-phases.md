@@ -54,14 +54,30 @@ Foundation   MVP         Growth      Enterprise   Scale       Ecosystem
 - [ ] Publish flow: build output → copy to `/sites/[project]/`
 - [ ] Auto-provision `[project-name].doable.app` subdomain
 
+### 0.5 Multi-User Safety (CRITICAL — PRD 17)
+
+> These are security and resource management requirements that MUST be in place before any public users. See [PRD 17](17-multi-user-infrastructure.md) for full specification.
+
+- [ ] **Workspace authorization middleware** — every route that accesses a workspace-scoped resource (project, folder, session, deployment, analytics) verifies the authenticated user is a member of the owning workspace. Returns 403 otherwise.
+- [ ] **Per-user AI session isolation** — AI sessions keyed by `projectId + userId + mode` (not just projectId). Two users on the same project get independent conversations, tool states, and history.
+- [ ] **Dev server lifecycle management** — idle timeout (default 15 min), LRU eviction when approaching memory/port limits, configurable `MAX_DEV_SERVERS` cap, orphan detection on API restart.
+- [ ] **Deploy mutex per project** — only one build/deploy runs per project at a time. Concurrent requests queued with UI feedback.
+- [ ] **Atomic file writes** — write to temp file then rename to prevent partial writes/corruption.
+- [ ] **Database query workspace filtering** — all `findById()` queries accept and filter by `workspaceId` as defense-in-depth.
+- [ ] **Atomic subdomain generation** — use `INSERT ... ON CONFLICT` to prevent race conditions on subdomain claiming.
+- [ ] **Global build concurrency limiter** — max 3 concurrent Vite builds across all projects (configurable).
+
 ### Deliverable
-Internal development environment where a developer can chat with AI, generate a React app, preview it, and publish to `*.doable.app`.
+Internal development environment where a developer can chat with AI, generate a React app, preview it, and publish to `*.doable.app`. **Safe for multiple concurrent users** with proper isolation.
 
 ### Success Criteria
 - AI generates a working React/TypeScript/Tailwind app from a prompt
 - Preview renders correctly within 30 seconds
 - Publish to `*.doable.app` works with zero config
 - Multi-turn conversation maintains context
+- Two users on the same project have independent AI sessions
+- User A cannot access User B's project in a different workspace
+- 50 concurrent projects run without exhausting server resources
 
 ---
 
@@ -119,8 +135,14 @@ Internal development environment where a developer can chat with AI, generate a 
 - [ ] Version list in sidebar (timestamp + description)
 - [ ] Rollback to any previous version
 
+### 1.8 Multi-User Hardening (PRD 17)
+- [ ] **Per-user rate limiting** — rate limits keyed by `userId` not IP. Plan-based limits (Free: 10 AI msgs/min, Pro: 30, Business: 60).
+- [ ] **WebSocket file change notifications** — when AI or a user modifies a file, broadcast to all users viewing that project so their editors refresh.
+- [ ] **Build concurrency queue** — in-memory semaphore limiting concurrent Vite builds across all projects.
+- [ ] **Credit pre-flight checks** — verify credits available before starting expensive AI operations, deduct on completion.
+
 ### Deliverable
-Public product where anyone can sign up, describe an app, watch it get built, edit it, and publish it to `*.doable.app`. Equivalent to Lovable's core experience.
+Public product where anyone can sign up, describe an app, watch it get built, edit it, and publish it to `*.doable.app`. Equivalent to Lovable's core experience. **Supports multiple concurrent users safely.**
 
 ### Success Criteria
 - User can go from signup to published app in < 5 minutes
@@ -128,6 +150,8 @@ Public product where anyone can sign up, describe an app, watch it get built, ed
 - 3 basic templates work end-to-end
 - Billing functional (free tier + paid conversion)
 - GitHub sync works for connected accounts
+- 10+ concurrent users operate without interference or data leaks
+- Per-user rate limits prevent abuse
 
 ### Revenue
 - Individual Pro subscriptions ($20/mo)
@@ -189,7 +213,31 @@ Public product where anyone can sign up, describe an app, watch it get built, ed
 - [ ] Role-based access: Owner, Admin, Member, Viewer
 - [ ] Team billing (per-seat pricing for Team tier)
 
-### 2.7 Template System
+### 2.7 Real-Time Collaborative Editing (PRD 17 Section 6) — CRITICAL FOR BUSINESS
+
+> **Elevated from Phase 4 to Phase 2.** Businesses paying for team plans expect real-time collaboration. This is a core retention feature, not a nice-to-have.
+
+- [ ] **Yjs CRDT integration** — conflict-free real-time document sync via Yjs
+- [ ] **y-monaco binding** — multi-cursor editing in Monaco Editor with per-user undo/redo
+- [ ] **y-websocket provider** — WebSocket transport for Yjs document sync and awareness
+- [ ] **Presence system** — see who's online (avatar, name, color), which file they're editing, cursor position
+- [ ] **AI activity indicators** — show when another user's AI session is generating code
+- [ ] **File change broadcasts** — instant notification when AI or another user modifies files
+- [ ] **Shared live preview** — all collaborators see the same preview, updated in real-time
+- [ ] **Collaboration-aware file tree** — icons showing which files other users have open
+- [ ] **Reconnection handling** — automatic resync when a user disconnects and reconnects
+- [ ] **Server-side Yjs persistence** — Yjs document state persisted to filesystem on debounce
+
+### 2.8 Multi-User Infrastructure Upgrades (PRD 17)
+- [ ] **PostgreSQL Row-Level Security** — enable RLS on all tenant-scoped tables as defense-in-depth
+- [ ] **Optimistic file concurrency** — file operations include `expectedVersion` to reject stale writes
+- [ ] **Redis-based session storage** — move AI sessions and rate limit counters from in-memory to Redis
+- [ ] **Redis-based rate limiting** — sliding window counters in Redis, shared across API instances
+- [ ] **WebSocket room architecture** — per-project rooms with presence, file changes, and notifications
+- [ ] **Per-member credit limits** — admins set max daily/monthly credits per workspace member
+- [ ] **Credit usage dashboard** — per-user credit consumption visibility for workspace admins
+
+### 2.9 Template System
 - [ ] Template registry (official templates stored in PostgreSQL)
 - [ ] 8 official templates: SaaS, e-commerce, content/CMS, mobile-first, internal tool, landing page, AI app, API service
 - [ ] Template provisioning: code scaffold + `.doable/` context files + MCP config
@@ -197,7 +245,7 @@ Public product where anyone can sign up, describe an app, watch it get built, ed
 - [ ] "Save as template" (Business+)
 
 ### Deliverable
-Full-featured app builder with visual editing, backend integrations, team collaboration, and a rich template library. Users stay because the AI is smarter (context system), the UX is richer (visual editor), and teams can work together.
+Full-featured app builder with visual editing, **real-time multi-user collaboration**, backend integrations, team collaboration, and a rich template library. Users stay because the AI is smarter (context system), the UX is richer (visual editor), and **teams can work together in real-time** on the same project.
 
 ### Success Criteria
 - Visual editing works for 80% of common UI changes
@@ -205,10 +253,14 @@ Full-featured app builder with visual editing, backend integrations, team collab
 - Supabase integration end-to-end (DB + auth + storage)
 - Templates reduce time-to-first-preview by 50%
 - Team features support 5+ member teams
+- **Real-time multi-cursor editing works with < 100ms keystroke propagation latency**
+- **Presence system shows online users with < 500ms update latency**
+- **25 concurrent editors per project without degradation**
+- **50+ concurrent users across the platform with proper isolation and no resource exhaustion**
 
 ### Revenue
 - Team tier ($50/seat/mo)
-- Business tier ($100/seat/mo) — custom MCPs, save-as-template
+- Business tier ($100/seat/mo) — custom MCPs, save-as-template, **full real-time collaboration**
 - Increased Pro retention from visual editor + templates
 
 ---
@@ -218,6 +270,14 @@ Full-featured app builder with visual editing, backend integrations, team collab
 **Goal**: Launch the white-label enterprise product. This is where Doable diverges from Lovable and becomes a **platform for platforms** — enterprises use Doable to let their ecosystem build on top of their systems.
 
 > **This is Doable's primary revenue driver.** Phases 0-2 build the foundation and prove the product. Phase 3 is why Doable exists.
+
+### 3.0 Multi-User Enterprise Hardening (PRD 17)
+- [ ] **Shared AI chat** — team members see and contribute to the same AI conversation on a project
+- [ ] **Optional file-level locks** — prevent concurrent edits to a file (enterprise feature)
+- [ ] **Inline code comments** — leave comments on specific lines/selections for team review
+- [ ] **Connection-level DB context** — set `SET LOCAL app.current_workspace_id` per request for RLS
+- [ ] **Enterprise audit trail** — log every cross-boundary access attempt (successful or denied)
+- [ ] **Per-workspace resource quotas** — max dev servers, max concurrent AI sessions, max storage per workspace
 
 ### 3.1 Enterprise Admin Console
 - [ ] White-label configuration: custom domain, logo, colors, landing page
@@ -330,11 +390,13 @@ Enterprise customers can white-label Doable, configure custom workspaces with th
 - [ ] Mobile preview: device frames in preview panel
 
 ### 4.4 Advanced Collaboration
-- [ ] Real-time multi-user editing (CRDT-based)
-- [ ] Comments and annotations on code/preview
-- [ ] Shared AI chat (team sees same conversation)
+> Note: CRDT-based real-time editing, presence, shared AI chat, and comments have been **moved to Phase 2-3** (see PRD 17). The items below are Phase 4 extensions.
+
+- [ ] Suggested changes (propose edits for team review, like GitHub PR suggestions)
 - [ ] Git branching: feature branches per team member
 - [ ] Pull request workflow within Doable
+- [ ] Branch-based preview environments (preview per branch)
+- [ ] Merge conflict resolution UI within the editor
 
 ### 4.5 Analytics & Security
 - [ ] Built-in analytics: pageviews, events, user flows (for apps users build)
@@ -437,11 +499,15 @@ Phase 5 ─── Ecosystem ─────────────────�
 | Dependency | Required By | Notes |
 |------------|------------|-------|
 | Phase 0 (AI agent + build pipeline) | Phase 1 (MVP) | Can't ship without working AI |
+| **Phase 0 (multi-user safety — PRD 17)** | **Phase 1 (MVP)** | **Cannot launch publicly without workspace auth, session isolation, and resource management** |
 | Phase 1 (context system foundation) | Phase 2 (advanced context) | Advanced files build on the injection system |
 | Phase 1 (auth + billing) | Phase 2 (teams) | Teams need role-based access |
+| **Phase 1 (WebSocket infrastructure)** | **Phase 2 (real-time collaboration)** | **CRDT sync and presence require WebSocket rooms** |
 | Phase 2 (MCP support) | Phase 3 (enterprise MCPs) | Enterprise MCPs need the MCP infrastructure |
 | Phase 2 (templates) | Phase 3 (enterprise workspaces) | Enterprise workspaces are super-templates |
 | Phase 2 (teams/workspaces) | Phase 3 (enterprise admin) | Enterprise admin extends team management |
+| **Phase 2 (CRDT + presence)** | **Phase 3 (shared AI chat, file locks)** | **Enterprise collab features extend the base CRDT system** |
+| **Phase 2 (Redis sessions + rate limits)** | **Phase 3 (enterprise scale)** | **Enterprise needs distributed state, not in-memory** |
 | Phase 3 (enterprise core) | Phase 4 (enterprise enhancements) | Enhancements need the base enterprise product |
 | Phase 3 (enterprise core) | Phase 5 (module marketplace) | Marketplace needs the module lifecycle |
 
@@ -451,11 +517,11 @@ Phase 5 ─── Ecosystem ─────────────────�
 
 | Phase | PRDs Covered |
 |-------|-------------|
-| **Phase 0** | 05 (backend/database), 12 (architecture) |
-| **Phase 1** | 01 (AI engine), 02 (editor UI), 03 (project management), 04 (code generation), 06 (auth), 07 (deployment), 09 (versioning), 11 (billing), **14 (context system — P0+P1)** |
-| **Phase 2** | 02 (visual editor expansion), 05 (user-choice backends), 07 (deploy adapter), 08 (integrations/MCPs), 09 (collaboration), **14 (context system — P1.5+P2+templates)** |
-| **Phase 3** | 06 (enterprise SSO), 08 (enterprise MCPs), 10 (audit/security), 11 (enterprise billing), **14 (enterprise workspaces — Section 9)** |
-| **Phase 4** | 07 (full hosting providers), 10 (analytics/security), 13 (mobile/native), **14 (context advanced features)** |
+| **Phase 0** | 05 (backend/database), 12 (architecture), **17 (multi-user safety — workspace auth, session isolation, resource management)** |
+| **Phase 1** | 01 (AI engine), 02 (editor UI), 03 (project management), 04 (code generation), 06 (auth), 07 (deployment), 09 (versioning), 11 (billing), **14 (context system — P0+P1)**, **17 (per-user rate limiting, build queue, credit safety)** |
+| **Phase 2** | 02 (visual editor expansion), 05 (user-choice backends), 07 (deploy adapter), 08 (integrations/MCPs), **09 (real-time collaboration — CRDT, presence, multi-cursor)**, **14 (context system — P1.5+P2+templates)**, **17 (RLS, Redis sessions, optimistic concurrency, WebSocket rooms, credit limits)** |
+| **Phase 3** | 06 (enterprise SSO), 08 (enterprise MCPs), 10 (audit/security), 11 (enterprise billing), **14 (enterprise workspaces — Section 9)**, **17 (shared AI chat, file locks, comments, enterprise audit, resource quotas)** |
+| **Phase 4** | 07 (full hosting providers), 10 (analytics/security), 13 (mobile/native), **14 (context advanced features)**, **17 (suggested changes, branch previews)** |
 | **Phase 5** | 03 (community templates), 08 (plugin system), 11 (marketplace billing) |
 
 ---
@@ -482,3 +548,9 @@ The absolute minimum to launch publicly:
 | 14 | Free tier + Pro subscription via Stripe | ⬜ | |
 | 15 | Plan.md auto-updated by Plan Mode | ⬜ | |
 | 16 | Memory.md accumulates learned facts | ⬜ | |
+| 17 | **Workspace auth middleware on all routes** | ⬜ | PRD 17 — CRITICAL security requirement |
+| 18 | **Per-user AI session isolation** | ⬜ | PRD 17 — sessions keyed by projectId+userId+mode |
+| 19 | **Dev server idle timeout + eviction** | ⬜ | PRD 17 — prevent resource exhaustion |
+| 20 | **Per-project deploy mutex** | ⬜ | PRD 17 — prevent concurrent deploy races |
+| 21 | **Per-user rate limiting** | ⬜ | PRD 17 — keyed by userId, plan-based limits |
+| 22 | **DB queries filter by workspaceId** | ⬜ | PRD 17 — defense-in-depth on all findById queries |

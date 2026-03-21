@@ -57,12 +57,33 @@ Doable supports team collaboration through workspaces with unlimited members, re
 ## 2. Team Collaboration
 
 ### 2.1 Real-Time Collaboration
-| Feature | Description |
-|---------|-------------|
-| **Simultaneous editing** | Multiple users in same project |
-| **Visual editor access** | All team members can use visual editor |
-| **GitHub integration** | Shared version control |
-| **Live preview** | Shared preview state |
+
+> **Full specification**: See [PRD 17 — Multi-User Infrastructure](17-multi-user-infrastructure.md) Sections 6, 9 for complete technical details on CRDT, Yjs, WebSocket architecture, and performance requirements.
+
+| Feature | Description | Phase |
+|---------|-------------|-------|
+| **Presence system** | See who's online in a project — avatars, colors, active panel | Phase 2 |
+| **Multi-cursor code editing** | See other users' cursors and selections in real-time via Yjs + y-monaco CRDT bindings | Phase 2 |
+| **Conflict-free concurrent edits** | All edits merge automatically via CRDT — no manual conflict resolution | Phase 2 |
+| **Per-user undo/redo** | Each user has their own undo stack, independent of other users | Phase 2 |
+| **Shared live preview** | All collaborators see the same preview state, updated in real-time | Phase 2 |
+| **AI activity indicators** | See when another user's AI session is generating code (typing indicator) | Phase 2 |
+| **File change broadcasts** | When AI or a user modifies a file, all collaborators' editors reload it instantly | Phase 2 |
+| **Visual editor co-access** | All team members can use visual editor simultaneously | Phase 2 |
+| **GitHub integration** | Shared version control | Phase 1 |
+| **Optional file locks** | Business+ users can lock a file while editing to prevent concurrent changes | Phase 3 |
+| **Shared AI chat** | Team members see and contribute to the same AI conversation | Phase 3 |
+| **Inline code comments** | Leave comments on specific lines/selections for review | Phase 3 |
+| **Suggested changes** | Propose code changes for team review (like GitHub suggestions) | Phase 4 |
+
+#### Collaboration by Plan
+
+| Plan | Collaboration Level |
+|------|-------------------|
+| **Free** | Single user per project (no collaboration) |
+| **Pro** | Presence + shared preview (no co-editing) |
+| **Business** | Full multi-cursor co-editing + presence + shared preview |
+| **Enterprise** | All above + file locks + shared AI chat + comments + suggested changes |
 
 ### 2.2 User Roles
 | Role | Permissions |

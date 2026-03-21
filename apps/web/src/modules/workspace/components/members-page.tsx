@@ -46,7 +46,7 @@ const ROLE_LABELS: Record<string, string> = {
   viewer: "Viewer",
 };
 
-const ROLE_ICONS: Record<string, typeof Shield> = {
+const ROLE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   owner: Crown,
   admin: Shield,
   member: Users,
@@ -435,7 +435,7 @@ function MemberRow({
   return (
     <div className="flex items-center gap-4 rounded-lg border p-4 transition-colors hover:bg-muted/30">
       <MemberAvatar
-        name={displayName}
+        name={displayName ?? "User"}
         avatarUrl={member.avatar_url}
       />
 

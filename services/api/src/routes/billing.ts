@@ -65,13 +65,7 @@ billingRoutes.post("/webhook", async (c) => {
       if (session.metadata?.type === "top_up") {
         const credits = parseInt(session.metadata.credits ?? "0", 10);
         if (credits > 0) {
-          await billing.addCredits(workspaceId, { rollover: credits });
-          // Also add to user-level credit balances
-          try {
-            await creditsDb.addRolloverCredits(workspaceId, credits);
-          } catch (err) {
-            console.warn("[Webhook] Failed to add rollover to user credits:", err);
-          }
+          await creditsDb.addRolloverCredits(workspaceId, credits);
         }
         break;
       }
@@ -108,17 +102,8 @@ billingRoutes.post("/webhook", async (c) => {
         await sql`
           UPDATE workspaces SET plan = ${plan.id} WHERE id = ${workspaceId}
         `;
-        // Reset credits for new plan (workspace-level)
-        const limits = PLAN_LIMITS[plan.id];
-        await billing.resetDailyCredits(workspaceId, limits.dailyCredits);
-        await billing.resetMonthlyCredits(workspaceId, limits.monthlyCredits);
-
-        // Update user-level credit balances for the new plan
-        try {
-          await creditsDb.updateWorkspacePlanCredits(workspaceId, plan.id as "free" | "pro" | "business" | "enterprise");
-        } catch (err) {
-          console.warn("[Webhook] Failed to update user credit balances:", err);
-        }
+        // Update credit balances for all workspace members
+        await creditsDb.updateWorkspacePlanCredits(workspaceId, plan.id as "free" | "pro" | "business" | "enterprise");
       }
       break;
     }
@@ -139,16 +124,8 @@ billingRoutes.post("/webhook", async (c) => {
       await sql`
         UPDATE workspaces SET plan = 'free' WHERE id = ${workspaceId}
       `;
-      const freeLimits = PLAN_LIMITS.free;
-      await billing.resetDailyCredits(workspaceId, freeLimits.dailyCredits);
-      await billing.resetMonthlyCredits(workspaceId, freeLimits.monthlyCredits);
-
-      // Update user-level credit balances to free plan
-      try {
-        await creditsDb.updateWorkspacePlanCredits(workspaceId, "free");
-      } catch (err) {
-        console.warn("[Webhook] Failed to update user credit balances:", err);
-      }
+      // Reset all workspace members to free plan credits
+      await creditsDb.updateWorkspacePlanCredits(workspaceId, "free");
       break;
     }
   }
@@ -169,18 +146,8 @@ billingRoutes.get("/credits", async (c) => {
 
   const userId = c.get("userId");
 
-  try {
-    const balance = await creditsDb.getCreditBalance(userId, workspaceId);
-    return c.json({ data: balance });
-  } catch (err) {
-    console.error("[Billing] Failed to get credit balance:", err);
-    // Fallback to workspace-level credits
-    const credits = await billing.getCredits(workspaceId);
-    if (!credits) {
-      return c.json({ error: "Credits not found" }, 404);
-    }
-    return c.json({ data: credits });
-  }
+  const balance = await creditsDb.getCreditBalance(userId, workspaceId);
+  return c.json({ data: balance });
 });
 
 // ─── GET /billing/credits/usage ─────────────────────────────

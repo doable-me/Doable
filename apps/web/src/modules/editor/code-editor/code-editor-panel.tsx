@@ -14,6 +14,8 @@ import {
   Map,
 } from "lucide-react";
 import type { MonacoEditorWrapperProps } from "./monaco-editor-wrapper";
+import { useCollaboration } from "@/modules/collaboration/collaboration-context";
+import { RemoteCursorManager } from "@/modules/collaboration/cursors";
 
 // Dynamically import Monaco to avoid SSR issues
 const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
@@ -47,6 +49,38 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
 
   const [showMinimap, setShowMinimap] = useState(false);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ─── Remote cursor collaboration ──────────────────────────
+  const { cursors, sendCursorMove } = useCollaboration();
+  const cursorManagerRef = useRef<RemoteCursorManager | null>(null);
+
+  const handleEditorMount = useCallback((editor: any) => {
+    cursorManagerRef.current?.dispose();
+    cursorManagerRef.current = new RemoteCursorManager(editor);
+  }, []);
+
+  const handleCursorChange = useCallback(
+    (line: number, column: number) => {
+      if (activeFilePath) {
+        sendCursorMove(activeFilePath, line, column);
+      }
+    },
+    [activeFilePath, sendCursorMove],
+  );
+
+  // Update remote cursor decorations when cursors or active file change
+  useEffect(() => {
+    if (cursorManagerRef.current && activeFilePath) {
+      cursorManagerRef.current.updateCursors(cursors, activeFilePath);
+    }
+  }, [cursors, activeFilePath]);
+
+  // Clean up cursor manager on unmount
+  useEffect(() => {
+    return () => {
+      cursorManagerRef.current?.dispose();
+    };
+  }, []);
 
   // Track the content per-file so tab switching preserves edits
   const fileContentsRef = useRef<Record<string, string>>({});
@@ -237,6 +271,8 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
             onChange={readOnly ? undefined : handleEditorChange}
             onSave={readOnly ? undefined : handleSave}
             showMinimap={showMinimap}
+            onEditorMount={handleEditorMount}
+            onCursorChange={handleCursorChange}
           />
         ) : (
           <EmptyEditor />

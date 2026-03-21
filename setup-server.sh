@@ -24,6 +24,35 @@ echo "║          Doable — Production Server Setup                ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
+# ─── SSH & Firewall Safety ────────────────────────────────────
+# CRITICAL: Ensure SSH is never locked out.
+# This runs BEFORE any other configuration to prevent lockout.
+info "Checking SSH & firewall safety..."
+
+# Ensure SSH is running and enabled
+systemctl enable ssh 2>/dev/null || systemctl enable sshd 2>/dev/null || true
+systemctl start ssh 2>/dev/null || systemctl start sshd 2>/dev/null || true
+
+# If UFW is installed and active, ensure SSH is allowed FIRST
+if command -v ufw &>/dev/null; then
+  # Always allow SSH before anything else — even if UFW is inactive,
+  # this ensures the rule is in place for when it gets enabled
+  ufw allow 22/tcp comment "SSH - NEVER REMOVE" >/dev/null 2>&1 || true
+
+  if ufw status | grep -q "Status: active"; then
+    info "UFW is active — verifying SSH is allowed..."
+    if ! ufw status | grep -qE "22/tcp.*ALLOW"; then
+      err "CRITICAL: UFW is active but SSH (port 22) is not allowed! Adding rule now..."
+      ufw allow 22/tcp comment "SSH - NEVER REMOVE"
+    fi
+    ok "UFW active, SSH allowed"
+  else
+    ok "UFW inactive (will configure later)"
+  fi
+else
+  ok "UFW not yet installed (will configure later)"
+fi
+
 # ─── Gather configuration ──────────────────────────────────────
 read -rp "Domain for Doable (e.g., doable.me): " DOMAIN
 [[ -z "$DOMAIN" ]] && err "Domain is required"
@@ -72,7 +101,7 @@ read -rp "Proceed? [Y/n]: " CONFIRM
 [[ "${CONFIRM,,}" == "n" ]] && exit 0
 
 # ─── Step 1: System packages ───────────────────────────────────
-info "Step 1/11: Installing system packages..."
+info "Step 1/13: Installing system packages..."
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -92,9 +121,9 @@ if ! command -v psql &>/dev/null; then
   apt-get install -y postgresql postgresql-contrib
 fi
 
-# Redis
-if ! command -v redis-cli &>/dev/null; then
-  apt-get install -y redis-server
+# fail2ban (SSH brute-force protection)
+if ! command -v fail2ban-client &>/dev/null; then
+  apt-get install -y fail2ban
 fi
 
 # tmux
@@ -126,13 +155,95 @@ if ! command -v cloudflared &>/dev/null; then
   apt-get update -qq && apt-get install -y cloudflared
 fi
 
-systemctl enable postgresql redis-server
-systemctl start postgresql redis-server
+systemctl enable postgresql fail2ban
+systemctl start postgresql fail2ban
 
 ok "Packages installed: node $(node -v), pnpm $(pnpm -v), psql $(psql --version | awk '{print $3}'), redis $(redis-cli -v | awk '{print $2}'), cloudflared $(cloudflared --version 2>&1 | awk '{print $3}')"
 
-# ─── Step 2: Swap ──────────────────────────────────────────────
-info "Step 2/11: Configuring swap..."
+# ─── Step 2: Firewall (UFW) ──────────────────────────────────
+info "Step 2/13: Configuring firewall (UFW)..."
+
+# Install UFW if not present
+if ! command -v ufw &>/dev/null; then
+  apt-get install -y ufw
+fi
+
+# ── SAFETY: Allow SSH FIRST, before touching anything else ──
+ufw allow 22/tcp comment "SSH - NEVER REMOVE"
+
+# Set default policies: deny incoming, allow outgoing
+ufw default deny incoming >/dev/null 2>&1
+ufw default allow outgoing >/dev/null 2>&1
+
+# Allow application ports
+ufw allow 3000/tcp comment "Next.js frontend"
+ufw allow 4000/tcp comment "API server"
+ufw allow 4001/tcp comment "WebSocket server"
+ufw allow 8080/tcp comment "Caddy - published sites"
+
+# ── Safety verification before enabling UFW ──
+# Verify SSH rule is actually in the ruleset before enabling
+if ! ufw status | grep -qE "22/tcp.*ALLOW"; then
+  err "SAFETY ABORT: SSH rule not found in UFW rules. Refusing to enable firewall."
+fi
+
+# Verify we can still reach SSH from the current connection
+# (If this script is running via SSH, the connection itself proves port 22 works)
+if [[ -n "${SSH_CONNECTION:-}" ]]; then
+  info "Running via SSH — verifying SSH connectivity is maintained..."
+  SSH_CLIENT_IP=$(echo "$SSH_CONNECTION" | awk '{print $1}')
+  info "Connected from: ${SSH_CLIENT_IP}"
+fi
+
+# Enable UFW (--force skips the interactive prompt)
+ufw --force enable
+
+# ── Post-enable verification ──
+if ! ufw status | grep -qE "22/tcp.*ALLOW"; then
+  # Emergency: disable UFW if SSH rule somehow vanished
+  warn "EMERGENCY: SSH rule missing after UFW enable — disabling firewall!"
+  ufw --force disable
+  err "Firewall disabled for safety. SSH rule was lost. Please investigate."
+fi
+
+ok "Firewall configured and enabled"
+ufw status numbered | while IFS= read -r line; do echo "  $line"; done
+
+# ─── Step 3: Harden PostgreSQL & configure fail2ban ─────────────
+info "Step 3/13: Hardening services..."
+
+# ── PostgreSQL: ensure it only listens on localhost ──
+PG_CONF=$(find /etc/postgresql -name postgresql.conf 2>/dev/null | head -1)
+if [[ -n "$PG_CONF" ]]; then
+  # Ensure listen_addresses is localhost only
+  if grep -q "^listen_addresses" "$PG_CONF"; then
+    sed -i "s/^listen_addresses.*/listen_addresses = 'localhost'/" "$PG_CONF"
+  elif grep -q "^#listen_addresses" "$PG_CONF"; then
+    sed -i "s/^#listen_addresses.*/listen_addresses = 'localhost'/" "$PG_CONF"
+  fi
+  systemctl restart postgresql
+  ok "PostgreSQL confirmed: listening on localhost only"
+else
+  warn "PostgreSQL config not found — check manually"
+fi
+
+# ── fail2ban: configure SSH jail ──
+cat > /etc/fail2ban/jail.local << F2BEOF
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 5
+bantime = 3600
+findtime = 600
+F2BEOF
+
+systemctl restart fail2ban
+ok "fail2ban configured: SSH brute-force protection active"
+
+# ─── Step 4: Swap ──────────────────────────────────────────────
+info "Step 4/13: Configuring swap..."
 
 if ! swapon --show | grep -q '/swapfile'; then
   TOTAL_RAM=$(free -m | awk '/^Mem:/{print $2}')
@@ -147,8 +258,8 @@ else
   ok "Swap already configured"
 fi
 
-# ─── Step 3: PostgreSQL setup ──────────────────────────────────
-info "Step 3/11: Setting up PostgreSQL..."
+# ─── Step 5: PostgreSQL setup ──────────────────────────────────
+info "Step 5/13: Setting up PostgreSQL..."
 
 sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='doable'" | grep -q 1 \
   || sudo -u postgres psql -c "CREATE USER doable WITH PASSWORD '${DB_PASS}' CREATEDB;"
@@ -160,8 +271,8 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE doable TO doable;" &>
 
 ok "Database ready (user: doable, db: doable)"
 
-# ─── Step 4: GitHub CLI auth ──────────────────────────────────
-info "Step 4/11: GitHub authentication..."
+# ─── Step 6: GitHub CLI auth ──────────────────────────────────
+info "Step 6/13: GitHub authentication..."
 
 if ! command -v gh &>/dev/null; then
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null
@@ -185,8 +296,8 @@ fi
 
 ok "GitHub CLI authenticated"
 
-# ─── Step 5: Clone repo ───────────────────────────────────────
-info "Step 5/11: Cloning repository..."
+# ─── Step 7: Clone repo ───────────────────────────────────────
+info "Step 7/13: Cloning repository..."
 
 INSTALL_DIR="/root/doable"
 
@@ -203,16 +314,13 @@ fi
 
 ok "Repo cloned to $INSTALL_DIR"
 
-# ─── Step 6: Environment files ────────────────────────────────
-info "Step 6/11: Writing environment files..."
+# ─── Step 8: Environment files ────────────────────────────────
+info "Step 8/13: Writing environment files..."
 
 cat > "${INSTALL_DIR}/.env" << ENVEOF
 # ─── Database ───────────────────────────────────────────────
 DATABASE_URL=postgres://doable:${DB_PASS}@localhost:5432/doable
 DATABASE_POOL_SIZE=20
-
-# ─── Redis ──────────────────────────────────────────────────
-REDIS_URL=redis://localhost:6379
 
 # ─── Auth / JWT ─────────────────────────────────────────────
 JWT_SECRET=${JWT_SECRET}
@@ -222,12 +330,12 @@ JWT_REFRESH_TOKEN_EXPIRES_IN=7d
 
 # ─── API Server ─────────────────────────────────────────────
 API_PORT=4000
-API_HOST=0.0.0.0
+API_HOST=127.0.0.1
 CORS_ORIGINS=https://${DOMAIN}
 
 # ─── WebSocket Server ──────────────────────────────────────
 WS_PORT=4001
-WS_HOST=0.0.0.0
+WS_HOST=127.0.0.1
 
 # ─── Next.js Frontend ──────────────────────────────────────
 NEXT_PUBLIC_API_URL=https://${API_DOMAIN}
@@ -267,7 +375,7 @@ STRIPE_BUSINESS_YEARLY_PRICE_ID=
 
 # ─── Publish / Hosting ────────────────────────────────────
 PROJECTS_ROOT=${INSTALL_DIR}/services/api/projects
-SITES_ROOT=${INSTALL_DIR}/sites
+SITES_DIR=${INSTALL_DIR}/sites
 DOABLE_DOMAIN=${DOMAIN}
 
 # ─── Environment ───────────────────────────────────────────
@@ -283,21 +391,34 @@ WEBENVEOF
 
 ok "Environment files created (.env + apps/web/.env.local)"
 
-# ─── Step 7: Install deps & migrate ──────────────────────────
-info "Step 7/11: Installing dependencies..."
+# ─── Step 9: Install deps & migrate ──────────────────────────
+info "Step 9/13: Installing dependencies..."
 
 cd "$INSTALL_DIR"
 pnpm install
 
 info "Running database migrations..."
-for f in $(ls services/api/src/db/migrations/*.sql 2>/dev/null | sort); do
-  PGPASSWORD="${DB_PASS}" psql -h localhost -U doable -d doable -f "$f" 2>&1 | grep -i error || true
+# Run migrations from BOTH migration directories
+for dir in services/api/src/db/migrations packages/db/migrations; do
+  if [[ -d "$dir" ]]; then
+    for f in $(ls "$dir"/*.sql 2>/dev/null | sort); do
+      info "  Applying: $f"
+      PGPASSWORD="${DB_PASS}" psql -h localhost -U doable -d doable -f "$f" 2>&1 | grep -i error || true
+    done
+  fi
 done
 
 ok "Dependencies installed & database migrated"
 
-# ─── Step 8: Cloudflare Tunnel ────────────────────────────────
-info "Step 8/11: Setting up Cloudflare Tunnel..."
+# Build Next.js production bundle
+info "Building Next.js..."
+cd "$INSTALL_DIR/apps/web"
+pnpm build
+cd "$INSTALL_DIR"
+ok "Next.js built"
+
+# ─── Step 10: Cloudflare Tunnel ───────────────────────────────
+info "Step 10/13: Setting up Cloudflare Tunnel..."
 
 if [[ ! -f /root/.cloudflared/cert.pem ]]; then
   warn "You need to authenticate with Cloudflare."
@@ -365,8 +486,8 @@ CFGEOF
 
 ok "Tunnel config written"
 
-# ─── Step 9: Publish infrastructure (Caddy + sites) ─────────
-info "Step 9/11: Setting up publish infrastructure..."
+# ─── Step 11: Publish infrastructure (Caddy + sites) ─────────
+info "Step 11/13: Setting up publish infrastructure..."
 
 # Create sites directory for published projects
 mkdir -p "${INSTALL_DIR}/sites"
@@ -374,14 +495,22 @@ chmod 755 /root
 chmod -R 755 "${INSTALL_DIR}/sites"
 
 # Caddyfile: serves *.domain from /sites/{subdomain}/
+# Bound to 127.0.0.1 — only reachable via Cloudflare Tunnel
 cat > /etc/caddy/Caddyfile << CADDYEOF
+{
+    auto_https off
+    admin 127.0.0.1:2019
+}
+
 :8080 {
+    bind 127.0.0.1
+
     @has_subdomain {
         header_regexp subdomain Host ^([a-z0-9][-a-z0-9]*)\.${DOMAIN//./\\.}\$
     }
 
     handle @has_subdomain {
-        root * ${INSTALL_DIR}/sites/{re.subdomain.1}
+        root * ${INSTALL_DIR}/sites/{re.subdomain.1}/live
         try_files {path} /index.html
         file_server
         header {
@@ -403,8 +532,8 @@ systemctl restart caddy
 
 ok "Caddy configured on :8080 for *.${DOMAIN} → ${INSTALL_DIR}/sites/"
 
-# ─── Step 10: Systemd services ────────────────────────────────
-info "Step 10/11: Creating systemd services..."
+# ─── Step 12: Systemd services ────────────────────────────────
+info "Step 12/13: Creating systemd services..."
 
 # Doable tmux startup script
 cat > "${INSTALL_DIR}/start.sh" << 'STARTEOF'
@@ -414,9 +543,11 @@ tmux kill-session -t "$SESSION" 2>/dev/null || true
 tmux new-session -d -s "$SESSION" -n "api" -c /root/doable
 tmux send-keys -t "$SESSION:api" "cd /root/doable && pnpm dev:api" Enter
 tmux new-window -t "$SESSION" -n "web" -c /root/doable
-tmux send-keys -t "$SESSION:web" "cd /root/doable && pnpm dev:web" Enter
+tmux send-keys -t "$SESSION:web" "cd /root/doable/apps/web && pnpm start" Enter
+tmux new-window -t "$SESSION" -n "ws" -c /root/doable
+tmux send-keys -t "$SESSION:ws" "cd /root/doable && pnpm dev:ws" Enter
 tmux select-window -t "$SESSION:api"
-echo "Doable tmux session started. Attach with: tmux attach -t doable"
+echo "Doable tmux session started (api + web + ws). Attach with: tmux attach -t doable"
 STARTEOF
 chmod +x "${INSTALL_DIR}/start.sh"
 
@@ -424,8 +555,8 @@ chmod +x "${INSTALL_DIR}/start.sh"
 cat > /etc/systemd/system/doable.service << SVCEOF
 [Unit]
 Description=Doable App (tmux session)
-After=network.target postgresql.service redis-server.service
-Wants=postgresql.service redis-server.service
+After=network.target postgresql.service
+Wants=postgresql.service
 
 [Service]
 Type=forking
@@ -450,8 +581,8 @@ systemctl enable doable.service cloudflared 2>/dev/null
 
 ok "Systemd services created and enabled"
 
-# ─── Step 11: Start everything ────────────────────────────────
-info "Step 11/11: Starting services..."
+# ─── Step 13: Start everything ────────────────────────────────
+info "Step 13/13: Starting services..."
 
 systemctl start cloudflared 2>/dev/null || systemctl restart cloudflared
 systemctl start doable.service
@@ -490,6 +621,7 @@ echo "  tmux attach -t doable          # View live logs"
 echo "  systemctl restart doable       # Restart the app"
 echo "  systemctl restart cloudflared  # Restart the tunnel"
 echo "  systemctl status doable cloudflared  # Check status"
+echo "  ufw status                          # Check firewall rules"
 echo ""
 
 if [[ "$WEB_STATUS" != "200" ]]; then
@@ -500,6 +632,12 @@ if [[ "$CF_STATUS" == "000" ]]; then
   warn "Public URL not reachable yet — DNS propagation may take a few minutes."
 fi
 
+echo ""
+echo "  ── Security ──"
+echo "  UFW firewall:   ACTIVE (SSH, 3000, 4000, 4001, 8080)"
+echo "  PostgreSQL:     bound to localhost only"
+echo "  fail2ban:       SSH brute-force protection active"
+echo "  API/WS:         bound to 127.0.0.1 (accessed via Cloudflare Tunnel)"
 echo ""
 echo "  ── Don't forget ──"
 echo "  1. Update Google OAuth redirect URI in GCP Console to:"

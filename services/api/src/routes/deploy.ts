@@ -7,6 +7,7 @@ import { sql } from "../db/index.js";
 import { deploymentQueries } from "@doable/db/queries/deployments";
 import { projectQueries } from "@doable/db/queries/projects";
 import { runPipeline } from "../deploy/pipeline.js";
+import { emitActivity } from "../lib/activity.js";
 
 const deployments = deploymentQueries(sql);
 const projects = projectQueries(sql);
@@ -61,6 +62,14 @@ deployRoutes.post("/:projectId", async (c) => {
       500
     );
   }
+
+  emitActivity(sql, {
+    projectId,
+    userId,
+    eventType: "publish",
+    summary: `published to ${result.url}`,
+    metadata: { url: result.url, environment },
+  });
 
   return c.json({
     data: {
@@ -123,6 +132,14 @@ deployRoutes.post("/:projectId/stream", async (c) => {
           durationMs: result.durationMs,
         });
       } else {
+        emitActivity(sql, {
+          projectId,
+          userId,
+          eventType: "publish",
+          summary: `published to ${result.url}`,
+          metadata: { url: result.url, environment },
+        });
+
         await sendEvent("complete", {
           deploymentId: result.deploymentId,
           url: result.url,
@@ -180,6 +197,14 @@ deployRoutes.post("/:projectId/publish", async (c) => {
     );
   }
 
+  emitActivity(sql, {
+    projectId,
+    userId,
+    eventType: "publish",
+    summary: `published to ${result.url}`,
+    metadata: { url: result.url, environment: "production" },
+  });
+
   return c.json({
     data: {
       deploymentId: result.deploymentId,
@@ -225,6 +250,14 @@ deployRoutes.post("/:projectId/publish/preview", async (c) => {
       500
     );
   }
+
+  emitActivity(sql, {
+    projectId,
+    userId,
+    eventType: "publish",
+    summary: `published preview to ${result.url}`,
+    metadata: { url: result.url, environment: "preview" },
+  });
 
   return c.json({
     data: {

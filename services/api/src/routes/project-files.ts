@@ -32,6 +32,7 @@ import {
 import { sql } from "../db/index.js";
 import { buildZipBuffer } from "../lib/zip.js";
 import { getTemplate } from "../templates/registry.js";
+import { emitActivity } from "../lib/activity.js";
 
 export const projectFileRoutes = new Hono<AuthEnv>();
 
@@ -211,6 +212,14 @@ projectFileRoutes.put("/projects/:id/files/*", async (c) => {
 
     await writeFile(projectId, filePath, body.content);
 
+    emitActivity(sql, {
+      projectId,
+      userId: c.get("userId"),
+      eventType: "file_save",
+      summary: `saved ${filePath.split("/").pop()}`,
+      metadata: { filePath },
+    });
+
     return c.json({
       data: {
         path: filePath,
@@ -238,6 +247,15 @@ projectFileRoutes.delete("/projects/:id/files/*", async (c) => {
 
   try {
     await deleteFile(projectId, filePath);
+
+    emitActivity(sql, {
+      projectId,
+      userId: c.get("userId"),
+      eventType: "file_delete",
+      summary: `deleted ${filePath.split("/").pop()}`,
+      metadata: { filePath },
+    });
+
     return c.json({ data: { deleted: true, path: filePath } });
   } catch (err) {
     if (err instanceof FileNotFoundError) {

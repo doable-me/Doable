@@ -87,11 +87,27 @@ Doable Cloud is the primary full-stack hosting platform:
 | **React Hooks** | Auto-generated hooks for data fetching |
 
 ### 2.4 Row-Level Security (RLS)
+
+#### For User-Built Apps (generated tables)
 - Automatically configured for generated tables
 - Users see only their own data by default
 - Role-based access policies
 - Payment/subscription data secured
 - Customizable via SQL policies
+
+#### For Doable Platform Tables (PRD 17)
+
+> **Full specification**: See [PRD 17 — Multi-User Infrastructure](17-multi-user-infrastructure.md) Section 1.3.
+
+Platform tables (projects, folders, AI sessions, deployments, analytics, etc.) require their own RLS policies for defense-in-depth tenant isolation:
+
+| Phase | Strategy |
+|-------|----------|
+| **Phase 0** | Application-level: workspace auth middleware + DB query filtering by `workspace_id` |
+| **Phase 2** | Database-level: PostgreSQL RLS on all tenant-scoped tables |
+| **Phase 3** | Connection-level: `SET LOCAL app.current_workspace_id` per request for enterprise-grade isolation |
+
+All `findById()` database queries MUST accept and filter by `workspaceId` from Phase 0 onward. RLS is a secondary safety net, not a replacement for application-level checks.
 
 ---
 

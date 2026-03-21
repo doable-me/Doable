@@ -29,6 +29,7 @@ import { securityRoutes } from "./routes/security.js";
 import { communityRoutes } from "./routes/community.js";
 import { connectorRoutes } from "./routes/connectors.js";
 import { skillsRoutes } from "./routes/skills.js";
+import { teamChatRoutes } from "./routes/team-chat.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 import { getConnectorManager } from "./mcp/connector-manager.js";
@@ -152,6 +153,7 @@ app.route("/community", communityRoutes);
 app.route("/workspaces", connectorRoutes);
 app.route("/workspaces", skillsRoutes);
 app.route("/workspaces/:wid/context", workspaceContextRoutes);
+app.route("/team-chat", teamChatRoutes);
 
 // ─── 404 Fallback ───────────────────────────────────────────
 app.notFound((c) => {
@@ -173,7 +175,7 @@ app.onError((err, c) => {
 
 // ─── Start Server ───────────────────────────────────────────
 const port = parseInt(process.env.API_PORT ?? "4000", 10);
-const host = process.env.API_HOST ?? "0.0.0.0";
+const host = process.env.API_HOST ?? "127.0.0.1";
 
 console.log(`Doable API starting on ${host}:${port}`);
 
