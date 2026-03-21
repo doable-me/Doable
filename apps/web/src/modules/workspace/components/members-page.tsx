@@ -343,7 +343,7 @@ function RemoveConfirmDialog({
   };
 
   const displayName =
-    member.display_name || member.email.split("@")[0];
+    member.display_name || member.email.split("@")[0] || member.email;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -405,7 +405,7 @@ function MemberRow({
   const [updatingRole, setUpdatingRole] = useState(false);
 
   const displayName =
-    member.display_name || member.email.split("@")[0];
+    member.display_name || member.email.split("@")[0] || member.email;
   const isCurrentUser = member.user_id === currentUserId;
   const canChangeRole = currentUserRole === "owner" && !isCurrentUser && member.role !== "owner";
   const canRemove =

@@ -45,7 +45,7 @@ function buildFileTree(files: Map<string, ProjectFile>): FileTreeNode[] {
     let currentPath = "";
 
     for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
+      const part = parts[i]!;
       const parentPath = currentPath;
       currentPath = currentPath ? `${currentPath}/${part}` : part;
       const isFile = i === parts.length - 1;

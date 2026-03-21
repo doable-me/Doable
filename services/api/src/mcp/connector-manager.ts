@@ -1,0 +1,253 @@
+import type { McpConnectorConfig, McpToolDefinition, ResolvedMcpTool } from "./types.js";
+import { McpClient } from "./client.js";
+import { createTransport } from "./transport.js";
+
+interface ConnectorEntry {
+  config: McpConnectorConfig;
+  client: McpClient;
+  tools: McpToolDefinition[];
+  lastUsed: number;
+  connectRetries: number;
+}
+
+/**
+ * Manages MCP connector lifecycle: lazy connect, pooling, reconnection, eviction.
+ */
+export class ConnectorManager {
+  private connections = new Map<string, ConnectorEntry>();
+  private readonly maxConnections: number;
+  private readonly idleTimeoutMs: number;
+  private evictionTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(opts?: { maxConnections?: number; idleTimeoutMs?: number }) {
+    this.maxConnections = opts?.maxConnections ?? 50;
+    this.idleTimeoutMs = opts?.idleTimeoutMs ?? 30 * 60 * 1000; // 30 minutes
+
+    // Run eviction check every 5 minutes
+    this.evictionTimer = setInterval(() => this.evictIdle(), 5 * 60 * 1000);
+  }
+
+  /**
+   * Get or create a connection to an MCP server.
+   * Lazy connects on first use.
+   */
+  async getClient(config: McpConnectorConfig): Promise<McpClient> {
+    const existing = this.connections.get(config.id);
+    if (existing?.client.isReady()) {
+      existing.lastUsed = Date.now();
+      return existing.client;
+    }
+
+    // Evict LRU if at capacity
+    if (this.connections.size >= this.maxConnections) {
+      this.evictLRU();
+    }
+
+    return this.connect(config);
+  }
+
+  /**
+   * Get the tools discovered from a connector.
+   * Connects if needed, caches the tool list.
+   */
+  async getTools(config: McpConnectorConfig): Promise<McpToolDefinition[]> {
+    const entry = this.connections.get(config.id);
+    if (entry?.tools.length) {
+      entry.lastUsed = Date.now();
+      return entry.tools;
+    }
+
+    const client = await this.getClient(config);
+    const tools = await client.listTools();
+
+    const existing = this.connections.get(config.id);
+    if (existing) {
+      existing.tools = tools;
+    }
+
+    return tools;
+  }
+
+  /**
+   * Resolve all effective MCP tools for a given scope.
+   * Merges tools from workspace + project + user connectors.
+   */
+  async getEffectiveTools(
+    connectors: McpConnectorConfig[],
+  ): Promise<ResolvedMcpTool[]> {
+    const resolved: ResolvedMcpTool[] = [];
+
+    // Process connectors, collecting tools from each
+    const results = await Promise.allSettled(
+      connectors
+        .filter((c) => c.status === "active")
+        .map(async (connector) => {
+          try {
+            const tools = await this.getTools(connector);
+            return tools.map((tool) => ({
+              connectorId: connector.id,
+              connectorName: connector.name,
+              tool,
+            }));
+          } catch (err) {
+            console.warn(
+              `[ConnectorManager] Failed to get tools from ${connector.name}:`,
+              err instanceof Error ? err.message : err,
+            );
+            return [];
+          }
+        }),
+    );
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        resolved.push(...result.value);
+      }
+    }
+
+    return resolved;
+  }
+
+  /**
+   * Test a connector — try to connect and list tools.
+   */
+  async testConnection(config: McpConnectorConfig): Promise<{
+    success: boolean;
+    tools?: McpToolDefinition[];
+    error?: string;
+  }> {
+    try {
+      const client = await this.connect(config);
+      const tools = await client.listTools();
+      return { success: true, tools };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  /**
+   * Disconnect a specific connector.
+   */
+  async disconnect(connectorId: string): Promise<void> {
+    const entry = this.connections.get(connectorId);
+    if (entry) {
+      await entry.client.disconnect();
+      this.connections.delete(connectorId);
+    }
+  }
+
+  /**
+   * Graceful shutdown — disconnect all connectors.
+   */
+  async shutdown(): Promise<void> {
+    if (this.evictionTimer) {
+      clearInterval(this.evictionTimer);
+      this.evictionTimer = null;
+    }
+
+    const disconnects = Array.from(this.connections.entries()).map(
+      async ([id, entry]) => {
+        try {
+          await entry.client.disconnect();
+        } catch (err) {
+          console.warn(`[ConnectorManager] Error disconnecting ${id}:`, err);
+        }
+      },
+    );
+
+    await Promise.allSettled(disconnects);
+    this.connections.clear();
+    console.log("[ConnectorManager] All connections closed");
+  }
+
+  /** Number of active connections */
+  get activeCount(): number {
+    return this.connections.size;
+  }
+
+  // ── Private ──
+
+  private async connect(config: McpConnectorConfig): Promise<McpClient> {
+    const headers: Record<string, string> = {};
+    // Auth headers would be decrypted and added here based on config.authType
+
+    const transport = createTransport(config.transportType, {
+      serverUrl: config.serverUrl,
+      serverCommand: config.serverCommand,
+      serverArgs: config.serverArgs,
+      headers,
+    });
+
+    const client = new McpClient(transport);
+
+    try {
+      const capabilities = await client.initialize();
+
+      this.connections.set(config.id, {
+        config,
+        client,
+        tools: [],
+        lastUsed: Date.now(),
+        connectRetries: 0,
+      });
+
+      console.log(
+        `[ConnectorManager] Connected to ${config.name} (${config.transportType})`,
+        capabilities,
+      );
+
+      return client;
+    } catch (err) {
+      // Track retry count for exponential backoff
+      const entry = this.connections.get(config.id);
+      const retries = (entry?.connectRetries ?? 0) + 1;
+
+      console.error(
+        `[ConnectorManager] Failed to connect to ${config.name} (attempt ${retries}):`,
+        err instanceof Error ? err.message : err,
+      );
+
+      throw err;
+    }
+  }
+
+  private evictIdle(): void {
+    const now = Date.now();
+    for (const [id, entry] of this.connections) {
+      if (now - entry.lastUsed > this.idleTimeoutMs) {
+        console.log(`[ConnectorManager] Evicting idle connection: ${entry.config.name}`);
+        entry.client.disconnect().catch(() => {});
+        this.connections.delete(id);
+      }
+    }
+  }
+
+  private evictLRU(): void {
+    let oldest: { id: string; lastUsed: number } | null = null;
+    for (const [id, entry] of this.connections) {
+      if (!oldest || entry.lastUsed < oldest.lastUsed) {
+        oldest = { id, lastUsed: entry.lastUsed };
+      }
+    }
+    if (oldest) {
+      const entry = this.connections.get(oldest.id);
+      console.log(`[ConnectorManager] Evicting LRU connection: ${entry?.config.name}`);
+      entry?.client.disconnect().catch(() => {});
+      this.connections.delete(oldest.id);
+    }
+  }
+}
+
+// ─── Singleton ──────────────────────────────────────────
+
+let _manager: ConnectorManager | null = null;
+
+export function getConnectorManager(): ConnectorManager {
+  if (!_manager) {
+    _manager = new ConnectorManager();
+  }
+  return _manager;
+}

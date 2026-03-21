@@ -1,32 +1,5 @@
 import type postgres from "postgres";
-
-export interface DeploymentRow {
-  id: string;
-  project_id: string;
-  environment: string;
-  status: string;
-  url: string | null;
-  build_log: string | null;
-  error_message: string | null;
-  version_number: number | null;
-  adapter: string;
-  deployed_by: string;
-  build_time_ms: number | null;
-  deploy_time_ms: number | null;
-  started_at: Date | null;
-  completed_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface DeploymentArtifactRow {
-  id: string;
-  deployment_id: string;
-  file_path: string;
-  file_size: number;
-  content_hash: string | null;
-  created_at: Date;
-}
+import type { DeploymentRow, DeploymentArtifactRow } from "../types.js";
 
 export function deploymentQueries(sql: postgres.Sql) {
   return {

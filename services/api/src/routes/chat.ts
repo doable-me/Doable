@@ -6,6 +6,7 @@ import { sql } from "../db/index.js";
 import {
   getCopilotEngine,
   createDoableTools,
+  createAllTools,
   type ByokProviderConfig,
   type CopilotEngine,
 } from "../ai/providers/copilot.js";
@@ -208,20 +209,33 @@ async function buildProjectContext(projectId: string): Promise<string> {
  */
 async function buildProjectContextForMode(
   projectId: string,
-  mode: "agent" | "plan" | "chat" | "visual-edit"
+  mode: "agent" | "plan" | "chat" | "visual-edit",
+  workspaceId?: string,
+  userId?: string,
 ): Promise<string> {
   let context = "";
 
   // Map visual-edit to agent mode for context purposes
   const contextMode = mode === "visual-edit" ? "agent" : mode;
 
-  // ── .doable/ context files ──
+  // ── .doable/ context files (multi-scope if workspace/user available) ──
   try {
-    const contextFiles = await ctxManager.initializeContext(projectId);
-    if (contextFiles.length > 0) {
-      const contextPrompt = buildContextPrompt(contextFiles, contextMode);
+    if (workspaceId && userId) {
+      // Multi-scope: workspace > project > user
+      const contextPrompt = await ctxManager.resolveEffectiveContext(
+        workspaceId, projectId, userId, contextMode,
+      );
       if (contextPrompt) {
         context += `\n\n${contextPrompt}`;
+      }
+    } else {
+      // Fallback: project-scoped only
+      const contextFiles = await ctxManager.initializeContext(projectId);
+      if (contextFiles.length > 0) {
+        const contextPrompt = buildContextPrompt(contextFiles, contextMode);
+        if (contextPrompt) {
+          context += `\n\n${contextPrompt}`;
+        }
       }
     }
   } catch (err) {
@@ -311,11 +325,11 @@ function extractViteErrorOverlay(html: string): string | null {
   ) {
     // Try to extract the error message from the overlay
     const preMatch = html.match(/<pre[^>]*class="message"[^>]*>([\s\S]*?)<\/pre>/);
-    if (preMatch) return preMatch[1].trim().slice(0, 800);
+    if (preMatch) return preMatch[1]!.trim().slice(0, 800);
 
     // Try extracting from err-message or similar divs
     const errMatch = html.match(/class="err-message"[^>]*>([\s\S]*?)<\//);
-    if (errMatch) return errMatch[1].trim().slice(0, 800);
+    if (errMatch) return errMatch[1]!.trim().slice(0, 800);
 
     // Fallback: strip tags and return a portion
     const clean = html
@@ -562,10 +576,17 @@ chatRoutes.post(
       // Visual-edit mode uses a separate session key so it doesn't
       // pollute the main chat context with element-level edits.
       const sessionKey = mode === "visual-edit" ? `${projectId}:visual-edit` : projectId;
+      // Look up workspace for multi-scope context + MCP tools
+      let workspaceId: string | undefined;
+      try {
+        const [proj] = await sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`;
+        workspaceId = proj?.workspace_id;
+      } catch { /* ignore */ }
+
       let sessionId = projectSessions.get(sessionKey);
       if (!sessionId) {
         const previewUrl = getDevServerUrl(projectId);
-        const projectContext = await buildProjectContextForMode(projectId, mode);
+        const projectContext = await buildProjectContextForMode(projectId, mode, workspaceId, userId);
 
         const systemPrompt =
           mode === "plan"
@@ -665,7 +686,7 @@ ERROR RECOVERY — if you encounter errors:
           provider: resolvedProvider,
           workingDirectory: projectPath,
           systemPrompt,
-          tools: createDoableTools(projectId),
+          tools: await createAllTools(projectId, workspaceId, userId),
         });
         projectSessions.set(sessionKey, sessionId);
       }
@@ -1429,43 +1450,210 @@ interface SSEEvent {
   data: unknown;
 }
 
-/** Generate a human-friendly message for a tool operation */
+/** Pretty-print a filename for creators (strip directory noise, keep readable) */
+function prettyFileName(filePath?: string): string {
+  if (!filePath) return "";
+  const name = filePath.split("/").pop() ?? filePath;
+  // Make component names more readable: "ProductCard.tsx" → "ProductCard"
+  return name.replace(/\.(tsx?|jsx?|css|json|md|html)$/, "");
+}
+
+/** Describe what part of the project a path relates to */
+function describeFileContext(filePath?: string): string {
+  if (!filePath) return "";
+  const lower = filePath.toLowerCase();
+  if (lower.includes("/pages/") || lower.includes("/app/")) return "page";
+  if (lower.includes("/components/ui/")) return "UI element";
+  if (lower.includes("/components/")) return "component";
+  if (lower.includes("/hooks/")) return "feature";
+  if (lower.includes("/lib/") || lower.includes("/utils/")) return "utility";
+  if (lower.includes("/styles/") || lower.endsWith(".css")) return "styles";
+  if (lower.includes("layout")) return "layout";
+  if (lower.includes("config") || lower.includes("vite.config") || lower.includes("tailwind")) return "configuration";
+  if (lower.endsWith(".json")) return "configuration";
+  if (lower.endsWith(".md")) return "documentation";
+  return "file";
+}
+
+/** Generate a creator-friendly message for a tool operation (shown in real-time) */
 function friendlyToolMessage(
   toolName: string,
   args?: Record<string, unknown>,
 ): string {
-  const fileName = (args?.path ?? args?.filePath ?? args?.file) as string | undefined;
-  const shortName = fileName?.split("/").pop() ?? "";
+  const filePath = (args?.path ?? args?.filePath ?? args?.file) as string | undefined;
+  const pretty = prettyFileName(filePath);
+  const context = describeFileContext(filePath);
   const lower = toolName.toLowerCase();
 
   if (lower.includes("create") || lower.includes("write")) {
-    return shortName ? `Creating ${shortName}` : "Creating a new file";
+    if (pretty) return `Building your ${context} \u2014 ${pretty}`;
+    return "Crafting something new for your project";
   }
   if (lower.includes("edit") || lower.includes("update") || lower.includes("patch")) {
-    return shortName ? `Updating ${shortName}` : "Updating a file";
+    if (pretty) return `Refining ${pretty}`;
+    return "Polishing your design";
   }
   if (lower.includes("read")) {
-    return shortName ? `Reading ${shortName}` : "Reading a file";
+    if (pretty) return `Reviewing ${pretty}`;
+    return "Studying your project";
   }
   if (lower.includes("list")) {
-    return "Scanning project structure";
+    return "Exploring your project";
+  }
+  if (lower.includes("search")) {
+    const pattern = args?.pattern as string | undefined;
+    if (pattern) return `Searching for "${pattern}"`;
+    return "Searching through your project";
   }
   if (lower.includes("install") || lower.includes("package")) {
-    const pkgs = (args?.packages ?? args?.name) as string | undefined;
-    if (pkgs) {
-      const first = pkgs.split(/\s+/)[0] ?? pkgs;
-      return `Installing ${first}`;
+    const pkgs = args?.packages as string[] | undefined;
+    if (pkgs && pkgs.length > 0) {
+      const names = pkgs.slice(0, 2).join(" & ");
+      return `Adding ${names} to your toolkit`;
     }
-    return "Installing packages";
+    return "Adding new capabilities";
+  }
+  if (lower.includes("build")) {
+    return "Preparing your app for the world";
   }
   if (lower.includes("delete") || lower.includes("remove")) {
-    return shortName ? `Removing ${shortName}` : "Removing a file";
+    if (pretty) return `Cleaning up ${pretty}`;
+    return "Tidying your project";
   }
   if (lower.includes("deploy")) {
-    return "Deploying preview";
+    return "Publishing your creation";
   }
-  // Filter out technical jargon
+  // Fallback: humanize the tool name
   return toolName.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Generate a creator-friendly result message for a completed tool operation.
+ * Strips server paths and technical details, keeps it engaging.
+ */
+function friendlyToolResult(
+  toolName: string,
+  result?: unknown,
+  success?: unknown,
+): string {
+  const lower = (toolName ?? "").toLowerCase();
+  const ok = success !== false;
+
+  if (!ok) {
+    if (lower.includes("build")) return "Build ran into an issue \u2014 working on a fix";
+    if (lower.includes("install")) return "Had trouble adding that package";
+    return "Hit a snag \u2014 figuring it out";
+  }
+
+  if (lower.includes("create") || lower.includes("write")) return "Added to your project";
+  if (lower.includes("edit") || lower.includes("update") || lower.includes("patch")) return "Changes applied";
+  if (lower.includes("read")) return "Got it";
+  if (lower.includes("list")) return "Project mapped out";
+  if (lower.includes("search")) return "Search complete";
+  if (lower.includes("install") || lower.includes("package")) return "Ready to use";
+  if (lower.includes("build")) return "Build complete";
+  if (lower.includes("delete") || lower.includes("remove")) return "Cleaned up";
+  if (lower.includes("deploy")) return "Live and ready";
+
+  return ok ? "Done" : "Issue encountered";
+}
+
+/**
+ * Strip absolute server paths and humanize technical jargon
+ * so the chat feels natural for creators, producers, and designers.
+ *
+ * Runs on every text token streamed to the frontend — must be fast.
+ */
+
+// Pre-compiled patterns for jargon replacement (word-boundary safe).
+// Order matters: longer/more-specific phrases first to avoid partial matches.
+const JARGON_MAP: Array<[RegExp, string]> = [
+  // ── Database / SQL ───────────────────────────────────────
+  [/\bSQL\s+migration(?:s)?\b/gi, "database update"],
+  [/\bSQL\s+schema\b/gi, "data structure"],
+  [/\bSQL\s+quer(?:y|ies)\b/gi, "data request"],
+  [/\bSQL\s+table(?:s)?\b/gi, "data table"],
+  [/\bSQL\s+column(?:s)?\b/gi, "data field"],
+  [/\brun(?:ning)?\s+(?:the\s+)?migration(?:s)?\b/gi, "updating the database"],
+  [/\bmigration\s+file(?:s)?\b/gi, "database update"],
+  [/\bschema\s+migration(?:s)?\b/gi, "database update"],
+  [/\bRow[- ]Level\s+Security\b/gi, "data protection rules"],
+  [/\bRLS\s+polic(?:y|ies)\b/gi, "data protection rules"],
+  [/\bforeign\s+keys\b/gi, "data links"],
+  [/\bforeign\s+key\b/gi, "data link"],
+  [/\bprimary\s+key\b/gi, "unique identifier"],
+  [/\bPostgreSQL\s+database\b/gi, "database"],
+  [/\bPostgres\s+database\b/gi, "database"],
+  [/\bPostgreSQL\b/gi, "database"],
+  [/\bPostgres\b/gi, "database"],
+  [/\bSQL\b/g, "database"],
+  [/\bCRUD\b/g, "create, read, update, delete"],
+
+  // ── Build & tooling ─────────────────────────────────────
+  [/\bVite\s+build\b/gi, "app build"],
+  [/\bVite\s+dev\s+server\b/gi, "live preview server"],
+  [/\bnpx\s+vite\b/gi, "build tool"],
+  [/\bnode_modules\b/g, "dependencies"],
+  [/\bpackage\.json\b/g, "project configuration"],
+  [/\btsconfig\.json\b/g, "project settings"],
+  [/\btailwind\.config\b/g, "style settings"],
+  [/\bvite\.config\b/g, "build settings"],
+  [/\bdevDependenc(?:y|ies)\b/gi, "development tools"],
+  [/\b(?:run\s+)?npm\s+install\b/gi, "install packages"],
+  [/\b(?:run\s+)?pnpm\s+add\b/gi, "install packages"],
+  [/\b(?:run\s+)?yarn\s+add\b/gi, "install packages"],
+
+  // ── Auth / security jargon ──────────────────────────────
+  [/\bJWT\s+token(?:s)?\b/gi, "login session"],
+  [/\bJWT\b/g, "authentication"],
+  [/\bOAuth\s+2\.0\b/gi, "secure sign-in"],
+  [/\bOAuth\b/gi, "secure sign-in"],
+  [/\bBearer\s+token\b/gi, "access token"],
+  [/\bCORS\s+(?:policy|config(?:uration)?|headers?)\b/gi, "security settings"],
+  [/\bCORS\b/g, "cross-origin security"],
+  [/\bmiddleware\b/gi, "security layer"],
+
+  // ── API / networking ────────────────────────────────────
+  [/\bAPI\s+endpoints\b/gi, "connection points"],
+  [/\bAPI\s+endpoint\b/gi, "connection point"],
+  [/\bREST\s+API\b/gi, "web service"],
+  [/\bGraphQL\b/gi, "data query layer"],
+  [/\bedge\s+functions\b/gi, "server functions"],
+  [/\bedge\s+function\b/gi, "server function"],
+  [/\bserverless\s+functions\b/gi, "server functions"],
+  [/\bserverless\s+function\b/gi, "server function"],
+  [/\bwebhooks\b/gi, "automated notifications"],
+  [/\bwebhook\b/gi, "automated notification"],
+
+  // ── Code structure (use lookaround for dotted extensions) ─
+  [/\.tsx\s+files\b/gi, "components"],
+  [/\.tsx\s+file\b/gi, "component"],
+  [/\.ts\s+files\b/gi, "modules"],
+  [/\.ts\s+file\b/gi, "module"],
+  [/\.css\s+files\b/gi, "stylesheets"],
+  [/\.css\s+file\b/gi, "stylesheet"],
+  [/\.jsx\s+files\b/gi, "components"],
+  [/\.jsx\s+file\b/gi, "component"],
+];
+
+function sanitizeText(text: string): string {
+  if (!text) return text;
+
+  let result = text;
+
+  // 1. Strip absolute server paths
+  //    e.g. /home/user/doable/projects/abc-123-def/src/App.tsx → src/App.tsx
+  result = result.replace(
+    /(?:[A-Za-z]:)?(?:[\\/][^\s:,)"']+)?[\\/]projects[\\/][a-f0-9-]+[\\/]/gi,
+    "",
+  );
+
+  // 2. Humanize technical jargon
+  for (const [pattern, replacement] of JARGON_MAP) {
+    result = result.replace(pattern, replacement);
+  }
+
+  return result;
 }
 
 function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
@@ -1478,7 +1666,7 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
       // SDK streaming: { deltaContent: "token" } — this is the real streaming event
       const delta = (data?.deltaContent ?? "") as string;
       if (!delta) return null;
-      return { type: "text_delta", data: delta };
+      return { type: "text_delta", data: sanitizeText(delta) };
     }
 
     // ─── Final complete message (sent after streaming ends) ─
@@ -1489,8 +1677,10 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
       return null;
 
     // ─── Legacy / direct provider text events ─────────────
-    case "text_delta":
-      return { type: "text_delta", data: data?.content ?? data ?? "" };
+    case "text_delta": {
+      const raw = (data?.content ?? data ?? "") as string;
+      return { type: "text_delta", data: sanitizeText(String(raw)) };
+    }
 
     // ─── Streaming reasoning deltas (token-by-token thinking) ──
     case "assistant.reasoning_delta": {
@@ -1513,11 +1703,15 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     case "tool.execution_start": {
       const toolName = (data?.toolName ?? data?.name) as string | undefined;
       const toolArgs = data?.arguments as Record<string, unknown> | undefined;
+      // Strip file paths from arguments before sending to frontend
+      const safeArgs = toolArgs ? { ...toolArgs } : undefined;
+      if (safeArgs) {
+        delete safeArgs.content; // Never send full file content to chat
+      }
       return {
         type: "tool_call",
         data: {
           name: toolName,
-          arguments: toolArgs,
           friendlyMessage: toolName ? friendlyToolMessage(toolName, toolArgs) : undefined,
         },
       };
@@ -1527,15 +1721,17 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
 
     // ─── Tool results (completed) ─────────────────────────
     case "tool.completed":
-    case "tool.execution_complete":
+    case "tool.execution_complete": {
+      const resultToolName = (data?.toolName ?? data?.name) as string;
       return {
         type: "tool_result",
         data: {
-          name: data?.toolName ?? data?.name,
-          result: data?.result,
+          name: resultToolName,
           success: data?.success,
+          friendlyMessage: friendlyToolResult(resultToolName, data?.result, data?.success),
         },
       };
+    }
     case "external_tool.completed":
       return null; // Skip — duplicate of tool.execution_complete
 
@@ -1543,7 +1739,7 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     case "session.error":
       return {
         type: "error",
-        data: data?.message ?? "Unknown error",
+        data: sanitizeText(String(data?.message ?? "Unknown error")),
       };
 
     // ─── Done ─────────────────────────────────────────────

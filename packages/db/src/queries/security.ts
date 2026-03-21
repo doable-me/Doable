@@ -108,9 +108,9 @@ export function securityQueries(sql: postgres.Sql) {
         code_snippet: f.codeSnippet ?? null,
         fix_suggestion: f.fixSuggestion ?? null,
       }));
-      return sql<SecurityFindingRow[]>`
+      return await sql<SecurityFindingRow[]>`
         INSERT INTO security_findings ${sql(
-          rows,
+          rows as readonly Record<string, unknown>[],
           "scan_id",
           "severity",
           "category",

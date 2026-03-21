@@ -148,14 +148,15 @@ export class CopilotEngine {
       ...(config.provider ? { provider: config.provider } : {}),
       ...(config.tools ? { tools: config.tools } : {}),
       ...(config.systemPrompt
-        ? { systemMessage: { type: "replace" as const, content: config.systemPrompt } }
+        ? { systemMessage: { mode: "replace" as const, content: config.systemPrompt } }
         : {}),
       ...(config.onUserInput
         ? {
-            onUserInputRequest: async (request) => ({
+            onUserInputRequest: async (request: { question: string }) => ({
               answer: await config.onUserInput!(
-                (request as Record<string, string>).question ?? "Please provide input",
+                request.question ?? "Please provide input",
               ),
+              wasFreeform: true,
             }),
           }
         : {}),
@@ -323,7 +324,7 @@ export class CopilotEngine {
     await session.setModel(model);
   }
 
-  private ensureClient(): asserts this is { client: CopilotClient } {
+  private ensureClient(): void {
     if (!this.client) {
       throw new Error(
         "CopilotEngine not started. Call start() first.",
@@ -565,6 +566,85 @@ export function createDoableTools(projectId: string): Tool[] {
       },
     }),
   ] as Tool[]);
+}
+
+// ─── MCP Tool Integration ────────────────────────────────
+
+import { getConnectorManager } from "../../mcp/connector-manager.js";
+import { createMcpTools } from "../../mcp/tool-bridge.js";
+import type { McpConnectorConfig } from "../../mcp/types.js";
+import { connectorQueries } from "@doable/db";
+
+/**
+ * Create all tools (built-in + MCP) for a Copilot session.
+ * MCP failures are logged but don't block built-in tools.
+ */
+export async function createAllTools(
+  projectId: string,
+  workspaceId?: string,
+  userId?: string,
+): Promise<Tool[]> {
+  const builtinTools = createDoableTools(projectId);
+
+  if (!workspaceId) return builtinTools;
+
+  try {
+    const { sql } = await import("../../db/index.js");
+    const connectors = connectorQueries(sql);
+    const manager = getConnectorManager();
+
+    // Get effective connectors for this scope
+    const connectorRows = await connectors.getEffectiveConnectors(
+      workspaceId,
+      projectId,
+      userId,
+    );
+
+    if (connectorRows.length === 0) return builtinTools;
+
+    // Convert DB rows to runtime configs
+    const configs = new Map<string, McpConnectorConfig>();
+    for (const row of connectorRows) {
+      const config: McpConnectorConfig = {
+        id: row.id,
+        workspaceId: row.workspace_id,
+        projectId: row.project_id ?? undefined,
+        scope: row.scope,
+        name: row.name,
+        description: row.description ?? undefined,
+        transportType: row.transport_type,
+        serverUrl: row.server_url ?? undefined,
+        serverCommand: row.server_command ?? undefined,
+        serverArgs: row.server_args ?? [],
+        authType: row.auth_type,
+        status: row.status as McpConnectorConfig["status"],
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+      configs.set(row.id, config);
+    }
+
+    // Resolve tools from all active connectors
+    const resolvedTools = await manager.getEffectiveTools(
+      Array.from(configs.values()),
+    );
+
+    if (resolvedTools.length === 0) return builtinTools;
+
+    const mcpTools = createMcpTools(resolvedTools, manager, configs);
+    console.log(
+      `[CopilotEngine] Loaded ${mcpTools.length} MCP tools from ${configs.size} connectors`,
+    );
+
+    return [...builtinTools, ...mcpTools];
+  } catch (err) {
+    console.warn(
+      "[CopilotEngine] MCP tool loading failed, using built-in tools only:",
+      err instanceof Error ? err.message : err,
+    );
+    return builtinTools;
+  }
 }
 
 // ─── Singleton ──────────────────────────────────────────

@@ -85,8 +85,8 @@ export function templateQueries(sql: postgres.Sql) {
           ${data.name},
           ${data.description ?? null},
           ${data.category ?? null},
-          ${data.codeFiles ? sql.json(data.codeFiles) : null},
-          ${data.doableContext ? sql.json(data.doableContext) : null},
+          ${data.codeFiles ? sql.json(data.codeFiles as postgres.JSONValue) : null},
+          ${data.doableContext ? sql.json(data.doableContext as postgres.JSONValue) : null},
           ${data.previewImageUrl ?? null},
           false,
           ${data.createdBy}

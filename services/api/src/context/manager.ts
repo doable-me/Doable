@@ -176,5 +176,71 @@ export function contextManager(sql: postgres.Sql) {
       const files = await this.initializeContext(projectId);
       return buildContextPrompt(files, mode);
     },
+
+    // ── Workspace context ──
+    async getWorkspaceContext(workspaceId: string): Promise<ContextFile[]> {
+      const rows = await sql<ContextFile[]>`
+        SELECT filename, content, updated_at AS "updatedAt"
+        FROM workspace_context_files
+        WHERE workspace_id = ${workspaceId}
+        ORDER BY filename
+      `;
+      return rows;
+    },
+
+    async setWorkspaceContext(workspaceId: string, filename: string, content: string): Promise<ContextFile> {
+      const [row] = await sql<ContextFile[]>`
+        INSERT INTO workspace_context_files (workspace_id, filename, content)
+        VALUES (${workspaceId}, ${filename}, ${content})
+        ON CONFLICT (workspace_id, filename)
+        DO UPDATE SET content = ${content}, updated_at = now()
+        RETURNING filename, content, updated_at AS "updatedAt"
+      `;
+      return row!;
+    },
+
+    // ── User context ──
+    async getUserContext(userId: string, workspaceId: string): Promise<ContextFile[]> {
+      const rows = await sql<ContextFile[]>`
+        SELECT filename, content, updated_at AS "updatedAt"
+        FROM user_context_files
+        WHERE user_id = ${userId} AND workspace_id = ${workspaceId}
+        ORDER BY filename
+      `;
+      return rows;
+    },
+
+    async setUserContext(userId: string, workspaceId: string, filename: string, content: string): Promise<ContextFile> {
+      const [row] = await sql<ContextFile[]>`
+        INSERT INTO user_context_files (user_id, workspace_id, filename, content)
+        VALUES (${userId}, ${workspaceId}, ${filename}, ${content})
+        ON CONFLICT (user_id, workspace_id, filename)
+        DO UPDATE SET content = ${content}, updated_at = now()
+        RETURNING filename, content, updated_at AS "updatedAt"
+      `;
+      return row!;
+    },
+
+    /**
+     * Resolve effective context across all scopes.
+     * Priority: user > project > workspace.
+     */
+    async resolveEffectiveContext(
+      workspaceId: string,
+      projectId: string,
+      userId: string,
+      mode: AiSessionMode,
+    ): Promise<string> {
+      const { buildContextPrompt, resolveMultiScopeContext } = await import("./injector.js");
+
+      const [workspaceFiles, projectFiles, userFiles] = await Promise.all([
+        this.getWorkspaceContext(workspaceId),
+        this.initializeContext(projectId),
+        this.getUserContext(userId, workspaceId),
+      ]);
+
+      const resolved = resolveMultiScopeContext(workspaceFiles, projectFiles, userFiles);
+      return buildContextPrompt(resolved, mode);
+    },
   };
 }

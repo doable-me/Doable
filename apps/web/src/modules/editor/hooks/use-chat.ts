@@ -126,12 +126,18 @@ export function useChat(projectId: string | null) {
                     liveStatus: "thinking",
                   });
                 } else if (parsed.type === "tool_call") {
+                  const friendly =
+                    parsed.data?.friendlyMessage ??
+                    parsed.data?.name ??
+                    "Working on it";
                   updateMessageFields(assistantId, {
-                    liveStatus: "tool_call",
+                    liveStatus: `tool_call:${friendly}`,
                   });
                 } else if (parsed.type === "tool_result") {
+                  const friendly =
+                    parsed.data?.friendlyMessage ?? "Done";
                   updateMessageFields(assistantId, {
-                    liveStatus: "tool_result",
+                    liveStatus: `tool_result:${friendly}`,
                   });
                 } else if (parsed.type === "status") {
                   const status = typeof parsed.data === "string" ? parsed.data : "";

@@ -14,6 +14,13 @@ import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+// Puppeteer evaluate callbacks run in the browser context where `document` exists.
+// Declare it here since the API tsconfig does not include the DOM lib.
+declare const document: {
+  querySelector(selectors: string): unknown;
+  body?: { innerText: string; children: { length: number } };
+};
+
 const THUMBNAILS_DIR = path.resolve("thumbnails");
 const VIEWPORT = { width: 1280, height: 720 };
 

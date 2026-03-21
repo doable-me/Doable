@@ -81,6 +81,6 @@ export async function readContextFile(
   try {
     return await readProjectFile(projectId, filePath);
   } catch {
-    return CONTEXT_DEFAULTS[fileName];
+    return CONTEXT_DEFAULTS[fileName] ?? "";
   }
 }

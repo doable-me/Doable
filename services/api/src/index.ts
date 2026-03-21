@@ -14,7 +14,7 @@ import { editorRoutes } from "./routes/editor.js";
 import { chatRoutes } from "./routes/chat.js";
 import { billingRoutes } from "./routes/billing.js";
 import { deployRoutes } from "./routes/deploy.js";
-import { contextRoutes } from "./routes/context.js";
+import { contextRoutes, workspaceContextRoutes } from "./routes/context.js";
 import { templateRoutes } from "./routes/templates.js";
 import { versionRoutes } from "./routes/versions.js";
 import { githubRoutes } from "./routes/github.js";
@@ -27,9 +27,12 @@ import { aiSettingsRoutes } from "./routes/ai-settings.js";
 import { adminRoutes } from "./routes/admin.js";
 import { securityRoutes } from "./routes/security.js";
 import { communityRoutes } from "./routes/community.js";
+import { connectorRoutes } from "./routes/connectors.js";
+import { skillsRoutes } from "./routes/skills.js";
 import { teamChatRoutes } from "./routes/team-chat.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
+import { getConnectorManager } from "./mcp/connector-manager.js";
 
 // ─── Visual Edit Bridge Script ───────────────────────────────
 // This script is loaded by preview iframes at /visual-edit-bridge.js
@@ -147,6 +150,9 @@ app.route("/analytics", analyticsRoutes);
 app.route("/admin", adminRoutes);
 app.route("/projects", securityRoutes);
 app.route("/community", communityRoutes);
+app.route("/workspaces", connectorRoutes);
+app.route("/workspaces", skillsRoutes);
+app.route("/workspaces/:wid/context", workspaceContextRoutes);
 app.route("/team-chat", teamChatRoutes);
 
 // ─── 404 Fallback ───────────────────────────────────────────
@@ -230,6 +236,17 @@ server.on("upgrade", (req, socket, head) => {
 
   proxyReq.on("error", () => socket.destroy());
   proxyReq.end();
+});
+
+// ─── Graceful Shutdown ──────────────────────────────────────
+process.on("SIGTERM", async () => {
+  console.log("[Server] SIGTERM received, shutting down...");
+  try {
+    await getConnectorManager().shutdown();
+  } catch (err) {
+    console.error("[Server] Error during MCP shutdown:", err);
+  }
+  process.exit(0);
 });
 
 export default app;
