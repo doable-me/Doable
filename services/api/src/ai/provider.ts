@@ -33,7 +33,7 @@ export class MockLLMProvider implements LLMProvider {
     _tools?: ToolDefinition[],
     _options?: LLMCompletionOptions,
   ): AsyncGenerator<StreamChunk> {
-    const lastMessage = messages.findLast((m) => m.role === "user");
+    const lastMessage = messages.findLast((m: ConversationMessage) => m.role === "user");
     const userContent = lastMessage?.content ?? "";
 
     // Check for matching response patterns

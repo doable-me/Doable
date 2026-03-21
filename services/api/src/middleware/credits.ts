@@ -69,8 +69,8 @@ export function requireCredits(minCredits: number = 1) {
 
       // Check if enterprise (unlimited)
       if (balance.plan_type === "enterprise") {
-        c.set("creditBalance" as never, balance);
-        c.set("creditWorkspaceId" as never, workspaceId);
+        c.set("creditBalance" as never, balance as never);
+        c.set("creditWorkspaceId" as never, workspaceId as never);
         await next();
         return;
       }
@@ -95,8 +95,8 @@ export function requireCredits(minCredits: number = 1) {
         );
       }
 
-      c.set("creditBalance" as never, balance);
-      c.set("creditWorkspaceId" as never, workspaceId);
+      c.set("creditBalance" as never, balance as never);
+      c.set("creditWorkspaceId" as never, workspaceId as never);
       await next();
     } catch (err) {
       console.error("[Credits] Failed to check credit balance:", err);

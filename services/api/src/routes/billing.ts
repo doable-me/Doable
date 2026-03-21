@@ -84,7 +84,8 @@ billingRoutes.post("/webhook", async (c) => {
       const workspaceId = sub.metadata?.workspaceId;
       if (!workspaceId) break;
 
-      const priceId = sub.items.data[0]?.price.id;
+      const firstItem = sub.items.data[0];
+      const priceId = firstItem?.price.id;
       const plan = PLANS.find(
         (p) =>
           p.stripePriceIdMonthly === priceId || p.stripePriceIdYearly === priceId
@@ -96,8 +97,8 @@ billingRoutes.post("/webhook", async (c) => {
         stripeSubscriptionId: sub.id,
         plan: plan?.id ?? "free",
         status: sub.status === "active" ? "active" : sub.status,
-        currentPeriodStart: new Date(sub.current_period_start * 1000),
-        currentPeriodEnd: new Date(sub.current_period_end * 1000),
+        currentPeriodStart: firstItem ? new Date(firstItem.current_period_start * 1000) : undefined,
+        currentPeriodEnd: firstItem ? new Date(firstItem.current_period_end * 1000) : undefined,
         cancelAt: sub.cancel_at ? new Date(sub.cancel_at * 1000) : null,
         canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
       });

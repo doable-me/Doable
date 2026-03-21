@@ -118,7 +118,8 @@ export function creditQueries(sql: postgres.Sql) {
       amount: number,
       metadata: ConsumeCreditsMetadata
     ): Promise<{ success: boolean; remaining: number }> {
-      return sql.begin(async (tx) => {
+      return sql.begin(async (_tx) => {
+        const tx = _tx as unknown as postgres.Sql;
         // Lock the row for update
         let [balance] = await tx<CreditBalanceRow[]>`
           SELECT * FROM credit_balances
@@ -152,6 +153,10 @@ export function creditQueries(sql: postgres.Sql) {
               FOR UPDATE
             `;
           }
+        }
+
+        if (!balance) {
+          return { success: false, remaining: 0 };
         }
 
         // Auto-reset daily if needed

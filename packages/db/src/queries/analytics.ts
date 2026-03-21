@@ -200,7 +200,7 @@ export function analyticsQueries(sql: postgres.Sql) {
           ${event.referrer ?? null}, ${event.userAgent ?? null}, ${event.deviceType ?? null},
           ${event.browser ?? null}, ${event.os ?? null}, ${event.country ?? null},
           ${event.screenWidth ?? null}, ${event.screenHeight ?? null}, ${event.duration ?? 0},
-          ${event.eventData ? sql.json(event.eventData) : null}
+          ${event.eventData ? sql.json(event.eventData as postgres.JSONValue) : null}
         )
       `;
     },

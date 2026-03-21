@@ -431,7 +431,7 @@ export const ALWAYS_INCLUDE_FILES = DEFAULT_CONTEXT_FILES
 export const CONTEXT_FILES_BY_CATEGORY = DEFAULT_CONTEXT_FILES.reduce(
   (acc, f) => {
     if (!acc[f.category]) acc[f.category] = [];
-    acc[f.category].push(f);
+    acc[f.category]!.push(f);
     return acc;
   },
   {} as Record<string, ContextFileDefinition[]>

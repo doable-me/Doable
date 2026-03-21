@@ -105,7 +105,6 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
       {
         data: {
           projectId,
-          projectPath: result.projectPath,
           files: result.files,
           previewUrl: devServer?.url ?? null,
           devServerPort: devServer?.port ?? null,
@@ -133,7 +132,6 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
       return c.json({
         data: {
           projectId,
-          projectPath: getProjectPath(projectId),
           files: [],
           previewUrl: devServer?.url ?? null,
           devServerPort: devServer?.port ?? null,
@@ -352,7 +350,7 @@ projectFileRoutes.post("/projects/:id/download", async (c) => {
     );
     c.header("Content-Length", String(zipBuffer.length));
 
-    return c.body(zipBuffer);
+    return c.body(zipBuffer as unknown as ArrayBuffer);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return c.json({ error: `Failed to create download: ${msg}` }, 500);

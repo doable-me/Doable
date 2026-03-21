@@ -43,7 +43,7 @@ function StatusDot({ status }: { status: Connector["status"] }) {
 
 // ─── Transport Badge ────────────────────────────────────────
 
-const TRANSPORT_LABELS: Record<Connector["transportType"], string> = {
+const TRANSPORT_LABELS: Record<Connector["transport_type"], string> = {
   streamable_http: "HTTP",
   http_sse: "SSE",
   stdio: "stdio",
@@ -124,7 +124,7 @@ function ConnectorCard({
           <p className="text-sm font-medium truncate">{connector.name}</p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="text-xs text-muted-foreground">
-              {TRANSPORT_LABELS[connector.transportType]}
+              {TRANSPORT_LABELS[connector.transport_type]}
             </span>
             <span className="text-xs text-muted-foreground/50">·</span>
             <span className="text-xs text-muted-foreground">
@@ -132,8 +132,8 @@ function ConnectorCard({
             </span>
             <span className="text-xs text-muted-foreground/50">·</span>
             <span className="text-xs text-muted-foreground">
-              {connector.tools.length} tool
-              {connector.tools.length !== 1 ? "s" : ""}
+              {((connector as any).tools ?? []).length} tool
+              {((connector as any).tools ?? []).length !== 1 ? "s" : ""}
             </span>
           </div>
         </div>
@@ -146,13 +146,13 @@ function ConnectorCard({
       {expanded && (
         <div className="border-t bg-muted/20">
           {/* Tools list */}
-          {connector.tools.length > 0 && (
+          {((connector as any).tools ?? []).length > 0 && (
             <div className="px-3 py-2 border-b">
               <p className="text-xs font-medium text-muted-foreground mb-1.5">
                 Available Tools
               </p>
               <div className="space-y-1">
-                {connector.tools.map((tool) => (
+                {((connector as any).tools ?? []).map((tool: { name: string; description?: string }) => (
                   <div
                     key={tool.name}
                     className="flex items-start gap-2 px-2 py-1 rounded-md bg-background"
@@ -174,7 +174,7 @@ function ConnectorCard({
             </div>
           )}
 
-          {connector.tools.length === 0 && (
+          {((connector as any).tools ?? []).length === 0 && (
             <div className="px-3 py-2 border-b">
               <p className="text-xs text-muted-foreground">
                 No tools discovered yet. Test the connection to discover
@@ -184,7 +184,7 @@ function ConnectorCard({
           )}
 
           {/* Status message */}
-          {connector.statusMessage && (
+          {connector.error_message && (
             <div
               className={cn(
                 "px-3 py-2 border-b text-xs flex items-center gap-1.5",
@@ -196,7 +196,7 @@ function ConnectorCard({
               {connector.status === "error" && (
                 <AlertCircle className="h-3 w-3 shrink-0" />
               )}
-              {connector.statusMessage}
+              {connector.error_message}
             </div>
           )}
 
@@ -386,7 +386,7 @@ export const ConnectorsPanel = ({ workspaceId }: ConnectorsPanelProps) => {
               {connectors.length !== 1 ? "s" : ""}
             </span>
             <span>
-              {connectors.reduce((sum, c) => sum + c.tools.length, 0)} total
+              {connectors.reduce((sum, c) => sum + ((c as any).tools ?? []).length, 0)} total
               tools
             </span>
           </div>

@@ -1,191 +1,124 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { apiFetch } from "@/lib/api";
 
 // ─── Types ──────────────────────────────────────────────────
 
 export interface Skill {
   id: string;
-  name: string;
-  content: string;
+  skill_name: string;
+  skill_content: string;
   scope: "workspace" | "project" | "user";
-  projectId?: string;
-  createdAt: string;
-  updatedAt: string;
+  project_id?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Rule {
   id: string;
-  name: string;
+  rule_name: string;
   content: string;
+  file_patterns: string[];
   scope: "workspace" | "project" | "user";
-  projectId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateSkillPayload {
-  name: string;
-  content: string;
-  scope: "workspace" | "project" | "user";
-  projectId?: string;
-}
-
-export interface CreateRulePayload {
-  name: string;
-  content: string;
-  scope: "workspace" | "project" | "user";
-  projectId?: string;
+  project_id?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Hook ───────────────────────────────────────────────────
 
-export function useSkills(
-  workspaceId: string,
-  projectId?: string,
-  apiBaseUrl = "/api"
-) {
+export function useSkills(workspaceId: string, projectId?: string) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    if (!workspaceId) return;
     setLoading(true);
     setError(null);
     try {
       const query = projectId ? `?projectId=${projectId}` : "";
-      const [skillsRes, rulesRes] = await Promise.all([
-        fetch(`${apiBaseUrl}/workspaces/${workspaceId}/skills${query}`, {
-          credentials: "include",
-        }),
-        fetch(`${apiBaseUrl}/workspaces/${workspaceId}/rules${query}`, {
-          credentials: "include",
-        }),
+      const [skillsJson, rulesJson] = await Promise.all([
+        apiFetch<{ data: Skill[] }>(`/workspaces/${workspaceId}/skills${query}`),
+        apiFetch<{ data: Rule[] }>(`/workspaces/${workspaceId}/rules${query}`),
       ]);
-      if (!skillsRes.ok) throw new Error("Failed to load skills");
-      if (!rulesRes.ok) throw new Error("Failed to load rules");
-      const skillsJson = (await skillsRes.json()) as { data: Skill[] };
-      const rulesJson = (await rulesRes.json()) as { data: Rule[] };
       setSkills(skillsJson.data);
       setRules(rulesJson.data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(err instanceof Error ? err.message : "Failed to load skills");
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, projectId, apiBaseUrl]);
+  }, [workspaceId, projectId]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  // ─── Skill CRUD ─────────────────────────────────────────
-
   const createSkill = useCallback(
-    async (payload: CreateSkillPayload) => {
-      const res = await fetch(
-        `${apiBaseUrl}/workspaces/${workspaceId}/skills`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(payload),
-        }
-      );
-      if (!res.ok) {
-        const json = (await res.json()) as { error?: string };
-        throw new Error(json.error ?? "Failed to create skill");
-      }
+    async (payload: { skillName: string; skillContent: string; scope: string; projectId?: string }) => {
+      await apiFetch(`/workspaces/${workspaceId}/skills`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
       await refresh();
     },
-    [workspaceId, apiBaseUrl, refresh]
+    [workspaceId, refresh]
   );
 
   const updateSkill = useCallback(
-    async (skillId: string, payload: Partial<CreateSkillPayload>) => {
-      const res = await fetch(
-        `${apiBaseUrl}/workspaces/${workspaceId}/skills/${skillId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(payload),
-        }
-      );
-      if (!res.ok) {
-        const json = (await res.json()) as { error?: string };
-        throw new Error(json.error ?? "Failed to update skill");
-      }
+    async (skillId: string, skillContent: string) => {
+      await apiFetch(`/workspaces/${workspaceId}/skills/${skillId}`, {
+        method: "PUT",
+        body: JSON.stringify({ skillContent }),
+      });
       await refresh();
     },
-    [workspaceId, apiBaseUrl, refresh]
+    [workspaceId, refresh]
   );
 
   const deleteSkill = useCallback(
     async (skillId: string) => {
-      const res = await fetch(
-        `${apiBaseUrl}/workspaces/${workspaceId}/skills/${skillId}`,
-        { method: "DELETE", credentials: "include" }
-      );
-      if (!res.ok) throw new Error("Failed to delete skill");
+      await apiFetch(`/workspaces/${workspaceId}/skills/${skillId}`, {
+        method: "DELETE",
+      });
       await refresh();
     },
-    [workspaceId, apiBaseUrl, refresh]
+    [workspaceId, refresh]
   );
 
-  // ─── Rule CRUD ──────────────────────────────────────────
-
   const createRule = useCallback(
-    async (payload: CreateRulePayload) => {
-      const res = await fetch(
-        `${apiBaseUrl}/workspaces/${workspaceId}/rules`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(payload),
-        }
-      );
-      if (!res.ok) {
-        const json = (await res.json()) as { error?: string };
-        throw new Error(json.error ?? "Failed to create rule");
-      }
+    async (payload: { ruleName: string; content: string; filePatterns: string[]; scope: string; projectId?: string }) => {
+      await apiFetch(`/workspaces/${workspaceId}/rules`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
       await refresh();
     },
-    [workspaceId, apiBaseUrl, refresh]
+    [workspaceId, refresh]
   );
 
   const updateRule = useCallback(
-    async (ruleId: string, payload: Partial<CreateRulePayload>) => {
-      const res = await fetch(
-        `${apiBaseUrl}/workspaces/${workspaceId}/rules/${ruleId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(payload),
-        }
-      );
-      if (!res.ok) {
-        const json = (await res.json()) as { error?: string };
-        throw new Error(json.error ?? "Failed to update rule");
-      }
+    async (ruleId: string, content: string, filePatterns?: string[]) => {
+      await apiFetch(`/workspaces/${workspaceId}/rules/${ruleId}`, {
+        method: "PUT",
+        body: JSON.stringify({ content, filePatterns }),
+      });
       await refresh();
     },
-    [workspaceId, apiBaseUrl, refresh]
+    [workspaceId, refresh]
   );
 
   const deleteRule = useCallback(
     async (ruleId: string) => {
-      const res = await fetch(
-        `${apiBaseUrl}/workspaces/${workspaceId}/rules/${ruleId}`,
-        { method: "DELETE", credentials: "include" }
-      );
-      if (!res.ok) throw new Error("Failed to delete rule");
+      await apiFetch(`/workspaces/${workspaceId}/rules/${ruleId}`, {
+        method: "DELETE",
+      });
       await refresh();
     },
-    [workspaceId, apiBaseUrl, refresh]
+    [workspaceId, refresh]
   );
 
   return {

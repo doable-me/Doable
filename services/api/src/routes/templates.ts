@@ -186,8 +186,8 @@ templateRoutes.post(
 
     return c.json({
       data: {
-        projectId: project.id,
         ...result,
+        projectId: project.id,
       },
     }, 201);
   }

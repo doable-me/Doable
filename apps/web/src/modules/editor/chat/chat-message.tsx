@@ -66,21 +66,37 @@ function CodeBlockCopyButton({ content }: { content: string }) {
 function StreamingStatus({ status }: { status?: string }) {
   if (!status) return null;
 
-  const icon = status === "thinking" ? (
+  // Parse status — format is "type:friendly message" or just "type"
+  const colonIdx = status.indexOf(":");
+  const statusType = colonIdx > 0 ? status.slice(0, colonIdx) : status;
+  const friendlyMsg = colonIdx > 0 ? status.slice(colonIdx + 1) : "";
+
+  const isThinking = statusType === "thinking";
+  const isToolCall = statusType === "tool_call";
+  const isToolResult = statusType === "tool_result";
+
+  const icon = isThinking ? (
     <Brain className="h-3 w-3 text-brand-400 animate-pulse" />
-  ) : status === "tool_call" || status === "tool_result" ? (
+  ) : isToolCall ? (
     <Wrench className="h-3 w-3 text-blue-400 animate-spin" />
+  ) : isToolResult ? (
+    <Check className="h-3 w-3 text-green-500" />
   ) : (
     <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
   );
 
-  const label = status === "thinking" ? "Thinking..." :
-    status === "tool_call" ? "Running tool..." :
-    status === "tool_result" ? "Processing result..." :
-    status;
+  const label = isThinking
+    ? "Thinking\u2026"
+    : isToolCall
+      ? friendlyMsg || "Working on it\u2026"
+      : isToolResult
+        ? friendlyMsg || "Done"
+        : status;
 
   return (
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
+    <div className={`flex items-center gap-1.5 text-xs mb-1.5 ${
+      isToolResult ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+    }`}>
       {icon}
       <span>{label}</span>
     </div>

@@ -53,9 +53,9 @@ export function chatQueries(sql: postgres.Sql) {
           ${data.sessionId},
           ${data.role},
           ${data.content},
-          ${data.toolCalls ? sql.json(data.toolCalls) : null},
+          ${data.toolCalls ? sql.json(data.toolCalls as postgres.JSONValue) : null},
           ${data.suggestions ? sql.json(data.suggestions) : null},
-          ${data.toolActions ? sql.json(data.toolActions) : null}
+          ${data.toolActions ? sql.json(data.toolActions as postgres.JSONValue) : null}
         )
         RETURNING *
       `;

@@ -324,11 +324,11 @@ function extractViteErrorOverlay(html: string): string | null {
   ) {
     // Try to extract the error message from the overlay
     const preMatch = html.match(/<pre[^>]*class="message"[^>]*>([\s\S]*?)<\/pre>/);
-    if (preMatch) return preMatch[1].trim().slice(0, 800);
+    if (preMatch) return preMatch[1]!.trim().slice(0, 800);
 
     // Try extracting from err-message or similar divs
     const errMatch = html.match(/class="err-message"[^>]*>([\s\S]*?)<\//);
-    if (errMatch) return errMatch[1].trim().slice(0, 800);
+    if (errMatch) return errMatch[1]!.trim().slice(0, 800);
 
     // Fallback: strip tags and return a portion
     const clean = html

@@ -65,7 +65,7 @@ interface EditorState {
   previewLoading: boolean;
 
   // Sidebar
-  activeSidebarTab: "pages" | "files" | "history" | "knowledge";
+  activeSidebarTab: "pages" | "files" | "history" | "knowledge" | "connectors" | "skills";
 
   // Actions - Project
   setProjectId: (id: string) => void;

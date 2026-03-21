@@ -56,7 +56,8 @@ export function billingQueries(sql: postgres.Sql) {
     ): Promise<{ success: boolean; remaining: number }> {
       const amount = opts?.amount ?? 1;
 
-      return sql.begin(async (tx) => {
+      return sql.begin(async (_tx) => {
+        const tx = _tx as unknown as postgres.Sql;
         // Try daily credits first, then monthly, then rollover
         const [credits] = await tx<CreditsRow[]>`
           SELECT * FROM credits WHERE workspace_id = ${workspaceId} FOR UPDATE
@@ -113,7 +114,7 @@ export function billingQueries(sql: postgres.Sql) {
             ${opts?.projectId ?? null},
             ${amount},
             ${action},
-            ${opts?.metadata ? sql.json(opts.metadata) : null}
+            ${opts?.metadata ? sql.json(opts.metadata as postgres.JSONValue) : null}
           )
         `;
 

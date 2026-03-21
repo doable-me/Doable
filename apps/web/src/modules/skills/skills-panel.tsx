@@ -160,7 +160,9 @@ function SkillCard({
   onUpdate: (content: string) => void;
   onDelete: () => void;
 }) {
-  const [editContent, setEditContent] = useState(item.content);
+  const itemName = type === "skill" ? (item as Skill).skill_name : (item as Rule).rule_name;
+  const itemContent = type === "skill" ? (item as Skill).skill_content : (item as Rule).content;
+  const [editContent, setEditContent] = useState(itemContent);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -187,9 +189,9 @@ function SkillCard({
   const handleContentChange = useCallback(
     (value: string) => {
       setEditContent(value);
-      setDirty(value !== item.content);
+      setDirty(value !== itemContent);
     },
-    [item.content]
+    [itemContent]
   );
 
   const Icon = type === "skill" ? Lightbulb : Shield;
@@ -208,10 +210,10 @@ function SkillCard({
         )}
         <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{item.name}</p>
+          <p className="text-sm font-medium truncate">{itemName}</p>
           <p className="text-xs text-muted-foreground truncate">
-            {item.content
-              ? `${item.content.length} chars`
+            {itemContent
+              ? `${itemContent.length} chars`
               : "Empty -- click to edit"}
           </p>
         </div>
@@ -358,7 +360,7 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
 
   const handleCreateSkill = useCallback(
     (name: string, content: string, scope: ScopeType) => {
-      void createSkill({ name, content, scope, projectId }).then(() =>
+      void createSkill({ skillName: name, skillContent: content, scope, projectId }).then(() =>
         setShowSkillForm(false)
       );
     },
@@ -367,7 +369,7 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
 
   const handleCreateRule = useCallback(
     (name: string, content: string, scope: ScopeType) => {
-      void createRule({ name, content, scope, projectId }).then(() =>
+      void createRule({ ruleName: name, content, filePatterns: [], scope, projectId }).then(() =>
         setShowRuleForm(false)
       );
     },
@@ -448,7 +450,7 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
                     )
                   }
                   onUpdate={(content) =>
-                    void updateSkill(skill.id, { content })
+                    void updateSkill(skill.id, content)
                   }
                   onDelete={() => void deleteSkill(skill.id)}
                 />
@@ -507,7 +509,7 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
                     )
                   }
                   onUpdate={(content) =>
-                    void updateRule(rule.id, { content })
+                    void updateRule(rule.id, content)
                   }
                   onDelete={() => void deleteRule(rule.id)}
                 />

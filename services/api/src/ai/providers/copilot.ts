@@ -148,14 +148,15 @@ export class CopilotEngine {
       ...(config.provider ? { provider: config.provider } : {}),
       ...(config.tools ? { tools: config.tools } : {}),
       ...(config.systemPrompt
-        ? { systemMessage: { type: "replace" as const, content: config.systemPrompt } }
+        ? { systemMessage: { mode: "replace" as const, content: config.systemPrompt } }
         : {}),
       ...(config.onUserInput
         ? {
-            onUserInputRequest: async (request) => ({
+            onUserInputRequest: async (request: { question: string }) => ({
               answer: await config.onUserInput!(
-                (request as Record<string, string>).question ?? "Please provide input",
+                request.question ?? "Please provide input",
               ),
+              wasFreeform: true,
             }),
           }
         : {}),
@@ -323,7 +324,7 @@ export class CopilotEngine {
     await session.setModel(model);
   }
 
-  private ensureClient(): asserts this is { client: CopilotClient } {
+  private ensureClient(): void {
     if (!this.client) {
       throw new Error(
         "CopilotEngine not started. Call start() first.",

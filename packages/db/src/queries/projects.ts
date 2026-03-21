@@ -140,7 +140,7 @@ export function projectQueries(sql: postgres.Sql) {
           ${data.projectId},
           ${data.versionNumber},
           ${data.description ?? null},
-          ${data.snapshotData ? sql.json(data.snapshotData) : null},
+          ${data.snapshotData ? sql.json(data.snapshotData as postgres.JSONValue) : null},
           ${data.createdBy}
         )
         RETURNING *

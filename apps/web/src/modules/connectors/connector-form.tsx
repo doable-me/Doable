@@ -56,8 +56,6 @@ export const ConnectorForm = ({
         serverUrl: isHttp ? serverUrl.trim() : undefined,
         serverCommand: !isHttp ? serverCommand.trim() : undefined,
         authType,
-        authCredential:
-          authType !== "none" ? authCredential.trim() : undefined,
       });
       onCreated();
     } catch (err) {
