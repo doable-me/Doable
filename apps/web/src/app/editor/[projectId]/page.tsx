@@ -2046,21 +2046,6 @@ export default function EditorPage() {
   const visualEditBroadcast = useVisualEditBroadcast({ iframeRef });
   useRemoteVisualEdits(iframeRef);
 
-  // Wrap applyLiveStyle/applyLiveText to also broadcast to collaborators
-  const applyLiveStyleCollab = useCallback((property: string, value: string) => {
-    visualEdit.applyLiveStyle(property, value);
-    if (visualEdit.selectedElement?.selector) {
-      visualEditBroadcast.broadcastStyleChange(visualEdit.selectedElement.selector, property, value);
-    }
-  }, [visualEdit.applyLiveStyle, visualEdit.selectedElement?.selector, visualEditBroadcast.broadcastStyleChange]);
-
-  const applyLiveTextCollab = useCallback((text: string) => {
-    visualEdit.applyLiveText(text);
-    if (visualEdit.selectedElement?.selector) {
-      visualEditBroadcast.broadcastTextChange(visualEdit.selectedElement.selector, text);
-    }
-  }, [visualEdit.applyLiveText, visualEdit.selectedElement?.selector, visualEditBroadcast.broadcastTextChange]);
-
   // Auto-activate visual edit when entering design mode
   const prevActiveTabRef = useRef(activeTab);
   useEffect(() => {
@@ -3149,8 +3134,8 @@ export default function EditorPage() {
                 onDeactivate={visualEdit.deactivateVisualEdit}
                 onSelectParent={visualEdit.selectParent}
                 onDeselectElement={visualEdit.deselectElement}
-                onApplyLiveStyle={applyLiveStyleCollab}
-                onApplyLiveText={applyLiveTextCollab}
+                onApplyLiveStyle={visualEdit.applyLiveStyle}
+                onApplyLiveText={visualEdit.applyLiveText}
                 hasPendingChanges={visualEdit.hasPendingChanges}
                 onCommitChanges={() => {
                   visualEdit.commitChanges();

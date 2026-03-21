@@ -336,14 +336,58 @@ export function useVisualEditBroadcast({
 }
 
 // ─── useRemoteVisualEdits ──────────────────────────────────────
-// Listens for remote style/text changes via WebSocket and applies
-// them to the local iframe so edits appear live for all collaborators.
+// Two-way bridge: broadcasts local visual edits to collaborators
+// AND applies incoming remote edits to the local iframe.
+// Non-intrusive — hooks into postMessage events without modifying
+// the existing applyLiveStyle/applyLiveText flow.
 
 export function useRemoteVisualEdits(
   iframeRef: React.RefObject<HTMLIFrameElement | null>,
 ) {
-  const { subscribe, joined } = useCollaboration();
+  const {
+    subscribe,
+    joined,
+    sendVisualEditStyleChange,
+    sendVisualEditTextChange,
+  } = useCollaboration();
 
+  // Track selected selector via iframe postMessage events
+  const selectedSelectorRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === "visual-edit:element-selected") {
+        selectedSelectorRef.current = e.data.element?.selector ?? null;
+      } else if (e.data?.type === "visual-edit:element-deselected") {
+        selectedSelectorRef.current = null;
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  // Listen for local style/text changes (via custom events from use-visual-edit)
+  // and broadcast them to collaborators
+  useEffect(() => {
+    const onStyle = (e: Event) => {
+      const { property, value } = (e as CustomEvent).detail;
+      const sel = selectedSelectorRef.current;
+      if (sel) sendVisualEditStyleChange(sel, property, value);
+    };
+    const onText = (e: Event) => {
+      const { text } = (e as CustomEvent).detail;
+      const sel = selectedSelectorRef.current;
+      if (sel) sendVisualEditTextChange(sel, text);
+    };
+    window.addEventListener("doable:ve-style", onStyle);
+    window.addEventListener("doable:ve-text", onText);
+    return () => {
+      window.removeEventListener("doable:ve-style", onStyle);
+      window.removeEventListener("doable:ve-text", onText);
+    };
+  }, [sendVisualEditStyleChange, sendVisualEditTextChange]);
+
+  // Apply incoming remote edits to our iframe
   useEffect(() => {
     if (!joined) return;
 
@@ -353,7 +397,6 @@ export function useRemoteVisualEdits(
 
       switch (msg.type) {
         case "visual-edit:style-change": {
-          // First select the element, then apply the style
           iframe.contentWindow.postMessage(
             { type: "visual-edit:select-element", selector: msg.selector },
             "*",

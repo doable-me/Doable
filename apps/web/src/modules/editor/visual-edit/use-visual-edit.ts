@@ -187,6 +187,7 @@ export function useVisualEdit({ iframeRef, projectId, onSendMessage }: UseVisual
   const applyLiveStyle = useCallback(
     (property: string, value: string) => {
       sendToIframe({ type: "visual-edit:apply-style", property, value });
+      window.dispatchEvent(new CustomEvent("doable:ve-style", { detail: { property, value } }));
       setPendingChanges((prev) => {
         const existing = prev.findIndex((c) => c.property === property);
         if (existing >= 0) {
@@ -203,6 +204,7 @@ export function useVisualEdit({ iframeRef, projectId, onSendMessage }: UseVisual
   const applyLiveText = useCallback(
     (text: string) => {
       sendToIframe({ type: "visual-edit:apply-text", text });
+      window.dispatchEvent(new CustomEvent("doable:ve-text", { detail: { text } }));
       setPendingText(text);
     },
     [sendToIframe],
