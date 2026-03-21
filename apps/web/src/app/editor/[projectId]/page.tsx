@@ -1540,24 +1540,44 @@ export default function EditorPage() {
   useEffect(() => {
     const loadFromApi = async () => {
       try {
-        const res = await fetch(`${API_URL}/projects/${resolvedProjectId}/chat/history`);
+        const { accessToken: histToken } = getStoredTokens();
+        const res = await fetch(`${API_URL}/projects/${resolvedProjectId}/chat/history`, {
+          headers: histToken ? { Authorization: `Bearer ${histToken}` } : {},
+        });
         if (!res.ok) return;
         const json = await res.json();
         if (Array.isArray(json.data) && json.data.length > 0) {
+          const currentUserId = authUser?.id;
           const apiMessages: ChatMsg[] = json.data
             .filter((m: any) => m.role === "user" || m.role === "assistant")
-            .map((m: any) => ({
-              id: m.id,
-              role: m.role as "user" | "assistant",
-              content: m.content || "",
-              timestamp: new Date(m.created_at).toLocaleTimeString([], {
-                hour: "numeric",
-                minute: "2-digit",
-              }),
-              isStreaming: false,
-              toolActions: m.tool_actions || undefined,
-              suggestions: m.suggestions || undefined,
-            }));
+            .map((m: any) => {
+              // Build senderInfo for user messages from other collaborators
+              let senderInfo: ChatMsg["senderInfo"] = undefined;
+              if (m.role === "user" && m.sent_by_user_id && m.sent_by_user_id !== currentUserId) {
+                const colors = ["#E57373","#F06292","#BA68C8","#9575CD","#7986CB","#64B5F6","#4FC3F7","#4DD0E1","#4DB6AC","#81C784","#AED581","#FFD54F","#FFB74D","#FF8A65","#A1887F","#90A4AE"];
+                let hash = 0;
+                for (let i = 0; i < m.sent_by_user_id.length; i++) hash = (hash * 31 + m.sent_by_user_id.charCodeAt(i)) | 0;
+                senderInfo = {
+                  userId: m.sent_by_user_id,
+                  displayName: m.display_name || "Collaborator",
+                  color: m.user_color || colors[Math.abs(hash) % colors.length],
+                  isRemote: true,
+                };
+              }
+              return {
+                id: m.id,
+                role: m.role as "user" | "assistant",
+                content: m.content || "",
+                timestamp: new Date(m.created_at).toLocaleTimeString([], {
+                  hour: "numeric",
+                  minute: "2-digit",
+                }),
+                isStreaming: false,
+                toolActions: m.tool_actions || undefined,
+                suggestions: m.suggestions || undefined,
+                senderInfo,
+              };
+            });
           setMessages(apiMessages);
           // Also update suggestions from the last assistant message
           const lastAssistant = [...apiMessages].reverse().find(m => m.role === "assistant");
