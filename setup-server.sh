@@ -89,6 +89,8 @@ read -rp "Stripe Webhook Secret: " STRIPE_WEBHOOK_SECRET
 API_DOMAIN="${API_SUB}.${DOMAIN}"
 WS_DOMAIN="${WS_SUB}.${DOMAIN}"
 JWT_SECRET=$(openssl rand -hex 32)
+ENCRYPTION_KEY=$(openssl rand -hex 32)
+INTERNAL_SECRET=$(openssl rand -hex 16)
 
 echo ""
 info "Configuration:"
@@ -327,6 +329,10 @@ JWT_SECRET=${JWT_SECRET}
 JWT_ISSUER=doable
 JWT_ACCESS_TOKEN_EXPIRES_IN=15m
 JWT_REFRESH_TOKEN_EXPIRES_IN=7d
+
+# ─── Encryption / Internal Auth ──────────────────────────────
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
+INTERNAL_SECRET=${INTERNAL_SECRET}
 
 # ─── API Server ─────────────────────────────────────────────
 API_PORT=4000

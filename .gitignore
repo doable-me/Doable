@@ -46,5 +46,8 @@ services/api/thumbnails/
 *.log
 npm-debug.log*
 
+# TypeScript build info
+*.tsbuildinfo
+
 # Testing
 coverage/
