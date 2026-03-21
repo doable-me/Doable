@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { apiFetch } from "@/lib/api";
 import {
   FileText,
   Plus,
@@ -182,31 +183,31 @@ export const ContextPanel = ({
 
   // ─── Endpoint builders ────────────────────────────────
 
-  const getListUrl = useCallback(() => {
+  const getListPath = useCallback(() => {
     switch (scope) {
       case "workspace":
-        return `${apiBaseUrl}/workspaces/${workspaceId}/context`;
+        return `/workspaces/${workspaceId}/context`;
       case "user":
-        return `${apiBaseUrl}/workspaces/${workspaceId}/context/user/list`;
+        return `/workspaces/${workspaceId}/context/user/list`;
       case "project":
       default:
-        return `${apiBaseUrl}/projects/${projectId}/context`;
+        return `/projects/${projectId}/context`;
     }
-  }, [scope, projectId, workspaceId, apiBaseUrl]);
+  }, [scope, projectId, workspaceId]);
 
-  const getFileUrl = useCallback(
+  const getFilePath = useCallback(
     (filename: string) => {
       switch (scope) {
         case "workspace":
-          return `${apiBaseUrl}/workspaces/${workspaceId}/context/${filename}`;
+          return `/workspaces/${workspaceId}/context/${filename}`;
         case "user":
-          return `${apiBaseUrl}/workspaces/${workspaceId}/context/user/${filename}`;
+          return `/workspaces/${workspaceId}/context/user/${filename}`;
         case "project":
         default:
-          return `${apiBaseUrl}/projects/${projectId}/context/${filename}`;
+          return `/projects/${projectId}/context/${filename}`;
       }
     },
-    [scope, projectId, workspaceId, apiBaseUrl]
+    [scope, projectId, workspaceId]
   );
 
   // ─── Data fetching ────────────────────────────────────
@@ -215,19 +216,15 @@ export const ContextPanel = ({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(getListUrl(), { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load context files");
-      const json = (await res.json()) as {
-        data: { files: ContextFile[]; stats: ContextStats };
-      };
+      const json = await apiFetch<{ data: { files: ContextFile[]; stats: ContextStats } }>(getListPath());
       setFiles(json.data.files);
       setStats(json.data.stats);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(err instanceof Error ? err.message : "Failed to load context files");
     } finally {
       setLoading(false);
     }
-  }, [getListUrl]);
+  }, [getListPath]);
 
   useEffect(() => {
     void fetchFiles();
@@ -242,13 +239,10 @@ export const ContextPanel = ({
 
   const handleSave = useCallback(
     async (filename: string, content: string) => {
-      const res = await fetch(getFileUrl(filename), {
+      await apiFetch(getFilePath(filename), {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ content }),
       });
-      if (!res.ok) throw new Error("Failed to save");
 
       // Update local state
       setFiles((prev) =>
@@ -259,40 +253,34 @@ export const ContextPanel = ({
         )
       );
     },
-    [getFileUrl]
+    [getFilePath]
   );
 
   const handleCreate = useCallback(async () => {
     const name = prompt("Context file name (e.g., api-notes.md):");
     if (!name || !name.endsWith(".md")) return;
 
-    const res = await fetch(getFileUrl(name), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ content: `# ${name.replace(".md", "")}\n\n` }),
-    });
-    if (!res.ok) {
-      const json = (await res.json()) as { error: string };
-      alert(json.error);
-      return;
+    try {
+      await apiFetch(getFilePath(name), {
+        method: "POST",
+        body: JSON.stringify({ content: `# ${name.replace(".md", "")}\n\n` }),
+      });
+      await fetchFiles();
+      setSelectedFile(name);
+    } catch {
+      // Create failed
     }
-    await fetchFiles();
-    setSelectedFile(name);
-  }, [getFileUrl, fetchFiles]);
+  }, [getFilePath, fetchFiles]);
 
   const handleDelete = useCallback(
     async (filename: string) => {
       if (!confirm(`Delete ${filename}? Default files will be reset.`)) return;
 
-      await fetch(getFileUrl(filename), {
-        method: "DELETE",
-        credentials: "include",
-      });
+      await apiFetch(getFilePath(filename), { method: "DELETE" });
       setSelectedFile(null);
       await fetchFiles();
     },
-    [getFileUrl, fetchFiles]
+    [getFilePath, fetchFiles]
   );
 
   const toggleCategory = useCallback((categoryKey: string) => {
