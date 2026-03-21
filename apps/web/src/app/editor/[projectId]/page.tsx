@@ -421,15 +421,14 @@ async function streamChat(
   providerIdOverride?: string | null,
   copilotAccountIdOverride?: string | null,
 ) {
-  const { accessToken } = getStoredTokens();
+  let currentToken = getStoredTokens().accessToken;
 
-  let res: Response;
-  try {
-    res = await fetch(`${API_URL}/projects/${projectId}/chat`, {
+  const makeRequest = async (token: string | null): Promise<Response> => {
+    return fetch(`${API_URL}/projects/${projectId}/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({
         content: message,
@@ -441,6 +440,35 @@ async function streamChat(
       }),
       signal,
     });
+  };
+
+  let res: Response;
+  try {
+    res = await makeRequest(currentToken);
+
+    // Auto-refresh token on 401 and retry once
+    if (res.status === 401) {
+      try {
+        const { apiFetch: _af, ...rest } = await import("@/lib/api");
+        // Trigger token refresh via apiFetch (it handles refresh internally)
+        const refreshRes = await fetch(`${API_URL}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: getStoredTokens().refreshToken }),
+        });
+        if (refreshRes.ok) {
+          const data = await refreshRes.json();
+          if (data.tokens) {
+            const { storeTokens } = await import("@/lib/api");
+            storeTokens(data.tokens);
+            currentToken = data.tokens.accessToken;
+            res = await makeRequest(currentToken);
+          }
+        }
+      } catch {
+        // Refresh failed — fall through to error handling
+      }
+    }
   } catch (err: unknown) {
     if (signal?.aborted) return;
     onError(
@@ -1542,12 +1570,7 @@ export default function EditorPage() {
   useEffect(() => {
     const loadFromApi = async () => {
       try {
-        const { accessToken: histToken } = getStoredTokens();
-        const res = await fetch(`${API_URL}/projects/${resolvedProjectId}/chat/history`, {
-          headers: histToken ? { Authorization: `Bearer ${histToken}` } : {},
-        });
-        if (!res.ok) return;
-        const json = await res.json();
+        const json = await apiFetch<{ data: any[] }>(`/projects/${resolvedProjectId}/chat/history`);
         if (Array.isArray(json.data) && json.data.length > 0) {
           const currentUserId = authUser?.id;
           const apiMessages: ChatMsg[] = json.data
