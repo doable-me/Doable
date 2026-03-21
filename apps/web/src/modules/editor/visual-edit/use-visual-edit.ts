@@ -7,6 +7,7 @@ interface UseVisualEditOptions {
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   projectId: string;
   onSendMessage: (message: string) => void;
+  onSaveComplete?: () => void;
 }
 
 interface PendingChange {
@@ -38,7 +39,7 @@ interface UseVisualEditReturn {
   isSaving: boolean;
 }
 
-export function useVisualEdit({ iframeRef, projectId, onSendMessage }: UseVisualEditOptions): UseVisualEditReturn {
+export function useVisualEdit({ iframeRef, projectId, onSendMessage, onSaveComplete }: UseVisualEditOptions): UseVisualEditReturn {
   const [mode, setMode] = useState<VisualEditMode>("idle");
   const [selectedElement, setSelectedElement] = useState<SelectedElement | null>(null);
   const [hoveredElement, setHoveredElement] = useState<SelectedElement | null>(null);
@@ -309,7 +310,7 @@ export function useVisualEdit({ iframeRef, projectId, onSendMessage }: UseVisual
       }
 
       // Notify collaborators to refresh their preview
-      window.dispatchEvent(new CustomEvent("doable:preview-refresh"));
+      onSaveComplete?.();
 
       return true;
     } catch (err) {

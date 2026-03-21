@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { CollaborationProvider } from "@/modules/collaboration";
 import { CollabHeaderItems } from "@/modules/collaboration/components/collab-header-items";
 import { CollabActivityOverlay } from "@/modules/collaboration/components/collab-activity-overlay";
-import { RemoteSelectionOverlays, RemoteVisualCursors, VisualEditConflictWarning, useVisualEditBroadcast, useRemoteVisualEdits } from "@/modules/collaboration/components/visual-edit-collab";
+import { RemoteSelectionOverlays, RemoteVisualCursors, VisualEditConflictWarning, useVisualEditBroadcast, CollabPreviewSync } from "@/modules/collaboration/components/visual-edit-collab";
 import { ChatPopout } from "@/modules/collaboration/components/chat-popout";
 import { ChatMessageToasts } from "@/modules/collaboration/components/chat-message-toast";
 import { CollabTeamChatWrapper } from "@/modules/collaboration/components/collab-team-chat-wrapper";
@@ -2042,9 +2042,10 @@ export default function EditorPage() {
 
   // ─── Visual Edit Hook ─────────────────────────────────────
   const isDesignMode = activeTab === "design";
-  const visualEdit = useVisualEdit({ iframeRef, projectId: resolvedProjectId, onSendMessage: sendMessage });
+  const visualEdit = useVisualEdit({ iframeRef, projectId: resolvedProjectId, onSendMessage: sendMessage, onSaveComplete: () => {
+    window.dispatchEvent(new CustomEvent("doable:preview-refresh"));
+  }});
   const visualEditBroadcast = useVisualEditBroadcast({ iframeRef });
-  useRemoteVisualEdits(iframeRef);
 
   // Auto-activate visual edit when entering design mode
   const prevActiveTabRef = useRef(activeTab);
@@ -4608,6 +4609,7 @@ export default function EditorPage() {
     <CollabActivityOverlay />
     <ChatPopout currentUserId={authUser?.id ?? ""} />
     <ChatMessageToasts />
+    <CollabPreviewSync iframeRef={iframeRef} />
     </>
     </CollaborationProvider>
   );

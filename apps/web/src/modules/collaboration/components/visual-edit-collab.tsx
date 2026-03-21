@@ -341,9 +341,8 @@ export function useVisualEditBroadcast({
 // Non-intrusive — hooks into postMessage events without modifying
 // the existing applyLiveStyle/applyLiveText flow.
 
-export function useRemoteVisualEdits(
-  iframeRef: React.RefObject<HTMLIFrameElement | null>,
-) {
+// Rendered as a component INSIDE CollaborationProvider so it has context access
+export function CollabPreviewSync({ iframeRef }: { iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
   const {
     subscribe,
     joined,
@@ -440,4 +439,6 @@ export function useRemoteVisualEdits(
 
     return unsub;
   }, [joined, subscribe, iframeRef]);
+
+  return null;
 }
