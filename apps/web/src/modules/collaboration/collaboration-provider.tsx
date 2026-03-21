@@ -113,7 +113,13 @@ export function CollaborationProvider({ projectId, userId, displayName, children
           break;
         }
         case "ai:message-sent": {
-          // Another user sent an AI message — UI can show notification
+          // When a user sends an AI message, they stopped typing
+          setAiTypingUsers(prev => {
+            if (!prev.has(msg.userId)) return prev;
+            const next = new Map(prev);
+            next.delete(msg.userId);
+            return next;
+          });
           break;
         }
       }

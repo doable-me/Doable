@@ -958,8 +958,7 @@ export default function EditorPage() {
   });
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [isInputTyping, setIsInputTyping] = useState(false);
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [keystrokeSignal, setKeystrokeSignal] = useState(0);
 
   // Voice input & image attachments
   const speechRecognition = useSpeechRecognition((transcript: string) => {
@@ -3596,7 +3595,7 @@ export default function EditorPage() {
             )}
 
             {/* Typing indicator from collaborators */}
-            <CollabChatTyping isTyping={isInputTyping} />
+            <CollabChatTyping keystrokeSignal={keystrokeSignal} />
 
             {/* Input area */}
             <div className="border-t border-zinc-800/60">
@@ -3633,9 +3632,7 @@ export default function EditorPage() {
                     value={inputValue}
                     onChange={(e) => {
                       setInputValue(e.target.value);
-                      setIsInputTyping(true);
-                      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-                      typingTimeoutRef.current = setTimeout(() => setIsInputTyping(false), 3000);
+                      setKeystrokeSignal((s) => s + 1);
                     }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
