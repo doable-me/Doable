@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { CollaborationProvider } from "@/modules/collaboration";
 import { CollabHeaderItems } from "@/modules/collaboration/components/collab-header-items";
 import { CollabActivityOverlay } from "@/modules/collaboration/components/collab-activity-overlay";
+import { RemoteSelectionOverlays, RemoteVisualCursors, VisualEditConflictWarning, useVisualEditBroadcast } from "@/modules/collaboration/components/visual-edit-collab";
 import { ChatPopout } from "@/modules/collaboration/components/chat-popout";
 import { ChatMessageToasts } from "@/modules/collaboration/components/chat-message-toast";
 import { CollabTeamChatWrapper } from "@/modules/collaboration/components/collab-team-chat-wrapper";
@@ -2042,6 +2043,7 @@ export default function EditorPage() {
   // ─── Visual Edit Hook ─────────────────────────────────────
   const isDesignMode = activeTab === "design";
   const visualEdit = useVisualEdit({ iframeRef, projectId: resolvedProjectId, onSendMessage: sendMessage });
+  const visualEditBroadcast = useVisualEditBroadcast({ iframeRef });
 
   // Auto-activate visual edit when entering design mode
   const prevActiveTabRef = useRef(activeTab);
@@ -2051,9 +2053,24 @@ export default function EditorPage() {
     }
     if (activeTab !== "design" && prevActiveTabRef.current === "design") {
       visualEdit.deactivateVisualEdit();
+      visualEditBroadcast.broadcastDeselect();
     }
     prevActiveTabRef.current = activeTab;
-  }, [activeTab, visualEdit.activateVisualEdit, visualEdit.deactivateVisualEdit]);
+  }, [activeTab, visualEdit.activateVisualEdit, visualEdit.deactivateVisualEdit, visualEditBroadcast.broadcastDeselect]);
+
+  // Broadcast visual edit selections to collaborators
+  const prevSelectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const sel = visualEdit.selectedElement;
+    if (sel && sel.selector !== prevSelectedRef.current) {
+      prevSelectedRef.current = sel.selector;
+      const r = sel.boundingRect;
+      visualEditBroadcast.broadcastSelect(sel.selector, { x: r?.left ?? 0, y: r?.top ?? 0, width: r?.width ?? 0, height: r?.height ?? 0 });
+    } else if (!sel && prevSelectedRef.current) {
+      prevSelectedRef.current = null;
+      visualEditBroadcast.broadcastDeselect();
+    }
+  }, [visualEdit.selectedElement, visualEditBroadcast.broadcastSelect, visualEditBroadcast.broadcastDeselect]);
 
   // Get iframe rect for floating toolbar positioning
   const [iframeRect, setIframeRect] = useState<DOMRect | null>(null);
@@ -4052,7 +4069,15 @@ export default function EditorPage() {
                     className="h-full w-full border-0"
                     title="App Preview"
                     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                    onMouseMove={isDesignMode ? visualEditBroadcast.handlePreviewMouseMove : undefined}
                   />
+                  {isDesignMode && (
+                    <>
+                      <RemoteSelectionOverlays iframeRef={iframeRef} />
+                      <RemoteVisualCursors iframeRef={iframeRef} />
+                      <VisualEditConflictWarning selectedSelector={visualEdit.selectedElement?.selector ?? null} />
+                    </>
+                  )}
                 </div>
               )}
               {/* ─── First Generation Loading Overlay ──────────── */}
