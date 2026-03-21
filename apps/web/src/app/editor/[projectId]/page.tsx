@@ -169,6 +169,7 @@ interface ChatMsg {
   attachments?: { type: string; data: string; name: string }[];
   thinkingContent?: string;
   senderInfo?: { userId: string; displayName: string; color: string; isRemote: boolean };
+  liveStatus?: string;
 }
 
 type TaskCardTab = "details" | "preview";
@@ -2541,28 +2542,50 @@ export default function EditorPage() {
     const aiMsgId = `remote_ai_${data.messageId}`;
     remoteStreamIdsRef.current[data.messageId] = aiMsgId;
 
-    setMessages((prev) => [
-      ...prev,
-      {
+    setMessages((prev) => {
+      const userMsg: ChatMsg = {
         id: userMsgId,
         role: "user" as const,
         content: data.content,
         timestamp: nowTimestamp(),
         senderInfo: { userId: data.userId, displayName: data.displayName, color, isRemote: true },
-      },
-      {
+      };
+      // If the assistant message was already auto-created by an early stream-chunk
+      // or tool-event, just insert the user message before it instead of duplicating
+      const existingIdx = prev.findIndex((m) => m.id === aiMsgId);
+      if (existingIdx !== -1) {
+        const copy = [...prev];
+        copy.splice(existingIdx, 0, userMsg);
+        return copy;
+      }
+      return [...prev, userMsg, {
         id: aiMsgId,
         role: "assistant" as const,
         content: "",
         timestamp: nowTimestamp(),
         isStreaming: true,
-      },
-    ]);
+      }];
+    });
   }, [authUser?.id]);
 
   const handleRemoteStreamChunk = useCallback((data: { messageId: string; chunk: string; isThinking: boolean }) => {
-    const aiMsgId = remoteStreamIdsRef.current[data.messageId];
-    if (!aiMsgId) return;
+    let aiMsgId = remoteStreamIdsRef.current[data.messageId];
+
+    // Auto-create assistant message if stream starts before ai:message-sent
+    if (!aiMsgId) {
+      aiMsgId = `remote_ai_${data.messageId}`;
+      remoteStreamIdsRef.current[data.messageId] = aiMsgId;
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === aiMsgId)) return prev;
+        return [...prev, {
+          id: aiMsgId!,
+          role: "assistant" as const,
+          content: "",
+          timestamp: nowTimestamp(),
+          isStreaming: true,
+        }];
+      });
+    }
 
     if (data.isThinking) {
       setMessages((prev) =>
@@ -2594,8 +2617,23 @@ export default function EditorPage() {
   }, []);
 
   const handleRemoteToolEvent = useCallback((data: { messageId: string; event: "tool_call" | "tool_result"; toolName: string; args: Record<string, unknown>; friendlyMessage?: string }) => {
-    const aiMsgId = remoteStreamIdsRef.current[data.messageId];
-    if (!aiMsgId) return;
+    let aiMsgId = remoteStreamIdsRef.current[data.messageId];
+
+    // Auto-create assistant message if tool event arrives before ai:message-sent
+    if (!aiMsgId) {
+      aiMsgId = `remote_ai_${data.messageId}`;
+      remoteStreamIdsRef.current[data.messageId] = aiMsgId;
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === aiMsgId)) return prev;
+        return [...prev, {
+          id: aiMsgId!,
+          role: "assistant" as const,
+          content: "",
+          timestamp: nowTimestamp(),
+          isStreaming: true,
+        }];
+      });
+    }
 
     if (data.event === "tool_call") {
       // Add a running tool action card
@@ -2643,6 +2681,11 @@ export default function EditorPage() {
   const handleRemoteStatus = useCallback((data: { messageId: string; status: string }) => {
     const aiMsgId = remoteStreamIdsRef.current[data.messageId];
     if (!aiMsgId) return;
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === aiMsgId ? { ...m, liveStatus: data.status } : m
+      )
+    );
     setLiveStatus(data.status);
   }, []);
 

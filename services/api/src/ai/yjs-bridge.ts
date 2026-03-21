@@ -104,6 +104,7 @@ export async function editFileThroughYjs(
 export async function broadcastToRoom(
   projectId: string,
   message: Record<string, unknown>,
+  excludeUserId?: string,
 ): Promise<void> {
   try {
     await fetch(`${WS_INTERNAL_URL}/internal/broadcast`, {
@@ -112,7 +113,7 @@ export async function broadcastToRoom(
         "Content-Type": "application/json",
         "X-Internal-Secret": INTERNAL_SECRET,
       },
-      body: JSON.stringify({ projectId, message }),
+      body: JSON.stringify({ projectId, message, excludeUserId }),
     });
   } catch {
     // Non-critical — broadcast failures shouldn't break the AI flow

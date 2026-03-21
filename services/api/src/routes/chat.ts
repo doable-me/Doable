@@ -748,7 +748,7 @@ ERROR RECOVERY — if you encounter errors:
         displayName: senderDisplayName,
         content: content.slice(0, 200),
         messageId,
-      }).catch(() => {});
+      }, userId).catch(() => {});
 
       // Stream events via SSE
       return streamSSE(c, async (stream) => {
@@ -799,7 +799,7 @@ ERROR RECOVERY — if you encounter errors:
                   chunk: typeof sseData.data === "string" ? sseData.data : "",
                   messageId,
                   isThinking: false,
-                }).catch(() => {});
+                }, userId).catch(() => {});
               }
               // Broadcast thinking chunks too
               if (sseData.type === "thinking") {
@@ -808,7 +808,7 @@ ERROR RECOVERY — if you encounter errors:
                   chunk: typeof sseData.data === "string" ? sseData.data : "",
                   messageId,
                   isThinking: true,
-                }).catch(() => {});
+                }, userId).catch(() => {});
               }
               // Broadcast tool_call / tool_result events so collaborators see tool activity
               if (sseData.type === "tool_call" || sseData.type === "tool_result") {
@@ -817,7 +817,7 @@ ERROR RECOVERY — if you encounter errors:
                   messageId,
                   event: sseData.type,
                   data: (sseData.data ?? {}) as Record<string, unknown>,
-                }).catch(() => {});
+                }, userId).catch(() => {});
               }
               // Broadcast status & auto_fix_complete events
               if (sseData.type === "status" || sseData.type === "auto_fix_complete") {
@@ -825,7 +825,7 @@ ERROR RECOVERY — if you encounter errors:
                   type: "ai:status",
                   messageId,
                   data: sseData.data,
-                }).catch(() => {});
+                }, userId).catch(() => {});
               }
               // Broadcast errors
               if (sseData.type === "error") {
@@ -833,7 +833,7 @@ ERROR RECOVERY — if you encounter errors:
                   type: "ai:error",
                   messageId,
                   error: sseData.data,
-                }).catch(() => {});
+                }, userId).catch(() => {});
               }
               // Accumulate tool calls for DB persistence
               if (sseData.type === "tool_call") {
@@ -1007,7 +1007,7 @@ ERROR RECOVERY — if you encounter errors:
           type: "ai:stream-end",
           messageId,
           finalContent: assistantContent.slice(0, 500),
-        }).catch(() => {});
+        }, userId).catch(() => {});
 
         // Save assistant message to database
         if (dbSessionId && assistantContent) {

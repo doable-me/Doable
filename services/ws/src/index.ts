@@ -74,10 +74,10 @@ const server = createServer(async (req, res) => {
 
     const body = await readBody(req);
     try {
-      const { projectId, message } = JSON.parse(body) as { projectId: string; message: WsServerMessage };
+      const { projectId, message, excludeUserId } = JSON.parse(body) as { projectId: string; message: WsServerMessage; excludeUserId?: string };
       const room = rooms.get(projectId);
       if (room) {
-        room.broadcast(message);
+        room.broadcast(message, excludeUserId);
       }
       res.writeHead(200);
       res.end("ok");
