@@ -86,6 +86,7 @@ import {
   ClipboardList,
   Plug,
   Users,
+  BookOpen,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -136,12 +137,13 @@ const SecurityPanel = dynamic(() => import("@/modules/editor/panels/security-pan
 const SpeedPanel = dynamic(() => import("@/modules/editor/panels/speed-panel").then(m => ({ default: m.SpeedPanel })), { ssr: false });
 const ConnectorsPanel = dynamic(() => import("@/modules/connectors/connectors-panel").then(m => ({ default: m.ConnectorsPanel })), { ssr: false });
 const SkillsPanel = dynamic(() => import("@/modules/skills/skills-panel").then(m => ({ default: m.SkillsPanel })), { ssr: false });
+const ContextPanel = dynamic(() => import("@/modules/editor/context-files/context-panel").then(m => ({ default: m.ContextPanel })), { ssr: false });
 
 // ─── Constants ──────────────────────────────────────────────
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Types ──────────────────────────────────────────────────
-type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "connectors" | "skills" | "team";
+type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "connectors" | "skills" | "knowledge" | "team";
 type ChatMode = "agent" | "plan" | "visual-edit";
 type DeviceMode = "desktop" | "tablet" | "mobile";
 
@@ -218,7 +220,7 @@ function detectLanguage(filename: string): string {
 const AUTOSAVE_DELAY_MS = 1500;
 
 /** Tabs that render a full panel (replacing the preview pane) */
-const PANEL_TABS: ActiveTab[] = ["cloud", "analytics", "files", "security", "speed", "connectors", "skills"];
+const PANEL_TABS: ActiveTab[] = ["cloud", "analytics", "files", "security", "speed", "connectors", "skills", "knowledge"];
 
 /** All items available in the triple-dots "More" menu */
 interface MoreMenuItem {
@@ -235,6 +237,7 @@ const MORE_MENU_ITEMS: MoreMenuItem[] = [
   { key: "files", icon: FolderOpen, label: "Files" },
   { key: "security", icon: Shield, label: "Security" },
   { key: "speed", icon: Gauge, label: "Speed" },
+  { key: "knowledge", icon: BookOpen, label: "Knowledge" },
   { key: "connectors", icon: Plug, label: "Connectors" },
   { key: "skills", icon: Sparkles, label: "Skills" },
 ];
@@ -3867,6 +3870,9 @@ export default function EditorPage() {
             )}
             {activeTab === "speed" && (
               <SpeedPanel projectId={resolvedProjectId} onClose={handlePanelClose} onSendMessage={sendMessage} />
+            )}
+            {activeTab === "knowledge" && (
+              <ContextPanel projectId={resolvedProjectId} workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? undefined : undefined} apiBaseUrl="https://api.doable.me" />
             )}
             {activeTab === "connectors" && (
               <ConnectorsPanel workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? "" : ""} />
