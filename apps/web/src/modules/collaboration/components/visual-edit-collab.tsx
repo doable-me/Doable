@@ -77,23 +77,13 @@ export function RemoteSelectionOverlays({ iframeRef }: RemoteSelectionOverlaysPr
     return () => window.removeEventListener("message", handleMessage);
   }, []);
 
-  // Refresh positions on scroll/resize and on selection changes
+  // Refresh positions on resize and selection changes (no contentDocument access — cross-origin)
   useEffect(() => {
     updatePositions();
-
-    const iframe = iframeRef.current;
-    const iframeDoc = iframe?.contentDocument ?? iframe?.contentWindow?.document;
-
-    const handleScrollOrResize = () => updatePositions();
-
-    window.addEventListener("resize", handleScrollOrResize);
-    iframeDoc?.addEventListener("scroll", handleScrollOrResize, true);
-
-    return () => {
-      window.removeEventListener("resize", handleScrollOrResize);
-      iframeDoc?.removeEventListener("scroll", handleScrollOrResize, true);
-    };
-  }, [iframeRef, updatePositions]);
+    const handleResize = () => updatePositions();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [updatePositions]);
 
   // Also re-request on an interval for scroll-inside-iframe scenarios
   useEffect(() => {

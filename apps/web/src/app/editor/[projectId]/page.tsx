@@ -4069,7 +4069,6 @@ export default function EditorPage() {
                     className="h-full w-full border-0"
                     title="App Preview"
                     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-                    onMouseMove={isDesignMode ? visualEditBroadcast.handlePreviewMouseMove : undefined}
                   />
                   {isDesignMode && (
                     <>
