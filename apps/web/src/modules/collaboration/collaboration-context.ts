@@ -33,6 +33,29 @@ export interface ActivityEvent {
   createdAt: string;
 }
 
+export interface RemoteVisualSelection {
+  userId: string;
+  displayName: string;
+  color: string;
+  selector: string;
+  boundingRect: { x: number; y: number; width: number; height: number };
+}
+
+export interface RemoteVisualCursor {
+  displayName: string;
+  color: string;
+  x: number;
+  y: number;
+}
+
+export interface AiQueueItem {
+  id: string;
+  userId: string;
+  displayName: string;
+  content: string;
+  position: number;
+}
+
 export interface CollaborationContextValue {
   // Connection
   connectionState: "connecting" | "connected" | "disconnected" | "reconnecting";
@@ -67,6 +90,21 @@ export interface CollaborationContextValue {
 
   // CRDT (Yjs)
   yjsProvider: any; // YjsWsProvider | null
+
+  // Phase B: AI Collaboration
+  aiStreamChunks: Map<string, string>;
+  aiTypingUsers: Map<string, string>;
+  aiQueue: AiQueueItem[];
+  sendAiTyping: (isTyping: boolean) => void;
+
+  // Phase C: Visual Edit Collaboration
+  remoteSelections: Map<string, RemoteVisualSelection>;
+  remoteVisualCursors: Map<string, RemoteVisualCursor>;
+  sendVisualEditSelect: (selector: string, boundingRect: { x: number; y: number; width: number; height: number }) => void;
+  sendVisualEditDeselect: () => void;
+  sendVisualEditStyleChange: (selector: string, property: string, value: string) => void;
+  sendVisualEditTextChange: (selector: string, newText: string) => void;
+  sendVisualEditCursorMove: (x: number, y: number) => void;
 }
 
 export const CollaborationContext = createContext<CollaborationContextValue | null>(null);
@@ -96,6 +134,19 @@ export function useCollaboration(): CollaborationContextValue {
       subscribe: () => () => {},
       send: () => {},
       yjsProvider: null,
+      // Phase B
+      aiStreamChunks: new Map(),
+      aiTypingUsers: new Map(),
+      aiQueue: [],
+      sendAiTyping: () => {},
+      // Phase C
+      remoteSelections: new Map(),
+      remoteVisualCursors: new Map(),
+      sendVisualEditSelect: () => {},
+      sendVisualEditDeselect: () => {},
+      sendVisualEditStyleChange: () => {},
+      sendVisualEditTextChange: () => {},
+      sendVisualEditCursorMove: () => {},
     };
   }
   return ctx;

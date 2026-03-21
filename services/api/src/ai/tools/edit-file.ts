@@ -1,5 +1,6 @@
 import type { Tool } from "./index.js";
 import { readProjectFile, writeProjectFile } from "../project-files.js";
+import { editFileThroughYjs } from "../yjs-bridge.js";
 
 export const editFileTool: Tool = {
   name: "edit_file",
@@ -65,6 +66,27 @@ export const editFileTool: Tool = {
       };
     }
 
+    // Try to edit through Yjs CRDT if collaboration is active
+    try {
+      const yjsResult = await editFileThroughYjs(
+        ctx.projectId,
+        path,
+        oldString,
+        newString,
+        replaceAll,
+      );
+      if (yjsResult.handled && yjsResult.success) {
+        return {
+          success: true,
+          output: `Edited ${path}: replaced ${yjsResult.occurrences ?? 1} occurrence(s) [via CRDT]`,
+          metadata: { path, occurrences: yjsResult.occurrences ?? 1 },
+        };
+      }
+    } catch {
+      // Fall through to direct write
+    }
+
+    // Direct filesystem edit
     const updated = replaceAll
       ? content.replaceAll(oldString, newString)
       : content.replace(oldString, newString);

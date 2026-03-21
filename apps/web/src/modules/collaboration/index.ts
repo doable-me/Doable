@@ -5,3 +5,6 @@ export { useTeamChat } from "./hooks/use-team-chat";
 export { useActivity } from "./hooks/use-activity";
 export { CollaborationProvider } from "./collaboration-provider";
 export { useCollaboration } from "./collaboration-context";
+export type { RemoteVisualSelection, RemoteVisualCursor, AiQueueItem } from "./collaboration-context";
+export { AiStreamOverlay, AiTypingIndicator, AiQueuePanel, AiMessageAttribution } from "./components/ai-chat-collab";
+export { RemoteSelectionOverlays, RemoteVisualCursors, VisualEditConflictWarning, useVisualEditBroadcast } from "./components/visual-edit-collab";

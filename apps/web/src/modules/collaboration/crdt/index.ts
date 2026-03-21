@@ -1,2 +1,2 @@
 export { YjsWsProvider } from "./yjs-provider";
-export { useCollaborativeEditor } from "./use-collaborative-editor";
+export { useCollaborativeEditor, useIsCollaborativeFile } from "./use-collaborative-editor";

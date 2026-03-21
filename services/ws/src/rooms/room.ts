@@ -1,5 +1,6 @@
 import type { WebSocket } from "ws";
 import * as Y from "yjs";
+import { YjsDocumentManager } from "../collaboration/yjs-document-manager.js";
 
 // ─── Local WS Types (until promoted to @doable/shared) ──
 export interface PresenceUser {
@@ -36,8 +37,29 @@ export type WsServerMessage =
   | { type: "awareness:files_open"; data: Record<string, string[]> }
   | { type: "awareness:user_selection"; userId: string; data: SelectionData }
   | { type: "cursor:move"; userId: string; displayName: string; color: string; filePath: string; line: number; column: number }
-  | { type: "yjs:sync-response"; data: string }
-  | { type: "yjs:update"; userId: string; data: string };
+  | { type: "yjs:sync-response"; data: string; filePath?: string }
+  | { type: "yjs:update"; userId: string; data: string; filePath?: string }
+  // Phase B: AI stream events
+  | { type: "ai:stream-chunk"; chunk: string; messageId: string; isThinking?: boolean }
+  | { type: "ai:stream-end"; messageId: string; finalContent?: string }
+  | { type: "ai:queue-update"; queue: AiQueueItem[] }
+  | { type: "ai:typing"; userId: string; displayName: string; isTyping: boolean }
+  | { type: "ai:message-sent"; userId: string; displayName: string; content: string; messageId: string }
+  | { type: "ai:abort"; messageId: string; abortedByUserId: string }
+  // Phase C: Visual edit events
+  | { type: "visual-edit:select"; userId: string; displayName: string; color: string; selector: string; boundingRect: { x: number; y: number; width: number; height: number } }
+  | { type: "visual-edit:deselect"; userId: string }
+  | { type: "visual-edit:style-change"; userId: string; selector: string; property: string; value: string }
+  | { type: "visual-edit:text-change"; userId: string; selector: string; newText: string }
+  | { type: "visual-edit:cursor-move"; userId: string; displayName: string; color: string; x: number; y: number };
+
+export interface AiQueueItem {
+  id: string;
+  userId: string;
+  displayName: string;
+  content: string;
+  position: number;
+}
 
 export interface ChatMessage {
   id: string;
@@ -63,8 +85,16 @@ export type WsClientMessage =
   | { type: "awareness:file_close"; filePath: string }
   | { type: "awareness:selection"; data: SelectionData }
   | { type: "cursor:move"; filePath: string; line: number; column: number }
-  | { type: "yjs:sync-request" }
-  | { type: "yjs:update"; data: string };
+  | { type: "yjs:sync-request"; filePath?: string }
+  | { type: "yjs:update"; data: string; filePath?: string }
+  // Phase B: AI events from client
+  | { type: "ai:typing"; isTyping: boolean }
+  // Phase C: Visual edit events from client
+  | { type: "visual-edit:select"; selector: string; boundingRect: { x: number; y: number; width: number; height: number } }
+  | { type: "visual-edit:deselect" }
+  | { type: "visual-edit:style-change"; selector: string; property: string; value: string }
+  | { type: "visual-edit:text-change"; selector: string; newText: string }
+  | { type: "visual-edit:cursor-move"; x: number; y: number };
 
 // ─── User Color ──────────────────────────────────────────
 const COLORS = [
@@ -96,24 +126,41 @@ interface RoomMember {
   openFiles: Set<string>;
   typingInChat: boolean;
   visualSelection: SelectionData | null;
+  // Phase C: visual edit selection
+  visualEditSelector: string | null;
 }
 
 export class Room {
   readonly projectId: string;
   private members = new Map<string, RoomMember>();
-  private yjsDoc: Y.Doc;
+  private yjsManager: YjsDocumentManager;
 
   constructor(projectId: string) {
     this.projectId = projectId;
-    this.yjsDoc = new Y.Doc();
+    this.yjsManager = new YjsDocumentManager(projectId);
+  }
+
+  /**
+   * Get the YjsDocumentManager for this room.
+   */
+  getYjsManager(): YjsDocumentManager {
+    return this.yjsManager;
   }
 
   getYjsState(): Uint8Array {
-    return Y.encodeStateAsUpdate(this.yjsDoc);
+    return this.yjsManager.getState();
   }
 
-  applyYjsUpdate(update: Uint8Array): void {
-    Y.applyUpdate(this.yjsDoc, update);
+  applyYjsUpdate(update: Uint8Array, origin?: string): void {
+    this.yjsManager.applyUpdate(update, origin ?? "remote-client");
+  }
+
+  /**
+   * Get the Yjs state for a specific file. Loads from disk if needed.
+   */
+  async getYjsFileState(filePath: string): Promise<Uint8Array> {
+    await this.yjsManager.getFileText(filePath);
+    return this.yjsManager.getState();
   }
 
   join(ws: WebSocket, userId: string, displayName: string | null, avatarUrl: string | null): PresenceUser[] {
@@ -123,8 +170,12 @@ export class Room {
       status: "active", currentFile: null, currentView: "code",
       joinedAt: now, lastActiveAt: now,
       openFiles: new Set(), typingInChat: false, visualSelection: null,
+      visualEditSelector: null,
     };
     this.members.set(userId, member);
+
+    // Cancel GC if a user reconnects
+    this.yjsManager.cancelGracePeriod();
 
     // Broadcast to others that this user joined
     const presenceUser = this.toPresenceUser(member);
@@ -137,6 +188,7 @@ export class Room {
   leave(userId: string): void {
     this.members.delete(userId);
     this.broadcast({ type: "presence:user_left", userId });
+    this.broadcast({ type: "visual-edit:deselect", userId });
   }
 
   updatePresence(userId: string, data: { currentFile?: string | null; currentView?: string; status?: string }): void {
@@ -180,6 +232,38 @@ export class Room {
     this.broadcast({ type: "awareness:user_selection", userId, data }, userId);
   }
 
+  // Phase C: Visual edit selection
+  updateVisualEditSelection(userId: string, selector: string, boundingRect: { x: number; y: number; width: number; height: number }): void {
+    const member = this.members.get(userId);
+    if (!member) return;
+    member.visualEditSelector = selector;
+    this.broadcast({
+      type: "visual-edit:select",
+      userId,
+      displayName: member.displayName ?? "User",
+      color: userColor(userId),
+      selector,
+      boundingRect,
+    }, userId);
+  }
+
+  clearVisualEditSelection(userId: string): void {
+    const member = this.members.get(userId);
+    if (member) member.visualEditSelector = null;
+    this.broadcast({ type: "visual-edit:deselect", userId }, userId);
+  }
+
+  // Check if another user is editing the same element
+  getVisualEditConflict(userId: string, selector: string): { userId: string; displayName: string } | null {
+    for (const [memberId, member] of this.members) {
+      if (memberId === userId) continue;
+      if (member.visualEditSelector === selector) {
+        return { userId: memberId, displayName: member.displayName ?? "User" };
+      }
+    }
+    return null;
+  }
+
   heartbeat(userId: string): void {
     const member = this.members.get(userId);
     if (member) {
@@ -217,6 +301,14 @@ export class Room {
     }
   }
 
+  /** Send to a specific user */
+  sendTo(userId: string, message: WsServerMessage): void {
+    const member = this.members.get(userId);
+    if (member && member.ws.readyState === member.ws.OPEN) {
+      member.ws.send(JSON.stringify(message));
+    }
+  }
+
   getPresenceUsers(): PresenceUser[] {
     return Array.from(this.members.values()).map((m) => this.toPresenceUser(m));
   }
@@ -235,6 +327,27 @@ export class Room {
 
   getWs(userId: string): WebSocket | undefined {
     return this.members.get(userId)?.ws;
+  }
+
+  getMember(userId: string): { displayName: string | null; color: string } | undefined {
+    const member = this.members.get(userId);
+    if (!member) return undefined;
+    return { displayName: member.displayName, color: userColor(userId) };
+  }
+
+  /**
+   * Called when the room becomes empty. Start GC grace period.
+   */
+  onEmpty(onDestroy: () => void): void {
+    this.yjsManager.startGracePeriod(onDestroy);
+  }
+
+  /**
+   * Destroy the room and its resources.
+   */
+  async destroy(): Promise<void> {
+    await this.yjsManager.persistAll();
+    this.yjsManager.destroy();
   }
 
   private toPresenceUser(m: RoomMember): PresenceUser {

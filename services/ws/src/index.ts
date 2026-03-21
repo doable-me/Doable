@@ -34,6 +34,16 @@ async function verifyToken(token: string): Promise<{ sub: string; email: string;
   }
 }
 
+// ─── HTTP body parser helper ────────────────────────────
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
+}
+
 // ─── HTTP Server ────────────────────────────────────────
 const server = createServer(async (req, res) => {
   // CORS headers
@@ -62,22 +72,95 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    let body = "";
-    req.on("data", (chunk) => { body += chunk; });
-    req.on("end", () => {
-      try {
-        const { projectId, message } = JSON.parse(body) as { projectId: string; message: WsServerMessage };
-        const room = rooms.get(projectId);
-        if (room) {
-          room.broadcast(message);
-        }
-        res.writeHead(200);
-        res.end("ok");
-      } catch {
-        res.writeHead(400);
-        res.end("Invalid JSON");
+    const body = await readBody(req);
+    try {
+      const { projectId, message } = JSON.parse(body) as { projectId: string; message: WsServerMessage };
+      const room = rooms.get(projectId);
+      if (room) {
+        room.broadcast(message);
       }
-    });
+      res.writeHead(200);
+      res.end("ok");
+    } catch {
+      res.writeHead(400);
+      res.end("Invalid JSON");
+    }
+    return;
+  }
+
+  // ─── Internal Yjs write endpoint — AI tools write through CRDT ───
+  if (req.method === "POST" && req.url === "/internal/yjs/write") {
+    const secret = req.headers["x-internal-secret"];
+    if (secret !== INTERNAL_SECRET) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
+
+    const body = await readBody(req);
+    try {
+      const { projectId, filePath, content, operation, oldString, newString, replaceAll } =
+        JSON.parse(body) as {
+          projectId: string;
+          filePath: string;
+          content?: string;
+          operation: "write" | "edit";
+          oldString?: string;
+          newString?: string;
+          replaceAll?: boolean;
+        };
+
+      const room = rooms.get(projectId);
+      if (!room || room.isEmpty) {
+        // No active collaboration — tell API to write directly
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ handled: false }));
+        return;
+      }
+
+      const manager = room.getYjsManager();
+
+      if (operation === "write" && content !== undefined) {
+        await manager.writeFileThroughCrdt(filePath, content);
+
+        // Broadcast the Yjs update to all clients
+        const state = manager.getState();
+        const encoded = Buffer.from(state).toString("base64");
+        room.broadcast({ type: "yjs:update", userId: "__ai__", data: encoded });
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ handled: true }));
+      } else if (operation === "edit" && oldString && newString !== undefined) {
+        const result = await manager.editFileThroughCrdt(filePath, oldString, newString, replaceAll ?? false);
+
+        if (result.success) {
+          // Broadcast update
+          const state = manager.getState();
+          const encoded = Buffer.from(state).toString("base64");
+          room.broadcast({ type: "yjs:update", userId: "__ai__", data: encoded });
+        }
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ handled: true, ...result }));
+      } else {
+        res.writeHead(400);
+        res.end("Invalid operation");
+      }
+    } catch (err) {
+      console.error("[ws] Yjs write error:", err);
+      res.writeHead(500);
+      res.end("Internal error");
+    }
+    return;
+  }
+
+  // ─── Internal: check if project has active collaborators ───
+  if (req.method === "GET" && req.url?.startsWith("/internal/collab-active/")) {
+    const projectId = req.url.split("/internal/collab-active/")[1];
+    const room = rooms.get(projectId ?? "");
+    const active = room ? !room.isEmpty : false;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ active, users: room?.size ?? 0 }));
     return;
   }
 
@@ -139,7 +222,10 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
       const room = rooms.get(state.projectId);
       if (room) {
         room.leave(state.userId);
-        if (room.isEmpty) rooms.remove(state.projectId);
+        if (room.isEmpty) {
+          // Start GC grace period instead of immediate removal
+          room.onEmpty(() => rooms.remove(state.projectId!));
+        }
       }
     }
     clients.delete(ws);
@@ -159,7 +245,9 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
         const oldRoom = rooms.get(state.projectId);
         if (oldRoom) {
           oldRoom.leave(state.userId);
-          if (oldRoom.isEmpty) rooms.remove(state.projectId);
+          if (oldRoom.isEmpty) {
+            oldRoom.onEmpty(() => rooms.remove(state.projectId!));
+          }
         }
       }
       state.projectId = msg.projectId;
@@ -170,7 +258,7 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       const API_URL = process.env.API_URL ?? "http://localhost:4000";
       fetch(`${API_URL}/team-chat/${msg.projectId}/internal?limit=50`, {
         headers: { "X-Internal-Secret": INTERNAL_SECRET },
-      }).then(r => r.json()).then(data => {
+      }).then(r => r.json()).then((data: any) => {
         if (data.data) send(ws, { type: "chat:history", messages: data.data.map((m: any) => ({
           id: m.id, projectId: m.project_id, userId: m.user_id,
           displayName: m.display_name, avatarUrl: null, content: m.content,
@@ -186,7 +274,9 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
         const room = rooms.get(state.projectId);
         if (room) {
           room.leave(state.userId);
-          if (room.isEmpty) rooms.remove(state.projectId);
+          if (room.isEmpty) {
+            room.onEmpty(() => rooms.remove(state.projectId!));
+          }
         }
         state.projectId = null;
       }
@@ -285,13 +375,25 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       break;
     }
 
+    // ─── Yjs CRDT sync (per-file aware) ──────────────────
     case "yjs:sync-request": {
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          const stateUpdate = room.getYjsState();
-          const encoded = Buffer.from(stateUpdate).toString("base64");
-          send(ws, { type: "yjs:sync-response", data: encoded });
+          if (msg.filePath) {
+            // Per-file sync: load file into CRDT and return state
+            room.getYjsFileState(msg.filePath).then((stateUpdate) => {
+              const encoded = Buffer.from(stateUpdate).toString("base64");
+              send(ws, { type: "yjs:sync-response", data: encoded, filePath: msg.filePath });
+            }).catch((err) => {
+              console.error(`[ws] Yjs file sync error for ${msg.filePath}:`, err);
+            });
+          } else {
+            // Full doc sync (backward compatible)
+            const stateUpdate = room.getYjsState();
+            const encoded = Buffer.from(stateUpdate).toString("base64");
+            send(ws, { type: "yjs:sync-response", data: encoded });
+          }
         }
       }
       break;
@@ -305,7 +407,95 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
           const update = Buffer.from(msg.data, "base64");
           room.applyYjsUpdate(new Uint8Array(update));
           // Broadcast to all other room members
-          room.broadcast({ type: "yjs:update", userId: state.userId, data: msg.data }, state.userId);
+          room.broadcast(
+            { type: "yjs:update", userId: state.userId, data: msg.data, filePath: msg.filePath },
+            state.userId,
+          );
+        }
+      }
+      break;
+    }
+
+    // ─── Phase B: AI typing indicator ────────────────────
+    case "ai:typing": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.broadcast({
+            type: "ai:typing",
+            userId: state.userId,
+            displayName: state.displayName ?? "User",
+            isTyping: msg.isTyping,
+          }, state.userId);
+        }
+      }
+      break;
+    }
+
+    // ─── Phase C: Visual edit events ─────────────────────
+    case "visual-edit:select": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.updateVisualEditSelection(state.userId, msg.selector, msg.boundingRect);
+        }
+      }
+      break;
+    }
+
+    case "visual-edit:deselect": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.clearVisualEditSelection(state.userId);
+        }
+      }
+      break;
+    }
+
+    case "visual-edit:style-change": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.broadcast({
+            type: "visual-edit:style-change",
+            userId: state.userId,
+            selector: msg.selector,
+            property: msg.property,
+            value: msg.value,
+          }, state.userId);
+        }
+      }
+      break;
+    }
+
+    case "visual-edit:text-change": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.broadcast({
+            type: "visual-edit:text-change",
+            userId: state.userId,
+            selector: msg.selector,
+            newText: msg.newText,
+          }, state.userId);
+        }
+      }
+      break;
+    }
+
+    case "visual-edit:cursor-move": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.broadcast({
+            type: "visual-edit:cursor-move",
+            userId: state.userId,
+            displayName: state.displayName ?? "User",
+            color: userColor(state.userId),
+            x: msg.x,
+            y: msg.y,
+          }, state.userId);
         }
       }
       break;
