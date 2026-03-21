@@ -141,8 +141,15 @@ export const VISUAL_EDIT_BRIDGE_INLINE = `
     return false;
   }
 
+  var lastCursorBroadcast = 0;
   function onMouseMove(e) {
     if (!selectionEnabled) return;
+    // Relay cursor position to parent for collaborative cursors
+    var now = Date.now();
+    if (now - lastCursorBroadcast > 50) {
+      lastCursorBroadcast = now;
+      window.parent.postMessage({ type: 'visual-edit:cursor-in-preview', x: e.clientX, y: e.clientY }, '*');
+    }
     var el = document.elementFromPoint(e.clientX, e.clientY);
     if (shouldIgnore(el) || el === hoveredElement) return;
     hoveredElement = el;

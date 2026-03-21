@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { CollaborationProvider } from "@/modules/collaboration";
 import { CollabHeaderItems } from "@/modules/collaboration/components/collab-header-items";
 import { CollabActivityOverlay } from "@/modules/collaboration/components/collab-activity-overlay";
-import { RemoteSelectionOverlays, RemoteVisualCursors, VisualEditConflictWarning, useVisualEditBroadcast, CollabPreviewSync } from "@/modules/collaboration/components/visual-edit-collab";
+import { RemoteSelectionOverlays, RemoteVisualCursors, VisualEditConflictWarning, CollabPreviewSync } from "@/modules/collaboration/components/visual-edit-collab";
 import { ChatPopout } from "@/modules/collaboration/components/chat-popout";
 import { ChatMessageToasts } from "@/modules/collaboration/components/chat-message-toast";
 import { CollabTeamChatWrapper } from "@/modules/collaboration/components/collab-team-chat-wrapper";
@@ -2045,7 +2045,6 @@ export default function EditorPage() {
   const visualEdit = useVisualEdit({ iframeRef, projectId: resolvedProjectId, onSendMessage: sendMessage, onSaveComplete: () => {
     window.dispatchEvent(new CustomEvent("doable:preview-refresh"));
   }});
-  const visualEditBroadcast = useVisualEditBroadcast({ iframeRef });
 
   // Auto-activate visual edit when entering design mode
   const prevActiveTabRef = useRef(activeTab);
@@ -2055,24 +2054,9 @@ export default function EditorPage() {
     }
     if (activeTab !== "design" && prevActiveTabRef.current === "design") {
       visualEdit.deactivateVisualEdit();
-      visualEditBroadcast.broadcastDeselect();
     }
     prevActiveTabRef.current = activeTab;
-  }, [activeTab, visualEdit.activateVisualEdit, visualEdit.deactivateVisualEdit, visualEditBroadcast.broadcastDeselect]);
-
-  // Broadcast visual edit selections to collaborators
-  const prevSelectedRef = useRef<string | null>(null);
-  useEffect(() => {
-    const sel = visualEdit.selectedElement;
-    if (sel && sel.selector !== prevSelectedRef.current) {
-      prevSelectedRef.current = sel.selector;
-      const r = sel.boundingRect;
-      visualEditBroadcast.broadcastSelect(sel.selector, { x: r?.left ?? 0, y: r?.top ?? 0, width: r?.width ?? 0, height: r?.height ?? 0 });
-    } else if (!sel && prevSelectedRef.current) {
-      prevSelectedRef.current = null;
-      visualEditBroadcast.broadcastDeselect();
-    }
-  }, [visualEdit.selectedElement, visualEditBroadcast.broadcastSelect, visualEditBroadcast.broadcastDeselect]);
+  }, [activeTab, visualEdit.activateVisualEdit, visualEdit.deactivateVisualEdit]);
 
   // Get iframe rect for floating toolbar positioning
   const [iframeRect, setIframeRect] = useState<DOMRect | null>(null);
