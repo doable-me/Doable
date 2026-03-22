@@ -23,6 +23,7 @@ import {
 } from "../projects/dev-server.js";
 import { isProjectScaffolded, ensureDependencies } from "../projects/file-manager.js";
 import { VISUAL_EDIT_BRIDGE_INLINE } from "../visual-edit-bridge-inline.js";
+import { getTrackingScript } from "../analytics/tracker.js";
 
 // Public API URL for browser-facing script injections (analytics, etc.)
 const publicApiUrl =
@@ -233,10 +234,10 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
 })();
 </script>`;
 
-      // Analytics meta + script go in <head>
+      // Analytics — inlined to avoid CDN/browser caching issues with script.js
       const headSnippet =
         `<meta name="doable-project-id" content="${projectId}">` +
-        `<script src="${publicApiUrl}/analytics/script.js"></script>`;
+        `<script>${getTrackingScript(publicApiUrl)}</script>`;
       // Visual edit bridge must go before </body> so document.body exists.
       // Inlined to avoid cross-origin script loading issues in sandboxed iframes.
       const bodySnippet = `<script>${VISUAL_EDIT_BRIDGE_INLINE}</script>`;
