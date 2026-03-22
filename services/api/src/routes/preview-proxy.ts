@@ -24,8 +24,10 @@ import {
 import { isProjectScaffolded, ensureDependencies } from "../projects/file-manager.js";
 import { VISUAL_EDIT_BRIDGE_INLINE } from "../visual-edit-bridge-inline.js";
 
-const apiUrl =
-  process.env.API_URL ??
+// Public API URL for browser-facing script injections (analytics, etc.)
+const publicApiUrl =
+  process.env.NEXT_PUBLIC_API_URL ??
+  process.env.CORS_ORIGINS?.split(",")[0]?.replace(/\/$/, "") ??
   `http://localhost:${process.env.API_PORT ?? "4000"}`;
 
 export const previewRoutes = new Hono();
@@ -234,7 +236,7 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       // Analytics meta + script go in <head>
       const headSnippet =
         `<meta name="doable-project-id" content="${projectId}">` +
-        `<script src="${apiUrl}/analytics/script.js"></script>`;
+        `<script src="${publicApiUrl}/analytics/script.js"></script>`;
       // Visual edit bridge must go before </body> so document.body exists.
       // Inlined to avoid cross-origin script loading issues in sandboxed iframes.
       const bodySnippet = `<script>${VISUAL_EDIT_BRIDGE_INLINE}</script>`;
