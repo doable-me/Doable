@@ -16,8 +16,10 @@ const projects = projectQueries(sql);
 
 export const analyticsRoutes = new Hono<AuthEnv>();
 
+// Public URL — this gets embedded in the tracking script served to browsers
 const apiUrl =
-  process.env.API_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  process.env.CORS_ORIGINS?.split(",")[0]?.replace(/\/$/, "") ??
   `http://localhost:${process.env.API_PORT ?? "4000"}`;
 
 // ─── Helpers ──────────────────────────────────────────────────
