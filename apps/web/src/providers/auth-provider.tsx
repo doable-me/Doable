@@ -89,12 +89,14 @@ function toAuthUser(apiUser: {
   email: string;
   displayName: string | null;
   avatarUrl: string | null;
+  isPlatformAdmin?: boolean;
 }): AuthUser {
   return {
     id: apiUser.id,
     email: apiUser.email,
     displayName: apiUser.displayName ?? apiUser.email.split("@")[0] ?? apiUser.email,
     avatarUrl: apiUser.avatarUrl,
+    isPlatformAdmin: apiUser.isPlatformAdmin ?? false,
   };
 }
 
