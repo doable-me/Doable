@@ -51,10 +51,12 @@ export const TRANSPORT_LABELS: Record<CustomIntegration["transport_type"], { fri
 };
 
 export const SCOPE_LABELS: Record<CustomIntegration["scope"], string> = {
-  workspace: "Shared with all projects",
-  project: "This project only",
-  user: "Just for me",
+  workspace: "Everyone in this workspace",
+  project: "Everyone on this project",
+  user: "Only me (personal)",
 };
+
+export type WorkspaceRole = "owner" | "admin" | "member" | "viewer";
 
 // ─── Hook ───────────────────────────────────────────────────
 
@@ -64,6 +66,7 @@ export function useIntegrations(workspaceId: string, projectId?: string) {
   const [loading, setLoading] = useState(true);
   const [githubLoading, setGithubLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [role, setRole] = useState<WorkspaceRole | null>(null);
 
   const refresh = useCallback(async () => {
     if (!workspaceId) {
@@ -73,10 +76,11 @@ export function useIntegrations(workspaceId: string, projectId?: string) {
     setLoading(true);
     setError(null);
     try {
-      const json = await apiFetch<{ data: CustomIntegration[] }>(
+      const json = await apiFetch<{ data: CustomIntegration[]; role?: WorkspaceRole }>(
         `/workspaces/${workspaceId}/connectors`
       );
       setIntegrations(json.data);
+      if (json.role) setRole(json.role);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load integrations");
     } finally {
@@ -163,6 +167,8 @@ export function useIntegrations(workspaceId: string, projectId?: string) {
   const projectIntegrations = integrations.filter((i) => i.scope === "project");
   const userIntegrations = integrations.filter((i) => i.scope === "user");
 
+  const isAdmin = role === "owner" || role === "admin";
+
   return {
     integrations,
     workspaceIntegrations,
@@ -172,6 +178,8 @@ export function useIntegrations(workspaceId: string, projectId?: string) {
     loading,
     githubLoading,
     error,
+    role,
+    isAdmin,
     refresh,
     refreshGithub,
     createIntegration,

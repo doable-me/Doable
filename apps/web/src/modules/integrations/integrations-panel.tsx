@@ -160,12 +160,14 @@ function CustomCard({
   onToggle,
   onTest,
   onDelete,
+  readOnly = false,
 }: {
   integration: CustomIntegration;
   expanded: boolean;
   onToggle: () => void;
   onTest: () => void;
   onDelete: () => void;
+  readOnly?: boolean;
 }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -323,7 +325,7 @@ function CustomCard({
               )}
               Test Connection
             </button>
-            <button
+            {!readOnly && <button
               onClick={handleDelete}
               onBlur={() => setConfirmDelete(false)}
               className={cn(
@@ -344,7 +346,7 @@ function CustomCard({
                   Remove
                 </>
               )}
-            </button>
+            </button>}
           </div>
         </div>
       )}
@@ -405,6 +407,7 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
     testIntegration,
     deleteIntegration,
     disconnectGithub,
+    isAdmin,
   } = useIntegrations(workspaceId, projectId);
 
   const [showForm, setShowForm] = useState(false);
@@ -468,6 +471,7 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
           {showForm && (
             <AddIntegrationForm
               workspaceId={workspaceId}
+              isAdmin={isAdmin}
               onCreated={handleCreated}
               onCancel={() => setShowForm(false)}
             />
@@ -511,12 +515,13 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
             <>
               {/* Shared with all projects (workspace scope) */}
               {workspaceCount > 0 && (
-                <ScopeSection label="Shared with all projects" count={workspaceCount}>
+                <ScopeSection label="Everyone in this workspace" count={workspaceCount}>
                   {workspaceIntegrations.map((integration) => (
                     <CustomCard
                       key={integration.id}
                       integration={integration}
                       expanded={expandedId === integration.id}
+                      readOnly={!isAdmin}
                       onToggle={() =>
                         setExpandedId((prev) =>
                           prev === integration.id ? null : integration.id
@@ -531,7 +536,7 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
 
               {/* This project only (project scope + built-ins) */}
               {projectId && (
-                <ScopeSection label="This project only" count={projectCount}>
+                <ScopeSection label="Everyone on this project" count={projectCount}>
                   {/* GitHub (built-in) — always shown */}
                   {!githubLoading && (
                     <BuiltInCard
@@ -616,7 +621,7 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
 
               {/* Just for me (user scope) */}
               {userCount > 0 && (
-                <ScopeSection label="Just for me" count={userCount}>
+                <ScopeSection label="Only me (personal)" count={userCount}>
                   {userIntegrations.map((integration) => (
                     <CustomCard
                       key={integration.id}

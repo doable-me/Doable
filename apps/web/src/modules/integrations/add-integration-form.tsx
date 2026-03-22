@@ -9,6 +9,7 @@ import { useIntegrations, TRANSPORT_LABELS } from "./use-integrations";
 
 interface AddIntegrationFormProps {
   workspaceId: string;
+  isAdmin?: boolean;
   onCreated: () => void;
   onCancel: () => void;
 }
@@ -21,13 +22,14 @@ type ScopeType = "workspace" | "project" | "user";
 
 export function AddIntegrationForm({
   workspaceId,
+  isAdmin = false,
   onCreated,
   onCancel,
 }: AddIntegrationFormProps) {
   const { createIntegration } = useIntegrations(workspaceId);
 
   const [name, setName] = useState("");
-  const [scope, setScope] = useState<ScopeType>("workspace");
+  const [scope, setScope] = useState<ScopeType>(isAdmin ? "workspace" : "user");
   const [transportType, setTransportType] = useState<TransportType>("streamable_http");
   const [serverUrl, setServerUrl] = useState("");
   const [serverCommand, setServerCommand] = useState("");
@@ -109,11 +111,11 @@ export function AddIntegrationForm({
           <label className="block text-xs font-medium text-muted-foreground mb-1.5">
             Availability
           </label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className={cn("grid gap-2", isAdmin ? "grid-cols-3" : "grid-cols-2")}>
             {([
-              { value: "workspace" as const, label: "All projects", desc: "Shared" },
-              { value: "project" as const, label: "This project", desc: "Project only" },
-              { value: "user" as const, label: "Just me", desc: "Personal" },
+              ...(isAdmin ? [{ value: "workspace" as const, label: "Everyone", desc: "All workspace members" }] : []),
+              { value: "project" as const, label: "This project", desc: "Project members" },
+              { value: "user" as const, label: "Only me", desc: "Personal" },
             ]).map((option) => (
               <button
                 key={option.value}

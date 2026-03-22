@@ -22,6 +22,13 @@ async function requireMember(workspaceId: string, userId: string): Promise<strin
   return null;
 }
 
+async function requireAdmin(workspaceId: string, userId: string): Promise<string | null> {
+  const role = await workspaces.getMemberRole(workspaceId, userId);
+  if (!role) return "Not a member of this workspace";
+  if (role !== "owner" && role !== "admin") return "Admin or owner role required";
+  return null;
+}
+
 /** Convert DB row to McpConnectorConfig for the runtime */
 function rowToConfig(row: Awaited<ReturnType<typeof connectors.getConnector>>): McpConnectorConfig {
   return {
@@ -54,11 +61,11 @@ connectorRoutes.get("/:workspaceId/connectors", async (c) => {
   const userId = c.get("userId");
   const projectId = c.req.query("projectId");
 
-  const err = await requireMember(workspaceId, userId);
-  if (err) return c.json({ error: err }, 403);
+  const role = await workspaces.getMemberRole(workspaceId, userId);
+  if (!role) return c.json({ error: "Not a member of this workspace" }, 403);
 
   const data = await connectors.listConnectors(workspaceId, { projectId });
-  return c.json({ data });
+  return c.json({ data, role });
 });
 
 const createConnectorSchema = z.object({
@@ -82,8 +89,14 @@ connectorRoutes.post(
     const userId = c.get("userId");
     const body = c.req.valid("json");
 
-    const err = await requireMember(workspaceId, userId);
-    if (err) return c.json({ error: err }, 403);
+    // Workspace-scoped integrations require admin/owner role
+    if (body.scope === "workspace") {
+      const err = await requireAdmin(workspaceId, userId);
+      if (err) return c.json({ error: err }, 403);
+    } else {
+      const err = await requireMember(workspaceId, userId);
+      if (err) return c.json({ error: err }, 403);
+    }
 
     // Validate transport config
     if (body.transportType !== "stdio" && !body.serverUrl) {
