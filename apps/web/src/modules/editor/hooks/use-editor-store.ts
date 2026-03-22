@@ -73,7 +73,7 @@ interface EditorState {
   previewLoading: boolean;
 
   // Sidebar
-  activeSidebarTab: "pages" | "files" | "history" | "knowledge" | "connectors" | "skills";
+  activeSidebarTab: "pages" | "files" | "history" | "knowledge" | "skills";
 
   // Actions - Project
   setProjectId: (id: string) => void;

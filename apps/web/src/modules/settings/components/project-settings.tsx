@@ -45,6 +45,7 @@ import {
   apiDeleteProject,
   type ApiProject,
 } from "@/lib/api";
+import { IntegrationsPanel } from "@/modules/integrations/integrations-panel";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -261,7 +262,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
         />
       )}
       {activeTab === "integrations" && (
-        <IntegrationsTab projectId={projectId} addToast={addToast} />
+        <IntegrationsPanelWrapper projectId={projectId} />
       )}
       {activeTab === "context" && (
         <ContextFilesTab projectId={projectId} addToast={addToast} />
@@ -527,203 +528,26 @@ function InfoItem({
 }
 
 // ═══════════════════════════════════════════════════════════════
-// INTEGRATIONS TAB
+// INTEGRATIONS TAB (uses unified IntegrationsPanel)
 // ═══════════════════════════════════════════════════════════════
 
-interface IntegrationCardProps {
-  icon: React.ElementType;
-  name: string;
-  description: string;
-  connected: boolean;
-  status?: string;
-  onConnect?: () => void;
-  onDisconnect?: () => void;
-  children?: React.ReactNode;
-  comingSoon?: boolean;
-}
-
-function IntegrationCard({
-  icon: Icon,
-  name,
-  description,
-  connected,
-  status,
-  onConnect,
-  onDisconnect,
-  children,
-  comingSoon,
-}: IntegrationCardProps) {
-  return (
-    <div className="rounded-xl border p-5 transition-colors">
-      <div className="flex items-start justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-            <Icon className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold">{name}</h3>
-              {comingSoon && (
-                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Coming Soon
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {connected && status && (
-            <div className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-green-500" />
-              <span className="text-xs font-medium text-green-600 dark:text-green-400">
-                {status}
-              </span>
-            </div>
-          )}
-          {!comingSoon && (
-            <button
-              onClick={connected ? onDisconnect : onConnect}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                connected
-                  ? "border border-input text-muted-foreground hover:bg-accent hover:text-foreground"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90"
-              )}
-            >
-              {connected ? "Disconnect" : "Connect"}
-            </button>
-          )}
-        </div>
-      </div>
-      {children && <div className="mt-4 border-t pt-4">{children}</div>}
-    </div>
-  );
-}
-
-function IntegrationsTab({
-  projectId,
-  addToast,
-}: {
-  projectId: string;
-  addToast: (type: "success" | "error", msg: string) => void;
-}) {
-  const [githubStatus, setGithubStatus] = useState<{
-    connected: boolean;
-    status: string;
-    repoUrl: string | null;
-    branch: string;
-    lastSyncedAt: string | null;
-  } | null>(null);
-  const [githubLoading, setGithubLoading] = useState(true);
-
-  // Load GitHub status
-  useEffect(() => {
-    apiFetch<{ data: typeof githubStatus }>(
-      `/projects/${projectId}/github/status`
-    )
-      .then((res) => setGithubStatus(res.data))
-      .catch(() => setGithubStatus(null))
-      .finally(() => setGithubLoading(false));
-  }, [projectId]);
-
-  const handleGitHubDisconnect = async () => {
-    try {
-      await apiFetch(`/projects/${projectId}/github/connect`, {
-        method: "DELETE",
-      });
-      setGithubStatus(null);
-      addToast("success", "Disconnected from GitHub");
-    } catch (err) {
-      addToast("error", err instanceof Error ? err.message : "Failed to disconnect");
-    }
-  };
+function IntegrationsPanelWrapper({ projectId }: { projectId: string }) {
+  const workspaceId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("doable_active_workspace_id") ?? ""
+      : "";
 
   return (
     <div className="space-y-4">
       <SectionCard
-        title="Integrations Hub"
-        description="Connect third-party services to extend your project."
+        title="Integrations"
+        description="Connect third-party services and AI tools to extend your project."
       >
-        <div className="space-y-4">
-          {/* GitHub Integration */}
-          {githubLoading ? (
-            <div className="rounded-xl border p-5">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 animate-pulse rounded-lg bg-muted" />
-                <div className="space-y-2">
-                  <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-                  <div className="h-3 w-48 animate-pulse rounded bg-muted" />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <IntegrationCard
-              icon={GitBranch}
-              name="GitHub"
-              description="Sync your project code with a GitHub repository for version control."
-              connected={githubStatus?.connected ?? false}
-              status={githubStatus?.status}
-              onConnect={() =>
-                addToast(
-                  "success",
-                  "Use the GitHub button in the editor toolbar to connect."
-                )
-              }
-              onDisconnect={() => void handleGitHubDisconnect()}
-            >
-              {githubStatus?.connected && (
-                <div className="space-y-2">
-                  {githubStatus.repoUrl && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Repository</span>
-                      <a
-                        href={githubStatus.repoUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-primary hover:underline"
-                      >
-                        {githubStatus.repoUrl.replace("https://github.com/", "")}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Branch</span>
-                    <span className="font-mono text-xs">{githubStatus.branch}</span>
-                  </div>
-                  {githubStatus.lastSyncedAt && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Last synced</span>
-                      <span className="text-xs">
-                        {new Date(githubStatus.lastSyncedAt).toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </IntegrationCard>
-          )}
-
-          {/* Stripe Integration (Placeholder) */}
-          <IntegrationCard
-            icon={CreditCard}
-            name="Stripe"
-            description="Accept payments, manage subscriptions, and process transactions."
-            connected={false}
-            comingSoon
-          />
-
-          {/* Supabase Integration (Placeholder) */}
-          <IntegrationCard
-            icon={Database}
-            name="Supabase"
-            description="Connect a Supabase database for backend storage and authentication."
-            connected={false}
-            comingSoon
-          />
-        </div>
+        <IntegrationsPanel
+          workspaceId={workspaceId}
+          projectId={projectId}
+          variant="settings"
+        />
       </SectionCard>
     </div>
   );

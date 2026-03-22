@@ -141,7 +141,7 @@ const CloudPanel = dynamic(() => import("@/modules/editor/panels/cloud-panel").t
 const AnalyticsPanel = dynamic(() => import("@/modules/editor/panels/analytics-panel").then(m => ({ default: m.AnalyticsPanel })), { ssr: false });
 const SecurityPanel = dynamic(() => import("@/modules/editor/panels/security-panel").then(m => ({ default: m.SecurityPanel })), { ssr: false });
 const SpeedPanel = dynamic(() => import("@/modules/editor/panels/speed-panel").then(m => ({ default: m.SpeedPanel })), { ssr: false });
-const ConnectorsPanel = dynamic(() => import("@/modules/connectors/connectors-panel").then(m => ({ default: m.ConnectorsPanel })), { ssr: false });
+const IntegrationsPanel = dynamic(() => import("@/modules/integrations/integrations-panel").then(m => ({ default: m.IntegrationsPanel })), { ssr: false });
 const SkillsPanel = dynamic(() => import("@/modules/skills/skills-panel").then(m => ({ default: m.SkillsPanel })), { ssr: false });
 const ContextPanel = dynamic(() => import("@/modules/editor/context-files/context-panel").then(m => ({ default: m.ContextPanel })), { ssr: false });
 
@@ -149,7 +149,7 @@ const ContextPanel = dynamic(() => import("@/modules/editor/context-files/contex
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Types ──────────────────────────────────────────────────
-type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "connectors" | "skills" | "knowledge" | "team";
+type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "integrations" | "skills" | "knowledge" | "team";
 type ChatMode = "agent" | "plan" | "visual-edit";
 type DeviceMode = "desktop" | "tablet" | "mobile";
 
@@ -228,7 +228,7 @@ function detectLanguage(filename: string): string {
 const AUTOSAVE_DELAY_MS = 1500;
 
 /** Tabs that render a full panel (replacing the preview pane) */
-const PANEL_TABS: ActiveTab[] = ["cloud", "analytics", "files", "security", "speed", "connectors", "skills", "knowledge"];
+const PANEL_TABS: ActiveTab[] = ["cloud", "analytics", "files", "security", "speed", "integrations", "skills", "knowledge"];
 
 /** All items available in the triple-dots "More" menu */
 interface MoreMenuItem {
@@ -246,7 +246,7 @@ const MORE_MENU_ITEMS: MoreMenuItem[] = [
   { key: "security", icon: Shield, label: "Security" },
   { key: "speed", icon: Gauge, label: "Speed" },
   { key: "knowledge", icon: BookOpen, label: "Knowledge" },
-  { key: "connectors", icon: Plug, label: "Connectors" },
+  { key: "integrations", icon: Plug, label: "Integrations" },
   { key: "skills", icon: Sparkles, label: "Skills" },
 ];
 
@@ -4148,8 +4148,8 @@ export default function EditorPage() {
             {activeTab === "knowledge" && (
               <ContextPanel projectId={resolvedProjectId} workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? undefined : undefined} apiBaseUrl="https://api.doable.me" />
             )}
-            {activeTab === "connectors" && (
-              <ConnectorsPanel workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? "" : ""} />
+            {activeTab === "integrations" && (
+              <IntegrationsPanel workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? "" : ""} projectId={resolvedProjectId} />
             )}
             {activeTab === "skills" && (
               <SkillsPanel workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? "" : ""} projectId={resolvedProjectId} />

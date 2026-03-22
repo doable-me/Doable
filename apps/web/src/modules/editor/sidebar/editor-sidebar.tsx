@@ -5,7 +5,6 @@ import { FileTree } from "./file-tree";
 import { VersionHistory } from "./version-history";
 import { PagesTab } from "./pages-tab";
 import { KnowledgeTab } from "./knowledge-tab";
-import { ConnectorsPanel } from "@/modules/connectors/connectors-panel";
 import { SkillsPanel } from "@/modules/skills/skills-panel";
 import {
   Files,
@@ -13,7 +12,6 @@ import {
   BookOpen,
   Layout,
   PanelLeftClose,
-  Plug,
   Sparkles,
 } from "lucide-react";
 
@@ -22,7 +20,6 @@ const tabs = [
   { id: "files" as const, label: "Files", icon: Files },
   { id: "history" as const, label: "History", icon: History },
   { id: "knowledge" as const, label: "Knowledge", icon: BookOpen },
-  { id: "connectors" as const, label: "Connectors", icon: Plug },
   { id: "skills" as const, label: "Skills", icon: Sparkles },
 ];
 
@@ -76,14 +73,6 @@ export function EditorSidebar() {
         {activeSidebarTab === "knowledge" && !projectId && (
           <div className="flex items-center justify-center h-48 text-xs text-muted-foreground">
             No project selected.
-          </div>
-        )}
-        {activeSidebarTab === "connectors" && workspaceId && (
-          <ConnectorsPanel workspaceId={workspaceId} />
-        )}
-        {activeSidebarTab === "connectors" && !workspaceId && (
-          <div className="flex items-center justify-center h-48 text-xs text-muted-foreground">
-            No workspace selected.
           </div>
         )}
         {activeSidebarTab === "skills" && workspaceId && (
