@@ -123,6 +123,11 @@ if ! command -v psql &>/dev/null; then
   apt-get install -y postgresql postgresql-contrib
 fi
 
+# pgvector extension for PostgreSQL
+if ! dpkg -l | grep -q "postgresql-.*-pgvector"; then
+  apt-get install -y postgresql-16-pgvector 2>/dev/null || apt-get install -y postgresql-14-pgvector 2>/dev/null || true
+fi
+
 # fail2ban (SSH brute-force protection)
 if ! command -v fail2ban-client &>/dev/null; then
   apt-get install -y fail2ban
@@ -342,6 +347,8 @@ CORS_ORIGINS=https://${DOMAIN}
 # ─── WebSocket Server ──────────────────────────────────────
 WS_PORT=4001
 WS_HOST=127.0.0.1
+WS_INTERNAL_URL=http://127.0.0.1:${WS_PORT:-4001}
+API_URL=http://127.0.0.1:${API_PORT:-4000}
 
 # ─── Next.js Frontend ──────────────────────────────────────
 NEXT_PUBLIC_API_URL=https://${API_DOMAIN}
@@ -356,6 +363,7 @@ GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
 GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
 GITHUB_REDIRECT_URI=https://${API_DOMAIN}/auth/github/callback
 GITHUB_COPILOT_REDIRECT_URI=https://${API_DOMAIN}/auth/github/copilot/callback
+GITHUB_REPO_REDIRECT_URI=https://api.${DOMAIN}/auth/github/repo/callback
 
 # ─── AI / Copilot SDK ─────────────────────────────────────
 COPILOT_DEFAULT_MODEL=
@@ -381,11 +389,19 @@ STRIPE_BUSINESS_YEARLY_PRICE_ID=
 
 # ─── Publish / Hosting ────────────────────────────────────
 PROJECTS_ROOT=${INSTALL_DIR}/services/api/projects
+DOABLE_PROJECTS_DIR=${INSTALL_DIR}/services/api/projects
 SITES_DIR=${INSTALL_DIR}/sites
 DOABLE_DOMAIN=${DOMAIN}
 
 # ─── Environment ───────────────────────────────────────────
 NODE_ENV=development
+
+# ─── Email (SMTP) ───
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+EMAIL_FROM=Doable <noreply@${DOMAIN}>
 ENVEOF
 
 # Next.js needs NEXT_PUBLIC_* in its own directory
@@ -404,12 +420,22 @@ cd "$INSTALL_DIR"
 pnpm install
 
 info "Running database migrations..."
+
+# Create PostgreSQL extensions as superuser (required before migrations)
+info "Creating PostgreSQL extensions..."
+sudo -u postgres psql -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" 2>/dev/null || true
+sudo -u postgres psql -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || true
+sudo -u postgres psql -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" 2>/dev/null || true
+ok "PostgreSQL extensions created (pgcrypto, vector, pg_trgm)"
+
 # Run migrations from BOTH migration directories
 for dir in services/api/src/db/migrations packages/db/migrations; do
   if [[ -d "$dir" ]]; then
     for f in $(ls "$dir"/*.sql 2>/dev/null | sort); do
       info "  Applying: $f"
-      PGPASSWORD="${DB_PASS}" psql -h localhost -U doable -d doable -f "$f" 2>&1 | grep -i error || true
+      if ! PGPASSWORD="${DB_PASS}" psql -h localhost -U "${DB_NAME}" -d "${DB_NAME}" -f "$f" 2>&1; then
+        warn "Migration may have had errors: $(basename "$f") — check output above"
+      fi
     done
   fi
 done
@@ -497,6 +523,8 @@ info "Step 11/13: Setting up publish infrastructure..."
 
 # Create sites directory for published projects
 mkdir -p "${INSTALL_DIR}/sites"
+mkdir -p "${INSTALL_DIR}/services/api/projects"
+mkdir -p "${INSTALL_DIR}/services/api/thumbnails"
 chmod 755 /root
 chmod -R 755 "${INSTALL_DIR}/sites"
 
