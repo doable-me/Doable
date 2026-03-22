@@ -421,7 +421,9 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
 
   // Count for each scope section (including built-ins)
   const workspaceCount = workspaceIntegrations.length;
-  const projectCount = projectIntegrations.length + (hasGithub ? 1 : 0) + (githubStatus && !githubStatus.connected ? 1 : 0);
+  // Count built-in integrations: GitHub (connected or not) + Stripe + Supabase placeholders
+  const builtInCount = projectId ? 3 : 0;
+  const projectCount = projectIntegrations.length + builtInCount;
   const userCount = userIntegrations.length;
 
   const isSettings = variant === "settings";
@@ -481,8 +483,8 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
             </div>
           )}
 
-          {/* Empty state */}
-          {!isLoading && totalCustom === 0 && !hasGithub && !showForm && (
+          {/* Empty state — only when no projectId (no built-ins to show) and no custom integrations */}
+          {!isLoading && totalCustom === 0 && !projectId && !showForm && (
             <div className="flex flex-col items-center justify-center py-10 text-center">
               <Plug className="h-8 w-8 text-muted-foreground/40 mb-3" />
               <p className="text-sm text-muted-foreground mb-1">
@@ -505,7 +507,7 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
           )}
 
           {/* Grouped by scope */}
-          {!isLoading && (totalCustom > 0 || githubStatus) && (
+          {!isLoading && (totalCustom > 0 || projectId) && (
             <>
               {/* Shared with all projects (workspace scope) */}
               {workspaceCount > 0 && (
@@ -528,7 +530,7 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
               )}
 
               {/* This project only (project scope + built-ins) */}
-              {(projectCount > 0 || githubStatus) && projectId && (
+              {projectId && (
                 <ScopeSection label="This project only" count={projectCount}>
                   {/* GitHub (built-in) */}
                   {githubStatus && (
