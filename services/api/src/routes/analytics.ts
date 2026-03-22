@@ -84,7 +84,7 @@ function isTrackRateLimited(ip: string): boolean {
 analyticsRoutes.get("/script.js", async (c) => {
   const script = getTrackingScript(apiUrl);
   c.header("Content-Type", "application/javascript");
-  c.header("Cache-Control", "public, max-age=3600");
+  c.header("Cache-Control", "public, max-age=300, s-maxage=60");
   return c.body(script);
 });
 
