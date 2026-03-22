@@ -1031,7 +1031,9 @@ export default function DashboardPage() {
 
   const fetchFolders = useCallback(async () => {
     try {
-      const res = await apiFetch<{ data: Folder[] }>("/folders");
+      const wsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") : null;
+      if (!wsId) { setFolders([]); return; }
+      const res = await apiFetch<{ data: Folder[] }>(`/folders?workspaceId=${wsId}`);
       setFolders(res.data);
     } catch {
       setFolders([]);
