@@ -532,20 +532,20 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
               {/* This project only (project scope + built-ins) */}
               {projectId && (
                 <ScopeSection label="This project only" count={projectCount}>
-                  {/* GitHub (built-in) */}
-                  {githubStatus && (
+                  {/* GitHub (built-in) — always shown */}
+                  {!githubLoading && (
                     <BuiltInCard
                       icon={GitBranch}
                       name="GitHub"
                       description="Sync code with a GitHub repository for version control."
-                      connected={githubStatus.connected}
-                      statusText={githubStatus.connected ? githubStatus.status : undefined}
+                      connected={githubStatus?.connected ?? false}
+                      statusText={githubStatus?.connected ? githubStatus.status : undefined}
                       onConnect={() => {
                         // Focus the GitHub button in the toolbar
                       }}
                       onDisconnect={() => void disconnectGithub()}
                     >
-                      {githubStatus.connected && (
+                      {githubStatus?.connected && (
                         <div className="space-y-2">
                           {githubStatus.repoUrl && (
                             <div className="flex items-center justify-between text-sm">
