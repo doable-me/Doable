@@ -41,7 +41,10 @@ export function useConnectors(workspaceId: string) {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!workspaceId) return;
+    if (!workspaceId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
