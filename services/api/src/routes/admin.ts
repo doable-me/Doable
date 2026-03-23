@@ -205,13 +205,168 @@ async function ensureWorkspaceMember(workspaceId: string, userId: string, invite
   }
 }
 
-// GET /admin/users/ai-allocations — all users with their AI allocation in their own workspace
+// Helper: copy a copilot account from one workspace to another.
+// Returns the ID of the account in the target workspace (reuses existing if same github_login).
+async function cloneCopilotAccountToWorkspace(
+  sourceAccountId: string,
+  targetWorkspaceId: string,
+  adminId: string,
+  encKey: string
+): Promise<string | null> {
+  // Get the source account with its decrypted token
+  const [source] = await sql<{
+    id: string; workspace_id: string; label: string; github_login: string;
+    github_id: string | null; is_valid: boolean; decrypted_token: string;
+  }[]>`
+    SELECT id, workspace_id, label, github_login, github_id, is_valid,
+           pgp_sym_decrypt(encrypted_token::bytea, ${encKey}) AS decrypted_token
+    FROM github_copilot_accounts
+    WHERE id = ${sourceAccountId}
+  `;
+  if (!source) return null;
+
+  // If already in target workspace, nothing to do — just return the existing ID
+  if (source.workspace_id === targetWorkspaceId) return source.id;
+
+  // Check if this github_login already exists in target workspace
+  const [existing] = await sql<{ id: string }[]>`
+    SELECT id FROM github_copilot_accounts
+    WHERE workspace_id = ${targetWorkspaceId} AND github_login = ${source.github_login}
+  `;
+  if (existing) {
+    // Update the existing account's token and label to stay in sync
+    await sql`
+      UPDATE github_copilot_accounts
+      SET encrypted_token = pgp_sym_encrypt(${source.decrypted_token}, ${encKey}),
+          label = ${source.label}, is_valid = ${source.is_valid}
+      WHERE id = ${existing.id}
+    `;
+    return existing.id;
+  }
+
+  // Create a copy in the target workspace
+  const [newAccount] = await sql<{ id: string }[]>`
+    INSERT INTO github_copilot_accounts (
+      workspace_id, label, github_login, github_id, encrypted_token, is_valid, added_by
+    ) VALUES (
+      ${targetWorkspaceId}, ${source.label}, ${source.github_login},
+      ${source.github_id}, pgp_sym_encrypt(${source.decrypted_token}, ${encKey}),
+      ${source.is_valid}, ${adminId}
+    ) RETURNING id
+  `;
+  return newAccount?.id ?? null;
+}
+
+// Helper: copy a custom AI provider from one workspace to another.
+async function cloneProviderToWorkspace(
+  sourceProviderId: string,
+  targetWorkspaceId: string,
+  adminId: string,
+  encKey: string
+): Promise<string | null> {
+  const [source] = await sql<{
+    id: string; workspace_id: string; label: string; provider_type: string;
+    base_url: string; azure_api_version: string | null; is_valid: boolean;
+    decrypted_api_key: string | null; decrypted_bearer_token: string | null;
+  }[]>`
+    SELECT id, workspace_id, label, provider_type, base_url, azure_api_version, is_valid,
+           CASE WHEN encrypted_api_key IS NOT NULL
+             THEN pgp_sym_decrypt(encrypted_api_key::bytea, ${encKey}) ELSE NULL END AS decrypted_api_key,
+           CASE WHEN encrypted_bearer_token IS NOT NULL
+             THEN pgp_sym_decrypt(encrypted_bearer_token::bytea, ${encKey}) ELSE NULL END AS decrypted_bearer_token
+    FROM ai_providers
+    WHERE id = ${sourceProviderId}
+  `;
+  if (!source) return null;
+
+  if (source.workspace_id === targetWorkspaceId) return source.id;
+
+  // Check if same label+type already exists in target workspace
+  const [existing] = await sql<{ id: string }[]>`
+    SELECT id FROM ai_providers
+    WHERE workspace_id = ${targetWorkspaceId}
+      AND provider_type = ${source.provider_type}::ai_provider_type
+      AND base_url = ${source.base_url}
+  `;
+  if (existing) {
+    // Update existing with latest keys
+    await sql`
+      UPDATE ai_providers
+      SET label = ${source.label}, is_valid = ${source.is_valid},
+          encrypted_api_key = ${source.decrypted_api_key ? sql`pgp_sym_encrypt(${source.decrypted_api_key}, ${encKey})` : null},
+          encrypted_bearer_token = ${source.decrypted_bearer_token ? sql`pgp_sym_encrypt(${source.decrypted_bearer_token}, ${encKey})` : null}
+      WHERE id = ${existing.id}
+    `;
+    return existing.id;
+  }
+
+  const [newProvider] = await sql<{ id: string }[]>`
+    INSERT INTO ai_providers (
+      workspace_id, label, provider_type, base_url, encrypted_api_key,
+      encrypted_bearer_token, azure_api_version, is_valid, added_by
+    ) VALUES (
+      ${targetWorkspaceId}, ${source.label}, ${source.provider_type}::ai_provider_type,
+      ${source.base_url},
+      ${source.decrypted_api_key ? sql`pgp_sym_encrypt(${source.decrypted_api_key}, ${encKey})` : null},
+      ${source.decrypted_bearer_token ? sql`pgp_sym_encrypt(${source.decrypted_bearer_token}, ${encKey})` : null},
+      ${source.azure_api_version}, ${source.is_valid}, ${adminId}
+    ) RETURNING id
+  `;
+  return newProvider?.id ?? null;
+}
+
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
+
+// Helper: clone copilot/provider into target workspace and write preferences + workspace defaults
+async function allocateAiToUser(
+  adminId: string,
+  targetUserId: string,
+  targetWorkspaceId: string,
+  sourceCopilotAccountId: string | null,
+  sourceProviderId: string | null,
+  model: string | null
+) {
+  let localCopilotId: string | null = null;
+  let localProviderId: string | null = null;
+
+  // Clone copilot account into user's workspace
+  if (sourceCopilotAccountId) {
+    localCopilotId = await cloneCopilotAccountToWorkspace(
+      sourceCopilotAccountId, targetWorkspaceId, adminId, ENCRYPTION_KEY
+    );
+  }
+
+  // Clone provider into user's workspace
+  if (sourceProviderId) {
+    localProviderId = await cloneProviderToWorkspace(
+      sourceProviderId, targetWorkspaceId, adminId, ENCRYPTION_KEY
+    );
+  }
+
+  // Write user preferences with the LOCAL (workspace-scoped) IDs
+  await aiSettings.upsertUserPreferences({
+    workspaceId: targetWorkspaceId,
+    userId: targetUserId,
+    copilotAccountId: localCopilotId,
+    providerId: localProviderId,
+    model,
+  });
+
+  // Also set workspace defaults so all projects in that workspace use this config
+  await aiSettings.upsertSettings({
+    workspaceId: targetWorkspaceId,
+    defaultCopilotAccountId: localCopilotId,
+    defaultProviderId: localProviderId,
+    defaultModel: model,
+    updatedBy: adminId,
+  });
+}
+
+// GET /admin/users/ai-allocations
 adminRoutes.get("/users/ai-allocations", async (c) => {
   const adminId = c.get("userId");
   const adminWorkspaceId = await getUserOwnedWorkspace(adminId);
 
-  // For each user, look up their AI preferences in THEIR OWN workspace (the one they own).
-  // This way the admin sees what each user actually experiences.
   const rows = await sql`
     SELECT
       u.id AS user_id,
@@ -244,7 +399,7 @@ adminRoutes.get("/users/ai-allocations", async (c) => {
     ORDER BY u.created_at ASC
   `;
 
-  // Return copilot accounts and providers from admin's workspace (these are the options to assign)
+  // Return copilot accounts and providers from admin's workspace (the options to assign)
   let accounts: Awaited<ReturnType<typeof aiSettings.listCopilotAccounts>> = [];
   let providers: Awaited<ReturnType<typeof aiSettings.listProviders>> = [];
   if (adminWorkspaceId) {
@@ -263,7 +418,7 @@ const adminAllocateSchema = z.object({
   model: z.string().max(100).nullable().optional(),
 });
 
-// PUT /admin/users/:userId/ai-allocation — write AI prefs into the TARGET USER's own workspace
+// PUT /admin/users/:userId/ai-allocation
 adminRoutes.put("/users/:userId/ai-allocation", async (c) => {
   const adminId = c.get("userId");
   const targetUserId = c.req.param("userId");
@@ -271,32 +426,30 @@ adminRoutes.put("/users/:userId/ai-allocation", async (c) => {
   const parsed = adminAllocateSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
-  // Write to the TARGET user's own workspace so they see it when they log in
   const targetWorkspaceId = await getUserOwnedWorkspace(targetUserId);
   if (!targetWorkspaceId) return c.json({ error: "Target user has no workspace" }, 400);
 
-  // Also add target user to admin's workspace so they can access shared projects
+  // Also invite to admin's workspace for shared project access
   const adminWorkspaceId = await getUserOwnedWorkspace(adminId);
   if (adminWorkspaceId) {
     await ensureWorkspaceMember(adminWorkspaceId, targetUserId, adminId);
   }
 
-  const result = await aiSettings.upsertUserPreferences({
-    workspaceId: targetWorkspaceId,
-    userId: targetUserId,
-    copilotAccountId: parsed.data.copilotAccountId ?? null,
-    providerId: parsed.data.providerId ?? null,
-    model: parsed.data.model ?? null,
-  });
+  await allocateAiToUser(
+    adminId, targetUserId, targetWorkspaceId,
+    parsed.data.copilotAccountId ?? null,
+    parsed.data.providerId ?? null,
+    parsed.data.model ?? null
+  );
 
-  return c.json({ data: result });
+  return c.json({ data: { ok: true } });
 });
 
 const adminBulkCopySchema = z.object({
   targetUserIds: z.array(z.string().uuid()).min(1).max(100),
 });
 
-// POST /admin/users/ai-allocations/copy-my-settings — copy admin's settings into each user's own workspace
+// POST /admin/users/ai-allocations/copy-my-settings
 adminRoutes.post("/users/ai-allocations/copy-my-settings", async (c) => {
   const adminId = c.get("userId");
   const body = await c.req.json();
@@ -306,7 +459,7 @@ adminRoutes.post("/users/ai-allocations/copy-my-settings", async (c) => {
   const adminWorkspaceId = await getUserOwnedWorkspace(adminId);
   if (!adminWorkspaceId) return c.json({ error: "No workspace found for admin" }, 400);
 
-  // Get admin's own preferences, or fall back to workspace defaults
+  // Get admin's effective AI settings (personal override → workspace defaults)
   let copilotAccountId: string | null = null;
   let providerId: string | null = null;
   let model: string | null = null;
@@ -327,27 +480,18 @@ adminRoutes.post("/users/ai-allocations/copy-my-settings", async (c) => {
 
   let updated = 0;
   for (const targetId of parsed.data.targetUserIds) {
-    // Write to each target user's own workspace
     const targetWsId = await getUserOwnedWorkspace(targetId);
     if (!targetWsId) continue;
 
-    // Also invite them to admin's workspace for shared access
     await ensureWorkspaceMember(adminWorkspaceId, targetId, adminId);
-
-    await aiSettings.upsertUserPreferences({
-      workspaceId: targetWsId,
-      userId: targetId,
-      copilotAccountId,
-      providerId,
-      model,
-    });
+    await allocateAiToUser(adminId, targetId, targetWsId, copilotAccountId, providerId, model);
     updated++;
   }
 
   return c.json({ data: { updated } });
 });
 
-// DELETE /admin/users/:userId/ai-allocation — reset from user's own workspace
+// DELETE /admin/users/:userId/ai-allocation
 adminRoutes.delete("/users/:userId/ai-allocation", async (c) => {
   const targetUserId = c.req.param("userId");
 
