@@ -1572,8 +1572,20 @@ function friendlyToolMessage(
   if (lower.includes("deploy")) {
     return "Publishing your creation";
   }
-  // Fallback: humanize the tool name
-  return toolName.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  if (lower.includes("sql") || lower.includes("query") || lower.includes("database") || lower.includes("db")) {
+    return "Setting up your database";
+  }
+  if (lower.includes("run") || lower.includes("exec") || lower.includes("shell") || lower.includes("command")) {
+    return "Running a quick task";
+  }
+  if (lower.includes("spawn") || lower.includes("agent") || lower.includes("sub")) {
+    return "Coordinating the build";
+  }
+  if (lower.includes("scan") || lower.includes("report") || lower.includes("inspect") || lower.includes("analyze")) {
+    return "Scanning project structure";
+  }
+  // Fallback: friendly generic message instead of raw tool name
+  return "Working on your project";
 }
 
 /**

@@ -117,10 +117,12 @@ export const ChatMessage = memo(function ChatMessage({
   const isActivelyStreaming = message.isStreaming && !!message.content;
 
   // Memoize rendered markdown — only recompute when content changes
-  const renderedHtml = useMemo(
-    () => (message.content ? renderMarkdown(message.content) : ""),
-    [message.content]
-  );
+  // Strip trailing colon during streaming (LLM often emits ":" before tool calls)
+  const renderedHtml = useMemo(() => {
+    if (!message.content) return "";
+    const content = isActivelyStreaming ? message.content.replace(/:\s*$/, "") : message.content;
+    return renderMarkdown(content);
+  }, [message.content, isActivelyStreaming]);
 
   return (
     <div
@@ -190,7 +192,11 @@ export const ChatMessage = memo(function ChatMessage({
           <div className="prose-editor text-sm leading-relaxed text-foreground">
             <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
             {isActivelyStreaming && (
-              <span className="inline-block w-1.5 h-4 bg-brand-500 animate-pulse ml-0.5 align-middle rounded-sm" />
+              <span className="inline-flex items-center gap-0.5 ml-1 align-middle">
+                <span className="inline-block w-1 h-1 rounded-full bg-brand-500 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1s" }} />
+                <span className="inline-block w-1 h-1 rounded-full bg-brand-500 animate-bounce" style={{ animationDelay: "150ms", animationDuration: "1s" }} />
+                <span className="inline-block w-1 h-1 rounded-full bg-brand-500 animate-bounce" style={{ animationDelay: "300ms", animationDuration: "1s" }} />
+              </span>
             )}
           </div>
         ) : null}
