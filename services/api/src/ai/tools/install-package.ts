@@ -107,11 +107,11 @@ export const installPackageTool: Tool = {
 function buildArgs(pm: PackageManager, packages: string[], isDev: boolean): string[] {
   switch (pm) {
     case "npm":
-      return ["install", ...(isDev ? ["--save-dev"] : []), ...packages];
+      return ["install", "--ignore-scripts", ...(isDev ? ["--save-dev"] : []), ...packages];
     case "pnpm":
-      return ["add", ...(isDev ? ["-D"] : []), ...packages];
+      return ["add", "--ignore-scripts", ...(isDev ? ["-D"] : []), ...packages];
     case "yarn":
-      return ["add", ...(isDev ? ["--dev"] : []), ...packages];
+      return ["add", "--ignore-scripts", ...(isDev ? ["--dev"] : []), ...packages];
   }
 }
 

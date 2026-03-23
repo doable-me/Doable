@@ -498,6 +498,7 @@ export function createDoableTools(projectId: string): Tool[] {
         const pkgList = packages.split(/\s+/).filter(Boolean);
         const npmArgs = [
           "install",
+          "--ignore-scripts",
           ...(dev ? ["--save-dev"] : []),
           ...pkgList,
           "--legacy-peer-deps",
