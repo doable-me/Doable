@@ -491,6 +491,121 @@ aiSettingsRoutes.put(
   }
 );
 
+// ─── User AI Allocations (admin manages other users) ─────
+
+// GET /workspaces/:workspaceId/ai-settings/user-allocations
+aiSettingsRoutes.get("/:workspaceId/ai-settings/user-allocations", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const userId = c.get("userId");
+
+  const err = await requireAdmin(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  const rows = await aiSettings.listAllUserPreferences(workspaceId);
+  return c.json({ data: rows });
+});
+
+const updateUserAllocationSchema = z.object({
+  copilotAccountId: z.string().uuid().nullable().optional(),
+  providerId: z.string().uuid().nullable().optional(),
+  model: z.string().max(100).nullable().optional(),
+});
+
+// PUT /workspaces/:workspaceId/ai-settings/user-allocations/:targetUserId
+aiSettingsRoutes.put(
+  "/:workspaceId/ai-settings/user-allocations/:targetUserId",
+  zValidator("json", updateUserAllocationSchema),
+  async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    const targetUserId = c.req.param("targetUserId");
+    const userId = c.get("userId");
+    const body = c.req.valid("json");
+
+    const err = await requireAdmin(workspaceId, userId);
+    if (err) return c.json({ error: err }, 403);
+
+    // Verify target is a workspace member
+    const targetErr = await requireMember(workspaceId, targetUserId);
+    if (targetErr) return c.json({ error: "Target user is not a workspace member" }, 400);
+
+    const result = await aiSettings.upsertUserPreferences({
+      workspaceId,
+      userId: targetUserId,
+      copilotAccountId: body.copilotAccountId ?? null,
+      providerId: body.providerId ?? null,
+      model: body.model ?? null,
+    });
+
+    return c.json({ data: result });
+  }
+);
+
+const copySettingsSchema = z.object({
+  targetUserIds: z.array(z.string().uuid()).min(1).max(100),
+});
+
+// POST /workspaces/:workspaceId/ai-settings/user-allocations/copy-my-settings
+aiSettingsRoutes.post(
+  "/:workspaceId/ai-settings/user-allocations/copy-my-settings",
+  zValidator("json", copySettingsSchema),
+  async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    const userId = c.get("userId");
+    const { targetUserIds } = c.req.valid("json");
+
+    const err = await requireAdmin(workspaceId, userId);
+    if (err) return c.json({ error: err }, 403);
+
+    // Get admin's own preferences, or fall back to workspace defaults
+    let copilotAccountId: string | null = null;
+    let providerId: string | null = null;
+    let model: string | null = null;
+
+    const adminPrefs = await aiSettings.getUserPreferences(workspaceId, userId);
+    if (adminPrefs && (adminPrefs.copilot_account_id || adminPrefs.provider_id || adminPrefs.model)) {
+      copilotAccountId = adminPrefs.copilot_account_id;
+      providerId = adminPrefs.provider_id;
+      model = adminPrefs.model;
+    } else {
+      const wsDefaults = await aiSettings.getSettings(workspaceId);
+      if (wsDefaults) {
+        copilotAccountId = wsDefaults.default_copilot_account_id;
+        providerId = wsDefaults.default_provider_id;
+        model = wsDefaults.default_model;
+      }
+    }
+
+    let updated = 0;
+    for (const targetId of targetUserIds) {
+      const memberErr = await requireMember(workspaceId, targetId);
+      if (memberErr) continue;
+      await aiSettings.upsertUserPreferences({
+        workspaceId,
+        userId: targetId,
+        copilotAccountId,
+        providerId,
+        model,
+      });
+      updated++;
+    }
+
+    return c.json({ data: { updated } });
+  }
+);
+
+// DELETE /workspaces/:workspaceId/ai-settings/user-allocations/:targetUserId
+aiSettingsRoutes.delete("/:workspaceId/ai-settings/user-allocations/:targetUserId", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const targetUserId = c.req.param("targetUserId");
+  const userId = c.get("userId");
+
+  const err = await requireAdmin(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  await aiSettings.deleteUserPreferences(workspaceId, targetUserId);
+  return c.json({ data: { userId: targetUserId, reset: true } });
+});
+
 // ─── Effective AI Config ─────────────────────────────────
 
 // GET /workspaces/:workspaceId/ai-settings/effective

@@ -301,6 +301,62 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
       return row!;
     },
 
+    async listAllUserPreferences(workspaceId: string) {
+      return sql<{
+        user_id: string;
+        email: string;
+        display_name: string | null;
+        avatar_url: string | null;
+        role: string;
+        copilot_account_id: string | null;
+        copilot_account_label: string | null;
+        provider_id: string | null;
+        provider_label: string | null;
+        provider_type: string | null;
+        model: string | null;
+        preference_updated_at: Date | null;
+      }[]>`
+        SELECT
+          wm.user_id,
+          u.email,
+          u.display_name,
+          u.avatar_url,
+          wm.role,
+          uap.copilot_account_id,
+          gca.label AS copilot_account_label,
+          uap.provider_id,
+          ap.label AS provider_label,
+          ap.provider_type,
+          uap.model,
+          uap.updated_at AS preference_updated_at
+        FROM workspace_members wm
+        INNER JOIN users u ON u.id = wm.user_id
+        LEFT JOIN user_ai_preferences uap
+          ON uap.workspace_id = wm.workspace_id AND uap.user_id = wm.user_id
+        LEFT JOIN github_copilot_accounts gca
+          ON gca.id = uap.copilot_account_id
+        LEFT JOIN ai_providers ap
+          ON ap.id = uap.provider_id
+        WHERE wm.workspace_id = ${workspaceId}
+        ORDER BY
+          CASE wm.role
+            WHEN 'owner' THEN 0
+            WHEN 'admin' THEN 1
+            WHEN 'member' THEN 2
+            WHEN 'viewer' THEN 3
+          END,
+          wm.joined_at ASC
+      `;
+    },
+
+    async deleteUserPreferences(workspaceId: string, userId: string): Promise<boolean> {
+      const result = await sql`
+        DELETE FROM user_ai_preferences
+        WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+      `;
+      return result.count > 0;
+    },
+
     async getEffectiveAiConfig(
       workspaceId: string,
       userId: string

@@ -15,11 +15,16 @@ import {
   apiListAiModels,
   apiGetUserAiPreferences,
   apiUpdateUserAiPreferences,
+  apiListUserAllocations,
+  apiUpdateUserAllocation,
+  apiCopyMySettings,
+  apiResetUserAllocation,
   type ApiGitHubCopilotAccount,
   type ApiAiProvider,
   type ApiWorkspaceAiDefaults,
   type ApiUserAiPreferences,
   type ApiEnforcementStatus,
+  type ApiUserAiAllocation,
 } from "@/lib/api";
 
 export function useGitHubAccounts(workspaceId: string | null) {
@@ -208,4 +213,49 @@ export function useAvailableModels(workspaceId: string | null) {
   useEffect(() => { refresh(); }, [refresh]);
 
   return { data, loading, refresh };
+}
+
+export function useUserAllocations(workspaceId: string | null) {
+  const [allocations, setAllocations] = useState<ApiUserAiAllocation[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!workspaceId) return;
+    setLoading(true);
+    try {
+      const res = await apiListUserAllocations(workspaceId);
+      setAllocations(res.data);
+    } catch (err) {
+      console.error("Failed to load user allocations:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const updateOne = async (targetUserId: string, data: {
+    copilotAccountId?: string | null;
+    providerId?: string | null;
+    model?: string | null;
+  }) => {
+    if (!workspaceId) return;
+    await apiUpdateUserAllocation(workspaceId, targetUserId, data);
+    await refresh();
+  };
+
+  const copyMySettings = async (targetUserIds: string[]) => {
+    if (!workspaceId) return 0;
+    const res = await apiCopyMySettings(workspaceId, targetUserIds);
+    await refresh();
+    return res.data.updated;
+  };
+
+  const resetOne = async (targetUserId: string) => {
+    if (!workspaceId) return;
+    await apiResetUserAllocation(workspaceId, targetUserId);
+    await refresh();
+  };
+
+  return { allocations, loading, refresh, updateOne, copyMySettings, resetOne };
 }

@@ -1,9 +1,41 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { ApiGitHubCopilotAccount, ApiAiProvider, ApiWorkspaceAiDefaults, ApiUserAiPreferences, ApiEnforcementStatus } from "@/lib/api";
 import { apiFetch } from "@/lib/api";
-import { Bot, Sparkles, Loader2, Check, Lock, User } from "lucide-react";
+import { Bot, Sparkles, Loader2, Check, Lock, User, HelpCircle } from "lucide-react";
+
+function HelpTooltip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative inline-flex">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-zinc-500 hover:text-zinc-300 transition-colors"
+        aria-label="Help"
+      >
+        <HelpCircle className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-72 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-xs text-zinc-300 leading-relaxed shadow-xl">
+          <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 h-3 w-3 rotate-45 border-l border-t border-zinc-700 bg-zinc-800" />
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   workspaceId: string | null;
@@ -98,6 +130,7 @@ function ModelSection({
   accounts,
   providers,
   copilotModels,
+  helpText,
 }: {
   title: string;
   description: string;
@@ -107,6 +140,7 @@ function ModelSection({
   accounts: ApiGitHubCopilotAccount[];
   providers: ApiAiProvider[];
   copilotModels: { id: string; label: string }[];
+  helpText?: string;
 }) {
   const validAccounts = accounts.filter((a) => a.is_valid);
   const validProviders = providers.filter((p) => p.is_valid);
@@ -117,8 +151,11 @@ function ModelSection({
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600/15">
           <Icon className="h-4 w-4 text-brand-400" />
         </div>
-        <div>
-          <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
+        <div className="flex-1">
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
+            {helpText && <HelpTooltip text={helpText} />}
+          </div>
           <p className="text-xs text-zinc-500">{description}</p>
         </div>
       </div>
@@ -305,9 +342,12 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600/15">
               <User className="h-4 w-4 text-brand-400" />
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-200">My AI Preferences</h3>
-              <p className="text-xs text-zinc-500">Your personal model preference for this workspace</p>
+            <div className="flex-1">
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm font-semibold text-zinc-200">My Personal Override</h3>
+                <HelpTooltip text="This only changes the AI model for you — the admin currently logged in. It overrides the workspace defaults below. Other workspace members will still use the workspace defaults unless they set their own override. If you don't set anything here, you'll also use the workspace defaults." />
+              </div>
+              <p className="text-xs text-zinc-500">Override the workspace defaults below for yourself only — other members are not affected</p>
             </div>
           </div>
 
@@ -315,7 +355,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
             <div className="flex items-center gap-2.5 rounded-lg border border-amber-600/30 bg-amber-600/5 px-4 py-3">
               <Lock className="h-4 w-4 text-amber-400 shrink-0" />
               <p className="text-sm text-amber-300">
-                Your workspace admin has enforced a specific AI model. Your preferences are locked.
+                An enforcement policy is active (see Access Control tab). Personal overrides are locked for all members.
               </p>
             </div>
           ) : (
@@ -417,7 +457,7 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
                 className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors"
               >
                 {userSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : userSaved ? <Check className="h-4 w-4" /> : <User className="h-4 w-4" />}
-                {userSaved ? "Saved!" : "Save Preferences"}
+                {userSaved ? "Saved!" : "Save My Override"}
               </button>
             </>
           )}
@@ -428,31 +468,33 @@ export function ModelConfigTab({ workspaceId, defaults, loading, accounts, provi
       {onUserPreferenceUpdate && (
         <div className="flex items-center gap-3">
           <div className="h-px flex-1 bg-zinc-800" />
-          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Workspace Defaults</span>
+          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Workspace Defaults — applies to all members</span>
           <div className="h-px flex-1 bg-zinc-800" />
         </div>
       )}
 
       <ModelSection
-        title="Primary Model"
-        description="Used for code generation, editing, and agent tasks"
+        title="Primary Model — All Workspace Members"
+        description="Default model for code generation, editing, and agent tasks for everyone you've invited to this workspace"
         icon={Bot}
         state={primary}
         onChange={setPrimary}
         accounts={accounts}
         providers={providers}
         copilotModels={copilotModels}
+        helpText="This is the main AI model used for chat, code generation, and editing. It applies to every member you've invited to this workspace — not all users on the platform. If a member has set a personal override (above), their override takes priority over this default."
       />
 
       <ModelSection
-        title="Suggestions Model"
-        description="Used for generating next-step suggestion chips (a lighter model saves cost)"
+        title="Suggestions Model — All Workspace Members"
+        description="Lighter model for suggestion chips, used by everyone you've invited to this workspace (saves cost vs primary model)"
         icon={Sparkles}
         state={suggestions}
         onChange={setSuggestions}
         accounts={accounts}
         providers={providers}
         copilotModels={copilotModels}
+        helpText="Suggestion chips are the quick-action buttons shown after each AI response. This model handles only those suggestions — a lighter, cheaper model works well here. Like the primary model, this applies to every member you've invited to this workspace, not all users on the platform."
       />
 
       <button

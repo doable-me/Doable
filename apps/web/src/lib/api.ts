@@ -704,6 +704,57 @@ export async function apiUpdateUserAiPreferences(
   );
 }
 
+// ─── User AI Allocations ─────────────────────────────────
+
+export interface ApiUserAiAllocation {
+  user_id: string;
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  role: string;
+  copilot_account_id: string | null;
+  copilot_account_label: string | null;
+  provider_id: string | null;
+  provider_label: string | null;
+  provider_type: string | null;
+  model: string | null;
+  preference_updated_at: string | null;
+}
+
+export async function apiListUserAllocations(workspaceId: string): Promise<{ data: ApiUserAiAllocation[] }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/user-allocations`);
+}
+
+export async function apiUpdateUserAllocation(
+  workspaceId: string,
+  targetUserId: string,
+  data: { copilotAccountId?: string | null; providerId?: string | null; model?: string | null }
+): Promise<{ data: ApiUserAiPreferences }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/user-allocations/${targetUserId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function apiCopyMySettings(
+  workspaceId: string,
+  targetUserIds: string[]
+): Promise<{ data: { updated: number } }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/user-allocations/copy-my-settings`, {
+    method: "POST",
+    body: JSON.stringify({ targetUserIds }),
+  });
+}
+
+export async function apiResetUserAllocation(
+  workspaceId: string,
+  targetUserId: string
+): Promise<{ data: { userId: string; reset: true } }> {
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/user-allocations/${targetUserId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function apiGetEffectiveAiConfig(workspaceId: string): Promise<{ data: ApiEffectiveAiConfig }> {
   return apiFetch<{ data: ApiEffectiveAiConfig }>(
     `/workspaces/${workspaceId}/ai-settings/effective`
