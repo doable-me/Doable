@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { usePlatformAdmin, type FeatureFlag } from "@/hooks/use-platform-admin";
+import { usePlatformAdmin, type FeatureFlag, type AdminUser } from "@/hooks/use-platform-admin";
+import { apiFetch } from "@/lib/api";
+import type { ApiGitHubCopilotAccount, ApiAiProvider } from "@/lib/api";
 import {
   Shield,
   ToggleLeft,
@@ -14,6 +16,12 @@ import {
   Loader2,
   ArrowLeft,
   ChevronDown,
+  Bot,
+  Pencil,
+  RotateCcw,
+  Copy,
+  Check,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -48,6 +56,24 @@ const ROLE_OPTIONS = [
   { value: "admin", label: "Admin+" },
   { value: "owner", label: "Owner only" },
 ];
+
+// ─── AI Allocation types ────────────────────────────────────
+
+interface UserAiAllocation {
+  user_id: string;
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  is_platform_admin: boolean;
+  role: string | null;
+  copilot_account_id: string | null;
+  copilot_account_label: string | null;
+  provider_id: string | null;
+  provider_label: string | null;
+  provider_type: string | null;
+  model: string | null;
+  preference_updated_at: string | null;
+}
 
 // ─── Feature Row ────────────────────────────────────────────
 
@@ -152,6 +178,254 @@ function FeatureRow({
   );
 }
 
+// ─── AI Allocation Status Badge ─────────────────────────────
+
+function AiStatusBadge({ row }: { row: UserAiAllocation }) {
+  const hasAllocation = !!(row.copilot_account_id || row.provider_id || row.model);
+  if (!hasAllocation) {
+    return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500">No AI configured</span>;
+  }
+  if (row.copilot_account_id) {
+    return (
+      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600/15 text-emerald-400">
+        Copilot: {row.copilot_account_label ?? "Unknown"}{row.model ? ` / ${row.model}` : ""}
+      </span>
+    );
+  }
+  if (row.provider_id) {
+    const typeName = row.provider_type ? row.provider_type.charAt(0).toUpperCase() + row.provider_type.slice(1) : "Provider";
+    return (
+      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-600/15 text-blue-400">
+        {typeName}: {row.provider_label ?? "Unknown"}{row.model ? ` / ${row.model}` : ""}
+      </span>
+    );
+  }
+  return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-700/50 text-zinc-400">Model: {row.model}</span>;
+}
+
+// ─── User Row with AI allocation ────────────────────────────
+
+function UserRow({
+  u,
+  currentUserId,
+  accounts,
+  providers,
+  onToggleAdmin,
+  onAllocate,
+  onReset,
+}: {
+  u: UserAiAllocation;
+  currentUserId: string;
+  accounts: Omit<ApiGitHubCopilotAccount, "workspace_id" | "added_by" | "created_at" | "updated_at">[];
+  providers: Omit<ApiAiProvider, "workspace_id" | "added_by" | "created_at" | "updated_at">[];
+  onToggleAdmin: (userId: string, isAdmin: boolean) => void;
+  onAllocate: (userId: string, data: { copilotAccountId?: string | null; providerId?: string | null; model?: string | null }) => Promise<void>;
+  onReset: (userId: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [source, setSource] = useState<"copilot" | "custom">("copilot");
+  const [copilotAccountId, setCopilotAccountId] = useState("");
+  const [providerId, setProviderId] = useState("");
+  const [model, setModel] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const hasAllocation = !!(u.copilot_account_id || u.provider_id || u.model);
+  const validAccounts = accounts.filter((a) => a.is_valid);
+  const validProviders = providers.filter((p) => p.is_valid);
+
+  function startEdit() {
+    if (u.provider_id) {
+      setSource("custom");
+      setProviderId(u.provider_id);
+      setCopilotAccountId("");
+    } else {
+      setSource("copilot");
+      setCopilotAccountId(u.copilot_account_id ?? "");
+      setProviderId("");
+    }
+    setModel(u.model ?? "");
+    setEditing(true);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onAllocate(u.user_id, {
+        copilotAccountId: source === "copilot" ? (copilotAccountId || null) : null,
+        providerId: source === "custom" ? (providerId || null) : null,
+        model: model || null,
+      });
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-400 shrink-0">
+          {(u.display_name ?? u.email)[0]?.toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-white truncate">
+              {u.display_name ?? u.email.split("@")[0]}
+            </p>
+            {u.is_platform_admin && <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-xs text-zinc-500 truncate">{u.email}</p>
+            <AiStatusBadge row={u} />
+          </div>
+        </div>
+
+        {/* AI actions */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={startEdit}
+            className="rounded p-1.5 text-zinc-500 hover:text-brand-400 hover:bg-zinc-800 transition-colors"
+            title="Configure AI for this user"
+          >
+            <Bot className="h-4 w-4" />
+          </button>
+          {hasAllocation && (
+            <button
+              onClick={() => onReset(u.user_id)}
+              className="rounded p-1.5 text-zinc-500 hover:text-amber-400 hover:bg-zinc-800 transition-colors"
+              title="Reset AI allocation"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Admin toggle */}
+        <button
+          onClick={() => onToggleAdmin(u.user_id, !u.is_platform_admin)}
+          disabled={u.user_id === currentUserId}
+          className={`shrink-0 rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            u.is_platform_admin
+              ? "bg-amber-600/20 text-amber-400 hover:bg-amber-600/30"
+              : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
+          }`}
+        >
+          {u.is_platform_admin ? "Revoke Admin" : "Make Admin"}
+        </button>
+      </div>
+
+      {/* Inline edit panel */}
+      {editing && (
+        <div className="border-t border-zinc-800 px-4 py-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-medium text-zinc-300">
+              Configure AI for {u.display_name ?? u.email}
+            </p>
+            <button onClick={() => setEditing(false)} className="text-zinc-500 hover:text-zinc-300">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* Source toggle */}
+          <div className="mb-3">
+            <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
+              <button
+                onClick={() => { setSource("copilot"); setProviderId(""); }}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  source === "copilot" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                GitHub Copilot
+              </button>
+              <button
+                onClick={() => { setSource("custom"); setCopilotAccountId(""); }}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  source === "custom" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Custom Provider
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            {source === "copilot" ? (
+              <>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">Account</label>
+                  <select
+                    value={copilotAccountId}
+                    onChange={(e) => setCopilotAccountId(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-brand-500"
+                  >
+                    <option value="">Default (gh CLI)</option>
+                    {validAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.label} (@{a.github_login})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">Model</label>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder="e.g. claude-sonnet-4 (blank = auto)"
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">Provider</label>
+                  <select
+                    value={providerId}
+                    onChange={(e) => setProviderId(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-brand-500"
+                  >
+                    <option value="">Select a provider...</option>
+                    {validProviders.map((p) => (
+                      <option key={p.id} value={p.id}>{p.label} ({p.provider_type})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">Model</label>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder="e.g. gpt-4o"
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={save}
+              disabled={saving}
+              className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors"
+            >
+              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+              Save
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Admin Page ─────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -169,6 +443,81 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const [activeTab, setActiveTab] = useState<"features" | "users">("features");
+
+  // AI allocations state
+  const [allocations, setAllocations] = useState<UserAiAllocation[]>([]);
+  const [accounts, setAccounts] = useState<ApiGitHubCopilotAccount[]>([]);
+  const [providers, setProviders] = useState<ApiAiProvider[]>([]);
+  const [allocLoading, setAllocLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkCopying, setBulkCopying] = useState(false);
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
+
+  const loadAllocations = useCallback(async () => {
+    if (!isPlatformAdmin) return;
+    setAllocLoading(true);
+    try {
+      const res = await apiFetch<{
+        data: UserAiAllocation[];
+        workspaceId: string | null;
+        accounts: ApiGitHubCopilotAccount[];
+        providers: ApiAiProvider[];
+      }>("/admin/users/ai-allocations");
+      setAllocations(res.data);
+      setAccounts(res.accounts ?? []);
+      setProviders(res.providers ?? []);
+    } catch (err) {
+      console.error("Failed to load AI allocations:", err);
+    } finally {
+      setAllocLoading(false);
+    }
+  }, [isPlatformAdmin]);
+
+  useEffect(() => {
+    if (activeTab === "users" && isPlatformAdmin) {
+      loadAllocations();
+    }
+  }, [activeTab, isPlatformAdmin, loadAllocations]);
+
+  async function handleAllocate(userId: string, data: { copilotAccountId?: string | null; providerId?: string | null; model?: string | null }) {
+    await apiFetch(`/admin/users/${userId}/ai-allocation`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    await loadAllocations();
+  }
+
+  async function handleReset(userId: string) {
+    await apiFetch(`/admin/users/${userId}/ai-allocation`, { method: "DELETE" });
+    await loadAllocations();
+  }
+
+  async function handleBulkCopy() {
+    if (selectedIds.size === 0) return;
+    setBulkCopying(true);
+    setBulkResult(null);
+    try {
+      const res = await apiFetch<{ data: { updated: number } }>("/admin/users/ai-allocations/copy-my-settings", {
+        method: "POST",
+        body: JSON.stringify({ targetUserIds: Array.from(selectedIds) }),
+      });
+      setBulkResult(`Settings copied to ${res.data.updated} user${res.data.updated !== 1 ? "s" : ""}`);
+      setSelectedIds(new Set());
+      await loadAllocations();
+      setTimeout(() => setBulkResult(null), 3000);
+    } finally {
+      setBulkCopying(false);
+    }
+  }
+
+  function toggleSelect(userId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
 
   // Redirect non-admins
   if (!loading && !isPlatformAdmin) {
@@ -194,6 +543,25 @@ export default function AdminPage() {
       </div>
     );
   }
+
+  // Merge users with allocations for display
+  const displayUsers: UserAiAllocation[] = allocations.length > 0
+    ? allocations
+    : users.map((u) => ({
+        user_id: u.id,
+        email: u.email,
+        display_name: u.display_name,
+        avatar_url: null,
+        is_platform_admin: u.is_platform_admin,
+        role: null,
+        copilot_account_id: null,
+        copilot_account_label: null,
+        provider_id: null,
+        provider_label: null,
+        provider_type: null,
+        model: null,
+        preference_updated_at: null,
+      }));
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -268,40 +636,72 @@ export default function AdminPage() {
 
       {/* Users Tab */}
       {activeTab === "users" && (
-        <div className="space-y-1">
-          <p className="text-xs text-zinc-500 mb-4">
-            Manage platform admin access. Platform admins can access this system admin panel and control all feature flags.
-          </p>
-          {users.map((u) => (
-            <div
-              key={u.id}
-              className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3"
-            >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-400">
-                {(u.display_name ?? u.email)[0]?.toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">
-                  {u.display_name ?? u.email.split("@")[0]}
-                </p>
-                <p className="text-xs text-zinc-500 truncate">{u.email}</p>
-              </div>
-              {u.is_platform_admin && (
-                <Crown className="h-4 w-4 text-amber-400 shrink-0" />
-              )}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-zinc-500">
+              Manage users, admin access, and AI model allocations. Click the <Bot className="inline h-3 w-3 text-zinc-400" /> icon to configure AI for any user.
+            </p>
+          </div>
+
+          {/* Bulk actions */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 rounded-lg border border-brand-600/30 bg-brand-600/5 px-4 py-2.5">
+              <span className="text-xs text-zinc-300">{selectedIds.size} selected</span>
               <button
-                onClick={() => toggleUserAdmin(u.id, !u.is_platform_admin)}
-                disabled={u.id === user?.id}
-                className={`shrink-0 rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                  u.is_platform_admin
-                    ? "bg-amber-600/20 text-amber-400 hover:bg-amber-600/30"
-                    : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
-                }`}
+                onClick={handleBulkCopy}
+                disabled={bulkCopying}
+                className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors"
               >
-                {u.is_platform_admin ? "Revoke Admin" : "Make Admin"}
+                {bulkCopying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
+                Copy My AI Settings to Selected
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="text-xs text-zinc-400 hover:text-zinc-200"
+              >
+                Clear
               </button>
             </div>
-          ))}
+          )}
+
+          {bulkResult && (
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-600/30 bg-emerald-600/5 px-4 py-2">
+              <Check className="h-3.5 w-3.5 text-emerald-400" />
+              <span className="text-xs text-emerald-300">{bulkResult}</span>
+            </div>
+          )}
+
+          {allocLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {displayUsers.map((u) => (
+                <div key={u.user_id} className="flex items-start gap-2">
+                  <div className="pt-3.5">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(u.user_id)}
+                      onChange={() => toggleSelect(u.user_id)}
+                      className="rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-0"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <UserRow
+                      u={u}
+                      currentUserId={user?.id ?? ""}
+                      accounts={accounts}
+                      providers={providers}
+                      onToggleAdmin={(id, isAdmin) => toggleUserAdmin(id, isAdmin)}
+                      onAllocate={handleAllocate}
+                      onReset={handleReset}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -4,14 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiListWorkspaces, apiFetch, type ApiWorkspace } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
-import { useGitHubAccounts, useCustomProviders, useWorkspaceAISettings, useUserAiPreferences, useUserAllocations } from "../hooks/use-ai-settings";
+import { useGitHubAccounts, useCustomProviders, useWorkspaceAISettings, useUserAiPreferences } from "../hooks/use-ai-settings";
 import { ConnectionsTab } from "./connections-tab";
 import { ModelConfigTab } from "./model-config-tab";
 import { AccessControlTab } from "./access-control-tab";
-import { UserAllocationsTab } from "./user-allocations-tab";
-import { Link2, Bot, Shield, ShieldAlert, Users } from "lucide-react";
+import { Link2, Bot, Shield, ShieldAlert } from "lucide-react";
 
-type Tab = "connections" | "models" | "access" | "allocations";
+type Tab = "connections" | "models" | "access";
 
 export function AiSettingsPage() {
   const router = useRouter();
@@ -57,7 +56,6 @@ export function AiSettingsPage() {
   const providers = useCustomProviders(activeWorkspaceId);
   const aiDefaults = useWorkspaceAISettings(activeWorkspaceId);
   const userPrefs = useUserAiPreferences(activeWorkspaceId ?? undefined);
-  const userAllocations = useUserAllocations(activeWorkspaceId);
 
   // Only platform admins can access AI settings
   const hasAccess = featureAllowed !== null ? featureAllowed : isPlatformAdmin;
@@ -102,7 +100,6 @@ export function AiSettingsPage() {
     { key: "models", label: "Model Configuration", icon: Bot },
     { key: "connections", label: "Connections", icon: Link2, adminOnly: true },
     { key: "access", label: "Access Control", icon: Shield, adminOnly: true },
-    { key: "allocations", label: "User Allocations", icon: Users, adminOnly: true },
   ];
   const tabs = allTabs.filter((t) => !t.adminOnly || isPlatformAdmin);
 
@@ -171,18 +168,6 @@ export function AiSettingsPage() {
             await aiDefaults.update(data);
             await userPrefs.refresh();
           }}
-        />
-      )}
-      {activeTab === "allocations" && (
-        <UserAllocationsTab
-          allocations={userAllocations.allocations}
-          loading={userAllocations.loading}
-          accounts={githubAccounts.accounts}
-          providers={providers.providers}
-          enforcement={userPrefs.enforcement}
-          onUpdate={userAllocations.updateOne}
-          onCopyMySettings={userAllocations.copyMySettings}
-          onReset={userAllocations.resetOne}
         />
       )}
     </div>
