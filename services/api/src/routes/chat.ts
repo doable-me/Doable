@@ -1554,8 +1554,9 @@ function friendlyToolMessage(
     return "Searching through your project";
   }
   if (lower.includes("install") || lower.includes("package")) {
-    const pkgs = args?.packages as string[] | undefined;
-    if (pkgs && pkgs.length > 0) {
+    const rawPkgs = args?.packages;
+    const pkgs = Array.isArray(rawPkgs) ? rawPkgs : typeof rawPkgs === "string" ? rawPkgs.split(/[\s,]+/).filter(Boolean) : [];
+    if (pkgs.length > 0) {
       const names = pkgs.slice(0, 2).join(" & ");
       return `Adding ${names} to your toolkit`;
     }
