@@ -186,18 +186,18 @@ adminRoutes.get("/users/:userId/overrides", async (c) => {
 
 // ─── AI Allocation (platform-level) ──────────────────────
 
-// Helper: get the admin's primary workspace (first owned workspace)
-async function getAdminWorkspace(adminUserId: string) {
+// Helper: get a user's primary workspace (the one they own)
+async function getUserOwnedWorkspace(userId: string) {
   const [ws] = await sql<{ id: string }[]>`
     SELECT w.id FROM workspaces w
     INNER JOIN workspace_members wm ON wm.workspace_id = w.id
-    WHERE wm.user_id = ${adminUserId} AND wm.role = 'owner'
+    WHERE wm.user_id = ${userId} AND wm.role = 'owner'
     ORDER BY w.created_at ASC LIMIT 1
   `;
   return ws?.id ?? null;
 }
 
-// Helper: ensure user is a member of the workspace, auto-invite if not
+// Helper: ensure user is a member of a workspace
 async function ensureWorkspaceMember(workspaceId: string, userId: string, invitedBy: string) {
   const role = await workspaces.getMemberRole(workspaceId, userId);
   if (!role) {
@@ -205,13 +205,13 @@ async function ensureWorkspaceMember(workspaceId: string, userId: string, invite
   }
 }
 
-// GET /admin/users/ai-allocations — all users with their AI allocation status
+// GET /admin/users/ai-allocations — all users with their AI allocation in their own workspace
 adminRoutes.get("/users/ai-allocations", async (c) => {
   const adminId = c.get("userId");
-  const workspaceId = await getAdminWorkspace(adminId);
-  if (!workspaceId) return c.json({ data: [], workspaceId: null });
+  const adminWorkspaceId = await getUserOwnedWorkspace(adminId);
 
-  // Get all platform users and left-join their AI preferences for admin's workspace
+  // For each user, look up their AI preferences in THEIR OWN workspace (the one they own).
+  // This way the admin sees what each user actually experiences.
   const rows = await sql`
     SELECT
       u.id AS user_id,
@@ -219,7 +219,7 @@ adminRoutes.get("/users/ai-allocations", async (c) => {
       u.display_name,
       u.avatar_url,
       u.is_platform_admin,
-      wm.role,
+      own_wm.role,
       uap.copilot_account_id,
       gca.label AS copilot_account_label,
       uap.provider_id,
@@ -228,10 +228,15 @@ adminRoutes.get("/users/ai-allocations", async (c) => {
       uap.model,
       uap.updated_at AS preference_updated_at
     FROM users u
-    LEFT JOIN workspace_members wm
-      ON wm.workspace_id = ${workspaceId} AND wm.user_id = u.id
+    LEFT JOIN LATERAL (
+      SELECT wm.workspace_id, wm.role
+      FROM workspace_members wm
+      INNER JOIN workspaces w ON w.id = wm.workspace_id
+      WHERE wm.user_id = u.id AND wm.role = 'owner'
+      ORDER BY w.created_at ASC LIMIT 1
+    ) own_wm ON true
     LEFT JOIN user_ai_preferences uap
-      ON uap.workspace_id = ${workspaceId} AND uap.user_id = u.id
+      ON uap.workspace_id = own_wm.workspace_id AND uap.user_id = u.id
     LEFT JOIN github_copilot_accounts gca
       ON gca.id = uap.copilot_account_id
     LEFT JOIN ai_providers ap
@@ -239,13 +244,17 @@ adminRoutes.get("/users/ai-allocations", async (c) => {
     ORDER BY u.created_at ASC
   `;
 
-  // Also return copilot accounts and providers for the admin's workspace
-  const [accounts, providers] = await Promise.all([
-    aiSettings.listCopilotAccounts(workspaceId),
-    aiSettings.listProviders(workspaceId),
-  ]);
+  // Return copilot accounts and providers from admin's workspace (these are the options to assign)
+  let accounts: Awaited<ReturnType<typeof aiSettings.listCopilotAccounts>> = [];
+  let providers: Awaited<ReturnType<typeof aiSettings.listProviders>> = [];
+  if (adminWorkspaceId) {
+    [accounts, providers] = await Promise.all([
+      aiSettings.listCopilotAccounts(adminWorkspaceId),
+      aiSettings.listProviders(adminWorkspaceId),
+    ]);
+  }
 
-  return c.json({ data: rows, workspaceId, accounts, providers });
+  return c.json({ data: rows, workspaceId: adminWorkspaceId, accounts, providers });
 });
 
 const adminAllocateSchema = z.object({
@@ -254,7 +263,7 @@ const adminAllocateSchema = z.object({
   model: z.string().max(100).nullable().optional(),
 });
 
-// PUT /admin/users/:userId/ai-allocation — set AI for a user (auto-invites to workspace)
+// PUT /admin/users/:userId/ai-allocation — write AI prefs into the TARGET USER's own workspace
 adminRoutes.put("/users/:userId/ai-allocation", async (c) => {
   const adminId = c.get("userId");
   const targetUserId = c.req.param("userId");
@@ -262,14 +271,18 @@ adminRoutes.put("/users/:userId/ai-allocation", async (c) => {
   const parsed = adminAllocateSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
-  const workspaceId = await getAdminWorkspace(adminId);
-  if (!workspaceId) return c.json({ error: "No workspace found for admin" }, 400);
+  // Write to the TARGET user's own workspace so they see it when they log in
+  const targetWorkspaceId = await getUserOwnedWorkspace(targetUserId);
+  if (!targetWorkspaceId) return c.json({ error: "Target user has no workspace" }, 400);
 
-  // Auto-invite user to workspace if not a member
-  await ensureWorkspaceMember(workspaceId, targetUserId, adminId);
+  // Also add target user to admin's workspace so they can access shared projects
+  const adminWorkspaceId = await getUserOwnedWorkspace(adminId);
+  if (adminWorkspaceId) {
+    await ensureWorkspaceMember(adminWorkspaceId, targetUserId, adminId);
+  }
 
   const result = await aiSettings.upsertUserPreferences({
-    workspaceId,
+    workspaceId: targetWorkspaceId,
     userId: targetUserId,
     copilotAccountId: parsed.data.copilotAccountId ?? null,
     providerId: parsed.data.providerId ?? null,
@@ -283,28 +296,28 @@ const adminBulkCopySchema = z.object({
   targetUserIds: z.array(z.string().uuid()).min(1).max(100),
 });
 
-// POST /admin/users/ai-allocations/copy-my-settings — bulk copy admin's settings
+// POST /admin/users/ai-allocations/copy-my-settings — copy admin's settings into each user's own workspace
 adminRoutes.post("/users/ai-allocations/copy-my-settings", async (c) => {
   const adminId = c.get("userId");
   const body = await c.req.json();
   const parsed = adminBulkCopySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
-  const workspaceId = await getAdminWorkspace(adminId);
-  if (!workspaceId) return c.json({ error: "No workspace found for admin" }, 400);
+  const adminWorkspaceId = await getUserOwnedWorkspace(adminId);
+  if (!adminWorkspaceId) return c.json({ error: "No workspace found for admin" }, 400);
 
   // Get admin's own preferences, or fall back to workspace defaults
   let copilotAccountId: string | null = null;
   let providerId: string | null = null;
   let model: string | null = null;
 
-  const adminPrefs = await aiSettings.getUserPreferences(workspaceId, adminId);
+  const adminPrefs = await aiSettings.getUserPreferences(adminWorkspaceId, adminId);
   if (adminPrefs && (adminPrefs.copilot_account_id || adminPrefs.provider_id || adminPrefs.model)) {
     copilotAccountId = adminPrefs.copilot_account_id;
     providerId = adminPrefs.provider_id;
     model = adminPrefs.model;
   } else {
-    const wsDefaults = await aiSettings.getSettings(workspaceId);
+    const wsDefaults = await aiSettings.getSettings(adminWorkspaceId);
     if (wsDefaults) {
       copilotAccountId = wsDefaults.default_copilot_account_id;
       providerId = wsDefaults.default_provider_id;
@@ -314,9 +327,15 @@ adminRoutes.post("/users/ai-allocations/copy-my-settings", async (c) => {
 
   let updated = 0;
   for (const targetId of parsed.data.targetUserIds) {
-    await ensureWorkspaceMember(workspaceId, targetId, adminId);
+    // Write to each target user's own workspace
+    const targetWsId = await getUserOwnedWorkspace(targetId);
+    if (!targetWsId) continue;
+
+    // Also invite them to admin's workspace for shared access
+    await ensureWorkspaceMember(adminWorkspaceId, targetId, adminId);
+
     await aiSettings.upsertUserPreferences({
-      workspaceId,
+      workspaceId: targetWsId,
       userId: targetId,
       copilotAccountId,
       providerId,
@@ -328,14 +347,13 @@ adminRoutes.post("/users/ai-allocations/copy-my-settings", async (c) => {
   return c.json({ data: { updated } });
 });
 
-// DELETE /admin/users/:userId/ai-allocation — reset user's AI allocation
+// DELETE /admin/users/:userId/ai-allocation — reset from user's own workspace
 adminRoutes.delete("/users/:userId/ai-allocation", async (c) => {
-  const adminId = c.get("userId");
   const targetUserId = c.req.param("userId");
 
-  const workspaceId = await getAdminWorkspace(adminId);
-  if (!workspaceId) return c.json({ error: "No workspace found for admin" }, 400);
+  const targetWorkspaceId = await getUserOwnedWorkspace(targetUserId);
+  if (!targetWorkspaceId) return c.json({ error: "Target user has no workspace" }, 400);
 
-  await aiSettings.deleteUserPreferences(workspaceId, targetUserId);
+  await aiSettings.deleteUserPreferences(targetWorkspaceId, targetUserId);
   return c.json({ data: { userId: targetUserId, reset: true } });
 });
