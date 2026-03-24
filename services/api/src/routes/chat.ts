@@ -83,7 +83,6 @@ async function resolveAiEngine(
     model?: string;
   },
 ): Promise<{
-  engine: CopilotEngine;
   model?: string;
   provider?: ByokProviderConfig;
   githubToken?: string;
@@ -165,11 +164,7 @@ async function resolveAiEngine(
     }
   }
 
-  // ── Tier 5: System default (no token → gh CLI auth) ──
-  const manager = getCopilotManager();
-  const engine = await manager.getEngine(githubToken);
-
-  return { engine, model: resolvedModel, provider: resolvedProvider, githubToken };
+  return { model: resolvedModel, provider: resolvedProvider, githubToken };
 }
 
 // ─── Helpers: project context & error detection ─────────
@@ -584,9 +579,8 @@ chatRoutes.post(
         }
       }
 
-      // ── Resolve AI engine via fallback chain ──
+      // ── Resolve AI config via fallback chain ──
       const {
-        engine,
         model: resolvedModel,
         provider: resolvedProvider,
         githubToken: resolvedGithubToken,
@@ -793,7 +787,44 @@ ERROR RECOVERY — if you encounter errors:
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let assistantToolCalls: any[] = [];
         try {
-          for await (const event of engine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined)) {
+          // Get a fresh engine reference — the pooled engine may have been
+          // recycled since resolveAiEngine ran (max-age, idle, or eviction).
+          const manager = getCopilotManager();
+          let currentEngine = await manager.getEngine(resolvedGithubToken);
+
+          // Try to send. If the session was lost (engine recycled), recreate it.
+          let messageStream: AsyncGenerator<import("@github/copilot-sdk").SessionEvent>;
+          try {
+            messageStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
+            // Force the generator to yield once — "Session not found" throws here
+            // because async generators are lazy (the body doesn't run until iterated).
+            const first = await messageStream.next();
+            // Wrap in a helper that re-yields the first value then continues
+            messageStream = (async function* () {
+              if (!first.done) yield first.value;
+              yield* messageStream;
+            })();
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes("not found")) {
+              // Session was lost (engine recycled) — recreate
+              console.log(`[Chat] Session '${sessionId}' lost, recreating for ${projectId}`);
+              projectSessions.delete(sessionKey);
+              currentEngine = await manager.getEngine(resolvedGithubToken);
+              const projectPath = getProjectPath(projectId);
+              const freshTools = await createAllTools(projectId, workspaceId, userId);
+              sessionId = await currentEngine.createSession({
+                projectId, userId, model: resolvedModel, provider: resolvedProvider,
+                workingDirectory: projectPath, systemPrompt: "", tools: freshTools,
+              });
+              projectSessions.set(sessionKey, sessionId);
+              messageStream = currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
+            } else {
+              throw err;
+            }
+          }
+
+          for await (const event of messageStream!) {
             const evtType = (event as Record<string, unknown>).type as string;
             const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
 
