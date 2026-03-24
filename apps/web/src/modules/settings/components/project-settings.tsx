@@ -982,12 +982,14 @@ function DomainTab({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-    pending: {
-      label: "Waiting for DNS",
-      color: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
-      icon: <Clock className="h-3 w-3" />,
-    },
+  type StatusInfo = { label: string; color: string; icon: React.ReactNode };
+  const defaultStatus: StatusInfo = {
+    label: "Waiting for DNS",
+    color: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+    icon: <Clock className="h-3 w-3" />,
+  };
+  const statusConfig: Record<string, StatusInfo> = {
+    pending: defaultStatus,
     verifying: {
       label: "Verifying",
       color: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
@@ -1101,7 +1103,7 @@ function DomainTab({
 
             {!loading &&
               customDomains.map((d) => {
-                const status = statusConfig[d.status] ?? statusConfig.pending;
+                const status = statusConfig[d.status] ?? defaultStatus;
                 const isVerifying = verifyingId === d.id;
                 const isRemoving = removingId === d.id;
 
