@@ -32,7 +32,7 @@ INSERT INTO feature_flags (feature_key, label, description, enabled, min_plan, m
   ('visual_editor',     'Visual Editor',        'Click-to-edit visual editing in preview',            true,  null,         null),
   ('code_editor',       'Code Editor',          'Monaco code editor (Dev Mode)',                      true,  'pro',        null),
   ('github_sync',       'GitHub Sync',          'Connect and sync projects with GitHub',              true,  null,         null),
-  ('publish',           'Publish / Deploy',     'Publish projects to doable.app or custom domains',   true,  null,         null),
+  ('publish',           'Publish / Deploy',     'Publish projects to doable.me or custom domains',   true,  null,         null),
   ('custom_domains',    'Custom Domains',       'Use your own domain for published apps',             true,  'pro',        null),
   ('templates',         'Templates',            'Create projects from templates',                     true,  null,         null),
   ('analytics',         'Analytics',            'Built-in analytics for published apps',              true,  null,         null),

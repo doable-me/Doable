@@ -474,7 +474,7 @@ function GeneralTab({
           <InfoItem
             icon={Link2}
             label="Project URL"
-            value={`${project.slug}.doable.app`}
+            value={`${project.slug}.doable.me`}
             mono
           />
           <InfoItem
@@ -1018,16 +1018,16 @@ function DomainTab({
   return (
     <div className="space-y-6">
       {/* Default Domain */}
-      <SectionCard title="Default Domain" description="Your project is always accessible at its .doable.app subdomain.">
+      <SectionCard title="Default Domain" description="Your project is always accessible at its .doable.me subdomain.">
         <div className="flex items-center justify-between rounded-lg bg-muted/30 p-4">
           <div>
             <p className="text-sm font-medium">Default URL</p>
             <p className="mt-0.5 font-mono text-sm text-muted-foreground">
-              {project.slug}.doable.app
+              {project.slug}.doable.me
             </p>
           </div>
           <a
-            href={`https://${project.slug}.doable.app`}
+            href={`https://${project.slug}.doable.me`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -1261,14 +1261,14 @@ function EnvironmentsTab({ project }: { project: ApiProject }) {
     {
       name: "Production",
       status: "active" as const,
-      url: `${project.slug}.doable.app`,
+      url: `${project.slug}.doable.me`,
       description: "Live site accessible to all visitors",
       lastDeployed: project.updated_at,
     },
     {
       name: "Preview",
       status: "active" as const,
-      url: `preview-${project.slug}.doable.app`,
+      url: `preview-${project.slug}.doable.me`,
       description: "Test changes before publishing to production",
       lastDeployed: null,
     },

@@ -27,7 +27,7 @@ function isValidDomain(domain: string): boolean {
     domain.length <= 253 &&
     !domain.includes("..") &&
     !domain.endsWith("doable.me") &&
-    !domain.endsWith("doable.app");
+    !domain.endsWith("doable.me");
 }
 
 /** Add a custom domain to a project */

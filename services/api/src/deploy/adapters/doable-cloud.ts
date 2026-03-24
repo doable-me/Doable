@@ -15,11 +15,11 @@ const SITES_DIR =
     ? path.join(process.cwd(), "data", "sites")
     : "/data/sites");
 
-const DOMAIN = process.env.DOABLE_DOMAIN ?? "doable.app";
+const DOMAIN = process.env.DOABLE_DOMAIN ?? "doable.me";
 
 /**
  * Default deploy adapter: copies build output to a local directory
- * and generates a *.doable.app URL.
+ * and generates a *.doable.me URL.
  *
  * Directory structure:
  *   /data/sites/[slug]/live/   - production deployment
