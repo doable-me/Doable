@@ -1,54 +1,34 @@
 /**
- * Cloudflare Custom Hostnames API client.
- * Used for Cloudflare for SaaS — allows users to bring their own domains.
+ * Cloudflare Zones + DNS API client for custom domains.
+ * Uses FREE Cloudflare plan — no paid features needed.
+ *
+ * Flow: create zone → user changes NS → zone activates → create CNAME to tunnel → SSL auto-provisions
  *
  * Required env vars:
- *   CLOUDFLARE_API_TOKEN  — API token with "SSL and Certificates" edit permission
- *   CLOUDFLARE_ZONE_ID    — Zone ID for doable.me
- *
- * Docs: https://developers.cloudflare.com/api/resources/custom_hostnames/
+ *   CLOUDFLARE_API_TOKEN   — API token with Zone:Edit, DNS:Edit permissions
+ *   CLOUDFLARE_ACCOUNT_ID  — Account ID (found in Cloudflare dashboard)
+ *   CLOUDFLARE_TUNNEL_ID   — Tunnel UUID for CNAME targets
  */
 
 const CF_API = "https://api.cloudflare.com/client/v4";
 
 function getConfig() {
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  const zoneId = process.env.CLOUDFLARE_ZONE_ID;
-  if (!apiToken || !zoneId) {
-    throw new Error("CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID are required for custom domains");
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const tunnelId = process.env.CLOUDFLARE_TUNNEL_ID;
+  if (!apiToken || !accountId || !tunnelId) {
+    throw new Error(
+      "CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, and CLOUDFLARE_TUNNEL_ID are required for custom domains"
+    );
   }
-  return { apiToken, zoneId };
+  return { apiToken, accountId, tunnelId };
 }
 
 function headers() {
-  const { apiToken } = getConfig();
   return {
-    Authorization: `Bearer ${apiToken}`,
+    Authorization: `Bearer ${getConfig().apiToken}`,
     "Content-Type": "application/json",
   };
-}
-
-export interface CfCustomHostname {
-  id: string;
-  hostname: string;
-  status: "pending" | "active" | "moved" | "deleted";
-  ssl: {
-    status: string; // "initializing" | "pending_validation" | "pending_issuance" | "pending_deployment" | "active"
-    method: string;
-    type: string;
-    validation_records?: Array<{
-      txt_name: string;
-      txt_value: string;
-    }>;
-    validation_errors?: Array<{ message: string }>;
-  };
-  ownership_verification?: {
-    type: string;
-    name: string;
-    value: string;
-  };
-  verification_errors?: Array<{ message: string }>;
-  created_at: string;
 }
 
 interface CfResponse<T> {
@@ -57,52 +37,68 @@ interface CfResponse<T> {
   result: T;
 }
 
-/** Create a Custom Hostname in Cloudflare */
-export async function createCustomHostname(domain: string): Promise<CfCustomHostname> {
-  const { zoneId } = getConfig();
-  const res = await fetch(`${CF_API}/zones/${zoneId}/custom_hostnames`, {
+// ── Zone Management ──────────────────────────────────────
+
+export interface CfZone {
+  id: string;
+  name: string;
+  status: "initializing" | "pending" | "active" | "moved" | "deleted";
+  name_servers: string[];
+  original_name_servers?: string[];
+}
+
+/** Add a domain as a zone on our Cloudflare account (free) */
+export async function createZone(domain: string): Promise<CfZone> {
+  const { accountId } = getConfig();
+  const res = await fetch(`${CF_API}/zones`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({
-      hostname: domain,
-      ssl: {
-        method: "txt",      // TXT record validation for SSL
-        type: "dv",          // Domain Validation
-        settings: {
-          min_tls_version: "1.2",
-        },
-      },
+      name: domain,
+      account: { id: accountId },
+      type: "full",
+      jump_start: true,
     }),
   });
 
-  const data = (await res.json()) as CfResponse<CfCustomHostname>;
+  const data = (await res.json()) as CfResponse<CfZone>;
   if (!data.success) {
     const msg = data.errors.map((e) => e.message).join(", ");
-    throw new Error(`Cloudflare createCustomHostname failed: ${msg}`);
+    throw new Error(`Cloudflare createZone failed: ${msg}`);
   }
   return data.result;
 }
 
-/** Get a Custom Hostname by its Cloudflare ID */
-export async function getCustomHostname(hostnameId: string): Promise<CfCustomHostname> {
-  const { zoneId } = getConfig();
-  const res = await fetch(`${CF_API}/zones/${zoneId}/custom_hostnames/${hostnameId}`, {
+/** Check zone status (pending → active once user changes nameservers) */
+export async function getZone(zoneId: string): Promise<CfZone> {
+  const res = await fetch(`${CF_API}/zones/${zoneId}`, {
     method: "GET",
     headers: headers(),
   });
 
-  const data = (await res.json()) as CfResponse<CfCustomHostname>;
+  const data = (await res.json()) as CfResponse<CfZone>;
   if (!data.success) {
     const msg = data.errors.map((e) => e.message).join(", ");
-    throw new Error(`Cloudflare getCustomHostname failed: ${msg}`);
+    throw new Error(`Cloudflare getZone failed: ${msg}`);
   }
   return data.result;
 }
 
-/** Delete a Custom Hostname */
-export async function deleteCustomHostname(hostnameId: string): Promise<void> {
-  const { zoneId } = getConfig();
-  const res = await fetch(`${CF_API}/zones/${zoneId}/custom_hostnames/${hostnameId}`, {
+/** Check if a zone already exists on our account */
+export async function findZone(domain: string): Promise<CfZone | null> {
+  const res = await fetch(`${CF_API}/zones?name=${encodeURIComponent(domain)}`, {
+    method: "GET",
+    headers: headers(),
+  });
+
+  const data = (await res.json()) as CfResponse<CfZone[]>;
+  if (!data.success) return null;
+  return (data.result as CfZone[])[0] ?? null;
+}
+
+/** Delete a zone from our account */
+export async function deleteZone(zoneId: string): Promise<void> {
+  const res = await fetch(`${CF_API}/zones/${zoneId}`, {
     method: "DELETE",
     headers: headers(),
   });
@@ -110,25 +106,63 @@ export async function deleteCustomHostname(hostnameId: string): Promise<void> {
   const data = (await res.json()) as CfResponse<{ id: string }>;
   if (!data.success) {
     const msg = data.errors.map((e) => e.message).join(", ");
-    throw new Error(`Cloudflare deleteCustomHostname failed: ${msg}`);
+    throw new Error(`Cloudflare deleteZone failed: ${msg}`);
   }
 }
 
-/** Trigger re-validation for a pending hostname */
-export async function refreshCustomHostname(hostnameId: string): Promise<CfCustomHostname> {
-  const { zoneId } = getConfig();
-  const res = await fetch(`${CF_API}/zones/${zoneId}/custom_hostnames/${hostnameId}`, {
-    method: "PATCH",
+// ── DNS Record Management ────────────────────────────────
+
+export interface CfDnsRecord {
+  id: string;
+  type: string;
+  name: string;
+  content: string;
+  proxied: boolean;
+}
+
+/** Create CNAME record pointing domain to our tunnel */
+export async function createTunnelCname(zoneId: string, domain: string): Promise<CfDnsRecord> {
+  const { tunnelId } = getConfig();
+  const tunnelHostname = `${tunnelId}.cfargotunnel.com`;
+
+  const res = await fetch(`${CF_API}/zones/${zoneId}/dns_records`, {
+    method: "POST",
     headers: headers(),
     body: JSON.stringify({
-      ssl: { method: "txt", type: "dv" },
+      type: "CNAME",
+      name: domain,
+      content: tunnelHostname,
+      proxied: true,
+      comment: "Doable custom domain → tunnel",
     }),
   });
 
-  const data = (await res.json()) as CfResponse<CfCustomHostname>;
+  const data = (await res.json()) as CfResponse<CfDnsRecord>;
   if (!data.success) {
     const msg = data.errors.map((e) => e.message).join(", ");
-    throw new Error(`Cloudflare refreshCustomHostname failed: ${msg}`);
+    throw new Error(`Cloudflare createTunnelCname failed: ${msg}`);
+  }
+  return data.result;
+}
+
+/** Create www CNAME redirecting to the apex domain */
+export async function createWwwCname(zoneId: string, domain: string): Promise<CfDnsRecord> {
+  const res = await fetch(`${CF_API}/zones/${zoneId}/dns_records`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      type: "CNAME",
+      name: "www",
+      content: domain,
+      proxied: true,
+      comment: "Doable www redirect",
+    }),
+  });
+
+  const data = (await res.json()) as CfResponse<CfDnsRecord>;
+  if (!data.success) {
+    // www might already exist — not critical
+    console.warn("[cloudflare] www CNAME creation failed (non-critical):", data.errors);
   }
   return data.result;
 }

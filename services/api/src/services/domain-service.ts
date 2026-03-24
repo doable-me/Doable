@@ -1,24 +1,30 @@
 /**
  * Domain service — orchestrates custom domain lifecycle.
  *
- * Flow:
- * 1. User adds domain -> createCustomHostname on Cloudflare -> save to DB (status: pending)
- * 2. User adds CNAME + TXT records at their DNS provider
- * 3. Poll Cloudflare API for status -> update DB (verifying -> ssl_pending -> active)
- * 4. When active -> update Caddy config -> domain is live
- * 5. Remove -> delete from Cloudflare -> remove Caddy block -> delete from DB
+ * Flow (Cloudflare Zones + DNS — free plan):
+ * 1. User adds domain → create zone on Cloudflare → save to DB (status: pending)
+ * 2. User changes nameservers at their registrar (one-time)
+ * 3. Poll Cloudflare API → zone status goes pending → active
+ * 4. Once active → create CNAME to tunnel + www CNAME → SSL auto-provisions
+ * 5. Update Caddy config → domain is live
+ * 6. Remove → delete zone from Cloudflare → remove Caddy block → delete from DB
  */
 import { sql } from "../db/index.js";
 import { customDomainQueries } from "@doable/db/queries/custom-domains";
 import { projectQueries } from "@doable/db/queries/projects";
-import * as cf from "../lib/cloudflare-domains.js";
+import {
+  createZone,
+  getZone,
+  deleteZone,
+  findZone,
+  createTunnelCname,
+  createWwwCname,
+} from "../lib/cloudflare-domains.js";
 import { applyCaddyConfig } from "./caddy-domains.js";
 import type { CustomDomainRow, CustomDomainStatus } from "@doable/db/types";
 
 const domains = customDomainQueries(sql);
 const projects = projectQueries(sql);
-
-const CNAME_TARGET = process.env.CUSTOM_DOMAIN_CNAME_TARGET ?? "custom.doable.me";
 
 /** Validate domain format */
 function isValidDomain(domain: string): boolean {
@@ -61,10 +67,15 @@ export async function addDomain(opts: {
     throw new DomainError("This domain is already in use by another project", 409);
   }
 
-  // Create on Cloudflare
-  let cfHostname: cf.CfCustomHostname;
+  // Check if zone already exists on our account (e.g. from a previous attempt)
+  let zone;
   try {
-    cfHostname = await cf.createCustomHostname(domain);
+    const existingZone = await findZone(domain);
+    if (existingZone) {
+      zone = existingZone;
+    } else {
+      zone = await createZone(domain);
+    }
   } catch (err) {
     console.error("[domain-service] Cloudflare API error:", err);
     throw new DomainError(
@@ -73,24 +84,26 @@ export async function addDomain(opts: {
     );
   }
 
-  // Extract verification records
-  const txtRecord = cfHostname.ssl?.validation_records?.[0];
-  const ownershipVerification = cfHostname.ownership_verification;
+  const tunnelId = process.env.CLOUDFLARE_TUNNEL_ID!;
+  const tunnelCname = `${tunnelId}.cfargotunnel.com`;
 
   // Save to database
   const row = await domains.create({
     projectId,
     domain,
-    cnameTarget: CNAME_TARGET,
+    cnameTarget: tunnelCname,
     createdBy: userId,
   });
 
-  // Update with Cloudflare metadata
+  // Update with Cloudflare metadata:
+  //   cloudflareHostnameId → zone ID (repurposed column)
+  //   verificationTxtName  → nameserver 1 (repurposed column)
+  //   verificationTxtValue → nameserver 2 (repurposed column)
   const updated = await domains.updateStatus(row.id, {
-    cloudflareHostnameId: cfHostname.id,
-    sslStatus: cfHostname.ssl?.status ?? null,
-    verificationTxtName: ownershipVerification?.name ?? txtRecord?.txt_name ?? null,
-    verificationTxtValue: ownershipVerification?.value ?? txtRecord?.txt_value ?? null,
+    cloudflareHostnameId: zone.id,
+    sslStatus: null,
+    verificationTxtName: zone.name_servers[0] ?? null,
+    verificationTxtValue: zone.name_servers[1] ?? null,
     lastCheckedAt: new Date(),
   });
 
@@ -107,12 +120,12 @@ export async function removeDomain(domainId: string): Promise<void> {
   // Mark as removing
   await domains.updateStatus(domainId, { status: "removing" });
 
-  // Delete from Cloudflare
+  // Delete zone from Cloudflare
   if (domainRow.cloudflare_hostname_id) {
     try {
-      await cf.deleteCustomHostname(domainRow.cloudflare_hostname_id);
+      await deleteZone(domainRow.cloudflare_hostname_id);
     } catch (err) {
-      console.warn("[domain-service] Cloudflare delete failed (continuing):", err);
+      console.warn("[domain-service] Cloudflare zone delete failed (continuing):", err);
     }
   }
 
@@ -139,10 +152,10 @@ export async function checkDomainStatus(domainId: string): Promise<CustomDomainR
     return domainRow;
   }
 
-  // Poll Cloudflare
-  let cfHostname: cf.CfCustomHostname;
+  // Poll Cloudflare zone status
+  let zone;
   try {
-    cfHostname = await cf.getCustomHostname(domainRow.cloudflare_hostname_id);
+    zone = await getZone(domainRow.cloudflare_hostname_id);
   } catch (err) {
     console.error("[domain-service] Cloudflare poll error:", err);
     await domains.updateStatus(domainId, {
@@ -152,38 +165,45 @@ export async function checkDomainStatus(domainId: string): Promise<CustomDomainR
     return (await domains.findById(domainId))!;
   }
 
-  // Map Cloudflare status to our status
+  // Map zone status to our domain status
   let newStatus: CustomDomainStatus = domainRow.status;
-  const sslStatus = cfHostname.ssl?.status ?? "unknown";
 
-  if (cfHostname.status === "active" && sslStatus === "active") {
-    newStatus = "active";
-  } else if (cfHostname.status === "active" && sslStatus !== "active") {
+  if (zone.status === "active" && domainRow.status === "pending") {
+    // Zone is active — nameservers propagated! Create CNAME records to our tunnel.
+    try {
+      await createTunnelCname(zone.id, domainRow.domain);
+      await createWwwCname(zone.id, domainRow.domain);
+    } catch (err) {
+      console.error("[domain-service] Failed to create CNAME records:", err);
+      await domains.updateStatus(domainId, {
+        verificationErrors: err instanceof Error ? err.message : "Failed to create DNS records",
+        lastCheckedAt: new Date(),
+      });
+      return (await domains.findById(domainId))!;
+    }
+
+    // CNAME created, Cloudflare Universal SSL will auto-provision
     newStatus = "ssl_pending";
-  } else if (cfHostname.status === "pending") {
-    newStatus = "verifying";
   }
 
-  // Collect errors
-  const errors = [
-    ...(cfHostname.verification_errors?.map((e) => e.message) ?? []),
-    ...(cfHostname.ssl?.validation_errors?.map((e) => e.message) ?? []),
-  ];
+  if (zone.status === "active" && domainRow.status === "ssl_pending") {
+    // SSL should be ready within minutes of zone activation
+    newStatus = "active";
+  }
 
-  if (errors.length > 0 && cfHostname.status !== "active") {
+  if (zone.status === "pending") {
+    // Still waiting for user to change nameservers
+    newStatus = "pending";
+  }
+
+  if (zone.status === "moved" || zone.status === "deleted") {
     newStatus = "failed";
   }
 
-  // Update verification records if Cloudflare returned new ones
-  const txtRecord = cfHostname.ssl?.validation_records?.[0];
-  const ownershipVerification = cfHostname.ownership_verification;
-
   await domains.updateStatus(domainId, {
     status: newStatus,
-    sslStatus,
-    verificationTxtName: ownershipVerification?.name ?? txtRecord?.txt_name ?? domainRow.verification_txt_name,
-    verificationTxtValue: ownershipVerification?.value ?? txtRecord?.txt_value ?? domainRow.verification_txt_value,
-    verificationErrors: errors.length > 0 ? errors.join("; ") : null,
+    sslStatus: zone.status === "active" ? "active" : "pending",
+    verificationErrors: null,
     lastCheckedAt: new Date(),
   });
 
