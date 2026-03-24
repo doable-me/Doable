@@ -86,6 +86,7 @@ async function resolveAiEngine(
   engine: CopilotEngine;
   model?: string;
   provider?: ByokProviderConfig;
+  githubToken?: string;
 }> {
   let resolvedProvider: ByokProviderConfig | undefined = overrides.provider;
   let resolvedModel: string | undefined = overrides.model;
@@ -168,7 +169,7 @@ async function resolveAiEngine(
   const manager = getCopilotManager();
   const engine = await manager.getEngine(githubToken);
 
-  return { engine, model: resolvedModel, provider: resolvedProvider };
+  return { engine, model: resolvedModel, provider: resolvedProvider, githubToken };
 }
 
 // ─── Helpers: project context & error detection ─────────
@@ -588,6 +589,7 @@ chatRoutes.post(
         engine,
         model: resolvedModel,
         provider: resolvedProvider,
+        githubToken: resolvedGithubToken,
       } = await resolveAiEngine(projectId, userId, {
         copilotAccountId,
         providerId,
@@ -702,14 +704,22 @@ ERROR RECOVERY — if you encounter errors:
 - If multiple errors cascade, fix them one at a time starting with the root cause (usually a missing package or broken import).`;
 
         const projectPath = getProjectPath(projectId);
-        sessionId = await engine.createSession({
-          projectId,
-          userId,
-          model: resolvedModel,
-          provider: resolvedProvider,
-          workingDirectory: projectPath,
-          systemPrompt,
-          tools: await createAllTools(projectId, workspaceId, userId),
+        const allTools = await createAllTools(projectId, workspaceId, userId);
+
+        // Use withAutoRetry to handle stale Copilot API tokens —
+        // if session creation fails with an auth error, the manager evicts
+        // the cached engine, creates a fresh one, and retries.
+        const manager = getCopilotManager();
+        sessionId = await manager.withAutoRetry(resolvedGithubToken, async (eng) => {
+          return eng.createSession({
+            projectId,
+            userId,
+            model: resolvedModel,
+            provider: resolvedProvider,
+            workingDirectory: projectPath,
+            systemPrompt,
+            tools: allTools,
+          });
         });
         projectSessions.set(sessionKey, sessionId);
       }
@@ -868,6 +878,16 @@ ERROR RECOVERY — if you encounter errors:
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
+
+          // If streaming failed due to a stale auth token, evict the engine
+          // so the next request gets a fresh one automatically.
+          if (msg.includes("not authorized") || msg.includes("policy") || msg.includes("unauthorized")) {
+            const manager = getCopilotManager();
+            await manager.evictEngine(resolvedGithubToken);
+            projectSessions.delete(sessionKey);
+            console.log("[Chat] Evicted stale engine after streaming auth error");
+          }
+
           await stream.writeSSE({
             data: JSON.stringify({ type: "error", data: msg }),
           });
@@ -1438,34 +1458,32 @@ chatRoutes.post(
 
       const manager = getCopilotManager();
 
-      // Helper: attempt a suggestion call with one config
-      const trySuggestion = async (config: typeof configs[0]): Promise<string[] | null> => {
-        const engine = await manager.getEngine(config.githubToken);
-        const sessionId = await engine.createSession({
-          projectId: "suggestions",
-          userId: "system",
-          model: config.model,
-          ...(config.provider ? { provider: config.provider } : {}),
-          systemPrompt: suggestionSystemPrompt,
-        });
-
-        const result = await engine.sendAndWait(sessionId, suggestionUserMessage, 15_000);
-        engine.disconnectSession(sessionId).catch(() => {});
-
-        const resultData = result?.data as Record<string, unknown> | undefined;
-        const content = typeof resultData?.content === "string" ? resultData.content : "";
-
-        const jsonMatch = content.match(/\[[\s\S]*?\]/);
-        if (!jsonMatch) return null;
-
-        const suggestions = JSON.parse(jsonMatch[0]) as string[];
-        return suggestions.filter((s): s is string => typeof s === "string").slice(0, 5);
-      };
-
-      // Try each config in order until one succeeds
+      // Try each config in order until one succeeds.
+      // withAutoRetry handles stale token eviction + retry transparently.
       for (const config of configs) {
         try {
-          const suggestions = await trySuggestion(config);
+          const suggestions = await manager.withAutoRetry(config.githubToken, async (engine) => {
+            const sessionId = await engine.createSession({
+              projectId: "suggestions",
+              userId: "system",
+              model: config.model,
+              ...(config.provider ? { provider: config.provider } : {}),
+              systemPrompt: suggestionSystemPrompt,
+            });
+
+            const result = await engine.sendAndWait(sessionId, suggestionUserMessage, 15_000);
+            engine.disconnectSession(sessionId).catch(() => {});
+
+            const resultData = result?.data as Record<string, unknown> | undefined;
+            const content = typeof resultData?.content === "string" ? resultData.content : "";
+
+            const jsonMatch = content.match(/\[[\s\S]*?\]/);
+            if (!jsonMatch) return null;
+
+            const parsed = JSON.parse(jsonMatch[0]) as string[];
+            return parsed.filter((s): s is string => typeof s === "string").slice(0, 5);
+          });
+
           if (suggestions && suggestions.length > 0) {
             // Save suggestions to the last assistant message in DB
             const userId = c.get("userId")!;
@@ -1494,44 +1512,7 @@ chatRoutes.post(
           }
           console.warn(`[Suggestions] Config '${config.label}' returned empty — trying next`);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(`[Suggestions] Config '${config.label}' (model=${config.model}) failed: ${msg}`);
-
-          // Auth/policy errors often mean a stale Copilot API token — evict the
-          // cached engine and retry once with a fresh connection.
-          if (msg.includes("not authorized") || msg.includes("policy")) {
-            console.log(`[Suggestions] Evicting stale engine for '${config.label}' and retrying...`);
-            await manager.evictEngine(config.githubToken);
-            try {
-              const suggestions = await trySuggestion(config);
-              if (suggestions && suggestions.length > 0) {
-                const userId = c.get("userId")!;
-                try {
-                  const [dbSession] = await sql`
-                    SELECT id FROM ai_sessions
-                    WHERE project_id = ${projectId} AND user_id = ${userId}
-                    ORDER BY created_at DESC LIMIT 1
-                  `;
-                  if (dbSession) {
-                    await sql`
-                      UPDATE ai_messages
-                      SET suggestions = ${sql.json(suggestions)}
-                      WHERE id = (
-                        SELECT id FROM ai_messages
-                        WHERE session_id = ${dbSession.id} AND role = 'assistant'
-                        ORDER BY created_at DESC LIMIT 1
-                      )
-                    `;
-                  }
-                } catch (e) {
-                  console.warn("[Chat] Failed to save suggestions:", e);
-                }
-                return c.json({ data: suggestions });
-              }
-            } catch (retryErr) {
-              console.warn(`[Suggestions] Retry for '${config.label}' also failed:`, retryErr instanceof Error ? retryErr.message : retryErr);
-            }
-          }
+          console.warn(`[Suggestions] Config '${config.label}' (model=${config.model}) failed:`, err instanceof Error ? err.message : err);
           // Continue to next config
         }
       }
