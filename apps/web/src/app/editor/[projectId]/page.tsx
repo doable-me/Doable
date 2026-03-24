@@ -444,10 +444,19 @@ async function streamChat(
     }
   } catch (err: unknown) {
     if (signal?.aborted) return;
-    onError(
-      "Unable to connect to Doable's AI engine. Please check that the API server is running."
-    );
-    return;
+    // Retry once after a brief delay — handles transient failures from
+    // API restarts (tsx watch reload), brief network blips, etc.
+    try {
+      await new Promise((r) => setTimeout(r, 1500));
+      if (signal?.aborted) return;
+      res = await makeRequest(currentToken);
+    } catch {
+      if (signal?.aborted) return;
+      onError(
+        "Connection to AI failed — the server may be restarting. Please try again in a moment."
+      );
+      return;
+    }
   }
 
   if (!res.ok) {
@@ -611,7 +620,7 @@ async function streamChat(
   } catch (err: unknown) {
     if (signal?.aborted) return;
     onError(
-      "Unable to connect to Doable's AI engine. Please check that the API server is running."
+      "Connection interrupted — the server may have restarted. Please send your message again."
     );
     return;
   }
