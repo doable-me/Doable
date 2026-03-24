@@ -13,7 +13,7 @@ function renderMarkdown(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
-  // Code blocks
+  // Code blocks (must be before line-level rules)
   html = html.replace(
     /```(\w+)?\n([\s\S]*?)```/g,
     (_match, lang, code) =>
@@ -26,14 +26,43 @@ function renderMarkdown(text: string): string {
     '<code class="inline-code">$1</code>'
   );
 
-  // Bold
+  // Bold (before italic so **bold** isn't caught by *italic*)
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 
   // Italic
   html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
 
-  // Line breaks
+  // Headings (# to ####) — must be at start of line
+  html = html.replace(/^#### (.+)$/gm, '<h4 class="chat-h4">$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3 class="chat-h3">$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2 class="chat-h2">$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1 class="chat-h1">$1</h1>');
+
+  // Unordered lists: lines starting with - or *
+  html = html.replace(/^[*-] (.+)$/gm, '<li class="chat-li">$1</li>');
+
+  // Ordered lists: lines starting with 1. 2. etc.
+  html = html.replace(/^\d+\. (.+)$/gm, '<li class="chat-li-ol">$1</li>');
+
+  // Wrap consecutive <li> runs in <ul>/<ol>
+  html = html.replace(
+    /((?:<li class="chat-li">[\s\S]*?<\/li>\s*)+)/g,
+    '<ul class="chat-ul">$1</ul>'
+  );
+  html = html.replace(
+    /((?:<li class="chat-li-ol">[\s\S]*?<\/li>\s*)+)/g,
+    '<ol class="chat-ol">$1</ol>'
+  );
+
+  // Horizontal rules
+  html = html.replace(/^---$/gm, '<hr class="chat-hr" />');
+
+  // Line breaks (skip inside <pre> blocks — handled by CSS white-space)
   html = html.replace(/\n/g, "<br />");
+
+  // Clean up: remove <br /> right after block elements
+  html = html.replace(/<\/(h[1-4]|li|ul|ol|pre|hr)><br \/>/g, "</$1>");
+  html = html.replace(/<hr class="chat-hr" \/><br \/>/g, '<hr class="chat-hr" />');
 
   return html;
 }
