@@ -84,6 +84,24 @@ export class CopilotEngineManager {
   }
 
   /**
+   * Evict a cached engine so the next getEngine() call creates a fresh one.
+   * Call this when a request fails with an auth/permission error — the
+   * underlying Copilot API token may have expired while the engine was pooled.
+   */
+  async evictEngine(githubToken?: string): Promise<void> {
+    const tokenHash = githubToken
+      ? createHash("sha256").update(githubToken).digest("hex")
+      : "__default__";
+
+    const entry = this.pool.get(tokenHash);
+    if (entry) {
+      console.log(`[CopilotManager] Evicting stale engine (${tokenHash.slice(0, 8)}…)`);
+      this.pool.delete(tokenHash);
+      entry.engine.stop().catch(() => {});
+    }
+  }
+
+  /**
    * Stop and remove idle engines.
    */
   private cleanupIdle(): void {
