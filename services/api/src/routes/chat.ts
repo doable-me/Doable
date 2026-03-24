@@ -1367,122 +1367,146 @@ chatRoutes.post(
     const { lastAssistantMessage, userPrompt } = c.req.valid("json");
 
     try {
-      // Resolve suggestion AI config with enforcement support
-      let suggestionModel: string | undefined = "gpt-4o-mini";
-      let suggestionGithubToken: string | undefined;
-      let suggestionProvider: ByokProviderConfig | undefined;
+      // Resolve AI configs: suggestion-specific first, default as fallback
+      const configs: Array<{
+        model: string | undefined;
+        githubToken: string | undefined;
+        provider: ByokProviderConfig | undefined;
+        label: string;
+      }> = [];
 
+      let settings: Awaited<ReturnType<typeof aiSettingsDb.getSettings>> | null = null;
       try {
         const [project] = await sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`;
         if (project?.workspace_id) {
-          const settings = await aiSettingsDb.getSettings(project.workspace_id);
-          if (settings) {
-            // ── Enforcement overrides everything ──
-            if (settings.enforce_ai) {
-              if (settings.enforced_copilot_account_id) {
-                suggestionGithubToken = (await aiSettingsDb.getCopilotAccountToken(settings.enforced_copilot_account_id)) ?? undefined;
-              }
-              if (settings.enforced_provider_id) {
-                const providerData = await aiSettingsDb.getProviderWithKey(settings.enforced_provider_id);
-                if (providerData) {
-                  suggestionProvider = {
-                    type: providerData.row.provider_type as "openai" | "azure" | "anthropic",
-                    baseUrl: providerData.row.base_url,
-                    apiKey: providerData.apiKey ?? undefined,
-                    bearerToken: providerData.bearerToken ?? undefined,
-                    ...(providerData.row.azure_api_version ? { azure: { apiVersion: providerData.row.azure_api_version } } : {}),
-                  };
-                }
-              }
-              if (settings.enforced_model) {
-                suggestionModel = settings.enforced_model;
-              }
-            } else {
-              // ── No enforcement: use suggestion-specific workspace settings ──
-              if (settings.suggestion_model) {
-                suggestionModel = settings.suggestion_model;
-              }
-              if (settings.suggestion_copilot_account_id) {
-                suggestionGithubToken = (await aiSettingsDb.getCopilotAccountToken(settings.suggestion_copilot_account_id)) ?? undefined;
-              }
-              if (settings.suggestion_provider_id) {
-                const providerData = await aiSettingsDb.getProviderWithKey(settings.suggestion_provider_id);
-                if (providerData) {
-                  suggestionProvider = {
-                    type: providerData.row.provider_type as "openai" | "azure" | "anthropic",
-                    baseUrl: providerData.row.base_url,
-                    apiKey: providerData.apiKey ?? undefined,
-                    bearerToken: providerData.bearerToken ?? undefined,
-                    ...(providerData.row.azure_api_version ? { azure: { apiVersion: providerData.row.azure_api_version } } : {}),
-                  };
-                }
-              }
-            }
-          }
+          settings = await aiSettingsDb.getSettings(project.workspace_id);
         }
       } catch (err) {
         console.error("[Chat] Failed to resolve suggestion settings:", err);
       }
 
-      const manager = getCopilotManager();
-      const engine = await manager.getEngine(suggestionGithubToken);
+      // Helper to resolve a provider config
+      const resolveProvider = async (providerId: string | null | undefined): Promise<ByokProviderConfig | undefined> => {
+        if (!providerId) return undefined;
+        const providerData = await aiSettingsDb.getProviderWithKey(providerId);
+        if (!providerData) return undefined;
+        return {
+          type: providerData.row.provider_type as "openai" | "azure" | "anthropic",
+          baseUrl: providerData.row.base_url,
+          apiKey: providerData.apiKey ?? undefined,
+          bearerToken: providerData.bearerToken ?? undefined,
+          ...(providerData.row.azure_api_version ? { azure: { apiVersion: providerData.row.azure_api_version } } : {}),
+        };
+      };
 
-      // Create a lightweight session with the configured suggestion model
-      const sessionId = await engine.createSession({
-        projectId: "suggestions",
-        userId: "system",
-        model: suggestionModel,
-        ...(suggestionProvider ? { provider: suggestionProvider } : {}),
-        systemPrompt: `You generate short, contextual next-step suggestion chips for an AI app builder. Given the user's last prompt and the AI's response, return exactly 4 suggestions as a JSON array of strings. Each suggestion should be 2-6 words, actionable, and relevant to what was just built. Do NOT include generic suggestions. Focus on what the user would logically want to do next with THIS specific app. Return ONLY the JSON array, no other text.`,
-      });
-
-      const result = await engine.sendAndWait(
-        sessionId,
-        `User asked: "${userPrompt.slice(0, 200)}"\n\nAI built: "${lastAssistantMessage.slice(0, 500)}"\n\nReturn 4 contextual next-step suggestions as a JSON array:`,
-        15_000, // 15s timeout — suggestions should be fast
-      );
-
-      // Clean up the ephemeral session
-      engine.disconnectSession(sessionId).catch(() => {});
-
-      // Parse the response — AssistantMessageEvent has { data: { content: string } }
-      const resultData = result?.data as Record<string, unknown> | undefined;
-      const content = typeof resultData?.content === "string" ? resultData.content : "";
-
-      // Extract JSON array from the response (may have markdown fences)
-      const jsonMatch = content.match(/\[[\s\S]*?\]/);
-      if (jsonMatch) {
-        const suggestions = JSON.parse(jsonMatch[0]) as string[];
-        const filteredSuggestions = suggestions
-          .filter((s): s is string => typeof s === "string")
-          .slice(0, 5);
-
-        // Save suggestions to the last assistant message in DB
-        const userId = c.get("userId")!;
-        try {
-          const [dbSession] = await sql`
-            SELECT id FROM ai_sessions
-            WHERE project_id = ${projectId} AND user_id = ${userId}
-            ORDER BY created_at DESC LIMIT 1
-          `;
-          if (dbSession) {
-            await sql`
-              UPDATE ai_messages
-              SET suggestions = ${sql.json(filteredSuggestions)}
-              WHERE id = (
-                SELECT id FROM ai_messages
-                WHERE session_id = ${dbSession.id} AND role = 'assistant'
-                ORDER BY created_at DESC LIMIT 1
-              )
-            `;
+      if (settings) {
+        if (settings.enforce_ai) {
+          // Enforcement: single config, no fallback
+          configs.push({
+            model: settings.enforced_model ?? "gpt-4o-mini",
+            githubToken: settings.enforced_copilot_account_id
+              ? ((await aiSettingsDb.getCopilotAccountToken(settings.enforced_copilot_account_id)) ?? undefined)
+              : undefined,
+            provider: await resolveProvider(settings.enforced_provider_id),
+            label: "enforced",
+          });
+        } else {
+          // Suggestion-specific config (primary attempt)
+          if (settings.suggestion_model || settings.suggestion_copilot_account_id || settings.suggestion_provider_id) {
+            configs.push({
+              model: settings.suggestion_model ?? "gpt-4o-mini",
+              githubToken: settings.suggestion_copilot_account_id
+                ? ((await aiSettingsDb.getCopilotAccountToken(settings.suggestion_copilot_account_id)) ?? undefined)
+                : undefined,
+              provider: await resolveProvider(settings.suggestion_provider_id),
+              label: "suggestion",
+            });
           }
-        } catch (e) {
-          console.warn("[Chat] Failed to save suggestions:", e);
+          // Default workspace config (fallback)
+          if (settings.default_model || settings.default_copilot_account_id || settings.default_provider_id) {
+            configs.push({
+              model: settings.default_model ?? "gpt-4o-mini",
+              githubToken: settings.default_copilot_account_id
+                ? ((await aiSettingsDb.getCopilotAccountToken(settings.default_copilot_account_id)) ?? undefined)
+                : undefined,
+              provider: await resolveProvider(settings.default_provider_id),
+              label: "default",
+            });
+          }
         }
-
-        return c.json({ data: filteredSuggestions });
       }
 
+      // Ensure there's always at least one config to try
+      if (configs.length === 0) {
+        configs.push({ model: "gpt-4o-mini", githubToken: undefined, provider: undefined, label: "fallback" });
+      }
+
+      const suggestionSystemPrompt = `You generate short, contextual next-step suggestion chips for an AI app builder. Given the user's last prompt and the AI's response, return exactly 4 suggestions as a JSON array of strings. Each suggestion should be 2-6 words, actionable, and relevant to what was just built. Do NOT include generic suggestions. Focus on what the user would logically want to do next with THIS specific app. Return ONLY the JSON array, no other text.`;
+      const suggestionUserMessage = `User asked: "${userPrompt.slice(0, 200)}"\n\nAI built: "${lastAssistantMessage.slice(0, 500)}"\n\nReturn 4 contextual next-step suggestions as a JSON array:`;
+
+      const manager = getCopilotManager();
+
+      // Try each config in order until one succeeds
+      for (const config of configs) {
+        try {
+          const engine = await manager.getEngine(config.githubToken);
+          const sessionId = await engine.createSession({
+            projectId: "suggestions",
+            userId: "system",
+            model: config.model,
+            ...(config.provider ? { provider: config.provider } : {}),
+            systemPrompt: suggestionSystemPrompt,
+          });
+
+          const result = await engine.sendAndWait(sessionId, suggestionUserMessage, 15_000);
+          engine.disconnectSession(sessionId).catch(() => {});
+
+          const resultData = result?.data as Record<string, unknown> | undefined;
+          const content = typeof resultData?.content === "string" ? resultData.content : "";
+
+          const jsonMatch = content.match(/\[[\s\S]*?\]/);
+          if (jsonMatch) {
+            const suggestions = JSON.parse(jsonMatch[0]) as string[];
+            const filteredSuggestions = suggestions
+              .filter((s): s is string => typeof s === "string")
+              .slice(0, 5);
+
+            if (filteredSuggestions.length > 0) {
+              // Save suggestions to the last assistant message in DB
+              const userId = c.get("userId")!;
+              try {
+                const [dbSession] = await sql`
+                  SELECT id FROM ai_sessions
+                  WHERE project_id = ${projectId} AND user_id = ${userId}
+                  ORDER BY created_at DESC LIMIT 1
+                `;
+                if (dbSession) {
+                  await sql`
+                    UPDATE ai_messages
+                    SET suggestions = ${sql.json(filteredSuggestions)}
+                    WHERE id = (
+                      SELECT id FROM ai_messages
+                      WHERE session_id = ${dbSession.id} AND role = 'assistant'
+                      ORDER BY created_at DESC LIMIT 1
+                    )
+                  `;
+                }
+              } catch (e) {
+                console.warn("[Chat] Failed to save suggestions:", e);
+              }
+
+              return c.json({ data: filteredSuggestions });
+            }
+          }
+          // Parsed but empty/invalid — try next config
+          console.warn(`[Suggestions] Config '${config.label}' returned empty — trying next`);
+        } catch (err) {
+          console.warn(`[Suggestions] Config '${config.label}' (model=${config.model}) failed:`, err instanceof Error ? err.message : err);
+          // Continue to next config
+        }
+      }
+
+      console.warn("[Suggestions] All configs exhausted, returning empty");
       return c.json({ data: [] });
     } catch (err) {
       console.warn("[Suggestions] Failed:", err);

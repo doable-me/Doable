@@ -569,21 +569,9 @@ ok "Caddy configured on :8080 for *.${DOMAIN} → ${INSTALL_DIR}/sites/"
 # ─── Step 12: Systemd services ────────────────────────────────
 info "Step 12/13: Creating systemd services..."
 
-# Doable tmux startup script
-cat > "${INSTALL_DIR}/start.sh" << 'STARTEOF'
-#!/bin/bash
-SESSION="doable"
-tmux kill-session -t "$SESSION" 2>/dev/null || true
-tmux new-session -d -s "$SESSION" -n "api" -c /root/doable
-tmux send-keys -t "$SESSION:api" "cd /root/doable && pnpm dev:api" Enter
-tmux new-window -t "$SESSION" -n "web" -c /root/doable
-tmux send-keys -t "$SESSION:web" "cd /root/doable/apps/web && pnpm start" Enter
-tmux new-window -t "$SESSION" -n "ws" -c /root/doable
-tmux send-keys -t "$SESSION:ws" "cd /root/doable && pnpm dev:ws" Enter
-tmux select-window -t "$SESSION:api"
-echo "Doable tmux session started (api + web + ws). Attach with: tmux attach -t doable"
-STARTEOF
+# Ensure scripts from repo are executable
 chmod +x "${INSTALL_DIR}/start.sh"
+chmod +x "${INSTALL_DIR}/watchdog.sh"
 
 # Doable systemd service
 cat > /etc/systemd/system/doable.service << SVCEOF
@@ -607,19 +595,48 @@ RestartSec=10
 WantedBy=multi-user.target
 SVCEOF
 
+# Doable watchdog timer — checks service health every 2 minutes
+chmod +x "${INSTALL_DIR}/watchdog.sh"
+
+cat > /etc/systemd/system/doable-watchdog.service << WDEOF
+[Unit]
+Description=Doable Watchdog — health check and auto-recovery
+After=doable.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${INSTALL_DIR}/watchdog.sh
+WDEOF
+
+cat > /etc/systemd/system/doable-watchdog.timer << WTEOF
+[Unit]
+Description=Run Doable watchdog every 2 minutes
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=120
+AccuracySec=30
+
+[Install]
+WantedBy=timers.target
+WTEOF
+
 # Cloudflared service
 cloudflared service install 2>/dev/null || true
 
 systemctl daemon-reload
-systemctl enable doable.service cloudflared 2>/dev/null
+systemctl enable doable.service doable-watchdog.timer cloudflared 2>/dev/null
 
-ok "Systemd services created and enabled"
+ok "Systemd services created and enabled (app + watchdog timer + tunnel)"
 
 # ─── Step 13: Start everything ────────────────────────────────
 info "Step 13/13: Starting services..."
 
 systemctl start cloudflared 2>/dev/null || systemctl restart cloudflared
 systemctl start doable.service
+systemctl start doable-watchdog.timer
 
 # Wait for services to come up
 echo -n "  Waiting for services"
@@ -655,6 +672,8 @@ echo "  tmux attach -t doable          # View live logs"
 echo "  systemctl restart doable       # Restart the app"
 echo "  systemctl restart cloudflared  # Restart the tunnel"
 echo "  systemctl status doable cloudflared  # Check status"
+echo "  systemctl list-timers doable-watchdog*  # Watchdog timer"
+echo "  tail -f /var/log/doable-watchdog.log    # Watchdog log"
 echo "  ufw status                          # Check firewall rules"
 echo ""
 
