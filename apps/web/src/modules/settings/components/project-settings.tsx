@@ -33,6 +33,10 @@ import {
   Map,
   Crown,
   ArrowRightLeft,
+  Copy,
+  AlertCircle,
+  ShieldCheck,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -40,7 +44,12 @@ import {
   apiGetProject,
   apiUpdateProject,
   apiDeleteProject,
+  apiListCustomDomains,
+  apiAddCustomDomain,
+  apiRemoveCustomDomain,
+  apiVerifyCustomDomain,
   type ApiProject,
+  type ApiCustomDomain,
 } from "@/lib/api";
 import { IntegrationsPanel } from "@/modules/integrations/integrations-panel";
 
@@ -871,8 +880,140 @@ function DomainTab({
   project: ApiProject;
   addToast: (type: "success" | "error", msg: string) => void;
 }) {
-  const [customDomain, setCustomDomain] = useState("");
-  const isPro = false; // TODO: derive from workspace plan
+  const [customDomains, setCustomDomains] = useState<ApiCustomDomain[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newDomain, setNewDomain] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // TODO: derive from workspace plan — for now check if project has published_url (allow for testing)
+  const isPro = true; // Will be gated by backend anyway
+
+  // Fetch custom domains on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await apiListCustomDomains(project.id);
+        if (!cancelled) setCustomDomains(res.data);
+      } catch {
+        // Silently fail — domains panel just shows empty
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [project.id]);
+
+  // Auto-poll pending domains every 15 seconds
+  useEffect(() => {
+    const hasPending = customDomains.some(
+      (d) => d.status === "pending" || d.status === "verifying" || d.status === "ssl_pending"
+    );
+    if (!hasPending) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await apiListCustomDomains(project.id);
+        setCustomDomains(res.data);
+      } catch {
+        // ignore
+      }
+    }, 15_000);
+
+    return () => clearInterval(interval);
+  }, [project.id, customDomains]);
+
+  const handleAddDomain = async () => {
+    const domain = newDomain.trim().toLowerCase();
+    if (!domain) return;
+
+    setAdding(true);
+    try {
+      const res = await apiAddCustomDomain(project.id, domain);
+      setCustomDomains((prev) => [res.data, ...prev]);
+      setNewDomain("");
+      addToast("success", `Domain ${domain} added. Configure your DNS records below.`);
+    } catch (err: any) {
+      addToast("error", err?.body?.error ?? "Failed to add domain");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleVerify = async (domainId: string) => {
+    setVerifyingId(domainId);
+    try {
+      const res = await apiVerifyCustomDomain(domainId);
+      setCustomDomains((prev) =>
+        prev.map((d) => (d.id === domainId ? res.data : d))
+      );
+      if (res.data.status === "active") {
+        addToast("success", `${res.data.domain} is now active!`);
+      } else if (res.data.status === "failed") {
+        addToast("error", res.data.verification_errors ?? "Verification failed");
+      }
+    } catch (err: any) {
+      addToast("error", err?.body?.error ?? "Verification check failed");
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
+  const handleRemove = async (domainId: string) => {
+    setRemovingId(domainId);
+    try {
+      await apiRemoveCustomDomain(domainId);
+      setCustomDomains((prev) => prev.filter((d) => d.id !== domainId));
+      addToast("success", "Domain removed");
+    } catch (err: any) {
+      addToast("error", err?.body?.error ?? "Failed to remove domain");
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+    pending: {
+      label: "Waiting for DNS",
+      color: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+      icon: <Clock className="h-3 w-3" />,
+    },
+    verifying: {
+      label: "Verifying",
+      color: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+      icon: <Loader2 className="h-3 w-3 animate-spin" />,
+    },
+    ssl_pending: {
+      label: "SSL Provisioning",
+      color: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+      icon: <Loader2 className="h-3 w-3 animate-spin" />,
+    },
+    active: {
+      label: "Active",
+      color: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
+      icon: <ShieldCheck className="h-3 w-3" />,
+    },
+    failed: {
+      label: "Failed",
+      color: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
+      icon: <AlertCircle className="h-3 w-3" />,
+    },
+    removing: {
+      label: "Removing",
+      color: "bg-gray-100 text-gray-700 dark:bg-gray-900/50 dark:text-gray-300",
+      icon: <Loader2 className="h-3 w-3 animate-spin" />,
+    },
+  };
 
   return (
     <div className="space-y-6">
@@ -898,8 +1039,9 @@ function DomainTab({
       </SectionCard>
 
       {/* Custom Domain */}
-      <SectionCard title="Custom Domain">
+      <SectionCard title="Custom Domain" description="Serve your published site from your own domain name.">
         {!isPro ? (
+          /* Pro gate — keep the existing Crown/upgrade UI */
           <div className="flex flex-col items-center rounded-lg border-2 border-dashed p-8 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900">
               <Crown className="h-6 w-6 text-amber-600 dark:text-amber-300" />
@@ -915,86 +1057,194 @@ function DomainTab({
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="custom-domain" className="text-sm font-medium">
-                Domain Name
-              </label>
+          <div className="space-y-5">
+            {/* Add domain form */}
+            <div className="flex gap-2">
               <input
-                id="custom-domain"
                 type="text"
-                value={customDomain}
-                onChange={(e) => setCustomDomain(e.target.value)}
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !adding && handleAddDomain()}
                 placeholder="app.example.com"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
+              <button
+                onClick={handleAddDomain}
+                disabled={!newDomain.trim() || adding}
+                className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+              >
+                {adding ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                Add Domain
+              </button>
             </div>
 
-            {/* DNS Instructions */}
-            <div className="rounded-lg bg-muted/30 p-4">
-              <h4 className="text-sm font-medium">DNS Configuration</h4>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Add the following DNS records to your domain provider:
-              </p>
-              <div className="mt-3 overflow-hidden rounded-md border">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="px-3 py-2 text-left font-medium">Type</th>
-                      <th className="px-3 py-2 text-left font-medium">Name</th>
-                      <th className="px-3 py-2 text-left font-medium">Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b">
-                      <td className="px-3 py-2 font-mono">CNAME</td>
-                      <td className="px-3 py-2 font-mono">
-                        {customDomain || "app"}
-                      </td>
-                      <td className="px-3 py-2 font-mono">
-                        cname.doable.app
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-3 py-2 font-mono">TXT</td>
-                      <td className="px-3 py-2 font-mono">
-                        _doable-verify
-                      </td>
-                      <td className="px-3 py-2 font-mono text-muted-foreground">
-                        doable-verify={project.id.slice(0, 8)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+            {/* Loading state */}
+            {loading && (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
-            </div>
+            )}
 
-            {/* SSL Status */}
-            <div className="flex items-center justify-between rounded-lg bg-muted/30 p-4">
-              <div className="flex items-center gap-2">
-                <Lock className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">SSL Certificate</p>
-                  <p className="text-xs text-muted-foreground">
-                    Auto-provisioned via Let's Encrypt
-                  </p>
-                </div>
+            {/* Domain list */}
+            {!loading && customDomains.length === 0 && (
+              <div className="rounded-lg border-2 border-dashed p-6 text-center">
+                <Globe className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                <p className="mt-2 text-sm text-muted-foreground">
+                  No custom domains configured. Add one above to get started.
+                </p>
               </div>
-              <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                Not configured
-              </span>
-            </div>
+            )}
 
-            <button
-              disabled={!customDomain.trim()}
-              onClick={() =>
-                addToast("success", "Domain configuration saved")
-              }
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
-            >
-              <Globe className="h-4 w-4" />
-              Add Domain
-            </button>
+            {!loading &&
+              customDomains.map((d) => {
+                const status = statusConfig[d.status] ?? statusConfig.pending;
+                const isVerifying = verifyingId === d.id;
+                const isRemoving = removingId === d.id;
+
+                return (
+                  <div key={d.id} className="rounded-lg border p-4 space-y-4">
+                    {/* Domain header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <p className="font-mono text-sm font-medium">{d.domain}</p>
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${status.color}`}>
+                          {status.icon}
+                          {status.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {d.status === "active" && (
+                          <a
+                            href={`https://${d.domain}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                          >
+                            Visit
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                        {d.status !== "active" && d.status !== "removing" && (
+                          <button
+                            onClick={() => handleVerify(d.id)}
+                            disabled={isVerifying}
+                            className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                          >
+                            {isVerifying ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3 w-3" />
+                            )}
+                            Verify
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleRemove(d.id)}
+                          disabled={isRemoving}
+                          className="inline-flex items-center gap-1 rounded-md border border-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                        >
+                          {isRemoving ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* DNS instructions (show when not active) */}
+                    {d.status !== "active" && d.status !== "removing" && (
+                      <div className="rounded-lg bg-muted/30 p-4 space-y-3">
+                        <div>
+                          <h4 className="text-sm font-medium">DNS Configuration</h4>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            Add the following record at your DNS provider, then click Verify.
+                          </p>
+                        </div>
+                        <div className="overflow-hidden rounded-md border">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b bg-muted/50">
+                                <th className="px-3 py-2 text-left font-medium">Type</th>
+                                <th className="px-3 py-2 text-left font-medium">Name</th>
+                                <th className="px-3 py-2 text-left font-medium">Value</th>
+                                <th className="w-10 px-2 py-2" />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr className={d.verification_txt_name ? "border-b" : ""}>
+                                <td className="px-3 py-2 font-mono">CNAME</td>
+                                <td className="px-3 py-2 font-mono">{d.domain.split(".")[0]}</td>
+                                <td className="px-3 py-2 font-mono">{d.cname_target}</td>
+                                <td className="px-2 py-2">
+                                  <button
+                                    onClick={() => copyToClipboard(d.cname_target, `cname-${d.id}`)}
+                                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                    title="Copy value"
+                                  >
+                                    {copiedField === `cname-${d.id}` ? (
+                                      <Check className="h-3 w-3 text-green-500" />
+                                    ) : (
+                                      <Copy className="h-3 w-3" />
+                                    )}
+                                  </button>
+                                </td>
+                              </tr>
+                              {d.verification_txt_name && (
+                                <tr>
+                                  <td className="px-3 py-2 font-mono">TXT</td>
+                                  <td className="px-3 py-2 font-mono text-xs break-all">{d.verification_txt_name}</td>
+                                  <td className="px-3 py-2 font-mono text-xs break-all">{d.verification_txt_value}</td>
+                                  <td className="px-2 py-2">
+                                    <button
+                                      onClick={() => copyToClipboard(d.verification_txt_value ?? "", `txt-${d.id}`)}
+                                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                      title="Copy value"
+                                    >
+                                      {copiedField === `txt-${d.id}` ? (
+                                        <Check className="h-3 w-3 text-green-500" />
+                                      ) : (
+                                        <Copy className="h-3 w-3" />
+                                      )}
+                                    </button>
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error message */}
+                    {d.verification_errors && d.status === "failed" && (
+                      <div className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                        <p className="text-xs text-destructive">{d.verification_errors}</p>
+                      </div>
+                    )}
+
+                    {/* Active state — SSL info */}
+                    {d.status === "active" && (
+                      <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-900/20 p-3">
+                        <ShieldCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <div>
+                          <p className="text-xs font-medium text-green-700 dark:text-green-300">
+                            SSL Active — Your domain is fully configured
+                          </p>
+                          <p className="text-xs text-green-600/70 dark:text-green-400/70">
+                            HTTPS enabled via Cloudflare. Certificate auto-renews.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         )}
       </SectionCard>

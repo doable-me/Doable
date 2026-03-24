@@ -509,6 +509,57 @@ export async function apiPublishProject(
   });
 }
 
+// ─── Custom Domain Types & API Methods ───────────────────
+
+export interface ApiCustomDomain {
+  id: string;
+  project_id: string;
+  domain: string;
+  status: "pending" | "verifying" | "ssl_pending" | "active" | "failed" | "removing";
+  cloudflare_hostname_id: string | null;
+  ssl_status: string | null;
+  verification_txt_name: string | null;
+  verification_txt_value: string | null;
+  cname_target: string;
+  verification_errors: string | null;
+  last_checked_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function apiListCustomDomains(
+  projectId: string
+): Promise<{ data: ApiCustomDomain[] }> {
+  return apiFetch(`/domains/project/${projectId}`);
+}
+
+export async function apiAddCustomDomain(
+  projectId: string,
+  domain: string
+): Promise<{ data: ApiCustomDomain }> {
+  return apiFetch(`/domains/project/${projectId}`, {
+    method: "POST",
+    body: JSON.stringify({ domain }),
+  });
+}
+
+export async function apiRemoveCustomDomain(
+  domainId: string
+): Promise<{ data: { id: string; removed: boolean } }> {
+  return apiFetch(`/domains/${domainId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function apiVerifyCustomDomain(
+  domainId: string
+): Promise<{ data: ApiCustomDomain }> {
+  return apiFetch(`/domains/${domainId}/verify`, {
+    method: "POST",
+  });
+}
+
 // ─── AI Settings API Methods ────────────────────────────────
 
 export interface ApiGitHubCopilotAccount {

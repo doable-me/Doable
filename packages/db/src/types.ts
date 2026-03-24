@@ -295,6 +295,31 @@ export interface DeploymentArtifactRow {
   created_at: Date;
 }
 
+export type CustomDomainStatus =
+  | "pending"
+  | "verifying"
+  | "ssl_pending"
+  | "active"
+  | "failed"
+  | "removing";
+
+export interface CustomDomainRow {
+  id: string;
+  project_id: string;
+  domain: string;
+  status: CustomDomainStatus;
+  cloudflare_hostname_id: string | null;
+  ssl_status: string | null;
+  verification_txt_name: string | null;
+  verification_txt_value: string | null;
+  cname_target: string;
+  verification_errors: string | null;
+  last_checked_at: Date | null;
+  created_by: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface FeatureFlagRow {
   feature_key: string;
   label: string;
