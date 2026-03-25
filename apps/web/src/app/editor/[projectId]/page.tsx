@@ -4542,11 +4542,12 @@ export default function EditorPage() {
           await github.connect(opts);
         }}
         onInitiateOAuth={() => github.initiateOAuth()}
-        repos={github.repos}
-        reposLoading={github.reposLoading}
+        repos={[] as never[]}
+        reposLoading={false}
         githubUsername={github.githubUsername}
         isGitHubConnected={github.isGitHubConnected}
-        onLoadRepos={() => github.loadRepos()}
+        onLoadRepos={async () => {}}
+        projectName={projectName}
       />
 
       {/* ─── Keyboard Shortcuts Dialog ─────────────────────────── */}
