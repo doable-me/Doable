@@ -37,6 +37,7 @@ interface IntegrationsPanelProps {
   workspaceId: string;
   projectId?: string;
   variant?: "panel" | "settings";
+  onGitHubConnect?: () => void;
 }
 
 // ─── Status Dot ─────────────────────────────────────────────
@@ -394,7 +395,7 @@ function ScopeSection({
 
 // ─── Main Panel ─────────────────────────────────────────────
 
-export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }: IntegrationsPanelProps) {
+export function IntegrationsPanel({ workspaceId, projectId, variant = "panel", onGitHubConnect }: IntegrationsPanelProps) {
   const {
     workspaceIntegrations,
     projectIntegrations,
@@ -546,7 +547,12 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel" }:
                       connected={githubStatus?.connected ?? false}
                       statusText={githubStatus?.connected ? githubStatus.status : undefined}
                       onConnect={() => {
-                        // Focus the GitHub button in the toolbar
+                        if (onGitHubConnect) {
+                          onGitHubConnect();
+                        } else {
+                          // Dispatch event for editor toolbar GitHub button
+                          window.dispatchEvent(new CustomEvent("doable:github-connect"));
+                        }
                       }}
                       onDisconnect={() => void disconnectGithub()}
                     >

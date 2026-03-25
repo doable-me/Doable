@@ -73,7 +73,8 @@ import type { Folder } from "@doable/shared";
 import { TemplateCard as NewTemplateCard } from "@/components/templates/template-card";
 import { TemplatePreviewModal } from "@/components/templates/template-preview-modal";
 import { UseTemplateDialog } from "@/components/templates/use-template-dialog";
-import { ArrowRight } from "lucide-react";
+import { ImportGitHubProjectDialog } from "@/modules/dashboard/components/import-github-project-dialog";
+import { ArrowRight, GitBranch } from "lucide-react";
 
 // ---- Constants ----
 
@@ -974,6 +975,9 @@ export default function DashboardPage() {
   const [previewTemplate, setPreviewTemplate] = useState<ApiTemplate | null>(null);
   const [remixTemplate, setRemixTemplate] = useState<ApiTemplate | null>(null);
 
+  // GitHub import dialog
+  const [showImportGitHub, setShowImportGitHub] = useState(false);
+
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -996,6 +1000,18 @@ export default function DashboardPage() {
 
   const firstName = user?.displayName?.split(" ")[0] ?? "there";
   const greeting = useRotatingGreeting(firstName);
+
+  // ---- Auto-open import dialog after GitHub OAuth redirect ----
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("import") === "1") {
+      setShowImportGitHub(true);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("import");
+      url.searchParams.delete("github_connected");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
 
   // ---- Persist view mode ----
   useEffect(() => {
@@ -1396,6 +1412,16 @@ export default function DashboardPage() {
                 className="hidden"
                 onChange={imageAttachments.handleFileChange}
               />
+              {/* Secondary actions */}
+              <div className="mt-4 flex items-center justify-center gap-4">
+                <button
+                  onClick={() => setShowImportGitHub(true)}
+                  className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-white transition-colors"
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  Import from GitHub
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1777,8 +1803,17 @@ export default function DashboardPage() {
                 ? `No projects match "${searchQuery}". Try a different search.`
                 : statusFilter !== "all" || starredFilter
                   ? "Try adjusting your filters."
-                  : "Describe what you want to build in the chat above and Doable will create it for you."}
+                  : "Describe what you want to build in the chat above, or import an existing project from GitHub."}
             </p>
+            {!searchQuery && statusFilter === "all" && !starredFilter && !activeFolderId && (
+              <button
+                onClick={() => setShowImportGitHub(true)}
+                className="mt-4 flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 transition-colors"
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+                Import from GitHub
+              </button>
+            )}
             {(searchQuery || statusFilter !== "all" || starredFilter) && (
               <button
                 onClick={() => {
@@ -1989,6 +2024,12 @@ export default function DashboardPage() {
           setRemixTemplate(null);
           router.push(`/editor/${projectId}`);
         }}
+      />
+
+      {/* Import from GitHub Dialog */}
+      <ImportGitHubProjectDialog
+        open={showImportGitHub}
+        onOpenChange={setShowImportGitHub}
       />
     </div>
   );

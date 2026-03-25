@@ -52,6 +52,9 @@ import {
   type ApiCustomDomain,
 } from "@/lib/api";
 import { IntegrationsPanel } from "@/modules/integrations/integrations-panel";
+import { GitHubSettings } from "@/modules/settings/components/github-settings";
+import { useAuth } from "@/hooks/use-auth";
+import { getGitHubConnectUrl, getStoredTokens } from "@/lib/api";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -187,7 +190,13 @@ function SectionCard({
 // ─── Main Component ─────────────────────────────────────────
 
 export function ProjectSettings({ projectId }: ProjectSettingsProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("general");
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    if (typeof window === "undefined") return "general";
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    const validTabs: Tab[] = ["general", "integrations", "context", "domain", "environments", "danger"];
+    return validTabs.includes(tab as Tab) ? (tab as Tab) : "general";
+  });
   const [project, setProject] = useState<ApiProject | null>(null);
   const [loading, setLoading] = useState(true);
   const { toasts, addToast, dismissToast } = useToasts();
@@ -538,10 +547,18 @@ function InfoItem({
 // ═══════════════════════════════════════════════════════════════
 
 function IntegrationsPanelWrapper({ projectId }: { projectId: string }) {
+  const { user } = useAuth();
+  const { accessToken } = getStoredTokens();
   const workspaceId =
     typeof window !== "undefined"
       ? localStorage.getItem("doable_active_workspace_id") ?? ""
       : "";
+
+  const handleGitHubConnect = useCallback(() => {
+    if (!user?.id) return;
+    const returnUrl = `${window.location.origin}/projects/${projectId}/settings?tab=integrations`;
+    window.location.href = getGitHubConnectUrl(user.id, returnUrl);
+  }, [user, projectId]);
 
   return (
     <div className="space-y-4">
@@ -553,8 +570,22 @@ function IntegrationsPanelWrapper({ projectId }: { projectId: string }) {
           workspaceId={workspaceId}
           projectId={projectId}
           variant="settings"
+          onGitHubConnect={handleGitHubConnect}
         />
       </SectionCard>
+
+      {/* Full GitHub push/pull controls when connected */}
+      {accessToken && (
+        <SectionCard
+          title="GitHub Sync"
+          description="Push and pull code changes to keep your project in sync."
+        >
+          <GitHubSettings
+            projectId={projectId}
+            accessToken={accessToken}
+          />
+        </SectionCard>
+      )}
     </div>
   );
 }

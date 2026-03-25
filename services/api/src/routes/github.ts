@@ -10,6 +10,7 @@ import {
   GITHUB_REPO_REDIRECT_URI,
   exchangeGitHubCode,
 } from "../lib/oauth.js";
+import { getProjectPath } from "../ai/project-files.js";
 
 const db = githubQueries(sql);
 const FRONTEND_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -372,12 +373,14 @@ githubRoutes.post("/:projectId/github/import", async (c) => {
   }
 
   try {
+    const projectPath = getProjectPath(projectId);
     const result = await githubSync.importFromGitHub(
       projectId,
-      body.repoOwner,
-      body.repoName,
+      projectPath,
       {
         token,
+        repoOwner: body.repoOwner,
+        repoName: body.repoName,
         branch: body.branch,
         userId,
       }
