@@ -342,27 +342,36 @@ export async function initialPush(
 ): Promise<SyncResult> {
   const branch = opts.branch ?? "main";
 
-  // Create the repo on GitHub if requested (auto_init: false — we push first commit)
+  let repoAlreadyExisted = false;
+  let actualRepoName = opts.repoName;
+
+  // Create the repo on GitHub if requested, or connect to existing
   if (opts.createNew) {
-    await github.createRepo(opts.token, {
-      name: opts.repoName,
-      description: opts.description,
-      isPrivate: opts.isPrivate ?? true,
-    });
+    const { repo, alreadyExisted } = await github.createOrGetRepo(
+      opts.token,
+      opts.repoOwner,
+      {
+        name: opts.repoName,
+        description: opts.description,
+        isPrivate: opts.isPrivate ?? true,
+      }
+    );
+    repoAlreadyExisted = alreadyExisted;
+    actualRepoName = repo.name;
   }
 
   // Ensure local repo exists
   await ensureRepo(projectPath);
 
   // Configure the remote
-  const repoUrl = `https://github.com/${opts.repoOwner}/${opts.repoName}.git`;
+  const repoUrl = `https://github.com/${opts.repoOwner}/${actualRepoName}.git`;
   await configureRemote(projectPath, "origin", repoUrl);
 
   // Save the connection in DB (upsert)
   await db.createConnection({
     projectId,
     repoOwner: opts.repoOwner,
-    repoName: opts.repoName,
+    repoName: actualRepoName,
     defaultBranch: branch,
     accessToken: opts.token,
     createdBy: opts.userId,
@@ -371,7 +380,8 @@ export async function initialPush(
   // Commit all current files and push
   const commitInfo = await autoCommit(projectPath, "Initial commit from Doable");
 
-  await gitPush(projectPath, "origin", branch, opts.token);
+  // Force push if connecting to an existing repo (Doable is source of truth)
+  await gitPush(projectPath, "origin", branch, opts.token, repoAlreadyExisted);
 
   const { stdout: sha } = await execGit(projectPath, ["rev-parse", "HEAD"]);
 

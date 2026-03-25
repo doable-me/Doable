@@ -93,6 +93,37 @@ export async function createRepo(
   };
 }
 
+/**
+ * Create a new repo, or if it already exists under the authenticated user,
+ * return the existing one. Avoids 422 "name already exists" errors.
+ */
+export async function createOrGetRepo(
+  token: string,
+  owner: string,
+  opts: { name: string; description?: string; isPrivate?: boolean }
+): Promise<{ repo: GitHubRepo; alreadyExisted: boolean }> {
+  try {
+    const repo = await createRepo(token, opts);
+    return { repo, alreadyExisted: false };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    // 422 = name already taken — try to get the existing repo
+    if (message.includes("422")) {
+      try {
+        const existing = await getRepo(token, owner, opts.name);
+        return { repo: existing, alreadyExisted: true };
+      } catch {
+        // Can't access the repo — it might belong to an org or be deleted
+        throw new Error(
+          `Repository "${opts.name}" already exists but could not be accessed. ` +
+          `Try a different name.`
+        );
+      }
+    }
+    throw err;
+  }
+}
+
 // ─── Commits ────────────────────────────────────────────────
 
 export async function getCommits(
