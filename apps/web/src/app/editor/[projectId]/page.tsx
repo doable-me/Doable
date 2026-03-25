@@ -20,6 +20,7 @@ import { CollabFileTabSync } from "@/modules/collaboration/components/collab-fil
 import { CollabAiSync } from "@/modules/collaboration/components/collab-ai-sync";
 import { useGitHub } from "@/modules/editor/hooks/use-github";
 import { GitHubConnectDialog } from "@/modules/editor/components/github-connect-dialog";
+import { GitHubButton } from "@/modules/editor/toolbar/github-button";
 import { CollabChatTyping } from "@/modules/collaboration/components/collab-chat-typing";
 import { useAttachments, ACCEPTED_EXTENSIONS, type Attachment } from "@/hooks/use-attachments";
 import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/components/editor-model-selector";
@@ -3083,14 +3084,18 @@ export default function EditorPage() {
             <UserPlus className="h-4 w-4" />
             <span className="hidden lg:inline">Share</span>
           </button>
-          {/* GitHub: rounded-md 6px, muted bg */}
-          <button
-            onClick={() => setGithubDialogOpen(true)}
-            className="flex h-7 w-7 items-center justify-center rounded-md bg-[#272725] text-[#FCFBF8] hover:brightness-125 transition-colors"
-            title="Sync with GitHub"
-          >
-            <Github className="h-4 w-4" />
-          </button>
+          {/* GitHub sync button with status */}
+          <GitHubButton
+            status={github.status}
+            pushing={github.pushing}
+            pulling={github.pulling}
+            onPush={async (message, force) => { await github.push(message, force); }}
+            onPull={async () => { await github.pull(); }}
+            onConnect={() => setGithubDialogOpen(true)}
+            onDisconnect={async () => { await github.disconnect(); }}
+            error={github.error}
+            onClearError={() => github.clearError()}
+          />
           {/* Upgrade */}
           <button
             onClick={() => router.push("/billing")}
