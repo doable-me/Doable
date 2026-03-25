@@ -4,7 +4,7 @@ import {
   PLATFORM_ADMIN_ROLES,
   type WorkspacePlan,
   type WorkspaceRole,
-} from "./types/index.js";
+} from "./types/index";
 
 // ─── Plan & Role Metadata ──────────────────────────────────
 // Add a new entry here when adding a plan or role.

@@ -9,7 +9,7 @@ import type {
   Template,
   Credits,
   AiSessionMode,
-} from "./index.js";
+} from "./index";
 
 // ─── Generic Response Wrappers ──────────────────────────────
 export interface ApiResponse<T> {
