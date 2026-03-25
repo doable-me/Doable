@@ -363,7 +363,7 @@ export async function initialPush(
 
   // Detect the actual local branch (may be "master" on older git versions)
   const { stdout: currentBranch } = await execGit(projectPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
-  const branch = opts.branch ?? currentBranch.trim() || "main";
+  const branch = opts.branch ?? (currentBranch.trim() || "main");
 
   // If the local branch is "master" but we want "main", rename it
   if (currentBranch.trim() === "master" && branch === "main") {
