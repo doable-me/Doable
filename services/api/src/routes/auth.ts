@@ -8,7 +8,8 @@ import { userQueries } from "@doable/db/queries/users.js";
 import { workspaceQueries } from "@doable/db/queries/workspaces.js";
 import { securityQueries } from "@doable/db/queries/security.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt.js";
-import { getGitHubAuthUrl, exchangeGitHubCode, getGitHubCopilotAuthUrl, GITHUB_COPILOT_REDIRECT_URI, getGoogleAuthUrl, exchangeGoogleCode } from "../lib/oauth.js";
+import { getGitHubAuthUrl, exchangeGitHubCode, getGitHubCopilotAuthUrl, GITHUB_COPILOT_REDIRECT_URI, GITHUB_REPO_REDIRECT_URI, getGoogleAuthUrl, exchangeGoogleCode } from "../lib/oauth.js";
+import { githubQueries } from "@doable/db/queries/github.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { sendTemplatedEmail } from "../lib/email.js";
 
@@ -385,5 +386,63 @@ authRoutes.get("/github/copilot/callback", async (c) => {
   } catch (err) {
     console.error("[OAuth] GitHub Copilot callback error:", err);
     return c.redirect(`${FRONTEND_URL}/ai-settings?error=oauth_failed`);
+  }
+});
+
+// ─── GET /auth/github/repo/callback ─ Handle GitHub repo OAuth ─
+// This route handles the repo-scoped OAuth callback (needs "repo" scope)
+// so users can push/pull code to GitHub from their Doable projects.
+authRoutes.get("/github/repo/callback", async (c) => {
+  const code = c.req.query("code");
+  const stateParam = c.req.query("state");
+
+  if (!code) {
+    return c.redirect(`${FRONTEND_URL}?error=github_missing_code`);
+  }
+
+  let projectId = "";
+  let returnUrl = "";
+  let userId = "";
+  try {
+    const decoded = JSON.parse(
+      Buffer.from(stateParam ?? "", "base64url").toString()
+    );
+    projectId = decoded.projectId ?? "";
+    returnUrl = decoded.returnUrl ?? "";
+    userId = decoded.userId ?? "";
+  } catch {
+    return c.redirect(`${FRONTEND_URL}?error=github_invalid_state`);
+  }
+
+  try {
+    const { accessToken: githubToken, user: ghUser } =
+      await exchangeGitHubCode(code, GITHUB_REPO_REDIRECT_URI);
+
+    if (userId) {
+      const ghDb = githubQueries(sql);
+      await ghDb.upsertUserToken({
+        userId,
+        githubUsername: ghUser.login,
+        githubId: String(ghUser.id),
+        accessToken: githubToken,
+        scopes: "repo,read:user",
+      });
+    }
+
+    const params = new URLSearchParams({
+      githubToken,
+      githubUsername: ghUser.login,
+      ...(projectId ? { projectId } : {}),
+    });
+
+    const redirectUrl = returnUrl
+      ? `${returnUrl}?${params.toString()}`
+      : `${FRONTEND_URL}/editor/${projectId}?githubConnected=true&${params.toString()}`;
+
+    return c.redirect(redirectUrl);
+  } catch (err) {
+    console.error("[OAuth] GitHub repo callback error:", err);
+    const redirectUrl = returnUrl || `${FRONTEND_URL}/editor/${projectId}`;
+    return c.redirect(`${redirectUrl}?error=github_oauth_failed`);
   }
 });
