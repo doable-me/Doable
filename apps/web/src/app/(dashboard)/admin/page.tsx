@@ -17,44 +17,39 @@ import {
   ArrowLeft,
   ChevronDown,
   Bot,
-  Pencil,
   RotateCcw,
   Copy,
   Check,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  WORKSPACE_PLANS,
+  WORKSPACE_ROLES,
+  PLAN_META,
+  ROLE_META,
+  PLAN_LABELS,
+  ROLE_LABELS,
+  type WorkspacePlan,
+  type WorkspaceRole,
+} from "@doable/shared";
 
 // ─── Role / Plan display helpers ────────────────────────────
 
-const PLAN_LABELS: Record<string, string> = {
-  free: "Free",
-  pro: "Pro",
-  business: "Business",
-  enterprise: "Enterprise",
-};
-
-const ROLE_LABELS: Record<string, string> = {
-  viewer: "Viewer",
-  member: "Member",
-  admin: "Admin",
-  owner: "Owner",
-};
-
 const PLAN_OPTIONS = [
   { value: "", label: "All plans" },
-  { value: "free", label: "Free+" },
-  { value: "pro", label: "Pro+" },
-  { value: "business", label: "Business+" },
-  { value: "enterprise", label: "Enterprise only" },
+  ...WORKSPACE_PLANS.map((p, i) => ({
+    value: p,
+    label: i === WORKSPACE_PLANS.length - 1 ? `${PLAN_LABELS[p]} only` : `${PLAN_LABELS[p]}+`,
+  })),
 ];
 
 const ROLE_OPTIONS = [
   { value: "", label: "Any role" },
-  { value: "viewer", label: "Viewer+" },
-  { value: "member", label: "Member+" },
-  { value: "admin", label: "Admin+" },
-  { value: "owner", label: "Owner only" },
+  ...WORKSPACE_ROLES.map((r, i) => ({
+    value: r,
+    label: i === WORKSPACE_ROLES.length - 1 ? `${ROLE_LABELS[r]} only` : `${ROLE_LABELS[r]}+`,
+  })),
 ];
 
 // ─── AI Allocation types ────────────────────────────────────
@@ -65,7 +60,9 @@ interface UserAiAllocation {
   display_name: string | null;
   avatar_url: string | null;
   is_platform_admin: boolean;
+  platform_role: string | null;
   role: string | null;
+  workspace_plan: string | null;
   copilot_account_id: string | null;
   copilot_account_label: string | null;
   provider_id: string | null;
@@ -203,6 +200,14 @@ function AiStatusBadge({ row }: { row: UserAiAllocation }) {
   return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-700/50 text-zinc-400">Model: {row.model}</span>;
 }
 
+// ─── Role / Plan color helpers ──────────────────────────────
+
+const ROLE_COLORS: Record<string, string> =
+  Object.fromEntries(WORKSPACE_ROLES.map((r) => [r, ROLE_META[r].color]));
+
+const PLAN_COLORS: Record<string, string> =
+  Object.fromEntries(WORKSPACE_PLANS.map((p) => [p, PLAN_META[p].color]));
+
 // ─── User Row with AI allocation ────────────────────────────
 
 function UserRow({
@@ -210,7 +215,8 @@ function UserRow({
   currentUserId,
   accounts,
   providers,
-  onToggleAdmin,
+  onChangeRole,
+  onChangePlan,
   onAllocate,
   onReset,
 }: {
@@ -218,7 +224,8 @@ function UserRow({
   currentUserId: string;
   accounts: Omit<ApiGitHubCopilotAccount, "workspace_id" | "added_by" | "created_at" | "updated_at">[];
   providers: Omit<ApiAiProvider, "workspace_id" | "added_by" | "created_at" | "updated_at">[];
-  onToggleAdmin: (userId: string, isAdmin: boolean) => void;
+  onChangeRole: (userId: string, role: string) => void;
+  onChangePlan: (userId: string, plan: string) => void;
   onAllocate: (userId: string, data: { copilotAccountId?: string | null; providerId?: string | null; model?: string | null }) => Promise<void>;
   onReset: (userId: string) => Promise<void>;
 }) {
@@ -232,6 +239,7 @@ function UserRow({
   const hasAllocation = !!(u.copilot_account_id || u.provider_id || u.model);
   const validAccounts = accounts.filter((a) => a.is_valid);
   const validProviders = providers.filter((p) => p.is_valid);
+  const isSelf = u.user_id === currentUserId;
 
   function startEdit() {
     if (u.provider_id) {
@@ -273,6 +281,7 @@ function UserRow({
               {u.display_name ?? u.email.split("@")[0]}
             </p>
             {u.is_platform_admin && <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />}
+            {isSelf && <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">You</span>}
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-xs text-zinc-500 truncate">{u.email}</p>
@@ -300,18 +309,28 @@ function UserRow({
           )}
         </div>
 
-        {/* Admin toggle */}
-        <button
-          onClick={() => onToggleAdmin(u.user_id, !u.is_platform_admin)}
-          disabled={u.user_id === currentUserId}
-          className={`shrink-0 rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-            u.is_platform_admin
-              ? "bg-amber-600/20 text-amber-400 hover:bg-amber-600/30"
-              : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
-          }`}
+        {/* Role dropdown */}
+        <select
+          value={u.platform_role ?? "member"}
+          onChange={(e) => onChangeRole(u.user_id, e.target.value)}
+          disabled={isSelf}
+          className={`shrink-0 rounded-md bg-zinc-800 border border-zinc-700 text-xs font-medium px-2 py-1.5 outline-none focus:border-brand-500 disabled:opacity-40 disabled:cursor-not-allowed ${ROLE_COLORS[u.platform_role ?? "member"] ?? "text-zinc-300"}`}
         >
-          {u.is_platform_admin ? "Revoke Admin" : "Make Admin"}
-        </button>
+          {WORKSPACE_ROLES.map((r) => (
+            <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+          ))}
+        </select>
+
+        {/* Plan dropdown */}
+        <select
+          value={u.workspace_plan ?? "free"}
+          onChange={(e) => onChangePlan(u.user_id, e.target.value)}
+          className={`shrink-0 rounded-md bg-zinc-800 border border-zinc-700 text-xs font-medium px-2 py-1.5 outline-none focus:border-brand-500 ${PLAN_COLORS[u.workspace_plan ?? "free"] ?? "text-zinc-300"}`}
+        >
+          {WORKSPACE_PLANS.map((p) => (
+            <option key={p} value={p}>{PLAN_LABELS[p]}</option>
+          ))}
+        </select>
       </div>
 
       {/* Inline edit panel */}
@@ -439,7 +458,9 @@ export default function AdminPage() {
     error,
     toggleFeature,
     updateFeature,
-    toggleUserAdmin,
+    setUserRole,
+    setUserPlan,
+    bulkUpdateUsers,
   } = usePlatformAdmin();
 
   const [activeTab, setActiveTab] = useState<"features" | "users">("features");
@@ -452,6 +473,9 @@ export default function AdminPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkCopying, setBulkCopying] = useState(false);
   const [bulkResult, setBulkResult] = useState<string | null>(null);
+  const [bulkRole, setBulkRole] = useState("");
+  const [bulkPlan, setBulkPlan] = useState("");
+  const [bulkUpdating, setBulkUpdating] = useState(false);
 
   const loadAllocations = useCallback(async () => {
     if (!isPlatformAdmin) return;
@@ -510,6 +534,45 @@ export default function AdminPage() {
     }
   }
 
+  async function handleBulkRolePlan() {
+    if (selectedIds.size === 0 || (!bulkRole && !bulkPlan)) return;
+    setBulkUpdating(true);
+    setBulkResult(null);
+    try {
+      await bulkUpdateUsers(
+        Array.from(selectedIds),
+        { ...(bulkRole ? { role: bulkRole } : {}), ...(bulkPlan ? { plan: bulkPlan } : {}) }
+      );
+      const parts: string[] = [];
+      if (bulkRole) parts.push(`role → ${ROLE_LABELS[bulkRole]}`);
+      if (bulkPlan) parts.push(`plan → ${PLAN_LABELS[bulkPlan]}`);
+      setBulkResult(`Updated ${selectedIds.size} user${selectedIds.size !== 1 ? "s" : ""}: ${parts.join(", ")}`);
+      setSelectedIds(new Set());
+      setBulkRole("");
+      setBulkPlan("");
+      await loadAllocations();
+      setTimeout(() => setBulkResult(null), 3000);
+    } finally {
+      setBulkUpdating(false);
+    }
+  }
+
+  async function handleChangeRole(userId: string, role: string) {
+    await setUserRole(userId, role);
+    // Update local allocations state
+    setAllocations((prev) => prev.map((a) =>
+      a.user_id === userId ? { ...a, platform_role: role, is_platform_admin: role === "admin" || role === "owner" } : a
+    ));
+  }
+
+  async function handleChangePlan(userId: string, plan: string) {
+    await setUserPlan(userId, plan);
+    // Update local allocations state
+    setAllocations((prev) => prev.map((a) =>
+      a.user_id === userId ? { ...a, workspace_plan: plan } : a
+    ));
+  }
+
   function toggleSelect(userId: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -553,7 +616,9 @@ export default function AdminPage() {
         display_name: u.display_name,
         avatar_url: null,
         is_platform_admin: u.is_platform_admin,
+        platform_role: u.platform_role ?? "member",
         role: null,
+        workspace_plan: null,
         copilot_account_id: null,
         copilot_account_label: null,
         provider_id: null,
@@ -562,6 +627,11 @@ export default function AdminPage() {
         model: null,
         preference_updated_at: null,
       }));
+
+  const allSelectableIds = displayUsers
+    .filter((u) => u.user_id !== user?.id)
+    .map((u) => u.user_id);
+  const allSelected = allSelectableIds.length > 0 && allSelectableIds.every((id) => selectedIds.has(id));
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -639,24 +709,69 @@ export default function AdminPage() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs text-zinc-500">
-              Manage users, admin access, and AI model allocations. Click the <Bot className="inline h-3 w-3 text-zinc-400" /> icon to configure AI for any user.
+              Manage users, roles, plans, and AI model allocations. Click the <Bot className="inline h-3 w-3 text-zinc-400" /> icon to configure AI for any user.
             </p>
           </div>
 
           {/* Bulk actions */}
           {selectedIds.size > 0 && (
-            <div className="flex items-center gap-3 rounded-lg border border-brand-600/30 bg-brand-600/5 px-4 py-2.5">
-              <span className="text-xs text-zinc-300">{selectedIds.size} selected</span>
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-brand-600/30 bg-brand-600/5 px-4 py-2.5">
+              <span className="text-xs font-medium text-zinc-300">{selectedIds.size} selected</span>
+
+              {/* Bulk role */}
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={bulkRole}
+                  onChange={(e) => setBulkRole(e.target.value)}
+                  className="rounded-md bg-zinc-800 border border-zinc-700 text-xs text-zinc-300 px-2 py-1 outline-none focus:border-brand-500"
+                >
+                  <option value="">Set role...</option>
+                  {WORKSPACE_ROLES.map((r) => (
+                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Bulk plan */}
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={bulkPlan}
+                  onChange={(e) => setBulkPlan(e.target.value)}
+                  className="rounded-md bg-zinc-800 border border-zinc-700 text-xs text-zinc-300 px-2 py-1 outline-none focus:border-brand-500"
+                >
+                  <option value="">Set plan...</option>
+                  {WORKSPACE_PLANS.map((p) => (
+                    <option key={p} value={p}>{PLAN_LABELS[p]}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Apply bulk changes */}
+              {(bulkRole || bulkPlan) && (
+                <button
+                  onClick={handleBulkRolePlan}
+                  disabled={bulkUpdating}
+                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors"
+                >
+                  {bulkUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                  Apply
+                </button>
+              )}
+
+              <div className="h-4 w-px bg-zinc-700" />
+
+              {/* Bulk AI copy */}
               <button
                 onClick={handleBulkCopy}
                 disabled={bulkCopying}
-                className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors"
+                className="flex items-center gap-1.5 rounded-lg bg-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-600 disabled:opacity-50 transition-colors"
               >
                 {bulkCopying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
-                Copy My AI Settings to Selected
+                Copy My AI Settings
               </button>
+
               <button
-                onClick={() => setSelectedIds(new Set())}
+                onClick={() => { setSelectedIds(new Set()); setBulkRole(""); setBulkPlan(""); }}
                 className="text-xs text-zinc-400 hover:text-zinc-200"
               >
                 Clear
@@ -677,6 +792,28 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="space-y-1">
+              {/* Select All header */}
+              {displayUsers.length > 1 && (
+                <div className="flex items-center gap-2 px-1 py-1.5">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={() => {
+                      if (allSelected) {
+                        setSelectedIds(new Set());
+                      } else {
+                        setSelectedIds(new Set(allSelectableIds));
+                      }
+                    }}
+                    className="rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-0"
+                  />
+                  <span className="text-[11px] text-zinc-500">
+                    {allSelected ? "Deselect all" : "Select all"}
+                  </span>
+                  <div className="flex-1" />
+                  <span className="text-[10px] text-zinc-600">{displayUsers.length} users</span>
+                </div>
+              )}
               {displayUsers.map((u) => (
                 <div key={u.user_id} className="flex items-start gap-2">
                   <div className="pt-3.5">
@@ -693,7 +830,8 @@ export default function AdminPage() {
                       currentUserId={user?.id ?? ""}
                       accounts={accounts}
                       providers={providers}
-                      onToggleAdmin={(id, isAdmin) => toggleUserAdmin(id, isAdmin)}
+                      onChangeRole={handleChangeRole}
+                      onChangePlan={handleChangePlan}
                       onAllocate={handleAllocate}
                       onReset={handleReset}
                     />

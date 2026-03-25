@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
-import type { Workspace } from "@doable/shared";
+import { WORKSPACE_ROLES, type Workspace } from "@doable/shared";
 import { MembersPage } from "./members-page";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -136,7 +136,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType; minRole: string }
   { id: "danger", label: "Danger Zone", icon: AlertTriangle, minRole: "owner" },
 ];
 
-const ROLE_HIERARCHY = ["owner", "admin", "member", "viewer"];
+const ROLE_HIERARCHY = [...WORKSPACE_ROLES].reverse();
 
 function hasRole(userRole: string, requiredRole: string): boolean {
   return ROLE_HIERARCHY.indexOf(userRole) <= ROLE_HIERARCHY.indexOf(requiredRole);

@@ -1,6 +1,21 @@
-// ─── Enums ──────────────────────────────────────────────────
-export type WorkspacePlan = "free" | "pro" | "business" | "enterprise";
-export type WorkspaceRole = "owner" | "admin" | "member" | "viewer";
+// ─── Plans & Roles (single source of truth) ─────────────────
+// To add a new plan or role:
+//   1. Add the value to the array below
+//   2. Add a row to PLAN_META / ROLE_META in constants.ts
+//   3. Run a Postgres migration: ALTER TYPE workspace_plan ADD VALUE 'new_plan';
+//   Everything else (types, labels, dropdowns, Zod schemas, hierarchies) derives automatically.
+
+/** Plans ordered from lowest → highest tier */
+export const WORKSPACE_PLANS = ["free", "pro", "business", "enterprise"] as const;
+export type WorkspacePlan = (typeof WORKSPACE_PLANS)[number];
+
+/** Roles ordered from lowest → highest privilege */
+export const WORKSPACE_ROLES = ["viewer", "member", "admin", "owner"] as const;
+export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
+
+/** Roles that grant platform admin access */
+export const PLATFORM_ADMIN_ROLES: readonly WorkspaceRole[] = ["admin", "owner"] as const;
+
 export type ProjectStatus = "creating" | "draft" | "published" | "error";
 export type ProjectVisibility = "public" | "restricted";
 export type AiSessionMode = "agent" | "plan" | "chat";

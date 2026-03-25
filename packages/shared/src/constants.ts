@@ -1,4 +1,50 @@
-import type { WorkspacePlan } from "./types/index.js";
+import {
+  WORKSPACE_PLANS,
+  WORKSPACE_ROLES,
+  PLATFORM_ADMIN_ROLES,
+  type WorkspacePlan,
+  type WorkspaceRole,
+} from "./types/index.js";
+
+// ─── Plan & Role Metadata ──────────────────────────────────
+// Add a new entry here when adding a plan or role.
+
+export interface PlanMeta { label: string; color: string; }
+export interface RoleMeta { label: string; color: string; }
+
+export const PLAN_META: Record<WorkspacePlan, PlanMeta> = {
+  free:       { label: "Free",       color: "text-zinc-400" },
+  pro:        { label: "Pro",        color: "text-brand-400" },
+  business:   { label: "Business",   color: "text-purple-400" },
+  enterprise: { label: "Enterprise", color: "text-amber-400" },
+};
+
+export const ROLE_META: Record<WorkspaceRole, RoleMeta> = {
+  viewer: { label: "Viewer", color: "text-zinc-400" },
+  member: { label: "Member", color: "text-zinc-300" },
+  admin:  { label: "Admin",  color: "text-amber-400" },
+  owner:  { label: "Owner",  color: "text-red-400" },
+};
+
+// Derived helpers — consuming code should use these, never raw strings.
+export const PLAN_LABELS: Record<string, string> =
+  Object.fromEntries(WORKSPACE_PLANS.map((p) => [p, PLAN_META[p].label]));
+
+export const ROLE_LABELS: Record<string, string> =
+  Object.fromEntries(WORKSPACE_ROLES.map((r) => [r, ROLE_META[r].label]));
+
+/** Check if a role value grants platform admin access */
+export function isPlatformAdminRole(role: string): boolean {
+  return (PLATFORM_ADMIN_ROLES as readonly string[]).includes(role);
+}
+
+/** Compare two roles/plans by hierarchy index. Returns negative if a < b. */
+export function compareRoles(a: string, b: string): number {
+  return (WORKSPACE_ROLES as readonly string[]).indexOf(a) - (WORKSPACE_ROLES as readonly string[]).indexOf(b);
+}
+export function comparePlans(a: string, b: string): number {
+  return (WORKSPACE_PLANS as readonly string[]).indexOf(a) - (WORKSPACE_PLANS as readonly string[]).indexOf(b);
+}
 
 // ─── Plan Limits ────────────────────────────────────────────
 export interface PlanLimits {

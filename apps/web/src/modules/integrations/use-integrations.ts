@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
+import type { WorkspaceRole } from "@doable/shared";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ export const SCOPE_LABELS: Record<CustomIntegration["scope"], string> = {
   user: "Only me (personal)",
 };
 
-export type WorkspaceRole = "owner" | "admin" | "member" | "viewer";
+export type { WorkspaceRole } from "@doable/shared";
 
 // ─── Hook ───────────────────────────────────────────────────
 

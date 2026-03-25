@@ -2,7 +2,7 @@ import { createMiddleware } from "hono/factory";
 import type { AuthEnv } from "./auth.js";
 import { sql } from "../db/index.js";
 import { workspaceQueries } from "@doable/db";
-import type { WorkspaceRole } from "@doable/shared";
+import { WORKSPACE_ROLES, type WorkspaceRole } from "@doable/shared";
 
 const workspaces = workspaceQueries(sql);
 
@@ -10,7 +10,7 @@ const workspaces = workspaceQueries(sql);
  * Role hierarchy for workspace access.
  * Lower index = higher privilege.
  */
-const ROLE_HIERARCHY: WorkspaceRole[] = ["owner", "admin", "member", "viewer"];
+const ROLE_HIERARCHY: WorkspaceRole[] = [...WORKSPACE_ROLES].reverse();
 
 /**
  * Factory that returns a Hono middleware requiring the authenticated user

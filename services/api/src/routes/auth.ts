@@ -45,12 +45,13 @@ function hashToken(token: string): string {
 
 function sanitizeUser(user: {
   id: string; email: string; display_name: string | null;
-  avatar_url: string | null; is_platform_admin?: boolean; created_at: Date; updated_at: Date;
+  avatar_url: string | null; is_platform_admin?: boolean; platform_role?: string; created_at: Date; updated_at: Date;
 }) {
   return {
     id: user.id, email: user.email,
     displayName: user.display_name, avatarUrl: user.avatar_url,
     isPlatformAdmin: user.is_platform_admin ?? false,
+    platformRole: user.platform_role ?? "member",
     createdAt: user.created_at.toISOString(), updatedAt: user.updated_at.toISOString(),
   };
 }

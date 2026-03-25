@@ -18,6 +18,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  WORKSPACE_ROLES,
+  ROLE_LABELS as SHARED_ROLE_LABELS,
+  ROLE_META,
+} from "@doable/shared";
+import {
   useWorkspaceMembers,
   type WorkspaceMemberData,
   type WorkspaceInviteData,
@@ -39,12 +44,7 @@ interface Toast {
 
 // ─── Role Helpers ───────────────────────────────────────────
 
-const ROLE_LABELS: Record<string, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  member: "Member",
-  viewer: "Viewer",
-};
+const ROLE_LABELS = SHARED_ROLE_LABELS;
 
 const ROLE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   owner: Crown,
@@ -53,16 +53,9 @@ const ROLE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
   viewer: Eye,
 };
 
-const ROLE_COLORS: Record<string, string> = {
-  owner:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  admin:
-    "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-  member:
-    "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-  viewer:
-    "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
-};
+const ROLE_COLORS: Record<string, string> = Object.fromEntries(
+  WORKSPACE_ROLES.map((r) => [r, ROLE_META[r].color])
+);
 
 const ASSIGNABLE_ROLES = ["admin", "member", "viewer"] as const;
 

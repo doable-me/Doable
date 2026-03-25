@@ -4,6 +4,7 @@ import { sql } from "../db/index.js";
 import { featureFlagQueries, aiSettingsQueries, workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
+import { WORKSPACE_PLANS, WORKSPACE_ROLES } from "@doable/shared";
 
 const featureFlags = featureFlagQueries(sql);
 const aiSettings = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
@@ -69,8 +70,8 @@ adminRoutes.get("/features/:key", async (c) => {
 // Update a feature flag
 const updateFlagSchema = z.object({
   enabled: z.boolean().optional(),
-  minPlan: z.enum(["free", "pro", "business", "enterprise"]).nullable().optional(),
-  minRole: z.enum(["viewer", "member", "admin", "owner"]).nullable().optional(),
+  minPlan: z.enum(WORKSPACE_PLANS).nullable().optional(),
+  minRole: z.enum(WORKSPACE_ROLES).nullable().optional(),
   label: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
 });
@@ -91,8 +92,8 @@ const createFlagSchema = z.object({
   label: z.string().min(1),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
-  minPlan: z.enum(["free", "pro", "business", "enterprise"]).nullable().optional(),
-  minRole: z.enum(["viewer", "member", "admin", "owner"]).nullable().optional(),
+  minPlan: z.enum(WORKSPACE_PLANS).nullable().optional(),
+  minRole: z.enum(WORKSPACE_ROLES).nullable().optional(),
 });
 
 adminRoutes.post("/features", async (c) => {
@@ -176,6 +177,43 @@ adminRoutes.patch("/users/:userId/admin", async (c) => {
 
   await featureFlags.setPlatformAdmin(targetUserId, parsed.data.isPlatformAdmin);
   return c.json({ ok: true });
+});
+
+// Set platform role
+const setRoleSchema = z.object({
+  role: z.enum(WORKSPACE_ROLES),
+});
+
+adminRoutes.patch("/users/:userId/role", async (c) => {
+  const body = await c.req.json();
+  const parsed = setRoleSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  const targetUserId = c.req.param("userId");
+  const callerId = c.get("userId");
+
+  // Prevent demoting yourself
+  if (targetUserId === callerId) {
+    return c.json({ error: "Cannot change your own platform role" }, 400);
+  }
+
+  await featureFlags.setUserPlatformRole(targetUserId, parsed.data.role);
+  return c.json({ ok: true });
+});
+
+// Set user workspace plan
+const setPlanSchema = z.object({
+  plan: z.enum(WORKSPACE_PLANS),
+});
+
+adminRoutes.patch("/users/:userId/plan", async (c) => {
+  const body = await c.req.json();
+  const parsed = setPlanSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  const result = await featureFlags.setUserWorkspacePlan(c.req.param("userId"), parsed.data.plan);
+  if (!result) return c.json({ error: "User has no workspace" }, 400);
+  return c.json({ ok: true, workspaceId: result.workspaceId, plan: result.plan });
 });
 
 // Get overrides for a specific user
@@ -362,6 +400,39 @@ async function allocateAiToUser(
   });
 }
 
+// Bulk update role and/or plan for multiple users
+const bulkUpdateSchema = z.object({
+  userIds: z.array(z.string().uuid()).min(1).max(200),
+  role: z.enum(WORKSPACE_ROLES).optional(),
+  plan: z.enum(WORKSPACE_PLANS).optional(),
+});
+
+adminRoutes.post("/users/bulk-update", async (c) => {
+  const body = await c.req.json();
+  const parsed = bulkUpdateSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  const callerId = c.get("userId");
+  const { userIds, role, plan } = parsed.data;
+
+  // Prevent changing own role in bulk
+  if (role && userIds.includes(callerId)) {
+    return c.json({ error: "Cannot change your own platform role" }, 400);
+  }
+
+  let roleUpdated = 0;
+  let planUpdated = 0;
+
+  if (role) {
+    roleUpdated = await featureFlags.bulkSetPlatformRole(userIds, role);
+  }
+  if (plan) {
+    planUpdated = await featureFlags.bulkSetWorkspacePlan(userIds, plan);
+  }
+
+  return c.json({ data: { roleUpdated, planUpdated } });
+});
+
 // GET /admin/users/ai-allocations
 adminRoutes.get("/users/ai-allocations", async (c) => {
   const adminId = c.get("userId");
@@ -374,7 +445,9 @@ adminRoutes.get("/users/ai-allocations", async (c) => {
       u.display_name,
       u.avatar_url,
       u.is_platform_admin,
+      u.platform_role,
       own_wm.role,
+      own_wm.workspace_plan,
       uap.copilot_account_id,
       gca.label AS copilot_account_label,
       uap.provider_id,
@@ -384,7 +457,7 @@ adminRoutes.get("/users/ai-allocations", async (c) => {
       uap.updated_at AS preference_updated_at
     FROM users u
     LEFT JOIN LATERAL (
-      SELECT wm.workspace_id, wm.role
+      SELECT wm.workspace_id, wm.role, w.plan AS workspace_plan
       FROM workspace_members wm
       INNER JOIN workspaces w ON w.id = wm.workspace_id
       WHERE wm.user_id = u.id AND wm.role = 'owner'

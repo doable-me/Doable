@@ -1,4 +1,6 @@
 import type postgres from "postgres";
+import { PLAN_LIMITS, isPlatformAdminRole, WORKSPACE_ROLES, WORKSPACE_PLANS } from "@doable/shared";
+import type { WorkspacePlan } from "@doable/shared";
 import type { FeatureFlagRow, UserFeatureOverrideRow, UserRow } from "../types.js";
 
 export function featureFlagQueries(sql: postgres.Sql) {
@@ -139,7 +141,7 @@ export function featureFlagQueries(sql: postgres.Sql) {
 
       // 3. Check min_role
       if (flag.min_role && userWorkspaceRole) {
-        const roleHierarchy = ["viewer", "member", "admin", "owner"];
+        const roleHierarchy: readonly string[] = WORKSPACE_ROLES;
         const requiredLevel = roleHierarchy.indexOf(flag.min_role);
         const userLevel = roleHierarchy.indexOf(userWorkspaceRole);
         if (userLevel < requiredLevel) {
@@ -151,7 +153,7 @@ export function featureFlagQueries(sql: postgres.Sql) {
 
       // 4. Check min_plan
       if (flag.min_plan && userPlan) {
-        const planHierarchy = ["free", "pro", "business", "enterprise"];
+        const planHierarchy: readonly string[] = WORKSPACE_PLANS;
         const requiredLevel = planHierarchy.indexOf(flag.min_plan);
         const userLevel = planHierarchy.indexOf(userPlan);
         if (userLevel < requiredLevel) {
@@ -172,16 +174,84 @@ export function featureFlagQueries(sql: postgres.Sql) {
 
     async setPlatformAdmin(userId: string, isAdmin: boolean): Promise<void> {
       await sql`
-        UPDATE users SET is_platform_admin = ${isAdmin} WHERE id = ${userId}
+        UPDATE users SET
+          is_platform_admin = ${isAdmin},
+          platform_role = CASE WHEN ${isAdmin} THEN 'admin'::workspace_role ELSE 'member'::workspace_role END
+        WHERE id = ${userId}
       `;
     },
 
-    async listAllUsers(): Promise<Pick<UserRow, "id" | "email" | "display_name" | "is_platform_admin" | "created_at">[]> {
-      return sql<Pick<UserRow, "id" | "email" | "display_name" | "is_platform_admin" | "created_at">[]>`
-        SELECT id, email, display_name, is_platform_admin, created_at
+    async listAllUsers(): Promise<Pick<UserRow, "id" | "email" | "display_name" | "is_platform_admin" | "platform_role" | "created_at">[]> {
+      return sql<Pick<UserRow, "id" | "email" | "display_name" | "is_platform_admin" | "platform_role" | "created_at">[]>`
+        SELECT id, email, display_name, is_platform_admin, platform_role, created_at
         FROM users
         ORDER BY created_at DESC
       `;
+    },
+
+    // ─── Platform Roles ─────────────────────────────────────
+    async setUserPlatformRole(userId: string, role: string): Promise<void> {
+      const isAdmin = isPlatformAdminRole(role);
+      await sql`
+        UPDATE users
+        SET platform_role = ${role}::workspace_role,
+            is_platform_admin = ${isAdmin}
+        WHERE id = ${userId}
+      `;
+    },
+
+    async bulkSetPlatformRole(userIds: string[], role: string): Promise<number> {
+      const isAdmin = isPlatformAdminRole(role);
+      const result = await sql`
+        UPDATE users
+        SET platform_role = ${role}::workspace_role,
+            is_platform_admin = ${isAdmin}
+        WHERE id = ANY(${userIds})
+      `;
+      return result.count;
+    },
+
+    // ─── Admin Plan Management ──────────────────────────────
+    async setUserWorkspacePlan(userId: string, plan: string): Promise<{ workspaceId: string; plan: string } | null> {
+      // Find user's first owned workspace
+      const [workspace] = await sql<{ id: string }[]>`
+        SELECT w.id FROM workspaces w
+        INNER JOIN workspace_members wm ON wm.workspace_id = w.id
+        WHERE wm.user_id = ${userId} AND wm.role = 'owner'
+        ORDER BY w.created_at ASC LIMIT 1
+      `;
+      if (!workspace) return null;
+
+      const workspaceId = workspace.id;
+
+      // Update the workspace plan
+      const [updated] = await sql<{ id: string; plan: string }[]>`
+        UPDATE workspaces SET plan = ${plan}::workspace_plan WHERE id = ${workspaceId} RETURNING id, plan
+      `;
+      if (!updated) return null;
+
+      // Update credit limits for all members of that workspace
+      const limits = PLAN_LIMITS[plan as WorkspacePlan];
+      if (limits) {
+        await sql`
+          UPDATE credit_balances
+          SET daily_credits = ${limits.dailyCredits},
+              monthly_credits = ${limits.monthlyCredits},
+              plan_type = ${plan}
+          WHERE workspace_id = ${workspaceId}
+        `;
+      }
+
+      return { workspaceId, plan: updated.plan };
+    },
+
+    async bulkSetWorkspacePlan(userIds: string[], plan: string): Promise<number> {
+      let count = 0;
+      for (const userId of userIds) {
+        const result = await this.setUserWorkspacePlan(userId, plan);
+        if (result) count++;
+      }
+      return count;
     },
   };
 }

@@ -27,6 +27,7 @@ export interface AuthUser {
   displayName: string;
   avatarUrl: string | null;
   isPlatformAdmin?: boolean;
+  platformRole?: string;
 }
 
 interface LoginData {
@@ -90,6 +91,7 @@ function toAuthUser(apiUser: {
   displayName: string | null;
   avatarUrl: string | null;
   isPlatformAdmin?: boolean;
+  platformRole?: string;
 }): AuthUser {
   return {
     id: apiUser.id,
@@ -97,6 +99,7 @@ function toAuthUser(apiUser: {
     displayName: apiUser.displayName ?? apiUser.email.split("@")[0] ?? apiUser.email,
     avatarUrl: apiUser.avatarUrl,
     isPlatformAdmin: apiUser.isPlatformAdmin ?? false,
+    platformRole: apiUser.platformRole ?? "member",
   };
 }
 

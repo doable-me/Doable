@@ -23,6 +23,7 @@ export interface UserRow {
   github_id: string | null;
   google_id: string | null;
   is_platform_admin: boolean;
+  platform_role: string;
   created_at: Date;
   updated_at: Date;
 }

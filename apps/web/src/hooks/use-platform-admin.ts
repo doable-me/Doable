@@ -37,6 +37,7 @@ export interface AdminUser {
   email: string;
   display_name: string | null;
   is_platform_admin: boolean;
+  platform_role: string;
   created_at: string;
 }
 
@@ -95,6 +96,31 @@ export function usePlatformAdmin() {
     setFeatures((prev) => prev.map((f) => f.feature_key === key ? updated : f));
   }, []);
 
+  const setUserRole = useCallback(async (userId: string, role: string) => {
+    await apiFetch(`/admin/users/${userId}/role`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    });
+    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, platform_role: role, is_platform_admin: role === "admin" || role === "owner" } : u));
+  }, []);
+
+  const setUserPlan = useCallback(async (userId: string, plan: string) => {
+    await apiFetch(`/admin/users/${userId}/plan`, {
+      method: "PATCH",
+      body: JSON.stringify({ plan }),
+    });
+  }, []);
+
+  const bulkUpdateUsers = useCallback(async (userIds: string[], updates: { role?: string; plan?: string }) => {
+    const res = await apiFetch("/admin/users/bulk-update", {
+      method: "POST",
+      body: JSON.stringify({ userIds, ...updates }),
+    });
+    // Refresh users list after bulk update
+    await Promise.all([loadFeatures(), loadUsers()]);
+    return res;
+  }, [loadFeatures, loadUsers]);
+
   const toggleUserAdmin = useCallback(async (userId: string, isAdmin: boolean) => {
     await apiFetch(`/admin/users/${userId}/admin`, {
       method: "PATCH",
@@ -127,6 +153,9 @@ export function usePlatformAdmin() {
     toggleUserAdmin,
     setUserOverride,
     removeUserOverride,
+    setUserRole,
+    setUserPlan,
+    bulkUpdateUsers,
     reload: () => Promise.all([loadFeatures(), loadUsers()]),
   };
 }
