@@ -65,18 +65,26 @@ export async function exchangeGitHubCode(
 
   const user = (await userRes.json()) as GitHubUser;
 
-  // If email is private, fetch from emails endpoint
+  // If email is private, try to fetch from emails endpoint
   if (!user.email) {
-    const emailRes = await fetch("https://api.github.com/user/emails", {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
-    });
-    const emails = (await emailRes.json()) as Array<{
-      email: string;
-      primary: boolean;
-      verified: boolean;
-    }>;
-    const primary = emails.find((e) => e.primary && e.verified);
-    user.email = primary?.email ?? emails[0]?.email ?? null;
+    try {
+      const emailRes = await fetch("https://api.github.com/user/emails", {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      });
+      if (emailRes.ok) {
+        const emails = (await emailRes.json()) as Array<{
+          email: string;
+          primary: boolean;
+          verified: boolean;
+        }>;
+        if (Array.isArray(emails)) {
+          const primary = emails.find((e) => e.primary && e.verified);
+          user.email = primary?.email ?? emails[0]?.email ?? null;
+        }
+      }
+    } catch {
+      // Email fetch failed (scope may not include user:email) — continue without email
+    }
   }
 
   return { accessToken: tokenData.access_token, user };
