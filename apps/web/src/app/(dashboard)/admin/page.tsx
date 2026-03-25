@@ -23,6 +23,8 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ToastContainer } from "@/components/ui/toast-container";
+import { useToasts } from "@/hooks/use-toasts";
 import {
   WORKSPACE_PLANS,
   WORKSPACE_ROLES,
@@ -463,6 +465,7 @@ export default function AdminPage() {
     bulkUpdateUsers,
   } = usePlatformAdmin();
 
+  const { toasts, addToast, dismissToast } = useToasts();
   const [activeTab, setActiveTab] = useState<"features" | "users">("features");
 
   // AI allocations state
@@ -472,7 +475,8 @@ export default function AdminPage() {
   const [allocLoading, setAllocLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkCopying, setBulkCopying] = useState(false);
-  const [bulkResult, setBulkResult] = useState<string | null>(null);
+  // bulkResult replaced by toasts — keep for backward compat with inline display
+  const bulkResult: string | null = null;
   const [bulkRole, setBulkRole] = useState("");
   const [bulkPlan, setBulkPlan] = useState("");
   const [bulkUpdating, setBulkUpdating] = useState(false);
@@ -504,31 +508,41 @@ export default function AdminPage() {
   }, [activeTab, isPlatformAdmin, loadAllocations]);
 
   async function handleAllocate(userId: string, data: { copilotAccountId?: string | null; providerId?: string | null; model?: string | null }) {
-    await apiFetch(`/admin/users/${userId}/ai-allocation`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    });
-    await loadAllocations();
+    try {
+      await apiFetch(`/admin/users/${userId}/ai-allocation`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+      await loadAllocations();
+      addToast("success", "AI settings saved");
+    } catch {
+      addToast("error", "Failed to save AI settings");
+    }
   }
 
   async function handleReset(userId: string) {
-    await apiFetch(`/admin/users/${userId}/ai-allocation`, { method: "DELETE" });
-    await loadAllocations();
+    try {
+      await apiFetch(`/admin/users/${userId}/ai-allocation`, { method: "DELETE" });
+      await loadAllocations();
+      addToast("success", "AI settings reset");
+    } catch {
+      addToast("error", "Failed to reset AI settings");
+    }
   }
 
   async function handleBulkCopy() {
     if (selectedIds.size === 0) return;
     setBulkCopying(true);
-    setBulkResult(null);
     try {
       const res = await apiFetch<{ data: { updated: number } }>("/admin/users/ai-allocations/copy-my-settings", {
         method: "POST",
         body: JSON.stringify({ targetUserIds: Array.from(selectedIds) }),
       });
-      setBulkResult(`Settings copied to ${res.data.updated} user${res.data.updated !== 1 ? "s" : ""}`);
+      addToast("success", `AI settings copied to ${res.data.updated} user${res.data.updated !== 1 ? "s" : ""}`);
       setSelectedIds(new Set());
       await loadAllocations();
-      setTimeout(() => setBulkResult(null), 3000);
+    } catch {
+      addToast("error", "Failed to copy AI settings");
     } finally {
       setBulkCopying(false);
     }
@@ -537,7 +551,6 @@ export default function AdminPage() {
   async function handleBulkRolePlan() {
     if (selectedIds.size === 0 || (!bulkRole && !bulkPlan)) return;
     setBulkUpdating(true);
-    setBulkResult(null);
     try {
       await bulkUpdateUsers(
         Array.from(selectedIds),
@@ -546,31 +559,48 @@ export default function AdminPage() {
       const parts: string[] = [];
       if (bulkRole) parts.push(`role → ${ROLE_LABELS[bulkRole]}`);
       if (bulkPlan) parts.push(`plan → ${PLAN_LABELS[bulkPlan]}`);
-      setBulkResult(`Updated ${selectedIds.size} user${selectedIds.size !== 1 ? "s" : ""}: ${parts.join(", ")}`);
+      addToast("success", `Updated ${selectedIds.size} user${selectedIds.size !== 1 ? "s" : ""}: ${parts.join(", ")}`);
       setSelectedIds(new Set());
       setBulkRole("");
       setBulkPlan("");
       await loadAllocations();
-      setTimeout(() => setBulkResult(null), 3000);
+    } catch {
+      addToast("error", "Bulk update failed");
     } finally {
       setBulkUpdating(false);
     }
   }
 
   async function handleChangeRole(userId: string, role: string) {
-    await setUserRole(userId, role);
-    // Update local allocations state
-    setAllocations((prev) => prev.map((a) =>
-      a.user_id === userId ? { ...a, platform_role: role, is_platform_admin: role === "admin" || role === "owner" } : a
+    // Optimistic update — instant UI feedback
+    const prev = allocations;
+    setAllocations((a) => a.map((u) =>
+      u.user_id === userId ? { ...u, platform_role: role, is_platform_admin: role === "admin" || role === "owner" } : u
     ));
+    try {
+      await setUserRole(userId, role);
+      const name = prev.find((u) => u.user_id === userId)?.display_name ?? "User";
+      addToast("success", `${name} → ${ROLE_LABELS[role]}`);
+    } catch {
+      setAllocations(prev); // Revert on error
+      addToast("error", "Failed to update role");
+    }
   }
 
   async function handleChangePlan(userId: string, plan: string) {
-    await setUserPlan(userId, plan);
-    // Update local allocations state
-    setAllocations((prev) => prev.map((a) =>
-      a.user_id === userId ? { ...a, workspace_plan: plan } : a
+    // Optimistic update — instant UI feedback
+    const prev = allocations;
+    setAllocations((a) => a.map((u) =>
+      u.user_id === userId ? { ...u, workspace_plan: plan } : u
     ));
+    try {
+      await setUserPlan(userId, plan);
+      const name = prev.find((u) => u.user_id === userId)?.display_name ?? "User";
+      addToast("success", `${name} → ${PLAN_LABELS[plan]} plan`);
+    } catch {
+      setAllocations(prev); // Revert on error
+      addToast("error", "Failed to update plan");
+    }
   }
 
   function toggleSelect(userId: string) {
@@ -842,6 +872,8 @@ export default function AdminPage() {
           )}
         </div>
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
