@@ -231,12 +231,16 @@ export function featureFlagQueries(sql: postgres.Sql) {
       if (!updated) return null;
 
       // Update credit limits for all members of that workspace
+      // Cap Infinity to max int32 since PostgreSQL integer columns can't store Infinity
       const limits = PLAN_LIMITS[plan as WorkspacePlan];
       if (limits) {
+        const MAX_INT = 2_147_483_647;
+        const daily = Number.isFinite(limits.dailyCredits) ? limits.dailyCredits : MAX_INT;
+        const monthly = Number.isFinite(limits.monthlyCredits) ? limits.monthlyCredits : MAX_INT;
         await sql`
           UPDATE credit_balances
-          SET daily_credits = ${limits.dailyCredits},
-              monthly_credits = ${limits.monthlyCredits},
+          SET daily_credits = ${daily},
+              monthly_credits = ${monthly},
               plan_type = ${plan}
           WHERE workspace_id = ${workspaceId}
         `;
