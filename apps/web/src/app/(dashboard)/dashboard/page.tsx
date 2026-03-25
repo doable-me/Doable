@@ -1412,13 +1412,13 @@ export default function DashboardPage() {
                 className="hidden"
                 onChange={imageAttachments.handleFileChange}
               />
-              {/* Secondary actions */}
-              <div className="mt-4 flex items-center justify-center gap-4">
+              {/* Secondary actions — above the gradient fade */}
+              <div className="relative z-20 mt-4 flex items-center justify-center gap-6">
                 <button
                   onClick={() => setShowImportGitHub(true)}
-                  className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-white transition-colors"
+                  className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 backdrop-blur-sm px-4 py-2 text-sm text-white/70 hover:text-white hover:bg-white/10 hover:border-white/25 transition-all"
                 >
-                  <GitBranch className="h-3.5 w-3.5" />
+                  <GitBranch className="h-4 w-4" />
                   Import from GitHub
                 </button>
               </div>
@@ -1501,6 +1501,17 @@ export default function DashboardPage() {
                 </button>
               )}
             </div>
+
+            {/* Import from GitHub — always visible in toolbar */}
+            {activeTab !== "templates" && (
+              <button
+                onClick={() => setShowImportGitHub(true)}
+                className="flex h-9 items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 text-sm text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 transition-colors"
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Import</span>
+              </button>
+            )}
 
             {/* Search */}
             <div className="relative">
