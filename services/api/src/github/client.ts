@@ -7,9 +7,6 @@ export interface GitHubCommit {
   sha: string; message: string; author: string; date: string; htmlUrl: string;
 }
 export interface GitHubBranch { name: string; sha: string; protected: boolean; }
-interface GitHubTreeEntry {
-  path: string; mode: string; type: "blob" | "tree"; content?: string; sha?: string;
-}
 
 const GITHUB_API = "https://api.github.com";
 
@@ -82,7 +79,7 @@ export async function createRepo(
     name: opts.name,
     description: opts.description ?? "",
     private: opts.isPrivate ?? true,
-    auto_init: true,
+    auto_init: false,
   });
 
   return {
@@ -129,86 +126,6 @@ export async function getCommits(
     date: c.commit.author.date,
     htmlUrl: c.html_url,
   }));
-}
-
-export async function createCommit(
-  token: string,
-  owner: string,
-  repo: string,
-  opts: {
-    branch: string;
-    message: string;
-    files: Array<{ path: string; content: string }>;
-  }
-): Promise<GitHubCommit> {
-  // 1. Get the latest commit SHA on the branch
-  const refData = await request<{ object: { sha: string } }>(
-    token,
-    "GET",
-    `/repos/${owner}/${repo}/git/ref/heads/${opts.branch}`
-  );
-  const latestCommitSha = refData.object.sha;
-
-  // 2. Get the tree SHA from the latest commit
-  const commitData = await request<{ tree: { sha: string } }>(
-    token,
-    "GET",
-    `/repos/${owner}/${repo}/git/commits/${latestCommitSha}`
-  );
-  const baseTreeSha = commitData.tree.sha;
-
-  // 3. Create blobs for each file
-  const treeEntries: GitHubTreeEntry[] = [];
-  for (const file of opts.files) {
-    const blob = await request<{ sha: string }>(
-      token,
-      "POST",
-      `/repos/${owner}/${repo}/git/blobs`,
-      { content: file.content, encoding: "utf-8" }
-    );
-    treeEntries.push({
-      path: file.path,
-      mode: "100644",
-      type: "blob",
-      sha: blob.sha,
-    });
-  }
-
-  // 4. Create a new tree
-  const newTree = await request<{ sha: string }>(
-    token,
-    "POST",
-    `/repos/${owner}/${repo}/git/trees`,
-    { base_tree: baseTreeSha, tree: treeEntries }
-  );
-
-  // 5. Create the commit
-  const newCommit = await request<{
-    sha: string;
-    message: string;
-    author: { name: string; date: string };
-    html_url: string;
-  }>(token, "POST", `/repos/${owner}/${repo}/git/commits`, {
-    message: opts.message,
-    tree: newTree.sha,
-    parents: [latestCommitSha],
-  });
-
-  // 6. Update the branch reference
-  await request(
-    token,
-    "PATCH",
-    `/repos/${owner}/${repo}/git/refs/heads/${opts.branch}`,
-    { sha: newCommit.sha }
-  );
-
-  return {
-    sha: newCommit.sha,
-    message: newCommit.message,
-    author: newCommit.author.name,
-    date: newCommit.author.date,
-    htmlUrl: newCommit.html_url ?? "",
-  };
 }
 
 // ─── Branches ───────────────────────────────────────────────
@@ -259,73 +176,4 @@ export async function getRepo(
     defaultBranch: r.default_branch,
     description: r.description,
   };
-}
-
-// ─── Latest Commit SHA ──────────────────────────────────────
-
-export async function getLatestCommitSha(
-  token: string,
-  owner: string,
-  repo: string,
-  branch: string
-): Promise<string> {
-  const refData = await request<{ object: { sha: string } }>(
-    token,
-    "GET",
-    `/repos/${owner}/${repo}/git/ref/heads/${branch}`
-  );
-  return refData.object.sha;
-}
-
-// ─── Contents ───────────────────────────────────────────────
-
-export async function getRepoContents(
-  token: string,
-  owner: string,
-  repo: string,
-  branch: string
-): Promise<Array<{ path: string; content: string }>> {
-  // Get the full tree recursively
-  const refData = await request<{ object: { sha: string } }>(
-    token,
-    "GET",
-    `/repos/${owner}/${repo}/git/ref/heads/${branch}`
-  );
-
-  const tree = await request<{
-    tree: Array<{ path: string; type: string; sha: string }>;
-  }>(
-    token,
-    "GET",
-    `/repos/${owner}/${repo}/git/trees/${refData.object.sha}?recursive=1`
-  );
-
-  const files: Array<{ path: string; content: string }> = [];
-
-  for (const entry of tree.tree) {
-    if (entry.type !== "blob") continue;
-
-    const ext = entry.path.substring(entry.path.lastIndexOf(".")).toLowerCase();
-    const skip = new Set([".png",".jpg",".jpeg",".gif",".ico",".woff",".woff2",".ttf",".eot",".mp4",".webm",".mp3",".zip",".tar",".gz"]);
-    if (skip.has(ext)) continue;
-
-    try {
-      const blob = await request<{ content: string; encoding: string }>(
-        token,
-        "GET",
-        `/repos/${owner}/${repo}/git/blobs/${entry.sha}`
-      );
-
-      if (blob.encoding === "base64") {
-        files.push({
-          path: entry.path,
-          content: Buffer.from(blob.content, "base64").toString("utf-8"),
-        });
-      }
-    } catch {
-      // Skip files that fail to fetch
-    }
-  }
-
-  return files;
 }

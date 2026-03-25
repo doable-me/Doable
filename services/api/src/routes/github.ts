@@ -342,6 +342,103 @@ githubRoutes.get("/:projectId/github/commits", async (c) => {
   }
 });
 
+// ─── Import from GitHub (clone existing repo) ───────────────
+githubRoutes.post("/:projectId/github/import", async (c) => {
+  const projectId = c.req.param("projectId");
+  const userId = c.get("userId");
+
+  const body = await c.req.json<{
+    repoOwner: string;
+    repoName: string;
+    branch?: string;
+  }>();
+
+  if (!body.repoOwner || !body.repoName) {
+    return c.json(
+      { error: "Missing required fields: repoOwner, repoName" },
+      400
+    );
+  }
+
+  // Get token from user's stored token
+  let token: string | undefined;
+  const userToken = await db.findUserToken(userId);
+  if (userToken) {
+    token = userToken.access_token;
+  }
+
+  if (!token) {
+    return c.json({ error: "No GitHub token available. Connect GitHub first." }, 401);
+  }
+
+  try {
+    const result = await githubSync.importFromGitHub(
+      projectId,
+      body.repoOwner,
+      body.repoName,
+      {
+        token,
+        branch: body.branch,
+        userId,
+      }
+    );
+
+    return c.json({ data: result }, 201);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: "Failed to import from GitHub", message }, 500);
+  }
+});
+
+// ─── Resolve merge conflicts ─────────────────────────────────
+githubRoutes.post("/:projectId/github/resolve", async (c) => {
+  const projectId = c.req.param("projectId");
+
+  const body = await c.req.json<{
+    strategy: "ours" | "theirs";
+    projectPath: string;
+  }>();
+
+  if (!body.strategy || !body.projectPath) {
+    return c.json(
+      { error: "Missing required fields: strategy, projectPath" },
+      400
+    );
+  }
+
+  try {
+    await githubSync.resolveConflicts(body.projectPath, body.strategy);
+
+    // Update sync status
+    await sql`
+      UPDATE github_connections SET sync_status = 'synced', last_synced_at = NOW()
+      WHERE project_id = ${projectId}
+    `;
+
+    return c.json({ data: { resolved: true, strategy: body.strategy } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: "Failed to resolve conflicts", message }, 500);
+  }
+});
+
+// ─── Abort merge ─────────────────────────────────────────────
+githubRoutes.post("/:projectId/github/abort-merge", async (c) => {
+  const body = await c.req.json<{ projectPath: string }>();
+
+  if (!body.projectPath) {
+    return c.json({ error: "Missing required field: projectPath" }, 400);
+  }
+
+  try {
+    await githubSync.abortMerge(body.projectPath);
+    return c.json({ data: { aborted: true } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: "Failed to abort merge", message }, 500);
+  }
+});
+
 // ─── Disconnect project from GitHub ─────────────────────────
 githubRoutes.delete("/:projectId/github/connect", async (c) => {
   const projectId = c.req.param("projectId");

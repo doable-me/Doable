@@ -90,6 +90,7 @@ export interface ProjectRow {
   template_id: string | null;
   folder_id: string | null;
   deleted_at: Date | null;
+  git_initialized: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -100,6 +101,7 @@ export interface ProjectVersionRow {
   version_number: number;
   description: string | null;
   snapshot_data: Record<string, unknown> | null;
+  commit_sha: string | null;
   bookmarked: boolean;
   created_by: string;
   created_at: Date;

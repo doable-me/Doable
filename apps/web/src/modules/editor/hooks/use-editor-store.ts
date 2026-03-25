@@ -34,6 +34,12 @@ export interface ChatMessage {
     mimeType: string;
     preview?: string;
   }>;
+  /** Git commit SHA created by this AI response (for undo) */
+  versionSha?: string;
+  /** Whether the user has undone this AI response */
+  undone?: boolean;
+  /** Whether the AI made file changes in this response */
+  hadToolCalls?: boolean;
 }
 
 export type EditorMode = "agent" | "plan";

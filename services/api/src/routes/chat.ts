@@ -26,6 +26,8 @@ import {
   getDevServerInternalUrl,
 } from "../projects/dev-server.js";
 import { autoVersion } from "../version-control/manager.js";
+import { isGitRepo } from "../git/init.js";
+import { autoCommit } from "../git/commits.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { contextManager } from "../context/manager.js";
 import { buildContextPrompt } from "../context/injector.js";
@@ -1042,12 +1044,30 @@ ERROR RECOVERY — if you encounter errors:
         if (hadToolCalls && isProjectScaffolded(projectId)) {
           try {
             const projectPath = getProjectPath(projectId);
-            await autoVersion(
-              projectId,
-              projectPath,
-              content.slice(0, 100), // Use first 100 chars of prompt as description
-              userId
-            );
+
+            // Use git-based versioning if available, otherwise legacy snapshots
+            if (isGitRepo(projectPath)) {
+              const commitInfo = await autoCommit(
+                projectPath,
+                content.slice(0, 100),
+                { type: "ai", sessionMessageId: assistantId }
+              );
+              if (commitInfo) {
+                await stream.writeSSE({
+                  data: JSON.stringify({
+                    type: "version_created",
+                    data: { sha: commitInfo.sha, messageId: assistantId },
+                  }),
+                });
+              }
+            } else {
+              await autoVersion(
+                projectId,
+                projectPath,
+                content.slice(0, 100),
+                userId
+              );
+            }
           } catch (vErr) {
             console.warn("[Chat] Auto-version failed:", vErr);
           }
@@ -1343,12 +1363,29 @@ chatRoutes.post(
       if (hadToolCalls && isProjectScaffolded(projectId)) {
         try {
           const projectPath = getProjectPath(projectId);
-          await autoVersion(
-            projectId,
-            projectPath,
-            `Fix runtime error: ${error.slice(0, 80)}`,
-            userId,
-          );
+
+          if (isGitRepo(projectPath)) {
+            const commitInfo = await autoCommit(
+              projectPath,
+              `Fix runtime error: ${error.slice(0, 80)}`,
+              { type: "ai" }
+            );
+            if (commitInfo) {
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: "version_created",
+                  data: { sha: commitInfo.sha },
+                }),
+              });
+            }
+          } else {
+            await autoVersion(
+              projectId,
+              projectPath,
+              `Fix runtime error: ${error.slice(0, 80)}`,
+              userId,
+            );
+          }
         } catch (vErr) {
           console.warn("[Chat] Auto-version after fix-error failed:", vErr);
         }

@@ -1,6 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { sql } from "../db/index.js";
 import { githubQueries } from "@doable/db/queries/github.js";
+import { gitFetch } from "./git-ops.js";
+import { isGitRepo } from "../git/init.js";
+import { getProjectPath } from "../projects/file-manager.js";
 
 const db = githubQueries(sql);
 
@@ -96,6 +99,16 @@ export async function handlePushEvent(
 
   // Update sync status to indicate remote has new changes
   await db.updateConnection(conn.project_id, { syncStatus: "behind" });
+
+  // Try to fetch new remote state so local tracking refs are up-to-date
+  try {
+    const projectPath = getProjectPath(conn.project_id);
+    if (isGitRepo(projectPath)) {
+      await gitFetch(projectPath, "origin", conn.access_token);
+    }
+  } catch {
+    // Non-critical: webhook still succeeds even if local fetch fails
+  }
 
   const totalChanges = payload.commits.reduce(
     (sum, c) => sum + c.added.length + c.removed.length + c.modified.length,

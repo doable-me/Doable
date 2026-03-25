@@ -19,6 +19,7 @@ import {
   FileAccessError,
 } from "../ai/project-files.js";
 import { blankTemplate } from "../templates/definitions/blank.js";
+import { initRepo } from "../git/init.js";
 
 // Re-export for convenience
 export {
@@ -114,6 +115,15 @@ export async function createProject(
     console.warn(
       `[FileManager] npm install completed but node_modules was not created for project ${projectId}`,
     );
+  }
+
+  // Initialize git repo for the new project
+  try {
+    await initRepo(projectPath);
+    console.log(`[FileManager] Git repo initialized for project ${projectId}`);
+  } catch (gitErr) {
+    // Non-critical: project works without git, can be migrated later
+    console.warn(`[FileManager] Git init failed for project ${projectId}:`, gitErr);
   }
 
   return {

@@ -15,6 +15,10 @@ import {
   RefreshCw,
   Star,
   Check,
+  Sparkles,
+  Pencil,
+  Cloud,
+  Archive,
 } from "lucide-react";
 import { useEditorStore } from "../hooks/use-editor-store";
 import { apiFetch } from "@/lib/api";
@@ -32,6 +36,17 @@ interface VersionEntry {
   created_by: string;
   created_at: string;
   snapshot_data?: Record<string, unknown> | null;
+  /** Git commit SHA (present for git-based versions) */
+  sha?: string;
+  shortSha?: string;
+  /** Version type from git trailers */
+  type?: "ai" | "user" | "sync" | "restore" | "migration" | "init" | "legacy";
+  /** Number of files changed in this version */
+  filesChanged?: number;
+  /** Number of insertions */
+  insertions?: number;
+  /** Number of deletions */
+  deletions?: number;
 }
 
 interface VersionsResponse {
@@ -478,20 +493,36 @@ export function VersionHistory() {
                           key={version.id}
                           className="relative flex gap-3 pb-1 group"
                         >
-                          {/* Timeline dot */}
+                          {/* Timeline dot — color/icon varies by version type */}
                           <div
                             className={`relative z-[5] mt-2 flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 transition-colors ${
                               isCurrent
                                 ? "border-primary bg-primary shadow-sm shadow-primary/25"
                                 : version.bookmarked
                                   ? "border-amber-400 bg-amber-50"
-                                  : "border-border bg-background group-hover:border-muted-foreground"
+                                  : version.type === "ai"
+                                    ? "border-purple-400 bg-purple-50 dark:bg-purple-950"
+                                    : version.type === "sync"
+                                      ? "border-green-400 bg-green-50 dark:bg-green-950"
+                                      : version.type === "restore"
+                                        ? "border-amber-400 bg-amber-50 dark:bg-amber-950"
+                                        : "border-border bg-background group-hover:border-muted-foreground"
                             }`}
                           >
                             {isCurrent ? (
                               <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
                             ) : version.bookmarked ? (
                               <Star className="h-2 w-2 text-amber-500 fill-amber-500" />
+                            ) : version.type === "ai" ? (
+                              <Sparkles className="h-2.5 w-2.5 text-purple-500" />
+                            ) : version.type === "user" ? (
+                              <Pencil className="h-2.5 w-2.5 text-blue-500" />
+                            ) : version.type === "sync" ? (
+                              <Cloud className="h-2.5 w-2.5 text-green-500" />
+                            ) : version.type === "restore" ? (
+                              <RotateCcw className="h-2.5 w-2.5 text-amber-500" />
+                            ) : version.type === "migration" || version.type === "legacy" ? (
+                              <Archive className="h-2.5 w-2.5 text-muted-foreground" />
                             ) : (
                               <GitCommit className="h-2.5 w-2.5 text-muted-foreground" />
                             )}
@@ -553,22 +584,40 @@ export function VersionHistory() {
                               </button>
                             </div>
 
-                            {/* Meta row: time, version, author */}
-                            <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                            {/* Meta row: time, version/SHA, author, files changed */}
+                            <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
                               <span className="flex items-center gap-0.5">
                                 <Clock className="h-2.5 w-2.5" />
                                 {formatTime(version.created_at)}
                               </span>
-                              <span className="text-muted-foreground/30">
-                                |
-                              </span>
-                              <span className="font-mono">
-                                v{version.version_number}
-                              </span>
-                              <span className="text-muted-foreground/30">
-                                |
-                              </span>
+                              <span className="text-muted-foreground/30">|</span>
+                              {version.shortSha ? (
+                                <span className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+                                  {version.shortSha}
+                                </span>
+                              ) : (
+                                <span className="font-mono">
+                                  v{version.version_number}
+                                </span>
+                              )}
+                              <span className="text-muted-foreground/30">|</span>
                               <span>{version.created_by}</span>
+                              {version.filesChanged != null && version.filesChanged > 0 && (
+                                <>
+                                  <span className="text-muted-foreground/30">|</span>
+                                  <span className="flex items-center gap-1">
+                                    <FileDiff className="h-2.5 w-2.5" />
+                                    {version.filesChanged} file{version.filesChanged !== 1 ? "s" : ""}
+                                    {(version.insertions || version.deletions) && (
+                                      <span className="text-[10px]">
+                                        {version.insertions ? <span className="text-green-600">+{version.insertions}</span> : null}
+                                        {version.insertions && version.deletions ? " " : null}
+                                        {version.deletions ? <span className="text-red-600">-{version.deletions}</span> : null}
+                                      </span>
+                                    )}
+                                  </span>
+                                </>
+                              )}
                             </div>
 
                             {/* Expandable details */}

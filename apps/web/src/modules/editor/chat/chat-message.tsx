@@ -1,9 +1,11 @@
 "use client";
 
 import { memo, useCallback, useState, useMemo } from "react";
-import { Bot, User, Copy, Check, Loader2, Brain, Wrench } from "lucide-react";
+import { Bot, User, Copy, Check, Loader2, Brain, Wrench, Undo2 } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "../hooks/use-editor-store";
+import { useEditorStore } from "../hooks/use-editor-store";
 import { MessageAttachments } from "./attachment-preview";
+import { apiFetch } from "@/lib/api";
 
 // ─── Simple Markdown Renderer ───────────────────────────────
 function renderMarkdown(text: string): string {
@@ -144,6 +146,30 @@ export const ChatMessage = memo(function ChatMessage({
   const isUser = message.role === "user";
   const isWaiting = message.isStreaming && !message.content;
   const isActivelyStreaming = message.isStreaming && !!message.content;
+  const [undoing, setUndoing] = useState(false);
+  const { projectId, updateMessageFields } = useEditorStore();
+
+  const canUndo =
+    !isUser &&
+    !message.isStreaming &&
+    message.versionSha &&
+    !message.undone;
+
+  const handleUndo = useCallback(async () => {
+    if (!projectId || !message.versionSha || undoing) return;
+    setUndoing(true);
+    try {
+      await apiFetch(`/projects/${projectId}/versions/undo`, {
+        method: "POST",
+        body: JSON.stringify({ messageId: message.id }),
+      });
+      updateMessageFields(message.id, { undone: true });
+    } catch (err) {
+      console.error("[Chat] Undo failed:", err);
+    } finally {
+      setUndoing(false);
+    }
+  }, [projectId, message.versionSha, message.id, undoing, updateMessageFields]);
 
   // Memoize rendered markdown — only recompute when content changes
   // Strip trailing colon during streaming (LLM often emits ":" before tool calls)
@@ -212,13 +238,21 @@ export const ChatMessage = memo(function ChatMessage({
         {/* Live status indicator */}
         {message.isStreaming && <StreamingStatus status={message.liveStatus} />}
 
+        {/* Undone badge */}
+        {message.undone && (
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+            <Undo2 className="h-3 w-3" />
+            <span className="font-medium">Changes undone</span>
+          </div>
+        )}
+
         {isWaiting ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             <span>Thinking...</span>
           </div>
         ) : message.content ? (
-          <div className="prose-editor text-sm leading-relaxed text-foreground">
+          <div className={`prose-editor text-sm leading-relaxed ${message.undone ? "text-muted-foreground opacity-60" : "text-foreground"}`}>
             <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
             {isActivelyStreaming && (
               <span className="inline-flex items-center gap-0.5 ml-1 align-middle">
@@ -229,6 +263,22 @@ export const ChatMessage = memo(function ChatMessage({
             )}
           </div>
         ) : null}
+
+        {/* Undo button for AI messages that made file changes */}
+        {canUndo && (
+          <button
+            onClick={handleUndo}
+            disabled={undoing}
+            className="mt-2 flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            {undoing ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Undo2 className="h-3 w-3" />
+            )}
+            {undoing ? "Undoing..." : "Undo changes"}
+          </button>
+        )}
       </div>
     </div>
   );

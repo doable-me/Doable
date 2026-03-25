@@ -1,6 +1,21 @@
 import { sql } from "../db/index.js";
 import * as github from "./client.js";
-import { createSnapshot } from "../version-control/snapshot.js";
+import {
+  configureRemote,
+  removeRemote,
+  gitPush,
+  gitPull,
+  gitFetch,
+  gitClone,
+  getAheadBehind,
+  resolveAllConflicts as gitResolveAll,
+  abortMerge as gitAbortMerge,
+  type PullResult,
+} from "./git-ops.js";
+import { ensureRepo, isGitRepo } from "../git/init.js";
+import { autoCommit, getLog } from "../git/commits.js";
+import { withProjectLock } from "../git/lock.js";
+import { execGit } from "../git/exec.js";
 import { githubQueries } from "@doable/db/queries/github.js";
 
 const db = githubQueries(sql);
@@ -8,7 +23,13 @@ const db = githubQueries(sql);
 // ─── Types ──────────────────────────────────────────────────
 
 export type SyncDirection = "push" | "pull";
-export type SyncStatusType = "synced" | "ahead" | "behind" | "diverged" | "conflict" | "disconnected";
+export type SyncStatusType =
+  | "synced"
+  | "ahead"
+  | "behind"
+  | "diverged"
+  | "conflict"
+  | "disconnected";
 
 export interface SyncResult {
   direction: SyncDirection;
@@ -26,12 +47,13 @@ export interface SyncStatus {
   repoOwner: string | null;
   repoName: string | null;
   lastCommitSha: string | null;
+  ahead?: number;
+  behind?: number;
 }
 
 export interface ConflictInfo {
   hasConflict: boolean;
-  localSha: string | null;
-  remoteSha: string | null;
+  conflictedFiles: string[];
   message: string;
 }
 
@@ -48,60 +70,64 @@ export async function pushToGitHub(
     throw new Error(`No GitHub connection for project ${projectId}`);
   }
 
-  const snapshot = await createSnapshot(projectPath);
-  const files = snapshot.files.map((f) => ({
-    path: f.path,
-    content: f.content,
-  }));
+  return withProjectLock(projectId, async () => {
+    await ensureRepo(projectPath);
 
-  if (files.length === 0) {
-    throw new Error("No files to push");
-  }
+    // Commit any pending changes
+    const commitInfo = await autoCommit(projectPath, message);
 
-  // Check for conflicts before pushing
-  const conflict = await checkConflicts(conn.id, conn.access_token, conn.repo_owner, conn.repo_name, conn.default_branch);
-  if (conflict.hasConflict) {
-    // Mark as diverged
-    await db.updateConnection(projectId, { syncStatus: "diverged" });
-    throw new Error(
-      `Conflict detected: remote has new commits since last sync. ` +
-      `Pull first or force push. ${conflict.message}`
-    );
-  }
-
-  const commit = await github.createCommit(
-    conn.access_token,
-    conn.repo_owner,
-    conn.repo_name,
-    {
-      branch: conn.default_branch,
-      message,
-      files,
+    // Fetch remote state and check for divergence
+    try {
+      await gitFetch(projectPath, "origin", conn.access_token);
+      const { behind } = await getAheadBehind(
+        projectPath,
+        "origin",
+        conn.default_branch
+      );
+      if (behind > 0) {
+        await db.updateConnection(projectId, { syncStatus: "diverged" });
+        throw new Error(
+          `Remote has ${behind} new commit(s) since last sync. Pull first or force push.`
+        );
+      }
+    } catch (err) {
+      // If it's our divergence error, re-throw
+      if (err instanceof Error && err.message.includes("Pull first")) throw err;
+      // Otherwise fetch failed (new repo, no remote branch yet) — safe to push
     }
-  );
 
-  // Log the commit
-  await db.createCommit({
-    connectionId: conn.id,
-    sha: commit.sha,
-    message,
-    author: commit.author,
-    branch: conn.default_branch,
-    direction: "push",
+    await gitPush(
+      projectPath,
+      "origin",
+      conn.default_branch,
+      conn.access_token
+    );
+
+    // Get HEAD sha after push
+    const { stdout: sha } = await execGit(projectPath, ["rev-parse", "HEAD"]);
+
+    // Log the commit in DB
+    await db.createCommit({
+      connectionId: conn.id,
+      sha,
+      message: commitInfo?.message ?? message,
+      author: "Doable",
+      branch: conn.default_branch,
+      direction: "push",
+    });
+
+    await db.updateConnection(projectId, {
+      syncStatus: "synced",
+      lastSyncedAt: new Date(),
+    });
+
+    return {
+      direction: "push",
+      commitSha: sha,
+      message: commitInfo?.message ?? message,
+      filesChanged: 0,
+    };
   });
-
-  // Update sync status
-  await db.updateConnection(projectId, {
-    syncStatus: "synced",
-    lastSyncedAt: new Date(),
-  });
-
-  return {
-    direction: "push",
-    commitSha: commit.sha,
-    message,
-    filesChanged: files.length,
-  };
 }
 
 // ─── Pull from GitHub ───────────────────────────────────────
@@ -116,67 +142,59 @@ export async function pullFromGitHub(
     throw new Error(`No GitHub connection for project ${projectId}`);
   }
 
-  // Get all file contents from the repo
-  const files = await github.getRepoContents(
-    conn.access_token,
-    conn.repo_owner,
-    conn.repo_name,
-    conn.default_branch
-  );
+  return withProjectLock(projectId, async () => {
+    await ensureRepo(projectPath);
 
-  if (files.length === 0) {
-    throw new Error("No files found in repository");
-  }
+    // Commit any local changes before pulling to avoid dirty-tree errors
+    await autoCommit(projectPath, "Auto-save before pull", { type: "sync" });
 
-  // Write files to project path
-  const { mkdir, writeFile } = await import("node:fs/promises");
-  const { join, dirname } = await import("node:path");
+    const result: PullResult = await gitPull(
+      projectPath,
+      "origin",
+      conn.default_branch,
+      conn.access_token
+    );
 
-  let filesWritten = 0;
-  for (const file of files) {
-    const fullPath = join(projectPath, file.path);
-    await mkdir(dirname(fullPath), { recursive: true });
-    await writeFile(fullPath, file.content, "utf-8");
-    filesWritten++;
-  }
+    if (result.hasConflicts) {
+      await db.updateConnection(projectId, { syncStatus: "conflict" });
+      throw new Error(
+        `Merge conflicts in ${result.conflictedFiles.length} file(s): ${result.conflictedFiles.join(", ")}. ` +
+          `Resolve conflicts or abort the merge.`
+      );
+    }
 
-  // Get the latest commit for logging
-  const commits = await github.getCommits(
-    conn.access_token,
-    conn.repo_owner,
-    conn.repo_name,
-    { branch: conn.default_branch, perPage: 1 }
-  );
+    const { stdout: sha } = await execGit(projectPath, ["rev-parse", "HEAD"]);
 
-  const latestCommit = commits[0];
-  if (latestCommit) {
+    // Log the pull in DB
     await db.createCommit({
       connectionId: conn.id,
-      sha: latestCommit.sha,
-      message: latestCommit.message,
-      author: latestCommit.author,
+      sha,
+      message: `Pull from GitHub`,
+      author: "Doable",
       branch: conn.default_branch,
       direction: "pull",
     });
-  }
 
-  // Update sync status
-  await db.updateConnection(projectId, {
-    syncStatus: "synced",
-    lastSyncedAt: new Date(),
+    await db.updateConnection(projectId, {
+      syncStatus: "synced",
+      lastSyncedAt: new Date(),
+    });
+
+    return {
+      direction: "pull",
+      commitSha: sha,
+      message: "Pull from GitHub",
+      filesChanged: result.filesChanged,
+    };
   });
-
-  return {
-    direction: "pull",
-    commitSha: latestCommit?.sha ?? "",
-    message: latestCommit?.message ?? "Pull from GitHub",
-    filesChanged: filesWritten,
-  };
 }
 
 // ─── Sync Status ────────────────────────────────────────────
 
-export async function syncStatus(projectId: string): Promise<SyncStatus> {
+export async function syncStatus(
+  projectId: string,
+  projectPath?: string
+): Promise<SyncStatus> {
   const conn = await db.findConnectionByProject(projectId);
 
   if (!conn) {
@@ -192,29 +210,53 @@ export async function syncStatus(projectId: string): Promise<SyncStatus> {
     };
   }
 
-  // Try to detect if remote has diverged
   let status = conn.sync_status as SyncStatusType;
   let lastCommitSha: string | null = null;
+  let ahead = 0;
+  let behind = 0;
 
-  try {
-    const remoteSha = await github.getLatestCommitSha(
-      conn.access_token,
-      conn.repo_owner,
-      conn.repo_name,
-      conn.default_branch
-    );
-    lastCommitSha = remoteSha;
+  // If we have a local repo, use git to check ahead/behind
+  if (projectPath && isGitRepo(projectPath)) {
+    try {
+      await gitFetch(projectPath, "origin", conn.access_token);
+      const counts = await getAheadBehind(
+        projectPath,
+        "origin",
+        conn.default_branch
+      );
+      ahead = counts.ahead;
+      behind = counts.behind;
 
-    // Check our last known commit
-    const { rows: lastCommits } = await db.listCommits(conn.id, { pageSize: 1 });
-    const lastLocalSha = lastCommits[0]?.sha ?? null;
+      const { stdout: sha } = await execGit(projectPath, [
+        "rev-parse",
+        "HEAD",
+      ]);
+      lastCommitSha = sha;
 
-    if (lastLocalSha && lastLocalSha !== remoteSha && status === "synced") {
-      status = "behind";
-      await db.updateConnection(projectId, { syncStatus: "behind" });
+      // Derive status from ahead/behind
+      if (ahead > 0 && behind > 0) {
+        status = "diverged";
+      } else if (behind > 0) {
+        status = "behind";
+      } else if (ahead > 0) {
+        status = "ahead";
+      } else {
+        status = "synced";
+      }
+
+      // Persist derived status
+      if (status !== conn.sync_status) {
+        await db.updateConnection(projectId, { syncStatus: status });
+      }
+    } catch {
+      // Can't reach remote — leave status as-is
     }
-  } catch {
-    // Can't reach GitHub -- leave status as-is
+  } else {
+    // Fallback: read last commit sha from DB
+    const { rows: lastCommits } = await db.listCommits(conn.id, {
+      pageSize: 1,
+    });
+    lastCommitSha = lastCommits[0]?.sha ?? null;
   }
 
   return {
@@ -226,46 +268,9 @@ export async function syncStatus(projectId: string): Promise<SyncStatus> {
     repoOwner: conn.repo_owner,
     repoName: conn.repo_name,
     lastCommitSha,
+    ahead,
+    behind,
   };
-}
-
-// ─── Conflict Detection ─────────────────────────────────────
-
-async function checkConflicts(
-  connectionId: string,
-  token: string,
-  owner: string,
-  repo: string,
-  branch: string
-): Promise<ConflictInfo> {
-  try {
-    const remoteSha = await github.getLatestCommitSha(token, owner, repo, branch);
-
-    // Get our last recorded commit for this connection
-    const { rows: lastCommits } = await db.listCommits(connectionId, { pageSize: 1 });
-    const lastLocalSha = lastCommits[0]?.sha ?? null;
-
-    // If we have no recorded commits, it's a fresh connection -- no conflict
-    if (!lastLocalSha) {
-      return { hasConflict: false, localSha: null, remoteSha, message: "" };
-    }
-
-    // If the remote SHA matches our last known SHA, no conflict
-    if (remoteSha === lastLocalSha) {
-      return { hasConflict: false, localSha: lastLocalSha, remoteSha, message: "" };
-    }
-
-    // Remote has diverged -- someone pushed to the repo directly
-    return {
-      hasConflict: true,
-      localSha: lastLocalSha,
-      remoteSha,
-      message: `Remote is at ${remoteSha.slice(0, 7)}, local last sync was ${lastLocalSha.slice(0, 7)}`,
-    };
-  } catch {
-    // Can't check -- allow the push (GitHub will reject if there's a real conflict)
-    return { hasConflict: false, localSha: null, remoteSha: null, message: "" };
-  }
 }
 
 // ─── Force Push (skip conflict check) ───────────────────────
@@ -281,47 +286,42 @@ export async function forcePushToGitHub(
     throw new Error(`No GitHub connection for project ${projectId}`);
   }
 
-  const snapshot = await createSnapshot(projectPath);
-  const files = snapshot.files.map((f) => ({
-    path: f.path,
-    content: f.content,
-  }));
+  return withProjectLock(projectId, async () => {
+    await ensureRepo(projectPath);
 
-  if (files.length === 0) {
-    throw new Error("No files to push");
-  }
+    const commitInfo = await autoCommit(projectPath, message);
 
-  const commit = await github.createCommit(
-    conn.access_token,
-    conn.repo_owner,
-    conn.repo_name,
-    {
+    await gitPush(
+      projectPath,
+      "origin",
+      conn.default_branch,
+      conn.access_token,
+      true // force
+    );
+
+    const { stdout: sha } = await execGit(projectPath, ["rev-parse", "HEAD"]);
+
+    await db.createCommit({
+      connectionId: conn.id,
+      sha,
+      message: commitInfo?.message ?? message,
+      author: "Doable",
       branch: conn.default_branch,
-      message,
-      files,
-    }
-  );
+      direction: "push",
+    });
 
-  await db.createCommit({
-    connectionId: conn.id,
-    sha: commit.sha,
-    message,
-    author: commit.author,
-    branch: conn.default_branch,
-    direction: "push",
+    await db.updateConnection(projectId, {
+      syncStatus: "synced",
+      lastSyncedAt: new Date(),
+    });
+
+    return {
+      direction: "push",
+      commitSha: sha,
+      message: commitInfo?.message ?? message,
+      filesChanged: 0,
+    };
   });
-
-  await db.updateConnection(projectId, {
-    syncStatus: "synced",
-    lastSyncedAt: new Date(),
-  });
-
-  return {
-    direction: "push",
-    commitSha: commit.sha,
-    message,
-    filesChanged: files.length,
-  };
 }
 
 // ─── Initial Push ───────────────────────────────────────────
@@ -342,7 +342,7 @@ export async function initialPush(
 ): Promise<SyncResult> {
   const branch = opts.branch ?? "main";
 
-  // Create the repo if requested
+  // Create the repo on GitHub if requested (auto_init: false — we push first commit)
   if (opts.createNew) {
     await github.createRepo(opts.token, {
       name: opts.repoName,
@@ -351,7 +351,14 @@ export async function initialPush(
     });
   }
 
-  // Save the connection (upsert)
+  // Ensure local repo exists
+  await ensureRepo(projectPath);
+
+  // Configure the remote
+  const repoUrl = `https://github.com/${opts.repoOwner}/${opts.repoName}.git`;
+  await configureRemote(projectPath, "origin", repoUrl);
+
+  // Save the connection in DB (upsert)
   await db.createConnection({
     projectId,
     repoOwner: opts.repoOwner,
@@ -361,13 +368,108 @@ export async function initialPush(
     createdBy: opts.userId,
   });
 
-  // Push the current project files
-  return pushToGitHub(projectId, projectPath, "Initial commit from Doable", opts.userId);
+  // Commit all current files and push
+  const commitInfo = await autoCommit(projectPath, "Initial commit from Doable");
+
+  await gitPush(projectPath, "origin", branch, opts.token);
+
+  const { stdout: sha } = await execGit(projectPath, ["rev-parse", "HEAD"]);
+
+  await db.createCommit({
+    connectionId: (await db.findConnectionByProject(projectId))!.id,
+    sha,
+    message: commitInfo?.message ?? "Initial commit from Doable",
+    author: "Doable",
+    branch,
+    direction: "push",
+  });
+
+  await db.updateConnection(projectId, {
+    syncStatus: "synced",
+    lastSyncedAt: new Date(),
+  });
+
+  return {
+    direction: "push",
+    commitSha: sha,
+    message: commitInfo?.message ?? "Initial commit from Doable",
+    filesChanged: 0,
+  };
+}
+
+// ─── Import from GitHub ─────────────────────────────────────
+
+export async function importFromGitHub(
+  projectId: string,
+  projectPath: string,
+  opts: {
+    token: string;
+    repoOwner: string;
+    repoName: string;
+    branch?: string;
+    userId: string;
+  }
+): Promise<SyncResult> {
+  const branch = opts.branch ?? "main";
+  const repoUrl = `https://github.com/${opts.repoOwner}/${opts.repoName}.git`;
+
+  // Clone the repo into the project path
+  await gitClone(repoUrl, projectPath, opts.token, branch);
+
+  // Save the connection in DB
+  await db.createConnection({
+    projectId,
+    repoOwner: opts.repoOwner,
+    repoName: opts.repoName,
+    defaultBranch: branch,
+    accessToken: opts.token,
+    createdBy: opts.userId,
+  });
+
+  const { stdout: sha } = await execGit(projectPath, ["rev-parse", "HEAD"]);
+
+  const conn = await db.findConnectionByProject(projectId);
+  if (conn) {
+    await db.createCommit({
+      connectionId: conn.id,
+      sha,
+      message: "Imported from GitHub",
+      author: "Doable",
+      branch,
+      direction: "pull",
+    });
+  }
+
+  await db.updateConnection(projectId, {
+    syncStatus: "synced",
+    lastSyncedAt: new Date(),
+  });
+
+  // Count files in repo
+  const { stdout: fileList } = await execGit(projectPath, [
+    "ls-files",
+  ]);
+  const filesChanged = fileList ? fileList.split("\n").filter(Boolean).length : 0;
+
+  return {
+    direction: "pull",
+    commitSha: sha,
+    message: "Imported from GitHub",
+    filesChanged,
+  };
 }
 
 // ─── Disconnect ─────────────────────────────────────────────
 
-export async function disconnectGitHub(projectId: string): Promise<boolean> {
+export async function disconnectGitHub(
+  projectId: string,
+  projectPath?: string
+): Promise<boolean> {
+  // Remove the git remote if the repo exists
+  if (projectPath && isGitRepo(projectPath)) {
+    await removeRemote(projectPath, "origin").catch(() => {});
+  }
+
   // Remove the project's github_repo_url
   await sql`
     UPDATE projects
@@ -378,12 +480,38 @@ export async function disconnectGitHub(projectId: string): Promise<boolean> {
   return db.deleteConnection(projectId);
 }
 
+// ─── Conflict Resolution ────────────────────────────────────
+
+export async function resolveConflicts(
+  projectPath: string,
+  strategy: "ours" | "theirs"
+): Promise<void> {
+  await gitResolveAll(projectPath, strategy);
+  // Commit the merge resolution
+  await execGit(projectPath, ["commit", "--no-edit"]);
+}
+
+export async function abortMerge(projectPath: string): Promise<void> {
+  await gitAbortMerge(projectPath);
+}
+
 // ─── Commit History ─────────────────────────────────────────
 
 export async function getCommitHistory(
   projectId: string,
   opts: { page?: number; pageSize?: number } = {}
-): Promise<{ commits: Array<{ id: string; sha: string; message: string; author: string; branch: string; direction: string; createdAt: string }>; total: number }> {
+): Promise<{
+  commits: Array<{
+    id: string;
+    sha: string;
+    message: string;
+    author: string;
+    branch: string;
+    direction: string;
+    createdAt: string;
+  }>;
+  total: number;
+}> {
   const conn = await db.findConnectionByProject(projectId);
   if (!conn) {
     return { commits: [], total: 0 };

@@ -280,6 +280,15 @@ export function useChat(
                   updateMessageFields(assistantId, {
                     liveStatus: status,
                   });
+                } else if (parsed.type === "version_created") {
+                  // Git commit was created for this AI response — store SHA for undo
+                  const sha = parsed.data?.sha ?? parsed.sha;
+                  if (sha) {
+                    updateMessageFields(assistantId, {
+                      versionSha: sha,
+                      hadToolCalls: true,
+                    });
+                  }
                 } else if (parsed.type === "error") {
                   accumulated += `\n\n**Error:** ${typeof parsed.data === "string" ? parsed.data : "Unknown error"}`;
                   if (rafHandle) cancelAnimationFrame(rafHandle);

@@ -574,3 +574,16 @@ adminRoutes.delete("/users/:userId/ai-allocation", async (c) => {
   await aiSettings.deleteUserPreferences(targetWorkspaceId, targetUserId);
   return c.json({ data: { userId: targetUserId, reset: true } });
 });
+
+// ─── Git Migration ─────────────────────────────────────────
+// POST /admin/migrate-to-git — batch migrate all projects to git
+adminRoutes.post("/migrate-to-git", async (c) => {
+  try {
+    const { migrateAllProjects } = await import("../git/migrate.js");
+    const result = await migrateAllProjects();
+    return c.json({ data: result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: "Migration failed", message }, 500);
+  }
+});

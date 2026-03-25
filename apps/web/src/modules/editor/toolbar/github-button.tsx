@@ -12,6 +12,10 @@ interface SyncStatus {
   branch: string;
   repoOwner: string | null;
   repoName: string | null;
+  aheadCount?: number;
+  behindCount?: number;
+  uncommittedChanges?: boolean;
+  conflictedFiles?: string[];
 }
 
 interface GitHubButtonProps {
@@ -22,6 +26,8 @@ interface GitHubButtonProps {
   onPull: () => Promise<void>;
   onConnect: () => void;
   onDisconnect: () => void;
+  onResolveConflicts?: (strategy: "ours" | "theirs") => Promise<void>;
+  onAbortMerge?: () => Promise<void>;
   error: string | null;
   onClearError: () => void;
 }
@@ -76,6 +82,8 @@ export function GitHubButton({
   onPull,
   onConnect,
   onDisconnect,
+  onResolveConflicts,
+  onAbortMerge,
   error,
   onClearError,
 }: GitHubButtonProps) {
@@ -162,6 +170,21 @@ export function GitHubButton({
               >
                 {status.repoUrl.replace("https://github.com/", "")}
               </a>
+            )}
+            {/* Ahead/behind counts */}
+            {(status?.aheadCount || status?.behindCount) && (
+              <div className="mt-1.5 flex items-center gap-2 text-xs">
+                {(status?.aheadCount ?? 0) > 0 && (
+                  <span className="text-blue-600">
+                    {status?.aheadCount} ahead
+                  </span>
+                )}
+                {(status?.behindCount ?? 0) > 0 && (
+                  <span className="text-amber-600">
+                    {status?.behindCount} behind
+                  </span>
+                )}
+              </div>
             )}
           </div>
 
