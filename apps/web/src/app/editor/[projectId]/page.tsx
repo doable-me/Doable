@@ -18,6 +18,8 @@ import { CollabPresenceSync } from "@/modules/collaboration/components/collab-pr
 import { FileTabPresenceDots } from "@/modules/collaboration/components/file-tab-presence-dots";
 import { CollabFileTabSync } from "@/modules/collaboration/components/collab-file-tab-sync";
 import { CollabAiSync } from "@/modules/collaboration/components/collab-ai-sync";
+import { useGitHub } from "@/modules/editor/hooks/use-github";
+import { GitHubConnectDialog } from "@/modules/editor/components/github-connect-dialog";
 import { CollabChatTyping } from "@/modules/collaboration/components/collab-chat-typing";
 import { useAttachments, ACCEPTED_EXTENSIONS, type Attachment } from "@/hooks/use-attachments";
 import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/components/editor-model-selector";
@@ -1006,6 +1008,14 @@ export default function EditorPage() {
   const [githubDialogOpen, setGithubDialogOpen] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // GitHub integration
+  const github = useGitHub({
+    projectId: resolvedProjectId,
+    projectPath: resolvedProjectId, // Backend resolves the actual path from projectId
+    userId: authUser?.id ?? "",
+    accessToken: getStoredTokens().accessToken ?? "",
+  });
 
   // Share dialog state
   const [projectVisibility, setProjectVisibility] = useState<"public" | "private">("public");
@@ -4520,52 +4530,19 @@ export default function EditorPage() {
       </Dialog>
 
       {/* ─── GitHub Connect Dialog ─────────────────────────────── */}
-      {githubDialogOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={(e) => { if (e.target === e.currentTarget) setGithubDialogOpen(false); }}
-        >
-          <div className="w-full max-w-lg rounded-lg border border-zinc-700 bg-[#1C1C1C] shadow-xl">
-            {/* Header */}
-            <div className="border-b border-zinc-700 px-6 py-4">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Github className="h-5 w-5" />
-                Connect to GitHub
-              </h2>
-              <p className="mt-1 text-sm text-zinc-400">
-                Link this project to a GitHub repository for version control.
-              </p>
-            </div>
-
-            {/* Body */}
-            <div className="p-6">
-              <p className="text-sm text-zinc-400 text-center py-8">
-                GitHub integration is coming soon. Connect your GitHub account in{" "}
-                <button
-                  onClick={() => {
-                    setGithubDialogOpen(false);
-                    router.push(`/projects/${resolvedProjectId}/settings`);
-                  }}
-                  className="text-brand-400 hover:text-brand-300 underline"
-                >
-                  project settings
-                </button>
-                {" "}to get started.
-              </p>
-            </div>
-
-            {/* Footer */}
-            <div className="flex justify-end gap-3 border-t border-zinc-700 px-6 py-4">
-              <button
-                className="rounded-md bg-zinc-800 border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
-                onClick={() => setGithubDialogOpen(false)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <GitHubConnectDialog
+        open={githubDialogOpen}
+        onClose={() => setGithubDialogOpen(false)}
+        onConnect={async (opts) => {
+          await github.connect(opts);
+        }}
+        onInitiateOAuth={() => github.initiateOAuth()}
+        repos={github.repos}
+        reposLoading={github.reposLoading}
+        githubUsername={github.githubUsername}
+        isGitHubConnected={github.isGitHubConnected}
+        onLoadRepos={() => github.loadRepos()}
+      />
 
       {/* ─── Keyboard Shortcuts Dialog ─────────────────────────── */}
       <Dialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen}>
