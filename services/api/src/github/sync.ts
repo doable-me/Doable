@@ -340,8 +340,6 @@ export async function initialPush(
     description?: string;
   }
 ): Promise<SyncResult> {
-  const branch = opts.branch ?? "main";
-
   let repoAlreadyExisted = false;
   let actualRepoName = opts.repoName;
 
@@ -362,6 +360,15 @@ export async function initialPush(
 
   // Ensure local repo exists
   await ensureRepo(projectPath);
+
+  // Detect the actual local branch (may be "master" on older git versions)
+  const { stdout: currentBranch } = await execGit(projectPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const branch = opts.branch ?? currentBranch.trim() || "main";
+
+  // If the local branch is "master" but we want "main", rename it
+  if (currentBranch.trim() === "master" && branch === "main") {
+    await execGit(projectPath, ["branch", "-M", "main"]);
+  }
 
   // Configure the remote
   const repoUrl = `https://github.com/${opts.repoOwner}/${actualRepoName}.git`;

@@ -21,7 +21,7 @@ export function isGitRepo(projectPath: string): boolean {
 }
 
 export async function initRepo(projectPath: string): Promise<void> {
-  await execGit(projectPath, ["init"]);
+  await execGit(projectPath, ["init", "-b", "main"]);
   await execGit(projectPath, ["config", "user.name", "Doable"]);
   await execGit(projectPath, ["config", "user.email", "noreply@doable.me"]);
 
