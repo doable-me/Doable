@@ -7,6 +7,7 @@ import {
   getCopilotEngine,
   createDoableTools,
   createAllTools,
+  onToolEvent,
   type ByokProviderConfig,
   type CopilotEngine,
 } from "../ai/providers/copilot.js";
@@ -860,12 +861,19 @@ ERROR RECOVERY — if you encounter errors:
             }
           }
 
+          // Subscribe to tool execution events so we can push live status to the client
+          // while the Copilot SDK executes tools silently.
+          const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
+            const friendly = friendlyToolMessage(toolName, args);
+            const ssePayload = status === "start"
+              ? { type: "tool_call", data: { name: toolName, friendlyMessage: friendly, arguments: args } }
+              : { type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly } };
+            stream.writeSSE({ data: JSON.stringify(ssePayload) }).catch(() => {});
+          });
+
           for await (const event of messageStream!) {
             const evtType = (event as Record<string, unknown>).type as string;
             const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
-
-            // Log ALL SDK events so we can see what's actually flowing
-            console.log(`[Chat:SDK] ${evtType}${evtData ? ` — ${JSON.stringify(evtData).slice(0, 120)}` : ""}`);
 
             // Capture full assistant.message for DB persistence (even though we skip it for SSE)
             if (evtType === "assistant.message" && evtData?.content) {
@@ -1180,9 +1188,11 @@ ERROR RECOVERY — if you encounter errors:
         }
 
         clearInterval(keepAlive);
+        unsubToolEvents();
         await stream.writeSSE({ data: "[DONE]" });
     } catch (err) {
       clearInterval(keepAlive);
+      unsubToolEvents();
       // Copilot SDK is the core engine — surface the real error, don't work around it
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Chat] Copilot SDK error:", errMsg);

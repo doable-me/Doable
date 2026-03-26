@@ -356,6 +356,21 @@ import {
  * create, edit, and read files in the project directory.
  * Vite hot-reloads changes automatically.
  */
+// Per-project event emitter for tool execution status.
+// The chat route subscribes to this to send SSE events to the client.
+type ToolEventHandler = (toolName: string, status: "start" | "end", args: Record<string, unknown>) => void;
+const toolEventHandlers = new Map<string, ToolEventHandler>();
+
+export function onToolEvent(projectId: string, handler: ToolEventHandler): () => void {
+  toolEventHandlers.set(projectId, handler);
+  return () => { toolEventHandlers.delete(projectId); };
+}
+
+function emitToolEvent(projectId: string, toolName: string, status: "start" | "end", args: Record<string, unknown>) {
+  const handler = toolEventHandlers.get(projectId);
+  if (handler) handler(toolName, status, args);
+}
+
 export function createDoableTools(projectId: string): Tool[] {
   return ([
     defineTool("create_file", {
@@ -378,7 +393,9 @@ export function createDoableTools(projectId: string): Tool[] {
       },
       handler: async (args: { path: string; content: string }) => {
         const { path, content } = args;
+        emitToolEvent(projectId, "create_file", "start", { path });
         await writeFile(projectId, path, content);
+        emitToolEvent(projectId, "create_file", "end", { path });
         return {
           success: true,
           path,
@@ -407,7 +424,9 @@ export function createDoableTools(projectId: string): Tool[] {
       },
       handler: async (args: { path: string; content: string }) => {
         const { path, content } = args;
+        emitToolEvent(projectId, "edit_file", "start", { path });
         await writeFile(projectId, path, content);
+        emitToolEvent(projectId, "edit_file", "end", { path });
         return {
           success: true,
           path,
@@ -432,8 +451,10 @@ export function createDoableTools(projectId: string): Tool[] {
       },
       handler: async (args: { path: string }) => {
         const { path } = args;
+        emitToolEvent(projectId, "read_file", "start", { path });
         try {
           const content = await readFile(projectId, path);
+          emitToolEvent(projectId, "read_file", "end", { path });
           return {
             success: true,
             path,
@@ -441,6 +462,7 @@ export function createDoableTools(projectId: string): Tool[] {
             lines: content.split("\n").length,
           };
         } catch (err) {
+          emitToolEvent(projectId, "read_file", "end", { path });
           return {
             success: false,
             error:
@@ -465,7 +487,9 @@ export function createDoableTools(projectId: string): Tool[] {
       },
       handler: async (args: { directory?: string }) => {
         const dir = args.directory ?? ".";
+        emitToolEvent(projectId, "list_files", "start", { directory: dir });
         const files = await listFiles(projectId, dir);
+        emitToolEvent(projectId, "list_files", "end", { directory: dir });
         return {
           success: true,
           count: files.length,
@@ -493,6 +517,7 @@ export function createDoableTools(projectId: string): Tool[] {
       },
       handler: async (args: { packages: string; dev?: boolean }) => {
         const { packages, dev } = args;
+        emitToolEvent(projectId, "install_package", "start", { packages });
         const { spawn: spawnCmd } = await import("node:child_process");
         const projectPath = getProjectPath(projectId);
         const pkgList = packages.split(/\s+/).filter(Boolean);
@@ -521,6 +546,7 @@ export function createDoableTools(projectId: string): Tool[] {
           });
 
           child.on("close", (code) => {
+            emitToolEvent(projectId, "install_package", "end", { packages });
             resolve({
               success: code === 0,
               packages: pkgList,
@@ -534,6 +560,7 @@ export function createDoableTools(projectId: string): Tool[] {
           });
 
           child.on("error", (err) => {
+            emitToolEvent(projectId, "install_package", "end", { packages });
             resolve({
               success: false,
               error: err.message,
