@@ -829,9 +829,9 @@ ERROR RECOVERY — if you encounter errors:
             })();
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes("not found")) {
-              // Session was lost (engine recycled) — recreate
-              console.log(`[Chat] Session '${sessionId}' lost, recreating for ${projectId}`);
+            if (msg.includes("not found") || msg.includes("not started") || msg.includes("stopped")) {
+              // Session or engine was lost (engine recycled/stopped) — recreate
+              console.log(`[Chat] Session or engine lost for ${projectId}: ${msg.slice(0, 80)}`);
               projectSessions.delete(sessionKey);
               currentEngine = await manager.getEngine(resolvedGithubToken);
               const projectPath = getProjectPath(projectId);
@@ -1167,6 +1167,18 @@ ERROR RECOVERY — if you encounter errors:
       // Copilot SDK is the core engine — surface the real error, don't work around it
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Chat] Copilot SDK error:", errMsg);
+
+      // Save partial assistant message so chat history isn't lost on error
+      if (dbSessionId && assistantContent) {
+        try {
+          await sql`
+            INSERT INTO ai_messages (session_id, role, content, tool_calls)
+            VALUES (${dbSessionId}, 'assistant', ${assistantContent}, ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])})
+          `;
+        } catch (e) {
+          console.warn("[Chat] Failed to save partial assistant message:", e);
+        }
+      }
 
       await stream.writeSSE({
         data: JSON.stringify({

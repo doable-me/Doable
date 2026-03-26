@@ -34,6 +34,7 @@ export const blankTemplate: TemplateDefinition = {
           "@types/react": "^19.0.3",
           "@types/react-dom": "^19.0.2",
           "@vitejs/plugin-react": "^4.3.4",
+          "enhanced-resolve": "^5.18.1",
           tailwindcss: "^4.0.0",
           typescript: "^5.7.2",
           vite: "^6.0.0",
