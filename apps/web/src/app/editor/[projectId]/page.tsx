@@ -1623,11 +1623,11 @@ export default function EditorPage() {
 
   // Auto-send prompt from dashboard navigation.
   // Reads from sessionStorage (primary) or URL query param (fallback).
-  // Waits for scaffold to be ready before sending so the backend can handle
-  // the chat request properly.
+  // Sends immediately — the chat API auto-scaffolds if needed, so we don't
+  // need to wait for the frontend scaffold to complete first.
   useEffect(() => {
     if (autoSentRef.current) return;
-    if (scaffoldStatus !== "ready") return; // Wait for scaffold
+    if (scaffoldStatus === "idle") return; // Wait for scaffold to at least START (so projectId is valid)
     autoSentRef.current = true;
     // Read from sessionStorage first (most reliable), then fall back to URL
     const storageKey = `doable_initial_prompt_${resolvedProjectId}`;
