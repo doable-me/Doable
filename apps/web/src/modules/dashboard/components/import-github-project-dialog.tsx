@@ -130,11 +130,8 @@ export function ImportGitHubProjectDialog({
       });
       const projectId = projectRes.data.id;
 
-      // Step 2: Import the repo
-      setImportingStatus("Cloning repository...");
-      await apiImportGitHubRepo(projectId, owner!, name!, repo.defaultBranch);
-
-      // Step 3: Store auto-setup prompt so the AI configures the project
+      // Step 2: Store auto-setup prompt so the AI configures the project
+      // once the clone finishes and the editor opens
       const setupPrompt = [
         `This project was just imported from GitHub (${repo.fullName}).`,
         `Analyze the project structure and files to understand what kind of project this is.`,
@@ -150,8 +147,13 @@ export function ImportGitHubProjectDialog({
         JSON.stringify({ prompt: setupPrompt })
       );
 
-      // Step 4: Navigate to editor
-      setImportingStatus("Opening project...");
+      // Step 3: Start clone in background — don't await (can take 2+ minutes)
+      // The editor will show the AI setting up the project once files arrive
+      apiImportGitHubRepo(projectId, owner!, name!, repo.defaultBranch).catch(
+        (err) => console.error("GitHub import failed:", err)
+      );
+
+      // Step 4: Navigate to editor immediately
       onOpenChange(false);
       router.push(`/editor/${projectId}`);
     } catch (err) {
