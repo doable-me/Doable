@@ -589,6 +589,7 @@ chatRoutes.post(
     let lastFlushLen = 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let assistantToolCalls: any[] = [];
+    let unsubToolEvents: (() => void) = () => {};
 
     try {
       // Send initial status so the client knows we're alive
@@ -861,7 +862,7 @@ ERROR RECOVERY — if you encounter errors:
 
           // Subscribe to tool execution events so we can push live status to the client
           // while the Copilot SDK executes tools silently in the background.
-          const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
+          unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
             hadToolCalls = true;
             const friendly = friendlyToolMessage(toolName, args);
             const ssePayload = status === "start"
