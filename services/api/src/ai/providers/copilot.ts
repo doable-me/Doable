@@ -315,6 +315,36 @@ export class CopilotEngine {
 
   /**
    * Send a message and wait for the complete response.
+   * Returns the assistant's reply text. Tool calls execute during this time.
+   *
+   * Use this instead of sendMessage() when the SDK's session.on() doesn't
+   * deliver streaming events (which is the current behavior in SDK v0.1.32).
+   */
+  async sendAndGetReply(
+    sessionId: string,
+    prompt: string,
+    fileAttachments?: Array<{ type: "file"; path: string; displayName?: string }>,
+    timeoutMs = 300_000,
+  ): Promise<{ content: string; messageId?: string } | null> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    const messageOptions: { prompt: string; attachments?: Array<{ type: "file"; path: string; displayName?: string }> } = { prompt };
+    if (fileAttachments && fileAttachments.length > 0) {
+      messageOptions.attachments = fileAttachments;
+    }
+
+    console.log(`[CopilotEngine] sendAndGetReply to session ${sessionId.slice(0, 8)}… (timeout: ${Math.round(timeoutMs / 1000)}s)`);
+    const result = await session.sendAndWait(messageOptions, timeoutMs);
+    const content = (result?.data as Record<string, unknown>)?.content as string ?? "";
+    console.log(`[CopilotEngine] sendAndGetReply complete — content length: ${content.length}`);
+    return { content, messageId: result?.id };
+  }
+
+  /**
+   * Send a message and wait for the complete response (legacy).
    */
   async sendAndWait(
     sessionId: string,

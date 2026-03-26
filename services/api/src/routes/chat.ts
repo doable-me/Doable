@@ -844,48 +844,46 @@ ERROR RECOVERY — if you encounter errors:
           const manager = getCopilotManager();
           let currentEngine = await manager.getEngine(resolvedGithubToken);
 
-          // Try to send. If the session was lost (engine recycled), recreate it.
-          let messageStream: AsyncGenerator<import("@github/copilot-sdk").SessionEvent>;
+          // Subscribe to tool execution events so we can push live status to the client
+          // while the Copilot SDK executes tools silently in the background.
+          const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
+            hadToolCalls = true;
+            const friendly = friendlyToolMessage(toolName, args);
+            const ssePayload = status === "start"
+              ? { type: "tool_call", data: { name: toolName, friendlyMessage: friendly, arguments: args } }
+              : { type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly } };
+            stream.writeSSE({ data: JSON.stringify(ssePayload) }).catch(() => {});
+            // Broadcast to collaborators
+            broadcastToRoom(projectId, {
+              type: "ai:tool-event", messageId,
+              event: status === "start" ? "tool_call" : "tool_result",
+              data: (ssePayload.data ?? {}) as Record<string, unknown>,
+            }, userId).catch(() => {});
+            // Persist tool calls progressively
+            if (status === "start") {
+              assistantToolCalls.push({ name: toolName, arguments: args });
+              if (assistantMessageId) {
+                sql`UPDATE ai_messages SET tool_calls = ${sql.json(assistantToolCalls)} WHERE id = ${assistantMessageId}`.catch(() => {});
+              }
+            }
+          });
+
+          // Use sendAndGetReply — the SDK's session.on() event stream is broken
+          // in v0.1.32 (only delivers pending_messages.modified, no streaming events).
+          // sendAndWait processes the full request and returns the final response.
+          // Tool activity is shown in real-time via the onToolEvent bridge above.
+          console.log(`[Chat] Sending message to session ${sessionId!.slice(0, 8)}… for project ${projectId}`);
+          let reply: { content: string; messageId?: string } | null = null;
           try {
-            console.log(`[Chat] Sending message to session ${sessionId!.slice(0, 8)}… for project ${projectId}`);
-            messageStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
-            // Force the generator to yield once — "Session not found" throws here
-            // because async generators are lazy (the body doesn't run until iterated).
-            // Add a 60s timeout — if the SDK hangs on the first event, don't wait forever.
-            const first = await Promise.race([
-              messageStream.next(),
-              new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error("Timed out waiting for first AI event (60s)")), 60_000)
-              ),
-            ]);
-            // Wrap in a helper that re-yields the first value then continues
-            messageStream = (async function* () {
-              if (!first.done) yield first.value;
-              yield* messageStream;
-            })();
+            reply = await currentEngine.sendAndGetReply(
+              sessionId!, augmentedContent,
+              fileAttachments.length > 0 ? fileAttachments : undefined,
+            );
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes("Timed out waiting for first AI event")) {
-              // First event timeout — the SDK is hanging. Evict everything and retry.
-              console.error(`[Chat] SDK hung for ${projectId} — evicting engine and recreating session`);
-              await stream.writeSSE({
-                data: JSON.stringify({ type: "thinking", data: "AI engine unresponsive — restarting..." }),
-              });
-              const mgr = getCopilotManager();
-              await mgr.evictEngine(resolvedGithubToken);
-              projectSessions.delete(sessionKey);
-              currentEngine = await mgr.getEngine(resolvedGithubToken);
-              const projectPath = getProjectPath(projectId);
-              const freshTools = await createAllTools(projectId, workspaceId, userId);
-              sessionId = await currentEngine.createSession({
-                projectId, userId, model: resolvedModel, provider: resolvedProvider,
-                workingDirectory: projectPath, systemPrompt, tools: freshTools,
-              });
-              projectSessions.set(sessionKey, sessionId);
-              messageStream = currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
-            } else if (msg.includes("not found") || msg.includes("not started") || msg.includes("stopped")) {
-              // Session or engine was lost (engine recycled/stopped) — recreate
-              console.log(`[Chat] Session or engine lost for ${projectId}: ${msg.slice(0, 80)}`);
+            if (msg.includes("not found") || msg.includes("not started") || msg.includes("stopped")) {
+              // Session or engine was lost — recreate
+              console.log(`[Chat] Session lost for ${projectId}: ${msg.slice(0, 80)} — recreating`);
               await stream.writeSSE({
                 data: JSON.stringify({ type: "thinking", data: "Reconnecting to AI..." }),
               });
@@ -898,122 +896,27 @@ ERROR RECOVERY — if you encounter errors:
                 workingDirectory: projectPath, systemPrompt, tools: freshTools,
               });
               projectSessions.set(sessionKey, sessionId);
-              messageStream = currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
+              reply = await currentEngine.sendAndGetReply(
+                sessionId, augmentedContent,
+                fileAttachments.length > 0 ? fileAttachments : undefined,
+              );
             } else {
               throw err;
             }
           }
+          unsubToolEvents();
 
-          // Subscribe to tool execution events so we can push live status to the client
-          // while the Copilot SDK executes tools silently.
-          const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
-            const friendly = friendlyToolMessage(toolName, args);
-            const ssePayload = status === "start"
-              ? { type: "tool_call", data: { name: toolName, friendlyMessage: friendly, arguments: args } }
-              : { type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly } };
-            stream.writeSSE({ data: JSON.stringify(ssePayload) }).catch(() => {});
-          });
-
-          let sseEventCount = 0;
-          for await (const event of messageStream!) {
-            const evtType = (event as Record<string, unknown>).type as string;
-            const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
-
-            // Log first few SSE events for diagnostics
-            sseEventCount++;
-            if (sseEventCount <= 5) {
-              console.log(`[Chat] SSE event #${sseEventCount}: type=${evtType}, hasData=${!!evtData}`);
-            }
-
-            // Capture full assistant.message for DB persistence (even though we skip it for SSE)
-            if (evtType === "assistant.message" && evtData?.content) {
-              const fullContent = evtData.content as string;
-              // Use the complete message for DB if we somehow missed deltas
-              if (!assistantContent && fullContent) {
-                assistantContent = fullContent;
-              }
-            }
-
-            const sseData = mapEventToSSE(event);
-            if (sseData) {
-              // When a tool_call is emitted, record the name for pairing
-              if (sseData.type === "tool_call") {
-                const toolData = sseData.data as Record<string, unknown>;
-                if (toolData?.name) {
-                  pendingToolNames.push(toolData.name as string);
-                }
-              }
-              // When a tool_result is emitted, inject the name from the queue
-              if (sseData.type === "tool_result") {
-                hadToolCalls = true;
-                const resultData = sseData.data as Record<string, unknown>;
-                if (!resultData?.name && pendingToolNames.length > 0) {
-                  resultData.name = pendingToolNames.shift();
-                }
-              }
-              // Accumulate assistant content for DB persistence
-              if (sseData.type === "text_delta") {
-                assistantContent += typeof sseData.data === "string" ? sseData.data : "";
-                // Flush to DB every ~500 chars so content survives crashes
-                if (assistantMessageId && assistantContent.length - lastFlushLen > 500) {
-                  lastFlushLen = assistantContent.length;
-                  sql`UPDATE ai_messages SET content = ${assistantContent} WHERE id = ${assistantMessageId}`.catch(() => {});
-                }
-                // Broadcast text chunks to other collaborators via WS
-                broadcastToRoom(projectId, {
-                  type: "ai:stream-chunk",
-                  chunk: typeof sseData.data === "string" ? sseData.data : "",
-                  messageId,
-                  isThinking: false,
-                }, userId).catch(() => {});
-              }
-              // Broadcast thinking chunks too
-              if (sseData.type === "thinking") {
-                broadcastToRoom(projectId, {
-                  type: "ai:stream-chunk",
-                  chunk: typeof sseData.data === "string" ? sseData.data : "",
-                  messageId,
-                  isThinking: true,
-                }, userId).catch(() => {});
-              }
-              // Broadcast tool_call / tool_result events so collaborators see tool activity
-              if (sseData.type === "tool_call" || sseData.type === "tool_result") {
-                broadcastToRoom(projectId, {
-                  type: "ai:tool-event",
-                  messageId,
-                  event: sseData.type,
-                  data: (sseData.data ?? {}) as Record<string, unknown>,
-                }, userId).catch(() => {});
-              }
-              // Broadcast status & auto_fix_complete events
-              if (sseData.type === "status" || sseData.type === "auto_fix_complete") {
-                broadcastToRoom(projectId, {
-                  type: "ai:status",
-                  messageId,
-                  data: sseData.data,
-                }, userId).catch(() => {});
-              }
-              // Broadcast errors
-              if (sseData.type === "error") {
-                broadcastToRoom(projectId, {
-                  type: "ai:error",
-                  messageId,
-                  error: sseData.data,
-                }, userId).catch(() => {});
-              }
-              // Accumulate tool calls for DB persistence — flush progressively
-              // so mid-stream refreshes still show tool action cards in history.
-              if (sseData.type === "tool_call") {
-                const toolData = sseData.data as Record<string, unknown>;
-                assistantToolCalls.push({ name: toolData?.name as string, arguments: toolData?.arguments });
-                if (assistantMessageId) {
-                  sql`UPDATE ai_messages SET tool_calls = ${sql.json(assistantToolCalls)} WHERE id = ${assistantMessageId}`.catch(() => {});
-                }
-              }
-              await stream.writeSSE({ data: JSON.stringify(sseData) });
-            }
+          // Emit the final assistant text as a single text_delta
+          if (reply?.content) {
+            assistantContent = reply.content;
+            const sanitized = sanitizeText(reply.content);
+            await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: sanitized }) });
+            // Broadcast to collaborators
+            broadcastToRoom(projectId, {
+              type: "ai:stream-chunk", chunk: sanitized, messageId, isThinking: false,
+            }, userId).catch(() => {});
           }
-          console.log(`[Chat] SSE stream complete for ${projectId}: ${sseEventCount} events, hadToolCalls=${hadToolCalls}, contentLen=${assistantContent.length}`);
+          console.log(`[Chat] SSE stream complete for ${projectId}: hadToolCalls=${hadToolCalls}, contentLen=${assistantContent.length}`);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
 
