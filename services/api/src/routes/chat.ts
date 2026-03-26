@@ -554,7 +554,16 @@ chatRoutes.post(
       fileAttachments = processed.fileAttachments;
     }
 
+    // Start SSE stream IMMEDIATELY — all setup runs inside the callback
+    // so HTTP headers are sent right away and Cloudflare Tunnel / proxies
+    // don't time out waiting for the initial response.
+    return streamSSE(c, async (stream) => {
     try {
+      // Send initial status so the client knows we're alive
+      await stream.writeSSE({
+        data: JSON.stringify({ type: "thinking", data: "Setting up..." }),
+      });
+
       // Auto-scaffold the project if it hasn't been created yet
       if (!isProjectScaffolded(projectId)) {
         try {
@@ -606,6 +615,11 @@ chatRoutes.post(
 
       let sessionId = projectSessions.get(sessionKey);
       if (!sessionId) {
+        // Send keep-alive status — session creation can be slow
+        await stream.writeSSE({
+          data: JSON.stringify({ type: "thinking", data: "Connecting to AI..." }),
+        });
+
         const previewUrl = getDevServerUrl(projectId);
         const projectContext = await buildProjectContextForMode(projectId, mode, workspaceId, userId);
 
@@ -779,8 +793,6 @@ ERROR RECOVERY — if you encounter errors:
         messageId,
       }, userId).catch(() => {});
 
-      // Stream events via SSE
-      return streamSSE(c, async (stream) => {
         let hadToolCalls = false;
         // Track pending tool names so tool_result events can include the name
         const pendingToolNames: string[] = [];
@@ -928,6 +940,7 @@ ERROR RECOVERY — if you encounter errors:
 
         // ── Auto-detect and fix preview errors ─────────────
         if (hadToolCalls && isProjectScaffolded(projectId)) {
+          try {
           const MAX_FIX_ATTEMPTS = 3;
           let fixedSuccessfully = false;
 
@@ -986,7 +999,8 @@ ERROR RECOVERY — if you encounter errors:
             });
 
             try {
-              for await (const event of engine.sendMessage(
+              const fixEngine = await getCopilotManager().getEngine(resolvedGithubToken);
+              for await (const event of fixEngine.sendMessage(
                 sessionId!,
                 buildAutoFixPrompt(previewError.message),
               )) {
@@ -1038,6 +1052,9 @@ ERROR RECOVERY — if you encounter errors:
               });
             }
           }
+          } catch (autoFixErr) {
+            console.warn("[Chat] Auto-fix system failed:", autoFixErr);
+          }
         }
 
         // Auto-create a version snapshot after AI finishes making changes
@@ -1050,13 +1067,13 @@ ERROR RECOVERY — if you encounter errors:
               const commitInfo = await autoCommit(
                 projectPath,
                 content.slice(0, 100),
-                { type: "ai", sessionMessageId: assistantId }
+                { type: "ai", sessionMessageId: messageId }
               );
               if (commitInfo) {
                 await stream.writeSSE({
                   data: JSON.stringify({
                     type: "version_created",
-                    data: { sha: commitInfo.sha, messageId: assistantId },
+                    data: { sha: commitInfo.sha, messageId },
                   }),
                 });
               }
@@ -1135,22 +1152,20 @@ ERROR RECOVERY — if you encounter errors:
         }
 
         await stream.writeSSE({ data: "[DONE]" });
-      });
     } catch (err) {
       // Copilot SDK is the core engine — surface the real error, don't work around it
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Chat] Copilot SDK error:", errMsg);
 
-      return streamSSE(c, async (stream) => {
-        await stream.writeSSE({
-          data: JSON.stringify({
-            type: "error",
-            data: `Copilot SDK error: ${errMsg}. Ensure you have a GitHub Copilot subscription or configure BYOK in settings.`,
-          }),
-        });
-        await stream.writeSSE({ data: "[DONE]" });
+      await stream.writeSSE({
+        data: JSON.stringify({
+          type: "error",
+          data: `Copilot SDK error: ${errMsg}. Ensure you have a GitHub Copilot subscription or configure BYOK in settings.`,
+        }),
       });
+      await stream.writeSSE({ data: "[DONE]" });
     }
+    });
   },
 );
 
