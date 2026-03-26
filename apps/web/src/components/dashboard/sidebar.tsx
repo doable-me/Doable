@@ -826,7 +826,7 @@ export function DashboardSidebar() {
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
-              className="w-56 bg-zinc-900 border-zinc-800 bottom-full mb-2"
+              className="w-56"
             >
               <DropdownMenuItem
                 className="text-zinc-300 focus:bg-white/5 focus:text-white"
