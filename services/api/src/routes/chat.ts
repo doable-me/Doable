@@ -558,6 +558,15 @@ chatRoutes.post(
     // so HTTP headers are sent right away and Cloudflare Tunnel / proxies
     // don't time out waiting for the initial response.
     return streamSSE(c, async (stream) => {
+    // Keep-alive: send periodic SSE pings to prevent Cloudflare Tunnel
+    // and other proxies from closing the connection during slow operations
+    // (session creation, AI thinking, tool execution, etc.)
+    const keepAlive = setInterval(async () => {
+      try {
+        await stream.writeSSE({ data: JSON.stringify({ type: "keep_alive" }) });
+      } catch { /* stream already closed */ }
+    }, 10_000);
+
     try {
       // Send initial status so the client knows we're alive
       await stream.writeSSE({
@@ -1151,8 +1160,10 @@ ERROR RECOVERY — if you encounter errors:
           }
         }
 
+        clearInterval(keepAlive);
         await stream.writeSSE({ data: "[DONE]" });
     } catch (err) {
+      clearInterval(keepAlive);
       // Copilot SDK is the core engine — surface the real error, don't work around it
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Chat] Copilot SDK error:", errMsg);
