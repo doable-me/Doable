@@ -251,6 +251,16 @@ projectRoutes.delete("/:id", async (c) => {
     return c.json({ error: "Project not found" }, 404);
   }
 
+  // Clean up GitHub connection so the repo can be re-imported
+  try {
+    await sql`DELETE FROM github_commits WHERE connection_id IN (
+      SELECT id FROM github_connections WHERE project_id = ${id}
+    )`;
+    await sql`DELETE FROM github_connections WHERE project_id = ${id}`;
+  } catch {
+    // Non-critical — don't block deletion
+  }
+
   return c.json({ data: { id, deleted: true } });
 });
 
