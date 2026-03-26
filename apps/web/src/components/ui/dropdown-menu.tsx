@@ -61,12 +61,17 @@ function DropdownMenuContent({
   const ref = React.useRef<HTMLDivElement>(null);
   const [pos, setPos] = React.useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
-  React.useEffect(() => {
+  // Position after content renders so we can measure and flip if needed
+  React.useLayoutEffect(() => {
     if (!open || !triggerRef.current) return;
 
     const rect = triggerRef.current.getBoundingClientRect();
+    const menuHeight = ref.current?.offsetHeight ?? 200;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const flipAbove = spaceBelow < menuHeight + 8 && rect.top > menuHeight + 8;
+
     setPos({
-      top: rect.bottom + 4,
+      top: flipAbove ? rect.top - menuHeight - 4 : rect.bottom + 4,
       left: align === "end" ? rect.right : rect.left,
     });
   }, [open, align, triggerRef]);
