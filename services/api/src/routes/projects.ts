@@ -251,53 +251,41 @@ projectRoutes.put("/:id", async (c) => {
 projectRoutes.delete("/:id", async (c) => {
   const id = c.req.param("id");
 
-  // Stop any running dev server for this project
-  await stopDevServer(id).catch(() => {});
-
-  // Delete project directory (including .git and all files)
-  const projectDir = getProjectPath(id);
-  if (existsSync(projectDir)) {
-    await rm(projectDir, { recursive: true, force: true });
-  }
-
-  // Delete thumbnail
-  const thumbPath = getThumbnailPath(id);
-  if (existsSync(thumbPath)) {
-    await rm(thumbPath, { force: true });
-  }
-
-  // Delete from database
+  // 1. Delete from database FIRST — instant, guarantees project disappears
   const deleted = await projects.hardDelete(id);
-
   if (!deleted) {
     return c.json({ error: "Project not found" }, 404);
   }
 
-  // Clean up everything in background — don't block response
-  (async () => {
-    // 1. GitHub connection data
-    try {
-      await sql`DELETE FROM github_commits WHERE connection_id IN (
-        SELECT id FROM github_connections WHERE project_id = ${id}
-      )`;
-      await sql`DELETE FROM github_connections WHERE project_id = ${id}`;
-    } catch { /* non-critical */ }
+  // 2. GitHub connection cleanup (fast DB queries, safe to await)
+  try {
+    await sql`DELETE FROM github_commits WHERE connection_id IN (
+      SELECT id FROM github_connections WHERE project_id = ${id}
+    )`;
+    await sql`DELETE FROM github_connections WHERE project_id = ${id}`;
+  } catch { /* non-critical */ }
 
-    // 2. Stop dev server (with timeout to avoid hanging)
+  // 3. Filesystem + dev server cleanup in background (can be slow)
+  (async () => {
     try {
-      const { stopDevServer } = await import("../projects/dev-server.js");
       await Promise.race([
         stopDevServer(id),
         new Promise((resolve) => setTimeout(resolve, 5000)),
       ]);
     } catch { /* non-critical */ }
 
-    // 3. Remove project files from disk
     try {
-      const { getProjectPath } = await import("../ai/project-files.js");
-      const { rm } = await import("node:fs/promises");
-      const projectPath = getProjectPath(id);
-      await rm(projectPath, { recursive: true, force: true });
+      const projectDir = getProjectPath(id);
+      if (existsSync(projectDir)) {
+        await rm(projectDir, { recursive: true, force: true });
+      }
+    } catch { /* non-critical */ }
+
+    try {
+      const thumbPath = getThumbnailPath(id);
+      if (existsSync(thumbPath)) {
+        await rm(thumbPath, { force: true });
+      }
     } catch { /* non-critical */ }
   })();
 
