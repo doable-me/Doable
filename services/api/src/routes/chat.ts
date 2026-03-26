@@ -480,14 +480,19 @@ const captureInProgress = new Set<string>();
  * @param delayMs - How long to wait for Vite HMR to settle (default: 3000)
  */
 function scheduleThumbnailCapture(projectId: string, delayMs = 3000): void {
-  if (captureInProgress.has(projectId)) return;
+  if (captureInProgress.has(projectId)) {
+    console.log(`[Thumbnail] Skipping capture for ${projectId} — already in progress`);
+    return;
+  }
   captureInProgress.add(projectId);
 
   const internalUrl = getDevServerInternalUrl(projectId);
   if (!internalUrl) {
+    console.warn(`[Thumbnail] No dev server URL for ${projectId} — skipping capture`);
     captureInProgress.delete(projectId);
     return;
   }
+  console.log(`[Thumbnail] Scheduling capture for ${projectId} in ${delayMs}ms (preview: ${internalUrl})`);
 
   const previewUrl = `${internalUrl}/preview/${projectId}/`;
   setTimeout(() => {
@@ -558,6 +563,8 @@ chatRoutes.post(
     // Start SSE stream IMMEDIATELY — all setup runs inside the callback
     // so HTTP headers are sent right away and Cloudflare Tunnel / proxies
     // don't time out waiting for the initial response.
+    // Anti-buffering headers for Cloudflare Tunnel and other reverse proxies
+    c.header("X-Accel-Buffering", "no");
     return streamSSE(c, async (stream) => {
     // Keep-alive: send periodic SSE pings to prevent Cloudflare Tunnel
     // and other proxies from closing the connection during slow operations
@@ -567,6 +574,16 @@ chatRoutes.post(
         await stream.writeSSE({ data: JSON.stringify({ type: "keep_alive" }) });
       } catch { /* stream already closed */ }
     }, 10_000);
+
+    // Declare assistant tracking variables OUTSIDE try block so the outer
+    // catch can access them for partial message persistence on error.
+    let hadToolCalls = false;
+    const pendingToolNames: string[] = [];
+    let assistantContent = "";
+    let assistantMessageId: string | undefined;
+    let lastFlushLen = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let assistantToolCalls: any[] = [];
 
     try {
       // Send initial status so the client knows we're alive
@@ -623,17 +640,12 @@ chatRoutes.post(
         workspaceId = proj?.workspace_id;
       } catch { /* ignore */ }
 
-      let sessionId = projectSessions.get(sessionKey);
-      if (!sessionId) {
-        // Send keep-alive status — session creation can be slow
-        await stream.writeSSE({
-          data: JSON.stringify({ type: "thinking", data: "Connecting to AI..." }),
-        });
+      // Pre-compute system prompt & context — needed both for fresh sessions
+      // and for session recreation after engine recycling.
+      const previewUrl = getDevServerUrl(projectId);
+      const projectContext = await buildProjectContextForMode(projectId, mode, workspaceId, userId);
 
-        const previewUrl = getDevServerUrl(projectId);
-        const projectContext = await buildProjectContextForMode(projectId, mode, workspaceId, userId);
-
-        const systemPrompt =
+      const systemPrompt =
           mode === "plan"
             ? "You are Doable's Plan Mode AI. Analyze requests, break them into steps, and produce structured plans. Do NOT write code directly — only plan and reason."
             : mode === "visual-edit"
@@ -723,6 +735,13 @@ ERROR RECOVERY — if you encounter errors:
 - "X is not exported from Y" → read BOTH the importing file AND the exporting file to understand the mismatch.
 - If multiple errors cascade, fix them one at a time starting with the root cause (usually a missing package or broken import).`;
 
+      let sessionId = projectSessions.get(sessionKey);
+      if (!sessionId) {
+        // Send keep-alive status — session creation can be slow
+        await stream.writeSSE({
+          data: JSON.stringify({ type: "thinking", data: "Connecting to AI..." }),
+        });
+
         const projectPath = getProjectPath(projectId);
         const allTools = await createAllTools(projectId, workspaceId, userId);
 
@@ -803,13 +822,7 @@ ERROR RECOVERY — if you encounter errors:
         messageId,
       }, userId).catch(() => {});
 
-        let hadToolCalls = false;
-        // Track pending tool names so tool_result events can include the name
-        const pendingToolNames: string[] = [];
-        // Track assistant content and tool calls for DB persistence
-        let assistantContent = "";
         // Pre-insert an empty assistant message row so partial content is never lost
-        let assistantMessageId: string | undefined;
         if (dbSessionId) {
           try {
             const [row] = await sql`
@@ -820,9 +833,6 @@ ERROR RECOVERY — if you encounter errors:
             assistantMessageId = row?.id;
           } catch { /* non-critical */ }
         }
-        let lastFlushLen = 0;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let assistantToolCalls: any[] = [];
         try {
           // Get a fresh engine reference — the pooled engine may have been
           // recycled since resolveAiEngine ran (max-age, idle, or eviction).
@@ -832,10 +842,17 @@ ERROR RECOVERY — if you encounter errors:
           // Try to send. If the session was lost (engine recycled), recreate it.
           let messageStream: AsyncGenerator<import("@github/copilot-sdk").SessionEvent>;
           try {
+            console.log(`[Chat] Sending message to session ${sessionId!.slice(0, 8)}… for project ${projectId}`);
             messageStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
             // Force the generator to yield once — "Session not found" throws here
             // because async generators are lazy (the body doesn't run until iterated).
-            const first = await messageStream.next();
+            // Add a 60s timeout — if the SDK hangs on the first event, don't wait forever.
+            const first = await Promise.race([
+              messageStream.next(),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("Timed out waiting for first AI event (60s)")), 60_000)
+              ),
+            ]);
             // Wrap in a helper that re-yields the first value then continues
             messageStream = (async function* () {
               if (!first.done) yield first.value;
@@ -843,16 +860,37 @@ ERROR RECOVERY — if you encounter errors:
             })();
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes("not found") || msg.includes("not started") || msg.includes("stopped")) {
+            if (msg.includes("Timed out waiting for first AI event")) {
+              // First event timeout — the SDK is hanging. Evict everything and retry.
+              console.error(`[Chat] SDK hung for ${projectId} — evicting engine and recreating session`);
+              await stream.writeSSE({
+                data: JSON.stringify({ type: "thinking", data: "AI engine unresponsive — restarting..." }),
+              });
+              const mgr = getCopilotManager();
+              await mgr.evictEngine(resolvedGithubToken);
+              projectSessions.delete(sessionKey);
+              currentEngine = await mgr.getEngine(resolvedGithubToken);
+              const projectPath = getProjectPath(projectId);
+              const freshTools = await createAllTools(projectId, workspaceId, userId);
+              sessionId = await currentEngine.createSession({
+                projectId, userId, model: resolvedModel, provider: resolvedProvider,
+                workingDirectory: projectPath, systemPrompt, tools: freshTools,
+              });
+              projectSessions.set(sessionKey, sessionId);
+              messageStream = currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
+            } else if (msg.includes("not found") || msg.includes("not started") || msg.includes("stopped")) {
               // Session or engine was lost (engine recycled/stopped) — recreate
               console.log(`[Chat] Session or engine lost for ${projectId}: ${msg.slice(0, 80)}`);
+              await stream.writeSSE({
+                data: JSON.stringify({ type: "thinking", data: "Reconnecting to AI..." }),
+              });
               projectSessions.delete(sessionKey);
               currentEngine = await manager.getEngine(resolvedGithubToken);
               const projectPath = getProjectPath(projectId);
               const freshTools = await createAllTools(projectId, workspaceId, userId);
               sessionId = await currentEngine.createSession({
                 projectId, userId, model: resolvedModel, provider: resolvedProvider,
-                workingDirectory: projectPath, systemPrompt: "", tools: freshTools,
+                workingDirectory: projectPath, systemPrompt, tools: freshTools,
               });
               projectSessions.set(sessionKey, sessionId);
               messageStream = currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
@@ -871,9 +909,16 @@ ERROR RECOVERY — if you encounter errors:
             stream.writeSSE({ data: JSON.stringify(ssePayload) }).catch(() => {});
           });
 
+          let sseEventCount = 0;
           for await (const event of messageStream!) {
             const evtType = (event as Record<string, unknown>).type as string;
             const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
+
+            // Log first few SSE events for diagnostics
+            sseEventCount++;
+            if (sseEventCount <= 5) {
+              console.log(`[Chat] SSE event #${sseEventCount}: type=${evtType}, hasData=${!!evtData}`);
+            }
 
             // Capture full assistant.message for DB persistence (even though we skip it for SSE)
             if (evtType === "assistant.message" && evtData?.content) {
@@ -959,6 +1004,7 @@ ERROR RECOVERY — if you encounter errors:
               await stream.writeSSE({ data: JSON.stringify(sseData) });
             }
           }
+          console.log(`[Chat] SSE stream complete for ${projectId}: ${sseEventCount} events, hadToolCalls=${hadToolCalls}, contentLen=${assistantContent.length}`);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
 
