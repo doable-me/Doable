@@ -213,8 +213,13 @@ export class CopilotEngine {
     const eventQueue: SessionEvent[] = [];
     let resolveWaiting: (() => void) | null = null;
     let done = false;
+    let lastEventTime = Date.now();
+
+    // Timeout: if no events for 90 seconds, assume the session is dead
+    const EVENT_TIMEOUT_MS = 90_000;
 
     const unsubscribe = session.on((event: SessionEvent) => {
+      lastEventTime = Date.now();
       eventQueue.push(event);
       if (resolveWaiting) {
         resolveWaiting();
@@ -237,7 +242,9 @@ export class CopilotEngine {
     }
 
     // Send the message (non-blocking)
+    console.log(`[CopilotEngine] Sending message to session ${sessionId.slice(0, 8)}…`);
     session.send(messageOptions).catch((err) => {
+      console.error(`[CopilotEngine] session.send() rejected:`, err instanceof Error ? err.message : err);
       eventQueue.push({
         type: "session.error",
         data: { message: err instanceof Error ? err.message : String(err) },
@@ -250,16 +257,40 @@ export class CopilotEngine {
     });
 
     try {
+      let eventCount = 0;
       while (!done || eventQueue.length > 0) {
         if (eventQueue.length > 0) {
-          yield eventQueue.shift()!;
+          const evt = eventQueue.shift()!;
+          eventCount++;
+          // Log first 3 events and terminal events for diagnostics
+          if (eventCount <= 3 || evt.type === "session.idle" || evt.type === "session.error") {
+            console.log(`[CopilotEngine] Event #${eventCount}: ${evt.type}`);
+          }
+          yield evt;
         } else if (!done) {
-          // Wait for next event
-          await new Promise<void>((resolve) => {
-            resolveWaiting = resolve;
+          // Wait for next event WITH timeout
+          const timedOut = await new Promise<boolean>((resolve) => {
+            resolveWaiting = () => resolve(false);
+            setTimeout(() => {
+              if (resolveWaiting) {
+                resolveWaiting = null;
+                resolve(true);
+              }
+            }, EVENT_TIMEOUT_MS);
           });
+          if (timedOut && !done && eventQueue.length === 0) {
+            const elapsed = Date.now() - lastEventTime;
+            console.error(`[CopilotEngine] No events for ${Math.round(elapsed / 1000)}s — session appears dead (${sessionId.slice(0, 8)}…)`);
+            // Yield a synthetic error event so the caller knows
+            yield {
+              type: "session.error",
+              data: { message: `AI session timed out — no response for ${Math.round(elapsed / 1000)} seconds. The AI engine may need to be restarted.` },
+            } as SessionEvent;
+            done = true;
+          }
         }
       }
+      console.log(`[CopilotEngine] Stream complete: ${eventCount} events yielded`);
     } finally {
       unsubscribe();
     }
