@@ -1,27 +1,27 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-
-interface DropdownMenuProps {
-  children: React.ReactNode;
-}
 
 interface DropdownMenuContextValue {
   open: boolean;
   setOpen: (open: boolean) => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
 }
 
 const DropdownMenuContext = React.createContext<DropdownMenuContextValue>({
   open: false,
   setOpen: () => {},
+  triggerRef: { current: null },
 });
 
-function DropdownMenu({ children }: DropdownMenuProps) {
+function DropdownMenu({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
+  const triggerRef = React.useRef<HTMLButtonElement | null>(null);
 
   return (
-    <DropdownMenuContext.Provider value={{ open, setOpen }}>
+    <DropdownMenuContext.Provider value={{ open, setOpen, triggerRef }}>
       <div className="relative inline-block text-left">{children}</div>
     </DropdownMenuContext.Provider>
   );
@@ -33,12 +33,16 @@ function DropdownMenuTrigger({
   asChild,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }) {
-  const { open, setOpen } = React.useContext(DropdownMenuContext);
+  const { open, setOpen, triggerRef } = React.useContext(DropdownMenuContext);
 
   return (
     <button
+      ref={triggerRef}
       className={className}
-      onClick={() => setOpen(!open)}
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpen(!open);
+      }}
       type="button"
       {...props}
     >
@@ -53,34 +57,53 @@ function DropdownMenuContent({
   children,
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & { align?: "start" | "end" }) {
-  const { open, setOpen } = React.useContext(DropdownMenuContext);
+  const { open, setOpen, triggerRef } = React.useContext(DropdownMenuContext);
   const ref = React.useRef<HTMLDivElement>(null);
+  const [pos, setPos] = React.useState<{ top: number; left: number }>({ top: 0, left: 0 });
+
+  React.useEffect(() => {
+    if (!open || !triggerRef.current) return;
+
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPos({
+      top: rect.bottom + 4,
+      left: align === "end" ? rect.right : rect.left,
+    });
+  }, [open, align, triggerRef]);
 
   React.useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.parentElement?.contains(e.target as Node)) {
+      if (
+        ref.current && !ref.current.contains(e.target as Node) &&
+        triggerRef.current && !triggerRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [open, setOpen]);
+  }, [open, setOpen, triggerRef]);
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       ref={ref}
       className={cn(
-        "absolute z-50 mt-2 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95",
-        align === "end" ? "right-0" : "left-0",
+        "fixed z-[9999] min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95",
         className
       )}
+      style={{
+        top: pos.top,
+        left: align === "end" ? undefined : pos.left,
+        right: align === "end" ? window.innerWidth - pos.left : undefined,
+      }}
       {...props}
     >
       {children}
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -99,6 +122,7 @@ function DropdownMenuItem({
         className
       )}
       onClick={(e) => {
+        e.stopPropagation();
         onClick?.(e);
         setOpen(false);
       }}
