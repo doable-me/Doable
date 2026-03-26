@@ -118,7 +118,7 @@ function DropdownMenuContent({
       ref={menuRef}
       data-dropdown-portal=""
       className={cn(
-        "fixed z-[9999] min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95",
+        "fixed z-[9999] min-w-[8rem] rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
         className
       )}
       style={{ top: 0, left: 0, visibility: "hidden" }}
