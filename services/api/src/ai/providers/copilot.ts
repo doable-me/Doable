@@ -241,10 +241,23 @@ export class CopilotEngine {
       console.log(`[CopilotEngine] Sending message with ${fileAttachments.length} file attachment(s):`, fileAttachments.map(a => a.displayName ?? a.path));
     }
 
-    // Send the message (non-blocking)
-    console.log(`[CopilotEngine] Sending message to session ${sessionId.slice(0, 8)}…`);
-    session.send(messageOptions).catch((err) => {
-      console.error(`[CopilotEngine] session.send() rejected:`, err instanceof Error ? err.message : err);
+    // Use sendAndWait instead of send — the SDK docs confirm events are still
+    // delivered to on() handlers during sendAndWait, AND it guarantees the session
+    // reaches idle state. Plain send() was only producing pending_messages.modified
+    // and then going silent, even though tools executed successfully.
+    console.log(`[CopilotEngine] Sending message to session ${sessionId.slice(0, 8)}… (sendAndWait, 5min timeout)`);
+    session.sendAndWait(messageOptions, 300_000).then((result) => {
+      console.log(`[CopilotEngine] sendAndWait resolved — content length: ${result?.data?.content?.length ?? 0}`);
+      // If we haven't already seen session.idle from events, mark done
+      if (!done) {
+        done = true;
+        if (resolveWaiting) {
+          resolveWaiting();
+          resolveWaiting = null;
+        }
+      }
+    }).catch((err) => {
+      console.error(`[CopilotEngine] sendAndWait rejected:`, err instanceof Error ? err.message : err);
       eventQueue.push({
         type: "session.error",
         data: { message: err instanceof Error ? err.message : String(err) },
