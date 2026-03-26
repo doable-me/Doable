@@ -1391,7 +1391,8 @@ export default function DashboardPage() {
               height: "130%",
               top: "-15%",
               left: "-15%",
-              background: "linear-gradient(180deg, #000000 0%, #000000 12%, hsl(var(--brand-950)) 22%, hsl(var(--brand-700)) 38%, hsl(var(--brand-500)) 50%, hsl(var(--brand-400)) 62%, hsl(var(--brand-300)) 74%, hsl(var(--brand-500)) 85%, hsl(var(--brand-400)) 95%, #000000 100%)",
+              backgroundImage: "linear-gradient(160deg, #000000 0%, #000000 10%, hsl(var(--brand-950)) 18%, hsl(var(--brand-700)) 32%, hsl(var(--brand-500)) 44%, hsl(var(--brand-400)) 54%, hsl(var(--brand-300)) 64%, hsl(var(--brand-500)) 76%, hsl(var(--brand-400)) 88%, #000000 100%)",
+              backgroundSize: "200% 200%",
             }} />
           </div>
           {/* Bottom fade into dark background */}

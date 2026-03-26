@@ -211,30 +211,32 @@
   animation: float-fast 10s ease-in-out infinite;
 }
 
-/* Animated gradient pulse drift - mimics Lovable's slowly moving gradient background */
+/* Animated gradient pulse drift - slowly moving gradient background */
 @keyframes pulse-drift {
   0% {
     transform: translateX(0%) translateY(0%) scale(1);
+    background-position: 50% 0%;
   }
-  20% {
-    transform: translateX(4%) translateY(-2%) scale(1.02);
+  25% {
+    transform: translateX(5%) translateY(-3%) scale(1.03);
+    background-position: 40% 40%;
   }
-  40% {
-    transform: translateX(-2%) translateY(3%) scale(0.98);
+  50% {
+    transform: translateX(-3%) translateY(4%) scale(0.97);
+    background-position: 60% 100%;
   }
-  60% {
-    transform: translateX(-4%) translateY(-1%) scale(1.01);
-  }
-  80% {
-    transform: translateX(3%) translateY(2%) scale(0.99);
+  75% {
+    transform: translateX(-5%) translateY(-2%) scale(1.02);
+    background-position: 50% 60%;
   }
   100% {
     transform: translateX(0%) translateY(0%) scale(1);
+    background-position: 50% 0%;
   }
 }
 
 .animate-pulse-drift {
-  animation: pulse-drift 25s ease-in-out infinite;
+  animation: pulse-drift 20s ease-in-out infinite;
 }
 
 /* Gradient text utility */

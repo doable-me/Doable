@@ -127,6 +127,13 @@ export function projectQueries(sql: postgres.Sql) {
       return result.count > 0;
     },
 
+    async hardDelete(id: string): Promise<boolean> {
+      const result = await sql`
+        DELETE FROM projects WHERE id = ${id}
+      `;
+      return result.count > 0;
+    },
+
     async createVersion(data: {
       projectId: string;
       versionNumber: number;

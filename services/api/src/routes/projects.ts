@@ -1,10 +1,15 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { sql } from "../db/index.js";
 import { projectQueries } from "@doable/db";
 import { starQueries } from "@doable/db";
 import { workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { getProjectPath } from "../ai/project-files.js";
+import { getThumbnailPath } from "../thumbnails/capture.js";
+import { stopDevServer } from "../projects/dev-server.js";
 import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
@@ -242,10 +247,27 @@ projectRoutes.put("/:id", async (c) => {
   return c.json({ data: project });
 });
 
-// ─── Delete Project (Soft) ──────────────────────────────────
+// ─── Delete Project (Hard — removes DB row, files, .git, thumbnail) ─────
 projectRoutes.delete("/:id", async (c) => {
   const id = c.req.param("id");
-  const deleted = await projects.softDelete(id);
+
+  // Stop any running dev server for this project
+  await stopDevServer(id).catch(() => {});
+
+  // Delete project directory (including .git and all files)
+  const projectDir = getProjectPath(id);
+  if (existsSync(projectDir)) {
+    await rm(projectDir, { recursive: true, force: true });
+  }
+
+  // Delete thumbnail
+  const thumbPath = getThumbnailPath(id);
+  if (existsSync(thumbPath)) {
+    await rm(thumbPath, { force: true });
+  }
+
+  // Delete from database
+  const deleted = await projects.hardDelete(id);
 
   if (!deleted) {
     return c.json({ error: "Project not found" }, 404);
