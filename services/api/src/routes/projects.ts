@@ -251,27 +251,32 @@ projectRoutes.delete("/:id", async (c) => {
     return c.json({ error: "Project not found" }, 404);
   }
 
-  // Clean up GitHub connection + dev server in background — don't block response
+  // Clean up everything in background — don't block response
   (async () => {
+    // 1. GitHub connection data
     try {
       await sql`DELETE FROM github_commits WHERE connection_id IN (
         SELECT id FROM github_connections WHERE project_id = ${id}
       )`;
       await sql`DELETE FROM github_connections WHERE project_id = ${id}`;
-    } catch {
-      // Non-critical
-    }
-    // Stop dev server if running (import { stopDevServer } at top would be circular)
+    } catch { /* non-critical */ }
+
+    // 2. Stop dev server (with timeout to avoid hanging)
     try {
       const { stopDevServer } = await import("../projects/dev-server.js");
-      // Race with a 5s timeout to avoid hanging
       await Promise.race([
         stopDevServer(id),
         new Promise((resolve) => setTimeout(resolve, 5000)),
       ]);
-    } catch {
-      // Non-critical
-    }
+    } catch { /* non-critical */ }
+
+    // 3. Remove project files from disk
+    try {
+      const { getProjectPath } = await import("../ai/project-files.js");
+      const { rm } = await import("node:fs/promises");
+      const projectPath = getProjectPath(id);
+      await rm(projectPath, { recursive: true, force: true });
+    } catch { /* non-critical */ }
   })();
 
   return c.json({ data: { id, deleted: true } });
