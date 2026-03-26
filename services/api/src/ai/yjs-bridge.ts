@@ -9,6 +9,8 @@
 
 const WS_INTERNAL_URL = process.env.WS_INTERNAL_URL ?? "http://localhost:4001";
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "internal-dev-secret";
+// Timeout for all internal WS server calls — prevents tool hangs when WS is slow/down
+const BRIDGE_TIMEOUT_MS = 5_000;
 
 interface YjsBridgeResult {
   handled: boolean;
@@ -23,6 +25,7 @@ export async function isCollaborationActive(projectId: string): Promise<boolean>
   try {
     const res = await fetch(`${WS_INTERNAL_URL}/internal/collab-active/${projectId}`, {
       headers: { "X-Internal-Secret": INTERNAL_SECRET },
+      signal: AbortSignal.timeout(BRIDGE_TIMEOUT_MS),
     });
     if (!res.ok) return false;
     const data = await res.json() as { active: boolean };
@@ -55,6 +58,7 @@ export async function writeFileThroughYjs(
         content,
         operation: "write",
       }),
+      signal: AbortSignal.timeout(BRIDGE_TIMEOUT_MS),
     });
 
     if (!res.ok) return { handled: false };
@@ -89,6 +93,7 @@ export async function editFileThroughYjs(
         newString,
         replaceAll,
       }),
+      signal: AbortSignal.timeout(BRIDGE_TIMEOUT_MS),
     });
 
     if (!res.ok) return { handled: false };
@@ -114,6 +119,7 @@ export async function broadcastToRoom(
         "X-Internal-Secret": INTERNAL_SECRET,
       },
       body: JSON.stringify({ projectId, message, excludeUserId }),
+      signal: AbortSignal.timeout(BRIDGE_TIMEOUT_MS),
     });
   } catch {
     // Non-critical — broadcast failures shouldn't break the AI flow

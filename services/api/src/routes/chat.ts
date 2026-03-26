@@ -593,18 +593,24 @@ chatRoutes.post(
     try {
       // Send initial status so the client knows we're alive
       await stream.writeSSE({
-        data: JSON.stringify({ type: "thinking", data: "Setting up..." }),
+        data: JSON.stringify({ type: "status", data: "Setting up..." }),
       });
 
       // Auto-scaffold the project if it hasn't been created yet
       if (!isProjectScaffolded(projectId)) {
         try {
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "status", data: "Creating project files..." }),
+          });
           console.log(`[Chat] Auto-scaffolding project ${projectId}`);
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "status", data: "Installing dependencies — this may take a moment..." }),
+          });
           await createProject(projectId);
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "status", data: "Dependencies installed" }),
+          });
         } catch (err: unknown) {
-          // "Project already exists" is benign (race condition with frontend scaffold).
-          // Any other error is a real problem — log it but continue so the AI can
-          // still operate on whatever files exist.
           const isAlreadyExists = err instanceof Error && err.message.includes("already scaffolded");
           if (!isAlreadyExists) {
             console.error(`[Chat] Scaffold failed for project ${projectId}:`, err);
@@ -615,14 +621,23 @@ chatRoutes.post(
       // Auto-start the dev server if not running
       if (!isDevServerRunning(projectId) && isProjectScaffolded(projectId)) {
         try {
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "status", data: "Starting live preview..." }),
+          });
           console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
           await startDevServer(projectId);
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "status", data: "Live preview ready" }),
+          });
         } catch (err) {
           console.error(`[Chat] Dev server start failed for project ${projectId}:`, err);
         }
       }
 
       // ── Resolve AI config via fallback chain ──
+      await stream.writeSSE({
+        data: JSON.stringify({ type: "thinking", data: "Connecting to AI..." }),
+      });
       const {
         model: resolvedModel,
         provider: resolvedProvider,
