@@ -864,6 +864,9 @@ ERROR RECOVERY — if you encounter errors:
             const evtType = (event as Record<string, unknown>).type as string;
             const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
 
+            // Log ALL SDK events so we can see what's actually flowing
+            console.log(`[Chat:SDK] ${evtType}${evtData ? ` — ${JSON.stringify(evtData).slice(0, 120)}` : ""}`);
+
             // Capture full assistant.message for DB persistence (even though we skip it for SSE)
             if (evtType === "assistant.message" && evtData?.content) {
               const fullContent = evtData.content as string;
