@@ -247,14 +247,18 @@ export class CopilotEngine {
     // and then going silent, even though tools executed successfully.
     console.log(`[CopilotEngine] Sending message to session ${sessionId.slice(0, 8)}… (sendAndWait, 5min timeout)`);
     session.sendAndWait(messageOptions, 300_000).then((result) => {
-      console.log(`[CopilotEngine] sendAndWait resolved — content length: ${result?.data?.content?.length ?? 0}`);
-      // If we haven't already seen session.idle from events, mark done
-      if (!done) {
-        done = true;
-        if (resolveWaiting) {
-          resolveWaiting();
-          resolveWaiting = null;
-        }
+      const contentLen = result?.data?.content?.length ?? 0;
+      console.log(`[CopilotEngine] sendAndWait resolved — content length: ${contentLen}`);
+      // SDK's on() doesn't deliver streaming events, so inject the final
+      // assistant.message + session.idle events ourselves from the sendAndWait result.
+      if (result) {
+        eventQueue.push(result as SessionEvent);
+      }
+      eventQueue.push({ type: "session.idle", data: {} } as SessionEvent);
+      done = true;
+      if (resolveWaiting) {
+        resolveWaiting();
+        resolveWaiting = null;
       }
     }).catch((err) => {
       console.error(`[CopilotEngine] sendAndWait rejected:`, err instanceof Error ? err.message : err);

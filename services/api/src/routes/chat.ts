@@ -1960,11 +1960,14 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     }
 
     // ─── Final complete message (sent after streaming ends) ─
-    case "assistant.message":
-      // When streaming is enabled, deltas already sent all text.
-      // Skip to avoid duplicating content. Only emit if no deltas were sent
-      // (fallback for non-streaming mode).
-      return null;
+    case "assistant.message": {
+      // The SDK's on() handler doesn't deliver streaming deltas — sendAndWait
+      // returns the final assistant.message with full content. Emit it as
+      // text_delta so the frontend displays the response text.
+      const content = (data?.content ?? "") as string;
+      if (!content) return null;
+      return { type: "text_delta", data: sanitizeText(content) };
+    }
 
     // ─── Legacy / direct provider text events ─────────────
     case "text_delta": {
