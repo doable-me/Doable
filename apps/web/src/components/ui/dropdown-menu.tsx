@@ -59,22 +59,33 @@ function DropdownMenuContent({
 }: React.HTMLAttributes<HTMLDivElement> & { align?: "start" | "end" }) {
   const { open, setOpen, triggerRef } = React.useContext(DropdownMenuContext);
   const ref = React.useRef<HTMLDivElement>(null);
-  const [pos, setPos] = React.useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [pos, setPos] = React.useState<{ top: number; left: number; ready: boolean }>({ top: -9999, left: -9999, ready: false });
 
-  // Position after content renders so we can measure and flip if needed
-  React.useLayoutEffect(() => {
+  // Position after portal renders so we can measure actual height
+  React.useEffect(() => {
     if (!open || !triggerRef.current) return;
 
-    const rect = triggerRef.current.getBoundingClientRect();
-    const menuHeight = ref.current?.offsetHeight ?? 200;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const flipAbove = spaceBelow < menuHeight + 8 && rect.top > menuHeight + 8;
+    // Use requestAnimationFrame to ensure portal is in the DOM
+    const raf = requestAnimationFrame(() => {
+      if (!triggerRef.current) return;
+      const rect = triggerRef.current.getBoundingClientRect();
+      const menuHeight = ref.current?.offsetHeight ?? 200;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const flipAbove = spaceBelow < menuHeight + 8 && rect.top > menuHeight + 8;
 
-    setPos({
-      top: flipAbove ? rect.top - menuHeight - 4 : rect.bottom + 4,
-      left: align === "end" ? rect.right : rect.left,
+      setPos({
+        top: flipAbove ? rect.top - menuHeight - 4 : rect.bottom + 4,
+        left: align === "end" ? rect.right : rect.left,
+        ready: true,
+      });
     });
+    return () => cancelAnimationFrame(raf);
   }, [open, align, triggerRef]);
+
+  // Reset position when closing
+  React.useEffect(() => {
+    if (!open) setPos({ top: -9999, left: -9999, ready: false });
+  }, [open]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -96,7 +107,8 @@ function DropdownMenuContent({
     <div
       ref={ref}
       className={cn(
-        "fixed z-[9999] min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95",
+        "fixed z-[9999] min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+        pos.ready ? "animate-in fade-in-0 zoom-in-95" : "opacity-0",
         className
       )}
       style={{
