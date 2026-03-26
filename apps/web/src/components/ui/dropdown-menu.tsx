@@ -58,68 +58,65 @@ function DropdownMenuContent({
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & { align?: "start" | "end" }) {
   const { open, setOpen, triggerRef } = React.useContext(DropdownMenuContext);
-  const ref = React.useRef<HTMLDivElement>(null);
 
+  // Use a callback ref to position the menu as soon as it's in the DOM
+  const menuRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!node || !triggerRef.current) return;
+
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const menuHeight = node.scrollHeight;
+      const spaceBelow = window.innerHeight - triggerRect.bottom;
+      const flipAbove = spaceBelow < menuHeight + 8 && triggerRect.top > menuHeight + 8;
+
+      node.style.top = flipAbove
+        ? `${triggerRect.top - menuHeight - 4}px`
+        : `${triggerRect.bottom + 4}px`;
+
+      if (align === "end") {
+        node.style.right = `${window.innerWidth - triggerRect.right}px`;
+        node.style.left = "auto";
+      } else {
+        node.style.left = `${triggerRect.left}px`;
+        node.style.right = "auto";
+      }
+
+      node.style.visibility = "visible";
+    },
+    [align, triggerRef]
+  );
+
+  // Close on outside click — delayed to avoid catching the opening click
   React.useEffect(() => {
     if (!open) return;
-    // Delay listener registration so the opening click doesn't immediately close
+
+    let handler: ((e: MouseEvent) => void) | null = null;
     const timeout = setTimeout(() => {
-      const handler = (e: MouseEvent) => {
-        if (
-          ref.current && !ref.current.contains(e.target as Node) &&
-          triggerRef.current && !triggerRef.current.contains(e.target as Node)
-        ) {
-          setOpen(false);
+      handler = (e: MouseEvent) => {
+        const target = e.target as Node;
+        // Check if click is inside any dropdown portal or trigger
+        const portals = document.querySelectorAll('[data-dropdown-portal]');
+        for (const portal of portals) {
+          if (portal.contains(target)) return;
         }
+        if (triggerRef.current?.contains(target)) return;
+        setOpen(false);
       };
       document.addEventListener("mousedown", handler);
-      // Store for cleanup
-      (ref as any)._outsideHandler = handler;
-    }, 0);
+    }, 10);
+
     return () => {
       clearTimeout(timeout);
-      if ((ref as any)._outsideHandler) {
-        document.removeEventListener("mousedown", (ref as any)._outsideHandler);
-        (ref as any)._outsideHandler = null;
-      }
+      if (handler) document.removeEventListener("mousedown", handler);
     };
   }, [open, setOpen, triggerRef]);
-
-  // Position the menu after it renders
-  const positionMenu = React.useCallback(() => {
-    if (!ref.current || !triggerRef.current) return;
-    const triggerRect = triggerRef.current.getBoundingClientRect();
-    const menu = ref.current;
-    const menuHeight = menu.scrollHeight;
-    const spaceBelow = window.innerHeight - triggerRect.bottom;
-    const flipAbove = spaceBelow < menuHeight + 8 && triggerRect.top > menuHeight + 8;
-
-    menu.style.visibility = "visible";
-    menu.style.top = flipAbove
-      ? `${triggerRect.top - menuHeight - 4}px`
-      : `${triggerRect.bottom + 4}px`;
-
-    if (align === "end") {
-      menu.style.right = `${window.innerWidth - triggerRect.right}px`;
-      menu.style.left = "auto";
-    } else {
-      menu.style.left = `${triggerRect.left}px`;
-      menu.style.right = "auto";
-    }
-  }, [align, triggerRef]);
-
-  // Run positioning after mount
-  React.useEffect(() => {
-    if (!open) return;
-    // Double rAF: first lets React commit the portal, second lets browser layout
-    requestAnimationFrame(() => requestAnimationFrame(() => positionMenu()));
-  }, [open, positionMenu]);
 
   if (!open) return null;
 
   return createPortal(
     <div
-      ref={ref}
+      ref={menuRef}
+      data-dropdown-portal=""
       className={cn(
         "fixed z-[9999] min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95",
         className
