@@ -62,16 +62,27 @@ function DropdownMenuContent({
 
   React.useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        ref.current && !ref.current.contains(e.target as Node) &&
-        triggerRef.current && !triggerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
+    // Delay listener registration so the opening click doesn't immediately close
+    const timeout = setTimeout(() => {
+      const handler = (e: MouseEvent) => {
+        if (
+          ref.current && !ref.current.contains(e.target as Node) &&
+          triggerRef.current && !triggerRef.current.contains(e.target as Node)
+        ) {
+          setOpen(false);
+        }
+      };
+      document.addEventListener("mousedown", handler);
+      // Store for cleanup
+      (ref as any)._outsideHandler = handler;
+    }, 0);
+    return () => {
+      clearTimeout(timeout);
+      if ((ref as any)._outsideHandler) {
+        document.removeEventListener("mousedown", (ref as any)._outsideHandler);
+        (ref as any)._outsideHandler = null;
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
   }, [open, setOpen, triggerRef]);
 
   // Position the menu after it renders
