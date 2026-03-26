@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -31,6 +31,29 @@ interface ImportGitHubProjectDialogProps {
 }
 
 type Step = "checking" | "connect" | "select" | "importing";
+
+// ─── Importing progress with elapsed timer ──────────────────
+
+function ImportingProgress({ status }: { status: string }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatTime = (s: number) =>
+    s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+
+  return (
+    <div className="flex flex-col items-center justify-center py-12 gap-3">
+      <Loader2 className="h-8 w-8 animate-spin text-brand-400" />
+      <p className="text-sm text-zinc-300">{status}</p>
+      <p className="text-xs text-zinc-500 tabular-nums">{formatTime(elapsed)} elapsed</p>
+      <p className="text-xs text-zinc-600">This may take a moment for large repositories</p>
+    </div>
+  );
+}
 
 // ─── Component ──────────────────────────────────────────────
 
@@ -130,8 +153,12 @@ export function ImportGitHubProjectDialog({
       });
       const projectId = projectRes.data.id;
 
-      // Step 2: Store auto-setup prompt so the AI configures the project
-      // once the clone finishes and the editor opens
+      // Step 2: Clone the repo — must complete before editor opens
+      // (editor scaffold would create blank files and conflict with clone)
+      setImportingStatus(`Cloning ${repo.fullName}...`);
+      await apiImportGitHubRepo(projectId, owner!, name!, repo.defaultBranch);
+
+      // Step 3: Store auto-setup prompt so the AI configures the project
       const setupPrompt = [
         `This project was just imported from GitHub (${repo.fullName}).`,
         `Analyze the project structure and files to understand what kind of project this is.`,
@@ -147,18 +174,16 @@ export function ImportGitHubProjectDialog({
         JSON.stringify({ prompt: setupPrompt })
       );
 
-      // Step 3: Start clone in background — don't await (can take 2+ minutes)
-      // The editor will show the AI setting up the project once files arrive
-      apiImportGitHubRepo(projectId, owner!, name!, repo.defaultBranch).catch(
-        (err) => console.error("GitHub import failed:", err)
-      );
-
-      // Step 4: Navigate to editor immediately
+      // Step 4: Navigate to editor
       onOpenChange(false);
       router.push(`/editor/${projectId}`);
     } catch (err) {
       setStep("select");
-      setError(err instanceof Error ? err.message : "Import failed");
+      const msg = err instanceof Error ? err.message : "Import failed";
+      setError(msg.includes("already exists")
+        ? "This repository was already imported. Check your projects list."
+        : msg
+      );
     }
   }, [repos, selectedRepo, onOpenChange, router]);
 
@@ -308,11 +333,7 @@ export function ImportGitHubProjectDialog({
 
         {/* Step: Importing */}
         {step === "importing" && (
-          <div className="flex flex-col items-center justify-center py-12 gap-3">
-            <Loader2 className="h-8 w-8 animate-spin text-brand-400" />
-            <p className="text-sm text-zinc-400">{importingStatus}</p>
-            <p className="text-xs text-zinc-600">This may take a moment for large repositories</p>
-          </div>
+          <ImportingProgress status={importingStatus} />
         )}
 
         {/* Footer */}
