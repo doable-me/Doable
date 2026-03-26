@@ -807,6 +807,19 @@ ERROR RECOVERY — if you encounter errors:
         const pendingToolNames: string[] = [];
         // Track assistant content and tool calls for DB persistence
         let assistantContent = "";
+        // Pre-insert an empty assistant message row so partial content is never lost
+        let assistantMessageId: string | undefined;
+        if (dbSessionId) {
+          try {
+            const [row] = await sql`
+              INSERT INTO ai_messages (session_id, role, content)
+              VALUES (${dbSessionId}, 'assistant', '')
+              RETURNING id
+            `;
+            assistantMessageId = row?.id;
+          } catch { /* non-critical */ }
+        }
+        let lastFlushLen = 0;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let assistantToolCalls: any[] = [];
         try {
@@ -880,6 +893,11 @@ ERROR RECOVERY — if you encounter errors:
               // Accumulate assistant content for DB persistence
               if (sseData.type === "text_delta") {
                 assistantContent += typeof sseData.data === "string" ? sseData.data : "";
+                // Flush to DB every ~500 chars so content survives crashes
+                if (assistantMessageId && assistantContent.length - lastFlushLen > 500) {
+                  lastFlushLen = assistantContent.length;
+                  sql`UPDATE ai_messages SET content = ${assistantContent} WHERE id = ${assistantMessageId}`.catch(() => {});
+                }
                 // Broadcast text chunks to other collaborators via WS
                 broadcastToRoom(projectId, {
                   type: "ai:stream-chunk",
@@ -1129,23 +1147,21 @@ ERROR RECOVERY — if you encounter errors:
           finalContent: assistantContent.slice(0, 500),
         }, userId).catch(() => {});
 
-        // Save assistant message to database
-        if (dbSessionId && assistantContent) {
+        // Final save of assistant message (update the pre-inserted row)
+        if (assistantMessageId && assistantContent) {
           try {
-            if (assistantToolCalls.length > 0) {
-              await sql`
-                INSERT INTO ai_messages (session_id, role, content, tool_calls)
-                VALUES (${dbSessionId}, 'assistant', ${assistantContent}, ${sql.json(assistantToolCalls)})
-              `;
-            } else {
-              await sql`
-                INSERT INTO ai_messages (session_id, role, content)
-                VALUES (${dbSessionId}, 'assistant', ${assistantContent})
-              `;
-            }
+            await sql`
+              UPDATE ai_messages
+              SET content = ${assistantContent},
+                  tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])}
+              WHERE id = ${assistantMessageId}
+            `;
           } catch (e) {
             console.warn("[Chat] Failed to save assistant message:", e);
           }
+        } else if (assistantMessageId && !assistantContent) {
+          // Remove empty placeholder if AI produced nothing
+          sql`DELETE FROM ai_messages WHERE id = ${assistantMessageId}`.catch(() => {});
         }
 
         // In plan mode, save the assistant response as .doable/plan.md
@@ -1169,15 +1185,19 @@ ERROR RECOVERY — if you encounter errors:
       console.error("[Chat] Copilot SDK error:", errMsg);
 
       // Save partial assistant message so chat history isn't lost on error
-      if (dbSessionId && assistantContent) {
+      if (assistantMessageId && assistantContent) {
         try {
           await sql`
-            INSERT INTO ai_messages (session_id, role, content, tool_calls)
-            VALUES (${dbSessionId}, 'assistant', ${assistantContent}, ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])})
+            UPDATE ai_messages
+            SET content = ${assistantContent},
+                tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])}
+            WHERE id = ${assistantMessageId}
           `;
         } catch (e) {
           console.warn("[Chat] Failed to save partial assistant message:", e);
         }
+      } else if (assistantMessageId && !assistantContent) {
+        sql`DELETE FROM ai_messages WHERE id = ${assistantMessageId}`.catch(() => {});
       }
 
       await stream.writeSSE({
