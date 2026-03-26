@@ -1120,7 +1120,7 @@ export default function EditorPage() {
           setScaffoldStatus("starting");
           let url: string | null = null;
           let attempts = 0;
-          const maxAttempts = 30;
+          const maxAttempts = 90;
           while (!url && attempts < maxAttempts && !cancelled) {
             try {
               url = await fetchPreviewUrl(resolvedProjectId);
@@ -2254,7 +2254,7 @@ export default function EditorPage() {
           setScaffoldStatus("starting");
           let url: string | null = null;
           let attempts = 0;
-          while (!url && attempts < 30) {
+          while (!url && attempts < 90) {
             try {
               url = await fetchPreviewUrl(resolvedProjectId);
             } catch {
@@ -2549,7 +2549,7 @@ export default function EditorPage() {
     const subtitleMsg =
       scaffoldStatus === "scaffolding"
         ? "Installing tools and configuring your project"
-        : "Starting the live preview so you can see changes instantly";
+        : "Starting the live preview so you can see changes instantly. First launch may take a moment.";
 
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-8">

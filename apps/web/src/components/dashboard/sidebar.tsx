@@ -506,8 +506,8 @@ export function DashboardSidebar() {
   const memberCount = (activeWorkspace as ApiWorkspace)?.memberCount ?? 1;
   const dailyCredits = (activeWorkspace as ApiWorkspace)?.credits?.dailyRemaining ?? 0;
   const dailyTotal = workspacePlan === "free" ? 5 : workspacePlan === "pro" ? 50 : 200;
-  const creditsUsed = dailyTotal - dailyCredits;
-  const creditsPercent = dailyTotal > 0 ? (creditsUsed / dailyTotal) * 100 : 0;
+  const creditsRemaining = Math.max(0, dailyCredits);
+  const creditsPercent = dailyTotal > 0 ? (creditsRemaining / dailyTotal) * 100 : 0;
 
   const folderTree = buildFolderTree(folders);
 
@@ -561,7 +561,7 @@ export function DashboardSidebar() {
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-zinc-500">Credits today</span>
               <span className="text-zinc-400">
-                {creditsUsed}/{dailyTotal}
+                {creditsRemaining}/{dailyTotal}
               </span>
             </div>
             <div className="h-1.5 w-full rounded-full bg-zinc-800">

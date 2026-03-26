@@ -19,7 +19,7 @@ import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.
 const PORT_RANGE_START = 3100;
 const PORT_RANGE_END = 3200;
 const DEV_SERVER_HOST = process.env.DEV_SERVER_HOST ?? "127.0.0.1";
-const STARTUP_TIMEOUT_MS = 30_000;
+const STARTUP_TIMEOUT_MS = 90_000;
 
 // ─── Types ───────────────────────────────────────────────
 
