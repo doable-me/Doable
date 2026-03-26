@@ -813,9 +813,7 @@ ERROR RECOVERY — if you encounter errors:
           // Get a fresh engine reference — the pooled engine may have been
           // recycled since resolveAiEngine ran (max-age, idle, or eviction).
           const manager = getCopilotManager();
-          console.log(`[Chat] Getting engine for ${projectId}...`);
           let currentEngine = await manager.getEngine(resolvedGithubToken);
-          console.log(`[Chat] Engine ready, sending message (session=${sessionId?.slice(0,8)}...)`);
 
           // Try to send. If the session was lost (engine recycled), recreate it.
           let messageStream: AsyncGenerator<import("@github/copilot-sdk").SessionEvent>;
@@ -823,9 +821,7 @@ ERROR RECOVERY — if you encounter errors:
             messageStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
             // Force the generator to yield once — "Session not found" throws here
             // because async generators are lazy (the body doesn't run until iterated).
-            console.log(`[Chat] Waiting for first event from AI...`);
             const first = await messageStream.next();
-            console.log(`[Chat] Got first event: ${(first.value as any)?.type ?? 'done'}`);
             // Wrap in a helper that re-yields the first value then continues
             messageStream = (async function* () {
               if (!first.done) yield first.value;
