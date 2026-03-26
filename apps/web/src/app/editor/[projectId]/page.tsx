@@ -1613,10 +1613,11 @@ export default function EditorPage() {
 
   // Auto-send prompt from dashboard navigation.
   // Reads from sessionStorage (primary) or URL query param (fallback).
-  // The backend auto-scaffolds on chat, so we don't need to wait for
-  // frontend scaffold status — just send once the component is mounted.
+  // Waits for scaffold to be ready before sending so the backend can handle
+  // the chat request properly.
   useEffect(() => {
     if (autoSentRef.current) return;
+    if (scaffoldStatus !== "ready") return; // Wait for scaffold
     autoSentRef.current = true;
     // Read from sessionStorage first (most reliable), then fall back to URL
     const storageKey = `doable_initial_prompt_${resolvedProjectId}`;
@@ -1647,9 +1648,9 @@ export default function EditorPage() {
     // Small delay so the UI renders the chat panel first
     setTimeout(() => {
       sendMessage(prompt!, storedAttachments);
-    }, 500);
+    }, 300);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [scaffoldStatus]);
 
   // Handle panel resize
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
