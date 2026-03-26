@@ -479,7 +479,7 @@ const captureInProgress = new Set<string>();
  * @param projectId - The project to capture
  * @param delayMs - How long to wait for Vite HMR to settle (default: 3000)
  */
-function scheduleThumbnailCapture(projectId: string, delayMs = 3000): void {
+function scheduleThumbnailCapture(projectId: string, delayMs = 5000): void {
   if (captureInProgress.has(projectId)) {
     console.log(`[Thumbnail] Skipping capture for ${projectId} — already in progress`);
     return;
@@ -492,13 +492,18 @@ function scheduleThumbnailCapture(projectId: string, delayMs = 3000): void {
     captureInProgress.delete(projectId);
     return;
   }
-  console.log(`[Thumbnail] Scheduling capture for ${projectId} in ${delayMs}ms (preview: ${internalUrl})`);
 
-  const previewUrl = `${internalUrl}/preview/${projectId}/`;
+  // Use the API server's proxy URL — Puppeteer loads through the reverse proxy
+  // so assets, HMR, and base paths resolve correctly (same as the browser).
+  const apiPort = parseInt(process.env.API_PORT ?? "4000", 10);
+  const apiHost = process.env.API_HOST ?? "127.0.0.1";
+  const previewUrl = `http://${apiHost}:${apiPort}/preview/${projectId}/`;
+  console.log(`[Thumbnail] Scheduling capture for ${projectId} in ${delayMs}ms (preview: ${previewUrl})`);
+
   setTimeout(() => {
     import("../thumbnails/capture.js")
       .then(({ captureProjectThumbnail }) =>
-        captureProjectThumbnail(projectId, previewUrl)
+        captureProjectThumbnail(projectId, previewUrl, { retries: 2, retryDelayMs: 3000 })
       )
       .then(async (filePath) => {
         if (filePath) {
@@ -996,10 +1001,14 @@ ERROR RECOVERY — if you encounter errors:
                   error: sseData.data,
                 }, userId).catch(() => {});
               }
-              // Accumulate tool calls for DB persistence
+              // Accumulate tool calls for DB persistence — flush progressively
+              // so mid-stream refreshes still show tool action cards in history.
               if (sseData.type === "tool_call") {
                 const toolData = sseData.data as Record<string, unknown>;
                 assistantToolCalls.push({ name: toolData?.name as string, arguments: toolData?.arguments });
+                if (assistantMessageId) {
+                  sql`UPDATE ai_messages SET tool_calls = ${sql.json(assistantToolCalls)} WHERE id = ${assistantMessageId}`.catch(() => {});
+                }
               }
               await stream.writeSSE({ data: JSON.stringify(sseData) });
             }

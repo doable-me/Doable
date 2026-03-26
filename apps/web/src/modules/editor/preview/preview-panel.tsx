@@ -37,6 +37,25 @@ export function PreviewPanel() {
     prevStreamingRef.current = isStreaming;
   }, [isStreaming, refresh]);
 
+  // ─── Live refresh during streaming ─────────────────────────
+  // Periodically refresh the preview while AI is generating code so the user
+  // sees changes in real-time, not just after streaming ends.
+  const messages = useEditorStore((s) => s.messages);
+  useEffect(() => {
+    if (!isStreaming) return;
+    // Find the latest assistant message's liveStatus to detect tool_result events
+    const latestAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+    const status = latestAssistant?.liveStatus ?? "";
+    // Refresh when a tool completes (file was written/edited)
+    if (status.startsWith("tool_result:")) {
+      const timer = setTimeout(() => {
+        setHasError(false);
+        refresh();
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [isStreaming, messages, refresh]);
+
   // ─── Route detection from file tree ─────────────────────────
   const routes = useMemo(() => {
     const entries: { label: string; path: string }[] = [];
