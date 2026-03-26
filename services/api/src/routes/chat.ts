@@ -888,6 +888,9 @@ ERROR RECOVERY — if you encounter errors:
           // in v0.1.32 (only delivers pending_messages.modified, no streaming events).
           // sendAndWait processes the full request and returns the final response.
           // Tool activity is shown in real-time via the onToolEvent bridge above.
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "thinking", data: "Building your project..." }),
+          });
           console.log(`[Chat] Sending message to session ${sessionId!.slice(0, 8)}… for project ${projectId}`);
           let reply: { content: string; messageId?: string } | null = null;
           try {
