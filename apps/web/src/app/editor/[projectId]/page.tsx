@@ -1591,7 +1591,17 @@ export default function EditorPage() {
                   minute: "2-digit",
                 }),
                 isStreaming: false,
-                toolActions: m.tool_actions || undefined,
+                toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
+                  ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => ({
+                      id: `hist-${m.id}-${i}`,
+                      toolName: tc.name || "unknown",
+                      description: describeToolAction(tc.name || "", tc.arguments),
+                      isExpanded: false,
+                      isBookmarked: false,
+                      filePath: (tc.arguments?.path ?? tc.arguments?.filePath ?? tc.arguments?.file) as string | undefined,
+                      status: "completed" as const,
+                    }))
+                  : undefined),
                 suggestions: m.suggestions || undefined,
                 senderInfo,
               };
