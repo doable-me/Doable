@@ -136,7 +136,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType; minRole: string }
   { id: "danger", label: "Danger Zone", icon: AlertTriangle, minRole: "owner" },
 ];
 
-const ROLE_HIERARCHY = [...WORKSPACE_ROLES].reverse();
+const ROLE_HIERARCHY: readonly string[] = [...WORKSPACE_ROLES].reverse();
 
 function hasRole(userRole: string, requiredRole: string): boolean {
   return ROLE_HIERARCHY.indexOf(userRole) <= ROLE_HIERARCHY.indexOf(requiredRole);

@@ -18,6 +18,8 @@ import {
   type ApiProject,
   type ApiTemplate,
 } from "@/lib/api";
+import { useToasts } from "@/hooks/use-toasts";
+import { ToastContainer } from "@/components/ui/toast-container";
 import {
   DASHBOARD_EVENTS,
   emitDashboardEvent,
@@ -938,6 +940,7 @@ function ContextMenuPortal({
 export default function DashboardPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { toasts, addToast, dismissToast } = useToasts();
 
   // Data
   const [projects, setProjects] = useState<ApiProject[]>([]);
@@ -1176,6 +1179,7 @@ export default function DashboardPage() {
   };
 
   const handleDelete = async (id: string) => {
+    const name = projects.find((p) => p.id === id)?.name || "Project";
     setProjects((prev) => prev.filter((p) => p.id !== id));
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1186,22 +1190,27 @@ export default function DashboardPage() {
     try {
       await apiDeleteProject(id);
       emitDashboardEvent(DASHBOARD_EVENTS.PROJECTS_CHANGED);
+      addToast("success", `"${name}" deleted`);
     } catch (err) {
       console.error("Failed to delete project:", err);
+      addToast("error", `Failed to delete "${name}"`);
       fetchProjects();
     }
   };
 
   const handleBulkDelete = async () => {
     const ids: string[] = Array.from(selectedIds);
+    const count = ids.length;
     setProjects((prev) => prev.filter((p) => !selectedIds.has(p.id)));
     setSelectedIds(new Set());
     setBulkDeleteConfirm(false);
     try {
       await Promise.all(ids.map((id) => apiDeleteProject(id)));
       emitDashboardEvent(DASHBOARD_EVENTS.PROJECTS_CHANGED);
+      addToast("success", `${count} project${count === 1 ? "" : "s"} deleted`);
     } catch (err) {
       console.error("Failed to delete projects:", err);
+      addToast("error", "Failed to delete some projects");
       fetchProjects();
     }
   };
@@ -2026,6 +2035,8 @@ export default function DashboardPage() {
         open={showImportGitHub}
         onOpenChange={setShowImportGitHub}
       />
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
