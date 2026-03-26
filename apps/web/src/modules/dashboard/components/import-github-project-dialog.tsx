@@ -134,7 +134,23 @@ export function ImportGitHubProjectDialog({
       setImportingStatus("Cloning repository...");
       await apiImportGitHubRepo(projectId, owner!, name!, repo.defaultBranch);
 
-      // Step 3: Navigate to editor
+      // Step 3: Store auto-setup prompt so the AI configures the project
+      const setupPrompt = [
+        `This project was just imported from GitHub (${repo.fullName}).`,
+        `Analyze the project structure and files to understand what kind of project this is.`,
+        `Then set it up so it runs correctly in the preview:`,
+        `1. Read package.json and key config files to understand the framework and dependencies`,
+        `2. Install any missing packages needed`,
+        `3. If it's not already a Vite project, adapt it so the preview works (add vite.config if needed, update entry points)`,
+        `4. Make sure the app renders correctly in the preview`,
+        `Keep all existing code and functionality intact — just make it runnable here.`,
+      ].join("\n");
+      sessionStorage.setItem(
+        `doable_initial_prompt_${projectId}`,
+        JSON.stringify({ prompt: setupPrompt })
+      );
+
+      // Step 4: Navigate to editor
       setImportingStatus("Opening project...");
       onOpenChange(false);
       router.push(`/editor/${projectId}`);
