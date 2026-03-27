@@ -30,6 +30,8 @@ import {
   Plus,
   Mic,
   ArrowUp,
+  Bot,
+  ListChecks,
   MoreHorizontal,
   Copy,
   Trash2,
@@ -305,6 +307,8 @@ function ChatInput({
   isListening,
   isMicSupported,
   onToggleMic,
+  startMode,
+  onToggleMode,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -316,6 +320,8 @@ function ChatInput({
   isListening: boolean;
   isMicSupported: boolean;
   onToggleMic: () => void;
+  startMode: "agent" | "plan";
+  onToggleMode: () => void;
 }) {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -373,6 +379,34 @@ function ChatInput({
             >
               <Plus className="h-4 w-4" />
             </button>
+            {/* Build / Plan first mode toggle */}
+            <div className="flex items-center rounded-full border border-zinc-700/50 overflow-hidden ml-1">
+              <button
+                onClick={startMode === "agent" ? undefined : onToggleMode}
+                className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
+                  startMode === "agent"
+                    ? "bg-brand-600/20 text-brand-400"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+                title="Build immediately"
+              >
+                <Bot className="h-3 w-3" />
+                Build
+              </button>
+              <div className="w-px h-4 bg-zinc-700/50" />
+              <button
+                onClick={startMode === "plan" ? undefined : onToggleMode}
+                className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
+                  startMode === "plan"
+                    ? "bg-blue-600/20 text-blue-400"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+                title="Plan first, then build"
+              >
+                <ListChecks className="h-3 w-3" />
+                Plan first
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             {isMicSupported && (
@@ -961,6 +995,7 @@ export default function DashboardPage() {
 
   // UI state
   const [prompt, setPrompt] = useState("");
+  const [startMode, setStartMode] = useState<"agent" | "plan">("agent");
   const [activeTab, setActiveTab] = useState<"recent" | "projects" | "templates">("recent");
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window !== "undefined") {
@@ -1155,7 +1190,7 @@ export default function DashboardPage() {
       });
       sessionStorage.setItem(`doable_initial_prompt_${res.data.id}`, payload);
       imageAttachments.clearAll();
-      router.push(`/editor/${res.data.id}?prompt=${encodeURIComponent(text)}`);
+      router.push(`/editor/${res.data.id}?prompt=${encodeURIComponent(text)}${startMode === "plan" ? "&mode=plan" : ""}`);
     } catch (err) {
       console.error("Failed to create project:", err);
       setError("Failed to create project. Please try again.");
@@ -1418,6 +1453,8 @@ export default function DashboardPage() {
                 isListening={speechRecognition.isListening}
                 isMicSupported={speechRecognition.isSupported}
                 onToggleMic={speechRecognition.toggle}
+                startMode={startMode}
+                onToggleMode={() => setStartMode(prev => prev === "agent" ? "plan" : "agent")}
               />
               <input
                 ref={imageAttachments.fileInputRef}

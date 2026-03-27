@@ -1664,6 +1664,11 @@ export default function EditorPage() {
   useEffect(() => {
     if (autoSentRef.current) return;
     autoSentRef.current = true;
+    // Read mode from URL — if "plan", switch to plan mode before sending
+    const urlMode = new URLSearchParams(window.location.search).get("mode");
+    if (urlMode === "plan") {
+      setChatMode("plan");
+    }
     // Read from sessionStorage first (most reliable), then fall back to URL
     const storageKey = `doable_initial_prompt_${resolvedProjectId}`;
     const stored = sessionStorage.getItem(storageKey);
