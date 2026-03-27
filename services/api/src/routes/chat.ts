@@ -876,9 +876,12 @@ ERROR RECOVERY — if you encounter errors:
                 console.log(`[Hook] Session end: ${reason}${error ? ` — ${error}` : ""}`);
               },
               onError: (error, context) => {
-                console.error(`[Hook] Error (${context}): ${error}`);
+                const errMsg = typeof error === "string" ? error
+                  : error instanceof Error ? error.message
+                  : JSON.stringify(error, null, 2);
+                console.error(`[Hook] Error (${context}):`, errMsg);
                 stream.writeSSE({ data: JSON.stringify({
-                  type: "error", data: `${context}: ${error}`,
+                  type: "error", data: errMsg,
                 }) }).catch(() => {});
               },
             },
@@ -1332,8 +1335,10 @@ ERROR RECOVERY — if you encounter errors:
       clearInterval(keepAlive);
       unsubToolEvents();
       // Copilot SDK is the core engine — surface the real error, don't work around it
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error("[Chat] Copilot SDK error:", errMsg);
+      const errMsg = err instanceof Error ? err.message
+        : typeof err === "string" ? err
+        : JSON.stringify(err);
+      console.error("[Chat] Copilot SDK error:", errMsg, err);
 
       // Save partial assistant message so chat history isn't lost on error
       if (assistantMessageId && assistantContent) {
