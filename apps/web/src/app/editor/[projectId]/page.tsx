@@ -2062,22 +2062,17 @@ export default function EditorPage() {
             delete fileContentsCache.current[selectedFile];
             loadFileContent(selectedFile);
           }
-          // Final preview refresh after AI makes changes
+          // Final preview refresh — always hard reload the iframe to guarantee
+          // the user sees the latest build output (HMR can silently fail)
           if (previewRefreshTimer.current) {
             clearTimeout(previewRefreshTimer.current);
           }
           previewRefreshTimer.current = setTimeout(() => {
             previewRefreshTimer.current = null;
-            if (iframeRef.current) {
-              try {
-                iframeRef.current.contentWindow?.postMessage({ type: "doable-refresh" }, "*");
-              } catch {
-                if (previewUrl) {
-                  iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
-                }
-              }
+            if (iframeRef.current && previewUrl) {
+              iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
             }
-          }, 500);
+          }, 1500);
 
           // Fetch AI-powered suggestions based on what was just built
           setAiSuggestions(FALLBACK_SUGGESTIONS); // Show fallback immediately
