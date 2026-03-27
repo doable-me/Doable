@@ -798,6 +798,8 @@ ERROR RECOVERY — if you encounter errors:
 - If multiple errors cascade, fix them one at a time starting with the root cause (usually a missing package or broken import).`;
 
       let sessionId = projectSessions.get(sessionKey);
+      // Hoist flushInterval so it's accessible in stream-end and catch blocks
+      let flushInterval: ReturnType<typeof setInterval> | null = null;
       if (!sessionId) {
         // Send keep-alive status — session creation can be slow
         await stream.writeSSE({
@@ -1019,7 +1021,7 @@ ERROR RECOVERY — if you encounter errors:
           // Timeout fires only after 2 minutes of NO activity — not a blind wall clock.
 
           // Progressive DB flush — save assistant content every 3s so refreshes show near-live progress
-          const flushInterval = setInterval(() => {
+          flushInterval = setInterval(() => {
             if (assistantMessageId && assistantContent) {
               sql`UPDATE ai_messages SET content = ${assistantContent}, tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])} WHERE id = ${assistantMessageId}`.catch(() => {});
             }
@@ -1079,7 +1081,7 @@ ERROR RECOVERY — if you encounter errors:
           }
           releaseTracker();
           unsubToolEvents();
-          clearInterval(flushInterval);
+          if (flushInterval) clearInterval(flushInterval);
           activeAiSessions.delete(projectId);
 
           // Emit the final assistant text as a single text_delta
@@ -1094,7 +1096,7 @@ ERROR RECOVERY — if you encounter errors:
           }
           console.log(`[Chat] SSE stream complete for ${projectId}: hadToolCalls=${hadToolCalls}, contentLen=${assistantContent.length}`);
         } catch (err) {
-          clearInterval(flushInterval);
+          if (flushInterval) clearInterval(flushInterval);
           activeAiSessions.delete(projectId);
           const msg = err instanceof Error ? err.message : String(err);
 
