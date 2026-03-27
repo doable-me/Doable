@@ -4070,11 +4070,11 @@ export default function EditorPage() {
           <div className="flex flex-1 flex-col overflow-hidden bg-[#1C1C1C]">
             {/* Preview iframe or loading state */}
             <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-[#141412] p-2">
-              {scaffoldStatus !== "ready" || !previewUrl ? (
+              {!previewUrl ? (
                 renderScaffoldOverlay()
               ) : (
                 <div
-                  className={`h-full overflow-hidden bg-white transition-all duration-300 ${
+                  className={`relative h-full overflow-hidden bg-white transition-all duration-300 ${
                     deviceMode === "mobile"
                       ? "w-[375px] rounded-[24px] shadow-2xl shadow-black/40"
                       : deviceMode === "tablet"
@@ -4108,6 +4108,17 @@ export default function EditorPage() {
                     title="App Preview"
                     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
                   />
+                  {/* Scaffold status watermark — shown on top of the live preview */}
+                  {scaffoldStatus !== "ready" && (
+                    <div className="absolute inset-0 z-10 flex items-end justify-center pb-4 pointer-events-none">
+                      <div className="flex items-center gap-2 rounded-full bg-black/60 backdrop-blur-sm px-4 py-2 shadow-lg">
+                        <div className="h-3 w-3 rounded-full border-2 border-zinc-500 border-t-brand-400 animate-spin" />
+                        <span className="text-xs font-medium text-zinc-200">
+                          {scaffoldStatus === "scaffolding" ? "Setting up workspace..." : "Starting preview..."}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   {isDesignMode && (
                     <>
                       <RemoteSelectionOverlays iframeRef={iframeRef} />
@@ -4117,21 +4128,14 @@ export default function EditorPage() {
                   )}
                 </div>
               )}
-              {/* ─── First Generation Loading Overlay ──────────── */}
+              {/* ─── First Generation Watermark ──────────── */}
               {isFirstGeneration && (
-                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#141412]">
-                  <div className="relative mb-6">
-                    <div className="h-12 w-12 rounded-full border-2 border-zinc-700 border-t-brand-400 animate-spin" />
-                    <Sparkles className="absolute inset-0 m-auto h-5 w-5 text-brand-400" />
-                  </div>
-                  <h3 className="text-base font-medium text-zinc-200 mb-2">Building your app...</h3>
-                  <p className="text-sm text-zinc-500 max-w-[280px] text-center mb-4">
-                    {liveStatus || "Setting things up"}
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    <span className="status-dot-1 h-1.5 w-1.5 rounded-full bg-brand-400" />
-                    <span className="status-dot-2 h-1.5 w-1.5 rounded-full bg-brand-400" />
-                    <span className="status-dot-3 h-1.5 w-1.5 rounded-full bg-brand-400" />
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+                  <div className="flex items-center gap-2.5 rounded-full bg-black/70 backdrop-blur-md px-4 py-2 shadow-xl border border-white/10">
+                    <div className="h-3.5 w-3.5 rounded-full border-2 border-zinc-500 border-t-brand-400 animate-spin" />
+                    <span className="text-xs font-medium text-zinc-200">
+                      {liveStatus || "Building your app..."}
+                    </span>
                   </div>
                 </div>
               )}
