@@ -3787,34 +3787,34 @@ export default function EditorPage() {
                   <PlanCard
                     plan={activePlan}
                     isEditable
-                    onApprove={async () => {
-                      try {
-                        const token = getStoredTokens().accessToken;
-                        await fetch(`${API_URL}/projects/${resolvedProjectId}/plan/approve`, {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                          },
-                          body: JSON.stringify({ planId: activePlan.id }),
-                        });
-                        setActivePlan(prev => prev ? { ...prev, status: "approved", approvedAt: new Date().toISOString() } : prev);
-                        setPlanPhase("building");
-                        setChatMode("agent");
-                        // Trigger the AI to start building — use setTimeout to let
-                        // React flush the mode change to "agent" before sendMessage reads it
-                        setTimeout(() => {
-                          // Build a context-rich message so the agent knows exactly what to build
-                          const stepSummary = activePlan.steps
-                            .map((s) => `${s.order}. ${s.title}`)
-                            .join("\n");
-                          sendMessage(
-                            `Start building! Here's the approved plan:\n\n**${activePlan.summary}**\n\n${stepSummary}\n\nBuild each step in order. The full plan details are in .doable/plan.md.`
-                          );
-                        }, 100);
-                      } catch (err) {
-                        console.error("[Plan] Approve failed:", err);
-                      }
+                    onApprove={() => {
+                      // Capture plan data before state changes
+                      const plan = activePlan;
+                      const summary = plan.summary;
+                      const stepList = plan.steps.map((s) => `${s.order}. ${s.title}`).join("\n");
+
+                      // Switch mode IMMEDIATELY — don't wait for API
+                      setActivePlan(prev => prev ? { ...prev, status: "approved", approvedAt: new Date().toISOString() } : prev);
+                      setPlanPhase("building");
+                      setChatMode("agent");
+
+                      // Approve in DB (fire and forget — UI already switched)
+                      const token = getStoredTokens().accessToken;
+                      fetch(`${API_URL}/projects/${resolvedProjectId}/plan/approve`, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                        },
+                        body: JSON.stringify({ planId: plan.id }),
+                      }).catch(() => {});
+
+                      // Trigger the AI to start building after React flushes the mode change
+                      setTimeout(() => {
+                        sendMessage(
+                          `Start building! Here's the approved plan:\n\n**${summary}**\n\n${stepList}\n\nBuild each step in order. The full plan details are in .doable/plan.md.`
+                        );
+                      }, 150);
                     }}
                     onRefine={() => {
                       sendMessage("Please refine the plan based on my feedback.");
