@@ -31,7 +31,7 @@ export function activityEventQueries(sql: postgres.Sql) {
           ${data.displayName},
           ${data.eventType},
           ${data.summary},
-          ${data.metadata ? sql.json(data.metadata) : null}
+          ${data.metadata ? sql.json(data.metadata as Record<string, string | number | boolean | null>) : null}
         )
         RETURNING *
       `;

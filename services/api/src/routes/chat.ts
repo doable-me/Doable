@@ -797,6 +797,13 @@ ERROR RECOVERY — if you encounter errors:
 - "X is not exported from Y" → read BOTH the importing file AND the exporting file to understand the mismatch.
 - If multiple errors cascade, fix them one at a time starting with the root cause (usually a missing package or broken import).`;
 
+      // In plan mode, strip write tools — only allow read + plan tools.
+      // This PREVENTS the AI from building when it should be planning.
+      const PLAN_ONLY_TOOLS = new Set([
+        "read_file", "list_files", "search_files",
+        "ask_clarification", "create_plan", "mark_step_complete",
+      ]);
+
       let sessionId = projectSessions.get(sessionKey);
       // Hoist flushInterval so it's accessible in stream-end and catch blocks
       let flushInterval: ReturnType<typeof setInterval> | null = null;
@@ -808,13 +815,6 @@ ERROR RECOVERY — if you encounter errors:
 
         const projectPath = getProjectPath(projectId);
         const allTools = await createAllTools(projectId, workspaceId, userId);
-
-        // In plan mode, strip write tools — only allow read + plan tools.
-        // This PREVENTS the AI from building when it should be planning.
-        const PLAN_ONLY_TOOLS = new Set([
-          "read_file", "list_files", "search_files",
-          "ask_clarification", "create_plan", "mark_step_complete",
-        ]);
         const sessionTools = mode === "plan"
           ? allTools.filter((t: { name?: string }) => PLAN_ONLY_TOOLS.has(t.name ?? ""))
           : allTools;
@@ -858,13 +858,13 @@ ERROR RECOVERY — if you encounter errors:
                     if (plan?.id) {
                       sql`INSERT INTO plans (id, project_id, summary, complexity, status, created_at)
                           VALUES (${plan.id as string}, ${projectId}, ${plan.summary as string}, ${plan.complexity as string}, 'draft', now())
-                          ON CONFLICT (id) DO NOTHING`.catch((e) => console.error("[Plan] DB save failed:", e));
+                          ON CONFLICT (id) DO NOTHING`.catch((e: unknown) => console.error("[Plan] DB save failed:", e));
                       const steps = plan.steps as Array<Record<string, unknown>> | undefined;
                       if (Array.isArray(steps)) {
                         for (const step of steps) {
                           sql`INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
                               VALUES (${step.id as string}, ${plan.id as string}, ${step.order as number}, ${step.title as string}, ${step.description as string}, ${(step.details as string) ?? null}, 'pending', ${(step.filePaths as string[]) ?? null})
-                              ON CONFLICT (id) DO NOTHING`.catch((e) => console.error("[Plan] Step save failed:", e));
+                              ON CONFLICT (id) DO NOTHING`.catch((e: unknown) => console.error("[Plan] Step save failed:", e));
                         }
                       }
                       console.log(`[Plan] Saved plan ${plan.id} with ${steps?.length ?? 0} steps to DB`);

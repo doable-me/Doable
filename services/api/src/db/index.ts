@@ -18,7 +18,7 @@ export const sql = DATABASE_URL
       },
       onnotice: () => {},
     })
-  : (new Proxy({} as ReturnType<typeof postgres>, {
+  : (new Proxy({} as postgres.Sql<{ bigint: bigint }>, {
       get: (_target, prop) => {
         if (prop === "end") return async () => {};
         return () => {
@@ -28,7 +28,7 @@ export const sql = DATABASE_URL
       apply: () => {
         throw new Error("Database not configured. Set DATABASE_URL in .env");
       },
-    }) as ReturnType<typeof postgres>);
+    }) as postgres.Sql<{ bigint: bigint }>);
 
 /**
  * Run a health check query against the database.

@@ -27,7 +27,7 @@ export function emitActivity(
     VALUES (
       ${id}, ${data.projectId}, ${data.userId},
       ${data.displayName ?? null}, ${data.eventType},
-      ${data.summary}, ${data.metadata ? sql.json(data.metadata) : null}
+      ${data.summary}, ${data.metadata ? sql.json(data.metadata as Record<string, string | number | boolean | null>) : null}
     )
   `.catch((err: unknown) => console.warn("[activity] DB save failed:", err));
 

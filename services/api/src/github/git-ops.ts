@@ -72,7 +72,7 @@ function authedUrl(owner: string, repo: string, token: string): string {
 function ownerRepoFromUrl(url: string): { owner: string; repo: string } | null {
   const m = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
   if (!m) return null;
-  return { owner: m[1], repo: m[2] };
+  return { owner: m[1]!, repo: m[2]! };
 }
 
 async function withAuth<T>(
@@ -146,7 +146,7 @@ export async function gitPull(
 
       // Parse files-changed count from merge summary
       const changedMatch = stdout.match(/(\d+) files? changed/);
-      const filesChanged = changedMatch ? parseInt(changedMatch[1], 10) : 0;
+      const filesChanged = changedMatch ? parseInt(changedMatch[1]!, 10) : 0;
 
       // Get HEAD sha after merge
       const { stdout: sha } = await execGit(projectPath, [
