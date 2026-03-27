@@ -1654,6 +1654,44 @@ export default function EditorPage() {
       }
     };
     loadFromApi();
+
+    // Restore active plan state on mount (e.g., after refresh)
+    (async () => {
+      try {
+        const planRes = await apiFetch<{ data: any }>(`/projects/${resolvedProjectId}/plan`);
+        if (planRes.data && planRes.data.status === "draft") {
+          setActivePlan(planRes.data);
+          setPlanPhase("reviewing");
+        } else if (planRes.data && (planRes.data.status === "approved" || planRes.data.status === "in_progress")) {
+          setActivePlan(planRes.data);
+          setPlanPhase("building");
+        }
+      } catch { /* no active plan */ }
+    })();
+
+    // Check if AI is still actively working (e.g., user refreshed during build)
+    (async () => {
+      try {
+        const statusRes = await apiFetch<{ active: boolean; mode?: string }>(`/projects/${resolvedProjectId}/ai-status`);
+        if (statusRes.active) {
+          setLiveStatus("AI is still working on your project...");
+          // Poll until AI finishes, then reload chat history
+          const poll = setInterval(async () => {
+            try {
+              const check = await apiFetch<{ active: boolean }>(`/projects/${resolvedProjectId}/ai-status`);
+              if (!check.active) {
+                clearInterval(poll);
+                setLiveStatus("");
+                // Reload chat history to get the completed response
+                loadFromApi();
+              }
+            } catch { clearInterval(poll); }
+          }, 3000);
+          // Stop polling after 5 minutes max
+          setTimeout(() => clearInterval(poll), 5 * 60 * 1000);
+        }
+      } catch { /* ignore */ }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedProjectId]);
 

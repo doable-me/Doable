@@ -468,6 +468,9 @@ function buildAutoFixPrompt(error: string): string {
 // ─── In-memory session mapping (projectId → copilot sessionId) ─
 const projectSessions = new Map<string, string>();
 
+// Track active AI work per project — allows clients to detect ongoing work after refresh
+const activeAiSessions = new Map<string, { startedAt: number; mode: string; userId: string }>();
+
 // ─── Debounce guard for thumbnail captures ─
 const captureInProgress = new Set<string>();
 
@@ -989,6 +992,17 @@ ERROR RECOVERY — if you encounter errors:
           // SDK hooks (onPreToolUse/onPostToolUse) fire via RPC for guaranteed progress.
           // onToolEvent bridge provides additional file-level events from our tool handlers.
           // Timeout fires only after 2 minutes of NO activity — not a blind wall clock.
+
+          // Progressive DB flush — save assistant content every 5s so refreshes don't lose work
+          const flushInterval = setInterval(() => {
+            if (assistantMessageId && assistantContent) {
+              sql`UPDATE ai_messages SET content = ${assistantContent}, tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])} WHERE id = ${assistantMessageId}`.catch(() => {});
+            }
+          }, 5000);
+
+          // Track active AI work per project so clients can detect ongoing work on refresh
+          activeAiSessions.set(projectId, { startedAt: Date.now(), mode, userId });
+
           await stream.writeSSE({
             data: JSON.stringify({ type: "thinking", data: "Building your project..." }),
           });
@@ -1037,6 +1051,8 @@ ERROR RECOVERY — if you encounter errors:
           }
           releaseTracker();
           unsubToolEvents();
+          clearInterval(flushInterval);
+          activeAiSessions.delete(projectId);
 
           // Emit the final assistant text as a single text_delta
           if (reply?.content) {
@@ -1050,6 +1066,8 @@ ERROR RECOVERY — if you encounter errors:
           }
           console.log(`[Chat] SSE stream complete for ${projectId}: hadToolCalls=${hadToolCalls}, contentLen=${assistantContent.length}`);
         } catch (err) {
+          clearInterval(flushInterval);
+          activeAiSessions.delete(projectId);
           const msg = err instanceof Error ? err.message : String(err);
 
           // If streaming failed due to a stale auth token, evict the engine
@@ -1314,6 +1332,21 @@ ERROR RECOVERY — if you encounter errors:
     });
   },
 );
+
+// ─── GET /projects/:id/ai-status ─ Check if AI is actively working ──
+chatRoutes.get("/projects/:id/ai-status", async (c) => {
+  const projectId = c.req.param("id");
+  const active = activeAiSessions.get(projectId);
+  if (active) {
+    return c.json({
+      active: true,
+      mode: active.mode,
+      startedAt: active.startedAt,
+      elapsed: Date.now() - active.startedAt,
+    });
+  }
+  return c.json({ active: false });
+});
 
 // ─── GET /projects/:id/chat/history ─ Chat history ──────────
 chatRoutes.get("/projects/:id/chat/history", async (c) => {
