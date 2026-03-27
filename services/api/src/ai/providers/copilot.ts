@@ -896,12 +896,15 @@ export function createDoableTools(projectId: string): Tool[] {
           const doablePath = join(projectPath, ".doable");
           await mkdir(doablePath, { recursive: true });
 
-          let md = `# Plan\n\n${args.summary}\n\n**Complexity:** ${args.complexity}\n\n`;
+          let md = `# Plan\n\nPlan ID: ${planId}\n\n${args.summary}\n\n**Complexity:** ${args.complexity}\n\n`;
           for (const step of steps) {
-            md += `## ${step.order}. ${step.title}\n\n${step.description}\n\n`;
+            md += `## ${step.order}. ${step.title}\n\n`;
+            md += `Step ID: ${step.id}\n\n`;
+            md += `${step.description}\n\n`;
             if (step.details) md += `**Details:** ${step.details}\n\n`;
             if (step.filePaths?.length) md += `**Files:** ${step.filePaths.join(", ")}\n\n`;
           }
+          md += `\n---\nAfter completing each step, call mark_step_complete(stepId, planId) to update progress.\n`;
           await writeFile(join(doablePath, "plan.md"), md, "utf-8");
         } catch {
           // Non-fatal — DB/events are the primary transport
@@ -925,6 +928,9 @@ export function createDoableTools(projectId: string): Tool[] {
         required: ["stepId", "planId"] as const,
       },
       handler: async (args: { stepId: string; planId: string }) => {
+        emitToolEvent(projectId, "mark_step_complete", "end", {
+          stepId: args.stepId, planId: args.planId, status: "completed",
+        });
         return { success: true, stepId: args.stepId, planId: args.planId, status: "completed" };
       },
     }),

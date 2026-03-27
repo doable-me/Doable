@@ -3770,7 +3770,13 @@ export default function EditorPage() {
                         // Trigger the AI to start building — use setTimeout to let
                         // React flush the mode change to "agent" before sendMessage reads it
                         setTimeout(() => {
-                          sendMessage("The plan has been approved. Please start building it now, step by step. Follow the plan in .doable/plan.md.");
+                          // Build a context-rich message so the agent knows exactly what to build
+                          const stepSummary = activePlan.steps
+                            .map((s) => `${s.order}. ${s.title}`)
+                            .join("\n");
+                          sendMessage(
+                            `Start building! Here's the approved plan:\n\n**${activePlan.summary}**\n\n${stepSummary}\n\nBuild each step in order. The full plan details are in .doable/plan.md.`
+                          );
                         }, 100);
                       } catch (err) {
                         console.error("[Plan] Approve failed:", err);

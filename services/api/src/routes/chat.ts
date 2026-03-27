@@ -723,6 +723,8 @@ The project is a Vite + React + TypeScript app with Tailwind CSS v4.${previewUrl
 
 The project is a Vite + React 19 + TypeScript app with Tailwind CSS v4 (using the @tailwindcss/vite plugin). Files are hot-reloaded via Vite.${previewUrl ? `\nLive preview: ${previewUrl}` : ""}${projectContext}
 
+PLAN EXECUTION: If the user says "start building" or references an approved plan, read .doable/plan.md with read_file FIRST. Follow the plan step by step. After completing each step, call mark_step_complete with the stepId and planId from the plan. This updates the user's progress tracker in real time.
+
 ═══════════════════════════════════════════════════════════════
   ⚠️  BEFORE WRITING ANY FILE — MANDATORY CHECKLIST  ⚠️
 ═══════════════════════════════════════════════════════════════
@@ -987,6 +989,14 @@ ERROR RECOVERY — if you encounter errors:
                   stream.writeSSE({ data: JSON.stringify({ type: "plan", data: { plan } }) }).catch(() => {});
                 }
               } catch { /* ignore */ }
+            }
+            if (status === "end" && toolName === "mark_step_complete" && args?.stepId) {
+              stream.writeSSE({ data: JSON.stringify({
+                type: "plan_step_update",
+                data: { stepId: args.stepId, planId: args.planId, status: "completed" },
+              }) }).catch(() => {});
+              // Also update DB
+              sql`UPDATE plan_steps SET status = 'completed', completed_at = now() WHERE id = ${args.stepId as string}`.catch(() => {});
             }
             // Broadcast to all room members (including sender for WS reconnection)
             broadcastToRoom(projectId, {
