@@ -4,8 +4,8 @@ import { useEditorStore, type EditorMode } from "../hooks/use-editor-store";
 import { Bot, ListChecks } from "lucide-react";
 
 const modes: { id: EditorMode; label: string; icon: typeof Bot; desc: string }[] = [
-  { id: "agent", label: "Agent", icon: Bot, desc: "AI writes code directly" },
-  { id: "plan", label: "Plan", icon: ListChecks, desc: "AI creates a plan first" },
+  { id: "agent", label: "Build", icon: Bot, desc: "AI writes code directly" },
+  { id: "plan", label: "Plan first", icon: ListChecks, desc: "AI helps you plan, then builds" },
 ];
 
 export function ModeToggle() {

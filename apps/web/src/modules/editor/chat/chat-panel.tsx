@@ -5,12 +5,24 @@ import { useChat } from "../hooks/use-chat";
 import { useEditorStore } from "../hooks/use-editor-store";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
+import { ClarificationFlow, PlanCard, PlanProgress } from "./plan";
 import { MessageSquare, Sparkles } from "lucide-react";
 
 export function ChatPanel() {
   const projectId = useEditorStore((s) => s.projectId);
-  const { messages, isStreaming, sendMessage, stopStreaming, loadHistory } =
+  const { messages, isStreaming, sendMessage, stopStreaming, loadHistory, answerClarification, approvePlan, abandonPlan } =
     useChat(projectId);
+
+  const activePlan = useEditorStore((s) => s.activePlan);
+  const planPhase = useEditorStore((s) => s.planPhase);
+  const pendingQuestions = useEditorStore((s) => s.pendingQuestions);
+
+  const {
+    updatePlanStep,
+    removePlanStep,
+    reorderPlanSteps,
+    addPlanStep,
+  } = useEditorStore();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -42,13 +54,58 @@ export function ChatPanel() {
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {messages.length === 0 ? (
+        {/* Plan progress tracker (during build) */}
+        {planPhase === "building" && activePlan && (
+          <PlanProgress plan={activePlan} />
+        )}
+
+        {messages.length === 0 && planPhase === "idle" ? (
           <EmptyState />
         ) : (
           <>
             {messages.map((msg) => (
               <ChatMessage key={msg.id} message={msg} />
             ))}
+
+            {/* Clarification questions */}
+            {planPhase === "clarifying" && pendingQuestions && (
+              <div className="px-4 py-3">
+                <ClarificationFlow
+                  questions={pendingQuestions}
+                  onComplete={(answers) => answerClarification(answers)}
+                  disabled={isStreaming}
+                />
+              </div>
+            )}
+
+            {/* Plan card (during review) */}
+            {planPhase === "reviewing" && activePlan && (
+              <div className="px-4 py-3">
+                <PlanCard
+                  plan={activePlan}
+                  isEditable
+                  onApprove={() => approvePlan(activePlan.id)}
+                  onRefine={() => {
+                    sendMessage("Please refine the plan based on my feedback.");
+                  }}
+                  onReset={() => abandonPlan(activePlan.id)}
+                  onStepEdit={(stepId, field, value) =>
+                    updatePlanStep(stepId, { [field]: value })
+                  }
+                  onStepRemove={removePlanStep}
+                  onStepReorder={reorderPlanSteps}
+                  onStepAdd={() =>
+                    addPlanStep({
+                      order: (activePlan.steps.length ?? 0) + 1,
+                      title: "New step",
+                      description: "Describe what this step does",
+                      status: "pending",
+                    })
+                  }
+                />
+              </div>
+            )}
+
             <div ref={bottomRef} />
           </>
         )}

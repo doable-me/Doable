@@ -289,6 +289,23 @@ export function useChat(
                       hadToolCalls: true,
                     });
                   }
+                } else if (parsed.type === "clarification") {
+                  const questions = parsed.data?.questions;
+                  if (Array.isArray(questions) && questions.length > 0) {
+                    useEditorStore.getState().setPendingQuestions(questions);
+                    useEditorStore.getState().setPlanPhase("clarifying");
+                  }
+                } else if (parsed.type === "plan") {
+                  const plan = parsed.data?.plan;
+                  if (plan) {
+                    useEditorStore.getState().setActivePlan(plan);
+                    useEditorStore.getState().setPlanPhase("reviewing");
+                  }
+                } else if (parsed.type === "plan_step_update") {
+                  const { stepId, status } = parsed.data ?? {};
+                  if (stepId && status) {
+                    useEditorStore.getState().updatePlanStep(stepId, { status });
+                  }
                 } else if (parsed.type === "error") {
                   accumulated += `\n\n**Error:** ${typeof parsed.data === "string" ? parsed.data : "Unknown error"}`;
                   if (rafHandle) cancelAnimationFrame(rafHandle);
@@ -325,6 +342,65 @@ export function useChat(
     abortRef.current?.abort();
     setStreaming(false);
   }, [setStreaming]);
+
+  const answerClarification = useCallback(
+    async (answers: Record<string, string>) => {
+      if (!projectId) return;
+      // Clear pending questions
+      useEditorStore.getState().setPendingQuestions(null);
+      useEditorStore.getState().setPlanPhase("planning");
+      // Send answers as a follow-up message in plan mode
+      const answerText = Object.entries(answers)
+        .map(([qId, answer]) => `${qId}: ${answer}`)
+        .join("\n");
+      await sendMessage(`Here are my answers to your questions:\n\n${answerText}`);
+    },
+    [projectId, sendMessage]
+  );
+
+  const approvePlan = useCallback(
+    async (planId: string) => {
+      if (!projectId) return;
+      try {
+        const { getStoredTokens } = await import("@/lib/api");
+        const { accessToken } = getStoredTokens();
+        await fetch(`${API_BASE}/projects/${projectId}/plan/approve`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({ planId }),
+        });
+        useEditorStore.getState().approvePlan();
+      } catch (err) {
+        console.error("[Plan] Approve failed:", err);
+      }
+    },
+    [projectId]
+  );
+
+  const abandonPlan = useCallback(
+    async (planId: string) => {
+      if (!projectId) return;
+      try {
+        const { getStoredTokens } = await import("@/lib/api");
+        const { accessToken } = getStoredTokens();
+        await fetch(`${API_BASE}/projects/${projectId}/plan/abandon`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({ planId }),
+        });
+        useEditorStore.getState().abandonPlan();
+      } catch (err) {
+        console.error("[Plan] Abandon failed:", err);
+      }
+    },
+    [projectId]
+  );
 
   const loadHistory = useCallback(async () => {
     if (!projectId) return;
@@ -377,5 +453,8 @@ export function useChat(
     stopStreaming,
     loadHistory,
     clearChat,
+    answerClarification,
+    approvePlan,
+    abandonPlan,
   };
 }

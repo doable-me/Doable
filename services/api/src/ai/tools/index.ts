@@ -89,6 +89,9 @@ import { listFilesTool } from "./list-files.js";
 import { runBuildTool } from "./run-build.js";
 import { searchFilesTool } from "./search-files.js";
 import { installPackageTool } from "./install-package.js";
+import { askClarificationTool } from "./plan-tools.js";
+import { createPlanTool } from "./plan-tools.js";
+import { markStepCompleteTool } from "./plan-tools.js";
 
 toolRegistry.register(createFileTool);
 toolRegistry.register(editFileTool);
@@ -98,3 +101,6 @@ toolRegistry.register(listFilesTool);
 toolRegistry.register(runBuildTool);
 toolRegistry.register(searchFilesTool);
 toolRegistry.register(installPackageTool);
+toolRegistry.register(askClarificationTool);
+toolRegistry.register(createPlanTool);
+toolRegistry.register(markStepCompleteTool);

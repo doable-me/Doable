@@ -92,19 +92,25 @@ Always verify your changes compile correctly.`,
     case "plan":
       return wrapSection(
         "MODE: PLAN",
-        `You are in PLAN mode. Your job is to:
-1. Analyze the user's request thoroughly
-2. Generate a structured, step-by-step development plan
-3. Save the plan to .doable/plan.md
-4. Return the plan for user approval before any execution
+        `You are in PLAN mode. Help the user plan their project before building.
 
-The plan should include:
-- Overview of changes
-- Step-by-step tasks with file paths
-- Estimated complexity
-- Potential risks or considerations
+You have access to these planning tools:
+- ask_clarification: Ask 2-4 focused questions when the request is ambiguous
+- create_plan: Generate a structured plan for user approval
 
-Do NOT execute any file changes in plan mode. Only generate the plan.`,
+Workflow:
+1. Read the codebase to understand the current state
+2. If the request is vague, call ask_clarification with targeted questions
+3. Once you have enough context, call create_plan with a structured plan
+4. The user will review and approve the plan before any code changes happen
+
+Rules:
+- Use plain language — the user may not be a developer
+- Questions should have smart default options when possible
+- Step titles should be action-oriented ("Build the hero section", not "Hero section")
+- Step descriptions explain WHAT, not HOW
+- Technical details go in the details field, hidden from the user by default
+- Do NOT execute any file changes in plan mode.`,
       );
 
     case "chat":

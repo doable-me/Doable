@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useState, useMemo } from "react";
-import { Bot, User, Copy, Check, Loader2, Brain, Wrench, Undo2 } from "lucide-react";
+import { Bot, User, Copy, Check, Loader2, Brain, Wrench, ListChecks, Undo2 } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "../hooks/use-editor-store";
 import { useEditorStore } from "../hooks/use-editor-store";
 import { MessageAttachments } from "./attachment-preview";
@@ -104,11 +104,14 @@ function StreamingStatus({ status }: { status?: string }) {
   const friendlyMsg = colonIdx > 0 ? status.slice(colonIdx + 1) : "";
 
   const isThinking = statusType === "thinking";
+  const isPlan = statusType === "plan";
   const isToolCall = statusType === "tool_call";
   const isToolResult = statusType === "tool_result";
 
   const icon = isThinking ? (
     <Brain className="h-3 w-3 text-brand-400 animate-pulse" />
+  ) : isPlan ? (
+    <ListChecks className="h-3 w-3 text-brand-400 animate-pulse" />
   ) : isToolCall ? (
     <Wrench className="h-3 w-3 text-blue-400 animate-spin" />
   ) : isToolResult ? (
@@ -119,11 +122,13 @@ function StreamingStatus({ status }: { status?: string }) {
 
   const label = isThinking
     ? "Thinking\u2026"
-    : isToolCall
-      ? friendlyMsg || "Working on it\u2026"
-      : isToolResult
-        ? friendlyMsg || "Done"
-        : status;
+    : isPlan
+      ? friendlyMsg || "Planning\u2026"
+      : isToolCall
+        ? friendlyMsg || "Working on it\u2026"
+        : isToolResult
+          ? friendlyMsg || "Done"
+          : status;
 
   return (
     <div className={`flex items-center gap-1.5 text-xs mb-1.5 ${

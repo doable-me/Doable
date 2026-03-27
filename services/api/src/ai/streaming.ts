@@ -1,4 +1,7 @@
 import type {
+  ClarificationQuestion,
+  Plan,
+  PlanStepStatus,
   StreamEvent,
   StreamEventType,
   StreamEventData,
@@ -64,6 +67,18 @@ export function errorEvent(
 
 export function doneEvent(duration: number, totalTokens?: number): StreamEvent {
   return createStreamEvent("done", { duration, totalTokens });
+}
+
+export function clarificationEvent(questions: ClarificationQuestion[]): StreamEvent {
+  return createStreamEvent("clarification", { questions });
+}
+
+export function planEvent(plan: Plan): StreamEvent {
+  return createStreamEvent("plan", { plan });
+}
+
+export function planStepUpdateEvent(planId: string, stepId: string, status: PlanStepStatus): StreamEvent {
+  return createStreamEvent("plan_step_update", { planId, stepId, status });
 }
 
 // ─── SSE Serialization ────────────────────────────────────

@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { Plan, PlanStep, ClarificationQuestion, PlanPhase } from "@doable/shared/types/ai";
 
 // ─── Types ──────────────────────────────────────────────────
 export interface FileNode {
@@ -74,6 +75,11 @@ interface EditorState {
   mode: EditorMode;
   isStreaming: boolean;
 
+  // Plan Mode V2
+  activePlan: Plan | null;
+  planPhase: PlanPhase;
+  pendingQuestions: ClarificationQuestion[] | null;
+
   // Preview
   previewUrl: string;
   previewLoading: boolean;
@@ -106,6 +112,17 @@ interface EditorState {
   setMode: (mode: EditorMode) => void;
   clearMessages: () => void;
 
+  // Plan Mode V2 Actions
+  setActivePlan: (plan: Plan | null) => void;
+  setPlanPhase: (phase: PlanPhase) => void;
+  setPendingQuestions: (questions: ClarificationQuestion[] | null) => void;
+  updatePlanStep: (stepId: string, updates: Partial<PlanStep>) => void;
+  reorderPlanSteps: (stepIds: string[]) => void;
+  removePlanStep: (stepId: string) => void;
+  addPlanStep: (step: Omit<PlanStep, "id">) => void;
+  approvePlan: () => void;
+  abandonPlan: () => void;
+
   // Actions - Preview
   setPreviewUrl: (url: string) => void;
   setPreviewLoading: (loading: boolean) => void;
@@ -130,6 +147,9 @@ export const useEditorStore = create<EditorState>()(
       messages: [],
       mode: "agent",
       isStreaming: false,
+      activePlan: null,
+      planPhase: "idle" as PlanPhase,
+      pendingQuestions: null,
       previewUrl: "",
       previewLoading: false,
       activeSidebarTab: "files",
@@ -193,6 +213,67 @@ export const useEditorStore = create<EditorState>()(
       setStreaming: (streaming) => set({ isStreaming: streaming }),
       setMode: (mode) => set({ mode }),
       clearMessages: () => set({ messages: [] }),
+
+      // Plan Mode V2
+      setActivePlan: (plan) => set({ activePlan: plan, planPhase: plan ? "reviewing" : "idle" }),
+      setPlanPhase: (phase) => set({ planPhase: phase }),
+      setPendingQuestions: (questions) => set({ pendingQuestions: questions, planPhase: questions ? "clarifying" : "idle" }),
+      updatePlanStep: (stepId, updates) =>
+        set((state) => {
+          if (!state.activePlan) return {};
+          return {
+            activePlan: {
+              ...state.activePlan,
+              steps: state.activePlan.steps.map((s) =>
+                s.id === stepId ? { ...s, ...updates } : s
+              ),
+            },
+          };
+        }),
+      reorderPlanSteps: (stepIds) =>
+        set((state) => {
+          if (!state.activePlan) return {};
+          const stepMap = new Map(state.activePlan.steps.map((s) => [s.id, s]));
+          const reordered = stepIds
+            .map((id, i) => {
+              const step = stepMap.get(id);
+              return step ? { ...step, order: i + 1 } : null;
+            })
+            .filter(Boolean) as PlanStep[];
+          return { activePlan: { ...state.activePlan, steps: reordered } };
+        }),
+      removePlanStep: (stepId) =>
+        set((state) => {
+          if (!state.activePlan) return {};
+          const steps = state.activePlan.steps
+            .filter((s) => s.id !== stepId)
+            .map((s, i) => ({ ...s, order: i + 1 }));
+          return { activePlan: { ...state.activePlan, steps } };
+        }),
+      addPlanStep: (step) =>
+        set((state) => {
+          if (!state.activePlan) return {};
+          const newStep: PlanStep = {
+            ...step,
+            id: `step_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          };
+          return {
+            activePlan: {
+              ...state.activePlan,
+              steps: [...state.activePlan.steps, newStep],
+            },
+          };
+        }),
+      approvePlan: () =>
+        set((state) => {
+          if (!state.activePlan) return {};
+          return {
+            activePlan: { ...state.activePlan, status: "approved", approvedAt: new Date().toISOString() },
+            planPhase: "building",
+            mode: "agent" as EditorMode,
+          };
+        }),
+      abandonPlan: () => set({ activePlan: null, planPhase: "idle", pendingQuestions: null }),
 
       // Preview
       setPreviewUrl: (url) => set({ previewUrl: url }),

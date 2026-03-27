@@ -31,6 +31,7 @@ import { communityRoutes } from "./routes/community.js";
 import { connectorRoutes } from "./routes/connectors.js";
 import { skillsRoutes } from "./routes/skills.js";
 import { teamChatRoutes } from "./routes/team-chat.js";
+import { planRoutes } from "./routes/plan.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 import { getConnectorManager } from "./mcp/connector-manager.js";
@@ -135,6 +136,7 @@ app.route("/", projectFileRoutes);
 app.route("/", directSaveRoutes);
 // Chat & editor routes BEFORE project routes (projectRoutes has wildcard auth middleware)
 app.route("/", chatRoutes);
+app.route("/", planRoutes);
 app.route("/", editorRoutes);
 app.route("/projects", projectRoutes);
 app.route("/workspaces", workspaceRoutes);

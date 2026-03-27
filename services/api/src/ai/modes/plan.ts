@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
 import type {
   ConversationMessage,
   StreamEvent,
   EngineOptions,
+  Plan,
+  ClarificationQuestion,
 } from "@doable/shared/types/ai.js";
 import type { LLMProvider } from "../provider.js";
 import type { ToolContext } from "../tools/index.js";
@@ -12,18 +15,19 @@ import {
   toolCallEvent,
   toolResultEvent,
   errorEvent,
+  clarificationEvent,
+  planEvent,
 } from "../streaming.js";
 import { updateContextFile } from "../context/index.js";
 import { sql } from "../../db/index.js";
-import { contextManager } from "../../context/manager.js";
 
-const ctxManager = contextManager(sql);
-
-// Tools allowed in plan mode (read-only + list + search)
+// Tools allowed in plan mode: read-only + plan-specific
 const PLAN_MODE_TOOLS = new Set([
   "read_file",
   "list_files",
   "search_files",
+  "ask_clarification",
+  "create_plan",
 ]);
 
 // ─── Plan Mode Handler ───────────────────────────────────
@@ -38,7 +42,7 @@ export async function* runPlanMode(
   let toolCallCount = 0;
   const conversationMessages = [...messages];
 
-  // Only expose read-only tools in plan mode
+  // Only expose plan-allowed tools
   const planTools = toolRegistry
     .getDefinitions()
     .filter((t) => PLAN_MODE_TOOLS.has(t.name));
@@ -102,23 +106,16 @@ export async function* runPlanMode(
       return;
     }
 
-    // If done (no tool calls), save the plan
+    // If done (no tool calls), try to extract plan from text as fallback
     if (finishReason !== "tool_use" || pendingToolCalls.length === 0) {
       if (fullText) {
         conversationMessages.push({ role: "assistant", content: fullText });
 
-        // Extract and save plan to .doable/plan.md (file system + database)
-        const plan = extractPlan(fullText);
-        if (plan) {
+        // Fallback: extract plan from raw text when AI doesn't use create_plan
+        const planMarkdown = extractPlan(fullText);
+        if (planMarkdown) {
           try {
-            // Save to file system
-            await updateContextFile(toolCtx.projectId, "plan.md", plan);
-            // Also save to database-backed context
-            try {
-              await ctxManager.updateContextFile(toolCtx.projectId, "plan.md", plan);
-            } catch {
-              // DB save is secondary — file system is the source of truth for the engine
-            }
+            await updateContextFile(toolCtx.projectId, "plan.md", planMarkdown);
             yield textEvent("\n\n_Plan saved to `.doable/plan.md`_");
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -129,23 +126,23 @@ export async function* runPlanMode(
       return;
     }
 
-    // Add assistant message
+    // Add assistant message with tool calls
     conversationMessages.push({
       role: "assistant",
       content: fullText || null,
       toolCalls: pendingToolCalls,
     });
 
-    // Execute read-only tools
+    // Execute tools
     for (const toolCall of pendingToolCalls) {
       toolCallCount++;
 
-      // Enforce read-only in plan mode
+      // Enforce plan-mode tool allowlist
       if (!PLAN_MODE_TOOLS.has(toolCall.name)) {
         const result = {
           success: false as const,
           output: "",
-          error: `Tool '${toolCall.name}' is not available in plan mode. Only read-only tools are allowed.`,
+          error: `Tool '${toolCall.name}' is not available in plan mode. Only read-only and planning tools are allowed.`,
         };
         yield toolResultEvent(toolCall.id, toolCall.name, result);
         conversationMessages.push({
@@ -175,18 +172,98 @@ export async function* runPlanMode(
         toolCallId: toolCall.id,
         name: toolCall.name,
       });
+
+      // ── Handle clarification tool ──────────────────────
+      if (result.metadata?.type === "clarification") {
+        const questions = result.metadata.questions as ClarificationQuestion[];
+        yield clarificationEvent(questions);
+        return;
+      }
+
+      // ── Handle create_plan tool ────────────────────────
+      if (result.metadata?.type === "plan") {
+        const plan = result.metadata.plan as Plan;
+
+        // Save plan to database
+        try {
+          await savePlanToDb(plan, toolCtx.projectId);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          yield errorEvent(`Failed to save plan to DB: ${msg}`, "DB_ERROR", true);
+          // Continue anyway — emit the plan event so the frontend gets it
+        }
+
+        // Save plan to .doable/plan.md
+        try {
+          const markdown = planToMarkdown(plan);
+          await updateContextFile(toolCtx.projectId, "plan.md", markdown);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          yield errorEvent(`Failed to save plan file: ${msg}`, "SAVE_ERROR", true);
+        }
+
+        yield planEvent(plan);
+        return;
+      }
     }
   }
 }
 
-// ─── Plan Extraction ──────────────────────────────────────
+// ─── Save Plan to Database ───────────────────────────────
+
+async function savePlanToDb(plan: Plan, projectId: string): Promise<void> {
+  // Insert the plan record
+  await sql`
+    INSERT INTO plans (id, project_id, summary, complexity, status, original_prompt, clarification_answers, created_at)
+    VALUES (
+      ${plan.id},
+      ${projectId},
+      ${plan.summary},
+      ${plan.complexity},
+      ${plan.status},
+      ${plan.originalPrompt ?? null},
+      ${plan.clarificationAnswers ? JSON.stringify(plan.clarificationAnswers) : null},
+      ${plan.createdAt}
+    )
+  `;
+
+  // Insert all plan steps
+  for (const step of plan.steps) {
+    await sql`
+      INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
+      VALUES (
+        ${step.id},
+        ${plan.id},
+        ${step.order},
+        ${step.title},
+        ${step.description},
+        ${step.details ?? null},
+        ${step.status},
+        ${step.filePaths ?? null}
+      )
+    `;
+  }
+}
+
+// ─── Plan to Markdown ────────────────────────────────────
+
+export function planToMarkdown(plan: Plan): string {
+  let md = `# Plan\n\n${plan.summary}\n\n**Complexity:** ${plan.complexity}\n\n`;
+  for (const step of plan.steps) {
+    md += `## ${step.order}. ${step.title}\n\n${step.description}\n\n`;
+    if (step.details) md += `**Details:** ${step.details}\n\n`;
+    if (step.filePaths?.length) md += `**Files:** ${step.filePaths.join(", ")}\n\n`;
+  }
+  return md;
+}
+
+// ─── Plan Extraction (Fallback) ──────────────────────────
 
 function extractPlan(text: string): string | null {
   // Look for a markdown plan structure in the response
   const planHeaderPattern = /^#\s+Plan/m;
 
   if (planHeaderPattern.test(text)) {
-    // Extract from the plan header onwards
     const match = text.match(planHeaderPattern);
     if (match?.index !== undefined) {
       return text.slice(match.index).trim();
@@ -201,7 +278,7 @@ function extractPlan(text: string): string | null {
     return `# Plan\n\n${text.trim()}`;
   }
 
-  // Fallback: wrap the entire response as a plan
+  // Fallback: wrap the entire response as a plan if long enough
   if (text.trim().length > 100) {
     return `# Plan\n\n${text.trim()}`;
   }
@@ -211,16 +288,20 @@ function extractPlan(text: string): string | null {
 
 // ─── Plan Prompt ──────────────────────────────────────────
 
-const PLAN_GENERATION_PROMPT = `Generate a structured development plan. The plan must include:
+const PLAN_GENERATION_PROMPT = `You have two tools for planning: ask_clarification and create_plan.
 
-1. **Overview**: Brief summary of what will be built/changed
-2. **Steps**: Numbered, actionable steps with:
-   - Description of the change
-   - File paths that will be created or modified
-   - Key implementation details
-3. **Complexity**: Estimated complexity (low/medium/high)
-4. **Risks**: Any potential issues or considerations
+STEP 1 — CLARIFY (if needed):
+- If the request is vague or ambiguous, call ask_clarification with 2-4 focused questions
+- Each question should have smart default options when possible
+- Use plain language, no technical jargon
+- If the request is specific enough, skip straight to STEP 2
 
-Format the plan as markdown starting with "# Plan".
-You may use read_file, list_files, and search_files to understand the current codebase before planning.
-Do NOT make any file changes.`;
+STEP 2 — PLAN:
+- After reading the codebase and understanding the request, call create_plan
+- Write a 1-2 sentence summary in plain language
+- Create 3-8 concrete steps with action-oriented titles
+- Step descriptions should explain WHAT will be built, not HOW
+- Put technical details (file paths, implementation notes) in the optional details field
+- Estimate complexity as simple/moderate/complex
+
+Do NOT make any file changes. Only analyze and plan.`;
