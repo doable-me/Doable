@@ -1670,25 +1670,38 @@ export default function EditorPage() {
     })();
 
     // Check if AI is still actively working (e.g., user refreshed during build)
+    // If active, poll chat history every 3s for near-live progress updates
+    // (DB is flushed every 5s, so content updates progressively)
     (async () => {
       try {
         const statusRes = await apiFetch<{ active: boolean; mode?: string }>(`/projects/${resolvedProjectId}/ai-status`);
         if (statusRes.active) {
           setLiveStatus("AI is still working on your project...");
-          // Poll until AI finishes, then reload chat history
+          setIsStreaming(true);
           const poll = setInterval(async () => {
             try {
+              // Reload chat history to show progressive content (DB flushed every 5s)
+              await loadFromApi();
+              // Also refresh file tree + preview since AI may be writing files
+              loadFileTree();
+              // Check if still active
               const check = await apiFetch<{ active: boolean }>(`/projects/${resolvedProjectId}/ai-status`);
               if (!check.active) {
                 clearInterval(poll);
                 setLiveStatus("");
-                // Reload chat history to get the completed response
-                loadFromApi();
+                setIsStreaming(false);
+                // Final reload to get completed response
+                await loadFromApi();
+                loadFileTree();
+                if (selectedFile) {
+                  delete fileContentsCache.current[selectedFile];
+                  loadFileContent(selectedFile);
+                }
               }
-            } catch { clearInterval(poll); }
+            } catch { clearInterval(poll); setIsStreaming(false); }
           }, 3000);
-          // Stop polling after 5 minutes max
-          setTimeout(() => clearInterval(poll), 5 * 60 * 1000);
+          // Safety: stop polling after 5 minutes
+          setTimeout(() => { clearInterval(poll); setIsStreaming(false); setLiveStatus(""); }, 5 * 60 * 1000);
         }
       } catch { /* ignore */ }
     })();

@@ -993,12 +993,12 @@ ERROR RECOVERY — if you encounter errors:
           // onToolEvent bridge provides additional file-level events from our tool handlers.
           // Timeout fires only after 2 minutes of NO activity — not a blind wall clock.
 
-          // Progressive DB flush — save assistant content every 5s so refreshes don't lose work
+          // Progressive DB flush — save assistant content every 3s so refreshes show near-live progress
           const flushInterval = setInterval(() => {
             if (assistantMessageId && assistantContent) {
               sql`UPDATE ai_messages SET content = ${assistantContent}, tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])} WHERE id = ${assistantMessageId}`.catch(() => {});
             }
-          }, 5000);
+          }, 3000);
 
           // Track active AI work per project so clients can detect ongoing work on refresh
           activeAiSessions.set(projectId, { startedAt: Date.now(), mode, userId });
