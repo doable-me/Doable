@@ -3701,6 +3701,11 @@ export default function EditorPage() {
                         setActivePlan(prev => prev ? { ...prev, status: "approved", approvedAt: new Date().toISOString() } : prev);
                         setPlanPhase("building");
                         setChatMode("agent");
+                        // Trigger the AI to start building — use setTimeout to let
+                        // React flush the mode change to "agent" before sendMessage reads it
+                        setTimeout(() => {
+                          sendMessage("The plan has been approved. Please start building it now, step by step. Follow the plan in .doable/plan.md.");
+                        }, 100);
                       } catch (err) {
                         console.error("[Plan] Approve failed:", err);
                       }

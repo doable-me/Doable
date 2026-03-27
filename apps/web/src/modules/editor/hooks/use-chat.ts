@@ -373,11 +373,15 @@ export function useChat(
           body: JSON.stringify({ planId }),
         });
         useEditorStore.getState().approvePlan();
+        // Trigger the AI to start building after mode switches to agent
+        setTimeout(() => {
+          sendMessage("The plan has been approved. Please start building it now, step by step. Follow the plan in .doable/plan.md.");
+        }, 100);
       } catch (err) {
         console.error("[Plan] Approve failed:", err);
       }
     },
-    [projectId]
+    [projectId, sendMessage]
   );
 
   const abandonPlan = useCallback(
