@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useState, useCallback } from "react";
-import { HelpCircle, Check } from "lucide-react";
+import { Check, ArrowRight } from "lucide-react";
 import type { ClarificationQuestion } from "@doable/shared/types/ai";
 
 interface ClarificationCardProps {
@@ -22,42 +22,51 @@ export const ClarificationCard = memo(function ClarificationCard({
   const [selectedAnswer, setSelectedAnswer] = useState(answeredValue ?? "");
   const [freeText, setFreeText] = useState("");
 
-  const handleAnswer = useCallback(
+  const handleSubmit = useCallback(() => {
+    if (disabled || answered) return;
+    const value =
+      question.type === "free_text"
+        ? freeText.trim()
+        : selectedAnswer;
+    if (!value && question.type === "free_text") return;
+    if (!value && question.type !== "free_text") return;
+    setAnswered(true);
+    onAnswer(question.id, value);
+  }, [disabled, answered, question.id, question.type, freeText, selectedAnswer, onAnswer]);
+
+  const handleSelect = useCallback(
     (value: string) => {
       if (disabled || answered) return;
       setSelectedAnswer(value);
-      setAnswered(true);
-      onAnswer(question.id, value);
     },
-    [disabled, answered, onAnswer, question.id]
+    [disabled, answered]
   );
 
-  const handleFreeTextSubmit = useCallback(() => {
-    const value = freeText.trim();
-    if (!value) return;
-    handleAnswer(value);
-  }, [freeText, handleAnswer]);
-
-  const handleKeyDown = useCallback(
+  const handleFreeTextKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        handleFreeTextSubmit();
+        handleSubmit();
       }
     },
-    [handleFreeTextSubmit]
+    [handleSubmit]
   );
 
   const handleSkip = useCallback(() => {
-    handleAnswer(question.default ?? "");
-  }, [handleAnswer, question.default]);
+    if (disabled || answered) return;
+    setSelectedAnswer(question.default ?? "");
+    setAnswered(true);
+    onAnswer(question.id, question.default ?? "");
+  }, [disabled, answered, question.default, question.id, onAnswer]);
 
-  // Answered state — show selected answer with checkmark
+  // Answered state — compact summary with checkmark
   if (answered) {
     return (
-      <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+      <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.03] px-3 py-2">
         <div className="flex items-start gap-2">
-          <Check className="mt-0.5 h-3.5 w-3.5 flex-none text-green-500" />
+          <div className="mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full bg-green-500/10">
+            <Check className="h-2.5 w-2.5 text-green-500" />
+          </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted-foreground">{question.question}</p>
             <p className="mt-0.5 text-sm font-medium text-foreground">
@@ -69,91 +78,148 @@ export const ClarificationCard = memo(function ClarificationCard({
     );
   }
 
+  const hasSelection =
+    question.type === "free_text"
+      ? freeText.trim().length > 0
+      : question.type === "multi_choice"
+        ? selectedAnswer !== "" || freeText.trim().length > 0
+        : selectedAnswer !== "";
+
   return (
-    <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5">
-      {/* Question */}
-      <div className="flex items-start gap-2">
-        <HelpCircle className="mt-0.5 h-3.5 w-3.5 flex-none text-brand-500" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-foreground">
-            {question.question}
-          </p>
-          {question.context && (
-            <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
-              {question.context}
-            </p>
-          )}
-        </div>
-      </div>
+    <div className="space-y-3">
+      {/* Question text */}
+      <p className="text-sm font-medium text-foreground">{question.question}</p>
+      {question.context && (
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          {question.context}
+        </p>
+      )}
 
-      {/* Answer controls */}
-      <div className="mt-2.5 pl-6">
-        {question.type === "yes_no" && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleAnswer("yes")}
-              disabled={disabled}
-              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-            >
-              Yes
-            </button>
-            <button
-              onClick={() => handleAnswer("no")}
-              disabled={disabled}
-              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-            >
-              No
-            </button>
-          </div>
-        )}
-
-        {question.type === "multi_choice" && (
-          <div>
-            <div className="flex flex-wrap gap-1.5">
-              {question.options?.map((option) => (
-                <button
-                  key={option}
-                  onClick={() => handleAnswer(option)}
-                  disabled={disabled}
-                  className="rounded-full border border-border px-3 py-1 text-xs text-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50"
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-            <div className="mt-2">
-              <input
-                type="text"
-                value={freeText}
-                onChange={(e) => setFreeText(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Or type your own..."
+      {/* Yes/No — two full-width radio cards */}
+      {question.type === "yes_no" && (
+        <div className="space-y-1.5">
+          {["Yes", "No"].map((label) => {
+            const value = label.toLowerCase();
+            const isSelected = selectedAnswer === value;
+            return (
+              <button
+                key={value}
+                onClick={() => handleSelect(value)}
                 disabled={disabled}
-                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50"
-              />
-            </div>
+                className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors disabled:opacity-50 ${
+                  isSelected
+                    ? "border-blue-500/40 bg-blue-500/[0.06] text-foreground"
+                    : "border-border bg-background text-foreground hover:border-blue-500/30 hover:bg-blue-500/[0.03]"
+                }`}
+              >
+                <span
+                  className={`flex h-4 w-4 flex-none items-center justify-center rounded-full border ${
+                    isSelected
+                      ? "border-blue-500 bg-blue-500"
+                      : "border-muted-foreground/40"
+                  }`}
+                >
+                  {isSelected && (
+                    <span className="block h-1.5 w-1.5 rounded-full bg-white" />
+                  )}
+                </span>
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Multi-choice — vertical radio-card list */}
+      {question.type === "multi_choice" && (
+        <div className="space-y-1.5">
+          {question.options?.map((option) => {
+            const isSelected = selectedAnswer === option;
+            return (
+              <button
+                key={option}
+                onClick={() => handleSelect(option)}
+                disabled={disabled}
+                className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors disabled:opacity-50 ${
+                  isSelected
+                    ? "border-blue-500/40 bg-blue-500/[0.06] text-foreground"
+                    : "border-border bg-background text-foreground hover:border-blue-500/30 hover:bg-blue-500/[0.03]"
+                }`}
+              >
+                <span
+                  className={`flex h-4 w-4 flex-none items-center justify-center rounded-full border ${
+                    isSelected
+                      ? "border-blue-500 bg-blue-500"
+                      : "border-muted-foreground/40"
+                  }`}
+                >
+                  {isSelected && (
+                    <span className="block h-1.5 w-1.5 rounded-full bg-white" />
+                  )}
+                </span>
+                <span>{option}</span>
+              </button>
+            );
+          })}
+
+          {/* Free-text alternative for multi-choice */}
+          <div className="mt-2">
+            <input
+              type="text"
+              value={freeText}
+              onChange={(e) => {
+                setFreeText(e.target.value);
+                if (e.target.value.trim()) setSelectedAnswer("");
+              }}
+              onFocus={() => setSelectedAnswer("")}
+              onKeyDown={handleFreeTextKeyDown}
+              placeholder="Or type your own..."
+              disabled={disabled}
+              className="w-full rounded-lg border border-dashed border-blue-500/20 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500/40 focus:outline-none disabled:opacity-50"
+            />
           </div>
-        )}
+        </div>
+      )}
 
-        {question.type === "free_text" && (
-          <input
-            type="text"
-            value={freeText}
-            onChange={(e) => setFreeText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={question.default ?? "Type your answer..."}
-            disabled={disabled}
-            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50"
-          />
-        )}
+      {/* Free text */}
+      {question.type === "free_text" && (
+        <input
+          type="text"
+          value={freeText}
+          onChange={(e) => setFreeText(e.target.value)}
+          onKeyDown={handleFreeTextKeyDown}
+          placeholder={question.default ?? "Type your answer..."}
+          disabled={disabled}
+          className="w-full rounded-lg border border-blue-500/20 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500/40 focus:outline-none disabled:opacity-50"
+        />
+      )}
 
-        {/* Skip button */}
+      {/* Actions row — Continue button + skip link */}
+      <div className="flex items-center justify-between pt-1">
         <button
           onClick={handleSkip}
           disabled={disabled}
-          className="mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+          className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors disabled:opacity-50"
         >
           Skip — let AI decide
+        </button>
+
+        <button
+          onClick={() => {
+            // For multi-choice with free text override
+            if (question.type === "multi_choice" && freeText.trim() && !selectedAnswer) {
+              setSelectedAnswer(freeText.trim());
+              setAnswered(true);
+              onAnswer(question.id, freeText.trim());
+              return;
+            }
+            handleSubmit();
+          }}
+          disabled={disabled || !hasSelection}
+          className="flex items-center gap-1.5 rounded-md bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Continue
+          <ArrowRight className="h-3 w-3" />
         </button>
       </div>
     </div>

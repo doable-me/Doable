@@ -886,6 +886,27 @@ export function createDoableTools(projectId: string): Tool[] {
           status: "draft" as const,
           createdAt: new Date().toISOString(),
         };
+
+        // Write plan as markdown to .doable/plan.md so the context injection system picks it up
+        try {
+          const { writeFile, mkdir } = await import("node:fs/promises");
+          const { join } = await import("node:path");
+          const { getProjectPath } = await import("../../projects/file-manager.js");
+          const projectPath = getProjectPath(projectId);
+          const doablePath = join(projectPath, ".doable");
+          await mkdir(doablePath, { recursive: true });
+
+          let md = `# Plan\n\n${args.summary}\n\n**Complexity:** ${args.complexity}\n\n`;
+          for (const step of steps) {
+            md += `## ${step.order}. ${step.title}\n\n${step.description}\n\n`;
+            if (step.details) md += `**Details:** ${step.details}\n\n`;
+            if (step.filePaths?.length) md += `**Files:** ${step.filePaths.join(", ")}\n\n`;
+          }
+          await writeFile(join(doablePath, "plan.md"), md, "utf-8");
+        } catch {
+          // Non-fatal — DB/events are the primary transport
+        }
+
         emitToolEvent(projectId, "create_plan", "start", {});
         emitToolEvent(projectId, "create_plan", "end", { output: JSON.stringify(plan) });
         return { success: true, plan, message: `Created plan with ${steps.length} steps` };

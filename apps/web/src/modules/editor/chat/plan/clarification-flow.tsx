@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useState, useCallback } from "react";
+import { HelpCircle } from "lucide-react";
 import type { ClarificationQuestion } from "@doable/shared/types/ai";
 import { ClarificationCard } from "./clarification-card";
 
@@ -50,16 +51,24 @@ export const ClarificationFlow = memo(function ClarificationFlow({
 
   if (completed) {
     return (
-      <div className="space-y-1.5">
-        {questions.map((q) => (
-          <ClarificationCard
-            key={q.id}
-            question={q}
-            onAnswer={() => {}}
-            answeredValue={answers[q.id]}
-            disabled
-          />
-        ))}
+      <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.03] p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-500/10">
+            <HelpCircle className="h-3.5 w-3.5 text-blue-500" />
+          </div>
+          <span className="text-sm font-medium text-foreground">Before we plan...</span>
+        </div>
+        <div className="space-y-1.5">
+          {questions.map((q) => (
+            <ClarificationCard
+              key={q.id}
+              question={q}
+              onAnswer={() => {}}
+              answeredValue={answers[q.id]}
+              disabled
+            />
+          ))}
+        </div>
       </div>
     );
   }
@@ -68,17 +77,36 @@ export const ClarificationFlow = memo(function ClarificationFlow({
   if (!currentQuestion) return null;
 
   return (
-    <div className="space-y-3">
-      {/* Progress indicator */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">
-          Question {currentIndex + 1} of {questions.length}
-        </span>
+    <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.03] p-4">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-3">
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-500/10">
+          <HelpCircle className="h-3.5 w-3.5 text-blue-500" />
+        </div>
+        <span className="text-sm font-medium text-foreground">Before we plan...</span>
+      </div>
+
+      {/* Progress dots + Skip All */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-1.5">
+          {questions.map((_, i) => (
+            <span
+              key={i}
+              className={`block h-1.5 w-1.5 rounded-full transition-colors ${
+                i < currentIndex
+                  ? "bg-blue-500"
+                  : i === currentIndex
+                    ? "bg-blue-500/60 ring-2 ring-blue-500/20"
+                    : "bg-muted-foreground/20"
+              }`}
+            />
+          ))}
+        </div>
         {questions.length > 1 && currentIndex < questions.length && (
           <button
             onClick={handleSkipAll}
             disabled={disabled}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors disabled:opacity-50"
           >
             Skip all — let AI decide
           </button>
@@ -87,7 +115,7 @@ export const ClarificationFlow = memo(function ClarificationFlow({
 
       {/* Previously answered questions (collapsed) */}
       {currentIndex > 0 && (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 mb-3">
           {questions.slice(0, currentIndex).map((q) => (
             <ClarificationCard
               key={q.id}
