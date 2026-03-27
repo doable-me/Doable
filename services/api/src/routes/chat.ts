@@ -654,9 +654,12 @@ chatRoutes.post(
       });
 
       // Get or create session for this project.
-      // Visual-edit mode uses a separate session key so it doesn't
-      // pollute the main chat context with element-level edits.
-      const sessionKey = mode === "visual-edit" ? `${projectId}:visual-edit` : projectId;
+      // Each mode uses a separate session key so they don't pollute
+      // each other's context (plan mode has restricted tools, visual-edit
+      // has element-level context, agent mode has full access).
+      const sessionKey = mode === "plan" ? `${projectId}:plan`
+        : mode === "visual-edit" ? `${projectId}:visual-edit`
+        : projectId;
       // Look up workspace for multi-scope context + MCP tools
       let workspaceId: string | undefined;
       try {
@@ -802,6 +805,16 @@ ERROR RECOVERY — if you encounter errors:
         const projectPath = getProjectPath(projectId);
         const allTools = await createAllTools(projectId, workspaceId, userId);
 
+        // In plan mode, strip write tools — only allow read + plan tools.
+        // This PREVENTS the AI from building when it should be planning.
+        const PLAN_ONLY_TOOLS = new Set([
+          "read_file", "list_files", "search_files",
+          "ask_clarification", "create_plan", "mark_step_complete",
+        ]);
+        const sessionTools = mode === "plan"
+          ? allTools.filter((t: { name?: string }) => PLAN_ONLY_TOOLS.has(t.name ?? ""))
+          : allTools;
+
         // Use withAutoRetry to handle stale Copilot API tokens —
         // if session creation fails with an auth error, the manager evicts
         // the cached engine, creates a fresh one, and retries.
@@ -814,7 +827,7 @@ ERROR RECOVERY — if you encounter errors:
             provider: resolvedProvider,
             workingDirectory: projectPath,
             systemPrompt,
-            tools: allTools,
+            tools: sessionTools,
             // SDK hooks — called via RPC for guaranteed progress updates
             toolProgress: {
               onToolStart: (toolName, args) => {
@@ -1038,9 +1051,12 @@ ERROR RECOVERY — if you encounter errors:
               currentEngine = await manager.getEngine(resolvedGithubToken);
               const projectPath = getProjectPath(projectId);
               const freshTools = await createAllTools(projectId, workspaceId, userId);
+              const recreateTools = mode === "plan"
+                ? freshTools.filter((t: { name?: string }) => PLAN_ONLY_TOOLS.has(t.name ?? ""))
+                : freshTools;
               sessionId = await currentEngine.createSession({
                 projectId, userId, model: resolvedModel, provider: resolvedProvider,
-                workingDirectory: projectPath, systemPrompt, tools: freshTools,
+                workingDirectory: projectPath, systemPrompt, tools: recreateTools,
               });
               projectSessions.set(sessionKey, sessionId);
               reply = await currentEngine.sendAndGetReply(
