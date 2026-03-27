@@ -811,7 +811,7 @@ export function createDoableTools(projectId: string): Tool[] {
 
     defineTool("ask_clarification", {
       description:
-        "Ask the user clarifying questions before generating a plan. Use this when the request is ambiguous or underspecified. Maximum 4 questions per call.",
+        "Ask the user friendly, non-technical clarifying questions before generating a plan. Questions must be about goals, audience, and experience — NEVER about technology, frameworks, or code. Maximum 4 questions.",
       parameters: {
         type: "object" as const,
         properties: {
@@ -821,11 +821,11 @@ export function createDoableTools(projectId: string): Tool[] {
               type: "object" as const,
               properties: {
                 id: { type: "string" as const, description: "Unique question ID" },
-                question: { type: "string" as const, description: "The question text" },
+                question: { type: "string" as const, description: "Plain-language question about the user's goals, audience, or preferences. NEVER technical." },
                 type: { type: "string" as const, enum: ["multi_choice", "yes_no", "free_text"] as const, description: "Question type" },
-                options: { type: "array" as const, items: { type: "string" as const }, description: "Options for multi_choice" },
+                options: { type: "array" as const, items: { type: "string" as const }, description: "Non-technical options describing outcomes or experiences, not technologies" },
                 default: { type: "string" as const, description: "Default answer if user skips" },
-                context: { type: "string" as const, description: "Why this question is asked" },
+                context: { type: "string" as const, description: "Brief friendly explanation of why you're asking" },
               },
               required: ["id", "question", "type"] as const,
             },
@@ -843,21 +843,21 @@ export function createDoableTools(projectId: string): Tool[] {
 
     defineTool("create_plan", {
       description:
-        "Create a structured development plan for user approval. Call this after you have enough context.",
+        "Create a step-by-step plan describing what the user will see and experience. Use plain language — no technical terms, no file paths, no code. Technical details go ONLY in the hidden details field.",
       parameters: {
         type: "object" as const,
         properties: {
-          summary: { type: "string" as const, description: "1-2 sentence plan summary" },
-          complexity: { type: "string" as const, enum: ["simple", "moderate", "complex"] as const },
+          summary: { type: "string" as const, description: "1-2 sentence summary a non-technical person would understand. No jargon." },
+          complexity: { type: "string" as const, enum: ["simple", "moderate", "complex"] as const, description: "From user perspective: simple=quick, moderate=a few screens, complex=lots of features" },
           steps: {
             type: "array" as const,
             items: {
               type: "object" as const,
               properties: {
-                title: { type: "string" as const, description: "Action-oriented step title" },
-                description: { type: "string" as const, description: "What this step accomplishes" },
-                details: { type: "string" as const, description: "Technical implementation details" },
-                filePaths: { type: "array" as const, items: { type: "string" as const }, description: "Files to create/modify" },
+                title: { type: "string" as const, description: "What the user will see. Example: 'Add a task list with checkboxes' NOT 'Create TaskList component'" },
+                description: { type: "string" as const, description: "Describe the experience: 'You'll see your tasks in a clean list...' NOT 'Renders a ul with map over state'" },
+                details: { type: "string" as const, description: "HIDDEN from user. Technical notes for the AI to use during build phase. File paths, code approach, etc." },
+                filePaths: { type: "array" as const, items: { type: "string" as const }, description: "HIDDEN from user. Files to create/modify." },
               },
               required: ["title", "description"] as const,
             },
