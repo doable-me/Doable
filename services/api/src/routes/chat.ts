@@ -876,12 +876,28 @@ ERROR RECOVERY — if you encounter errors:
                 console.log(`[Hook] Session end: ${reason}${error ? ` — ${error}` : ""}`);
               },
               onError: (error, context) => {
-                const errMsg = typeof error === "string" ? error
-                  : error instanceof Error ? error.message
-                  : JSON.stringify(error, null, 2);
-                console.error(`[Hook] Error (${context}):`, errMsg);
+                // Extract every possible detail from the error
+                let details: string;
+                if (typeof error === "string") {
+                  details = error;
+                } else if (error instanceof Error) {
+                  details = `${error.name}: ${error.message}${error.cause ? ` | cause: ${JSON.stringify(error.cause)}` : ""}`;
+                } else if (error && typeof error === "object") {
+                  // SDK errors are often plain objects — dig into all properties
+                  const keys = Object.getOwnPropertyNames(error);
+                  if (keys.length > 0) {
+                    details = keys.map(k => `${k}: ${JSON.stringify((error as any)[k])}`).join(", ");
+                  } else {
+                    // Try prototype chain
+                    details = JSON.stringify(error, Object.getOwnPropertyNames(Object.getPrototypeOf(error) || {}));
+                  }
+                } else {
+                  details = String(error);
+                }
+                const fullMsg = `${context}: ${details}`;
+                console.error(`[Hook] Error:`, fullMsg, error);
                 stream.writeSSE({ data: JSON.stringify({
-                  type: "error", data: errMsg,
+                  type: "error", data: fullMsg,
                 }) }).catch(() => {});
               },
             },
@@ -1334,10 +1350,20 @@ ERROR RECOVERY — if you encounter errors:
     } catch (err) {
       clearInterval(keepAlive);
       unsubToolEvents();
-      // Copilot SDK is the core engine — surface the real error, don't work around it
-      const errMsg = err instanceof Error ? err.message
-        : typeof err === "string" ? err
-        : JSON.stringify(err);
+      // Extract real error details — don't lose anything
+      let errMsg: string;
+      if (err instanceof Error) {
+        errMsg = `${err.name}: ${err.message}${err.stack ? `\n${err.stack.split("\n").slice(0, 3).join("\n")}` : ""}`;
+      } else if (typeof err === "string") {
+        errMsg = err;
+      } else if (err && typeof err === "object") {
+        const keys = Object.getOwnPropertyNames(err);
+        errMsg = keys.length > 0
+          ? keys.map(k => `${k}: ${JSON.stringify((err as any)[k])}`).join(", ")
+          : JSON.stringify(err);
+      } else {
+        errMsg = String(err);
+      }
       console.error("[Chat] Copilot SDK error:", errMsg, err);
 
       // Save partial assistant message so chat history isn't lost on error
@@ -1359,7 +1385,7 @@ ERROR RECOVERY — if you encounter errors:
       await stream.writeSSE({
         data: JSON.stringify({
           type: "error",
-          data: `Copilot SDK error: ${errMsg}. Ensure you have a GitHub Copilot subscription or configure BYOK in settings.`,
+          data: errMsg,
         }),
       });
       await stream.writeSSE({ data: "[DONE]" });
