@@ -1729,8 +1729,8 @@ export default function EditorPage() {
   useEffect(() => {
     if (autoSentRef.current) return;
     autoSentRef.current = true;
-    // Read mode from URL — if "plan", switch to plan mode before sending
-    const urlMode = new URLSearchParams(window.location.search).get("mode");
+    // Read mode from URL — if "plan", switch to plan mode and pass it directly to sendMessage
+    const urlMode = new URLSearchParams(window.location.search).get("mode") as ChatMode | null;
     if (urlMode === "plan") {
       setChatMode("plan");
     }
@@ -1761,8 +1761,9 @@ export default function EditorPage() {
     // Don't auto-send if messages already exist (page was refreshed with localStorage history)
     if (messages.length > 0) return;
     // Small delay so the UI renders the chat panel first
+    // Pass urlMode directly — don't rely on React state which may not have flushed
     setTimeout(() => {
-      sendMessage(prompt!, storedAttachments);
+      sendMessage(prompt!, storedAttachments, urlMode === "plan" ? "plan" : undefined);
     }, 300);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedProjectId]);
@@ -1958,7 +1959,7 @@ export default function EditorPage() {
 
   // ─── Send message to real API ──────────────────────────────
   const sendMessage = useCallback(
-    (text: string, msgAttachments?: Attachment[]) => {
+    (text: string, msgAttachments?: Attachment[], modeOverride?: ChatMode) => {
       const trimmed = text.trim();
       if (!trimmed || isStreaming) return;
 
@@ -1997,8 +1998,8 @@ export default function EditorPage() {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      // Auto-detect visual edit mode from [Visual Edit] prefix
-      const effectiveMode: ChatMode = trimmed.startsWith("[Visual Edit]") ? "visual-edit" : chatMode;
+      // Use explicit mode override if provided, otherwise detect from prefix or state
+      const effectiveMode: ChatMode = modeOverride ?? (trimmed.startsWith("[Visual Edit]") ? "visual-edit" : chatMode);
 
       streamChat(
         resolvedProjectId,
@@ -3804,10 +3805,12 @@ export default function EditorPage() {
                         body: JSON.stringify({ planId: plan.id }),
                       }).catch(() => {});
 
-                      // Trigger the AI to start building after React flushes the mode change
+                      // Trigger the AI to start building — pass "agent" mode explicitly
                       setTimeout(() => {
                         sendMessage(
-                          `Start building! Here's the approved plan:\n\n**${summary}**\n\n${stepList}\n\nBuild each step in order. The full plan details are in .doable/plan.md.`
+                          `Start building! Here's the approved plan:\n\n**${summary}**\n\n${stepList}\n\nBuild each step in order. The full plan details are in .doable/plan.md.`,
+                          undefined,
+                          "agent"
                         );
                       }, 150);
                     }}
