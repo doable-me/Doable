@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { CopilotEngine } from "./copilot.js";
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;  // 30 minutes
-const MAX_AGE_MS      = 25 * 60 * 1000;  // 25 minutes — recycle before Copilot API tokens expire
+const MAX_AGE_MS      = 60 * 60 * 1000;  // 60 minutes — extended from 25min; sendAndWait handles auth internally
 
 interface PoolEntry {
   engine: CopilotEngine;
@@ -24,6 +24,7 @@ interface PoolEntry {
   githubToken: string | undefined;
   lastUsed: number;
   createdAt: number;
+  activeRequests: number;
   startPromise: Promise<void> | null;
 }
 
@@ -79,6 +80,22 @@ export class CopilotEngineManager {
     }
 
     return this.createEngine(tokenHash, githubToken);
+  }
+
+  /** Mark an engine as having an active request (prevents recycling) */
+  trackRequest(githubToken?: string): () => void {
+    const tokenHash = githubToken
+      ? createHash("sha256").update(githubToken).digest("hex")
+      : "__default__";
+    const entry = this.pool.get(tokenHash);
+    if (entry) {
+      entry.activeRequests++;
+      entry.lastUsed = Date.now();
+    }
+    return () => {
+      const e = this.pool.get(tokenHash);
+      if (e) e.activeRequests = Math.max(0, e.activeRequests - 1);
+    };
   }
 
   /**
@@ -156,6 +173,7 @@ export class CopilotEngineManager {
       githubToken,
       lastUsed: now,
       createdAt: now,
+      activeRequests: 0,
       startPromise: null,
     };
 
@@ -190,6 +208,9 @@ export class CopilotEngineManager {
 
       // Never proactively clean up the default engine (no token = gh CLI auth)
       if (hash === "__default__" && !isIdle) continue;
+
+      // Never recycle an engine with active requests — kills in-flight sendAndWait calls
+      if (entry.activeRequests > 0) continue;
 
       if (isIdle || isAged) {
         const reason = isAged ? "max age" : "idle";

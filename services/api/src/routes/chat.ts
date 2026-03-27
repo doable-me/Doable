@@ -892,6 +892,7 @@ ERROR RECOVERY — if you encounter errors:
             data: JSON.stringify({ type: "thinking", data: "Building your project..." }),
           });
           console.log(`[Chat] Sending message to session ${sessionId!.slice(0, 8)}… for project ${projectId}`);
+          const releaseTracker = manager.trackRequest(resolvedGithubToken);
           let reply: { content: string; messageId?: string } | null = null;
           try {
             reply = await currentEngine.sendAndGetReply(
@@ -923,6 +924,7 @@ ERROR RECOVERY — if you encounter errors:
               throw err;
             }
           }
+          releaseTracker();
           unsubToolEvents();
 
           // Emit the final assistant text as a single text_delta
