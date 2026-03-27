@@ -668,7 +668,27 @@ chatRoutes.post(
 
       const systemPrompt =
           mode === "plan"
-            ? "You are Doable's Plan Mode AI. Analyze requests, break them into steps, and produce structured plans. Do NOT write code directly — only plan and reason."
+            ? `You are Doable's Plan Mode AI. Help the user plan their project before building.
+
+You have access to these planning tools:
+- ask_clarification: Ask 2-4 focused questions when the request is ambiguous or underspecified
+- create_plan: Generate a structured plan with steps for user approval
+
+Workflow:
+1. Read the codebase to understand the current state (use read_file, list_files, search_files)
+2. If the request is vague, call ask_clarification with targeted questions (each with smart default options)
+3. Once you have enough context, call create_plan with a structured plan
+
+Rules:
+- Use plain language — the user may not be a developer
+- Questions should have multiple-choice options when possible
+- Step titles should be action-oriented ("Build the hero section", not "Hero section")
+- Step descriptions explain WHAT will be built, not HOW
+- Technical details (file paths, implementation notes) go in the optional details field
+- Do NOT execute any file changes. Only analyze and plan.
+- You MUST call ask_clarification or create_plan tools — do not just output text.
+
+${previewUrl ? `Preview: ${previewUrl}` : ""}${projectContext}`
             : mode === "visual-edit"
             ? `You are Doable's Visual Edit AI. You make precise, surgical edits to individual UI elements. The user has selected a specific element in the visual preview and wants you to modify it.
 
@@ -795,6 +815,45 @@ ERROR RECOVERY — if you encounter errors:
                 stream.writeSSE({ data: JSON.stringify({
                   type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly },
                 }) }).catch(() => {});
+
+                // Plan Mode V2: Emit structured plan events for plan tools
+                if (toolName === "ask_clarification" && result) {
+                  try {
+                    const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
+                    if (output) {
+                      const questions = JSON.parse(output);
+                      if (Array.isArray(questions) && questions.length > 0) {
+                        stream.writeSSE({ data: JSON.stringify({
+                          type: "clarification", data: { questions },
+                        }) }).catch(() => {});
+                      }
+                    }
+                  } catch { /* non-critical parse error */ }
+                }
+                if (toolName === "create_plan" && result) {
+                  try {
+                    const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
+                    if (output) {
+                      const plan = JSON.parse(output);
+                      if (plan && plan.id) {
+                        stream.writeSSE({ data: JSON.stringify({
+                          type: "plan", data: { plan },
+                        }) }).catch(() => {});
+                        // Save plan to DB
+                        sql`INSERT INTO plans (id, project_id, summary, complexity, status, created_at)
+                            VALUES (${plan.id}, ${projectId}, ${plan.summary}, ${plan.complexity}, 'draft', now())
+                            ON CONFLICT (id) DO NOTHING`.catch(() => {});
+                        if (Array.isArray(plan.steps)) {
+                          for (const step of plan.steps) {
+                            sql`INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
+                                VALUES (${step.id}, ${plan.id}, ${step.order}, ${step.title}, ${step.description}, ${step.details ?? null}, 'pending', ${step.filePaths ?? null})
+                                ON CONFLICT (id) DO NOTHING`.catch(() => {});
+                          }
+                        }
+                      }
+                    }
+                  } catch { /* non-critical parse error */ }
+                }
               },
               onSessionEnd: (reason, error) => {
                 console.log(`[Hook] Session end: ${reason}${error ? ` — ${error}` : ""}`);
@@ -896,6 +955,24 @@ ERROR RECOVERY — if you encounter errors:
               ? { type: "tool_call", data: { name: toolName, friendlyMessage: friendly, arguments: args } }
               : { type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly } };
             stream.writeSSE({ data: JSON.stringify(ssePayload) }).catch(() => {});
+
+            // Plan Mode V2: Emit plan events from tool event bridge
+            if (status === "end" && toolName === "ask_clarification" && args?.output) {
+              try {
+                const questions = JSON.parse(args.output as string);
+                if (Array.isArray(questions)) {
+                  stream.writeSSE({ data: JSON.stringify({ type: "clarification", data: { questions } }) }).catch(() => {});
+                }
+              } catch { /* ignore */ }
+            }
+            if (status === "end" && toolName === "create_plan" && args?.output) {
+              try {
+                const plan = JSON.parse(args.output as string);
+                if (plan?.id) {
+                  stream.writeSSE({ data: JSON.stringify({ type: "plan", data: { plan } }) }).catch(() => {});
+                }
+              } catch { /* ignore */ }
+            }
             // Broadcast to collaborators
             broadcastToRoom(projectId, {
               type: "ai:tool-event", messageId,

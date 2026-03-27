@@ -116,6 +116,8 @@ import type { MonacoEditorWrapperProps } from "@/modules/editor/code-editor/mona
 import { CollaborativeMonacoWrapper } from "@/modules/editor/code-editor/collaborative-monaco-wrapper";
 import { useVisualEdit } from "@/modules/editor/visual-edit/use-visual-edit";
 import { VisualEditToolbar } from "@/modules/editor/visual-edit/visual-edit-toolbar";
+import type { ClarificationQuestion, Plan } from "@doable/shared/types/ai";
+import { ClarificationFlow, PlanCard, PlanProgress } from "@/modules/editor/chat/plan";
 
 // ─── Dynamically import Monaco (browser-only) ───────────────
 const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
@@ -396,6 +398,9 @@ async function streamChat(
   modelOverride?: string,
   providerIdOverride?: string | null,
   copilotAccountIdOverride?: string | null,
+  onClarification?: (questions: ClarificationQuestion[]) => void,
+  onPlan?: (plan: Plan) => void,
+  onPlanStepUpdate?: (stepId: string, status: string) => void,
 ) {
   let currentToken = getStoredTokens().accessToken;
 
@@ -556,6 +561,32 @@ async function streamChat(
             const action = (d?.action as string) ?? "edit";
             if (filePath) {
               onToolCompleted(`${action}_file`, { path: filePath });
+            }
+          }
+
+          // Handle plan mode events
+          if (parsed.type === "clarification" && onClarification) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const questions = d?.questions as ClarificationQuestion[] | undefined;
+            if (Array.isArray(questions) && questions.length > 0) {
+              onClarification(questions);
+            }
+          }
+
+          if (parsed.type === "plan" && onPlan) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const plan = d?.plan as Plan | undefined;
+            if (plan) {
+              onPlan(plan);
+            }
+          }
+
+          if (parsed.type === "plan_step_update" && onPlanStepUpdate) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const stepId = d?.stepId as string | undefined;
+            const status = d?.status as string | undefined;
+            if (stepId && status) {
+              onPlanStepUpdate(stepId, status);
             }
           }
 
@@ -909,6 +940,11 @@ export default function EditorPage() {
   // ─── UI state ─────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
   const [chatMode, setChatMode] = useState<ChatMode>("agent");
+
+  // Plan Mode V2 state
+  const [activePlan, setActivePlan] = useState<Plan | null>(null);
+  const [planPhase, setPlanPhase] = useState<"idle" | "clarifying" | "planning" | "reviewing" | "building">("idle");
+  const [pendingQuestions, setPendingQuestions] = useState<ClarificationQuestion[] | null>(null);
 
   // ── AI Model Selection ──
   const [selectedModelId, setSelectedModelId] = useState(() => {
@@ -2058,6 +2094,24 @@ export default function EditorPage() {
         selectedModelId || undefined,
         selectedProviderId,
         selectedCopilotAccountId,
+        // Plan mode callbacks
+        (questions) => {
+          setPendingQuestions(questions);
+          setPlanPhase("clarifying");
+        },
+        (plan) => {
+          setActivePlan(plan);
+          setPlanPhase("reviewing");
+        },
+        (stepId, status) => {
+          setActivePlan(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              steps: prev.steps.map(s => s.id === stepId ? { ...s, status: status as any } : s),
+            };
+          });
+        },
       );
     },
     [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, handleToolStarted, loadFileTree, selectedFile, loadFileContent, previewUrl, selectedModelId, selectedProviderId, selectedCopilotAccountId]
@@ -3215,6 +3269,13 @@ export default function EditorPage() {
                 </div>
               )}
 
+              {/* Plan progress tracker during build */}
+              {planPhase === "building" && activePlan && (
+                <div className="px-3 py-2">
+                  <PlanProgress plan={activePlan} />
+                </div>
+              )}
+
               {messages.map((msg, msgIdx) => (
                 <div key={msg.id} className="group">
                   {msg.role === "user" ? (
@@ -3600,6 +3661,120 @@ export default function EditorPage() {
                   )}
                 </div>
               ))}
+
+              {/* Plan Mode V2: Clarification questions */}
+              {planPhase === "clarifying" && pendingQuestions && (
+                <div className="px-3 py-2">
+                  <ClarificationFlow
+                    questions={pendingQuestions}
+                    onComplete={async (answers) => {
+                      setPendingQuestions(null);
+                      setPlanPhase("planning");
+                      const answerText = Object.entries(answers)
+                        .map(([qId, answer]) => `${qId}: ${answer}`)
+                        .join("\n");
+                      // Send answers back as a follow-up in plan mode
+                      sendMessage(`Here are my answers to your questions:\n\n${answerText}`);
+                    }}
+                    disabled={isStreaming}
+                  />
+                </div>
+              )}
+
+              {/* Plan Mode V2: Plan card for review */}
+              {planPhase === "reviewing" && activePlan && (
+                <div className="px-3 py-2">
+                  <PlanCard
+                    plan={activePlan}
+                    isEditable
+                    onApprove={async () => {
+                      try {
+                        const token = getStoredTokens().accessToken;
+                        await fetch(`${API_URL}/projects/${resolvedProjectId}/plan/approve`, {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                          },
+                          body: JSON.stringify({ planId: activePlan.id }),
+                        });
+                        setActivePlan(prev => prev ? { ...prev, status: "approved", approvedAt: new Date().toISOString() } : prev);
+                        setPlanPhase("building");
+                        setChatMode("agent");
+                      } catch (err) {
+                        console.error("[Plan] Approve failed:", err);
+                      }
+                    }}
+                    onRefine={() => {
+                      sendMessage("Please refine the plan based on my feedback.");
+                    }}
+                    onReset={async () => {
+                      try {
+                        const token = getStoredTokens().accessToken;
+                        await fetch(`${API_URL}/projects/${resolvedProjectId}/plan/abandon`, {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                          },
+                          body: JSON.stringify({ planId: activePlan.id }),
+                        });
+                      } catch {}
+                      setActivePlan(null);
+                      setPlanPhase("idle");
+                      setPendingQuestions(null);
+                    }}
+                    onStepEdit={(stepId, field, value) => {
+                      setActivePlan(prev => {
+                        if (!prev) return prev;
+                        return {
+                          ...prev,
+                          steps: prev.steps.map(s => s.id === stepId ? { ...s, [field]: value } : s),
+                        };
+                      });
+                    }}
+                    onStepRemove={(stepId) => {
+                      setActivePlan(prev => {
+                        if (!prev) return prev;
+                        return {
+                          ...prev,
+                          steps: prev.steps.filter(s => s.id !== stepId).map((s, i) => ({ ...s, order: i + 1 })),
+                        };
+                      });
+                    }}
+                    onStepReorder={(stepIds) => {
+                      setActivePlan(prev => {
+                        if (!prev) return prev;
+                        const stepById: Record<string, (typeof prev.steps)[number]> = {};
+                        for (const s of prev.steps) stepById[s.id] = s;
+                        const reordered = stepIds
+                          .map((id, i) => {
+                            const step = stepById[id];
+                            return step ? { ...step, order: i + 1 } : null;
+                          })
+                          .filter(Boolean) as typeof prev.steps;
+                        return { ...prev, steps: reordered };
+                      });
+                    }}
+                    onStepAdd={() => {
+                      setActivePlan(prev => {
+                        if (!prev) return prev;
+                        return {
+                          ...prev,
+                          steps: [...prev.steps, {
+                            id: `step_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                            order: prev.steps.length + 1,
+                            title: "New step",
+                            description: "Describe what this step does",
+                            status: "pending" as const,
+                          }],
+                        };
+                      });
+                    }}
+                  />
+                </div>
+              )}
+
               <div ref={chatEndRef} />
             </div>
 
@@ -3781,7 +3956,7 @@ export default function EditorPage() {
                           title="Agent mode — generates code"
                         >
                           <Bot className="h-3 w-3" />
-                          <span className="hidden sm:inline">Agent</span>
+                          <span className="hidden sm:inline">Build</span>
                         </button>
                         <div className="w-px h-4 bg-zinc-600/40" />
                         <button
@@ -3794,7 +3969,7 @@ export default function EditorPage() {
                           title="Plan mode — creates plans only"
                         >
                           <ClipboardList className="h-3 w-3" />
-                          <span className="hidden sm:inline">Plan</span>
+                          <span className="hidden sm:inline">Plan first</span>
                         </button>
                       </div>
 

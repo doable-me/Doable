@@ -806,6 +806,107 @@ export function createDoableTools(projectId: string): Tool[] {
         };
       },
     }),
+
+    // ─── Plan Mode V2 Tools ──────────────────────────────────
+
+    defineTool("ask_clarification", {
+      description:
+        "Ask the user clarifying questions before generating a plan. Use this when the request is ambiguous or underspecified. Maximum 4 questions per call.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          questions: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                id: { type: "string" as const, description: "Unique question ID" },
+                question: { type: "string" as const, description: "The question text" },
+                type: { type: "string" as const, enum: ["multi_choice", "yes_no", "free_text"] as const, description: "Question type" },
+                options: { type: "array" as const, items: { type: "string" as const }, description: "Options for multi_choice" },
+                default: { type: "string" as const, description: "Default answer if user skips" },
+                context: { type: "string" as const, description: "Why this question is asked" },
+              },
+              required: ["id", "question", "type"] as const,
+            },
+          },
+        },
+        required: ["questions"] as const,
+      },
+      handler: async (args: { questions: Array<{ id: string; question: string; type: string; options?: string[]; default?: string; context?: string }> }) => {
+        emitToolEvent(projectId, "ask_clarification", "start", {});
+        const questions = args.questions.slice(0, 4);
+        emitToolEvent(projectId, "ask_clarification", "end", { output: JSON.stringify(questions) });
+        return { success: true, questions, message: `Asked ${questions.length} clarification questions` };
+      },
+    }),
+
+    defineTool("create_plan", {
+      description:
+        "Create a structured development plan for user approval. Call this after you have enough context.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          summary: { type: "string" as const, description: "1-2 sentence plan summary" },
+          complexity: { type: "string" as const, enum: ["simple", "moderate", "complex"] as const },
+          steps: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                title: { type: "string" as const, description: "Action-oriented step title" },
+                description: { type: "string" as const, description: "What this step accomplishes" },
+                details: { type: "string" as const, description: "Technical implementation details" },
+                filePaths: { type: "array" as const, items: { type: "string" as const }, description: "Files to create/modify" },
+              },
+              required: ["title", "description"] as const,
+            },
+          },
+        },
+        required: ["summary", "complexity", "steps"] as const,
+      },
+      handler: async (args: { summary: string; complexity: string; steps: Array<{ title: string; description: string; details?: string; filePaths?: string[] }> }) => {
+        const { randomUUID } = await import("node:crypto");
+        const planId = randomUUID();
+        const steps = args.steps.map((s, i) => ({
+          id: randomUUID(),
+          order: i + 1,
+          title: s.title,
+          description: s.description,
+          details: s.details,
+          filePaths: s.filePaths,
+          status: "pending" as const,
+        }));
+        const plan = {
+          id: planId,
+          projectId,
+          summary: args.summary,
+          complexity: args.complexity,
+          steps,
+          status: "draft" as const,
+          createdAt: new Date().toISOString(),
+        };
+        emitToolEvent(projectId, "create_plan", "start", {});
+        emitToolEvent(projectId, "create_plan", "end", { output: JSON.stringify(plan) });
+        return { success: true, plan, message: `Created plan with ${steps.length} steps` };
+      },
+    }),
+
+    defineTool("mark_step_complete", {
+      description:
+        "Mark a plan step as completed during build execution.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          stepId: { type: "string" as const, description: "The step ID to mark complete" },
+          planId: { type: "string" as const, description: "The plan ID" },
+        },
+        required: ["stepId", "planId"] as const,
+      },
+      handler: async (args: { stepId: string; planId: string }) => {
+        return { success: true, stepId: args.stepId, planId: args.planId, status: "completed" };
+      },
+    }),
   ] as Tool[]);
 }
 
