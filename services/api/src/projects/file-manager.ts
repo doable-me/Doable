@@ -40,12 +40,36 @@ export interface ScaffoldResult {
   installOutput: string;
 }
 
+// In-flight scaffold promises — prevents two concurrent createProject()
+// calls for the same project from colliding (race between frontend
+// scaffold POST and chat API auto-scaffold).
+const scaffoldingInFlight = new Map<string, Promise<ScaffoldResult>>();
+
 /**
  * Create a new Vite+React+TypeScript project scaffold.
  * Writes all template files and runs `pnpm install`.
  * If templateFiles is provided, uses those instead of the default blank scaffold.
  */
 export async function createProject(
+  projectId: string,
+  templateFiles?: Record<string, string>
+): Promise<ScaffoldResult> {
+  // Deduplicate concurrent scaffold calls for the same project
+  const inflight = scaffoldingInFlight.get(projectId);
+  if (inflight) {
+    return inflight;
+  }
+
+  const promise = doCreateProject(projectId, templateFiles);
+  scaffoldingInFlight.set(projectId, promise);
+  try {
+    return await promise;
+  } finally {
+    scaffoldingInFlight.delete(projectId);
+  }
+}
+
+async function doCreateProject(
   projectId: string,
   templateFiles?: Record<string, string>
 ): Promise<ScaffoldResult> {
