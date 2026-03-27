@@ -47,7 +47,7 @@ const MODE_CONFIGS: Record<AiSessionMode, ModeConfig> = {
       "user.md",
       "instructions.md",
       "knowledge.md",
-      "plan.md",
+      // plan.md is NOT injected — the AI reads it on demand via read_file to save context tokens
       "memory.md",
       // P0.5: Session lifecycle
       "boot.md",
@@ -62,19 +62,19 @@ const MODE_CONFIGS: Record<AiSessionMode, ModeConfig> = {
       "heartbeat.md",
     ],
     preamble:
-      "You are working inside a project. Follow the project's identity, knowledge, and instructions precisely. Apply the design soul. Reference memory for prior context. Respect user preferences.",
+      "You are working inside a project. Follow the project's identity, knowledge, and instructions precisely. Apply the design soul. Reference memory for prior context. Respect user preferences. If .doable/plan.md exists, read it with read_file and follow the plan step by step.",
   },
   plan: {
     include: [
       "identity.md",
       "knowledge.md",
-      "plan.md",
+      // plan.md is NOT injected — the AI reads it on demand via read_file to save context tokens
       "memory.md",
       "architecture.md",
       "schema.md",
     ],
     preamble:
-      "You are helping plan the next steps for this project. Use the project identity and knowledge base to make informed suggestions. Reference the current plan and memory.",
+      "You are helping plan the next steps for this project. Use the project identity and knowledge base to make informed suggestions. If .doable/plan.md exists, read it with read_file for context on existing plans.",
   },
   chat: {
     include: [

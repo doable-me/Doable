@@ -50,13 +50,15 @@ export function buildSystemPrompt(
     sections.push(wrapSection("MEMORY", context.contextFiles["memory.md"]));
   }
 
-  // Active plan (if in plan or agent mode)
+  // Active plan reference (if in plan or agent mode)
+  // Don't inject the full plan text — just tell the AI where to find it.
+  // This saves context tokens on every message. The AI reads it on demand.
   if (
     (mode === "plan" || mode === "agent") &&
     context.contextFiles["plan.md"]
   ) {
     sections.push(
-      wrapSection("ACTIVE PLAN", context.contextFiles["plan.md"]),
+      wrapSection("ACTIVE PLAN", "There is an active development plan at `.doable/plan.md`. Read it with read_file before starting work. Follow the plan step by step."),
     );
   }
 
