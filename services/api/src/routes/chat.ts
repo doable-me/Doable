@@ -779,6 +779,33 @@ ERROR RECOVERY — if you encounter errors:
             workingDirectory: projectPath,
             systemPrompt,
             tools: allTools,
+            // SDK hooks — called via RPC for guaranteed progress updates
+            toolProgress: {
+              onToolStart: (toolName, args) => {
+                console.log(`[Hook] Tool start: ${toolName}`);
+                const friendly = friendlyToolMessage(toolName, args as Record<string, unknown>);
+                stream.writeSSE({ data: JSON.stringify({
+                  type: "tool_call", data: { name: toolName, friendlyMessage: friendly },
+                }) }).catch(() => {});
+              },
+              onToolEnd: (toolName, args, result) => {
+                console.log(`[Hook] Tool end: ${toolName}`);
+                hadToolCalls = true;
+                const friendly = friendlyToolResult(toolName, result, true);
+                stream.writeSSE({ data: JSON.stringify({
+                  type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly },
+                }) }).catch(() => {});
+              },
+              onSessionEnd: (reason, error) => {
+                console.log(`[Hook] Session end: ${reason}${error ? ` — ${error}` : ""}`);
+              },
+              onError: (error, context) => {
+                console.error(`[Hook] Error (${context}): ${error}`);
+                stream.writeSSE({ data: JSON.stringify({
+                  type: "error", data: `${context}: ${error}`,
+                }) }).catch(() => {});
+              },
+            },
           });
         });
         projectSessions.set(sessionKey, sessionId);
@@ -884,10 +911,10 @@ ERROR RECOVERY — if you encounter errors:
             }
           });
 
-          // Use sendAndGetReply — the SDK's session.on() event stream is broken
-          // in v0.1.32 (only delivers pending_messages.modified, no streaming events).
-          // sendAndWait processes the full request and returns the final response.
-          // Tool activity is shown in real-time via the onToolEvent bridge above.
+          // Use sendAndGetReply with session.send() + session.on() + activity-based timeout.
+          // SDK hooks (onPreToolUse/onPostToolUse) fire via RPC for guaranteed progress.
+          // onToolEvent bridge provides additional file-level events from our tool handlers.
+          // Timeout fires only after 2 minutes of NO activity — not a blind wall clock.
           await stream.writeSSE({
             data: JSON.stringify({ type: "thinking", data: "Building your project..." }),
           });
@@ -898,6 +925,16 @@ ERROR RECOVERY — if you encounter errors:
             reply = await currentEngine.sendAndGetReply(
               sessionId!, augmentedContent,
               fileAttachments.length > 0 ? fileAttachments : undefined,
+              // Activity callback — resets the inactivity timer and pushes SSE events
+              (type, detail) => {
+                if (type === "text_delta") {
+                  // Streaming text arrived — accumulate for DB persistence
+                  assistantContent += detail.replace(/^\+(\d+) chars$/, "");
+                } else if (type === "event") {
+                  // Any SDK event = activity
+                  console.log(`[Chat] SDK activity: ${detail}`);
+                }
+              },
             );
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);

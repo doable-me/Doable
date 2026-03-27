@@ -44,6 +44,14 @@ export interface ByokProviderConfig {
   azure?: { apiVersion?: string };
 }
 
+/** Callback for tool lifecycle hooks — called via RPC, separate from event stream */
+export interface ToolProgressCallback {
+  onToolStart?: (toolName: string, args: unknown) => void;
+  onToolEnd?: (toolName: string, args: unknown, result: unknown) => void;
+  onSessionEnd?: (reason: string, error?: string) => void;
+  onError?: (error: string, context: string) => void;
+}
+
 export interface CopilotSessionConfig {
   /** Project ID for context */
   projectId: string;
@@ -63,6 +71,8 @@ export interface CopilotSessionConfig {
   onUserInput?: (question: string) => Promise<string>;
   /** Handler for streaming events */
   onEvent?: (event: SessionEvent) => void;
+  /** Tool progress callbacks — separate RPC channel from event stream */
+  toolProgress?: ToolProgressCallback;
 }
 
 // ─── Copilot Engine ────────────────────────────────────
@@ -160,6 +170,21 @@ export class CopilotEngine {
             }),
           }
         : {}),
+      // Hooks — called via RPC (separate from event stream) for guaranteed progress
+      hooks: {
+        onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
+          config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs);
+        },
+        onPostToolUse: async (input: { toolName: string; toolArgs: unknown; toolResult: unknown }) => {
+          config.toolProgress?.onToolEnd?.(input.toolName, input.toolArgs, input.toolResult);
+        },
+        onSessionEnd: async (input: { reason: string; error?: string }) => {
+          config.toolProgress?.onSessionEnd?.(input.reason, input.error);
+        },
+        onErrorOccurred: async (input: { error: string; errorContext: string }) => {
+          config.toolProgress?.onError?.(input.error, input.errorContext);
+        },
+      },
     };
 
     const session = await this.client!.createSession(sessionConfig);
@@ -317,14 +342,20 @@ export class CopilotEngine {
    * Send a message and wait for the complete response.
    * Returns the assistant's reply text. Tool calls execute during this time.
    *
-   * Use this instead of sendMessage() when the SDK's session.on() doesn't
-   * deliver streaming events (which is the current behavior in SDK v0.1.32).
+   * Uses session.send() (non-blocking) + session.on() for completion detection.
+   * The timeout is ACTIVITY-BASED: it resets each time the onActivity callback
+   * fires. Only triggers when there's genuinely no activity for inactivityMs.
+   *
+   * @param onActivity - Called whenever any activity is detected (tool hook,
+   *   SDK event, etc.). The caller should use this to reset their own timers
+   *   and push SSE status updates.
    */
   async sendAndGetReply(
     sessionId: string,
     prompt: string,
     fileAttachments?: Array<{ type: "file"; path: string; displayName?: string }>,
-    timeoutMs = 300_000,
+    onActivity?: (type: string, detail: string) => void,
+    inactivityMs = 120_000, // 2 minutes of silence = timeout
   ): Promise<{ content: string; messageId?: string } | null> {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -336,11 +367,107 @@ export class CopilotEngine {
       messageOptions.attachments = fileAttachments;
     }
 
-    console.log(`[CopilotEngine] sendAndGetReply to session ${sessionId.slice(0, 8)}… (timeout: ${Math.round(timeoutMs / 1000)}s)`);
-    const result = await session.sendAndWait(messageOptions, timeoutMs);
-    const content = (result?.data as Record<string, unknown>)?.content as string ?? "";
-    console.log(`[CopilotEngine] sendAndGetReply complete — content length: ${content.length}`);
-    return { content, messageId: result?.id };
+    console.log(`[CopilotEngine] sendAndGetReply to session ${sessionId.slice(0, 8)}… (inactivity timeout: ${Math.round(inactivityMs / 1000)}s)`);
+
+    return new Promise((resolve, reject) => {
+      let lastActivity = Date.now();
+      let assistantContent = "";
+      let assistantMessageId: string | undefined;
+      let completed = false;
+
+      // Activity-based timeout: fires only after sustained silence
+      const checkInactivity = setInterval(() => {
+        if (completed) return;
+        const elapsed = Date.now() - lastActivity;
+        if (elapsed > inactivityMs) {
+          clearInterval(checkInactivity);
+          unsubscribe();
+          if (!completed) {
+            completed = true;
+            console.error(`[CopilotEngine] No activity for ${Math.round(elapsed / 1000)}s — timing out`);
+            // Return whatever content we have so far rather than crashing
+            if (assistantContent) {
+              resolve({ content: assistantContent, messageId: assistantMessageId });
+            } else {
+              reject(new Error(`AI session timed out — no activity for ${Math.round(elapsed / 1000)} seconds`));
+            }
+          }
+        }
+      }, 10_000);
+
+      const touch = (type: string, detail: string) => {
+        lastActivity = Date.now();
+        onActivity?.(type, detail);
+      };
+
+      // Subscribe to ALL events from the SDK
+      const unsubscribe = session.on((event: SessionEvent) => {
+        const evtType = (event as Record<string, unknown>).type as string;
+        const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
+
+        touch("event", evtType);
+        console.log(`[CopilotEngine] Event: ${evtType}`);
+
+        // Capture streaming text
+        if (evtType === "assistant.message_delta") {
+          const delta = (evtData?.deltaContent ?? "") as string;
+          if (delta) {
+            assistantContent += delta;
+            touch("text_delta", `+${delta.length} chars`);
+          }
+        }
+
+        // Capture final message
+        if (evtType === "assistant.message") {
+          const content = (evtData?.content ?? "") as string;
+          if (content && !assistantContent) {
+            assistantContent = content;
+          }
+          assistantMessageId = (event as Record<string, unknown>).id as string;
+        }
+
+        // Completion
+        if (evtType === "session.idle") {
+          if (!completed) {
+            completed = true;
+            clearInterval(checkInactivity);
+            unsubscribe();
+            console.log(`[CopilotEngine] session.idle — content length: ${assistantContent.length}`);
+            resolve({ content: assistantContent, messageId: assistantMessageId });
+          }
+        }
+
+        // Error
+        if (evtType === "session.error") {
+          if (!completed) {
+            completed = true;
+            clearInterval(checkInactivity);
+            unsubscribe();
+            const errMsg = (evtData?.message ?? "Unknown error") as string;
+            console.error(`[CopilotEngine] session.error: ${errMsg}`);
+            // Return partial content if we have any
+            if (assistantContent) {
+              resolve({ content: assistantContent, messageId: assistantMessageId });
+            } else {
+              reject(new Error(errMsg));
+            }
+          }
+        }
+      });
+
+      // Send the message (non-blocking) — events flow through session.on()
+      session.send(messageOptions).then((msgId) => {
+        console.log(`[CopilotEngine] session.send() resolved — messageId: ${msgId}`);
+        touch("send", "message accepted");
+      }).catch((err) => {
+        if (!completed) {
+          completed = true;
+          clearInterval(checkInactivity);
+          unsubscribe();
+          reject(err);
+        }
+      });
+    });
   }
 
   /**
