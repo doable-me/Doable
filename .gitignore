@@ -41,6 +41,8 @@ Thumbs.db
 # Generated project data (user projects, thumbnails)
 services/api/projects/
 services/api/thumbnails/
+services/api/services/
+services/ws/projects/
 
 # Logs
 *.log
