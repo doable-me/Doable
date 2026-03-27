@@ -919,7 +919,9 @@ ERROR RECOVERY — if you encounter errors:
         }
       }
 
-      // Broadcast to other collaborators that a message was sent
+      // Broadcast AI message to ALL users in room (including sender).
+      // After refresh, the sender reconnects via WS and picks up live events.
+      // During the original SSE session, frontend deduplicates via ownMessageIds.
       const messageId = crypto.randomUUID();
       broadcastToRoom(projectId, {
         type: "ai:message-sent",
@@ -927,7 +929,7 @@ ERROR RECOVERY — if you encounter errors:
         displayName: senderDisplayName,
         content: content.slice(0, 200),
         messageId,
-      }, userId).catch(() => {});
+      }).catch(() => {});
 
         // Pre-insert an empty assistant message row so partial content is never lost
         if (dbSessionId) {
@@ -973,12 +975,12 @@ ERROR RECOVERY — if you encounter errors:
                 }
               } catch { /* ignore */ }
             }
-            // Broadcast to collaborators
+            // Broadcast to all room members (including sender for WS reconnection)
             broadcastToRoom(projectId, {
               type: "ai:tool-event", messageId,
               event: status === "start" ? "tool_call" : "tool_result",
               data: (ssePayload.data ?? {}) as Record<string, unknown>,
-            }, userId).catch(() => {});
+            }).catch(() => {});
             // Persist tool calls progressively
             if (status === "start") {
               assistantToolCalls.push({ name: toolName, arguments: args });
@@ -1059,10 +1061,10 @@ ERROR RECOVERY — if you encounter errors:
             assistantContent = reply.content;
             const sanitized = sanitizeText(reply.content);
             await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: sanitized }) });
-            // Broadcast to collaborators
+            // Broadcast to all room members (including sender for WS reconnection)
             broadcastToRoom(projectId, {
               type: "ai:stream-chunk", chunk: sanitized, messageId, isThinking: false,
-            }, userId).catch(() => {});
+            }).catch(() => {});
           }
           console.log(`[Chat] SSE stream complete for ${projectId}: hadToolCalls=${hadToolCalls}, contentLen=${assistantContent.length}`);
         } catch (err) {
@@ -1259,12 +1261,12 @@ ERROR RECOVERY — if you encounter errors:
           scheduleThumbnailCapture(projectId);
         }
 
-        // Broadcast stream end to collaborators
+        // Broadcast stream end to all room members
         broadcastToRoom(projectId, {
           type: "ai:stream-end",
           messageId,
           finalContent: assistantContent.slice(0, 500),
-        }, userId).catch(() => {});
+        }).catch(() => {});
 
         // Final save of assistant message (update the pre-inserted row)
         if (assistantMessageId && assistantContent) {

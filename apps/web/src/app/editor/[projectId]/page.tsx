@@ -2731,12 +2731,22 @@ export default function EditorPage() {
   const handleRemoteStreamChunk = useCallback((data: { messageId: string; chunk: string; isThinking: boolean }) => {
     let aiMsgId = remoteStreamIdsRef.current[data.messageId];
 
-    // Auto-create assistant message if stream starts before ai:message-sent
+    // Auto-create or reuse assistant message
     if (!aiMsgId) {
       aiMsgId = `remote_ai_${data.messageId}`;
       remoteStreamIdsRef.current[data.messageId] = aiMsgId;
       setMessages((prev) => {
         if (prev.some((m) => m.id === aiMsgId)) return prev;
+        // After refresh: reuse the last assistant message from DB history
+        // instead of creating a duplicate (it already has partial content)
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg?.role === "assistant" && !lastMsg.isStreaming) {
+          remoteStreamIdsRef.current[data.messageId] = lastMsg.id;
+          aiMsgId = lastMsg.id;
+          return prev.map((m) =>
+            m.id === lastMsg.id ? { ...m, isStreaming: true } : m
+          );
+        }
         return [...prev, {
           id: aiMsgId!,
           role: "assistant" as const,
