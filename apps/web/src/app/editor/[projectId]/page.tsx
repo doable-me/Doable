@@ -1670,37 +1670,51 @@ export default function EditorPage() {
     })();
 
     // Check if AI is still actively working (e.g., user refreshed during build)
-    // If active, poll chat history every 3s for near-live progress updates
-    // (DB is flushed every 5s, so content updates progressively)
+    // If active, set streaming state so loading indicators show, and poll for updates
     (async () => {
       try {
         const statusRes = await apiFetch<{ active: boolean; mode?: string }>(`/projects/${resolvedProjectId}/ai-status`);
         if (statusRes.active) {
           setLiveStatus("AI is still working on your project...");
           setIsStreaming(true);
+
+          // Reload every 3s while AI is active — chat history, file tree, preview
+          let lastRefresh = 0;
           const poll = setInterval(async () => {
             try {
-              // Reload chat history to show progressive content (DB flushed every 5s)
               await loadFromApi();
-              // Also refresh file tree + preview since AI may be writing files
               loadFileTree();
-              // Check if still active
+
+              // Refresh preview iframe every 6s (not every 3s — too aggressive)
+              const now = Date.now();
+              if (now - lastRefresh > 6000 && iframeRef.current && previewUrl) {
+                iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + now;
+                lastRefresh = now;
+              }
+
               const check = await apiFetch<{ active: boolean }>(`/projects/${resolvedProjectId}/ai-status`);
               if (!check.active) {
                 clearInterval(poll);
                 setLiveStatus("");
                 setIsStreaming(false);
-                // Final reload to get completed response
+                // Final reload everything
                 await loadFromApi();
                 loadFileTree();
                 if (selectedFile) {
                   delete fileContentsCache.current[selectedFile];
                   loadFileContent(selectedFile);
                 }
+                // Final preview refresh
+                if (iframeRef.current && previewUrl) {
+                  setTimeout(() => {
+                    if (iframeRef.current && previewUrl) {
+                      iframeRef.current.src = previewUrl + "?t=" + Date.now();
+                    }
+                  }, 2000);
+                }
               }
             } catch { clearInterval(poll); setIsStreaming(false); }
           }, 3000);
-          // Safety: stop polling after 5 minutes
           setTimeout(() => { clearInterval(poll); setIsStreaming(false); setLiveStatus(""); }, 5 * 60 * 1000);
         }
       } catch { /* ignore */ }
@@ -2783,8 +2797,18 @@ export default function EditorPage() {
         m.id === aiMsgId ? { ...m, isStreaming: false } : m
       )
     );
+    setIsStreaming(false);
+    setLiveStatus("");
     delete remoteStreamIdsRef.current[data.messageId];
-  }, []);
+
+    // Refresh file tree + preview when stream ends (files were written)
+    loadFileTree();
+    setTimeout(() => {
+      if (iframeRef.current && previewUrl) {
+        iframeRef.current.src = previewUrl + "?t=" + Date.now();
+      }
+    }, 2000);
+  }, [loadFileTree, previewUrl]);
 
   const handleRemoteToolEvent = useCallback((data: { messageId: string; event: "tool_call" | "tool_result"; toolName: string; args: Record<string, unknown>; friendlyMessage?: string }) => {
     let aiMsgId = remoteStreamIdsRef.current[data.messageId];
@@ -2806,8 +2830,9 @@ export default function EditorPage() {
     }
 
     if (data.event === "tool_call") {
-      // Add a running tool action card
+      // Update live status so the loading bar shows what's happening
       const description = data.friendlyMessage || data.toolName.replace(/[_-]/g, " ");
+      setLiveStatus(description);
       const filePath = typeof (data.args?.path ?? data.args?.filePath) === "string"
         ? (data.args?.path ?? data.args?.filePath) as string : undefined;
       setMessages((prev) =>
@@ -2843,10 +2868,19 @@ export default function EditorPage() {
           return m;
         })
       );
-      // Also refresh file tree and preview for file-modifying tools
+      // Refresh file tree and debounced preview reload for file-modifying tools
       loadFileTree();
+      // Debounced preview refresh — only trigger if no refresh in last 3s
+      if (iframeRef.current && previewUrl) {
+        clearTimeout((handleRemoteToolEvent as any)._previewTimer);
+        (handleRemoteToolEvent as any)._previewTimer = setTimeout(() => {
+          if (iframeRef.current && previewUrl) {
+            iframeRef.current.src = previewUrl + "?t=" + Date.now();
+          }
+        }, 3000);
+      }
     }
-  }, [loadFileTree]);
+  }, [loadFileTree, previewUrl]);
 
   const handleRemoteStatus = useCallback((data: { messageId: string; status: string }) => {
     const aiMsgId = remoteStreamIdsRef.current[data.messageId];
