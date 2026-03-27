@@ -82,20 +82,17 @@ export async function writeProjectFile(
     throw new FileAccessError("Content exceeds max file size");
   }
 
-  // Try to write through Yjs CRDT if collaboration is active
-  try {
-    const result = await writeFileThroughYjs(projectId, filePath, content);
-    if (result.handled) {
-      return; // CRDT handled the write — persistence is debounced
-    }
-  } catch {
-    // Fall through to direct write
-  }
-
-  // Direct filesystem write (no active collaboration)
+  // Always write to the local filesystem so the Vite dev server sees changes immediately
   const fullPath = resolveFilePath(projectId, filePath);
   await mkdir(dirname(fullPath), { recursive: true });
   await writeFile(fullPath, content, "utf-8");
+
+  // Also write through Yjs CRDT if collaboration is active (syncs to other clients)
+  try {
+    await writeFileThroughYjs(projectId, filePath, content);
+  } catch {
+    // Non-critical — local write already succeeded
+  }
 }
 
 export async function deleteProjectFile(
