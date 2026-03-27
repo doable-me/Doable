@@ -816,43 +816,27 @@ ERROR RECOVERY — if you encounter errors:
                   type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly },
                 }) }).catch(() => {});
 
-                // Plan Mode V2: Emit structured plan events for plan tools
-                if (toolName === "ask_clarification" && result) {
-                  try {
-                    const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
-                    if (output) {
-                      const questions = JSON.parse(output);
-                      if (Array.isArray(questions) && questions.length > 0) {
-                        stream.writeSSE({ data: JSON.stringify({
-                          type: "clarification", data: { questions },
-                        }) }).catch(() => {});
-                      }
-                    }
-                  } catch { /* non-critical parse error */ }
-                }
+                // Plan Mode V2: Save plan to DB when create_plan tool completes
+                // The SDK hook result is the handler's return value: { success, plan, message }
                 if (toolName === "create_plan" && result) {
                   try {
-                    const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
-                    if (output) {
-                      const plan = JSON.parse(output);
-                      if (plan && plan.id) {
-                        stream.writeSSE({ data: JSON.stringify({
-                          type: "plan", data: { plan },
-                        }) }).catch(() => {});
-                        // Save plan to DB
-                        sql`INSERT INTO plans (id, project_id, summary, complexity, status, created_at)
-                            VALUES (${plan.id}, ${projectId}, ${plan.summary}, ${plan.complexity}, 'draft', now())
-                            ON CONFLICT (id) DO NOTHING`.catch(() => {});
-                        if (Array.isArray(plan.steps)) {
-                          for (const step of plan.steps) {
-                            sql`INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
-                                VALUES (${step.id}, ${plan.id}, ${step.order}, ${step.title}, ${step.description}, ${step.details ?? null}, 'pending', ${step.filePaths ?? null})
-                                ON CONFLICT (id) DO NOTHING`.catch(() => {});
-                          }
+                    const r = result as Record<string, unknown>;
+                    const plan = r.plan as Record<string, unknown> | undefined;
+                    if (plan?.id) {
+                      sql`INSERT INTO plans (id, project_id, summary, complexity, status, created_at)
+                          VALUES (${plan.id as string}, ${projectId}, ${plan.summary as string}, ${plan.complexity as string}, 'draft', now())
+                          ON CONFLICT (id) DO NOTHING`.catch((e) => console.error("[Plan] DB save failed:", e));
+                      const steps = plan.steps as Array<Record<string, unknown>> | undefined;
+                      if (Array.isArray(steps)) {
+                        for (const step of steps) {
+                          sql`INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
+                              VALUES (${step.id as string}, ${plan.id as string}, ${step.order as number}, ${step.title as string}, ${step.description as string}, ${(step.details as string) ?? null}, 'pending', ${(step.filePaths as string[]) ?? null})
+                              ON CONFLICT (id) DO NOTHING`.catch((e) => console.error("[Plan] Step save failed:", e));
                         }
                       }
+                      console.log(`[Plan] Saved plan ${plan.id} with ${steps?.length ?? 0} steps to DB`);
                     }
-                  } catch { /* non-critical parse error */ }
+                  } catch (e) { console.error("[Plan] DB save error:", e); }
                 }
               },
               onSessionEnd: (reason, error) => {
