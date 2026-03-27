@@ -8,6 +8,8 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { writeFile as fsWriteFile, mkdir as fsMkdir } from "node:fs/promises";
+import path from "node:path";
 import {
   readProjectFile,
   writeProjectFile,
@@ -108,9 +110,14 @@ async function doCreateProject(
     files = Object.entries(blankTemplate.codeFiles);
   }
 
+  // Write files directly to disk — NOT through writeProjectFile which goes
+  // through the Yjs bridge. The Yjs bridge debounces disk persistence, so
+  // files might not exist on disk when the validation check runs.
   const createdFiles: string[] = [];
   for (const [filePath, content] of files) {
-    await writeProjectFile(projectId, filePath, content);
+    const fullPath = path.join(projectPath, filePath);
+    await fsMkdir(path.dirname(fullPath), { recursive: true });
+    await fsWriteFile(fullPath, content, "utf-8");
     createdFiles.push(filePath);
   }
 
