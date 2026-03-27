@@ -1,26 +1,28 @@
 /**
- * CopilotEngine Manager
+ * CopilotEngine Manager — Per-Project Concurrency
  *
- * Pools CopilotEngine instances keyed by SHA-256 hash of the GitHub token.
- * - No token = default engine (uses gh CLI auth)
- * - Same token = reuses existing engine
- * - Idle engines are stopped after 30 minutes
- * - ALL engines are recycled after 25 minutes (max age) to prevent stale
- *   Copilot API tokens — the SDK exchanges GitHub tokens for short-lived
- *   API tokens internally, and long-lived engines can hold expired ones
- * - Concurrent requests for the same token await a single start promise
+ * Pools CopilotEngine instances keyed by projectId so each project gets
+ * its own CLI subprocess. This allows true parallel AI processing —
+ * User A's request on Project X never blocks User B on Project Y.
+ *
+ * - Each project gets a dedicated CopilotClient + CLI subprocess
+ * - The githubToken is used for auth when creating the engine
+ * - Idle engines are stopped after 10 minutes (faster cleanup for more engines)
+ * - ALL engines are recycled after 60 minutes (max age)
+ * - Hard cap of 20 concurrent engines (~50-100MB each, 4GB server)
+ * - Concurrent requests for the same project await a single start promise
  * - Auth/policy errors trigger automatic eviction + retry via withAutoRetry()
  */
 
-import { createHash } from "node:crypto";
 import { CopilotEngine } from "./copilot.js";
 
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000;  // 30 minutes
-const MAX_AGE_MS      = 60 * 60 * 1000;  // 60 minutes — extended from 25min; sendAndWait handles auth internally
+const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — shorter for per-project pool
+const MAX_AGE_MS      = 60 * 60 * 1000; // 60 minutes
+const MAX_ENGINES     = 20;              // Hard cap — ~1-2GB at full capacity
 
 interface PoolEntry {
   engine: CopilotEngine;
-  tokenHash: string;
+  projectId: string;
   githubToken: string | undefined;
   lastUsed: number;
   createdAt: number;
@@ -51,16 +53,12 @@ export class CopilotEngineManager {
   }
 
   /**
-   * Get a CopilotEngine for the given GitHub token.
-   * Returns the default engine (gh CLI auth) when no token is provided.
-   * Automatically recycles engines that have exceeded MAX_AGE_MS.
+   * Get a CopilotEngine for the given project.
+   * Each project gets its own dedicated CLI subprocess for true concurrency.
+   * The githubToken is used for authentication when creating the engine.
    */
-  async getEngine(githubToken?: string): Promise<CopilotEngine> {
-    const tokenHash = githubToken
-      ? createHash("sha256").update(githubToken).digest("hex")
-      : "__default__";
-
-    const existing = this.pool.get(tokenHash);
+  async getEngine(projectId: string, githubToken?: string): Promise<CopilotEngine> {
+    const existing = this.pool.get(projectId);
     if (existing) {
       // Wait for startup if still in progress
       if (existing.startPromise) {
@@ -69,8 +67,8 @@ export class CopilotEngineManager {
 
       // Recycle if past max age — proactively prevents stale tokens
       if (Date.now() - existing.createdAt > MAX_AGE_MS) {
-        console.log(`[CopilotManager] Recycling engine past max age (${tokenHash.slice(0, 8)}…)`);
-        this.pool.delete(tokenHash);
+        console.log(`[CopilotManager] Recycling engine past max age (${projectId.slice(0, 8)}…)`);
+        this.pool.delete(projectId);
         existing.engine.stop().catch(() => {});
         // Fall through to create a new one
       } else {
@@ -79,21 +77,27 @@ export class CopilotEngineManager {
       }
     }
 
-    return this.createEngine(tokenHash, githubToken);
+    // Enforce hard cap — try cleanup first, then reject if still full
+    if (this.pool.size >= MAX_ENGINES) {
+      this.cleanup();
+      if (this.pool.size >= MAX_ENGINES) {
+        console.warn(`[CopilotManager] At capacity (${MAX_ENGINES} engines) — rejecting ${projectId.slice(0, 8)}…`);
+        throw new Error("Server busy — too many concurrent AI sessions. Please try again in a few minutes.");
+      }
+    }
+
+    return this.createEngine(projectId, githubToken);
   }
 
   /** Mark an engine as having an active request (prevents recycling) */
-  trackRequest(githubToken?: string): () => void {
-    const tokenHash = githubToken
-      ? createHash("sha256").update(githubToken).digest("hex")
-      : "__default__";
-    const entry = this.pool.get(tokenHash);
+  trackRequest(projectId: string): () => void {
+    const entry = this.pool.get(projectId);
     if (entry) {
       entry.activeRequests++;
       entry.lastUsed = Date.now();
     }
     return () => {
-      const e = this.pool.get(tokenHash);
+      const e = this.pool.get(projectId);
       if (e) e.activeRequests = Math.max(0, e.activeRequests - 1);
     };
   }
@@ -102,22 +106,20 @@ export class CopilotEngineManager {
    * Run an async operation with automatic retry on auth errors.
    * If the operation fails with an auth/token error, evicts the cached engine
    * and retries once with a fresh connection.
-   *
-   * Use this for any Copilot SDK call that might fail due to stale tokens:
-   *   await manager.withAutoRetry(githubToken, async (engine) => { ... })
    */
   async withAutoRetry<T>(
+    projectId: string,
     githubToken: string | undefined,
     operation: (engine: CopilotEngine) => Promise<T>,
   ): Promise<T> {
-    const engine = await this.getEngine(githubToken);
+    const engine = await this.getEngine(projectId, githubToken);
     try {
       return await operation(engine);
     } catch (err) {
       if (isAuthError(err)) {
-        console.log(`[CopilotManager] Auth error detected, evicting and retrying...`);
-        await this.evictEngine(githubToken);
-        const freshEngine = await this.getEngine(githubToken);
+        console.log(`[CopilotManager] Auth error detected for ${projectId.slice(0, 8)}…, evicting and retrying...`);
+        await this.evictEngine(projectId);
+        const freshEngine = await this.getEngine(projectId, githubToken);
         return await operation(freshEngine);
       }
       throw err;
@@ -126,18 +128,13 @@ export class CopilotEngineManager {
 
   /**
    * Evict a cached engine so the next getEngine() call creates a fresh one.
-   * Call this when a request fails with an auth/permission error — the
-   * underlying Copilot API token may have expired while the engine was pooled.
+   * Call this when a request fails with an auth/permission error.
    */
-  async evictEngine(githubToken?: string): Promise<void> {
-    const tokenHash = githubToken
-      ? createHash("sha256").update(githubToken).digest("hex")
-      : "__default__";
-
-    const entry = this.pool.get(tokenHash);
+  async evictEngine(projectId: string): Promise<void> {
+    const entry = this.pool.get(projectId);
     if (entry) {
-      console.log(`[CopilotManager] Evicting stale engine (${tokenHash.slice(0, 8)}…)`);
-      this.pool.delete(tokenHash);
+      console.log(`[CopilotManager] Evicting stale engine (${projectId.slice(0, 8)}…)`);
+      this.pool.delete(projectId);
       entry.engine.stop().catch(() => {});
     }
   }
@@ -158,7 +155,12 @@ export class CopilotEngineManager {
     console.log("[CopilotManager] All engines stopped");
   }
 
-  private async createEngine(tokenHash: string, githubToken?: string): Promise<CopilotEngine> {
+  /** Get the current number of pooled engines (for monitoring) */
+  get poolSize(): number {
+    return this.pool.size;
+  }
+
+  private async createEngine(projectId: string, githubToken?: string): Promise<CopilotEngine> {
     const engine = new CopilotEngine({
       model: process.env.COPILOT_DEFAULT_MODEL,
       cliPath: process.env.COPILOT_CLI_PATH,
@@ -169,7 +171,7 @@ export class CopilotEngineManager {
     const now = Date.now();
     const entry: PoolEntry = {
       engine,
-      tokenHash,
+      projectId,
       githubToken,
       lastUsed: now,
       createdAt: now,
@@ -178,12 +180,12 @@ export class CopilotEngineManager {
     };
 
     // Dedup: store entry before starting so concurrent calls see it
-    this.pool.set(tokenHash, entry);
+    this.pool.set(projectId, entry);
 
     // Start with dedup promise
     entry.startPromise = engine.start().catch((err) => {
-      console.error(`[CopilotManager] Failed to start engine (${tokenHash.slice(0, 8)}):`, err);
-      this.pool.delete(tokenHash);
+      console.error(`[CopilotManager] Failed to start engine (${projectId.slice(0, 8)}):`, err);
+      this.pool.delete(projectId);
       throw err;
     });
 
@@ -193,7 +195,7 @@ export class CopilotEngineManager {
       entry.startPromise = null;
     }
 
-    console.log(`[CopilotManager] Engine started (${tokenHash.slice(0, 8)}…)`);
+    console.log(`[CopilotManager] Engine started (${projectId.slice(0, 8)}…) — pool: ${this.pool.size}/${MAX_ENGINES}`);
     return engine;
   }
 
@@ -202,23 +204,20 @@ export class CopilotEngineManager {
    */
   private cleanup(): void {
     const now = Date.now();
-    for (const [hash, entry] of this.pool) {
+    for (const [key, entry] of this.pool) {
       const isIdle = now - entry.lastUsed > IDLE_TIMEOUT_MS;
       const isAged = now - entry.createdAt > MAX_AGE_MS;
 
-      // Never proactively clean up the default engine (no token = gh CLI auth)
-      if (hash === "__default__" && !isIdle) continue;
-
-      // Never recycle an engine with active requests — kills in-flight sendAndWait calls
+      // Never recycle an engine with active requests — kills in-flight calls
       if (entry.activeRequests > 0) continue;
 
       if (isIdle || isAged) {
         const reason = isAged ? "max age" : "idle";
-        console.log(`[CopilotManager] Stopping engine (${hash.slice(0, 8)}… — ${reason})`);
+        console.log(`[CopilotManager] Stopping engine (${key.slice(0, 8)}… — ${reason}) — pool: ${this.pool.size - 1}/${MAX_ENGINES}`);
         entry.engine.stop().catch((err) =>
           console.error(`[CopilotManager] Error stopping engine:`, err)
         );
-        this.pool.delete(hash);
+        this.pool.delete(key);
       }
     }
   }

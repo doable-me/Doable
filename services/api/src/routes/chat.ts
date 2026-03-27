@@ -823,7 +823,7 @@ ERROR RECOVERY — if you encounter errors:
         // if session creation fails with an auth error, the manager evicts
         // the cached engine, creates a fresh one, and retries.
         const manager = getCopilotManager();
-        sessionId = await manager.withAutoRetry(resolvedGithubToken, async (eng) => {
+        sessionId = await manager.withAutoRetry(projectId, resolvedGithubToken, async (eng) => {
           return eng.createSession({
             projectId,
             userId,
@@ -965,7 +965,7 @@ ERROR RECOVERY — if you encounter errors:
           // Get a fresh engine reference — the pooled engine may have been
           // recycled since resolveAiEngine ran (max-age, idle, or eviction).
           const manager = getCopilotManager();
-          let currentEngine = await manager.getEngine(resolvedGithubToken);
+          let currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
 
           // Subscribe to tool execution events so we can push live status to the client
           // while the Copilot SDK executes tools silently in the background.
@@ -1036,7 +1036,7 @@ ERROR RECOVERY — if you encounter errors:
             data: JSON.stringify({ type: "thinking", data: "Building your project..." }),
           });
           console.log(`[Chat] Sending message to session ${sessionId!.slice(0, 8)}… for project ${projectId}`);
-          const releaseTracker = manager.trackRequest(resolvedGithubToken);
+          const releaseTracker = manager.trackRequest(projectId);
           let reply: { content: string; messageId?: string } | null = null;
           try {
             reply = await currentEngine.sendAndGetReply(
@@ -1062,7 +1062,7 @@ ERROR RECOVERY — if you encounter errors:
                 data: JSON.stringify({ type: "thinking", data: "Reconnecting to AI..." }),
               });
               projectSessions.delete(sessionKey);
-              currentEngine = await manager.getEngine(resolvedGithubToken);
+              currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
               const projectPath = getProjectPath(projectId);
               const freshTools = await createAllTools(projectId, workspaceId, userId);
               const recreateTools = mode === "plan"
@@ -1106,7 +1106,7 @@ ERROR RECOVERY — if you encounter errors:
           // so the next request gets a fresh one automatically.
           if (msg.includes("not authorized") || msg.includes("policy") || msg.includes("unauthorized")) {
             const manager = getCopilotManager();
-            await manager.evictEngine(resolvedGithubToken);
+            await manager.evictEngine(projectId);
             projectSessions.delete(sessionKey);
             console.log("[Chat] Evicted stale engine after streaming auth error");
           }
@@ -1177,7 +1177,7 @@ ERROR RECOVERY — if you encounter errors:
             });
 
             try {
-              const fixEngine = await getCopilotManager().getEngine(resolvedGithubToken);
+              const fixEngine = await getCopilotManager().getEngine(projectId, resolvedGithubToken);
               for await (const event of fixEngine.sendMessage(
                 sessionId!,
                 buildAutoFixPrompt(previewError.message),
@@ -1642,7 +1642,7 @@ chatRoutes.get("/ai/models", async (c) => {
     }
 
     const manager = getCopilotManager();
-    const engine = await manager.getEngine(githubToken);
+    const engine = await manager.getEngine("__models__", githubToken);
     const models = await engine.listModels();
     return c.json({ data: models });
   } catch (err) {
@@ -1756,7 +1756,7 @@ chatRoutes.post(
       // withAutoRetry handles stale token eviction + retry transparently.
       for (const config of configs) {
         try {
-          const suggestions = await manager.withAutoRetry(config.githubToken, async (engine) => {
+          const suggestions = await manager.withAutoRetry("__suggestions__", config.githubToken, async (engine) => {
             const sessionId = await engine.createSession({
               projectId: "suggestions",
               userId: "system",
