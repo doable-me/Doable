@@ -51,12 +51,14 @@ interface Finding {
 interface ScanResult {
   id: string;
   projectId: string;
-  scanType: string;
+  scanType?: string;
   status: string;
   findingsCount: number;
-  startedAt: string | null;
-  completedAt: string | null;
-  createdAt: string;
+  filesScanned?: number;
+  duration?: number;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  createdAt?: string;
 }
 
 interface ScanResponse {
@@ -276,8 +278,8 @@ export function SecurityPanel({ projectId, onClose }: Props) {
       );
 
       setFindings(result.findings);
-      setFilesScanned(result.filesScanned ?? 0);
-      setScanDuration(Math.round((result.duration ?? 0) / 1000));
+      setFilesScanned(result.filesScanned ?? result.scan?.filesScanned ?? 0);
+      setScanDuration(Math.round(((result.duration ?? result.scan?.duration ?? 0)) / 1000));
       setLastScanTime(new Date());
       setHasScanned(true);
     } catch (err) {
