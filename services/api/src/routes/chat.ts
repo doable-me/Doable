@@ -797,11 +797,14 @@ ERROR RECOVERY — if you encounter errors:
 - "X is not exported from Y" → read BOTH the importing file AND the exporting file to understand the mismatch.
 - If multiple errors cascade, fix them one at a time starting with the root cause (usually a missing package or broken import).`;
 
-      // In plan mode, strip write tools — only allow read + plan tools.
-      // This PREVENTS the AI from building when it should be planning.
+      // Plan mode: only allow read + plan tools (no file writes).
+      // Build mode: strip plan-only tools so the AI builds instead of asking questions.
       const PLAN_ONLY_TOOLS = new Set([
         "read_file", "list_files", "search_files",
         "ask_clarification", "create_plan", "mark_step_complete",
+      ]);
+      const PLAN_EXCLUSIVE_TOOLS = new Set([
+        "ask_clarification", "create_plan",
       ]);
 
       let sessionId = projectSessions.get(sessionKey);
@@ -817,7 +820,7 @@ ERROR RECOVERY — if you encounter errors:
         const allTools = await createAllTools(projectId, workspaceId, userId);
         const sessionTools = mode === "plan"
           ? allTools.filter((t: { name?: string }) => PLAN_ONLY_TOOLS.has(t.name ?? ""))
-          : allTools;
+          : allTools.filter((t: { name?: string }) => !PLAN_EXCLUSIVE_TOOLS.has(t.name ?? ""));
 
         // Use withAutoRetry to handle stale Copilot API tokens —
         // if session creation fails with an auth error, the manager evicts
@@ -1067,7 +1070,7 @@ ERROR RECOVERY — if you encounter errors:
               const freshTools = await createAllTools(projectId, workspaceId, userId);
               const recreateTools = mode === "plan"
                 ? freshTools.filter((t: { name?: string }) => PLAN_ONLY_TOOLS.has(t.name ?? ""))
-                : freshTools;
+                : freshTools.filter((t: { name?: string }) => !PLAN_EXCLUSIVE_TOOLS.has(t.name ?? ""));
               sessionId = await currentEngine.createSession({
                 projectId, userId, model: resolvedModel, provider: resolvedProvider,
                 workingDirectory: projectPath, systemPrompt, tools: recreateTools,
