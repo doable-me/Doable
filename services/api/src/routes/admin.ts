@@ -641,8 +641,8 @@ adminRoutes.post("/thumbnails/generate-missing", async (c) => {
         const previewUrl = `http://127.0.0.1:${apiPort}/preview/${project.id}/`;
         try {
           const filePath = await captureProjectThumbnail(project.id, previewUrl, {
-            retries: 1,
-            retryDelayMs: 2000,
+            retries: 3,
+            retryDelayMs: 5000,
             triggeredBy: "admin" as const,
           });
           if (filePath) {
