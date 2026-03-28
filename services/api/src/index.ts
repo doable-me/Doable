@@ -48,7 +48,16 @@ const app = new Hono();
 
 // Pre-create middleware instances (avoid re-instantiating on every request)
 const secureHeadersMw = secureHeaders();
-const apiRateLimiter = rateLimiter({ windowMs: 60_000, max: 100 });
+const apiRateLimiter = rateLimiter({
+  windowMs: 60_000,
+  max: 200,
+  keyGenerator: (c) => {
+    // Use Authorization token (per-user) or fall back to IP
+    const auth = c.req.header("authorization");
+    if (auth) return `auth:${auth.slice(-16)}`;
+    return c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? "unknown";
+  },
+});
 
 // ─── Global Middleware ──────────────────────────────────────
 app.use("*", logger());
@@ -109,7 +118,7 @@ app.use(
 // triggers many subrequests (HTML + JS chunks + CSS + assets) which would
 // quickly exhaust the limit and cause preview loads to fail with 429.
 app.use("*", async (c, next) => {
-  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/analytics/") || c.req.path === "/visual-edit-bridge.js") {
+  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/thumbnails/") || c.req.path.startsWith("/analytics/") || c.req.path === "/visual-edit-bridge.js") {
     await next();
     return;
   }
