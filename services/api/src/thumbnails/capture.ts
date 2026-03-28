@@ -13,6 +13,7 @@ import puppeteer, { type Browser } from "puppeteer";
 import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { sql } from "../db/index.js";
 
 // Puppeteer evaluate callbacks run in the browser context where `document` exists.
 // Declare it here since the API tsconfig does not include the DOM lib.
@@ -76,10 +77,12 @@ async function isPreviewHealthy(page: import("puppeteer").Page): Promise<boolean
 export async function captureProjectThumbnail(
   projectId: string,
   previewUrl: string,
-  options?: { retries?: number; retryDelayMs?: number },
+  options?: { retries?: number; retryDelayMs?: number; triggeredBy?: "auto" | "admin" | "regenerate" },
 ): Promise<string | null> {
   const maxAttempts = 1 + (options?.retries ?? 1);
   const retryDelay = options?.retryDelayMs ?? 5000;
+  const triggeredBy = options?.triggeredBy ?? "auto";
+  const startTime = Date.now();
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -109,7 +112,9 @@ export async function captureProjectThumbnail(
           await new Promise((r) => setTimeout(r, retryDelay));
           continue;
         }
-        console.warn(`[Thumbnail] Skipping capture for ${projectId} — preview has errors after ${maxAttempts} attempts`);
+        const msg = `Preview has errors after ${maxAttempts} attempts`;
+        console.warn(`[Thumbnail] Skipping capture for ${projectId} — ${msg}`);
+        void logThumbnailAttempt({ projectId, status: "skipped", previewUrl, errorMessage: msg, durationMs: Date.now() - startTime, triggeredBy });
         return null;
       }
 
@@ -118,6 +123,7 @@ export async function captureProjectThumbnail(
       await page.close();
 
       console.log(`[Thumbnail] Captured screenshot for ${projectId}`);
+      void logThumbnailAttempt({ projectId, status: "success", previewUrl, durationMs: Date.now() - startTime, triggeredBy });
       return filePath;
     } catch (err) {
       if (attempt < maxAttempts) {
@@ -125,7 +131,9 @@ export async function captureProjectThumbnail(
         await new Promise((r) => setTimeout(r, retryDelay));
         continue;
       }
+      const msg = err instanceof Error ? err.message : "Unknown error";
       console.warn(`[Thumbnail] Failed to capture for ${projectId} after ${maxAttempts} attempts:`, err);
+      void logThumbnailAttempt({ projectId, status: "failed", previewUrl, errorMessage: msg, durationMs: Date.now() - startTime, triggeredBy });
       return null;
     }
   }
@@ -144,6 +152,26 @@ export function getThumbnailPath(projectId: string): string {
  */
 export function thumbnailExists(projectId: string): boolean {
   return existsSync(getThumbnailPath(projectId));
+}
+
+/**
+ * Log a thumbnail generation attempt to the database.
+ */
+export async function logThumbnailAttempt(opts: {
+  projectId: string;
+  projectName?: string;
+  status: "success" | "failed" | "skipped";
+  previewUrl?: string;
+  errorMessage?: string;
+  durationMs?: number;
+  triggeredBy?: "auto" | "admin" | "regenerate";
+}): Promise<void> {
+  try {
+    await sql`INSERT INTO thumbnail_logs (project_id, project_name, status, preview_url, error_message, duration_ms, triggered_by)
+      VALUES (${opts.projectId}, ${opts.projectName ?? null}, ${opts.status}, ${opts.previewUrl ?? null}, ${opts.errorMessage ?? null}, ${opts.durationMs ?? null}, ${opts.triggeredBy ?? "auto"})`;
+  } catch (e) {
+    console.warn("[Thumbnail] Failed to write log:", e);
+  }
 }
 
 // ─── Cleanup on shutdown ────────────────────────────────────

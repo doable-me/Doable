@@ -587,3 +587,78 @@ adminRoutes.post("/migrate-to-git", async (c) => {
     return c.json({ error: "Migration failed", message }, 500);
   }
 });
+
+// ─── Thumbnail Management ─────────────────────────────────
+
+// GET /admin/thumbnail-logs — get recent thumbnail generation logs
+adminRoutes.get("/thumbnail-logs", async (c) => {
+  const limit = parseInt(c.req.query("limit") ?? "50", 10);
+  try {
+    const logs = await sql`
+      SELECT tl.id, tl.project_id, tl.project_name, tl.status, tl.preview_url,
+             tl.error_message, tl.duration_ms, tl.triggered_by, tl.created_at,
+             p.name as current_project_name
+      FROM thumbnail_logs tl
+      LEFT JOIN projects p ON p.id = tl.project_id
+      ORDER BY tl.created_at DESC
+      LIMIT ${limit}
+    `;
+    return c.json({ data: logs });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: "Failed to fetch thumbnail logs", message }, 500);
+  }
+});
+
+// POST /admin/thumbnails/generate-missing — generate thumbnails for all projects that are missing one
+adminRoutes.post("/thumbnails/generate-missing", async (c) => {
+  try {
+    const { captureProjectThumbnail, thumbnailExists } = await import("../thumbnails/capture.js");
+    const apiPort = parseInt(process.env.API_PORT ?? "4000", 10);
+
+    // Get all projects
+    const projects = await sql<{ id: string; name: string; thumbnail_url: string | null }[]>`
+      SELECT id, name, thumbnail_url FROM projects ORDER BY updated_at DESC
+    `;
+
+    const missing: { id: string; name: string }[] = [];
+    for (const p of projects) {
+      if (!thumbnailExists(p.id)) {
+        missing.push({ id: p.id, name: p.name });
+      }
+    }
+
+    if (missing.length === 0) {
+      return c.json({ data: { total: projects.length, missing: 0, queued: 0, message: "All projects already have thumbnails" } });
+    }
+
+    // Process in background — return immediately with count
+    const queued = missing.length;
+
+    // Fire and forget: generate thumbnails sequentially to avoid overwhelming Puppeteer
+    (async () => {
+      for (const project of missing) {
+        const previewUrl = `http://127.0.0.1:${apiPort}/preview/${project.id}/`;
+        try {
+          const filePath = await captureProjectThumbnail(project.id, previewUrl, {
+            retries: 1,
+            retryDelayMs: 2000,
+            triggeredBy: "admin" as const,
+          });
+          if (filePath) {
+            const thumbnailUrl = `/thumbnails/${project.id}.png`;
+            await sql`UPDATE projects SET thumbnail_url = ${thumbnailUrl}, updated_at = NOW() WHERE id = ${project.id}`;
+          }
+        } catch (e) {
+          console.warn(`[Thumbnail Admin] Failed for ${project.id}:`, e);
+        }
+      }
+      console.log(`[Thumbnail Admin] Finished generating ${queued} missing thumbnails`);
+    })();
+
+    return c.json({ data: { total: projects.length, missing: queued, queued, message: `Generating ${queued} missing thumbnails in background` } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: "Failed to generate thumbnails", message }, 500);
+  }
+});

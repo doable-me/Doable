@@ -489,18 +489,12 @@ function scheduleThumbnailCapture(projectId: string, delayMs = 5000): void {
   }
   captureInProgress.add(projectId);
 
-  const internalUrl = getDevServerInternalUrl(projectId);
-  if (!internalUrl) {
-    console.warn(`[Thumbnail] No dev server URL for ${projectId} — skipping capture`);
-    captureInProgress.delete(projectId);
-    return;
-  }
-
   // Use the API server's proxy URL — Puppeteer loads through the reverse proxy
   // so assets, HMR, and base paths resolve correctly (same as the browser).
+  // This works even when getDevServerInternalUrl() returns null, because the
+  // /preview/:projectId/ proxy route handles dev server lookup internally.
   const apiPort = parseInt(process.env.API_PORT ?? "4000", 10);
-  const apiHost = process.env.API_HOST ?? "127.0.0.1";
-  const previewUrl = `http://${apiHost}:${apiPort}/preview/${projectId}/`;
+  const previewUrl = `http://127.0.0.1:${apiPort}/preview/${projectId}/`;
   console.log(`[Thumbnail] Scheduling capture for ${projectId} in ${delayMs}ms (preview: ${previewUrl})`);
 
   setTimeout(() => {

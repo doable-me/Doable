@@ -21,6 +21,12 @@ import {
   Copy,
   Check,
   X,
+  ImageIcon,
+  Play,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToastContainer } from "@/components/ui/toast-container";
@@ -466,7 +472,7 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users">("features");
+  const [activeTab, setActiveTab] = useState<"features" | "users" | "thumbnails">("features");
 
   // AI allocations state
   const [allocations, setAllocations] = useState<UserAiAllocation[]>([]);
@@ -690,6 +696,7 @@ export default function AdminPage() {
         {[
           { key: "features" as const, label: "Feature Flags", icon: Settings2 },
           { key: "users" as const, label: "Users", icon: Users },
+          { key: "thumbnails" as const, label: "Thumbnails", icon: ImageIcon },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -873,7 +880,167 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* Thumbnails Tab */}
+      {activeTab === "thumbnails" && (
+        <ThumbnailsPanel />
+      )}
+
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </div>
+  );
+}
+
+// ─── Thumbnails Panel ────────────────────────────────────────
+
+interface ThumbnailLog {
+  id: string;
+  project_id: string;
+  project_name: string | null;
+  current_project_name: string | null;
+  status: string;
+  preview_url: string | null;
+  error_message: string | null;
+  duration_ms: number | null;
+  triggered_by: string;
+  created_at: string;
+}
+
+interface GenerateResult {
+  total: number;
+  missing: number;
+  queued: number;
+  message: string;
+}
+
+function ThumbnailsPanel() {
+  const [logs, setLogs] = useState<ThumbnailLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [result, setResult] = useState<GenerateResult | null>(null);
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      const res = await apiFetch<{ data: ThumbnailLog[] }>("/admin/thumbnail-logs?limit=100");
+      setLogs(res.data);
+    } catch (e) {
+      console.error("Failed to fetch thumbnail logs:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
+
+  const handleGenerateMissing = useCallback(async () => {
+    setGenerating(true);
+    setResult(null);
+    try {
+      const res = await apiFetch<{ data: GenerateResult }>("/admin/thumbnails/generate-missing", { method: "POST" });
+      setResult(res.data);
+      // Refresh logs after a delay to show new entries
+      setTimeout(() => fetchLogs(), 3000);
+    } catch (e) {
+      console.error("Failed to generate thumbnails:", e);
+    } finally {
+      setGenerating(false);
+    }
+  }, [fetchLogs]);
+
+  const statusIcon = (status: string) => {
+    switch (status) {
+      case "success": return <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />;
+      case "failed": return <XCircle className="h-3.5 w-3.5 text-red-500" />;
+      case "skipped": return <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />;
+      default: return <Clock className="h-3.5 w-3.5 text-zinc-500" />;
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-zinc-500">
+            Generate missing project thumbnails and view the generation log.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handleGenerateMissing}
+            disabled={generating}
+            className="gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm"
+          >
+            {generating ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</>
+            ) : (
+              <><Play className="h-4 w-4" /> Generate Missing Thumbnails</>
+            )}
+          </Button>
+          <Button
+            onClick={fetchLogs}
+            variant="outline"
+            className="gap-2 text-sm border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        </div>
+      </div>
+
+      {result && (
+        <div className="rounded-lg border border-brand-800/50 bg-brand-900/20 px-4 py-3 text-sm">
+          <p className="text-brand-300 font-medium">{result.message}</p>
+          <p className="text-zinc-500 text-xs mt-1">
+            Total projects: {result.total} | Missing: {result.missing} | Queued: {result.queued}
+          </p>
+        </div>
+      )}
+
+      {/* Logs table */}
+      <div className="rounded-lg border border-zinc-800 overflow-hidden">
+        <div className="bg-zinc-900/50 px-4 py-2.5 border-b border-zinc-800 flex items-center justify-between">
+          <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Generation Log</h3>
+          <span className="text-xs text-zinc-600">{logs.length} entries</span>
+        </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+          </div>
+        ) : logs.length === 0 ? (
+          <div className="text-center py-8 text-sm text-zinc-600">
+            No thumbnail generation logs yet. Click "Generate Missing Thumbnails" to start.
+          </div>
+        ) : (
+          <div className="divide-y divide-zinc-800/50 max-h-[500px] overflow-y-auto">
+            {logs.map((log) => (
+              <div key={log.id} className="px-4 py-2.5 flex items-center gap-3 text-sm hover:bg-zinc-900/30">
+                {statusIcon(log.status)}
+                <div className="flex-1 min-w-0">
+                  <span className="text-zinc-200 font-medium truncate block">
+                    {log.current_project_name ?? log.project_name ?? log.project_id.slice(0, 8)}
+                  </span>
+                  {log.error_message && (
+                    <span className="text-xs text-red-400 truncate block">{log.error_message}</span>
+                  )}
+                </div>
+                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                  log.triggered_by === "admin" ? "bg-purple-900/30 text-purple-400" :
+                  log.triggered_by === "regenerate" ? "bg-blue-900/30 text-blue-400" :
+                  "bg-zinc-800 text-zinc-500"
+                }`}>
+                  {log.triggered_by}
+                </span>
+                {log.duration_ms != null && (
+                  <span className="text-xs text-zinc-600">{log.duration_ms}ms</span>
+                )}
+                <span className="text-xs text-zinc-600 whitespace-nowrap">
+                  {new Date(log.created_at).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
