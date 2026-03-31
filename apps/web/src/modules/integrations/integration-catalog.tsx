@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Search, Filter, Plug, ChevronDown, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +14,8 @@ import { IntegrationDetailSheet } from "./integration-detail-sheet";
 import { ConnectFlow } from "./connect-flow";
 
 // ─── Integration Catalog ───────────────────────────────────
+
+const PAGE_SIZE = 24;
 
 interface IntegrationCatalogProps {
   workspaceId: string;
@@ -49,6 +51,20 @@ export function IntegrationCatalog({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [connectItem, setConnectItem] = useState<CatalogItem | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
+
+  // Pagination: show PAGE_SIZE at a time for available items
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Reset pagination when search or category changes
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [search, category]);
+
+  const visibleAvailable = useMemo(
+    () => availableItems.slice(0, visibleCount),
+    [availableItems, visibleCount]
+  );
+  const hasMore = visibleCount < availableItems.length;
 
   // Category pill scroll container
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -242,7 +258,7 @@ export function IntegrationCatalog({
             </span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {availableItems.map((item) => (
+            {visibleAvailable.map((item) => (
               <IntegrationCard
                 key={item.id}
                 item={item}
@@ -251,6 +267,19 @@ export function IntegrationCatalog({
               />
             ))}
           </div>
+          {hasMore && (
+            <div className="flex justify-center pt-4">
+              <button
+                onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                className={cn(
+                  "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+                  "border border-input text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                Load more ({availableItems.length - visibleCount} remaining)
+              </button>
+            </div>
+          )}
         </div>
       )}
 

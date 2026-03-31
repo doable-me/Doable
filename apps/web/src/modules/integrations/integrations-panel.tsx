@@ -31,6 +31,7 @@ import {
 } from "./use-integrations";
 import { AddIntegrationForm } from "./add-integration-form";
 import { IntegrationCatalog } from "./integration-catalog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -484,16 +485,6 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel", o
         )}
 
         <div className="p-3 pt-0 space-y-1">
-          {/* Add form */}
-          {showForm && (
-            <AddIntegrationForm
-              workspaceId={workspaceId}
-              isAdmin={isAdmin}
-              onCreated={handleCreated}
-              onCancel={() => setShowForm(false)}
-            />
-          )}
-
           {/* Loading */}
           {isLoading && totalCustom === 0 && !githubStatus && (
             <div className="flex items-center justify-center h-32">
@@ -606,6 +597,18 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel", o
           </div>
         </div>
       )}
+
+      {/* Add MCP Server Dialog */}
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-md p-0 overflow-hidden">
+          <AddIntegrationForm
+            workspaceId={workspaceId}
+            isAdmin={isAdmin}
+            onCreated={handleCreated}
+            onCancel={() => setShowForm(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
