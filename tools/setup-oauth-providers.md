@@ -16,10 +16,13 @@ No admin action required for these.
 
 When a user connects an OAuth integration, the API resolves credentials in this order:
 
-1. **Database** -- admin-registered OAuth apps (via `oauth_apps` table)
+1. **Database** -- admin-registered OAuth apps (via `oauth_apps` table, per-workspace or global)
 2. **Per-integration env var** -- `OAUTH_{INTEGRATION_ID}_CLIENT_ID` / `_CLIENT_SECRET`
-3. **Shared provider fallback** -- `GOOGLE_CLIENT_ID` for all Google services, `GITHUB_CLIENT_ID` for GitHub
-4. If none found, the user sees an error with setup instructions.
+3. **Shared provider fallback** -- `GOOGLE_INTEGRATIONS_CLIENT_ID` for all Google services (separate from login), `GITHUB_CLIENT_ID` for GitHub
+4. **Login fallback** -- `GOOGLE_CLIENT_ID` (NOT recommended — mixes login and integration consent screens)
+5. If none found, the user sees an error with setup instructions.
+
+**IMPORTANT:** Keep login OAuth (`GOOGLE_CLIENT_ID`) and integration OAuth (`GOOGLE_INTEGRATIONS_CLIENT_ID`) as separate OAuth clients in Google Cloud Console. Login should only request `openid email profile`. Integration OAuth requests service-specific scopes (gmail, drive, etc.) and persists tokens with refresh capability.
 
 The redirect URI for ALL OAuth integrations is:
 
@@ -27,10 +30,12 @@ The redirect URI for ALL OAuth integrations is:
 {API_URL}/integrations/oauth/callback
 ```
 
-For local development: `http://127.0.0.1:4000/integrations/oauth/callback`
+For local development: `http://localhost:4000/integrations/oauth/callback`
 For production: `https://api.doable.me/integrations/oauth/callback`
 
 Override with `INTEGRATIONS_OAUTH_REDIRECT_URI` env var if using a different public URL.
+
+> **Tip:** Use `localhost` not `127.0.0.1` for local dev redirect URIs — Google treats them differently and `localhost` propagates faster in their systems.
 
 ---
 
@@ -70,7 +75,7 @@ One Google OAuth app handles: **Gmail, Google Sheets, Google Docs, Google Calend
    - Application type: **Web application**
    - Name: `Doable Integrations`
    - Under **Authorized redirect URIs**, add:
-     - `http://127.0.0.1:4000/integrations/oauth/callback` (local dev)
+     - `http://localhost:4000/integrations/oauth/callback` (local dev)
      - `https://api.doable.me/integrations/oauth/callback` (production)
 9. Copy the **Client ID** and **Client Secret**
 
@@ -92,8 +97,12 @@ In the Google Cloud Console, go to **APIs & Services > Library** and enable:
 ### Environment Variables
 
 ```env
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-your-secret
+# Separate from GOOGLE_CLIENT_ID (which is for "Sign in with Google" login only)
+GOOGLE_INTEGRATIONS_CLIENT_ID=your-integrations-client-id.apps.googleusercontent.com
+GOOGLE_INTEGRATIONS_CLIENT_SECRET=GOCSPX-your-integrations-secret
+
+# Override redirect URI if API is behind a tunnel/proxy
+INTEGRATIONS_OAUTH_REDIRECT_URI=http://localhost:4000/integrations/oauth/callback
 ```
 
 ### Publishing the App
