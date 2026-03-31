@@ -945,8 +945,8 @@ import type { McpConnectorConfig } from "../../mcp/types.js";
 import { connectorQueries } from "@doable/db";
 
 /**
- * Create all tools (built-in + MCP) for a Copilot session.
- * MCP failures are logged but don't block built-in tools.
+ * Create all tools (built-in + native integrations + MCP) for a Copilot session.
+ * Native integration and MCP failures are logged but don't block built-in tools.
  */
 export async function createAllTools(
   projectId: string,
@@ -957,6 +957,47 @@ export async function createAllTools(
 
   if (!workspaceId) return builtinTools;
 
+  // Load native integration tools and MCP tools in parallel
+  const [integrationTools, mcpTools] = await Promise.all([
+    loadIntegrationTools(workspaceId, projectId, userId),
+    loadMcpTools(workspaceId, projectId, userId),
+  ]);
+
+  return [...builtinTools, ...integrationTools, ...mcpTools];
+}
+
+/** Load native integration tools (Activepieces-backed) */
+async function loadIntegrationTools(
+  workspaceId: string,
+  projectId: string,
+  userId?: string,
+): Promise<Tool[]> {
+  try {
+    const { createIntegrationTools } = await import("../../integrations/tool-bridge.js");
+    const tools = await createIntegrationTools({
+      workspaceId,
+      projectId,
+      userId: userId ?? "",
+    });
+    if (tools.length > 0) {
+      console.log(`[CopilotEngine] Loaded ${tools.length} native integration tools`);
+    }
+    return tools;
+  } catch (err) {
+    console.warn(
+      "[CopilotEngine] Native integration tool loading failed:",
+      err instanceof Error ? err.message : err,
+    );
+    return [];
+  }
+}
+
+/** Load MCP connector tools */
+async function loadMcpTools(
+  workspaceId: string,
+  projectId: string,
+  userId?: string,
+): Promise<Tool[]> {
   try {
     const { sql } = await import("../../db/index.js");
     const connectors = connectorQueries(sql);
@@ -969,7 +1010,7 @@ export async function createAllTools(
       userId,
     );
 
-    if (connectorRows.length === 0) return builtinTools;
+    if (connectorRows.length === 0) return [];
 
     // Convert DB rows to runtime configs
     const configs = new Map<string, McpConnectorConfig>();
@@ -999,20 +1040,20 @@ export async function createAllTools(
       Array.from(configs.values()),
     );
 
-    if (resolvedTools.length === 0) return builtinTools;
+    if (resolvedTools.length === 0) return [];
 
     const mcpTools = createMcpTools(resolvedTools, manager, configs);
     console.log(
       `[CopilotEngine] Loaded ${mcpTools.length} MCP tools from ${configs.size} connectors`,
     );
 
-    return [...builtinTools, ...mcpTools];
+    return mcpTools;
   } catch (err) {
     console.warn(
-      "[CopilotEngine] MCP tool loading failed, using built-in tools only:",
+      "[CopilotEngine] MCP tool loading failed:",
       err instanceof Error ? err.message : err,
     );
-    return builtinTools;
+    return [];
   }
 }
 

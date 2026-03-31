@@ -29,12 +29,14 @@ import { adminRoutes } from "./routes/admin.js";
 import { securityRoutes } from "./routes/security.js";
 import { communityRoutes } from "./routes/community.js";
 import { connectorRoutes } from "./routes/connectors.js";
+import { integrationRoutes } from "./routes/integrations.js";
 import { skillsRoutes } from "./routes/skills.js";
 import { teamChatRoutes } from "./routes/team-chat.js";
 import { planRoutes } from "./routes/plan.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 import { getConnectorManager } from "./mcp/connector-manager.js";
+import { getOAuthRedirectUri } from "./integrations/oauth2.js";
 
 // ─── Visual Edit Bridge Script ───────────────────────────────
 // This script is loaded by preview iframes at /visual-edit-bridge.js
@@ -164,6 +166,7 @@ app.route("/admin", adminRoutes);
 app.route("/projects", securityRoutes);
 app.route("/community", communityRoutes);
 app.route("/workspaces", connectorRoutes);
+app.route("/", integrationRoutes);
 app.route("/workspaces", skillsRoutes);
 app.route("/workspaces/:wid/context", workspaceContextRoutes);
 app.route("/team-chat", teamChatRoutes);
@@ -191,6 +194,7 @@ const port = parseInt(process.env.API_PORT ?? "4000", 10);
 const host = process.env.API_HOST ?? "127.0.0.1";
 
 console.log(`Doable API starting on ${host}:${port}`);
+console.log(`[Integrations] OAuth callback URI: ${getOAuthRedirectUri()} — add this to your OAuth providers' allowed redirect URIs`);
 
 const server = serve({
   fetch: app.fetch,

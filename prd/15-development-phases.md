@@ -130,6 +130,14 @@ Internal development environment where a developer can chat with AI, generate a 
 - [ ] Stripe integration for subscription billing
 - [ ] Credit/usage tracking
 
+### 1.6b AI Usage Tracking — Foundation (PRD 20)
+- [ ] **Token extraction from providers** — extract prompt/completion token counts from Copilot SDK and Anthropic responses ([PRD 20 Section 1](20-usage-token-cost-tracking.md))
+- [ ] **`ai_usage_log` table** — per-request logging of tokens, cost, model, duration
+- [ ] **`model_pricing` table** — model-to-cost mapping managed by platform admin
+- [ ] **Credit consumption wiring** — call `consumeCredits()` from chat route with actual token metadata
+- [ ] **Per-message usage display** — show token count and cost in chat message footer
+- [ ] **SSE done event enrichment** — include usage metrics in the done event payload
+
 ### 1.7 Version History (Basic)
 - [ ] Every AI edit creates a version checkpoint
 - [ ] Version list in sidebar (timestamp + description)
@@ -237,6 +245,12 @@ Public product where anyone can sign up, describe an app, watch it get built, ed
 - [ ] **Per-member credit limits** — admins set max daily/monthly credits per workspace member
 - [ ] **Credit usage dashboard** — per-user credit consumption visibility for workspace admins
 
+### 2.8b Usage Dashboards — User & Project (PRD 20)
+- [ ] **Daily aggregation table** — `ai_usage_daily` with automated rollup from `ai_usage_log` ([PRD 20 Section 2](20-usage-token-cost-tracking.md))
+- [ ] **My Usage page** — user-facing dashboard showing personal token consumption, cost, and credit gauge
+- [ ] **Per-project usage tab** — usage breakdown in Project Settings showing member contributions, mode split, and trend chart
+- [ ] **Usage API routes** — `/usage/me`, `/usage/me/history`, `/usage/me/breakdown` endpoints
+
 ### 2.9 Template System
 - [ ] Template registry (official templates stored in PostgreSQL)
 - [ ] 8 official templates: SaaS, e-commerce, content/CMS, mobile-first, internal tool, landing page, AI app, API service
@@ -278,6 +292,16 @@ Full-featured app builder with visual editing, **real-time multi-user collaborat
 - [ ] **Connection-level DB context** — set `SET LOCAL app.current_workspace_id` per request for RLS
 - [ ] **Enterprise audit trail** — log every cross-boundary access attempt (successful or denied)
 - [ ] **Per-workspace resource quotas** — max dev servers, max concurrent AI sessions, max storage per workspace
+
+### 3.0b Workspace & Platform Admin Usage Dashboards (PRD 20)
+- [ ] **Workspace admin usage dashboard** — per-member usage breakdown, per-project cost attribution, model distribution chart ([PRD 20 Section 5](20-usage-token-cost-tracking.md))
+- [ ] **Per-member budget controls** — workspace admins set daily/monthly credit caps per member with hard/soft limits
+- [ ] **Usage alerts** — in-app notifications when members hit 80%/100% of budget, cost spike detection
+- [ ] **Platform admin usage dashboard** — system-wide token/cost/request metrics, workspace and user rankings, model cost breakdown ([PRD 20 Section 6](20-usage-token-cost-tracking.md))
+- [ ] **Model pricing management** — platform admin UI to manage per-model token costs
+- [ ] **Usage export** — CSV/JSON export for workspace admins and platform admins
+- [ ] **Monthly aggregation table** — `ai_usage_monthly` for billing period summaries
+- [ ] **Platform controls** — cost ceiling kill switch, per-workspace/user AI suspend, model disable
 
 ### 3.1 Enterprise Admin Console
 - [ ] White-label configuration: custom domain, logo, colors, landing page
@@ -508,6 +532,8 @@ Phase 5 ─── Ecosystem ─────────────────�
 | Phase 2 (teams/workspaces) | Phase 3 (enterprise admin) | Enterprise admin extends team management |
 | **Phase 2 (CRDT + presence)** | **Phase 3 (shared AI chat, file locks)** | **Enterprise collab features extend the base CRDT system** |
 | **Phase 2 (Redis sessions + rate limits)** | **Phase 3 (enterprise scale)** | **Enterprise needs distributed state, not in-memory** |
+| **Phase 1 (token extraction + ai_usage_log)** | **Phase 2 (user/project dashboards)** | **Dashboards need usage data to display** |
+| **Phase 2 (daily aggregation + user dashboards)** | **Phase 3 (workspace/admin dashboards)** | **Admin dashboards query aggregated data from Phase 2** |
 | Phase 3 (enterprise core) | Phase 4 (enterprise enhancements) | Enhancements need the base enterprise product |
 | Phase 3 (enterprise core) | Phase 5 (module marketplace) | Marketplace needs the module lifecycle |
 
@@ -518,9 +544,9 @@ Phase 5 ─── Ecosystem ─────────────────�
 | Phase | PRDs Covered |
 |-------|-------------|
 | **Phase 0** | 05 (backend/database), 12 (architecture), **17 (multi-user safety — workspace auth, session isolation, resource management)** |
-| **Phase 1** | 01 (AI engine), 02 (editor UI), 03 (project management), 04 (code generation), 06 (auth), 07 (deployment), 09 (versioning), 11 (billing), **14 (context system — P0+P1)**, **17 (per-user rate limiting, build queue, credit safety)** |
-| **Phase 2** | 02 (visual editor expansion), 05 (user-choice backends), 07 (deploy adapter), 08 (integrations/MCPs), **09 (real-time collaboration — CRDT, presence, multi-cursor)**, **14 (context system — P1.5+P2+templates)**, **17 (RLS, Redis sessions, optimistic concurrency, WebSocket rooms, credit limits)** |
-| **Phase 3** | 06 (enterprise SSO), 08 (enterprise MCPs), 10 (audit/security), 11 (enterprise billing), **14 (enterprise workspaces — Section 9)**, **17 (shared AI chat, file locks, comments, enterprise audit, resource quotas)** |
+| **Phase 1** | 01 (AI engine), 02 (editor UI), 03 (project management), 04 (code generation), 06 (auth), 07 (deployment), 09 (versioning), 11 (billing), **14 (context system — P0+P1)**, **17 (per-user rate limiting, build queue, credit safety)**, **20 (token extraction, ai_usage_log, per-message costs)** |
+| **Phase 2** | 02 (visual editor expansion), 05 (user-choice backends), 07 (deploy adapter), 08 (integrations/MCPs), **09 (real-time collaboration — CRDT, presence, multi-cursor)**, **14 (context system — P1.5+P2+templates)**, **17 (RLS, Redis sessions, optimistic concurrency, WebSocket rooms, credit limits)**, **20 (user dashboards, project usage tab, daily aggregation)** |
+| **Phase 3** | 06 (enterprise SSO), 08 (enterprise MCPs), 10 (audit/security), 11 (enterprise billing), **14 (enterprise workspaces — Section 9)**, **17 (shared AI chat, file locks, comments, enterprise audit, resource quotas)**, **20 (workspace admin dashboard, platform admin dashboard, budget controls, model pricing, usage export)** |
 | **Phase 4** | 07 (full hosting providers), 10 (analytics/security), 13 (mobile/native), **14 (context advanced features)**, **17 (suggested changes, branch previews)** |
 | **Phase 5** | 03 (community templates), 08 (plugin system), 11 (marketplace billing) |
 

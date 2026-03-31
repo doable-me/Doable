@@ -97,6 +97,9 @@ These components are designed in [PRD 12 Section 8.10](12-architecture.md) as pr
 | 15 | [development-phases.md](15-development-phases.md) | MVP → Enterprise development phases, Phase 0-5 roadmap, ship criteria, dependency map |
 | 16 | [copilot-sdk-core.md](16-copilot-sdk-core.md) | Copilot SDK as the core engine, custom tools, authentication |
 | 17 | [multi-user-infrastructure.md](17-multi-user-infrastructure.md) | Multi-user concurrency, tenant isolation, workspace authorization, AI session isolation, dev server lifecycle, build/deploy concurrency, CRDT real-time collaboration, rate limiting, resource management |
+| 18 | [sandbox-isolation.md](18-sandbox-isolation.md) | Code sandbox security, execution isolation |
+| 19 | [native-integrations-engine.md](19-native-integrations-engine.md) | Native integration capabilities, provider ecosystem |
+| 20 | [usage-token-cost-tracking.md](20-usage-token-cost-tracking.md) | AI usage tracking, token extraction, cost estimation, per-user/project/workspace/admin dashboards, budget controls, usage alerts |
 
 ---
 

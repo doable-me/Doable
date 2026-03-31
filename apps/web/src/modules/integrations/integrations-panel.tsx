@@ -30,6 +30,7 @@ import {
   type GitHubStatus,
 } from "./use-integrations";
 import { AddIntegrationForm } from "./add-integration-form";
+import { IntegrationCatalog } from "./integration-catalog";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -426,7 +427,7 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel", o
   // Count for each scope section (including built-ins)
   const workspaceCount = workspaceIntegrations.length;
   // Count built-in integrations: GitHub (connected or not) + Stripe + Supabase placeholders
-  const builtInCount = projectId ? 3 : 0;
+  const builtInCount = 0; // Built-ins moved to native catalog or header buttons
   const projectCount = projectIntegrations.length + builtInCount;
   const userCount = userIntegrations.length;
 
@@ -458,16 +459,31 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel", o
         </div>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="px-4 py-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 border-b">
-          {error}
-        </div>
-      )}
-
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        <div className="p-3 space-y-1">
+        {/* Native Integration Catalog */}
+        <div className="p-3 pb-0">
+          <IntegrationCatalog workspaceId={workspaceId} projectId={projectId} />
+        </div>
+
+        {/* Separator */}
+        <div className="mx-3 my-4 border-t" />
+
+        {/* Custom MCP Connectors heading */}
+        <div className="px-4 pb-2">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            Custom MCP Connectors
+          </h4>
+        </div>
+
+        {/* MCP Error */}
+        {error && (
+          <div className="mx-3 mb-2 px-3 py-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        <div className="p-3 pt-0 space-y-1">
           {/* Add form */}
           {showForm && (
             <AddIntegrationForm
@@ -535,78 +551,9 @@ export function IntegrationsPanel({ workspaceId, projectId, variant = "panel", o
                 </ScopeSection>
               )}
 
-              {/* This project only (project scope + built-ins) */}
-              {projectId && (
+              {/* This project only (project scope) */}
+              {projectId && projectIntegrations.length > 0 && (
                 <ScopeSection label="Everyone on this project" count={projectCount}>
-                  {/* GitHub (built-in) — always shown */}
-                  {!githubLoading && (
-                    <BuiltInCard
-                      icon={GitBranch}
-                      name="GitHub"
-                      description="Sync code with a GitHub repository for version control."
-                      connected={githubStatus?.connected ?? false}
-                      statusText={githubStatus?.connected ? githubStatus.status : undefined}
-                      onConnect={() => {
-                        if (onGitHubConnect) {
-                          onGitHubConnect();
-                        } else {
-                          // Dispatch event for editor toolbar GitHub button
-                          window.dispatchEvent(new CustomEvent("doable:github-connect"));
-                        }
-                      }}
-                      onDisconnect={() => void disconnectGithub()}
-                    >
-                      {githubStatus?.connected && (
-                        <div className="space-y-2">
-                          {githubStatus.repoUrl && (
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">Repository</span>
-                              <a
-                                href={githubStatus.repoUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-primary hover:underline"
-                              >
-                                {githubStatus.repoUrl.replace("https://github.com/", "")}
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">Branch</span>
-                            <span className="font-mono text-xs">{githubStatus.branch}</span>
-                          </div>
-                          {githubStatus.lastSyncedAt && (
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">Last synced</span>
-                              <span className="text-xs">
-                                {new Date(githubStatus.lastSyncedAt).toLocaleString()}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </BuiltInCard>
-                  )}
-
-                  {/* Stripe (coming soon) */}
-                  <BuiltInCard
-                    icon={CreditCard}
-                    name="Stripe"
-                    description="Accept payments, manage subscriptions, and process transactions."
-                    connected={false}
-                    comingSoon
-                  />
-
-                  {/* Supabase (coming soon) */}
-                  <BuiltInCard
-                    icon={Database}
-                    name="Supabase"
-                    description="Connect a Supabase database for backend storage and authentication."
-                    connected={false}
-                    comingSoon
-                  />
-
                   {/* Custom project-scoped integrations */}
                   {projectIntegrations.map((integration) => (
                     <CustomCard
