@@ -99,14 +99,14 @@ export function ConnectFlow({
     setLoading(true);
     setError(null);
     try {
-      const url = await onGetAuthorizationUrl(item.id);
-      // Open popup for OAuth
+      // Open popup immediately (in the user-gesture context) to avoid popup blockers,
+      // then navigate it to the OAuth URL once the API responds.
       const width = 600;
       const height = 700;
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
       const popup = window.open(
-        url,
+        "about:blank",
         "doable-oauth",
         `width=${width},height=${height},left=${left},top=${top},popup=1`
       );
@@ -118,6 +118,10 @@ export function ConnectFlow({
         setLoading(false);
         return;
       }
+
+      // Fetch the authorization URL and redirect the popup
+      const url = await onGetAuthorizationUrl(item.id);
+      popup.location.href = url;
 
       // Poll for popup closure
       const pollTimer = setInterval(() => {

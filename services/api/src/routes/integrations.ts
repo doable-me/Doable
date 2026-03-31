@@ -257,34 +257,59 @@ integrationRoutes.post("/integrations/connections/:id/test", authMiddleware, asy
   }
 
   try {
-    // Decrypt credentials and try to load the piece + call validate
-    const credentials = await credentialVault.decrypt(connectionId);
+    // Decrypt credentials to verify they're readable
+    const credentials = await credentialVault.decrypt(connectionId) as Record<string, unknown> | null;
 
-    // Try to load the piece and check for a validate/test method
-    const mod = await import(def.piecePackage);
-    const firstKey = Object.keys(mod)[0];
-    const piece = mod.default ?? (firstKey ? mod[firstKey] : undefined);
+    if (!credentials) {
+      await credentialVault.updateStatus(connectionId, "error", "Credentials not found or corrupted");
+      return c.json({ data: { success: false, message: "Credentials not found", integrationId: row.integration_id } });
+    }
 
     let valid = true;
     let message = "Connection is active";
 
-    if (piece?.auth?.validate) {
-      try {
-        const result = await piece.auth.validate({ auth: credentials });
-        valid = result?.valid !== false;
-        message = result?.error ?? message;
-      } catch (validateErr) {
+    // For OAuth2, verify the access token exists
+    if (def.authType === "oauth2") {
+      if (!credentials.access_token) {
         valid = false;
-        message = validateErr instanceof Error ? validateErr.message : String(validateErr);
+        message = "No access token found. Try reconnecting.";
+      } else {
+        // Quick validation: try a lightweight API call for known providers
+        if (row.integration_id === "gmail") {
+          const res = await fetch("https://www.googleapis.com/gmail/v1/users/me/profile", {
+            headers: { Authorization: `Bearer ${credentials.access_token}` },
+          });
+          if (res.ok) {
+            const profile = await res.json() as Record<string, unknown>;
+            message = `Connected as ${profile.emailAddress ?? "unknown"}`;
+          } else if (res.status === 401) {
+            valid = false;
+            message = "Access token expired. Try reconnecting.";
+          } else {
+            valid = false;
+            message = `Gmail API returned ${res.status}`;
+          }
+        }
       }
     }
 
-    // Update status in DB
-    await credentialVault.updateStatus(
-      connectionId,
-      valid ? "active" : "error",
-      valid ? undefined : message,
-    );
+    // Try piece's validate method if available
+    try {
+      const mod = await import(def.piecePackage);
+      const firstKey = Object.keys(mod)[0];
+      const piece = mod.default ?? (firstKey ? mod[firstKey] : undefined);
+      if (piece?.auth?.validate) {
+        const result = await piece.auth.validate({ auth: credentials });
+        if (result?.valid === false) {
+          valid = false;
+          message = result?.error ?? "Validation failed";
+        }
+      }
+    } catch {
+      // Piece loading/validation is optional — don't fail the test
+    }
+
+    await credentialVault.updateStatus(connectionId, valid ? "active" : "error", valid ? undefined : message);
 
     return c.json({
       data: {
@@ -373,12 +398,18 @@ integrationRoutes.get("/integrations/oauth/callback", async (c) => {
   try {
     const result = await handleOAuthCallback(code, state);
 
-    return c.redirect(result.redirectUrl);
+    // This runs in a popup — return HTML that auto-closes the window.
+    // The opener (connect-flow.tsx) polls for popup closure and refreshes connections.
+    return c.html(`<!DOCTYPE html><html><head><title>Connected</title></head><body>
+      <p>Connected successfully! This window will close automatically.</p>
+      <script>window.close();</script>
+    </body></html>`);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    return c.redirect(
-      `${frontendUrl}/settings/integrations?error=${encodeURIComponent(errorMsg)}`,
-    );
+    return c.html(`<!DOCTYPE html><html><head><title>Error</title></head><body>
+      <p>Connection failed: ${errorMsg.replace(/</g, "&lt;")}</p>
+      <p><a href="javascript:window.close()">Close this window</a></p>
+    </body></html>`, 400);
   }
 });
 

@@ -102,10 +102,13 @@ export async function buildAuthorizationUrl(integrationId: string, params: {
     const envClientId = process.env[`OAUTH_${envKey}_CLIENT_ID`];
     const envClientSecret = process.env[`OAUTH_${envKey}_CLIENT_SECRET`];
 
-    // Google services share the same OAuth app
+    // Google services share the same OAuth app — prefer dedicated integrations
+    // client over the login client to keep scopes/consent screens separate
     const isGoogle = oauth.authUrl.includes("accounts.google.com");
-    const googleClientId = process.env.GOOGLE_CLIENT_ID;
-    const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const googleIntClientId = process.env.GOOGLE_INTEGRATIONS_CLIENT_ID;
+    const googleIntClientSecret = process.env.GOOGLE_INTEGRATIONS_CLIENT_SECRET;
+    const googleClientId = googleIntClientId || process.env.GOOGLE_CLIENT_ID;
+    const googleClientSecret = googleIntClientSecret || process.env.GOOGLE_CLIENT_SECRET;
 
     // GitHub shares its OAuth app
     const isGitHub = oauth.authUrl.includes("github.com");
@@ -204,10 +207,10 @@ export async function handleOAuthCallback(code: string, state: string): Promise<
     const isGitHub = oauth.authUrl.includes("github.com");
 
     clientId = process.env[`OAUTH_${envKey}_CLIENT_ID`]
-      || (isGoogle ? process.env.GOOGLE_CLIENT_ID : undefined)
+      || (isGoogle ? (process.env.GOOGLE_INTEGRATIONS_CLIENT_ID || process.env.GOOGLE_CLIENT_ID) : undefined)
       || (isGitHub ? process.env.GITHUB_CLIENT_ID : undefined);
     clientSecret = process.env[`OAUTH_${envKey}_CLIENT_SECRET`]
-      || (isGoogle ? process.env.GOOGLE_CLIENT_SECRET : undefined)
+      || (isGoogle ? (process.env.GOOGLE_INTEGRATIONS_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET) : undefined)
       || (isGitHub ? process.env.GITHUB_CLIENT_SECRET : undefined);
   }
 
@@ -287,8 +290,9 @@ export async function handleOAuthCallback(code: string, state: string): Promise<
     },
   });
 
-  // Redirect back to the app
-  const redirectUrl = `${APP_URL}/settings/integrations?connected=${integrationId}`;
+  // Redirect back to the app — this runs in a popup, so redirect to a page
+  // that signals success. The popup opener polls for closure.
+  const redirectUrl = `${APP_URL}/integrations/oauth/success?connected=${integrationId}`;
 
   return { connection, redirectUrl };
 }

@@ -170,7 +170,7 @@ export const COMMUNICATION_INTEGRATIONS: Record<string, IntegrationDefinition> =
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/gmail.compose",
       ],
-      pkce: true,
+      // PKCE not needed for confidential clients (server-side with client_secret)
     },
     actions: [
       "send_email",
