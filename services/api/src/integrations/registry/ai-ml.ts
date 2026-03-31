@@ -217,8 +217,7 @@ export const AI_ML_INTEGRATIONS: Record<string, IntegrationDefinition> = {
       authUrl: GOOGLE_AUTH_URL,
       tokenUrl: GOOGLE_TOKEN_URL,
       scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-      pkce: true,
-      pkceMethod: "S256",
+      // PKCE not needed for confidential clients (server-side with client_secret)
       prompt: "consent",
       extraParams: {
         access_type: "offline",

@@ -605,8 +605,7 @@ export const DEVELOPER_TOOLS_INTEGRATIONS: Record<string, IntegrationDefinition>
       authUrl: GOOGLE_AUTH_URL,
       tokenUrl: GOOGLE_TOKEN_URL,
       scopes: ["https://www.googleapis.com/auth/devstorage.full_control"],
-      pkce: true,
-      pkceMethod: "S256",
+      // PKCE not needed for confidential clients (server-side with client_secret)
       prompt: "consent",
       extraParams: {
         access_type: "offline",

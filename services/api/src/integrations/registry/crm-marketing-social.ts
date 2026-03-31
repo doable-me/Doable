@@ -12,8 +12,7 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_OAUTH_BASE = {
   authUrl: GOOGLE_AUTH_URL,
   tokenUrl: GOOGLE_TOKEN_URL,
-  pkce: true,
-  pkceMethod: "S256" as const,
+  // PKCE not needed for confidential clients (server-side with client_secret)
   prompt: "consent" as const,
   extraParams: { access_type: "offline" },
 };
