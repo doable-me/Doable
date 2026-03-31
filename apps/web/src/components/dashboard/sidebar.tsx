@@ -36,7 +36,6 @@ import {
   Bot,
   Home,
   Search,
-  BookOpen,
   FolderOpen,
   FolderPlus,
   FolderIcon,
@@ -600,7 +599,7 @@ export function DashboardSidebar() {
               active={pathname === "/discover"}
               onClick={() => router.push("/discover")}
             />
-            <NavItem icon={BookOpen} label="Resources" />
+            {/* Resources — route not yet implemented, hidden to avoid dead link */}
           </div>
 
           {/* Projects Section */}
