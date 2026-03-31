@@ -64,6 +64,13 @@ const FALLBACK_MODELS = [
   { id: "", label: "Auto (recommended)" },
   { id: "claude-sonnet-4", label: "Claude Sonnet 4" },
   { id: "gpt-4o", label: "GPT-4o" },
+  { id: "gpt-4o-mini", label: "GPT-4o Mini" },
+  { id: "gpt-4.1", label: "GPT-4.1" },
+  { id: "gpt-4.1-mini", label: "GPT-4.1 Mini" },
+  { id: "gpt-4.1-nano", label: "GPT-4.1 Nano" },
+  { id: "o3-mini", label: "o3-mini" },
+  { id: "o4-mini", label: "o4-mini" },
+  { id: "gemini-2.0-flash-001", label: "Gemini 2.0 Flash" },
 ];
 
 function useCopilotModels(copilotAccountId?: string) {

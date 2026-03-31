@@ -1628,6 +1628,19 @@ chatRoutes.post(
   },
 );
 
+// ─── Known Copilot models (fallback when SDK listModels is unavailable) ───
+const KNOWN_COPILOT_MODELS = [
+  { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
+  { id: "gpt-4o", name: "GPT-4o" },
+  { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+  { id: "gpt-4.1", name: "GPT-4.1" },
+  { id: "gpt-4.1-mini", name: "GPT-4.1 Mini" },
+  { id: "gpt-4.1-nano", name: "GPT-4.1 Nano" },
+  { id: "o3-mini", name: "o3-mini" },
+  { id: "o4-mini", name: "o4-mini" },
+  { id: "gemini-2.0-flash-001", name: "Gemini 2.0 Flash" },
+];
+
 // ─── GET /ai/models ─ List available models ─────────────────
 chatRoutes.get("/ai/models", async (c) => {
   try {
@@ -1638,15 +1651,30 @@ chatRoutes.get("/ai/models", async (c) => {
       githubToken = (await aiSettingsDb.getCopilotAccountToken(copilotAccountId)) ?? undefined;
     }
 
+    // Use account-specific pool key so different tokens get different engines
+    const poolKey = copilotAccountId ? `__models__:${copilotAccountId}` : "__models__";
     const manager = getCopilotManager();
-    const engine = await manager.getEngine("__models__", githubToken);
-    const models = await engine.listModels();
-    return c.json({ data: models });
+    const engine = await manager.getEngine(poolKey, githubToken);
+
+    try {
+      // Timeout after 8s — listModels() can hang with some auth configs
+      const models = await Promise.race([
+        engine.listModels(),
+        new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error("listModels timeout")), 8000)
+        ),
+      ]);
+      if (Array.isArray(models) && models.length > 0) {
+        return c.json({ data: models });
+      }
+    } catch {
+      // listModels() not available, timed out, or returned empty — use known models
+    }
+
+    return c.json({ data: KNOWN_COPILOT_MODELS });
   } catch (err) {
-    return c.json({
-      data: [],
-      error: err instanceof Error ? err.message : "Failed to list models",
-    });
+    // Engine creation failed — still return known models so UI isn't empty
+    return c.json({ data: KNOWN_COPILOT_MODELS });
   }
 });
 

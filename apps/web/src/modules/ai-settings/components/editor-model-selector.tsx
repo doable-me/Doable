@@ -26,8 +26,12 @@ const DEFAULT_MODELS: ModelOption[] = [
   { id: "claude-sonnet-4", label: "Claude Sonnet 4", group: "copilot" },
   { id: "gpt-4o", label: "GPT-4o", group: "copilot" },
   { id: "gpt-4o-mini", label: "GPT-4o Mini", group: "copilot" },
+  { id: "gpt-4.1", label: "GPT-4.1", group: "copilot" },
+  { id: "gpt-4.1-mini", label: "GPT-4.1 Mini", group: "copilot" },
+  { id: "gpt-4.1-nano", label: "GPT-4.1 Nano", group: "copilot" },
   { id: "o3-mini", label: "o3-mini", group: "copilot" },
   { id: "o4-mini", label: "o4-mini", group: "copilot" },
+  { id: "gemini-2.0-flash-001", label: "Gemini 2.0 Flash", group: "copilot" },
 ];
 
 export function EditorModelSelector({
