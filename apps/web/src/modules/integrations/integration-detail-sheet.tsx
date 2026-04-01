@@ -234,8 +234,8 @@ export function IntegrationDetailSheet({
                         </span>
                       </div>
 
-                      {/* Error message */}
-                      {conn.errorMessage && (
+                      {/* Error message (hide if we have a fresh test result for this connection) */}
+                      {conn.errorMessage && !(testResult && testResult.id === conn.id) && (
                         <div className="flex items-center gap-1.5 text-xs text-red-600 mb-2">
                           <AlertCircle className="h-3 w-3 shrink-0" />
                           <span className="truncate">{conn.errorMessage}</span>
@@ -258,7 +258,7 @@ export function IntegrationDetailSheet({
                             <AlertCircle className="h-3 w-3 shrink-0" />
                           )}
                           {testResult.valid
-                            ? "Connection is healthy"
+                            ? (testResult as any).message || "Connection is healthy"
                             : testResult.error || "Connection failed"}
                         </div>
                       )}

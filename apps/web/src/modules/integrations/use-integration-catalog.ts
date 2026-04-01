@@ -162,11 +162,11 @@ export function useIntegrationCatalog(workspaceId: string) {
   }, [fetchCatalog, fetchConnections]);
 
   const testConnection = useCallback(async (connectionId: string) => {
-    const res = await apiFetch<{ data: { valid: boolean; error?: string } }>(
+    const res = await apiFetch<{ data: { success: boolean; message?: string; integrationId?: string } }>(
       `/integrations/connections/${connectionId}/test`,
       { method: "POST" }
     );
-    return res.data;
+    return { valid: res.data.success, message: res.data.message, error: res.data.success ? undefined : res.data.message };
   }, []);
 
   const getAuthorizationUrl = useCallback(async (integrationId: string, scope?: string) => {
