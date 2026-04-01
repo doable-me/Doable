@@ -279,27 +279,46 @@ integrationRoutes.post("/integrations/connections/:id/test", authMiddleware, asy
     let valid = true;
     let message = "Connection is active";
 
-    // For OAuth2, verify the access token exists
+    // Quick validation: try a lightweight API call for known providers
     if (def.authType === "oauth2") {
       if (!credentials.access_token) {
         valid = false;
         message = "No access token found. Try reconnecting.";
+      } else if (row.integration_id === "gmail") {
+        const res = await fetch("https://www.googleapis.com/gmail/v1/users/me/profile", {
+          headers: { Authorization: `Bearer ${credentials.access_token}` },
+        });
+        if (res.ok) {
+          const profile = await res.json() as Record<string, unknown>;
+          message = `Connected as ${profile.emailAddress ?? "unknown"}`;
+        } else if (res.status === 401) {
+          valid = false;
+          message = "Access token expired. Try reconnecting.";
+        } else {
+          valid = false;
+          message = `Gmail API returned ${res.status}`;
+        }
+      }
+    } else if (def.authType === "custom_auth" && row.integration_id === "supabase") {
+      const url = credentials.url as string;
+      const apiKey = credentials.apiKey as string;
+      if (!url || !apiKey) {
+        valid = false;
+        message = "Missing project URL or API key.";
       } else {
-        // Quick validation: try a lightweight API call for known providers
-        if (row.integration_id === "gmail") {
-          const res = await fetch("https://www.googleapis.com/gmail/v1/users/me/profile", {
-            headers: { Authorization: `Bearer ${credentials.access_token}` },
+        try {
+          const res = await fetch(`${url}/rest/v1/`, {
+            headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}` },
           });
           if (res.ok) {
-            const profile = await res.json() as Record<string, unknown>;
-            message = `Connected as ${profile.emailAddress ?? "unknown"}`;
-          } else if (res.status === 401) {
-            valid = false;
-            message = "Access token expired. Try reconnecting.";
+            message = `Connected to ${url.replace("https://", "").replace(".supabase.co", "")}`;
           } else {
             valid = false;
-            message = `Gmail API returned ${res.status}`;
+            message = `Supabase API returned ${res.status}: ${res.statusText}`;
           }
+        } catch (e) {
+          valid = false;
+          message = `Cannot reach Supabase: ${e instanceof Error ? e.message : String(e)}`;
         }
       }
     }
