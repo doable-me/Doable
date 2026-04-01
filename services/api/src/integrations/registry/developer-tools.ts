@@ -348,6 +348,20 @@ export const DEVELOPER_TOOLS_INTEGRATIONS: Record<string, IntegrationDefinition>
     tier: "built_in",
     requiresOAuthApp: false,
     supportsUserProvidedCredentials: true,
+    enhancedAuth: {
+      providerKey: "supabase",
+      connectLabel: "Sign in with Supabase",
+      oauthIntegrationKey: "supabase-mgmt",
+      oauth2Config: {
+        authUrl: "https://api.supabase.com/v1/oauth/authorize",
+        tokenUrl: "https://api.supabase.com/v1/oauth/token",
+        scopes: ["all"],
+        pkce: true,
+        pkceMethod: "S256",
+      },
+      requiresResourceSelection: true,
+      resourceLabel: "Select a Supabase project",
+    },
   },
 
   firebase: {

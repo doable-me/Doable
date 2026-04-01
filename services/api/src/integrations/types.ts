@@ -61,6 +61,42 @@ export interface IntegrationDefinition {
   tier: "built_in" | "community";
   requiresOAuthApp: boolean;
   supportsUserProvidedCredentials: boolean;
+  /** Optional enhanced auth — offers OAuth-based "easy connect" alongside manual form */
+  enhancedAuth?: EnhancedAuthConfig;
+}
+
+// ─── Enhanced Auth Types ────────────────────────────────
+
+/**
+ * A resource the user can select after OAuth (e.g., a Supabase project,
+ * a Vercel team, a Stripe account).
+ */
+export interface EnhancedAuthResource {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  meta?: Record<string, unknown>;
+}
+
+/**
+ * Configuration for an enhanced auth connector module.
+ * When present on an IntegrationDefinition, the connect dialog offers
+ * an "easy connect" button alongside the manual form.
+ */
+export interface EnhancedAuthConfig {
+  /** Unique key matching the module filename, e.g. "supabase" */
+  providerKey: string;
+  /** Human-readable label for the button, e.g. "Sign in with Supabase" */
+  connectLabel: string;
+  /** OAuth integration ID for the management OAuth flow (e.g., "supabase-mgmt") */
+  oauthIntegrationKey: string;
+  /** OAuth2 config for the management/admin OAuth flow */
+  oauth2Config: OAuth2Config;
+  /** Whether the user must pick a resource (project/account) after OAuth */
+  requiresResourceSelection: boolean;
+  /** Label for the resource picker, e.g. "Select a project" */
+  resourceLabel?: string;
 }
 
 // ─── Connection Types ────────────────────────────────────
