@@ -34,6 +34,7 @@ interface ConnectFlowProps {
     integrationId: string,
     scope?: string
   ) => Promise<string>;
+  onGetEnhancedAuthUrl?: (integrationId: string) => Promise<string>;
   projectId?: string;
 }
 
@@ -43,6 +44,7 @@ export function ConnectFlow({
   onOpenChange,
   onConnect,
   onGetAuthorizationUrl,
+  onGetEnhancedAuthUrl,
   projectId,
 }: ConnectFlowProps) {
   const [loading, setLoading] = useState(false);
@@ -149,6 +151,48 @@ export function ConnectFlow({
       setLoading(false);
     }
   }, [item, onGetAuthorizationUrl, onOpenChange]);
+
+  const handleEnhancedAuth = useCallback(async () => {
+    if (!item || !onGetEnhancedAuthUrl) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const popup = window.open(
+        "about:blank",
+        "doable-enhanced-auth",
+        `width=${width},height=${height},left=${left},top=${top},popup=1`
+      );
+
+      if (!popup) {
+        setError("Popup was blocked. Please allow popups for this site and try again.");
+        setLoading(false);
+        return;
+      }
+
+      const url = await onGetEnhancedAuthUrl(item.id);
+      popup.location.href = url;
+
+      const pollTimer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(pollTimer);
+          setLoading(false);
+          onOpenChange(false);
+        }
+      }, 500);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to start enhanced auth";
+      if (msg.includes("not configured") || msg.includes("CLIENT_ID") || msg.includes("OAuth")) {
+        setError(`Enhanced auth is not set up for ${item.displayName} yet. You can still connect manually below.`);
+      } else {
+        setError(msg);
+      }
+      setLoading(false);
+    }
+  }, [item, onGetEnhancedAuthUrl, onOpenChange]);
 
   const handleSecretTextConnect = useCallback(async () => {
     if (!item || !apiKey.trim()) return;
@@ -309,6 +353,42 @@ export function ConnectFlow({
               <ShieldAlert className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />
             )}
             {error}
+          </div>
+        )}
+
+        {/* Enhanced Auth (easy connect button + manual fallback divider) */}
+        {item.enhancedAuth && onGetEnhancedAuthUrl && (
+          <div className="space-y-3 py-1">
+            <Button
+              className="w-full"
+              onClick={() => void handleEnhancedAuth()}
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  {item.enhancedAuth.connectLabel}
+                </>
+              )}
+            </Button>
+            <p className="text-[11px] text-center text-muted-foreground/70">
+              Auto-fetch your project credentials — no manual setup needed
+            </p>
+            <div className="relative my-2">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  or enter credentials manually
+                </span>
+              </div>
+            </div>
           </div>
         )}
 

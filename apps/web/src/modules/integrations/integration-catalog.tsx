@@ -42,6 +42,7 @@ export function IntegrationCatalog({
     disconnect,
     testConnection,
     getAuthorizationUrl,
+    getEnhancedAuthUrl,
     getActions,
     refresh,
   } = useIntegrationCatalog(workspaceId);
@@ -319,6 +320,7 @@ export function IntegrationCatalog({
         onOpenChange={handleConnectFlowClose}
         onConnect={handleConnectComplete}
         onGetAuthorizationUrl={getAuthorizationUrl}
+        onGetEnhancedAuthUrl={getEnhancedAuthUrl}
         projectId={projectId}
       />
     </div>

@@ -14,6 +14,13 @@ export interface CustomAuthField {
   options?: Array<{ label: string; value: string }>;
 }
 
+export interface EnhancedAuthInfo {
+  providerKey: string;
+  connectLabel: string;
+  requiresResourceSelection: boolean;
+  resourceLabel?: string;
+}
+
 export interface CatalogItem {
   id: string;
   displayName: string;
@@ -25,6 +32,7 @@ export interface CatalogItem {
   connected: boolean;
   actionCount: number;
   customAuthFields?: CustomAuthField[];
+  enhancedAuth?: EnhancedAuthInfo;
 }
 
 export interface IntegrationAction {
@@ -177,6 +185,14 @@ export function useIntegrationCatalog(workspaceId: string) {
     return res.data;
   }, []);
 
+  const getEnhancedAuthUrl = useCallback(async (integrationId: string) => {
+    const params = new URLSearchParams({ workspaceId });
+    const res = await apiFetch<{ authorizationUrl: string }>(
+      `/integrations/enhanced-auth/${integrationId}/authorize?${params}`
+    );
+    return res.authorizationUrl;
+  }, [workspaceId]);
+
   const connectedItems = catalog.filter(i => i.connected);
   const availableItems = catalog.filter(i => !i.connected);
 
@@ -185,7 +201,7 @@ export function useIntegrationCatalog(workspaceId: string) {
     search, setSearch, category, setCategory,
     connectedItems, availableItems,
     connect, disconnect, testConnection,
-    getAuthorizationUrl, getActions,
+    getAuthorizationUrl, getEnhancedAuthUrl, getActions,
     refresh: () => { fetchCatalog(); fetchConnections(); },
   };
 }
