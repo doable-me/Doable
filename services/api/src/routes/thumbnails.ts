@@ -36,7 +36,11 @@ thumbnailRoutes.get("/:filename", async (c) => {
   const projectId = filename.replace(/\.png$/, "");
 
   if (!thumbnailExists(projectId)) {
-    return c.notFound();
+    // Prevent browsers/proxies from caching the 404 — the thumbnail
+    // may be generated moments later by an in-flight capture.
+    return c.body("Not found", 404, {
+      "Cache-Control": "no-store",
+    });
   }
 
   try {

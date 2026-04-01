@@ -7,7 +7,6 @@ import {
   getCopilotEngine,
   createDoableTools,
   createAllTools,
-  onToolEvent,
   type ByokProviderConfig,
   type CopilotEngine,
 } from "../ai/providers/copilot.js";
@@ -468,11 +467,11 @@ function buildAutoFixPrompt(error: string): string {
 // ─── In-memory session mapping (projectId → copilot sessionId) ─
 const projectSessions = new Map<string, string>();
 
-// Track active AI work per project — allows clients to detect ongoing work after refresh
-const activeAiSessions = new Map<string, { startedAt: number; mode: string; userId: string }>();
-
 // ─── Debounce guard for thumbnail captures ─
-const captureInProgress = new Set<string>();
+// Map of projectId → timestamp when capture started.
+// Entries auto-expire after CAPTURE_TTL_MS so a hung capture can't permanently block a project.
+const captureInProgress = new Map<string, number>();
+const CAPTURE_TTL_MS = 60_000; // 60 seconds
 
 /**
  * Schedule a thumbnail capture for a project. Debounced — only one
@@ -482,25 +481,30 @@ const captureInProgress = new Set<string>();
  * @param projectId - The project to capture
  * @param delayMs - How long to wait for Vite HMR to settle (default: 3000)
  */
-function scheduleThumbnailCapture(projectId: string, delayMs = 5000): void {
-  if (captureInProgress.has(projectId)) {
-    console.log(`[Thumbnail] Skipping capture for ${projectId} — already in progress`);
+function scheduleThumbnailCapture(projectId: string, delayMs = 3000): void {
+  const existingTs = captureInProgress.get(projectId);
+  if (existingTs) {
+    if (Date.now() - existingTs < CAPTURE_TTL_MS) {
+      console.log(`[Thumbnail] Skipping capture for ${projectId} — already in progress`);
+      return;
+    }
+    // TTL expired — previous capture likely hung, allow retry
+    console.warn(`[Thumbnail] Previous capture for ${projectId} expired (>60s) — allowing retry`);
+  }
+  captureInProgress.set(projectId, Date.now());
+
+  const internalUrl = getDevServerInternalUrl(projectId);
+  if (!internalUrl) {
+    captureInProgress.delete(projectId);
+    console.warn(`[Thumbnail] Skipping capture for ${projectId} — dev server not running`);
     return;
   }
-  captureInProgress.add(projectId);
 
-  // Use the API server's proxy URL — Puppeteer loads through the reverse proxy
-  // so assets, HMR, and base paths resolve correctly (same as the browser).
-  // This works even when getDevServerInternalUrl() returns null, because the
-  // /preview/:projectId/ proxy route handles dev server lookup internally.
-  const apiPort = parseInt(process.env.API_PORT ?? "4000", 10);
-  const previewUrl = `http://127.0.0.1:${apiPort}/preview/${projectId}/`;
-  console.log(`[Thumbnail] Scheduling capture for ${projectId} in ${delayMs}ms (preview: ${previewUrl})`);
-
+  const previewUrl = `${internalUrl}/preview/${projectId}/`;
   setTimeout(() => {
     import("../thumbnails/capture.js")
       .then(({ captureProjectThumbnail }) =>
-        captureProjectThumbnail(projectId, previewUrl, { retries: 2, retryDelayMs: 3000 })
+        captureProjectThumbnail(projectId, previewUrl)
       )
       .then(async (filePath) => {
         if (filePath) {
@@ -510,10 +514,12 @@ function scheduleThumbnailCapture(projectId: string, delayMs = 5000): void {
           } catch (e) {
             console.warn("[Thumbnail] Failed to save URL to DB:", e);
           }
+        } else {
+          console.warn(`[Thumbnail] Capture returned null for ${projectId} — preview may have errors`);
         }
       })
       .finally(() => captureInProgress.delete(projectId))
-      .catch(console.warn);
+      .catch((err) => console.warn(`[Thumbnail] Capture failed for ${projectId}:`, err));
   }, delayMs);
 }
 
@@ -565,8 +571,6 @@ chatRoutes.post(
     // Start SSE stream IMMEDIATELY — all setup runs inside the callback
     // so HTTP headers are sent right away and Cloudflare Tunnel / proxies
     // don't time out waiting for the initial response.
-    // Anti-buffering headers for Cloudflare Tunnel and other reverse proxies
-    c.header("X-Accel-Buffering", "no");
     return streamSSE(c, async (stream) => {
     // Keep-alive: send periodic SSE pings to prevent Cloudflare Tunnel
     // and other proxies from closing the connection during slow operations
@@ -577,38 +581,21 @@ chatRoutes.post(
       } catch { /* stream already closed */ }
     }, 10_000);
 
-    // Declare assistant tracking variables OUTSIDE try block so the outer
-    // catch can access them for partial message persistence on error.
-    let hadToolCalls = false;
-    const pendingToolNames: string[] = [];
-    let assistantContent = "";
-    let assistantMessageId: string | undefined;
-    let lastFlushLen = 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let assistantToolCalls: any[] = [];
-    let unsubToolEvents: (() => void) = () => {};
-
     try {
       // Send initial status so the client knows we're alive
       await stream.writeSSE({
-        data: JSON.stringify({ type: "status", data: "Setting up..." }),
+        data: JSON.stringify({ type: "thinking", data: "Setting up..." }),
       });
 
       // Auto-scaffold the project if it hasn't been created yet
       if (!isProjectScaffolded(projectId)) {
         try {
-          await stream.writeSSE({
-            data: JSON.stringify({ type: "status", data: "Creating project files..." }),
-          });
           console.log(`[Chat] Auto-scaffolding project ${projectId}`);
-          await stream.writeSSE({
-            data: JSON.stringify({ type: "status", data: "Installing dependencies — this may take a moment..." }),
-          });
           await createProject(projectId);
-          await stream.writeSSE({
-            data: JSON.stringify({ type: "status", data: "Dependencies installed" }),
-          });
         } catch (err: unknown) {
+          // "Project already exists" is benign (race condition with frontend scaffold).
+          // Any other error is a real problem — log it but continue so the AI can
+          // still operate on whatever files exist.
           const isAlreadyExists = err instanceof Error && err.message.includes("already scaffolded");
           if (!isAlreadyExists) {
             console.error(`[Chat] Scaffold failed for project ${projectId}:`, err);
@@ -619,23 +606,14 @@ chatRoutes.post(
       // Auto-start the dev server if not running
       if (!isDevServerRunning(projectId) && isProjectScaffolded(projectId)) {
         try {
-          await stream.writeSSE({
-            data: JSON.stringify({ type: "status", data: "Starting live preview..." }),
-          });
           console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
           await startDevServer(projectId);
-          await stream.writeSSE({
-            data: JSON.stringify({ type: "status", data: "Live preview ready" }),
-          });
         } catch (err) {
           console.error(`[Chat] Dev server start failed for project ${projectId}:`, err);
         }
       }
 
       // ── Resolve AI config via fallback chain ──
-      await stream.writeSSE({
-        data: JSON.stringify({ type: "thinking", data: "Connecting to AI..." }),
-      });
       const {
         model: resolvedModel,
         provider: resolvedProvider,
@@ -648,12 +626,9 @@ chatRoutes.post(
       });
 
       // Get or create session for this project.
-      // Each mode uses a separate session key so they don't pollute
-      // each other's context (plan mode has restricted tools, visual-edit
-      // has element-level context, agent mode has full access).
-      const sessionKey = mode === "plan" ? `${projectId}:plan`
-        : mode === "visual-edit" ? `${projectId}:visual-edit`
-        : projectId;
+      // Visual-edit mode uses a separate session key so it doesn't
+      // pollute the main chat context with element-level edits.
+      const sessionKey = mode === "visual-edit" ? `${projectId}:visual-edit` : projectId;
       // Look up workspace for multi-scope context + MCP tools
       let workspaceId: string | undefined;
       try {
@@ -661,47 +636,19 @@ chatRoutes.post(
         workspaceId = proj?.workspace_id;
       } catch { /* ignore */ }
 
-      // Pre-compute system prompt & context — needed both for fresh sessions
-      // and for session recreation after engine recycling.
-      const previewUrl = getDevServerUrl(projectId);
-      const projectContext = await buildProjectContextForMode(projectId, mode, workspaceId, userId);
+      let sessionId = projectSessions.get(sessionKey);
+      if (!sessionId) {
+        // Send keep-alive status — session creation can be slow
+        await stream.writeSSE({
+          data: JSON.stringify({ type: "thinking", data: "Connecting to AI..." }),
+        });
 
-      const systemPrompt =
+        const previewUrl = getDevServerUrl(projectId);
+        const projectContext = await buildProjectContextForMode(projectId, mode, workspaceId, userId);
+
+        const systemPrompt =
           mode === "plan"
-            ? `You are Doable's planning assistant. You help people plan what they want to build — like a friendly product collaborator, not a developer.
-
-CRITICAL: The user is likely a designer, business owner, creator, or someone with no coding background. NEVER use technical language. No file paths, no component names, no framework jargon, no "API", no "state management", no "routing". Speak in terms of what the user will SEE and EXPERIENCE.
-
-You have two tools:
-- ask_clarification: Ask 2-4 simple questions about what the user wants
-- create_plan: Create a step-by-step plan the user can review and approve
-
-Workflow:
-1. Quietly read the codebase (use read_file, list_files) — do NOT mention files or code to the user
-2. If the request is vague, call ask_clarification with friendly, non-technical questions
-3. Once you understand what they want, call create_plan with a clear plan
-
-QUESTION RULES (ask_clarification):
-- Ask about the USER'S goals, not implementation details
-- Good: "What's this app for?", "Who will use it?", "What should it look like?"
-- Bad: "Should I use React Router?", "Do you want local state or a database?", "Which API?"
-- Options should describe experiences, not technologies: "Clean and minimal" not "Tailwind with white background"
-- Frame options as outcomes: "Users can save favorites" not "Add localStorage persistence"
-- Maximum 4 questions, keep them short and conversational
-- NEVER mention React, TypeScript, Tailwind, Vite, components, hooks, or any technical term
-
-PLAN RULES (create_plan):
-- Step titles describe what the user will SEE: "Add a sidebar with navigation" not "Create NavSidebar component"
-- Step descriptions explain the EXPERIENCE: "Users will see a clean list of their tasks with checkboxes" not "Render a TaskList component with map over state array"
-- NEVER mention file paths, imports, packages, or code in titles or descriptions
-- Technical details (for the AI to use later during build) go ONLY in the hidden "details" field
-- Complexity should be from the user's perspective: "simple" = quick, "moderate" = a few screens, "complex" = lots of features
-- Keep the summary to 1-2 sentences a non-technical person would understand
-
-Do NOT execute any file changes. Only plan.
-You MUST call ask_clarification or create_plan — do not just output text.
-
-${previewUrl ? `Preview: ${previewUrl}` : ""}${projectContext}`
+            ? "You are Doable's Plan Mode AI. Analyze requests, break them into steps, and produce structured plans. Do NOT write code directly — only plan and reason."
             : mode === "visual-edit"
             ? `You are Doable's Visual Edit AI. You make precise, surgical edits to individual UI elements. The user has selected a specific element in the visual preview and wants you to modify it.
 
@@ -716,8 +663,6 @@ The project is a Vite + React + TypeScript app with Tailwind CSS v4.${previewUrl
             : `You are Doable's Agent Mode AI. You build complete, working web applications by creating files, editing files, and installing packages. The user sees a live preview that updates in real-time as you make changes.
 
 The project is a Vite + React 19 + TypeScript app with Tailwind CSS v4 (using the @tailwindcss/vite plugin). Files are hot-reloaded via Vite.${previewUrl ? `\nLive preview: ${previewUrl}` : ""}${projectContext}
-
-PLAN EXECUTION: If the user says "start building" or references an approved plan, read .doable/plan.md with read_file FIRST. Follow the plan step by step. After completing each step, call mark_step_complete with the stepId and planId from the plan. This updates the user's progress tracker in real time.
 
 ═══════════════════════════════════════════════════════════════
   ⚠️  BEFORE WRITING ANY FILE — MANDATORY CHECKLIST  ⚠️
@@ -791,36 +736,14 @@ ERROR RECOVERY — if you encounter errors:
 - "X is not exported from Y" → read BOTH the importing file AND the exporting file to understand the mismatch.
 - If multiple errors cascade, fix them one at a time starting with the root cause (usually a missing package or broken import).`;
 
-      // Plan mode: only allow read + plan tools (no file writes).
-      // Build mode: strip plan-only tools so the AI builds instead of asking questions.
-      const PLAN_ONLY_TOOLS = new Set([
-        "read_file", "list_files", "search_files",
-        "ask_clarification", "create_plan", "mark_step_complete",
-      ]);
-      const PLAN_EXCLUSIVE_TOOLS = new Set([
-        "ask_clarification", "create_plan",
-      ]);
-
-      let sessionId = projectSessions.get(sessionKey);
-      // Hoist flushInterval so it's accessible in stream-end and catch blocks
-      let flushInterval: ReturnType<typeof setInterval> | null = null;
-      if (!sessionId) {
-        // Send keep-alive status — session creation can be slow
-        await stream.writeSSE({
-          data: JSON.stringify({ type: "thinking", data: "Connecting to AI..." }),
-        });
-
         const projectPath = getProjectPath(projectId);
         const allTools = await createAllTools(projectId, workspaceId, userId);
-        const sessionTools = mode === "plan"
-          ? allTools.filter((t: { name?: string }) => PLAN_ONLY_TOOLS.has(t.name ?? ""))
-          : allTools.filter((t: { name?: string }) => !PLAN_EXCLUSIVE_TOOLS.has(t.name ?? ""));
 
         // Use withAutoRetry to handle stale Copilot API tokens —
         // if session creation fails with an auth error, the manager evicts
         // the cached engine, creates a fresh one, and retries.
         const manager = getCopilotManager();
-        sessionId = await manager.withAutoRetry(projectId, resolvedGithubToken, async (eng) => {
+        sessionId = await manager.withAutoRetry(resolvedGithubToken, async (eng) => {
           return eng.createSession({
             projectId,
             userId,
@@ -828,59 +751,7 @@ ERROR RECOVERY — if you encounter errors:
             provider: resolvedProvider,
             workingDirectory: projectPath,
             systemPrompt,
-            tools: sessionTools,
-            // SDK hooks — called via RPC for guaranteed progress updates
-            toolProgress: {
-              onToolStart: (toolName, args) => {
-                console.log(`[Hook] Tool start: ${toolName}`);
-                const friendly = friendlyToolMessage(toolName, args as Record<string, unknown>);
-                stream.writeSSE({ data: JSON.stringify({
-                  type: "tool_call", data: { name: toolName, friendlyMessage: friendly },
-                }) }).catch(() => {});
-              },
-              onToolEnd: (toolName, args, result) => {
-                console.log(`[Hook] Tool end: ${toolName}`);
-                hadToolCalls = true;
-                const friendly = friendlyToolResult(toolName, result, true);
-                stream.writeSSE({ data: JSON.stringify({
-                  type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly },
-                }) }).catch(() => {});
-
-                // Plan Mode V2: Save plan to DB when create_plan tool completes
-                // The SDK hook result is the handler's return value: { success, plan, message }
-                if (toolName === "create_plan" && result) {
-                  try {
-                    const r = result as Record<string, unknown>;
-                    const plan = r.plan as Record<string, unknown> | undefined;
-                    if (plan?.id) {
-                      sql`INSERT INTO plans (id, project_id, summary, complexity, status, created_at)
-                          VALUES (${plan.id as string}, ${projectId}, ${plan.summary as string}, ${plan.complexity as string}, 'draft', now())
-                          ON CONFLICT (id) DO NOTHING`.catch((e: unknown) => console.error("[Plan] DB save failed:", e));
-                      const steps = plan.steps as Array<Record<string, unknown>> | undefined;
-                      if (Array.isArray(steps)) {
-                        for (const step of steps) {
-                          sql`INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
-                              VALUES (${step.id as string}, ${plan.id as string}, ${step.order as number}, ${step.title as string}, ${step.description as string}, ${(step.details as string) ?? null}, 'pending', ${(step.filePaths as string[]) ?? null})
-                              ON CONFLICT (id) DO NOTHING`.catch((e: unknown) => console.error("[Plan] Step save failed:", e));
-                        }
-                      }
-                      console.log(`[Plan] Saved plan ${plan.id} with ${steps?.length ?? 0} steps to DB`);
-                    }
-                  } catch (e) { console.error("[Plan] DB save error:", e); }
-                }
-              },
-              onSessionEnd: (reason, error) => {
-                console.log(`[Hook] Session end: ${reason}${error ? ` — ${error}` : ""}`);
-              },
-              onError: (error, context) => {
-                const { inspect } = require("node:util");
-                const details = inspect(error, { depth: 5, colors: false, showHidden: true });
-                console.error(`[Hook] Error (${context}):`, details);
-                stream.writeSSE({ data: JSON.stringify({
-                  type: "error", data: `${context}: ${details}`,
-                }) }).catch(() => {});
-              },
-            },
+            tools: allTools,
           });
         });
         projectSessions.set(sessionKey, sessionId);
@@ -935,9 +806,7 @@ ERROR RECOVERY — if you encounter errors:
         }
       }
 
-      // Broadcast AI message to ALL users in room (including sender).
-      // After refresh, the sender reconnects via WS and picks up live events.
-      // During the original SSE session, frontend deduplicates via ownMessageIds.
+      // Broadcast to other collaborators that a message was sent
       const messageId = crypto.randomUUID();
       broadcastToRoom(projectId, {
         type: "ai:message-sent",
@@ -945,9 +814,15 @@ ERROR RECOVERY — if you encounter errors:
         displayName: senderDisplayName,
         content: content.slice(0, 200),
         messageId,
-      }).catch(() => {});
+      }, userId).catch(() => {});
 
+        let hadToolCalls = false;
+        // Track pending tool names so tool_result events can include the name
+        const pendingToolNames: string[] = [];
+        // Track assistant content and tool calls for DB persistence
+        let assistantContent = "";
         // Pre-insert an empty assistant message row so partial content is never lost
+        let assistantMessageId: string | undefined;
         if (dbSessionId) {
           try {
             const [row] = await sql`
@@ -958,152 +833,143 @@ ERROR RECOVERY — if you encounter errors:
             assistantMessageId = row?.id;
           } catch { /* non-critical */ }
         }
+        let lastFlushLen = 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let assistantToolCalls: any[] = [];
         try {
           // Get a fresh engine reference — the pooled engine may have been
           // recycled since resolveAiEngine ran (max-age, idle, or eviction).
           const manager = getCopilotManager();
-          let currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
+          let currentEngine = await manager.getEngine(resolvedGithubToken);
 
-          // Subscribe to tool execution events so we can push live status to the client
-          // while the Copilot SDK executes tools silently in the background.
-          unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
-            hadToolCalls = true;
-            const friendly = friendlyToolMessage(toolName, args);
-            const ssePayload = status === "start"
-              ? { type: "tool_call", data: { name: toolName, friendlyMessage: friendly, arguments: args } }
-              : { type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly } };
-            stream.writeSSE({ data: JSON.stringify(ssePayload) }).catch(() => {});
-
-            // Plan Mode V2: Emit plan events from tool event bridge
-            if (status === "end" && toolName === "ask_clarification" && args?.output) {
-              try {
-                const questions = JSON.parse(args.output as string);
-                if (Array.isArray(questions)) {
-                  stream.writeSSE({ data: JSON.stringify({ type: "clarification", data: { questions } }) }).catch(() => {});
-                }
-              } catch { /* ignore */ }
-            }
-            if (status === "end" && toolName === "create_plan" && args?.output) {
-              try {
-                const plan = JSON.parse(args.output as string);
-                if (plan?.id) {
-                  stream.writeSSE({ data: JSON.stringify({ type: "plan", data: { plan } }) }).catch(() => {});
-                }
-              } catch { /* ignore */ }
-            }
-            if (status === "end" && toolName === "mark_step_complete" && args?.stepId) {
-              stream.writeSSE({ data: JSON.stringify({
-                type: "plan_step_update",
-                data: { stepId: args.stepId, planId: args.planId, status: "completed" },
-              }) }).catch(() => {});
-              // Also update DB
-              sql`UPDATE plan_steps SET status = 'completed', completed_at = now() WHERE id = ${args.stepId as string}`.catch(() => {});
-            }
-            // Broadcast to all room members (including sender for WS reconnection)
-            broadcastToRoom(projectId, {
-              type: "ai:tool-event", messageId,
-              event: status === "start" ? "tool_call" : "tool_result",
-              data: (ssePayload.data ?? {}) as Record<string, unknown>,
-            }).catch(() => {});
-            // Persist tool calls progressively
-            if (status === "start") {
-              assistantToolCalls.push({ name: toolName, arguments: args });
-              if (assistantMessageId) {
-                sql`UPDATE ai_messages SET tool_calls = ${sql.json(assistantToolCalls)} WHERE id = ${assistantMessageId}`.catch(() => {});
-              }
-            }
-          });
-
-          // Use sendAndGetReply with session.send() + session.on() + activity-based timeout.
-          // SDK hooks (onPreToolUse/onPostToolUse) fire via RPC for guaranteed progress.
-          // onToolEvent bridge provides additional file-level events from our tool handlers.
-          // Timeout fires only after 2 minutes of NO activity — not a blind wall clock.
-
-          // Progressive DB flush — save assistant content every 3s so refreshes show near-live progress
-          flushInterval = setInterval(() => {
-            if (assistantMessageId && assistantContent) {
-              sql`UPDATE ai_messages SET content = ${assistantContent}, tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])} WHERE id = ${assistantMessageId}`.catch(() => {});
-            }
-          }, 3000);
-
-          // Track active AI work per project so clients can detect ongoing work on refresh
-          activeAiSessions.set(projectId, { startedAt: Date.now(), mode, userId });
-
-          await stream.writeSSE({
-            data: JSON.stringify({ type: "thinking", data: "Building your project..." }),
-          });
-          console.log(`[Chat] Sending message to session ${sessionId!.slice(0, 8)}… for project ${projectId}`);
-          const releaseTracker = manager.trackRequest(projectId);
-          let reply: { content: string; messageId?: string } | null = null;
+          // Try to send. If the session was lost (engine recycled), recreate it.
+          let messageStream: AsyncGenerator<import("@github/copilot-sdk").SessionEvent>;
           try {
-            reply = await currentEngine.sendAndGetReply(
-              sessionId!, augmentedContent,
-              fileAttachments.length > 0 ? fileAttachments : undefined,
-              // Activity callback — resets the inactivity timer and pushes SSE events
-              (type, detail) => {
-                if (type === "text_delta") {
-                  // Streaming text arrived — accumulate for DB persistence
-                  assistantContent += detail.replace(/^\+(\d+) chars$/, "");
-                } else if (type === "event") {
-                  // Any SDK event = activity
-                  console.log(`[Chat] SDK activity: ${detail}`);
-                }
-              },
-            );
+            messageStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
+            // Force the generator to yield once — "Session not found" throws here
+            // because async generators are lazy (the body doesn't run until iterated).
+            const first = await messageStream.next();
+            // Wrap in a helper that re-yields the first value then continues
+            messageStream = (async function* () {
+              if (!first.done) yield first.value;
+              yield* messageStream;
+            })();
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             if (msg.includes("not found") || msg.includes("not started") || msg.includes("stopped")) {
-              // Session or engine was lost — recreate
-              console.log(`[Chat] Session lost for ${projectId}: ${msg.slice(0, 80)} — recreating`);
-              await stream.writeSSE({
-                data: JSON.stringify({ type: "thinking", data: "Reconnecting to AI..." }),
-              });
+              // Session or engine was lost (engine recycled/stopped) — recreate
+              console.log(`[Chat] Session or engine lost for ${projectId}: ${msg.slice(0, 80)}`);
               projectSessions.delete(sessionKey);
-              currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
+              currentEngine = await manager.getEngine(resolvedGithubToken);
               const projectPath = getProjectPath(projectId);
               const freshTools = await createAllTools(projectId, workspaceId, userId);
-              const recreateTools = mode === "plan"
-                ? freshTools.filter((t: { name?: string }) => PLAN_ONLY_TOOLS.has(t.name ?? ""))
-                : freshTools.filter((t: { name?: string }) => !PLAN_EXCLUSIVE_TOOLS.has(t.name ?? ""));
               sessionId = await currentEngine.createSession({
                 projectId, userId, model: resolvedModel, provider: resolvedProvider,
-                workingDirectory: projectPath, systemPrompt, tools: recreateTools,
+                workingDirectory: projectPath, systemPrompt: "", tools: freshTools,
               });
               projectSessions.set(sessionKey, sessionId);
-              reply = await currentEngine.sendAndGetReply(
-                sessionId, augmentedContent,
-                fileAttachments.length > 0 ? fileAttachments : undefined,
-              );
+              messageStream = currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
             } else {
               throw err;
             }
           }
-          releaseTracker();
-          unsubToolEvents();
-          if (flushInterval) clearInterval(flushInterval);
-          activeAiSessions.delete(projectId);
 
-          // Emit the final assistant text as a single text_delta
-          if (reply?.content) {
-            assistantContent = reply.content;
-            const sanitized = sanitizeText(reply.content);
-            await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: sanitized }) });
-            // Broadcast to all room members (including sender for WS reconnection)
-            broadcastToRoom(projectId, {
-              type: "ai:stream-chunk", chunk: sanitized, messageId, isThinking: false,
-            }).catch(() => {});
+          for await (const event of messageStream!) {
+            const evtType = (event as Record<string, unknown>).type as string;
+            const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
+
+            // Capture full assistant.message for DB persistence (even though we skip it for SSE)
+            if (evtType === "assistant.message" && evtData?.content) {
+              const fullContent = evtData.content as string;
+              // Use the complete message for DB if we somehow missed deltas
+              if (!assistantContent && fullContent) {
+                assistantContent = fullContent;
+              }
+            }
+
+            const sseData = mapEventToSSE(event);
+            if (sseData) {
+              // When a tool_call is emitted, record the name for pairing
+              if (sseData.type === "tool_call") {
+                const toolData = sseData.data as Record<string, unknown>;
+                if (toolData?.name) {
+                  pendingToolNames.push(toolData.name as string);
+                }
+              }
+              // When a tool_result is emitted, inject the name from the queue
+              if (sseData.type === "tool_result") {
+                hadToolCalls = true;
+                const resultData = sseData.data as Record<string, unknown>;
+                if (!resultData?.name && pendingToolNames.length > 0) {
+                  resultData.name = pendingToolNames.shift();
+                }
+              }
+              // Accumulate assistant content for DB persistence
+              if (sseData.type === "text_delta") {
+                assistantContent += typeof sseData.data === "string" ? sseData.data : "";
+                // Flush to DB every ~500 chars so content survives crashes
+                if (assistantMessageId && assistantContent.length - lastFlushLen > 500) {
+                  lastFlushLen = assistantContent.length;
+                  sql`UPDATE ai_messages SET content = ${assistantContent} WHERE id = ${assistantMessageId}`.catch(() => {});
+                }
+                // Broadcast text chunks to other collaborators via WS
+                broadcastToRoom(projectId, {
+                  type: "ai:stream-chunk",
+                  chunk: typeof sseData.data === "string" ? sseData.data : "",
+                  messageId,
+                  isThinking: false,
+                }, userId).catch(() => {});
+              }
+              // Broadcast thinking chunks too
+              if (sseData.type === "thinking") {
+                broadcastToRoom(projectId, {
+                  type: "ai:stream-chunk",
+                  chunk: typeof sseData.data === "string" ? sseData.data : "",
+                  messageId,
+                  isThinking: true,
+                }, userId).catch(() => {});
+              }
+              // Broadcast tool_call / tool_result events so collaborators see tool activity
+              if (sseData.type === "tool_call" || sseData.type === "tool_result") {
+                broadcastToRoom(projectId, {
+                  type: "ai:tool-event",
+                  messageId,
+                  event: sseData.type,
+                  data: (sseData.data ?? {}) as Record<string, unknown>,
+                }, userId).catch(() => {});
+              }
+              // Broadcast status & auto_fix_complete events
+              if (sseData.type === "status" || sseData.type === "auto_fix_complete") {
+                broadcastToRoom(projectId, {
+                  type: "ai:status",
+                  messageId,
+                  data: sseData.data,
+                }, userId).catch(() => {});
+              }
+              // Broadcast errors
+              if (sseData.type === "error") {
+                broadcastToRoom(projectId, {
+                  type: "ai:error",
+                  messageId,
+                  error: sseData.data,
+                }, userId).catch(() => {});
+              }
+              // Accumulate tool calls for DB persistence
+              if (sseData.type === "tool_call") {
+                const toolData = sseData.data as Record<string, unknown>;
+                assistantToolCalls.push({ name: toolData?.name as string, arguments: toolData?.arguments });
+              }
+              await stream.writeSSE({ data: JSON.stringify(sseData) });
+            }
           }
-          console.log(`[Chat] SSE stream complete for ${projectId}: hadToolCalls=${hadToolCalls}, contentLen=${assistantContent.length}`);
         } catch (err) {
-          if (flushInterval) clearInterval(flushInterval);
-          activeAiSessions.delete(projectId);
           const msg = err instanceof Error ? err.message : String(err);
 
           // If streaming failed due to a stale auth token, evict the engine
           // so the next request gets a fresh one automatically.
           if (msg.includes("not authorized") || msg.includes("policy") || msg.includes("unauthorized")) {
             const manager = getCopilotManager();
-            await manager.evictEngine(projectId);
+            await manager.evictEngine(resolvedGithubToken);
             projectSessions.delete(sessionKey);
             console.log("[Chat] Evicted stale engine after streaming auth error");
           }
@@ -1174,7 +1040,7 @@ ERROR RECOVERY — if you encounter errors:
             });
 
             try {
-              const fixEngine = await getCopilotManager().getEngine(projectId, resolvedGithubToken);
+              const fixEngine = await getCopilotManager().getEngine(resolvedGithubToken);
               for await (const event of fixEngine.sendMessage(
                 sessionId!,
                 buildAutoFixPrompt(previewError.message),
@@ -1288,12 +1154,12 @@ ERROR RECOVERY — if you encounter errors:
           scheduleThumbnailCapture(projectId);
         }
 
-        // Broadcast stream end to all room members
+        // Broadcast stream end to collaborators
         broadcastToRoom(projectId, {
           type: "ai:stream-end",
           messageId,
           finalContent: assistantContent.slice(0, 500),
-        }).catch(() => {});
+        }, userId).catch(() => {});
 
         // Final save of assistant message (update the pre-inserted row)
         if (assistantMessageId && assistantContent) {
@@ -1325,13 +1191,11 @@ ERROR RECOVERY — if you encounter errors:
         }
 
         clearInterval(keepAlive);
-        unsubToolEvents();
         await stream.writeSSE({ data: "[DONE]" });
     } catch (err) {
       clearInterval(keepAlive);
-      unsubToolEvents();
-      const { inspect } = require("node:util");
-      const errMsg = inspect(err, { depth: 5, colors: false, showHidden: true });
+      // Copilot SDK is the core engine — surface the real error, don't work around it
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Chat] Copilot SDK error:", errMsg);
 
       // Save partial assistant message so chat history isn't lost on error
@@ -1353,7 +1217,7 @@ ERROR RECOVERY — if you encounter errors:
       await stream.writeSSE({
         data: JSON.stringify({
           type: "error",
-          data: errMsg,
+          data: `Copilot SDK error: ${errMsg}. Ensure you have a GitHub Copilot subscription or configure BYOK in settings.`,
         }),
       });
       await stream.writeSSE({ data: "[DONE]" });
@@ -1361,21 +1225,6 @@ ERROR RECOVERY — if you encounter errors:
     });
   },
 );
-
-// ─── GET /projects/:id/ai-status ─ Check if AI is actively working ──
-chatRoutes.get("/projects/:id/ai-status", async (c) => {
-  const projectId = c.req.param("id");
-  const active = activeAiSessions.get(projectId);
-  if (active) {
-    return c.json({
-      active: true,
-      mode: active.mode,
-      startedAt: active.startedAt,
-      elapsed: Date.now() - active.startedAt,
-    });
-  }
-  return c.json({ active: false });
-});
 
 // ─── GET /projects/:id/chat/history ─ Chat history ──────────
 chatRoutes.get("/projects/:id/chat/history", async (c) => {
@@ -1628,19 +1477,6 @@ chatRoutes.post(
   },
 );
 
-// ─── Known Copilot models (fallback when SDK listModels is unavailable) ───
-const KNOWN_COPILOT_MODELS = [
-  { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
-  { id: "gpt-4o", name: "GPT-4o" },
-  { id: "gpt-4o-mini", name: "GPT-4o Mini" },
-  { id: "gpt-4.1", name: "GPT-4.1" },
-  { id: "gpt-4.1-mini", name: "GPT-4.1 Mini" },
-  { id: "gpt-4.1-nano", name: "GPT-4.1 Nano" },
-  { id: "o3-mini", name: "o3-mini" },
-  { id: "o4-mini", name: "o4-mini" },
-  { id: "gemini-2.0-flash-001", name: "Gemini 2.0 Flash" },
-];
-
 // ─── GET /ai/models ─ List available models ─────────────────
 chatRoutes.get("/ai/models", async (c) => {
   try {
@@ -1651,30 +1487,15 @@ chatRoutes.get("/ai/models", async (c) => {
       githubToken = (await aiSettingsDb.getCopilotAccountToken(copilotAccountId)) ?? undefined;
     }
 
-    // Use account-specific pool key so different tokens get different engines
-    const poolKey = copilotAccountId ? `__models__:${copilotAccountId}` : "__models__";
     const manager = getCopilotManager();
-    const engine = await manager.getEngine(poolKey, githubToken);
-
-    try {
-      // Timeout after 8s — listModels() can hang with some auth configs
-      const models = await Promise.race([
-        engine.listModels(),
-        new Promise<null>((_, reject) =>
-          setTimeout(() => reject(new Error("listModels timeout")), 8000)
-        ),
-      ]);
-      if (Array.isArray(models) && models.length > 0) {
-        return c.json({ data: models });
-      }
-    } catch {
-      // listModels() not available, timed out, or returned empty — use known models
-    }
-
-    return c.json({ data: KNOWN_COPILOT_MODELS });
+    const engine = await manager.getEngine(githubToken);
+    const models = await engine.listModels();
+    return c.json({ data: models });
   } catch (err) {
-    // Engine creation failed — still return known models so UI isn't empty
-    return c.json({ data: KNOWN_COPILOT_MODELS });
+    return c.json({
+      data: [],
+      error: err instanceof Error ? err.message : "Failed to list models",
+    });
   }
 });
 
@@ -1781,7 +1602,7 @@ chatRoutes.post(
       // withAutoRetry handles stale token eviction + retry transparently.
       for (const config of configs) {
         try {
-          const suggestions = await manager.withAutoRetry("__suggestions__", config.githubToken, async (engine) => {
+          const suggestions = await manager.withAutoRetry(config.githubToken, async (engine) => {
             const sessionId = await engine.createSession({
               projectId: "suggestions",
               userId: "system",
@@ -2085,14 +1906,11 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     }
 
     // ─── Final complete message (sent after streaming ends) ─
-    case "assistant.message": {
-      // The SDK's on() handler doesn't deliver streaming deltas — sendAndWait
-      // returns the final assistant.message with full content. Emit it as
-      // text_delta so the frontend displays the response text.
-      const content = (data?.content ?? "") as string;
-      if (!content) return null;
-      return { type: "text_delta", data: sanitizeText(content) };
-    }
+    case "assistant.message":
+      // When streaming is enabled, deltas already sent all text.
+      // Skip to avoid duplicating content. Only emit if no deltas were sent
+      // (fallback for non-streaming mode).
+      return null;
 
     // ─── Legacy / direct provider text events ─────────────
     case "text_delta": {

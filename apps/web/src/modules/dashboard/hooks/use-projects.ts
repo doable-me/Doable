@@ -96,7 +96,20 @@ export function useProjects(opts: UseProjectsOptions): UseProjectsReturn {
 
   useEffect(() => {
     fetchProjects();
-    return () => abortRef.current?.abort();
+
+    // Refetch when the user returns to this tab — picks up thumbnails
+    // that were generated in the background while the user was in the editor.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchProjects();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      abortRef.current?.abort();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [fetchProjects]);
 
   const createProject = async (data: {

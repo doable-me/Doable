@@ -25,14 +25,22 @@ declare const document: {
 const THUMBNAILS_DIR = path.resolve("thumbnails");
 const VIEWPORT = { width: 1280, height: 720 };
 
+const BROWSER_LAUNCH_TIMEOUT_MS = 30_000;
+
 let browser: Browser | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (!browser || !browser.connected) {
-    browser = await puppeteer.launch({
+    // Wrap puppeteer.launch() with a timeout so a missing/broken Chrome
+    // binary can't hang forever and permanently block thumbnail captures.
+    const launchPromise = puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
     });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Browser launch timed out after 30s")), BROWSER_LAUNCH_TIMEOUT_MS)
+    );
+    browser = await Promise.race([launchPromise, timeoutPromise]);
   }
   return browser;
 }
