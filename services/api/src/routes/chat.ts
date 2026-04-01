@@ -743,7 +743,7 @@ ERROR RECOVERY — if you encounter errors:
         // if session creation fails with an auth error, the manager evicts
         // the cached engine, creates a fresh one, and retries.
         const manager = getCopilotManager();
-        sessionId = await manager.withAutoRetry(resolvedGithubToken, async (eng) => {
+        sessionId = await manager.withAutoRetry(projectId, resolvedGithubToken, async (eng) => {
           return eng.createSession({
             projectId,
             userId,
@@ -1602,7 +1602,7 @@ chatRoutes.post(
       // withAutoRetry handles stale token eviction + retry transparently.
       for (const config of configs) {
         try {
-          const suggestions = await manager.withAutoRetry(config.githubToken, async (engine) => {
+          const suggestions = await manager.withAutoRetry("suggestions", config.githubToken, async (engine) => {
             const sessionId = await engine.createSession({
               projectId: "suggestions",
               userId: "system",

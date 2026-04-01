@@ -509,7 +509,7 @@
     "@activepieces/shared": "^0.50.0",
     "@doable/db": "workspace:*",
     "@doable/shared": "workspace:*",
-    "@github/copilot-sdk": "^0.1.32",
+    "@github/copilot-sdk": "^0.2.0",
     "@hono/node-server": "^1.13.7",
     "@hono/zod-validator": "^0.4.2",
     "argon2": "^0.41.1",
