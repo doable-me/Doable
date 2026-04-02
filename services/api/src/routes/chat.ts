@@ -7,6 +7,7 @@ import {
   getCopilotEngine,
   createDoableTools,
   createAllTools,
+  onToolEvent,
   type ByokProviderConfig,
   type CopilotEngine,
 } from "../ai/providers/copilot.js";
@@ -467,6 +468,10 @@ function buildAutoFixPrompt(error: string): string {
 // ─── In-memory session mapping (projectId → copilot sessionId) ─
 const projectSessions = new Map<string, string>();
 
+// Track active streaming requests per project so /ai-status can report
+// whether the AI is still working (survives page refresh).
+const activeRequests = new Map<string, { mode: string; startedAt: number }>();
+
 // ─── Debounce guard for thumbnail captures ─
 // Map of projectId → timestamp when capture started.
 // Entries auto-expire after CAPTURE_TTL_MS so a hung capture can't permanently block a project.
@@ -571,6 +576,7 @@ chatRoutes.post(
     // Start SSE stream IMMEDIATELY — all setup runs inside the callback
     // so HTTP headers are sent right away and Cloudflare Tunnel / proxies
     // don't time out waiting for the initial response.
+    c.header("X-Accel-Buffering", "no"); // Prevent proxy buffering of SSE
     return streamSSE(c, async (stream) => {
     // Keep-alive: send periodic SSE pings to prevent Cloudflare Tunnel
     // and other proxies from closing the connection during slow operations
@@ -590,12 +596,12 @@ chatRoutes.post(
       // Auto-scaffold the project if it hasn't been created yet
       if (!isProjectScaffolded(projectId)) {
         try {
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: "Creating project files..." } }),
+          });
           console.log(`[Chat] Auto-scaffolding project ${projectId}`);
           await createProject(projectId);
         } catch (err: unknown) {
-          // "Project already exists" is benign (race condition with frontend scaffold).
-          // Any other error is a real problem — log it but continue so the AI can
-          // still operate on whatever files exist.
           const isAlreadyExists = err instanceof Error && err.message.includes("already scaffolded");
           if (!isAlreadyExists) {
             console.error(`[Chat] Scaffold failed for project ${projectId}:`, err);
@@ -606,6 +612,9 @@ chatRoutes.post(
       // Auto-start the dev server if not running
       if (!isDevServerRunning(projectId) && isProjectScaffolded(projectId)) {
         try {
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Starting live preview..." } }),
+          });
           console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
           await startDevServer(projectId);
         } catch (err) {
@@ -613,42 +622,46 @@ chatRoutes.post(
         }
       }
 
-      // ── Resolve AI config via fallback chain ──
-      const {
-        model: resolvedModel,
-        provider: resolvedProvider,
-        githubToken: resolvedGithubToken,
-      } = await resolveAiEngine(projectId, userId, {
-        copilotAccountId,
-        providerId,
-        provider: provider as ByokProviderConfig | undefined,
-        model,
-      });
-
-      // Get or create session for this project.
-      // Visual-edit mode uses a separate session key so it doesn't
-      // pollute the main chat context with element-level edits.
+      // ── Resolve AI config + workspace in parallel ──
       const sessionKey = mode === "visual-edit" ? `${projectId}:visual-edit` : projectId;
-      // Look up workspace for multi-scope context + MCP tools
-      let workspaceId: string | undefined;
-      try {
-        const [proj] = await sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`;
-        workspaceId = proj?.workspace_id;
-      } catch { /* ignore */ }
+      const [aiConfig, workspaceRow] = await Promise.all([
+        resolveAiEngine(projectId, userId, {
+          copilotAccountId,
+          providerId,
+          provider: provider as ByokProviderConfig | undefined,
+          model,
+        }),
+        sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`.catch(() => []),
+      ]);
+      const { model: resolvedModel, provider: resolvedProvider, githubToken: resolvedGithubToken } = aiConfig;
+      const workspaceId: string | undefined = workspaceRow[0]?.workspace_id;
 
-      let sessionId = projectSessions.get(sessionKey);
-      if (!sessionId) {
-        // Send keep-alive status — session creation can be slow
-        await stream.writeSSE({
-          data: JSON.stringify({ type: "thinking", data: "Connecting to AI..." }),
-        });
+      // Build context + tools in parallel (both need workspaceId but not each other)
+      const previewUrl = getDevServerUrl(projectId);
+      const [projectContext, allTools] = await Promise.all([
+        buildProjectContextForMode(projectId, mode, workspaceId, userId),
+        createAllTools(projectId, workspaceId, userId),
+      ]);
 
-        const previewUrl = getDevServerUrl(projectId);
-        const projectContext = await buildProjectContextForMode(projectId, mode, workspaceId, userId);
-
-        const systemPrompt =
+      const systemPrompt =
           mode === "plan"
-            ? "You are Doable's Plan Mode AI. Analyze requests, break them into steps, and produce structured plans. Do NOT write code directly — only plan and reason."
+            ? `You are Doable's Plan Mode AI. You have two tools for planning: ask_clarification and create_plan.
+
+STEP 1 — CLARIFY (if needed):
+- If the request is vague or ambiguous, call ask_clarification with 2-4 focused questions
+- Each question should have smart default options when possible
+- Use plain language, no technical jargon
+- If the request is very specific, you may skip straight to STEP 2
+
+STEP 2 — PLAN:
+- After understanding the request, call create_plan
+- Write a 1-2 sentence summary in plain language
+- Create 3-8 concrete steps with action-oriented titles
+- Step descriptions should explain WHAT will be built, not HOW
+- Put technical details (file paths, implementation notes) in the optional details field
+- Estimate complexity as simple/moderate/complex
+
+IMPORTANT: Do NOT write code. Do NOT create or edit files. Only analyze and plan. You MUST use the ask_clarification and create_plan tools — do not output plans as plain text.`
             : mode === "visual-edit"
             ? `You are Doable's Visual Edit AI. You make precise, surgical edits to individual UI elements. The user has selected a specific element in the visual preview and wants you to modify it.
 
@@ -736,8 +749,23 @@ ERROR RECOVERY — if you encounter errors:
 - "X is not exported from Y" → read BOTH the importing file AND the exporting file to understand the mismatch.
 - If multiple errors cascade, fix them one at a time starting with the root cause (usually a missing package or broken import).`;
 
-        const projectPath = getProjectPath(projectId);
-        const allTools = await createAllTools(projectId, workspaceId, userId);
+      const projectPath = getProjectPath(projectId);
+
+      // In plan mode, restrict tools to read-only + plan-specific tools.
+      // This prevents the AI from building instead of planning.
+      const PLAN_MODE_ALLOWED = new Set([
+        "read_file", "list_files", "search_files",
+        "ask_clarification", "create_plan", "mark_step_complete",
+      ]);
+      const sessionTools = mode === "plan"
+        ? allTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED.has(t.name ?? ""))
+        : allTools;
+
+      let sessionId = projectSessions.get(sessionKey);
+      if (!sessionId) {
+        await stream.writeSSE({
+          data: JSON.stringify({ type: "status", data: { phase: "connecting", message: "Connecting to AI..." } }),
+        });
 
         // Use withAutoRetry to handle stale Copilot API tokens —
         // if session creation fails with an auth error, the manager evicts
@@ -751,7 +779,71 @@ ERROR RECOVERY — if you encounter errors:
             provider: resolvedProvider,
             workingDirectory: projectPath,
             systemPrompt,
-            tools: allTools,
+            tools: sessionTools,
+            // SDK hooks — called via RPC for guaranteed progress updates
+            toolProgress: {
+              onToolStart: (toolName, args) => {
+                const friendly = friendlyToolMessage(toolName, args as Record<string, unknown>);
+                stream.writeSSE({ data: JSON.stringify({
+                  type: "tool_call", data: { name: toolName, friendlyMessage: friendly },
+                }) }).catch(() => {});
+              },
+              onToolEnd: (toolName, _args, result) => {
+                hadToolCalls = true;
+                const friendly = friendlyToolResult(toolName, result, true);
+                stream.writeSSE({ data: JSON.stringify({
+                  type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly },
+                }) }).catch(() => {});
+
+                // Plan Mode: Emit structured plan/clarification events
+                if (toolName === "ask_clarification" && result) {
+                  try {
+                    const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
+                    if (output) {
+                      const questions = JSON.parse(output);
+                      if (Array.isArray(questions) && questions.length > 0) {
+                        stream.writeSSE({ data: JSON.stringify({
+                          type: "clarification", data: { questions },
+                        }) }).catch(() => {});
+                      }
+                    }
+                  } catch { /* non-critical */ }
+                }
+                if (toolName === "create_plan" && result) {
+                  try {
+                    const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
+                    if (output) {
+                      const plan = JSON.parse(output);
+                      if (plan?.id) {
+                        stream.writeSSE({ data: JSON.stringify({
+                          type: "plan", data: { plan },
+                        }) }).catch(() => {});
+                        // Save plan to DB
+                        sql`INSERT INTO plans (id, project_id, summary, complexity, status, created_at)
+                            VALUES (${plan.id}, ${projectId}, ${plan.summary}, ${plan.complexity}, 'draft', now())
+                            ON CONFLICT (id) DO NOTHING`.catch(() => {});
+                        if (Array.isArray(plan.steps)) {
+                          for (const step of plan.steps) {
+                            sql`INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
+                                VALUES (${step.id}, ${plan.id}, ${step.order}, ${step.title}, ${step.description}, ${step.details ?? null}, 'pending', ${step.filePaths ?? null})
+                                ON CONFLICT (id) DO NOTHING`.catch(() => {});
+                          }
+                        }
+                      }
+                    }
+                  } catch { /* non-critical */ }
+                }
+              },
+              onSessionEnd: (reason, error) => {
+                if (error) console.error(`[Chat] Session ended: ${reason} — ${error}`);
+              },
+              onError: (error, context) => {
+                console.error(`[Chat] Hook error (${context}): ${error}`);
+                stream.writeSSE({ data: JSON.stringify({
+                  type: "error", data: `${context}: ${error}`,
+                }) }).catch(() => {});
+              },
+            },
           });
         });
         projectSessions.set(sessionKey, sessionId);
@@ -816,6 +908,9 @@ ERROR RECOVERY — if you encounter errors:
         messageId,
       }, userId).catch(() => {});
 
+        // Mark this project as having an active AI request
+        activeRequests.set(projectId, { mode, startedAt: Date.now() });
+
         let hadToolCalls = false;
         // Track pending tool names so tool_result events can include the name
         const pendingToolNames: string[] = [];
@@ -836,11 +931,70 @@ ERROR RECOVERY — if you encounter errors:
         let lastFlushLen = 0;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let assistantToolCalls: any[] = [];
+        // Subscribe to tool execution events — captures plan/clarification data
+        // from tool handlers in real-time as they execute, independently of SDK
+        // event delivery. This is the reliable channel for structured plan data.
+        const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
+          if (status === "start") {
+            const friendly = friendlyToolMessage(toolName, args);
+            stream.writeSSE({
+              data: JSON.stringify({
+                type: "tool_call",
+                data: { name: toolName, friendlyMessage: friendly, arguments: args },
+              }),
+            }).catch(() => {});
+          }
+
+          if (status === "end") {
+            // Emit plan/clarification SSE events from tool handler output
+            if (toolName === "ask_clarification" && args.output) {
+              try {
+                const questions = JSON.parse(args.output as string);
+                stream.writeSSE({
+                  data: JSON.stringify({ type: "clarification", data: { questions } }),
+                }).catch(() => {});
+              } catch { /* parse error — skip */ }
+            }
+            if (toolName === "create_plan" && args.output) {
+              try {
+                const plan = JSON.parse(args.output as string);
+                // Save plan to DB
+                (async () => {
+                  try {
+                    const planId = plan.id as string;
+                    await sql`
+                      INSERT INTO plans (id, project_id, summary, complexity, status, created_at)
+                      VALUES (${planId}, ${projectId}, ${plan.summary}, ${plan.complexity}, 'draft', ${plan.createdAt})
+                      ON CONFLICT (id) DO NOTHING
+                    `;
+                    if (Array.isArray(plan.steps)) {
+                      for (const step of plan.steps) {
+                        await sql`
+                          INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
+                          VALUES (${step.id}, ${planId}, ${step.order}, ${step.title}, ${step.description}, ${step.details ?? null}, 'pending', ${step.filePaths ?? null})
+                          ON CONFLICT (id) DO NOTHING
+                        `;
+                      }
+                    }
+                  } catch (dbErr) {
+                    console.warn("[Chat] Failed to save plan to DB:", dbErr);
+                  }
+                })();
+                stream.writeSSE({
+                  data: JSON.stringify({ type: "plan", data: { plan } }),
+                }).catch(() => {});
+              } catch { /* parse error — skip */ }
+            }
+          }
+        });
+
+        // Track active request so engine pool doesn't recycle mid-stream
+        const releaseTracker = getCopilotManager().trackRequest(projectId);
         try {
           // Get a fresh engine reference — the pooled engine may have been
           // recycled since resolveAiEngine ran (max-age, idle, or eviction).
           const manager = getCopilotManager();
-          let currentEngine = await manager.getEngine(resolvedGithubToken);
+          let currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
 
           // Try to send. If the session was lost (engine recycled), recreate it.
           let messageStream: AsyncGenerator<import("@github/copilot-sdk").SessionEvent>;
@@ -859,13 +1013,18 @@ ERROR RECOVERY — if you encounter errors:
             if (msg.includes("not found") || msg.includes("not started") || msg.includes("stopped")) {
               // Session or engine was lost (engine recycled/stopped) — recreate
               console.log(`[Chat] Session or engine lost for ${projectId}: ${msg.slice(0, 80)}`);
+              stream.writeSSE({
+                data: JSON.stringify({ type: "status", data: { phase: "reconnecting", message: "Reconnecting to AI..." } }),
+              }).catch(() => {});
               projectSessions.delete(sessionKey);
-              currentEngine = await manager.getEngine(resolvedGithubToken);
-              const projectPath = getProjectPath(projectId);
+              currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
               const freshTools = await createAllTools(projectId, workspaceId, userId);
+              const recreationTools = mode === "plan"
+                ? freshTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED.has(t.name ?? ""))
+                : freshTools;
               sessionId = await currentEngine.createSession({
                 projectId, userId, model: resolvedModel, provider: resolvedProvider,
-                workingDirectory: projectPath, systemPrompt: "", tools: freshTools,
+                workingDirectory: projectPath, systemPrompt, tools: recreationTools,
               });
               projectSessions.set(sessionKey, sessionId);
               messageStream = currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
@@ -969,7 +1128,7 @@ ERROR RECOVERY — if you encounter errors:
           // so the next request gets a fresh one automatically.
           if (msg.includes("not authorized") || msg.includes("policy") || msg.includes("unauthorized")) {
             const manager = getCopilotManager();
-            await manager.evictEngine(resolvedGithubToken);
+            await manager.evictEngine(projectId);
             projectSessions.delete(sessionKey);
             console.log("[Chat] Evicted stale engine after streaming auth error");
           }
@@ -977,6 +1136,9 @@ ERROR RECOVERY — if you encounter errors:
           await stream.writeSSE({
             data: JSON.stringify({ type: "error", data: msg }),
           });
+        } finally {
+          unsubToolEvents();
+          releaseTracker();
         }
 
         // ── Auto-detect and fix preview errors ─────────────
@@ -1040,7 +1202,7 @@ ERROR RECOVERY — if you encounter errors:
             });
 
             try {
-              const fixEngine = await getCopilotManager().getEngine(resolvedGithubToken);
+              const fixEngine = await getCopilotManager().getEngine(projectId, resolvedGithubToken);
               for await (const event of fixEngine.sendMessage(
                 sessionId!,
                 buildAutoFixPrompt(previewError.message),
@@ -1190,9 +1352,11 @@ ERROR RECOVERY — if you encounter errors:
           }
         }
 
+        activeRequests.delete(projectId);
         clearInterval(keepAlive);
         await stream.writeSSE({ data: "[DONE]" });
     } catch (err) {
+      activeRequests.delete(projectId);
       clearInterval(keepAlive);
       // Copilot SDK is the core engine — surface the real error, don't work around it
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -1225,6 +1389,24 @@ ERROR RECOVERY — if you encounter errors:
     });
   },
 );
+
+// ─── GET /projects/:id/ai-status ─ Is AI actively working? ──
+// Called by frontend on page refresh to detect in-progress builds
+// and start polling for updates instead of showing a dead page.
+chatRoutes.use("/projects/:id/ai-status", authMiddleware);
+chatRoutes.get("/projects/:id/ai-status", async (c) => {
+  const projectId = c.req.param("id");
+  const active = activeRequests.get(projectId);
+  if (active) {
+    return c.json({
+      active: true,
+      mode: active.mode,
+      startedAt: active.startedAt,
+      elapsed: Date.now() - active.startedAt,
+    });
+  }
+  return c.json({ active: false });
+});
 
 // ─── GET /projects/:id/chat/history ─ Chat history ──────────
 chatRoutes.get("/projects/:id/chat/history", async (c) => {
@@ -1488,7 +1670,7 @@ chatRoutes.get("/ai/models", async (c) => {
     }
 
     const manager = getCopilotManager();
-    const engine = await manager.getEngine(githubToken);
+    const engine = await manager.getEngine("models", githubToken);
     const models = await engine.listModels();
     return c.json({ data: models });
   } catch (err) {
@@ -1905,11 +2087,20 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
       return { type: "text_delta", data: sanitizeText(delta) };
     }
 
+    // ─── SDK v0.2.0 streaming delta (raw text chunks) ────
+    case "assistant.streaming_delta": {
+      // SDK v0.2.0 delivers text tokens via streaming_delta alongside message_delta.
+      // The data shape varies — try common fields.
+      const streamDelta = (data?.deltaContent ?? data?.content ?? data?.delta ?? "") as string;
+      if (!streamDelta) return null;
+      return { type: "text_delta", data: sanitizeText(streamDelta) };
+    }
+
     // ─── Final complete message (sent after streaming ends) ─
     case "assistant.message":
-      // When streaming is enabled, deltas already sent all text.
-      // Skip to avoid duplicating content. Only emit if no deltas were sent
-      // (fallback for non-streaming mode).
+      // Skip — deltas and streaming_delta already sent text incrementally.
+      // The full content is captured separately for DB persistence in the
+      // streaming loop (evtType === "assistant.message" check).
       return null;
 
     // ─── Legacy / direct provider text events ─────────────
@@ -1988,6 +2179,8 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     case "session.tools_updated":
     case "session.usage_info":
     case "assistant.usage":
+    case "hook.start":
+    case "hook.end":
     case "user.message":
     case "assistant.turn_start":
     case "assistant.turn_end":

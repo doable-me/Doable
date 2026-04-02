@@ -73,6 +73,25 @@ aiSettingsRoutes.post(
       return c.json({ error: "Failed to validate GitHub token" }, 400);
     }
 
+    // Also verify Copilot API access — catch early if the token lacks Copilot scopes
+    try {
+      const { CopilotClient } = await import("@github/copilot-sdk");
+      const client = new CopilotClient({ githubToken });
+      await client.start();
+      const models = await client.listModels();
+      await client.stop();
+      if (models.length === 0) {
+        return c.json({ error: "GitHub token is valid but has no Copilot access. Check your Copilot subscription." }, 400);
+      }
+    } catch (sdkErr) {
+      const msg = sdkErr instanceof Error ? sdkErr.message : String(sdkErr);
+      if (msg.includes("not authorized") || msg.includes("unauthorized")) {
+        return c.json({ error: "GitHub token works but Copilot API access is denied. Re-authorize with Copilot scopes or check your subscription." }, 400);
+      }
+      // Non-critical — allow adding even if SDK check fails transiently
+      console.warn("[AI Settings] Copilot access check failed (non-blocking):", msg);
+    }
+
     try {
       const account = await aiSettings.addCopilotAccount({
         workspaceId,
@@ -155,19 +174,43 @@ aiSettingsRoutes.post("/:workspaceId/ai-settings/copilot-accounts/:id/validate",
   if (!token) return c.json({ error: "Account not found or invalid" }, 404);
 
   try {
-    const res = await fetch("https://api.github.com/user", {
+    // 1. Verify GitHub token is valid
+    const ghRes = await fetch("https://api.github.com/user", {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const valid = res.ok;
-
-    if (!valid) {
+    if (!ghRes.ok) {
       await aiSettings.updateCopilotAccount(accountId, { isValid: false });
+      return c.json({ data: { valid: false, status: ghRes.status, error: "GitHub token is invalid or expired" } });
     }
 
-    return c.json({ data: { valid, status: res.status } });
+    // 2. Verify Copilot API access by starting a SDK client and listing models
+    let copilotValid = false;
+    let copilotError: string | undefined;
+    try {
+      const { CopilotClient } = await import("@github/copilot-sdk");
+      const client = new CopilotClient({ githubToken: token });
+      await client.start();
+      const models = await client.listModels();
+      copilotValid = models.length > 0;
+      if (!copilotValid) copilotError = "No models available — Copilot access may be restricted";
+      await client.stop();
+    } catch (sdkErr) {
+      copilotError = sdkErr instanceof Error ? sdkErr.message : String(sdkErr);
+      if (copilotError.includes("not authorized") || copilotError.includes("unauthorized")) {
+        copilotError = "GitHub token works but Copilot API access is denied. Check your Copilot subscription or re-authorize with Copilot scopes.";
+      }
+    }
+
+    if (!copilotValid) {
+      await aiSettings.updateCopilotAccount(accountId, { isValid: false });
+      return c.json({ data: { valid: false, status: 200, error: copilotError } });
+    }
+
+    await aiSettings.updateCopilotAccount(accountId, { isValid: true });
+    return c.json({ data: { valid: true, status: 200 } });
   } catch {
     await aiSettings.updateCopilotAccount(accountId, { isValid: false });
-    return c.json({ data: { valid: false, status: 0 } });
+    return c.json({ data: { valid: false, status: 0, error: "Connection check failed" } });
   }
 });
 

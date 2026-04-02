@@ -266,27 +266,14 @@ export class CopilotEngine {
       console.log(`[CopilotEngine] Sending message with ${fileAttachments.length} file attachment(s):`, fileAttachments.map(a => a.displayName ?? a.path));
     }
 
-    // Use sendAndWait instead of send — the SDK docs confirm events are still
-    // delivered to on() handlers during sendAndWait, AND it guarantees the session
-    // reaches idle state. Plain send() was only producing pending_messages.modified
-    // and then going silent, even though tools executed successfully.
-    console.log(`[CopilotEngine] Sending message to session ${sessionId.slice(0, 8)}… (sendAndWait, 5min timeout)`);
-    session.sendAndWait(messageOptions, 300_000).then((result) => {
-      const contentLen = result?.data?.content?.length ?? 0;
-      console.log(`[CopilotEngine] sendAndWait resolved — content length: ${contentLen}`);
-      // SDK's on() doesn't deliver streaming events, so inject the final
-      // assistant.message + session.idle events ourselves from the sendAndWait result.
-      if (result) {
-        eventQueue.push(result as SessionEvent);
-      }
-      eventQueue.push({ type: "session.idle", data: {} } as SessionEvent);
-      done = true;
-      if (resolveWaiting) {
-        resolveWaiting();
-        resolveWaiting = null;
-      }
+    // Use session.send() (non-blocking). SDK v0.2.0 delivers ALL events through
+    // session.on() including assistant.message_delta (true token streaming),
+    // tool.execution_start/complete, assistant.reasoning_delta, and session.idle.
+    console.log(`[CopilotEngine] Sending message to session ${sessionId.slice(0, 8)}… (non-blocking send)`);
+    session.send(messageOptions).then(() => {
+      console.log(`[CopilotEngine] session.send() accepted`);
     }).catch((err) => {
-      console.error(`[CopilotEngine] sendAndWait rejected:`, err instanceof Error ? err.message : err);
+      console.error(`[CopilotEngine] session.send() rejected:`, err instanceof Error ? err.message : err);
       eventQueue.push({
         type: "session.error",
         data: { message: err instanceof Error ? err.message : String(err) },
