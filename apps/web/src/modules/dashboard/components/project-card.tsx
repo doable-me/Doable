@@ -72,7 +72,7 @@ export function ProjectCard({
       <div className="relative aspect-video w-full bg-muted">
         {project.thumbnailUrl && !imageError ? (
           <img
-            src={project.thumbnailUrl}
+            src={`${project.thumbnailUrl}?v=${new Date(project.updatedAt).getTime()}`}
             alt={project.name}
             className="h-full w-full object-cover"
             onError={() => setImageError(true)}

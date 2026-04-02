@@ -390,7 +390,7 @@ async function detectPreviewError(projectId: string): Promise<PreviewErrorInfo |
           file === "index.html"
             ? { Accept: "text/html" }
             : { Accept: "application/javascript" };
-        const res = await fetch(`${base}/${file}`, { headers });
+        const res = await fetch(`${base}/${file}`, { headers, signal: AbortSignal.timeout(5000) });
         if (!res.ok) {
           const body = await res.text();
           const clean = body
@@ -413,6 +413,7 @@ async function detectPreviewError(projectId: string): Promise<PreviewErrorInfo |
     try {
       const pageRes = await fetch(`${base}/`, {
         headers: { Accept: "text/html" },
+        signal: AbortSignal.timeout(5000),
       });
       if (pageRes.ok) {
         const pageHtml = await pageRes.text();
@@ -515,7 +516,12 @@ function scheduleThumbnailCapture(projectId: string, delayMs = 3000): void {
         if (filePath) {
           try {
             const thumbnailUrl = `/thumbnails/${projectId}.png`;
-            await sql`UPDATE projects SET thumbnail_url = ${thumbnailUrl} WHERE id = ${projectId}`;
+            await sql`UPDATE projects SET thumbnail_url = ${thumbnailUrl}, updated_at = NOW() WHERE id = ${projectId}`;
+            // Notify dashboard clients so thumbnail refreshes without tab switch
+            broadcastToRoom(projectId, {
+              type: "thumbnail:updated",
+              thumbnailUrl,
+            }).catch(() => {});
           } catch (e) {
             console.warn("[Thumbnail] Failed to save URL to DB:", e);
           }
@@ -586,6 +592,36 @@ chatRoutes.post(
         await stream.writeSSE({ data: JSON.stringify({ type: "keep_alive" }) });
       } catch { /* stream already closed */ }
     }, 10_000);
+
+    // Track assistant state across the whole request lifecycle so both
+    // success and error paths can persist the same in-flight data.
+    let hadToolCalls = false;
+    let versionSha: string | undefined;
+    const pendingToolNames: string[] = [];
+    let assistantContent = "";
+    let lastCapturedMsgId: string | undefined;
+    let msgIdDeltaStart = 0;
+    let assistantMessageId: string | undefined;
+    let lastFlushLen = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let assistantToolCalls: any[] = [];
+
+    const recordAssistantToolCall = (name?: string, args?: unknown) => {
+      if (!name) return;
+      const normalizedArgs = args && typeof args === "object"
+        ? (args as Record<string, unknown>)
+        : undefined;
+      const last = assistantToolCalls[assistantToolCalls.length - 1] as { name?: string; arguments?: unknown } | undefined;
+      // Avoid obvious duplicates when multiple event channels emit the same start.
+      if (
+        last?.name === name &&
+        JSON.stringify(last?.arguments ?? null) === JSON.stringify(normalizedArgs ?? null)
+      ) {
+        return;
+      }
+      assistantToolCalls.push({ name, arguments: normalizedArgs });
+      hadToolCalls = true;
+    };
 
     try {
       // Send initial status so the client knows we're alive
@@ -757,9 +793,14 @@ ERROR RECOVERY — if you encounter errors:
         "read_file", "list_files", "search_files",
         "ask_clarification", "create_plan", "mark_step_complete",
       ]);
+      // In agent/build mode, exclude plan-only tools so the AI doesn't
+      // trigger clarification or plan UI when the user chose build mode.
+      const PLAN_ONLY_TOOLS = new Set([
+        "ask_clarification", "create_plan", "mark_step_complete",
+      ]);
       const sessionTools = mode === "plan"
         ? allTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED.has(t.name ?? ""))
-        : allTools;
+        : allTools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
 
       let sessionId = projectSessions.get(sessionKey);
       if (!sessionId) {
@@ -783,6 +824,7 @@ ERROR RECOVERY — if you encounter errors:
             // SDK hooks — called via RPC for guaranteed progress updates
             toolProgress: {
               onToolStart: (toolName, args) => {
+                recordAssistantToolCall(toolName, args as Record<string, unknown>);
                 const friendly = friendlyToolMessage(toolName, args as Record<string, unknown>);
                 stream.writeSSE({ data: JSON.stringify({
                   type: "tool_call", data: { name: toolName, friendlyMessage: friendly },
@@ -912,15 +954,7 @@ ERROR RECOVERY — if you encounter errors:
         activeRequests.set(projectId, { mode, startedAt: Date.now() });
         sql`INSERT INTO ai_active_streams (project_id, message_id) VALUES (${projectId}, ${messageId}) ON CONFLICT (project_id) DO UPDATE SET message_id = ${messageId}, started_at = now()`.catch(() => {});
 
-        let hadToolCalls = false;
-        // Track the version SHA produced by auto-commit (if any)
-        let versionSha: string | undefined;
-        // Track pending tool names so tool_result events can include the name
-        const pendingToolNames: string[] = [];
-        // Track assistant content and tool calls for DB persistence
-        let assistantContent = "";
         // Pre-insert an empty assistant message row so partial content is never lost
-        let assistantMessageId: string | undefined;
         if (dbSessionId) {
           try {
             const [row] = await sql`
@@ -931,14 +965,12 @@ ERROR RECOVERY — if you encounter errors:
             assistantMessageId = row?.id;
           } catch { /* non-critical */ }
         }
-        let lastFlushLen = 0;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let assistantToolCalls: any[] = [];
         // Subscribe to tool execution events — captures plan/clarification data
         // from tool handlers in real-time as they execute, independently of SDK
         // event delivery. This is the reliable channel for structured plan data.
         const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
           if (status === "start") {
+            recordAssistantToolCall(toolName, args);
             const friendly = friendlyToolMessage(toolName, args);
             stream.writeSSE({
               data: JSON.stringify({
@@ -1036,16 +1068,81 @@ ERROR RECOVERY — if you encounter errors:
             }
           }
 
-          for await (const event of messageStream!) {
-            const evtType = (event as Record<string, unknown>).type as string;
-            const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
+          // Wrap the SDK's async generator with a per-iteration timeout.
+          // The SDK sometimes stops yielding events without closing the
+          // generator or emitting a terminal event, causing `for await`
+          // to hang indefinitely. This helper races each `.next()` call
+          // against a 60-second deadline so the stream always completes.
+          const SDK_IDLE_TIMEOUT_MS = 60_000;
+          const iterator = messageStream![Symbol.asyncIterator]();
+          let iterDone = false;
+          while (!iterDone) {
+            const raceResult = await Promise.race([
+              iterator.next(),
+              new Promise<{ done: true; value: undefined }>((resolve) =>
+                setTimeout(() => resolve({ done: true, value: undefined }), SDK_IDLE_TIMEOUT_MS),
+              ),
+            ]);
+            if (raceResult.done) {
+              if (!raceResult.value) {
+                // Timeout fired — SDK went silent. Send a completion note so
+                // the user isn't left wondering what happened.
+                console.log(`[Chat] SDK generator idle for ${SDK_IDLE_TIMEOUT_MS / 1000}s — forcing stream exit for ${projectId}`);
+                if (hadToolCalls && assistantContent) {
+                  // AI already produced text — just close cleanly
+                }
+                // If AI only made tool calls with no text, that's fine —
+                // the frontend ToolActivitySummary renders them instead.
+              }
+              iterDone = true;
+              break;
+            }
+            const event = raceResult.value as Record<string, unknown>;
+            const evtType = event.type as string;
+            const evtData = event.data as Record<string, unknown> | undefined;
 
-            // Capture full assistant.message for DB persistence (even though we skip it for SSE)
-            if (evtType === "assistant.message" && evtData?.content) {
-              const fullContent = evtData.content as string;
-              // Use the complete message for DB if we somehow missed deltas
-              if (!assistantContent && fullContent) {
-                assistantContent = fullContent;
+            // Track the start of a new assistant turn when its first delta arrives.
+            // This ensures msgIdDeltaStart is set BEFORE deltas are accumulated,
+            // so the assistant.message catch-up check is per-turn accurate.
+            if (evtType === "assistant.message_delta" || evtType === "assistant.streaming_delta") {
+              const deltaMessageId = evtData?.messageId as string | undefined;
+              if (deltaMessageId && deltaMessageId !== lastCapturedMsgId) {
+                lastCapturedMsgId = deltaMessageId;
+                msgIdDeltaStart = assistantContent.length;
+              }
+            }
+
+            // Capture full assistant.message for DB persistence.
+            // Each assistant.message event carries content for THAT specific turn only
+            // (not cumulative). Track per-message-ID to correctly append multi-turn text.
+            if (evtType === "assistant.message") {
+              const msgId = evtData?.messageId as string | undefined;
+              const content = (evtData?.content ?? "") as string;
+
+              // Detect a new assistant turn (new messageId)
+              if (msgId && msgId !== lastCapturedMsgId) {
+                lastCapturedMsgId = msgId;
+                msgIdDeltaStart = assistantContent.length; // deltas for this message start here
+              }
+
+              if (content) {
+                // Compare against deltas accumulated for THIS specific message
+                const deltasSoFar = assistantContent.slice(msgIdDeltaStart);
+                if (content.length > deltasSoFar.length) {
+                  // Deltas missed part of this message — emit the missing suffix
+                  const missing = content.slice(deltasSoFar.length);
+                  await stream.writeSSE({
+                    data: JSON.stringify({ type: "text_delta", data: sanitizeText(missing) }),
+                  });
+                  // Replace the per-message portion with the authoritative full text
+                  assistantContent = assistantContent.slice(0, msgIdDeltaStart) + content;
+                } else if (!deltasSoFar && !assistantContent) {
+                  // No deltas at all — use full content
+                  await stream.writeSSE({
+                    data: JSON.stringify({ type: "text_delta", data: sanitizeText(content) }),
+                  });
+                  assistantContent = content;
+                }
               }
             }
 
@@ -1056,6 +1153,7 @@ ERROR RECOVERY — if you encounter errors:
                 const toolData = sseData.data as Record<string, unknown>;
                 if (toolData?.name) {
                   pendingToolNames.push(toolData.name as string);
+                  recordAssistantToolCall(toolData.name as string, toolData?.arguments);
                 }
               }
               // When a tool_result is emitted, inject the name from the queue
@@ -1068,7 +1166,8 @@ ERROR RECOVERY — if you encounter errors:
               }
               // Accumulate assistant content for DB persistence
               if (sseData.type === "text_delta") {
-                assistantContent += typeof sseData.data === "string" ? sseData.data : "";
+                const delta = typeof sseData.data === "string" ? sseData.data : "";
+                assistantContent += delta;
                 // Flush to DB every ~500 chars so content survives crashes
                 if (assistantMessageId && assistantContent.length - lastFlushLen > 500) {
                   lastFlushLen = assistantContent.length;
@@ -1116,14 +1215,50 @@ ERROR RECOVERY — if you encounter errors:
                   error: sseData.data,
                 }, userId).catch(() => {});
               }
-              // Accumulate tool calls for DB persistence
-              if (sseData.type === "tool_call") {
-                const toolData = sseData.data as Record<string, unknown>;
-                assistantToolCalls.push({ name: toolData?.name as string, arguments: toolData?.arguments });
-              }
+              // tool calls are recorded by recordAssistantToolCall from hooks/SSE
               await stream.writeSSE({ data: JSON.stringify(sseData) });
             }
+
+            // Break out of the loop when the SDK signals the SESSION is complete.
+            // Only session-level events are terminal. assistant.message and
+            // assistant.turn_end are PER-TURN events that fire between tool
+            // calls in agentic workflows — treating them as terminal would
+            // kill the stream after the first tool call, losing all
+            // subsequent thinking/text/tool streaming.
+            const SESSION_TERMINAL_EVENTS = new Set([
+              "session.idle", "done",
+            ]);
+            if (SESSION_TERMINAL_EVENTS.has(evtType)) {
+              console.log(`[Chat] Session terminal event "${evtType}" — exiting stream loop for ${projectId}`);
+              break;
+            }
+            // Log unexpected event types for debugging
+            if (!sseData && !SESSION_TERMINAL_EVENTS.has(evtType) && ![
+              "pending_messages.modified", "session.tools_updated", "session.usage_info",
+              "assistant.usage", "hook.start", "hook.end", "user.message",
+              "assistant.turn_start", "assistant.turn_end", "permission.requested",
+              "permission.completed", "assistant.reasoning", "assistant.message",
+            ].includes(evtType)) {
+              console.log(`[Chat] Unmapped SDK event: "${evtType}" for ${projectId}`);
+            }
           }
+
+          // If the loop exited (via timeout or terminal event) with pending
+          // tool_calls that never got a tool_result, flush synthetic results
+          // so the frontend can mark those actions as completed.
+          for (const pendingName of pendingToolNames) {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "tool_result",
+                data: {
+                  name: pendingName,
+                  success: true,
+                  friendlyMessage: "Done",
+                },
+              }),
+            });
+          }
+          pendingToolNames.length = 0;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
 
@@ -1142,6 +1277,7 @@ ERROR RECOVERY — if you encounter errors:
         } finally {
           unsubToolEvents();
           releaseTracker();
+          console.log(`[Chat] AI streaming complete for ${projectId}, starting post-processing...`);
         }
 
         // ── Auto-detect and fix preview errors ─────────────
@@ -1206,13 +1342,40 @@ ERROR RECOVERY — if you encounter errors:
 
             try {
               const fixEngine = await getCopilotManager().getEngine(projectId, resolvedGithubToken);
-              for await (const event of fixEngine.sendMessage(
+              const FIX_TERMINAL_EVENTS = new Set([
+                "session.idle", "done",
+              ]);
+              const FIX_IDLE_TIMEOUT_MS = 30_000;
+              const fixStream = fixEngine.sendMessage(
                 sessionId!,
                 buildAutoFixPrompt(previewError.message),
-              )) {
+              );
+              const fixIter = fixStream[Symbol.asyncIterator]();
+              let fixDone = false;
+              while (!fixDone) {
+                const fixResult = await Promise.race([
+                  fixIter.next(),
+                  new Promise<{ done: true; value: undefined }>((resolve) =>
+                    setTimeout(() => resolve({ done: true, value: undefined }), FIX_IDLE_TIMEOUT_MS),
+                  ),
+                ]);
+                if (fixResult.done) {
+                  if (!fixResult.value) {
+                    console.log(`[Chat] Auto-fix generator idle for ${FIX_IDLE_TIMEOUT_MS / 1000}s — forcing exit for ${projectId}`);
+                  }
+                  fixDone = true;
+                  break;
+                }
+                const event = fixResult.value as Record<string, unknown>;
                 const sseData = mapEventToSSE(event);
                 if (sseData) {
                   await stream.writeSSE({ data: JSON.stringify(sseData) });
+                }
+                // Guard against SDK generator hanging (same as main loop)
+                const fixEvtType = event.type as string;
+                if (FIX_TERMINAL_EVENTS.has(fixEvtType)) {
+                  console.log(`[Chat] Auto-fix terminal event "${fixEvtType}" — exiting fix loop for ${projectId}`);
+                  break;
                 }
               }
             } catch (fixErr) {
@@ -1327,12 +1490,14 @@ ERROR RECOVERY — if you encounter errors:
           finalContent: assistantContent.slice(0, 500),
         }, userId).catch(() => {});
 
-        // Final save of assistant message (update the pre-inserted row)
-        if (assistantMessageId && assistantContent) {
+        // Final save of assistant message (update the pre-inserted row).
+        // Save even when content is empty if tool calls were made — the task card
+        // in history depends on tool_calls being persisted.
+        if (assistantMessageId && (assistantContent || hadToolCalls)) {
           try {
             await sql`
               UPDATE ai_messages
-              SET content = ${assistantContent},
+              SET content = ${assistantContent || null},
                   tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])},
                   version_sha = ${versionSha ?? null},
                   had_tool_calls = ${hadToolCalls}
@@ -1341,8 +1506,8 @@ ERROR RECOVERY — if you encounter errors:
           } catch (e) {
             console.warn("[Chat] Failed to save assistant message:", e);
           }
-        } else if (assistantMessageId && !assistantContent) {
-          // Remove empty placeholder if AI produced nothing
+        } else if (assistantMessageId) {
+          // Remove empty placeholder only if AI produced nothing at all
           sql`DELETE FROM ai_messages WHERE id = ${assistantMessageId}`.catch(() => {});
         }
 
@@ -1363,6 +1528,7 @@ ERROR RECOVERY — if you encounter errors:
         }
 
         clearInterval(keepAlive);
+        console.log(`[Chat] Sending [DONE] for ${projectId}`);
         await stream.writeSSE({ data: "[DONE]" });
     } catch (err) {
       activeRequests.delete(projectId);
@@ -1372,12 +1538,13 @@ ERROR RECOVERY — if you encounter errors:
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Chat] Copilot SDK error:", errMsg);
 
-      // Save partial assistant message so chat history isn't lost on error
-      if (assistantMessageId && assistantContent) {
+      // Save partial assistant message so chat history isn't lost on error.
+      // Preserve rows with tool calls even if no text content.
+      if (assistantMessageId && (assistantContent || hadToolCalls)) {
         try {
           await sql`
             UPDATE ai_messages
-            SET content = ${assistantContent},
+            SET content = ${assistantContent || null},
                 tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])},
                 version_sha = ${versionSha ?? null},
                 had_tool_calls = ${hadToolCalls}
@@ -1386,7 +1553,7 @@ ERROR RECOVERY — if you encounter errors:
         } catch (e) {
           console.warn("[Chat] Failed to save partial assistant message:", e);
         }
-      } else if (assistantMessageId && !assistantContent) {
+      } else if (assistantMessageId) {
         sql`DELETE FROM ai_messages WHERE id = ${assistantMessageId}`.catch(() => {});
       }
 
@@ -1806,9 +1973,15 @@ chatRoutes.post(
         }
       }
 
-      // Ensure there's always at least one config to try
+      // Ensure there's always at least one config to try.
+      // Use the workspace's default copilot account token so gpt-4o-mini
+      // can authenticate even when no suggestion-specific model is set.
       if (configs.length === 0) {
-        configs.push({ model: "gpt-4o-mini", githubToken: undefined, provider: undefined, label: "fallback" });
+        let fallbackToken: string | undefined;
+        if (settings?.default_copilot_account_id) {
+          fallbackToken = (await aiSettingsDb.getCopilotAccountToken(settings.default_copilot_account_id)) ?? undefined;
+        }
+        configs.push({ model: "gpt-4o-mini", githubToken: fallbackToken, provider: undefined, label: "fallback" });
       }
 
       const suggestionSystemPrompt = `You generate short, contextual next-step suggestion chips for an AI app builder. Given the user's last prompt and the AI's response, return exactly 4 suggestions as a JSON array of strings. Each suggestion should be 2-6 words, actionable, and relevant to what was just built. Do NOT include generic suggestions. Focus on what the user would logically want to do next with THIS specific app. Return ONLY the JSON array, no other text.`;

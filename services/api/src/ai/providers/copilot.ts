@@ -209,7 +209,25 @@ export class CopilotEngine {
 
     const session = await this.client!.resumeSession(sessionId, {
       onPermissionRequest: approveAll,
+      streaming: true,
       ...(config?.tools ? { tools: config.tools } : {}),
+      // Re-attach hooks so tool progress fires on resumed sessions too
+      ...(config?.toolProgress ? {
+        hooks: {
+          onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
+            config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs);
+          },
+          onPostToolUse: async (input: { toolName: string; toolArgs: unknown; toolResult: unknown }) => {
+            config.toolProgress?.onToolEnd?.(input.toolName, input.toolArgs, input.toolResult);
+          },
+          onSessionEnd: async (input: { reason: string; error?: string }) => {
+            config.toolProgress?.onSessionEnd?.(input.reason, input.error);
+          },
+          onErrorOccurred: async (input: { error: string; errorContext: string }) => {
+            config.toolProgress?.onError?.(input.error, input.errorContext);
+          },
+        },
+      } : {}),
     });
 
     if (config?.onEvent) {
@@ -239,23 +257,40 @@ export class CopilotEngine {
     let resolveWaiting: (() => void) | null = null;
     let done = false;
     let lastEventTime = Date.now();
+    let lastContentEventTime = Date.now();
 
-    // Timeout: if no events for 90 seconds, assume the session is dead
+    // Timeout: if no events at all for 90 seconds, assume the session is dead
     const EVENT_TIMEOUT_MS = 90_000;
+    // Content timeout: if no content-bearing events for 90 seconds, assume done
+    // (SDK may keep emitting noise events without closing the generator)
+    // Must match EVENT_TIMEOUT_MS — model needs time between tool calls to reason
+    const CONTENT_TIMEOUT_MS = 90_000;
+    const CONTENT_EVENT_TYPES = new Set([
+      "assistant.message_delta", "assistant.streaming_delta", "assistant.message",
+      "assistant.reasoning_delta", "assistant.reasoning", "assistant.thinking",
+      "tool.running", "tool.completed", "tool.execution_start", "tool.execution_complete",
+      "session.idle", "session.error",
+    ]);
 
     const unsubscribe = session.on((event: SessionEvent) => {
       lastEventTime = Date.now();
+      if (CONTENT_EVENT_TYPES.has(event.type)) {
+        lastContentEventTime = Date.now();
+      }
+
+      // Do NOT queue session.idle events from session.on() — SDK 0.2.0 fires
+      // session.idle immediately when registering on() a resumed/cached idle session,
+      // which would terminate the loop before sendAndWait() even starts.
+      // Only sendAndWait() below controls termination by pushing the synthetic idle.
+      if (event.type === "session.idle" || event.type === "session.error") {
+        console.log(`[CopilotEngine] session.on() got ${event.type} — suppressed (sendAndWait controls termination)`);
+        return;
+      }
+
       eventQueue.push(event);
       if (resolveWaiting) {
         resolveWaiting();
         resolveWaiting = null;
-      }
-
-      if (
-        event.type === "session.idle" ||
-        event.type === "session.error"
-      ) {
-        done = true;
       }
     });
 
@@ -266,14 +301,27 @@ export class CopilotEngine {
       console.log(`[CopilotEngine] Sending message with ${fileAttachments.length} file attachment(s):`, fileAttachments.map(a => a.displayName ?? a.path));
     }
 
-    // Use session.send() (non-blocking). SDK v0.2.0 delivers ALL events through
-    // session.on() including assistant.message_delta (true token streaming),
-    // tool.execution_start/complete, assistant.reasoning_delta, and session.idle.
-    console.log(`[CopilotEngine] Sending message to session ${sessionId.slice(0, 8)}… (non-blocking send)`);
-    session.send(messageOptions).then(() => {
-      console.log(`[CopilotEngine] session.send() accepted`);
+    // Use sendAndWait() — events still fire through session.on() (streaming deltas,
+    // tool events) but sendAndWait guarantees the session reaches idle state and
+    // returns the final assistant.message content. Plain session.send() was tested
+    // with 0.2.0 and went silent — same issue as 0.1.32.
+    console.log(`[CopilotEngine] >>>SENDANDWAIT<<< session ${sessionId.slice(0, 8)}…`);
+    session.sendAndWait(messageOptions, 300_000).then((result) => {
+      const contentLen = result?.data?.content?.length ?? 0;
+      console.log(`[CopilotEngine] sendAndWait resolved — content length: ${contentLen}`);
+      // Inject the final assistant.message event from the result so the
+      // chat route can capture the full content for DB persistence and SSE.
+      if (result) {
+        eventQueue.push(result as unknown as SessionEvent);
+      }
+      eventQueue.push({ type: "session.idle", data: {} } as SessionEvent);
+      done = true;
+      if (resolveWaiting) {
+        resolveWaiting();
+        resolveWaiting = null;
+      }
     }).catch((err) => {
-      console.error(`[CopilotEngine] session.send() rejected:`, err instanceof Error ? err.message : err);
+      console.error(`[CopilotEngine] sendAndWait rejected:`, err instanceof Error ? err.message : err);
       eventQueue.push({
         type: "session.error",
         data: { message: err instanceof Error ? err.message : String(err) },
@@ -291,10 +339,10 @@ export class CopilotEngine {
         if (eventQueue.length > 0) {
           const evt = eventQueue.shift()!;
           eventCount++;
-          // Log first 3 events and terminal events for diagnostics
-          if (eventCount <= 3 || evt.type === "session.idle" || evt.type === "session.error") {
-            console.log(`[CopilotEngine] Event #${eventCount}: ${evt.type}`);
-          }
+          // Log all events for diagnostics (verbose mode for debugging)
+          const evtData = (evt as Record<string, unknown>).data as Record<string, unknown> | undefined;
+          const shortData = evtData ? JSON.stringify(evtData).slice(0, 120) : "{}";
+          console.log(`[CopilotEngine] Event #${eventCount}: ${evt.type} | ${shortData}`);
           yield evt;
         } else if (!done) {
           // Wait for next event WITH timeout

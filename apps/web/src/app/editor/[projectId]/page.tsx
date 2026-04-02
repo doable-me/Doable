@@ -2056,7 +2056,14 @@ export default function EditorPage() {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
-                ? { ...m, isStreaming: false }
+                ? {
+                    ...m,
+                    isStreaming: false,
+                    // Mark any remaining "running" tool actions as completed
+                    toolActions: m.toolActions?.map((a) =>
+                      a.status === "running" ? { ...a, status: "completed" as const } : a
+                    ),
+                  }
                 : m
             )
           );

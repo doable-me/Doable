@@ -27,11 +27,40 @@ export const projectRoutes = new Hono<AuthEnv>();
 // All project routes require authentication
 projectRoutes.use("*", authMiddleware);
 
-// ─── Helper: get user's default workspace ───────────────────
+// ─── Helper: get user's workspace (with membership check) ───
 async function getUserWorkspaceId(userId: string, explicit?: string): Promise<string | null> {
-  if (explicit) return explicit;
+  if (explicit) {
+    // Verify the user is actually a member of the requested workspace
+    const role = await workspacesQ.getMemberRole(explicit, userId);
+    if (!role) return null;
+    return explicit;
+  }
   const userWorkspaces = await workspacesQ.listByUser(userId);
   return userWorkspaces.length > 0 ? userWorkspaces[0]!.id : null;
+}
+
+// ─── Helper: verify user can access a project ────────────────
+// Checks workspace membership first, then project_collaborators.
+// Returns the role from whichever grants access (workspace role takes priority).
+async function requireProjectAccess(
+  userId: string,
+  projectId: string
+): Promise<{ project: NonNullable<Awaited<ReturnType<typeof projects.findById>>>; role: string } | null> {
+  const project = await projects.findById(projectId);
+  if (!project) return null;
+
+  // 1. Workspace member — has access to all projects in the workspace
+  const wsRole = await workspacesQ.getMemberRole(project.workspace_id, userId);
+  if (wsRole) return { project, role: wsRole };
+
+  // 2. Project collaborator — has access to this specific project only
+  const [collab] = await sql<{ role: string }[]>`
+    SELECT role FROM project_collaborators
+    WHERE project_id = ${projectId} AND user_id = ${userId}
+  `;
+  if (collab) return { project, role: collab.role };
+
+  return null;
 }
 
 // ─── List Starred Projects ──────────────────────────────────
@@ -44,10 +73,19 @@ projectRoutes.get("/starred", async (c) => {
     return c.json({ data: [] });
   }
 
-  // Fetch full project details for each starred project
+  // Fetch full project details for each starred project, filtering to accessible ones
   const projectPromises = starredIds.map((id) => projects.findById(id));
   const projectResults = await Promise.all(projectPromises);
-  const data = projectResults
+  const validProjects = projectResults.filter((p): p is NonNullable<typeof p> => p != null);
+
+  // Filter to only projects the user has workspace access to
+  const accessChecks = await Promise.all(
+    validProjects.map(async (p) => {
+      const role = await workspacesQ.getMemberRole(p.workspace_id, userId);
+      return role ? p : null;
+    })
+  );
+  const data = accessChecks
     .filter((p): p is NonNullable<typeof p> => p != null)
     .map((p) => ({ ...p, starred: true }));
 
@@ -73,6 +111,10 @@ projectRoutes.get("/", async (c) => {
 
   const workspaceId = await getUserWorkspaceId(userId, explicitWorkspaceId ?? undefined);
   if (!workspaceId) {
+    // If an explicit workspace was requested but user isn't a member, return 403
+    if (explicitWorkspaceId) {
+      return c.json({ error: "Access denied to this workspace" }, 403);
+    }
     return c.json({ data: [], pagination: { total: 0, page: 1, pageSize, totalPages: 0 } });
   }
 
@@ -153,9 +195,12 @@ projectRoutes.post("/", async (c) => {
 
   const { prompt, ...data } = parsed.data;
 
-  // Resolve workspace — use provided or user's default
+  // Resolve workspace — use provided or user's default (with membership check)
   const workspaceId = await getUserWorkspaceId(userId, data.workspaceId);
   if (!workspaceId) {
+    if (data.workspaceId) {
+      return c.json({ error: "Access denied to this workspace" }, 403);
+    }
     return c.json({ error: "No workspace found. Please create a workspace first." }, 400);
   }
 
@@ -183,16 +228,16 @@ projectRoutes.post("/", async (c) => {
 // ─── Get Project ────────────────────────────────────────────
 projectRoutes.get("/:id", async (c) => {
   const id = c.req.param("id");
-  const project = await projects.findById(id);
+  const userId = c.get("userId");
 
-  if (!project) {
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
     return c.json({ error: "Project not found" }, 404);
   }
 
-  const userId = c.get("userId");
   const starred = await stars.isStarred(userId, id);
 
-  return c.json({ data: { ...project, starred } });
+  return c.json({ data: { ...access.project, starred } });
 });
 
 // ─── Update Project ─────────────────────────────────────────
@@ -206,6 +251,13 @@ const updateSchema = z.object({
 
 projectRoutes.patch("/:id", async (c) => {
   const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
   const body = await c.req.json();
   const parsed = updateSchema.safeParse(body);
 
@@ -228,6 +280,13 @@ projectRoutes.patch("/:id", async (c) => {
 // PUT also updates the project (some frontends use PUT instead of PATCH)
 projectRoutes.put("/:id", async (c) => {
   const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
   const body = await c.req.json();
   const parsed = updateSchema.safeParse(body);
 
@@ -250,6 +309,17 @@ projectRoutes.put("/:id", async (c) => {
 // ─── Delete Project (Hard — removes DB row, files, .git, thumbnail) ─────
 projectRoutes.delete("/:id", async (c) => {
   const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  // Only owners and admins can delete projects
+  if (access.role !== "owner" && access.role !== "admin") {
+    return c.json({ error: "Only workspace owners and admins can delete projects" }, 403);
+  }
 
   // 1. Delete from database FIRST — instant, guarantees project disappears
   const deleted = await projects.hardDelete(id);
@@ -295,11 +365,13 @@ projectRoutes.delete("/:id", async (c) => {
 // ─── Duplicate Project ──────────────────────────────────────
 projectRoutes.post("/:id/duplicate", async (c) => {
   const id = c.req.param("id");
-  const original = await projects.findById(id);
+  const userId = c.get("userId");
 
-  if (!original) {
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
     return c.json({ error: "Project not found" }, 404);
   }
+  const original = access.project;
 
   const timestamp = Date.now().toString(36);
   const newSlug = `${original.slug}-copy-${timestamp}`;
@@ -321,8 +393,8 @@ projectRoutes.post("/:id/star", async (c) => {
   const id = c.req.param("id");
   const userId = c.get("userId");
 
-  const project = await projects.findById(id);
-  if (!project) {
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
     return c.json({ error: "Project not found" }, 404);
   }
 
@@ -338,6 +410,13 @@ const moveSchema = z.object({
 
 projectRoutes.post("/:id/move", async (c) => {
   const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
   const body = await c.req.json();
   const parsed = moveSchema.safeParse(body);
 

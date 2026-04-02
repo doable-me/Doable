@@ -138,7 +138,8 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
     }
 
     // Ensure a project record exists in the database so the dashboard can list it
-    await ensureProjectDbRecord(projectId);
+    const userId = c.get("userId");
+    await ensureProjectDbRecord(projectId, userId);
 
     return c.json(
       {
@@ -166,7 +167,7 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
       }
 
       // Also ensure DB record exists for previously-scaffolded projects
-      await ensureProjectDbRecord(projectId);
+      await ensureProjectDbRecord(projectId, c.get("userId"));
 
       return c.json({
         data: {
@@ -436,11 +437,9 @@ function isValidUuid(value: string): boolean {
 }
 
 /**
- * Ensure a project record exists in the database.
- * This is needed because the scaffold endpoint creates files on disk
- * but doesn't require auth, so the normal POST /projects flow (which
- * requires auth) may not have been called. Without a DB record the
- * dashboard's GET /projects returns nothing.
+ * Ensure a project record exists in the database, owned by the
+ * authenticated user's workspace. Falls back to first workspace only
+ * if no userId is provided (shouldn't happen in normal auth flows).
  *
  * Only works for UUID project IDs (the projects table has a uuid primary key).
  * Non-UUID IDs (e.g. "proj-1234567890") are skipped since they come from
@@ -448,7 +447,7 @@ function isValidUuid(value: string): boolean {
  *
  * Uses INSERT ... ON CONFLICT DO NOTHING so it's safe to call multiple times.
  */
-async function ensureProjectDbRecord(projectId: string): Promise<void> {
+async function ensureProjectDbRecord(projectId: string, userId?: string): Promise<void> {
   try {
     // The projects table uses uuid as the primary key type.
     // Skip non-UUID project IDs — they can't be stored.
@@ -461,18 +460,31 @@ async function ensureProjectDbRecord(projectId: string): Promise<void> {
     const existing = await sql`SELECT id FROM projects WHERE id = ${projectId}`;
     if (existing.length > 0) return;
 
-    // Find a workspace to associate the project with.
-    // Since this endpoint has no auth, pick the first available workspace.
-    const workspaces = await sql`SELECT id FROM workspaces ORDER BY created_at ASC LIMIT 1`;
-    if (workspaces.length === 0) {
-      console.warn(
-        `[Scaffold] No workspaces in DB — cannot create project record for ${projectId}. ` +
-        `The project will exist on disk but won't appear on the dashboard until a workspace is created.`
-      );
-      return;
+    // Use the authenticated user's workspace so projects land in the correct account
+    let workspaceId: string | undefined;
+    if (userId) {
+      const userWorkspaces = await sql`
+        SELECT w.id FROM workspaces w
+        INNER JOIN workspace_members wm ON wm.workspace_id = w.id
+        WHERE wm.user_id = ${userId}
+        ORDER BY w.updated_at DESC
+        LIMIT 1
+      `;
+      workspaceId = userWorkspaces[0]?.id as string | undefined;
     }
 
-    const workspaceId = workspaces[0]!.id as string;
+    // Fallback: pick the first workspace (should rarely happen now that auth is required)
+    if (!workspaceId) {
+      const fallback = await sql`SELECT id FROM workspaces ORDER BY created_at ASC LIMIT 1`;
+      if (fallback.length === 0) {
+        console.warn(
+          `[Scaffold] No workspaces in DB — cannot create project record for ${projectId}. ` +
+          `The project will exist on disk but won't appear on the dashboard until a workspace is created.`
+        );
+        return;
+      }
+      workspaceId = fallback[0]!.id as string;
+    }
 
     // Derive a human-readable name from the projectId
     const projectName = projectId

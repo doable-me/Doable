@@ -228,7 +228,13 @@ export function useChat(
         };
 
         try {
-          while (true) {
+          let streamDone = false;
+          // Track last meaningful event time — if the server keeps sending
+          // only keep_alive pings with no real content for 30s, assume done.
+          let lastMeaningfulEvent = Date.now();
+          const STALE_STREAM_MS = 30_000;
+
+          while (!streamDone) {
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -242,14 +248,20 @@ export function useChat(
 
               const data = trimmed.slice(6);
               if (data === "[DONE]") {
-                // Final flush
+                // Final flush and exit both loops
                 if (rafHandle) cancelAnimationFrame(rafHandle);
                 updateMessage(assistantId, accumulated);
+                streamDone = true;
                 break;
               }
 
               try {
                 const parsed = JSON.parse(data);
+                // Track meaningful events (anything except keep_alive and noise)
+                if (parsed.type !== "keep_alive") {
+                  lastMeaningfulEvent = Date.now();
+                }
+
                 if (parsed.type === "text_delta") {
                   const text = typeof parsed.data === "string" ? parsed.data : "";
                   accumulated += text;
@@ -276,9 +288,11 @@ export function useChat(
                     liveStatus: `tool_result:${friendly}`,
                   });
                 } else if (parsed.type === "status") {
-                  const status = typeof parsed.data === "string" ? parsed.data : "";
+                  const status = typeof parsed.data === "string"
+                    ? parsed.data
+                    : (parsed.data?.message ?? parsed.data?.phase ?? "");
                   updateMessageFields(assistantId, {
-                    liveStatus: status,
+                    liveStatus: status ? `status:${status}` : "",
                   });
                 } else if (parsed.type === "version_created") {
                   // Git commit was created for this AI response — store SHA for undo
@@ -294,6 +308,8 @@ export function useChat(
                   if (Array.isArray(questions) && questions.length > 0) {
                     useEditorStore.getState().setPendingQuestions(questions);
                     useEditorStore.getState().setPlanPhase("clarifying");
+                    // Stop streaming so clarification buttons become interactive
+                    setStreaming(false);
                   }
                 } else if (parsed.type === "plan") {
                   const plan = parsed.data?.plan;
@@ -315,6 +331,14 @@ export function useChat(
                 // Skip malformed JSON lines
               }
             }
+
+            // Safety: if only keep_alive pings with no real content for 30s, exit
+            if (!streamDone && Date.now() - lastMeaningfulEvent > STALE_STREAM_MS) {
+              console.warn("[Chat] Stream stale — no meaningful events for 30s, closing");
+              if (rafHandle) cancelAnimationFrame(rafHandle);
+              if (accumulated) updateMessage(assistantId, accumulated);
+              break;
+            }
           }
         } finally {
           // Ensure final content is flushed
@@ -330,6 +354,7 @@ export function useChat(
         updateMessage(assistantId, errorContent);
       } finally {
         setStreaming(false);
+        updateMessageFields(assistantId, { isStreaming: false, liveStatus: undefined });
         abortRef.current = null;
         // Clean up own message tracking after a delay
         setTimeout(() => ownMessageIds.current.delete(broadcastMsgId), 30_000);
