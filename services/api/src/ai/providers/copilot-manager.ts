@@ -160,6 +160,28 @@ export class CopilotEngineManager {
     return this.pool.size;
   }
 
+  /** Snapshot of all pool entries for admin monitoring */
+  getPoolSnapshot(): Array<{
+    projectId: string;
+    sessionCount: number;
+    activeRequests: number;
+    createdAt: number;
+    lastUsed: number;
+    idleMs: number;
+    ageMs: number;
+  }> {
+    const now = Date.now();
+    return Array.from(this.pool.values()).map((entry) => ({
+      projectId: entry.projectId,
+      sessionCount: entry.engine.sessionCount,
+      activeRequests: entry.activeRequests,
+      createdAt: entry.createdAt,
+      lastUsed: entry.lastUsed,
+      idleMs: now - entry.lastUsed,
+      ageMs: now - entry.createdAt,
+    }));
+  }
+
   private async createEngine(projectId: string, githubToken?: string): Promise<CopilotEngine> {
     const engine = new CopilotEngine({
       model: process.env.COPILOT_DEFAULT_MODEL,

@@ -27,6 +27,10 @@ import {
   XCircle,
   AlertTriangle,
   Clock,
+  Activity,
+  Trash2,
+  Zap,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToastContainer } from "@/components/ui/toast-container";
@@ -472,7 +476,7 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users" | "thumbnails">("features");
+  const [activeTab, setActiveTab] = useState<"features" | "users" | "thumbnails" | "copilot">("features");
 
   // AI allocations state
   const [allocations, setAllocations] = useState<UserAiAllocation[]>([]);
@@ -697,6 +701,7 @@ export default function AdminPage() {
           { key: "features" as const, label: "Feature Flags", icon: Settings2 },
           { key: "users" as const, label: "Users", icon: Users },
           { key: "thumbnails" as const, label: "Thumbnails", icon: ImageIcon },
+          { key: "copilot" as const, label: "Copilot Sessions", icon: Activity },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -885,6 +890,11 @@ export default function AdminPage() {
         <ThumbnailsPanel />
       )}
 
+      {/* Copilot Sessions Tab */}
+      {activeTab === "copilot" && (
+        <CopilotSessionsPanel />
+      )}
+
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
@@ -1036,6 +1046,262 @@ function ThumbnailsPanel() {
                 <span className="text-xs text-zinc-600 whitespace-nowrap">
                   {new Date(log.created_at).toLocaleString()}
                 </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Copilot Sessions Panel ─────────────────────────────────────
+
+interface CopilotChatSession {
+  sessionKey: string;
+  projectId: string;
+  sessionId: string;
+  isVisualEdit: boolean;
+  active: boolean;
+  mode: string | null;
+  startedAt: number | null;
+}
+
+interface CopilotEngineEntry {
+  projectId: string;
+  projectName: string | null;
+  sessionCount: number;
+  activeRequests: number;
+  createdAt: number;
+  lastUsed: number;
+  idleMs: number;
+  ageMs: number;
+  chatSessions: CopilotChatSession[];
+}
+
+interface CopilotSessionsData {
+  engines: CopilotEngineEntry[];
+  poolSize: number;
+  maxEngines: number;
+  processMemory: {
+    rss: number;
+    heapUsed: number;
+    heapTotal: number;
+    external: number;
+  };
+  uptime: number;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
+function formatUptime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function CopilotSessionsPanel() {
+  const [data, setData] = useState<CopilotSessionsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [terminating, setTerminating] = useState<Set<string>>(new Set());
+  const [terminatingAll, setTerminatingAll] = useState(false);
+
+  const fetchSessions = useCallback(async () => {
+    try {
+      const res = await apiFetch<{ data: CopilotSessionsData }>("/admin/copilot-sessions");
+      setData(res.data);
+    } catch (e) {
+      console.error("Failed to fetch copilot sessions:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+    const interval = setInterval(fetchSessions, 5000);
+    return () => clearInterval(interval);
+  }, [fetchSessions]);
+
+  const handleTerminate = useCallback(async (projectId: string) => {
+    setTerminating((prev) => new Set(prev).add(projectId));
+    try {
+      await apiFetch(`/admin/copilot-sessions/${projectId}`, { method: "DELETE" });
+      await fetchSessions();
+    } catch (e) {
+      console.error("Failed to terminate session:", e);
+    } finally {
+      setTerminating((prev) => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
+    }
+  }, [fetchSessions]);
+
+  const handleTerminateAll = useCallback(async () => {
+    setTerminatingAll(true);
+    try {
+      await apiFetch("/admin/copilot-sessions", { method: "DELETE" });
+      await fetchSessions();
+    } catch (e) {
+      console.error("Failed to terminate all sessions:", e);
+    } finally {
+      setTerminatingAll(false);
+    }
+  }, [fetchSessions]);
+
+  if (loading && !data) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  return (
+    <div className="space-y-4">
+      {/* Process stats bar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4 text-xs text-zinc-500">
+          <span className="flex items-center gap-1.5">
+            <Zap className="h-3.5 w-3.5 text-brand-400" />
+            <span className="text-zinc-300 font-medium">{data.poolSize}</span>/{data.maxEngines} engines
+          </span>
+          <span>
+            RSS <span className="text-zinc-300 font-medium">{formatBytes(data.processMemory.rss)}</span>
+          </span>
+          <span>
+            Heap <span className="text-zinc-300 font-medium">{formatBytes(data.processMemory.heapUsed)}</span> / {formatBytes(data.processMemory.heapTotal)}
+          </span>
+          <span>
+            Uptime <span className="text-zinc-300 font-medium">{formatUptime(data.uptime)}</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {data.poolSize > 0 && (
+            <Button
+              onClick={handleTerminateAll}
+              disabled={terminatingAll}
+              variant="outline"
+              className="gap-2 text-sm border-red-800/50 text-red-400 hover:bg-red-900/20 hover:text-red-300"
+            >
+              {terminatingAll ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Stopping...</>
+              ) : (
+                <><Square className="h-3.5 w-3.5" /> Stop All Engines</>
+              )}
+            </Button>
+          )}
+          <Button
+            onClick={fetchSessions}
+            variant="outline"
+            className="gap-2 text-sm border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        </div>
+      </div>
+
+      <p className="text-xs text-zinc-600">
+        Auto-refreshes every 5 seconds. Each engine is a per-project Copilot CLI subprocess.
+      </p>
+
+      {/* Engines table */}
+      <div className="rounded-lg border border-zinc-800 overflow-hidden">
+        <div className="bg-zinc-900/50 px-4 py-2.5 border-b border-zinc-800">
+          <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Active Engines</h3>
+        </div>
+        {data.engines.length === 0 ? (
+          <div className="text-center py-10 text-sm text-zinc-600">
+            No active Copilot engines. Sessions start when users interact with AI in the editor.
+          </div>
+        ) : (
+          <div className="divide-y divide-zinc-800/50">
+            {data.engines.map((engine) => (
+              <div key={engine.projectId} className="px-4 py-3 hover:bg-zinc-900/30">
+                <div className="flex items-center gap-3">
+                  {/* Status indicator */}
+                  <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${
+                    engine.activeRequests > 0
+                      ? "bg-green-500 animate-pulse"
+                      : "bg-zinc-600"
+                  }`} />
+
+                  {/* Project info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-zinc-200 font-medium truncate">
+                        {engine.projectName ?? "Unknown Project"}
+                      </span>
+                      <span className="text-[10px] text-zinc-600 font-mono">
+                        {engine.projectId.slice(0, 8)}
+                      </span>
+                    </div>
+                    {/* Chat sessions under this engine */}
+                    {engine.chatSessions.length > 0 && (
+                      <div className="flex items-center gap-2 mt-1">
+                        {engine.chatSessions.map((cs) => (
+                          <span key={cs.sessionKey} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            cs.active
+                              ? "bg-green-900/30 text-green-400"
+                              : "bg-zinc-800 text-zinc-500"
+                          }`}>
+                            {cs.isVisualEdit ? "visual-edit" : cs.mode ?? "idle"}
+                            {cs.active && cs.startedAt ? ` (${formatDuration(Date.now() - cs.startedAt)})` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Stats */}
+                  <div className="flex items-center gap-4 text-xs text-zinc-500 shrink-0">
+                    <span title="Active requests">
+                      {engine.activeRequests > 0 ? (
+                        <span className="text-green-400 font-medium">{engine.activeRequests} active</span>
+                      ) : (
+                        <span className="text-zinc-600">idle</span>
+                      )}
+                    </span>
+                    <span title="Sessions">{engine.sessionCount} sess</span>
+                    <span title="Engine age">age {formatDuration(engine.ageMs)}</span>
+                    <span title="Time since last use">idle {formatDuration(engine.idleMs)}</span>
+                  </div>
+
+                  {/* Terminate button */}
+                  <Button
+                    onClick={() => handleTerminate(engine.projectId)}
+                    disabled={terminating.has(engine.projectId)}
+                    variant="outline"
+                    className="gap-1.5 text-xs border-red-900/50 text-red-400 hover:bg-red-900/20 hover:text-red-300 h-7 px-2"
+                  >
+                    {terminating.has(engine.projectId) ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3 w-3" />
+                    )}
+                    Kill
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

@@ -86,6 +86,11 @@ export class CopilotEngine {
     this.config = config;
   }
 
+  /** Number of active sessions in this engine */
+  get sessionCount(): number {
+    return this.sessions.size;
+  }
+
   /**
    * Initialize the Copilot client. Must be called before creating sessions.
    */
@@ -247,6 +252,7 @@ export class CopilotEngine {
     prompt: string,
     fileAttachments?: Array<{ type: "file"; path: string; displayName?: string }>,
   ): AsyncGenerator<SessionEvent> {
+    console.log(`[CopilotEngine] **sendMessage invoked** for session ${sessionId.slice(0, 8)}…, prompt truncated: "${prompt.slice(0, 50)}..."`);
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new Error(`Session ${sessionId} not found`);
@@ -305,18 +311,36 @@ export class CopilotEngine {
     // tool events) but sendAndWait guarantees the session reaches idle state and
     // returns the final assistant.message content. Plain session.send() was tested
     // with 0.2.0 and went silent — same issue as 0.1.32.
-    console.log(`[CopilotEngine] >>>SENDANDWAIT<<< session ${sessionId.slice(0, 8)}…`);
-    session.sendAndWait(messageOptions, 300_000).then((result) => {
-      const contentLen = result?.data?.content?.length ?? 0;
+    console.log(`[CopilotEngine] **sendMessage: Calling sendAndWait with 5min timeout**`);
+    const sendAndWaitPromise = session.sendAndWait(messageOptions, 300_000);
+    console.log(`[CopilotEngine] **sendMessage: sendAndWait promise created (fire-and-forget)**`);
+    
+    sendAndWaitPromise.then((result) => {
+      console.log(`[CopilotEngine] **sendMessage: sendAndWait.then() FIRED**`);
+      if (!result) {
+        console.log(`[CopilotEngine] **WARNING: sendAndWait returned null/undefined!**`);
+      } else {
+        console.log(`[CopilotEngine] **sendAndWait returned:`, {
+          type: result.type,
+          contentLength: (result.data as any)?.content?.length ?? 0,
+          messageId: (result.data as any)?.messageId,
+        });
+      }
+      const contentLen = (result?.data as any)?.content?.length ?? 0;
       console.log(`[CopilotEngine] sendAndWait resolved — content length: ${contentLen}`);
       // Inject the final assistant.message event from the result so the
       // chat route can capture the full content for DB persistence and SSE.
       if (result) {
+        console.log(`[CopilotEngine] Pushing assistant.message to eventQueue from sendAndWait`);
         eventQueue.push(result as unknown as SessionEvent);
+      } else {
+        console.log(`[CopilotEngine] sendAndWait returned undefined (no assistant message)`);
       }
+      console.log(`[CopilotEngine] Pushing synthetic session.idle to eventQueue`);
       eventQueue.push({ type: "session.idle", data: {} } as SessionEvent);
       done = true;
       if (resolveWaiting) {
+        console.log(`[CopilotEngine] Calling resolveWaiting() to unblock wait loop`);
         resolveWaiting();
         resolveWaiting = null;
       }
@@ -342,7 +366,7 @@ export class CopilotEngine {
           // Log all events for diagnostics (verbose mode for debugging)
           const evtData = (evt as Record<string, unknown>).data as Record<string, unknown> | undefined;
           const shortData = evtData ? JSON.stringify(evtData).slice(0, 120) : "{}";
-          console.log(`[CopilotEngine] Event #${eventCount}: ${evt.type} | ${shortData}`);
+          console.log(`[CopilotEngine] ✓ Yielding Event #${eventCount}: ${evt.type}`);
           yield evt;
         } else if (!done) {
           // Wait for next event WITH timeout

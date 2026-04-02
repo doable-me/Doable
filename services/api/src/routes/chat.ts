@@ -473,6 +473,31 @@ const projectSessions = new Map<string, string>();
 // whether the AI is still working (survives page refresh).
 const activeRequests = new Map<string, { mode: string; startedAt: number }>();
 
+/** Snapshot of active chat sessions for admin monitoring */
+export function getChatSessionsSnapshot(): Array<{
+  sessionKey: string;
+  projectId: string;
+  sessionId: string;
+  isVisualEdit: boolean;
+  active: boolean;
+  mode: string | null;
+  startedAt: number | null;
+}> {
+  return Array.from(projectSessions.entries()).map(([key, sessionId]) => {
+    const baseProjectId = key.replace(/:visual-edit$/, "");
+    const req = activeRequests.get(baseProjectId);
+    return {
+      sessionKey: key,
+      projectId: baseProjectId,
+      sessionId,
+      isVisualEdit: key.endsWith(":visual-edit"),
+      active: !!req,
+      mode: req?.mode ?? null,
+      startedAt: req?.startedAt ?? null,
+    };
+  });
+}
+
 // ─── Debounce guard for thumbnail captures ─
 // Map of projectId → timestamp when capture started.
 // Entries auto-expire after CAPTURE_TTL_MS so a hung capture can't permanently block a project.

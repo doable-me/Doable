@@ -5,6 +5,8 @@ import { featureFlagQueries, aiSettingsQueries, workspaceQueries } from "@doable
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { WORKSPACE_PLANS, WORKSPACE_ROLES } from "@doable/shared";
+import { getCopilotManager } from "../ai/providers/copilot-manager.js";
+import { getChatSessionsSnapshot } from "./chat.js";
 
 const featureFlags = featureFlagQueries(sql);
 const aiSettings = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
@@ -661,4 +663,61 @@ adminRoutes.post("/thumbnails/generate-missing", async (c) => {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: "Failed to generate thumbnails", message }, 500);
   }
+});
+
+// ─── Copilot Sessions Monitoring ─────────────────────────────
+
+// GET /admin/copilot-sessions — list all active engines + chat sessions
+adminRoutes.get("/copilot-sessions", async (c) => {
+  const manager = getCopilotManager();
+  const poolSnapshot = manager.getPoolSnapshot();
+  const chatSessions = getChatSessionsSnapshot();
+  const mem = process.memoryUsage();
+
+  // Enrich with project names from DB
+  const projectIds = [...new Set(poolSnapshot.map((e) => e.projectId))];
+  let projectNames: Record<string, string> = {};
+  if (projectIds.length > 0) {
+    const rows = await sql<{ id: string; name: string }[]>`
+      SELECT id, name FROM projects WHERE id = ANY(${projectIds})
+    `;
+    projectNames = Object.fromEntries(rows.map((r) => [r.id, r.name]));
+  }
+
+  const engines = poolSnapshot.map((e) => ({
+    ...e,
+    projectName: projectNames[e.projectId] ?? null,
+    chatSessions: chatSessions.filter((s) => s.projectId === e.projectId),
+  }));
+
+  return c.json({
+    data: {
+      engines,
+      poolSize: manager.poolSize,
+      maxEngines: 20,
+      processMemory: {
+        rss: mem.rss,
+        heapUsed: mem.heapUsed,
+        heapTotal: mem.heapTotal,
+        external: mem.external,
+      },
+      uptime: process.uptime(),
+    },
+  });
+});
+
+// DELETE /admin/copilot-sessions/:projectId — terminate a specific engine
+adminRoutes.delete("/copilot-sessions/:projectId", async (c) => {
+  const projectId = c.req.param("projectId");
+  const manager = getCopilotManager();
+  await manager.evictEngine(projectId);
+  return c.json({ data: { projectId, terminated: true } });
+});
+
+// DELETE /admin/copilot-sessions — terminate ALL engines
+adminRoutes.delete("/copilot-sessions", async (c) => {
+  const manager = getCopilotManager();
+  const count = manager.poolSize;
+  await manager.stopAll();
+  return c.json({ data: { terminated: count } });
 });
