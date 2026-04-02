@@ -41,6 +41,8 @@ export interface ChatMessage {
   undone?: boolean;
   /** Whether the AI made file changes in this response */
   hadToolCalls?: boolean;
+  /** Persisted tool call details from DB (for rendering summaries after refresh) */
+  toolCallDetails?: Array<{ name: string; arguments?: unknown }>;
 }
 
 export type EditorMode = "agent" | "plan";

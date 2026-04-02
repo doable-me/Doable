@@ -908,10 +908,13 @@ ERROR RECOVERY — if you encounter errors:
         messageId,
       }, userId).catch(() => {});
 
-        // Mark this project as having an active AI request
+        // Mark this project as having an active AI request (in-memory + DB)
         activeRequests.set(projectId, { mode, startedAt: Date.now() });
+        sql`INSERT INTO ai_active_streams (project_id, message_id) VALUES (${projectId}, ${messageId}) ON CONFLICT (project_id) DO UPDATE SET message_id = ${messageId}, started_at = now()`.catch(() => {});
 
         let hadToolCalls = false;
+        // Track the version SHA produced by auto-commit (if any)
+        let versionSha: string | undefined;
         // Track pending tool names so tool_result events can include the name
         const pendingToolNames: string[] = [];
         // Track assistant content and tool calls for DB persistence
@@ -1273,6 +1276,7 @@ ERROR RECOVERY — if you encounter errors:
                 { type: "ai", sessionMessageId: messageId }
               );
               if (commitInfo) {
+                versionSha = commitInfo.sha;
                 await stream.writeSSE({
                   data: JSON.stringify({
                     type: "version_created",
@@ -1329,7 +1333,9 @@ ERROR RECOVERY — if you encounter errors:
             await sql`
               UPDATE ai_messages
               SET content = ${assistantContent},
-                  tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])}
+                  tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])},
+                  version_sha = ${versionSha ?? null},
+                  had_tool_calls = ${hadToolCalls}
               WHERE id = ${assistantMessageId}
             `;
           } catch (e) {
@@ -1339,6 +1345,10 @@ ERROR RECOVERY — if you encounter errors:
           // Remove empty placeholder if AI produced nothing
           sql`DELETE FROM ai_messages WHERE id = ${assistantMessageId}`.catch(() => {});
         }
+
+        // Clear active stream markers (in-memory + DB)
+        activeRequests.delete(projectId);
+        sql`DELETE FROM ai_active_streams WHERE project_id = ${projectId}`.catch(() => {});
 
         // In plan mode, save the assistant response as .doable/plan.md
         if (mode === "plan" && assistantContent) {
@@ -1352,11 +1362,11 @@ ERROR RECOVERY — if you encounter errors:
           }
         }
 
-        activeRequests.delete(projectId);
         clearInterval(keepAlive);
         await stream.writeSSE({ data: "[DONE]" });
     } catch (err) {
       activeRequests.delete(projectId);
+      sql`DELETE FROM ai_active_streams WHERE project_id = ${projectId}`.catch(() => {});
       clearInterval(keepAlive);
       // Copilot SDK is the core engine — surface the real error, don't work around it
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -1368,7 +1378,9 @@ ERROR RECOVERY — if you encounter errors:
           await sql`
             UPDATE ai_messages
             SET content = ${assistantContent},
-                tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])}
+                tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])},
+                version_sha = ${versionSha ?? null},
+                had_tool_calls = ${hadToolCalls}
             WHERE id = ${assistantMessageId}
           `;
         } catch (e) {
@@ -1408,6 +1420,29 @@ chatRoutes.get("/projects/:id/ai-status", async (c) => {
   return c.json({ active: false });
 });
 
+// ─── GET /projects/:id/chat/status ─ DB-backed active stream check ──
+// Complements /ai-status (in-memory). This one survives API restarts.
+chatRoutes.get("/projects/:id/chat/status", async (c) => {
+  const projectId = c.req.param("id");
+  try {
+    const [row] = await sql`
+      SELECT message_id, started_at FROM ai_active_streams
+      WHERE project_id = ${projectId}
+    `;
+    if (row) {
+      const age = Date.now() - new Date(row.started_at).getTime();
+      if (age > 5 * 60 * 1000) {
+        sql`DELETE FROM ai_active_streams WHERE project_id = ${projectId}`.catch(() => {});
+        return c.json({ streaming: false });
+      }
+      return c.json({ streaming: true, messageId: row.message_id, startedAt: row.started_at });
+    }
+    return c.json({ streaming: false });
+  } catch {
+    return c.json({ streaming: false });
+  }
+});
+
 // ─── GET /projects/:id/chat/history ─ Chat history ──────────
 chatRoutes.get("/projects/:id/chat/history", async (c) => {
   const projectId = c.req.param("id");
@@ -1427,7 +1462,8 @@ chatRoutes.get("/projects/:id/chat/history", async (c) => {
 
     const messages = await sql`
       SELECT id, role, content, tool_calls, suggestions, tool_actions,
-             sent_by_user_id, display_name, user_color, created_at
+             sent_by_user_id, display_name, user_color, created_at,
+             version_sha, had_tool_calls
       FROM ai_messages
       WHERE session_id = ${dbSession.id}
       ORDER BY created_at ASC

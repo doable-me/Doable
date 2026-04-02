@@ -413,25 +413,110 @@ export function useChat(
       const { getStoredTokens } = await import("@/lib/api");
       const { accessToken } = getStoredTokens();
 
-      const response = await fetch(
-        `${API_BASE}/projects/${projectId}/chat/history`,
-        {
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-        },
-      );
-      if (!response.ok) return;
+      const headers: Record<string, string> = accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
+        : {};
 
-      const data = await response.json();
+      // Fetch history and active-stream status in parallel
+      const [historyRes, statusRes] = await Promise.all([
+        fetch(`${API_BASE}/projects/${projectId}/chat/history`, { headers }),
+        fetch(`${API_BASE}/projects/${projectId}/chat/status`, { headers }).catch(() => null),
+      ]);
+      if (!historyRes.ok) return;
+
+      const data = await historyRes.json();
+      const statusData = statusRes?.ok ? await statusRes.json() : null;
+      const isActivelyStreaming = statusData?.streaming === true;
+
       if (Array.isArray(data.data)) {
         clearMessages();
         for (const msg of data.data) {
-          addMessage(msg);
+          // Map DB column names to ChatMessage fields
+          const toolCalls = msg.tool_calls ?? msg.toolCalls;
+          const hadTools =
+            msg.had_tool_calls ??
+            msg.hadToolCalls ??
+            (Array.isArray(toolCalls) && toolCalls.length > 0);
+
+          const mapped: ChatMessage = {
+            id: msg.id,
+            role: msg.role,
+            content: msg.content ?? "",
+            timestamp: msg.created_at ?? msg.timestamp ?? new Date().toISOString(),
+            senderName: msg.display_name ?? msg.senderName,
+            senderId: msg.sent_by_user_id ?? msg.senderId,
+            versionSha: msg.version_sha ?? msg.versionSha,
+            hadToolCalls: hadTools || undefined,
+            toolCallDetails: hadTools && Array.isArray(toolCalls) ? toolCalls : undefined,
+          };
+
+          addMessage(mapped);
+        }
+
+        // If the server is still streaming, show an indicator on the last assistant message
+        if (isActivelyStreaming) {
+          const msgs = useEditorStore.getState().messages;
+          const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
+          if (lastAssistant) {
+            updateMessageFields(lastAssistant.id, {
+              isStreaming: true,
+              liveStatus: "AI is still working...",
+            });
+            // Poll until stream finishes
+            pollStreamStatus(projectId, lastAssistant.id, headers);
+          }
         }
       }
     } catch {
       // Silently fail on history load
     }
-  }, [projectId, clearMessages, addMessage]);
+  }, [projectId, clearMessages, addMessage, updateMessageFields]);
+
+  // Poll for active stream completion (used after page refresh)
+  const pollStreamStatus = useCallback(
+    (projId: string, assistantMsgId: string, headers: Record<string, string>) => {
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch(`${API_BASE}/projects/${projId}/chat/status`, { headers });
+          if (!res.ok) { clearInterval(interval); return; }
+          const data = await res.json();
+          if (!data.streaming) {
+            clearInterval(interval);
+            // Stream finished — reload the final content from history
+            const histRes = await fetch(`${API_BASE}/projects/${projId}/chat/history`, { headers });
+            if (histRes.ok) {
+              const hist = await histRes.json();
+              if (Array.isArray(hist.data)) {
+                const lastMsg = [...hist.data].reverse().find((m: any) => m.role === "assistant");
+                if (lastMsg) {
+                  const toolCalls = lastMsg.tool_calls ?? lastMsg.toolCalls;
+                  const hadTools =
+                    lastMsg.had_tool_calls ??
+                    (Array.isArray(toolCalls) && toolCalls.length > 0);
+                  updateMessageFields(assistantMsgId, {
+                    content: lastMsg.content ?? "",
+                    isStreaming: false,
+                    liveStatus: undefined,
+                    versionSha: lastMsg.version_sha,
+                    hadToolCalls: hadTools || undefined,
+                    toolCallDetails: hadTools && Array.isArray(toolCalls) ? toolCalls : undefined,
+                  });
+                  updateMessage(assistantMsgId, lastMsg.content ?? "");
+                }
+              }
+            } else {
+              updateMessageFields(assistantMsgId, { isStreaming: false, liveStatus: undefined });
+            }
+          }
+        } catch {
+          clearInterval(interval);
+          updateMessageFields(assistantMsgId, { isStreaming: false, liveStatus: undefined });
+        }
+      }, 3000);
+      setTimeout(() => clearInterval(interval), 5 * 60 * 1000);
+    },
+    [updateMessage, updateMessageFields],
+  );
 
   const clearChat = useCallback(async () => {
     if (!projectId) return;

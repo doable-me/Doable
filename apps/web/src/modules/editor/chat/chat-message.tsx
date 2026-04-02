@@ -94,6 +94,46 @@ function CodeBlockCopyButton({ content }: { content: string }) {
   );
 }
 
+// ─── Tool Activity Summary (shown for history messages) ─────
+function ToolActivitySummary({ toolCalls }: { toolCalls: Array<{ name: string; arguments?: unknown }> }) {
+  const counts: Record<string, number> = {};
+  for (const tc of toolCalls) {
+    const name = tc.name ?? "unknown";
+    counts[name] = (counts[name] ?? 0) + 1;
+  }
+
+  const friendlyName = (name: string, count: number): string => {
+    switch (name) {
+      case "create_file": return `Created ${count} file${count > 1 ? "s" : ""}`;
+      case "edit_file": return `Edited ${count} file${count > 1 ? "s" : ""}`;
+      case "read_file": return `Read ${count} file${count > 1 ? "s" : ""}`;
+      case "list_files": return "Explored project structure";
+      case "install_package": return `Installed ${count} package${count > 1 ? "s" : ""}`;
+      case "search_files": return `Searched ${count} time${count > 1 ? "s" : ""}`;
+      case "run_terminal_command": return `Ran ${count} command${count > 1 ? "s" : ""}`;
+      default: return `${name} (${count})`;
+    }
+  };
+
+  const writeTools = ["create_file", "edit_file", "install_package", "run_terminal_command"];
+  const writeEntries = Object.entries(counts).filter(([name]) => writeTools.includes(name));
+  const entries = writeEntries.length > 0 ? writeEntries : Object.entries(counts);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+      <Wrench className="h-3 w-3 text-blue-400" />
+      {entries.map(([name, count], i) => (
+        <span key={name}>
+          {friendlyName(name, count)}
+          {i < entries.length - 1 ? " · " : ""}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ─── Streaming Status Indicator ─────────────────────────────
 function StreamingStatus({ status }: { status?: string }) {
   if (!status) return null;
@@ -268,6 +308,16 @@ export const ChatMessage = memo(function ChatMessage({
             )}
           </div>
         ) : null}
+
+        {/* Tool activity summary — shown for history messages with tool calls */}
+        {!isUser && !message.isStreaming && !message.content && message.hadToolCalls && message.toolCallDetails && (
+          <ToolActivitySummary toolCalls={message.toolCallDetails} />
+        )}
+        {!isUser && !message.isStreaming && message.content && message.hadToolCalls && message.toolCallDetails && (
+          <div className="mt-1.5">
+            <ToolActivitySummary toolCalls={message.toolCallDetails} />
+          </div>
+        )}
 
         {/* Undo button for AI messages that made file changes */}
         {canUndo && (
