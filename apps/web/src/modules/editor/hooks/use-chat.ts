@@ -287,6 +287,7 @@ export function useChat(
                   updateMessageFields(assistantId, {
                     liveStatus: `tool_result:${friendly}`,
                   });
+                  useEditorStore.getState().bumpToolResultVersion();
                 } else if (parsed.type === "status") {
                   const status = typeof parsed.data === "string"
                     ? parsed.data

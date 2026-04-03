@@ -1633,6 +1633,7 @@ export default function EditorPage() {
                   minute: "2-digit",
                 }),
                 isStreaming: false,
+                thinkingContent: m.thinking_content || undefined,
                 toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
                   ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => ({
                       id: `hist-${m.id}-${i}`,
@@ -3666,11 +3667,13 @@ export default function EditorPage() {
                         )}
 
                         {/* Inline thinking indicator */}
-                        {msg.thinkingContent && msg.isStreaming && (
+                        {msg.thinkingContent && (
                           <details className="mb-2 rounded-lg border border-zinc-700/40 bg-zinc-900/30 text-[13px]">
                             <summary className="cursor-pointer select-none px-3 py-1.5 text-zinc-500 hover:text-zinc-400 flex items-center gap-2">
-                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse" />
-                              Thinking...
+                              {msg.isStreaming && (
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse" />
+                              )}
+                              {msg.isStreaming ? "Thinking..." : "Thought process"}
                             </summary>
                             <div className="px-3 pb-2 text-zinc-500 whitespace-pre-wrap max-h-40 overflow-y-auto">
                               {msg.thinkingContent}

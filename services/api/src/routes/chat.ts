@@ -624,6 +624,7 @@ chatRoutes.post(
     let versionSha: string | undefined;
     const pendingToolNames: string[] = [];
     let assistantContent = "";
+    let assistantThinking = "";
     let lastCapturedMsgId: string | undefined;
     let msgIdDeltaStart = 0;
     let assistantMessageId: string | undefined;
@@ -1059,14 +1060,16 @@ ERROR RECOVERY — if you encounter errors:
           // Try to send. If the session was lost (engine recycled), recreate it.
           let messageStream: AsyncGenerator<import("@github/copilot-sdk").SessionEvent>;
           try {
-            messageStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
+            const originalStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
             // Force the generator to yield once — "Session not found" throws here
             // because async generators are lazy (the body doesn't run until iterated).
-            const first = await messageStream.next();
-            // Wrap in a helper that re-yields the first value then continues
+            const first = await originalStream.next();
+            // Wrap in a helper that re-yields the first value then continues.
+            // IMPORTANT: use `originalStream` — not `messageStream` — to avoid
+            // self-delegation after the reassignment below.
             messageStream = (async function* () {
               if (!first.done) yield first.value;
-              yield* messageStream;
+              yield* originalStream;
             })();
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -1097,8 +1100,9 @@ ERROR RECOVERY — if you encounter errors:
           // The SDK sometimes stops yielding events without closing the
           // generator or emitting a terminal event, causing `for await`
           // to hang indefinitely. This helper races each `.next()` call
-          // against a 60-second deadline so the stream always completes.
-          const SDK_IDLE_TIMEOUT_MS = 60_000;
+          // against a 180-second deadline so the stream always completes.
+          // Must be generous enough for tool calls (file writes, npm installs).
+          const SDK_IDLE_TIMEOUT_MS = 180_000;
           const iterator = messageStream![Symbol.asyncIterator]();
           let iterDone = false;
           while (!iterDone) {
@@ -1110,14 +1114,15 @@ ERROR RECOVERY — if you encounter errors:
             ]);
             if (raceResult.done) {
               if (!raceResult.value) {
-                // Timeout fired — SDK went silent. Send a completion note so
-                // the user isn't left wondering what happened.
+                // Timeout fired — SDK went silent. Notify the user so they
+                // aren't left staring at a spinner.
                 console.log(`[Chat] SDK generator idle for ${SDK_IDLE_TIMEOUT_MS / 1000}s — forcing stream exit for ${projectId}`);
-                if (hadToolCalls && assistantContent) {
-                  // AI already produced text — just close cleanly
-                }
-                // If AI only made tool calls with no text, that's fine —
-                // the frontend ToolActivitySummary renders them instead.
+                await stream.writeSSE({
+                  data: JSON.stringify({
+                    type: "status",
+                    data: { phase: "timeout", message: "AI response timed out — your changes have been saved." },
+                  }),
+                });
               }
               iterDone = true;
               break;
@@ -1206,11 +1211,13 @@ ERROR RECOVERY — if you encounter errors:
                   isThinking: false,
                 }, userId).catch(() => {});
               }
-              // Broadcast thinking chunks too
+              // Accumulate and broadcast thinking chunks
               if (sseData.type === "thinking") {
+                const thinkingDelta = typeof sseData.data === "string" ? sseData.data : "";
+                assistantThinking += thinkingDelta;
                 broadcastToRoom(projectId, {
                   type: "ai:stream-chunk",
-                  chunk: typeof sseData.data === "string" ? sseData.data : "",
+                  chunk: thinkingDelta,
                   messageId,
                   isThinking: true,
                 }, userId).catch(() => {});
@@ -1263,6 +1270,7 @@ ERROR RECOVERY — if you encounter errors:
               "assistant.usage", "hook.start", "hook.end", "user.message",
               "assistant.turn_start", "assistant.turn_end", "permission.requested",
               "permission.completed", "assistant.reasoning", "assistant.message",
+              "assistant.streaming_delta", "assistant.reasoning_delta",
             ].includes(evtType)) {
               console.log(`[Chat] Unmapped SDK event: "${evtType}" for ${projectId}`);
             }
@@ -1525,7 +1533,8 @@ ERROR RECOVERY — if you encounter errors:
               SET content = ${assistantContent || null},
                   tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])},
                   version_sha = ${versionSha ?? null},
-                  had_tool_calls = ${hadToolCalls}
+                  had_tool_calls = ${hadToolCalls},
+                  thinking_content = ${assistantThinking || null}
               WHERE id = ${assistantMessageId}
             `;
           } catch (e) {
@@ -1572,7 +1581,8 @@ ERROR RECOVERY — if you encounter errors:
             SET content = ${assistantContent || null},
                 tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])},
                 version_sha = ${versionSha ?? null},
-                had_tool_calls = ${hadToolCalls}
+                had_tool_calls = ${hadToolCalls},
+                thinking_content = ${assistantThinking || null}
             WHERE id = ${assistantMessageId}
           `;
         } catch (e) {
@@ -1655,7 +1665,7 @@ chatRoutes.get("/projects/:id/chat/history", async (c) => {
     const messages = await sql`
       SELECT id, role, content, tool_calls, suggestions, tool_actions,
              sent_by_user_id, display_name, user_color, created_at,
-             version_sha, had_tool_calls
+             version_sha, had_tool_calls, thinking_content
       FROM ai_messages
       WHERE session_id = ${dbSession.id}
       ORDER BY created_at ASC

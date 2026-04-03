@@ -252,124 +252,67 @@ export class CopilotEngine {
     prompt: string,
     fileAttachments?: Array<{ type: "file"; path: string; displayName?: string }>,
   ): AsyncGenerator<SessionEvent> {
-    console.log(`[CopilotEngine] **sendMessage invoked** for session ${sessionId.slice(0, 8)}…, prompt truncated: "${prompt.slice(0, 50)}..."`);
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new Error(`Session ${sessionId} not found`);
     }
 
-    // Collect events via handler
+    // ── Event queue bridges session.on() callbacks → async generator yields ──
     const eventQueue: SessionEvent[] = [];
     let resolveWaiting: (() => void) | null = null;
     let done = false;
+
+    // Inactivity timeout: if no events at all for this long, assume dead
+    const EVENT_TIMEOUT_MS = 120_000; // 2 minutes — generous for agentic tool loops
     let lastEventTime = Date.now();
-    let lastContentEventTime = Date.now();
 
-    // Timeout: if no events at all for 90 seconds, assume the session is dead
-    const EVENT_TIMEOUT_MS = 90_000;
-    // Content timeout: if no content-bearing events for 90 seconds, assume done
-    // (SDK may keep emitting noise events without closing the generator)
-    // Must match EVENT_TIMEOUT_MS — model needs time between tool calls to reason
-    const CONTENT_TIMEOUT_MS = 90_000;
-    const CONTENT_EVENT_TYPES = new Set([
-      "assistant.message_delta", "assistant.streaming_delta", "assistant.message",
-      "assistant.reasoning_delta", "assistant.reasoning", "assistant.thinking",
-      "tool.running", "tool.completed", "tool.execution_start", "tool.execution_complete",
-      "session.idle", "session.error",
-    ]);
-
+    // Subscribe to ALL events from the SDK (streaming deltas, tools, idle, error).
+    // Per the SDK source, session.on() receives every event the CLI emits via
+    // JSON-RPC — including assistant.message_delta when streaming: true.
+    // session.idle and session.error are terminal events that end the stream.
     const unsubscribe = session.on((event: SessionEvent) => {
       lastEventTime = Date.now();
-      if (CONTENT_EVENT_TYPES.has(event.type)) {
-        lastContentEventTime = Date.now();
-      }
-
-      // Do NOT queue session.idle events from session.on() — SDK 0.2.0 fires
-      // session.idle immediately when registering on() a resumed/cached idle session,
-      // which would terminate the loop before sendAndWait() even starts.
-      // Only sendAndWait() below controls termination by pushing the synthetic idle.
-      if (event.type === "session.idle" || event.type === "session.error") {
-        console.log(`[CopilotEngine] session.on() got ${event.type} — suppressed (sendAndWait controls termination)`);
-        return;
-      }
-
       eventQueue.push(event);
+
+      if (event.type === "session.idle" || event.type === "session.error") {
+        done = true;
+      }
+
       if (resolveWaiting) {
         resolveWaiting();
         resolveWaiting = null;
       }
     });
 
-    // Build the message options — include file attachments if provided
-    const messageOptions: { prompt: string; attachments?: Array<{ type: "file"; path: string; displayName?: string }> } = { prompt };
+    // Build message options
+    const messageOptions: {
+      prompt: string;
+      attachments?: Array<{ type: "file"; path: string; displayName?: string }>;
+    } = { prompt };
     if (fileAttachments && fileAttachments.length > 0) {
       messageOptions.attachments = fileAttachments;
-      console.log(`[CopilotEngine] Sending message with ${fileAttachments.length} file attachment(s):`, fileAttachments.map(a => a.displayName ?? a.path));
     }
 
-    // Use sendAndWait() — events still fire through session.on() (streaming deltas,
-    // tool events) but sendAndWait guarantees the session reaches idle state and
-    // returns the final assistant.message content. Plain session.send() was tested
-    // with 0.2.0 and went silent — same issue as 0.1.32.
-    console.log(`[CopilotEngine] **sendMessage: Calling sendAndWait with 5min timeout**`);
-    const sendAndWaitPromise = session.sendAndWait(messageOptions, 300_000);
-    console.log(`[CopilotEngine] **sendMessage: sendAndWait promise created (fire-and-forget)**`);
-    
-    sendAndWaitPromise.then((result) => {
-      console.log(`[CopilotEngine] **sendMessage: sendAndWait.then() FIRED**`);
-      if (!result) {
-        console.log(`[CopilotEngine] **WARNING: sendAndWait returned null/undefined!**`);
-      } else {
-        console.log(`[CopilotEngine] **sendAndWait returned:`, {
-          type: result.type,
-          contentLength: (result.data as any)?.content?.length ?? 0,
-          messageId: (result.data as any)?.messageId,
-        });
-      }
-      const contentLen = (result?.data as any)?.content?.length ?? 0;
-      console.log(`[CopilotEngine] sendAndWait resolved — content length: ${contentLen}`);
-      // Inject the final assistant.message event from the result so the
-      // chat route can capture the full content for DB persistence and SSE.
-      if (result) {
-        console.log(`[CopilotEngine] Pushing assistant.message to eventQueue from sendAndWait`);
-        eventQueue.push(result as unknown as SessionEvent);
-      } else {
-        console.log(`[CopilotEngine] sendAndWait returned undefined (no assistant message)`);
-      }
-      console.log(`[CopilotEngine] Pushing synthetic session.idle to eventQueue`);
-      eventQueue.push({ type: "session.idle", data: {} } as SessionEvent);
-      done = true;
-      if (resolveWaiting) {
-        console.log(`[CopilotEngine] Calling resolveWaiting() to unblock wait loop`);
-        resolveWaiting();
-        resolveWaiting = null;
-      }
-    }).catch((err) => {
-      console.error(`[CopilotEngine] sendAndWait rejected:`, err instanceof Error ? err.message : err);
-      eventQueue.push({
-        type: "session.error",
-        data: { message: err instanceof Error ? err.message : String(err) },
-      } as SessionEvent);
-      done = true;
-      if (resolveWaiting) {
-        resolveWaiting();
-        resolveWaiting = null;
-      }
-    });
+    // Send message via session.send() — returns the messageId once the CLI
+    // acknowledges receipt. Processing continues asynchronously; events
+    // flow through session.on() registered above.
+    try {
+      const messageId = await session.send(messageOptions);
+      console.log(`[CopilotEngine] session.send() → msgId ${messageId} (${sessionId.slice(0, 8)}…)`);
+    } catch (err) {
+      unsubscribe();
+      throw err;
+    }
 
+    // Yield events as they arrive until a terminal event (session.idle / session.error)
     try {
       let eventCount = 0;
       while (!done || eventQueue.length > 0) {
         if (eventQueue.length > 0) {
           const evt = eventQueue.shift()!;
           eventCount++;
-          // Log all events for diagnostics (verbose mode for debugging)
-          const evtData = (evt as Record<string, unknown>).data as Record<string, unknown> | undefined;
-          const shortData = evtData ? JSON.stringify(evtData).slice(0, 120) : "{}";
-          console.log(`[CopilotEngine] ✓ Yielding Event #${eventCount}: ${evt.type}`);
           yield evt;
         } else if (!done) {
-          // Wait for next event WITH timeout
           const timedOut = await new Promise<boolean>((resolve) => {
             resolveWaiting = () => resolve(false);
             setTimeout(() => {
@@ -381,17 +324,18 @@ export class CopilotEngine {
           });
           if (timedOut && !done && eventQueue.length === 0) {
             const elapsed = Date.now() - lastEventTime;
-            console.error(`[CopilotEngine] No events for ${Math.round(elapsed / 1000)}s — session appears dead (${sessionId.slice(0, 8)}…)`);
-            // Yield a synthetic error event so the caller knows
+            console.error(`[CopilotEngine] No events for ${Math.round(elapsed / 1000)}s — timeout (${sessionId.slice(0, 8)}…)`);
             yield {
               type: "session.error",
-              data: { message: `AI session timed out — no response for ${Math.round(elapsed / 1000)} seconds. The AI engine may need to be restarted.` },
+              data: { message: `AI session timed out — no response for ${Math.round(elapsed / 1000)} seconds.` },
             } as SessionEvent;
             done = true;
           }
         }
       }
-      console.log(`[CopilotEngine] Stream complete: ${eventCount} events yielded`);
+      if (eventCount > 0) {
+        console.log(`[CopilotEngine] Stream complete: ${eventCount} events (${sessionId.slice(0, 8)}…)`);
+      }
     } finally {
       unsubscribe();
     }

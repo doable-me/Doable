@@ -11,6 +11,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer as createTcpServer } from "node:net";
+import path from "node:path";
 import { getProjectPath } from "../ai/project-files.js";
 import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
 
@@ -177,12 +178,16 @@ async function doStartDevServer(
   // This makes the reverse proxy transparent — no HTML rewriting needed.
   const base = `/preview/${projectId}/`;
 
+  // Invoke Vite directly via Node instead of relying on .bin shims,
+  // which may not be created by npm install on Node 24+/Windows.
+  const viteEntry = path.join(projectPath, "node_modules", "vite", "bin", "vite.js");
+
   const child = spawn(
-    "npx",
-    ["vite", "--host", DEV_SERVER_HOST, "--port", String(port), "--strictPort", "--base", base],
+    process.execPath,
+    [viteEntry, "--host", DEV_SERVER_HOST, "--port", String(port), "--strictPort", "--base", base],
     {
       cwd: projectPath,
-      shell: true,
+      shell: false,
       stdio: "pipe",
       env: {
         ...process.env,

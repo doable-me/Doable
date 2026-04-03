@@ -111,6 +111,17 @@ export function usePlatformAdmin() {
     });
   }, []);
 
+  const getUserCredits = useCallback(async (userId: string) => {
+    return apiFetch(`/admin/users/${userId}/credits`);
+  }, []);
+
+  const setUserCredits = useCallback(async (userId: string, data: { dailyCredits?: number; monthlyCredits?: number; rolloverCredits?: number; resetUsage?: boolean }) => {
+    return apiFetch(`/admin/users/${userId}/credits`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }, []);
+
   const bulkUpdateUsers = useCallback(async (userIds: string[], updates: { role?: string; plan?: string }) => {
     const res = await apiFetch("/admin/users/bulk-update", {
       method: "POST",
@@ -155,6 +166,8 @@ export function usePlatformAdmin() {
     removeUserOverride,
     setUserRole,
     setUserPlan,
+    getUserCredits,
+    setUserCredits,
     bulkUpdateUsers,
     reload: () => Promise.all([loadFeatures(), loadUsers()]),
   };

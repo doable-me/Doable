@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { sql } from "../db/index.js";
-import { featureFlagQueries, aiSettingsQueries, workspaceQueries } from "@doable/db";
+import { featureFlagQueries, aiSettingsQueries, workspaceQueries, creditQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { WORKSPACE_PLANS, WORKSPACE_ROLES } from "@doable/shared";
@@ -10,6 +10,7 @@ import { getChatSessionsSnapshot } from "./chat.js";
 
 const featureFlags = featureFlagQueries(sql);
 const aiSettings = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
+const credits = creditQueries(sql);
 const workspaces = workspaceQueries(sql);
 
 export const adminRoutes = new Hono<AuthEnv>();
@@ -216,6 +217,81 @@ adminRoutes.patch("/users/:userId/plan", async (c) => {
   const result = await featureFlags.setUserWorkspacePlan(c.req.param("userId"), parsed.data.plan);
   if (!result) return c.json({ error: "User has no workspace" }, 400);
   return c.json({ ok: true, workspaceId: result.workspaceId, plan: result.plan });
+});
+
+// ─── Admin Credit Allocation ─────────────────────────────
+
+const setCreditsSchema = z.object({
+  dailyCredits: z.number().int().min(0).max(100000).optional(),
+  monthlyCredits: z.number().int().min(0).max(1000000).optional(),
+  rolloverCredits: z.number().int().min(0).max(1000000).optional(),
+  resetUsage: z.boolean().optional(),
+});
+
+// GET /admin/users/:userId/credits — get credit balance for a user
+adminRoutes.get("/users/:userId/credits", async (c) => {
+  const userId = c.req.param("userId");
+  // Find user's owned workspace
+  const [ws] = await sql<{ id: string; plan: string }[]>`
+    SELECT w.id, w.plan FROM workspaces w
+    INNER JOIN workspace_members wm ON wm.workspace_id = w.id
+    WHERE wm.user_id = ${userId} AND wm.role = 'owner'
+    ORDER BY w.created_at ASC LIMIT 1
+  `;
+  if (!ws) return c.json({ error: "User has no workspace" }, 404);
+
+  const balance = await credits.getCreditBalance(userId, ws.id);
+  return c.json({ ...balance, workspaceId: ws.id });
+});
+
+// PATCH /admin/users/:userId/credits — set credit allocation for a user
+adminRoutes.patch("/users/:userId/credits", async (c) => {
+  const userId = c.req.param("userId");
+  const body = await c.req.json();
+  const parsed = setCreditsSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  const { dailyCredits, monthlyCredits, rolloverCredits, resetUsage } = parsed.data;
+
+  // Find user's owned workspace
+  const [ws] = await sql<{ id: string; plan: string }[]>`
+    SELECT w.id, w.plan FROM workspaces w
+    INNER JOIN workspace_members wm ON wm.workspace_id = w.id
+    WHERE wm.user_id = ${userId} AND wm.role = 'owner'
+    ORDER BY w.created_at ASC LIMIT 1
+  `;
+  if (!ws) return c.json({ error: "User has no workspace" }, 404);
+
+  // Ensure balance row exists
+  await credits.getCreditBalance(userId, ws.id);
+
+  // Update individual fields
+  if (dailyCredits !== undefined) {
+    await sql`UPDATE credit_balances SET daily_credits = ${dailyCredits}, updated_at = now()
+              WHERE user_id = ${userId} AND workspace_id = ${ws.id}`;
+  }
+  if (monthlyCredits !== undefined) {
+    await sql`UPDATE credit_balances SET monthly_credits = ${monthlyCredits}, updated_at = now()
+              WHERE user_id = ${userId} AND workspace_id = ${ws.id}`;
+  }
+  if (rolloverCredits !== undefined) {
+    await sql`UPDATE credit_balances SET rollover_credits = ${rolloverCredits}, updated_at = now()
+              WHERE user_id = ${userId} AND workspace_id = ${ws.id}`;
+  }
+
+  if (resetUsage) {
+    await sql`
+      UPDATE credit_balances
+      SET daily_credits_used = 0,
+          monthly_credits_used = 0,
+          daily_reset_at = now() + interval '1 day',
+          monthly_reset_at = date_trunc('month', now()) + interval '1 month'
+      WHERE user_id = ${userId} AND workspace_id = ${ws.id}
+    `;
+  }
+
+  const balance = await credits.getCreditBalance(userId, ws.id);
+  return c.json({ ok: true, balance });
 });
 
 // Get overrides for a specific user

@@ -39,32 +39,28 @@ export function PreviewPanel() {
 
   // ─── Live refresh during streaming ─────────────────────────
   // Refresh preview when tool_result events fire (file was written/edited).
-  const messages = useEditorStore((s) => s.messages);
-  const lastToolResultRef = useRef("");
+  // toolResultVersion increments on every tool_result SSE event.
+  const toolResultVersion = useEditorStore((s) => s.toolResultVersion);
+  const prevToolResultRef = useRef(toolResultVersion);
   useEffect(() => {
-    if (!isStreaming) return;
-    const latestAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-    const status = latestAssistant?.liveStatus ?? "";
-    // Refresh when a NEW tool completes (deduplicate by status string)
-    if (status.startsWith("tool_result:") && status !== lastToolResultRef.current) {
-      lastToolResultRef.current = status;
-      const timer = setTimeout(() => {
-        setHasError(false);
-        refresh();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [isStreaming, messages, refresh]);
+    if (!isStreaming || toolResultVersion === prevToolResultRef.current) return;
+    prevToolResultRef.current = toolResultVersion;
+    const timer = setTimeout(() => {
+      setHasError(false);
+      refresh();
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [isStreaming, toolResultVersion, refresh]);
 
   // ─── Periodic fallback refresh during streaming ────────────
-  // If no tool_result events arrive, refresh every 8s during streaming
+  // If no tool_result events arrive, refresh every 5s during streaming
   // so the user sees progress even without HMR.
   useEffect(() => {
     if (!isStreaming) return;
     const interval = setInterval(() => {
       setHasError(false);
       refresh();
-    }, 8000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [isStreaming, refresh]);
 

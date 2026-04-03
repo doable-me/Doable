@@ -231,6 +231,8 @@ function UserRow({
   onChangePlan,
   onAllocate,
   onReset,
+  onGetCredits,
+  onSetCredits,
 }: {
   u: UserAiAllocation;
   currentUserId: string;
@@ -240,6 +242,8 @@ function UserRow({
   onChangePlan: (userId: string, plan: string) => void;
   onAllocate: (userId: string, data: { copilotAccountId?: string | null; providerId?: string | null; model?: string | null }) => Promise<void>;
   onReset: (userId: string) => Promise<void>;
+  onGetCredits: (userId: string) => Promise<{ daily_total: number; daily_remaining: number; monthly_total: number; monthly_remaining: number; rollover_credits: number }>;
+  onSetCredits: (userId: string, data: { dailyCredits?: number; monthlyCredits?: number; rolloverCredits?: number; resetUsage?: boolean }) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [source, setSource] = useState<"copilot" | "custom">("copilot");
@@ -247,6 +251,14 @@ function UserRow({
   const [providerId, setProviderId] = useState("");
   const [model, setModel] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editingCredits, setEditingCredits] = useState(false);
+  const [creditDaily, setCreditDaily] = useState(0);
+  const [creditMonthly, setCreditMonthly] = useState(0);
+  const [creditRollover, setCreditRollover] = useState(0);
+  const [creditDailyUsed, setCreditDailyUsed] = useState(0);
+  const [creditMonthlyUsed, setCreditMonthlyUsed] = useState(0);
+  const [creditLoading, setCreditLoading] = useState(false);
+  const [creditSaving, setCreditSaving] = useState(false);
 
   const hasAllocation = !!(u.copilot_account_id || u.provider_id || u.model);
   const validAccounts = accounts.filter((a) => a.is_valid);
@@ -281,6 +293,46 @@ function UserRow({
     }
   }
 
+  async function startEditCredits() {
+    setCreditLoading(true);
+    setEditingCredits(true);
+    try {
+      const res = await onGetCredits(u.user_id);
+      setCreditDaily(res.daily_total);
+      setCreditMonthly(res.monthly_total);
+      setCreditRollover(res.rollover_credits);
+      setCreditDailyUsed(res.daily_total - res.daily_remaining);
+      setCreditMonthlyUsed(res.monthly_total - res.monthly_remaining);
+    } catch {
+      setCreditDaily(0);
+      setCreditMonthly(0);
+      setCreditRollover(0);
+      setCreditDailyUsed(0);
+      setCreditMonthlyUsed(0);
+    } finally {
+      setCreditLoading(false);
+    }
+  }
+
+  async function saveCredits(resetUsage = false) {
+    setCreditSaving(true);
+    try {
+      await onSetCredits(u.user_id, {
+        dailyCredits: creditDaily,
+        monthlyCredits: creditMonthly,
+        rolloverCredits: creditRollover,
+        resetUsage,
+      });
+      if (resetUsage) {
+        setCreditDailyUsed(0);
+        setCreditMonthlyUsed(0);
+      }
+      if (!resetUsage) setEditingCredits(false);
+    } finally {
+      setCreditSaving(false);
+    }
+  }
+
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/50">
       <div className="flex items-center gap-3 px-4 py-3">
@@ -301,8 +353,15 @@ function UserRow({
           </div>
         </div>
 
-        {/* AI actions */}
+        {/* AI & Credits actions */}
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={startEditCredits}
+            className="rounded p-1.5 text-zinc-500 hover:text-emerald-400 hover:bg-zinc-800 transition-colors"
+            title="Manage credits"
+          >
+            <Zap className="h-4 w-4" />
+          </button>
           <button
             onClick={startEdit}
             className="rounded p-1.5 text-zinc-500 hover:text-brand-400 hover:bg-zinc-800 transition-colors"
@@ -453,6 +512,95 @@ function UserRow({
           </div>
         </div>
       )}
+
+      {/* Credits edit panel */}
+      {editingCredits && (
+        <div className="border-t border-zinc-800 px-4 py-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-medium text-zinc-300">
+              <Zap className="inline h-3.5 w-3.5 text-emerald-400 mr-1" />
+              Credits for {u.display_name ?? u.email}
+            </p>
+            <button onClick={() => setEditingCredits(false)} className="text-zinc-500 hover:text-zinc-300">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {creditLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+            </div>
+          ) : (
+            <>
+              {/* Usage display */}
+              <div className="flex gap-3 mb-3 text-[11px]">
+                <span className="text-zinc-500">Daily used: <span className="text-zinc-300">{creditDailyUsed}/{creditDaily}</span></span>
+                <span className="text-zinc-500">Monthly used: <span className="text-zinc-300">{creditMonthlyUsed}/{creditMonthly}</span></span>
+                <span className="text-zinc-500">Rollover: <span className="text-zinc-300">{creditRollover}</span></span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">Daily Credits</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={creditDaily}
+                    onChange={(e) => setCreditDaily(Number(e.target.value))}
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-brand-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">Monthly Credits</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={creditMonthly}
+                    onChange={(e) => setCreditMonthly(Number(e.target.value))}
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-brand-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">Rollover Credits</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={creditRollover}
+                    onChange={(e) => setCreditRollover(Number(e.target.value))}
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-brand-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => saveCredits(false)}
+                  disabled={creditSaving}
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                >
+                  {creditSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                  Save Credits
+                </button>
+                <button
+                  onClick={() => saveCredits(true)}
+                  disabled={creditSaving}
+                  className="flex items-center gap-1.5 rounded-lg bg-amber-600/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 disabled:opacity-50 transition-colors"
+                  title="Save credits and reset daily/monthly usage to 0"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Save &amp; Reset Usage
+                </button>
+                <button
+                  onClick={() => setEditingCredits(false)}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -472,6 +620,8 @@ export default function AdminPage() {
     updateFeature,
     setUserRole,
     setUserPlan,
+    getUserCredits,
+    setUserCredits,
     bulkUpdateUsers,
   } = usePlatformAdmin();
 
@@ -876,6 +1026,12 @@ export default function AdminPage() {
                       onChangePlan={handleChangePlan}
                       onAllocate={handleAllocate}
                       onReset={handleReset}
+                      onGetCredits={getUserCredits}
+                      onSetCredits={async (userId, data) => {
+                        await setUserCredits(userId, data);
+                        const name = allocations.find((a) => a.user_id === userId)?.display_name ?? "User";
+                        addToast("success", `Credits updated for ${name}`);
+                      }}
                     />
                   </div>
                 </div>
@@ -1119,6 +1275,7 @@ function formatUptime(seconds: number): string {
 function CopilotSessionsPanel() {
   const [data, setData] = useState<CopilotSessionsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [terminating, setTerminating] = useState<Set<string>>(new Set());
   const [terminatingAll, setTerminatingAll] = useState(false);
 
@@ -1126,12 +1283,14 @@ function CopilotSessionsPanel() {
     try {
       const res = await apiFetch<{ data: CopilotSessionsData }>("/admin/copilot-sessions");
       setData(res.data);
+      setError(null);
     } catch (e) {
       console.error("Failed to fetch copilot sessions:", e);
+      if (!data) setError(e instanceof Error ? e.message : "Failed to load sessions");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [data]);
 
   useEffect(() => {
     fetchSessions();
@@ -1175,7 +1334,21 @@ function CopilotSessionsPanel() {
     );
   }
 
-  if (!data) return null;
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-3">
+        <AlertTriangle className="h-5 w-5 text-amber-400" />
+        <p className="text-sm text-zinc-400">{error ?? "No session data available"}</p>
+        <Button
+          onClick={() => { setLoading(true); setError(null); fetchSessions(); }}
+          variant="outline"
+          className="gap-2 text-sm border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+        >
+          <RotateCcw className="h-3.5 w-3.5" /> Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

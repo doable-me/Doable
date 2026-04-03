@@ -85,6 +85,7 @@ interface EditorState {
   // Preview
   previewUrl: string;
   previewLoading: boolean;
+  toolResultVersion: number;
 
   // Sidebar
   activeSidebarTab: "pages" | "files" | "history" | "knowledge" | "skills";
@@ -128,6 +129,7 @@ interface EditorState {
   // Actions - Preview
   setPreviewUrl: (url: string) => void;
   setPreviewLoading: (loading: boolean) => void;
+  bumpToolResultVersion: () => void;
 
   // Actions - Sidebar
   setActiveSidebarTab: (tab: EditorState["activeSidebarTab"]) => void;
@@ -154,6 +156,7 @@ export const useEditorStore = create<EditorState>()(
       pendingQuestions: null,
       previewUrl: "",
       previewLoading: false,
+      toolResultVersion: 0,
       activeSidebarTab: "files",
 
       // Project
@@ -280,6 +283,7 @@ export const useEditorStore = create<EditorState>()(
       // Preview
       setPreviewUrl: (url) => set({ previewUrl: url }),
       setPreviewLoading: (loading) => set({ previewLoading: loading }),
+      bumpToolResultVersion: () => set((s) => ({ toolResultVersion: s.toolResultVersion + 1 })),
 
       // Sidebar
       setActiveSidebarTab: (tab) => set({ activeSidebarTab: tab }),

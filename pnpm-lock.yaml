@@ -1622,6 +1622,9 @@ importers:
       '@doable/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@github/copilot':
+        specifier: ^1.0.16
+        version: 1.0.16
       '@github/copilot-sdk':
         specifier: ^0.2.0
         version: 0.2.0
@@ -4938,8 +4941,8 @@ packages:
     os: [darwin]
     hasBin: true
 
-  '@github/copilot-darwin-arm64@1.0.5':
-    resolution: {integrity: sha512-XBwo8t5higPXzCvXVYkADImixt9k8P2XsflWup2b86x9KtcssYTcfEWWIg42AOCe8J/OJRJN2MMTQuWt5aeK9w==}
+  '@github/copilot-darwin-arm64@1.0.16':
+    resolution: {integrity: sha512-Yxu8+Sau1X7Ah9lHeC/pHms40/6Dw2Ry/97BaKijZSTAbyhkfjy8UjAmROoihqmoW89kOaCi4JnT+1XvP/bYZw==}
     cpu: [arm64]
     os: [darwin]
     hasBin: true
@@ -4950,8 +4953,8 @@ packages:
     os: [darwin]
     hasBin: true
 
-  '@github/copilot-darwin-x64@1.0.5':
-    resolution: {integrity: sha512-zUlMEKct5oPk/ImnYKz+fUjI9xfIwRE2/WI8BrpuDDe16aFDW2Co/6WFFr5rgYcXoGX2Jm8HT563UUxaFbnnOA==}
+  '@github/copilot-darwin-x64@1.0.16':
+    resolution: {integrity: sha512-EptQqgQ0GGdji0LQ09Q1BRB5TRpxkb4DK5bKGLbhE9chHsByv6ppukT8qLFZXktAB1DU5J5k0VZ77IhBuvF6Fw==}
     cpu: [x64]
     os: [darwin]
     hasBin: true
@@ -4962,8 +4965,8 @@ packages:
     os: [linux]
     hasBin: true
 
-  '@github/copilot-linux-arm64@1.0.5':
-    resolution: {integrity: sha512-Rp5Key6IBcm00K3+yc8rga3IXaJKN7mwYtP/mpkCKaJJp7izpJK7Z7Dr1slb63Z3yCAyPwMeYlE+adFCwlnYUA==}
+  '@github/copilot-linux-arm64@1.0.16':
+    resolution: {integrity: sha512-OlG/WeJlnr/42w5w1mI3aKA2zpmSjCJKSSL0TM9chYW3J2vEPcghYHKGRRijRPHpyB4/+WGGE5UrcHc9DaL2FA==}
     cpu: [arm64]
     os: [linux]
     hasBin: true
@@ -4974,8 +4977,8 @@ packages:
     os: [linux]
     hasBin: true
 
-  '@github/copilot-linux-x64@1.0.5':
-    resolution: {integrity: sha512-ZEKOi57SUo3Ds2ZeYkIkHJ9MJA0Im1i04i0vdAPKH5Xibb2AC6I2EHO2dU/MWwqIeXoK5QDRh0r0Gs+BkHA/dg==}
+  '@github/copilot-linux-x64@1.0.16':
+    resolution: {integrity: sha512-zbZCkU3FqqQEPIF1Qf/Eq6DzTclyGhU09JM6UciOfPUA3yC2uFQHYkUyK0xYNSNzJaD2TdOGtmi1/O5sDyqQ9A==}
     cpu: [x64]
     os: [linux]
     hasBin: true
@@ -4994,8 +4997,8 @@ packages:
     os: [win32]
     hasBin: true
 
-  '@github/copilot-win32-arm64@1.0.5':
-    resolution: {integrity: sha512-pkhuKJZ1AcRAkVS2OO4BEBfMovGSuGWem4isBq+cgRDtuXRfRiZuc88Z9WcrtDCCwpdLx9rSYPVSWQG5fvupPQ==}
+  '@github/copilot-win32-arm64@1.0.16':
+    resolution: {integrity: sha512-QgSBkcNwi7r5SbPiq8/0RYyQqdN4qfspliiuzlwjL0Ib7iG0zSCWJyQ5IRoUNPYfDbkgnpNZDp91aONhrhX4LQ==}
     cpu: [arm64]
     os: [win32]
     hasBin: true
@@ -5006,8 +5009,8 @@ packages:
     os: [win32]
     hasBin: true
 
-  '@github/copilot-win32-x64@1.0.5':
-    resolution: {integrity: sha512-x6PWG80uCuCI+IgCLD1fnBJtfuf9nMBzJwOcMlFwjRtHduV/V9OOW3c89ooGwh/lRhCatAP5GxZGTyC7AJR3kQ==}
+  '@github/copilot-win32-x64@1.0.16':
+    resolution: {integrity: sha512-t+w/dENE8AR/Bm7vtHMzQBPFHZWN/2vsXXNJewYUNZGkV3mIthl+fUOiY9Ni7oVuEfDsnfrz2LFvJ2CGxs8lHA==}
     cpu: [x64]
     os: [win32]
     hasBin: true
@@ -5016,8 +5019,8 @@ packages:
     resolution: {integrity: sha512-VFyMwZKmeMiTFiP/6z+ZBnLVgRWl5cDAt9BWouMz7Zfh5RqQJg4ynD1vWJzKgo08u/oYf9UoF1xqFKnHmedA9A==}
     hasBin: true
 
-  '@github/copilot@1.0.5':
-    resolution: {integrity: sha512-lQGN1/qw7gJRT+lSW1U79Ltrf9rkF6UP8FcEb0hGEf9hq0K8/MaulzK+iDtH/gwXYweFXID29E3QlwSqbdsHqQ==}
+  '@github/copilot@1.0.16':
+    resolution: {integrity: sha512-ecLG87eEBVUfF49n1CDKddbm027Eg7noa7ccSHNtmgbteJ40k1sbMY3OJJ3JHhYgEqwt2OOJo7gEX17rp/8cVg==}
     hasBin: true
 
   '@google/genai@1.29.0':
@@ -23728,49 +23731,49 @@ snapshots:
   '@github/copilot-darwin-arm64@1.0.14':
     optional: true
 
-  '@github/copilot-darwin-arm64@1.0.5':
+  '@github/copilot-darwin-arm64@1.0.16':
     optional: true
 
   '@github/copilot-darwin-x64@1.0.14':
     optional: true
 
-  '@github/copilot-darwin-x64@1.0.5':
+  '@github/copilot-darwin-x64@1.0.16':
     optional: true
 
   '@github/copilot-linux-arm64@1.0.14':
     optional: true
 
-  '@github/copilot-linux-arm64@1.0.5':
+  '@github/copilot-linux-arm64@1.0.16':
     optional: true
 
   '@github/copilot-linux-x64@1.0.14':
     optional: true
 
-  '@github/copilot-linux-x64@1.0.5':
+  '@github/copilot-linux-x64@1.0.16':
     optional: true
 
   '@github/copilot-sdk@0.1.32':
     dependencies:
-      '@github/copilot': 1.0.5
+      '@github/copilot': 1.0.14
       vscode-jsonrpc: 8.2.1
       zod: 4.3.6
 
   '@github/copilot-sdk@0.2.0':
     dependencies:
-      '@github/copilot': 1.0.14
+      '@github/copilot': 1.0.16
       vscode-jsonrpc: 8.2.1
       zod: 4.3.6
 
   '@github/copilot-win32-arm64@1.0.14':
     optional: true
 
-  '@github/copilot-win32-arm64@1.0.5':
+  '@github/copilot-win32-arm64@1.0.16':
     optional: true
 
   '@github/copilot-win32-x64@1.0.14':
     optional: true
 
-  '@github/copilot-win32-x64@1.0.5':
+  '@github/copilot-win32-x64@1.0.16':
     optional: true
 
   '@github/copilot@1.0.14':
@@ -23782,14 +23785,14 @@ snapshots:
       '@github/copilot-win32-arm64': 1.0.14
       '@github/copilot-win32-x64': 1.0.14
 
-  '@github/copilot@1.0.5':
+  '@github/copilot@1.0.16':
     optionalDependencies:
-      '@github/copilot-darwin-arm64': 1.0.5
-      '@github/copilot-darwin-x64': 1.0.5
-      '@github/copilot-linux-arm64': 1.0.5
-      '@github/copilot-linux-x64': 1.0.5
-      '@github/copilot-win32-arm64': 1.0.5
-      '@github/copilot-win32-x64': 1.0.5
+      '@github/copilot-darwin-arm64': 1.0.16
+      '@github/copilot-darwin-x64': 1.0.16
+      '@github/copilot-linux-arm64': 1.0.16
+      '@github/copilot-linux-x64': 1.0.16
+      '@github/copilot-win32-arm64': 1.0.16
+      '@github/copilot-win32-x64': 1.0.16
 
   '@google/genai@1.29.0(@modelcontextprotocol/sdk@1.26.0(zod@3.25.76))(bufferutil@4.1.0)':
     dependencies:

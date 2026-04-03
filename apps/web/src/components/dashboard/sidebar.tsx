@@ -504,7 +504,8 @@ export function DashboardSidebar() {
   const workspacePlan = activeWorkspace?.plan ?? "free";
   const memberCount = (activeWorkspace as ApiWorkspace)?.memberCount ?? 1;
   const dailyCredits = (activeWorkspace as ApiWorkspace)?.credits?.dailyRemaining ?? 0;
-  const dailyTotal = workspacePlan === "free" ? 5 : workspacePlan === "pro" ? 50 : 200;
+  const planDefault = workspacePlan === "free" ? 5 : workspacePlan === "pro" ? 50 : 200;
+  const dailyTotal = Math.max(planDefault, dailyCredits);
   const creditsRemaining = Math.max(0, dailyCredits);
   const creditsPercent = dailyTotal > 0 ? (creditsRemaining / dailyTotal) * 100 : 0;
 

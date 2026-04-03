@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -23,6 +23,14 @@ import { Button } from "@/components/ui/button";
 export default function HomePage() {
   const [prompt, setPrompt] = useState("");
   const router = useRouter();
+
+  // Redirect to dashboard if already authenticated
+  useEffect(() => {
+    const token = localStorage.getItem("doable_access_token");
+    if (token) {
+      router.replace("/dashboard");
+    }
+  }, [router]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
