@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { Tool } from "./index.js";
 import { getProjectPath } from "../project-files.js";
+import { restartDevServer, isRunning } from "../../projects/dev-server.js";
 
 // Packages that should never be installed
 const BLOCKED_PACKAGES = new Set([
@@ -94,9 +95,20 @@ export const installPackageTool: Tool = {
       };
     }
 
+    // Restart the Vite dev server so it picks up newly installed packages
+    let restarted = false;
+    if (isRunning(ctx.projectId)) {
+      try {
+        await restartDevServer(ctx.projectId);
+        restarted = true;
+      } catch (err) {
+        console.error(`[install_package] Failed to restart dev server:`, err);
+      }
+    }
+
     return {
       success: true,
-      output: `Installed ${packages.join(", ")}${isDev ? " (dev)" : ""}\n${result.output}`,
+      output: `Installed ${packages.join(", ")}${isDev ? " (dev)" : ""}${restarted ? " (dev server restarted)" : ""}\n${result.output}`,
       metadata: { packages, dev: isDev, packageManager: pm },
     };
   },

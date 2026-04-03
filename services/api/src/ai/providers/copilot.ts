@@ -557,6 +557,7 @@ import {
   listFiles,
   getProjectPath,
 } from "../../projects/file-manager.js";
+import { restartDevServer, isRunning } from "../../projects/dev-server.js";
 
 /**
  * Create Doable-specific tools for the Copilot agent.
@@ -753,15 +754,29 @@ export function createDoableTools(projectId: string): Tool[] {
             output += d.toString();
           });
 
-          child.on("close", (code) => {
+          child.on("close", async (code) => {
             emitToolEvent(projectId, "install_package", "end", { packages });
+
+            // After successful install, restart the Vite dev server so it
+            // picks up newly installed packages (clears .vite dep cache).
+            let restarted = false;
+            if (code === 0 && isRunning(projectId)) {
+              try {
+                await restartDevServer(projectId);
+                restarted = true;
+                console.log(`[install_package] Restarted Vite dev server for ${projectId}`);
+              } catch (err) {
+                console.error(`[install_package] Failed to restart dev server:`, err);
+              }
+            }
+
             resolve({
               success: code === 0,
               packages: pkgList,
               dev: dev ?? false,
               message:
                 code === 0
-                  ? `Installed ${pkgList.join(", ")}`
+                  ? `Installed ${pkgList.join(", ")}${restarted ? " (dev server restarted)" : ""}`
                   : `Install failed with code ${code}`,
               output: output.slice(-500),
             });

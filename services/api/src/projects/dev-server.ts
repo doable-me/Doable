@@ -467,6 +467,32 @@ export function getRunningServers(): Array<{
 }
 
 /**
+ * Restart the dev server for a project.
+ * Stops the existing server (if running), clears Vite's dependency
+ * pre-bundle cache, and starts a fresh server. This is needed after
+ * installing new npm packages so Vite re-discovers them.
+ */
+export async function restartDevServer(
+  projectId: string,
+): Promise<{ url: string; port: number }> {
+  console.log(`[DevServer] Restarting server for project ${projectId}`);
+  await stopDevServer(projectId);
+
+  // Clear Vite's dependency pre-bundle cache so newly installed
+  // packages are picked up on the next start.
+  const { rm } = await import("node:fs/promises");
+  const viteCacheDir = path.join(getProjectPath(projectId), "node_modules", ".vite");
+  try {
+    await rm(viteCacheDir, { recursive: true, force: true });
+    console.log(`[DevServer] Cleared Vite cache at ${viteCacheDir}`);
+  } catch {
+    // Cache dir may not exist yet — that's fine
+  }
+
+  return startDevServer(projectId);
+}
+
+/**
  * Stop all running dev servers. Call on process exit.
  */
 export async function stopAllDevServers(): Promise<void> {

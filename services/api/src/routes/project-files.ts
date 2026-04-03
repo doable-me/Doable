@@ -27,6 +27,7 @@ import {
   startDevServer,
   stopDevServer,
   getDevServerUrl,
+  getDevServerInternalUrl,
   isRunning,
 } from "../projects/dev-server.js";
 import { sql } from "../db/index.js";
@@ -141,6 +142,29 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
     const userId = c.get("userId");
     await ensureProjectDbRecord(projectId, userId);
 
+    // Auto-capture thumbnail for template-based projects (they have real content from the start)
+    if (templateFiles && devServer) {
+      const internalUrl = getDevServerInternalUrl(projectId);
+      if (internalUrl) {
+        const previewForCapture = `${internalUrl}/preview/${projectId}/`;
+        // Delay longer (8s) for template projects to let Vite fully build
+        setTimeout(() => {
+          import("../thumbnails/capture.js")
+            .then(({ captureProjectThumbnail }) =>
+              captureProjectThumbnail(projectId, previewForCapture, { retries: 2, retryDelayMs: 5000, triggeredBy: "auto" })
+            )
+            .then(async (filePath) => {
+              if (filePath) {
+                const thumbnailUrl = `/thumbnails/${projectId}.png`;
+                await sql`UPDATE projects SET thumbnail_url = ${thumbnailUrl}, updated_at = NOW() WHERE id = ${projectId}`;
+                console.log(`[Thumbnail] Auto-captured for template project ${projectId}`);
+              }
+            })
+            .catch((err) => console.warn(`[Thumbnail] Template capture failed for ${projectId}:`, err));
+        }, 8000);
+      }
+    }
+
     return c.json(
       {
         data: {
@@ -168,6 +192,37 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
 
       // Also ensure DB record exists for previously-scaffolded projects
       await ensureProjectDbRecord(projectId, c.get("userId"));
+
+      // Catch-up thumbnail: if project has no thumbnail but dev server is running, try to capture one
+      if (devServer) {
+        try {
+          const [proj] = await sql<{ thumbnail_url: string | null }[]>`
+            SELECT thumbnail_url FROM projects WHERE id = ${projectId}
+          `;
+          if (!proj?.thumbnail_url) {
+            const internalUrl = getDevServerInternalUrl(projectId);
+            if (internalUrl) {
+              const previewForCapture = `${internalUrl}/preview/${projectId}/`;
+              setTimeout(() => {
+                import("../thumbnails/capture.js")
+                  .then(({ captureProjectThumbnail }) =>
+                    captureProjectThumbnail(projectId, previewForCapture, { retries: 1, retryDelayMs: 5000, triggeredBy: "auto" })
+                  )
+                  .then(async (filePath) => {
+                    if (filePath) {
+                      const thumbnailUrl = `/thumbnails/${projectId}.png`;
+                      await sql`UPDATE projects SET thumbnail_url = ${thumbnailUrl}, updated_at = NOW() WHERE id = ${projectId}`;
+                      console.log(`[Thumbnail] Catch-up capture for ${projectId}`);
+                    }
+                  })
+                  .catch((err) => console.warn(`[Thumbnail] Catch-up failed for ${projectId}:`, err));
+              }, 5000);
+            }
+          }
+        } catch {
+          // Non-critical — don't block scaffold response
+        }
+      }
 
       return c.json({
         data: {
