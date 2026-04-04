@@ -2438,13 +2438,15 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     case "assistant.turn_end":
     case "permission.requested":
     case "permission.completed":
+    case "model_call":
+    case "model_call.start":
+    case "model_call.end":
       return null;
 
     default:
-      // Pass through other events
-      if (data) {
-        return { type, data };
-      }
+      // Log unknown events for debugging but don't forward to client
+      // to prevent internal SDK data from leaking into the UI
+      console.debug(`[mapEventToSSE] unhandled event type: ${type}`);
       return null;
   }
 }

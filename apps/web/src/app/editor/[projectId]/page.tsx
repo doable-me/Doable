@@ -646,8 +646,10 @@ async function streamChat(
             onChunk(text);
           }
         } catch {
-          // If the payload isn't JSON, treat it as raw text
-          if (payload) {
+          // Non-JSON payloads are likely raw text from legacy providers.
+          // Skip payloads that look like internal SDK event names to
+          // prevent leaked metadata from appearing as chat text.
+          if (payload && !payload.startsWith("{") && !payload.includes("model_call")) {
             onChunk(payload);
           }
         }
@@ -1081,6 +1083,8 @@ export default function EditorPage() {
   const [liveStatus, setLiveStatus] = useState<string>("");
   // Track first generation to show loading overlay instead of default template
   const [isFirstGeneration, setIsFirstGeneration] = useState(false);
+  // Track whether tool calls are active (for building overlay on follow-up builds)
+  const [hasActiveToolCalls, setHasActiveToolCalls] = useState(false);
   const previewRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1720,9 +1724,9 @@ export default function EditorPage() {
                   }, 2000);
                 }
               }
-            } catch { clearInterval(poll); setIsStreaming(false); }
+            } catch { clearInterval(poll); setIsStreaming(false); setHasActiveToolCalls(false); }
           }, 3000);
-          setTimeout(() => { clearInterval(poll); setIsStreaming(false); setLiveStatus(""); }, 5 * 60 * 1000);
+          setTimeout(() => { clearInterval(poll); setIsStreaming(false); setLiveStatus(""); setHasActiveToolCalls(false); }, 5 * 60 * 1000);
         }
       } catch { /* ignore */ }
     })();
@@ -1837,6 +1841,7 @@ export default function EditorPage() {
       // Update live status with human-friendly description
       const description = describeToolAction(toolName, _args);
       setLiveStatus(description);
+      setHasActiveToolCalls(true);
 
       setMessages((prev) => {
         const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
@@ -2071,7 +2076,7 @@ export default function EditorPage() {
           setIsStreaming(false);
           setLiveStatus("");
           setIsFirstGeneration(false);
-          // Refresh file tree after AI response completes (may have created files)
+          setHasActiveToolCalls(false);
           loadFileTree();
           if (selectedFile) {
             delete fileContentsCache.current[selectedFile];
@@ -2137,6 +2142,7 @@ export default function EditorPage() {
           setIsStreaming(false);
           setLiveStatus("");
           setIsFirstGeneration(false);
+          setHasActiveToolCalls(false);
         },
         // onToolCompleted
         handleToolCompleted,
@@ -2257,6 +2263,7 @@ export default function EditorPage() {
     );
     setIsStreaming(false);
     setLiveStatus("");
+    setHasActiveToolCalls(false);
   }, []);
 
   // Toggle feedback on a message
@@ -2806,6 +2813,7 @@ export default function EditorPage() {
     );
     setIsStreaming(false);
     setLiveStatus("");
+    setHasActiveToolCalls(false);
     delete remoteStreamIdsRef.current[data.messageId];
 
     // Refresh file tree + preview when stream ends (files were written)
@@ -4453,16 +4461,25 @@ export default function EditorPage() {
                     title="App Preview"
                     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
                   />
-                  {/* Building overlay — covers blank template during first generation,
-                      shows live status as the AI works. Disappears when generation ends. */}
-                  {(isFirstGeneration || scaffoldStatus !== "ready") && (
-                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#141412]/90 backdrop-blur-sm transition-opacity duration-500">
+                  {/* Building overlay — covers preview during scaffold setup,
+                      first generation, or any active AI building with tool calls.
+                      Shows live status as the AI works. Disappears when generation ends. */}
+                  {(isFirstGeneration || scaffoldStatus !== "ready" || hasActiveToolCalls) && (
+                    <div className={`absolute inset-0 z-10 flex flex-col items-center justify-center transition-opacity duration-500 ${
+                      scaffoldStatus !== "ready" || isFirstGeneration
+                        ? "bg-[#141412]/90 backdrop-blur-sm"
+                        : "bg-[#141412]/75 backdrop-blur-[2px]"
+                    }`}>
                       <div className="relative mb-5">
                         <div className="h-10 w-10 rounded-full border-2 border-zinc-700 border-t-brand-400 animate-spin" />
                         <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-brand-400" />
                       </div>
                       <h3 className="text-sm font-medium text-zinc-300 mb-1">
-                        {scaffoldStatus !== "ready" ? "Setting up workspace..." : "Building your app..."}
+                        {scaffoldStatus !== "ready"
+                          ? "Setting up workspace..."
+                          : planPhase === "building"
+                            ? "Building from plan..."
+                            : "Building your app..."}
                       </h3>
                       <p className="text-xs text-zinc-500 max-w-[260px] text-center">
                         {liveStatus || (scaffoldStatus !== "ready" ? "Installing dependencies" : "AI is writing code")}
