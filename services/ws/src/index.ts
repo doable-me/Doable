@@ -223,7 +223,7 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
     if (state.projectId) {
       const room = rooms.get(state.projectId);
       if (room) {
-        room.leave(state.userId);
+        room.leave(state.userId, ws);
         if (room.isEmpty) {
           // Start GC grace period instead of immediate removal
           room.onEmpty(() => rooms.remove(state.projectId!));
@@ -247,7 +247,7 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       if (state.projectId) {
         const oldRoom = rooms.get(state.projectId);
         if (oldRoom) {
-          oldRoom.leave(state.userId);
+          oldRoom.leave(state.userId, ws);
           if (oldRoom.isEmpty) {
             oldRoom.onEmpty(() => rooms.remove(state.projectId!));
           }
@@ -276,7 +276,7 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          room.leave(state.userId);
+          room.leave(state.userId, ws);
           if (room.isEmpty) {
             room.onEmpty(() => rooms.remove(state.projectId!));
           }
@@ -440,7 +440,16 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          room.updateVisualEditSelection(state.userId, msg.selector, msg.boundingRect);
+          // Check if another user is already editing this element
+          const conflict = room.getVisualEditConflict(state.userId, msg.selector);
+          if (conflict) {
+            send(ws, {
+              type: "error",
+              code: "VISUAL_EDIT_CONFLICT",
+              message: `${conflict.displayName} is already editing this element`,
+            });
+          }
+          room.updateVisualEditSelection(state.userId, msg.selector, msg.boundingRect, ws);
         }
       }
       break;
@@ -450,7 +459,7 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          room.clearVisualEditSelection(state.userId);
+          room.clearVisualEditSelection(state.userId, ws);
         }
       }
       break;
@@ -460,13 +469,13 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          room.broadcast({
+          room.broadcastExceptWs({
             type: "visual-edit:style-change",
             userId: state.userId,
             selector: msg.selector,
             property: msg.property,
             value: msg.value,
-          }, state.userId);
+          }, ws);
         }
       }
       break;
@@ -476,12 +485,12 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          room.broadcast({
+          room.broadcastExceptWs({
             type: "visual-edit:text-change",
             userId: state.userId,
             selector: msg.selector,
             newText: msg.newText,
-          }, state.userId);
+          }, ws);
         }
       }
       break;
@@ -491,14 +500,14 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          room.broadcast({
+          room.broadcastExceptWs({
             type: "visual-edit:cursor-move",
             userId: state.userId,
             displayName: state.displayName ?? "User",
             color: userColor(state.userId),
             x: msg.x,
             y: msg.y,
-          }, state.userId);
+          }, ws);
         }
       }
       break;
@@ -509,7 +518,7 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          room.broadcast({ type: "visual-edit:preview-refresh" } as any, state.userId);
+          room.broadcastExceptWs({ type: "visual-edit:preview-refresh" } as any, ws);
           console.log("[ws] broadcast preview-refresh to room");
         }
       }

@@ -43,12 +43,16 @@ export function CollaborationProvider({ projectId, userId, displayName, children
       yjsProviderRef.current = null;
       setYjsProvider(null);
     }
+  }, [joined, send, subscribe]);
 
+  // Separate unmount-only cleanup to avoid React Strict Mode double-mount
+  // destroying the provider between mount cycles
+  useEffect(() => {
     return () => {
       yjsProviderRef.current?.destroy();
       yjsProviderRef.current = null;
     };
-  }, [joined, send, subscribe]);
+  }, []);
 
   // File awareness state
   const [filesOpen, setFilesOpen] = useState<Record<string, string[]>>({});

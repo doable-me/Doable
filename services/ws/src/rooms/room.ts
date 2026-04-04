@@ -135,7 +135,8 @@ interface RoomMember {
 
 export class Room {
   readonly projectId: string;
-  private members = new Map<string, RoomMember>();
+  /** userId → list of connections (supports same user in multiple tabs) */
+  private members = new Map<string, RoomMember[]>();
   private yjsManager: YjsDocumentManager;
 
   constructor(projectId: string) {
@@ -175,28 +176,47 @@ export class Room {
       openFiles: new Set(), typingInChat: false, visualSelection: null,
       visualEditSelector: null,
     };
-    this.members.set(userId, member);
+    const existing = this.members.get(userId) ?? [];
+    existing.push(member);
+    this.members.set(userId, existing);
 
     // Cancel GC if a user reconnects
     this.yjsManager.cancelGracePeriod();
 
-    // Broadcast to others that this user joined
-    const presenceUser = this.toPresenceUser(member);
-    this.broadcast({ type: "presence:user_joined", user: presenceUser }, userId);
+    // Broadcast to others that this user joined (only if first connection for this user)
+    if (existing.length === 1) {
+      const presenceUser = this.toPresenceUser(member);
+      this.broadcast({ type: "presence:user_joined", user: presenceUser }, userId);
+    }
 
     // Return current members list for the joining user
     return this.getPresenceUsers();
   }
 
-  leave(userId: string): void {
+  leave(userId: string, ws?: WebSocket): void {
+    const connections = this.members.get(userId);
+    if (!connections) return;
+
+    if (ws) {
+      // Remove only the specific connection
+      const filtered = connections.filter(m => m.ws !== ws);
+      if (filtered.length > 0) {
+        this.members.set(userId, filtered);
+        return; // User still has other connections, don't broadcast leave
+      }
+    }
+
+    // User has no more connections — fully leave
     this.members.delete(userId);
     this.broadcast({ type: "presence:user_left", userId });
     this.broadcast({ type: "visual-edit:deselect", userId });
   }
 
   updatePresence(userId: string, data: { currentFile?: string | null; currentView?: string; status?: string }): void {
-    const member = this.members.get(userId);
-    if (!member) return;
+    const connections = this.members.get(userId);
+    if (!connections?.length) return;
+    // Update the most-recently-active connection's metadata
+    const member = connections[connections.length - 1]!;
     if (data.currentFile !== undefined) member.currentFile = data.currentFile;
     if (data.currentView) member.currentView = data.currentView as RoomMember["currentView"];
     if (data.status) member.status = data.status as RoomMember["status"];
@@ -205,8 +225,9 @@ export class Room {
   }
 
   updateFileOpen(userId: string, filePath: string): void {
-    const member = this.members.get(userId);
-    if (!member) return;
+    const connections = this.members.get(userId);
+    if (!connections?.length) return;
+    const member = connections[connections.length - 1]!;
     member.openFiles.add(filePath);
     member.currentFile = filePath;
     member.lastActiveAt = new Date().toISOString();
@@ -214,67 +235,85 @@ export class Room {
   }
 
   updateFileClose(userId: string, filePath: string): void {
-    const member = this.members.get(userId);
-    if (!member) return;
+    const connections = this.members.get(userId);
+    if (!connections?.length) return;
+    const member = connections[connections.length - 1]!;
     member.openFiles.delete(filePath);
     if (member.currentFile === filePath) member.currentFile = null;
     this.broadcastFilesOpen();
   }
 
   setTyping(userId: string, typing: boolean): void {
-    const member = this.members.get(userId);
-    if (!member) return;
-    member.typingInChat = typing;
+    const connections = this.members.get(userId);
+    if (!connections?.length) return;
+    for (const m of connections) m.typingInChat = typing;
     this.broadcast({ type: "chat:user_typing", userId, typing }, userId);
   }
 
   updateSelection(userId: string, data: SelectionData): void {
-    const member = this.members.get(userId);
-    if (!member) return;
-    member.visualSelection = data;
+    const connections = this.members.get(userId);
+    if (!connections?.length) return;
+    for (const m of connections) m.visualSelection = data;
     this.broadcast({ type: "awareness:user_selection", userId, data }, userId);
   }
 
   // Phase C: Visual edit selection
-  updateVisualEditSelection(userId: string, selector: string, boundingRect: { x: number; y: number; width: number; height: number }): void {
-    const member = this.members.get(userId);
-    if (!member) return;
-    member.visualEditSelector = selector;
-    this.broadcast({
+  updateVisualEditSelection(userId: string, selector: string, boundingRect: { x: number; y: number; width: number; height: number }, excludeWs?: WebSocket): void {
+    const connections = this.members.get(userId);
+    if (!connections?.length) return;
+    for (const m of connections) m.visualEditSelector = selector;
+    const member = connections[0]!;
+    const message: WsServerMessage = {
       type: "visual-edit:select",
       userId,
       displayName: member.displayName ?? "User",
       color: userColor(userId),
       selector,
       boundingRect,
-    }, userId);
+    };
+    if (excludeWs) {
+      this.broadcastExceptWs(message, excludeWs);
+    } else {
+      this.broadcast(message, userId);
+    }
   }
 
-  clearVisualEditSelection(userId: string): void {
-    const member = this.members.get(userId);
-    if (member) member.visualEditSelector = null;
-    this.broadcast({ type: "visual-edit:deselect", userId }, userId);
+  clearVisualEditSelection(userId: string, excludeWs?: WebSocket): void {
+    const connections = this.members.get(userId);
+    if (connections) {
+      for (const m of connections) m.visualEditSelector = null;
+    }
+    const message: WsServerMessage = { type: "visual-edit:deselect", userId };
+    if (excludeWs) {
+      this.broadcastExceptWs(message, excludeWs);
+    } else {
+      this.broadcast(message, userId);
+    }
   }
 
   // Check if another user is editing the same element
   getVisualEditConflict(userId: string, selector: string): { userId: string; displayName: string } | null {
-    for (const [memberId, member] of this.members) {
+    for (const [memberId, connections] of this.members) {
       if (memberId === userId) continue;
-      if (member.visualEditSelector === selector) {
-        return { userId: memberId, displayName: member.displayName ?? "User" };
+      for (const member of connections) {
+        if (member.visualEditSelector === selector) {
+          return { userId: memberId, displayName: member.displayName ?? "User" };
+        }
       }
     }
     return null;
   }
 
   heartbeat(userId: string): void {
-    const member = this.members.get(userId);
-    if (member) {
-      member.lastActiveAt = new Date().toISOString();
-      if (member.status === "idle") {
-        member.status = "active";
-        this.broadcast({ type: "presence:user_updated", user: this.toPresenceUser(member) });
+    const connections = this.members.get(userId);
+    if (connections) {
+      for (const member of connections) {
+        member.lastActiveAt = new Date().toISOString();
+        if (member.status === "idle") {
+          member.status = "active";
+        }
       }
+      this.broadcast({ type: "presence:user_updated", user: this.toPresenceUser(connections[0]!) });
     }
   }
 
@@ -282,12 +321,16 @@ export class Room {
   checkIdle(): string[] {
     const now = Date.now();
     const disconnected: string[] = [];
-    for (const [userId, member] of this.members) {
+    for (const [userId, connections] of this.members) {
+      // Use the most recently active connection
+      const member = connections.reduce((a, b) =>
+        new Date(a.lastActiveAt).getTime() > new Date(b.lastActiveAt).getTime() ? a : b
+      );
       const elapsed = now - new Date(member.lastActiveAt).getTime();
       if (elapsed > 5 * 60_000) {
         disconnected.push(userId);
       } else if (elapsed > 60_000 && member.status === "active") {
-        member.status = "idle";
+        for (const m of connections) m.status = "idle";
         this.broadcast({ type: "presence:user_updated", user: this.toPresenceUser(member) });
       }
     }
@@ -296,24 +339,54 @@ export class Room {
 
   broadcast(message: WsServerMessage, excludeUserId?: string): void {
     const data = JSON.stringify(message);
-    for (const [userId, member] of this.members) {
+    for (const [userId, connections] of this.members) {
       if (userId === excludeUserId) continue;
+      for (const member of connections) {
+        if (member.ws.readyState === member.ws.OPEN) {
+          member.ws.send(data);
+        }
+      }
+    }
+  }
+
+  /** Broadcast to everyone except a specific WebSocket connection.
+   *  Unlike broadcast(), this allows the same user's OTHER tabs to receive the message. */
+  broadcastExceptWs(message: WsServerMessage, excludeWs: WebSocket): void {
+    const data = JSON.stringify(message);
+    for (const [, connections] of this.members) {
+      for (const member of connections) {
+        if (member.ws === excludeWs) continue;
+        if (member.ws.readyState === member.ws.OPEN) {
+          member.ws.send(data);
+        }
+      }
+    }
+  }
+
+  /** Send to a specific user (all connections) */
+  sendTo(userId: string, message: WsServerMessage): void {
+    const connections = this.members.get(userId);
+    if (!connections) return;
+    const data = JSON.stringify(message);
+    for (const member of connections) {
       if (member.ws.readyState === member.ws.OPEN) {
         member.ws.send(data);
       }
     }
   }
 
-  /** Send to a specific user */
-  sendTo(userId: string, message: WsServerMessage): void {
-    const member = this.members.get(userId);
-    if (member && member.ws.readyState === member.ws.OPEN) {
-      member.ws.send(JSON.stringify(message));
-    }
-  }
-
   getPresenceUsers(): PresenceUser[] {
-    return Array.from(this.members.values()).map((m) => this.toPresenceUser(m));
+    const users: PresenceUser[] = [];
+    for (const connections of this.members.values()) {
+      if (connections.length > 0) {
+        // Use the most recently active connection for presence
+        const member = connections.reduce((a, b) =>
+          new Date(a.lastActiveAt).getTime() > new Date(b.lastActiveAt).getTime() ? a : b
+        );
+        users.push(this.toPresenceUser(member));
+      }
+    }
+    return users;
   }
 
   get size(): number {
@@ -329,13 +402,14 @@ export class Room {
   }
 
   getWs(userId: string): WebSocket | undefined {
-    return this.members.get(userId)?.ws;
+    const connections = this.members.get(userId);
+    return connections?.[0]?.ws;
   }
 
   getMember(userId: string): { displayName: string | null; color: string } | undefined {
-    const member = this.members.get(userId);
-    if (!member) return undefined;
-    return { displayName: member.displayName, color: userColor(userId) };
+    const connections = this.members.get(userId);
+    if (!connections?.length) return undefined;
+    return { displayName: connections[0]!.displayName, color: userColor(userId) };
   }
 
   /**
@@ -369,9 +443,13 @@ export class Room {
 
   private broadcastFilesOpen(): void {
     const data: Record<string, string[]> = {};
-    for (const [userId, member] of this.members) {
-      if (member.openFiles.size > 0) {
-        data[userId] = Array.from(member.openFiles);
+    for (const [userId, connections] of this.members) {
+      const allFiles = new Set<string>();
+      for (const member of connections) {
+        for (const f of member.openFiles) allFiles.add(f);
+      }
+      if (allFiles.size > 0) {
+        data[userId] = Array.from(allFiles);
       }
     }
     this.broadcast({ type: "awareness:files_open", data });

@@ -317,6 +317,12 @@ export function DashboardSidebar() {
   const [allProjectsDragOver, setAllProjectsDragOver] = useState(false);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
 
+  // Workspace creation
+  const [createWsOpen, setCreateWsOpen] = useState(false);
+  const [newWsName, setNewWsName] = useState("");
+  const [wsSubmitting, setWsSubmitting] = useState(false);
+  const [wsError, setWsError] = useState<string | null>(null);
+
   // Folder management
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -491,6 +497,29 @@ export function DashboardSidebar() {
     localStorage.setItem("doable_active_workspace_id", id);
   };
 
+  const handleCreateWorkspace = async () => {
+    if (!newWsName.trim() || wsSubmitting) return;
+    setWsSubmitting(true);
+    setWsError(null);
+    try {
+      const slug = newWsName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48);
+      const res = await apiFetch<{ data: ApiWorkspace }>("/workspaces", {
+        method: "POST",
+        body: JSON.stringify({ name: newWsName.trim(), slug }),
+      });
+      const ws = res.data;
+      setWorkspaces((prev) => [...prev, ws]);
+      setActiveWorkspaceId(ws.id);
+      localStorage.setItem("doable_active_workspace_id", ws.id);
+      setNewWsName("");
+      setCreateWsOpen(false);
+    } catch (err) {
+      setWsError(err instanceof Error ? err.message : "Failed to create workspace");
+    } finally {
+      setWsSubmitting(false);
+    }
+  };
+
   const displayName = user?.displayName ?? "User";
   const initials = displayName
     .split(" ")
@@ -555,6 +584,21 @@ export function DashboardSidebar() {
                   )}
                 </DropdownMenuItem>
               ))}
+              <DropdownMenuSeparator className="bg-zinc-800" />
+              <DropdownMenuItem
+                className="text-zinc-300 focus:bg-white/5 focus:text-white"
+                onClick={() => setCreateWsOpen(true)}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Create workspace
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-zinc-300 focus:bg-white/5 focus:text-white"
+                onClick={() => router.push("/workspace-settings")}
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Workspace settings
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <div className="space-y-1">
@@ -875,6 +919,46 @@ export function DashboardSidebar() {
           </DropdownMenu>
         </div>
       </aside>
+
+      {/* Create Workspace Dialog */}
+      <Dialog open={createWsOpen} onOpenChange={(open) => { setCreateWsOpen(open); if (!open) { setNewWsName(""); setWsError(null); } }}>
+        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800">
+          <DialogHeader>
+            <DialogTitle className="text-zinc-200">Create workspace</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-300">Name</label>
+              <Input
+                placeholder="My Team"
+                value={newWsName}
+                onChange={(e) => setNewWsName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreateWorkspace()}
+                autoFocus
+                className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+              />
+            </div>
+            {wsError && <p className="text-xs text-red-400">{wsError}</p>}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreateWsOpen(false)}
+              className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateWorkspace}
+              disabled={wsSubmitting || !newWsName.trim()}
+              className="bg-brand-600 text-white hover:bg-brand-500"
+            >
+              {wsSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Folder Dialog */}
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>

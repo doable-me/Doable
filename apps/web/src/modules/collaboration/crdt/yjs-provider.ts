@@ -24,9 +24,14 @@ export class YjsWsProvider {
     // Listen for incoming Yjs messages
     this.unsubscribe = subscribe((msg: any) => {
       if (msg.type === "yjs:sync-response") {
-        const update = Uint8Array.from(atob(msg.data), c => c.charCodeAt(0));
-        Y.applyUpdate(this.doc, update, "remote");
-        this.synced = true;
+        try {
+          const update = Uint8Array.from(atob(msg.data), c => c.charCodeAt(0));
+          Y.applyUpdate(this.doc, update, "remote");
+          this.synced = true;
+        } catch (err) {
+          console.error("[YjsWsProvider] Failed to decode sync-response:", err);
+          return;
+        }
 
         // If this was a per-file sync response, mark that file as synced
         if (msg.filePath) {
@@ -40,8 +45,12 @@ export class YjsWsProvider {
         }
       }
       if (msg.type === "yjs:update") {
-        const update = Uint8Array.from(atob(msg.data), c => c.charCodeAt(0));
-        Y.applyUpdate(this.doc, update, "remote");
+        try {
+          const update = Uint8Array.from(atob(msg.data), c => c.charCodeAt(0));
+          Y.applyUpdate(this.doc, update, "remote");
+        } catch (err) {
+          console.error("[YjsWsProvider] Failed to decode yjs:update:", err);
+        }
       }
     });
 
@@ -59,13 +68,30 @@ export class YjsWsProvider {
 
   /**
    * Request sync for a specific file. Returns when the file is synced.
+   * Times out after 15 seconds to prevent infinite hanging.
    */
   async syncFile(filePath: string): Promise<void> {
     if (this.syncedFiles.has(filePath)) return;
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        // Clean up the callback to prevent memory leak
+        const callbacks = this.pendingFileCallbacks.get(filePath);
+        if (callbacks) {
+          const idx = callbacks.indexOf(wrappedResolve);
+          if (idx >= 0) callbacks.splice(idx, 1);
+          if (callbacks.length === 0) this.pendingFileCallbacks.delete(filePath);
+        }
+        reject(new Error(`[YjsWsProvider] syncFile timeout for ${filePath}`));
+      }, 15_000);
+
+      const wrappedResolve = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+
       const callbacks = this.pendingFileCallbacks.get(filePath) ?? [];
-      callbacks.push(resolve);
+      callbacks.push(wrappedResolve);
       this.pendingFileCallbacks.set(filePath, callbacks);
       this.send({ type: "yjs:sync-request", filePath });
     });

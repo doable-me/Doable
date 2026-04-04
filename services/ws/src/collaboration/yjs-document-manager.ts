@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, normalize } from "node:path";
 import { existsSync } from "node:fs";
 
 const PROJECTS_ROOT = process.env.DOABLE_PROJECTS_DIR ?? join(process.cwd(), "projects");
@@ -23,6 +23,7 @@ export class YjsDocumentManager {
   private doc: Y.Doc;
   private files: Y.Map<Y.Text>;
   private managedFiles = new Map<string, ManagedDoc>();
+  private pendingLoads = new Map<string, Promise<Y.Text>>();
   private gcTimer: ReturnType<typeof setTimeout> | null = null;
   private projectId: string;
   private onUpdate: ((filePath: string, update: Uint8Array) => void) | null = null;
@@ -38,6 +39,12 @@ export class YjsDocumentManager {
         // Find which file was updated by checking dirty flags
         for (const [filePath, managed] of this.managedFiles) {
           this.schedulePersist(filePath, managed);
+        }
+        // Broadcast update to connected clients
+        if (this.onUpdate) {
+          for (const [filePath] of this.managedFiles) {
+            this.onUpdate(filePath, update);
+          }
         }
       }
     });
@@ -94,6 +101,7 @@ export class YjsDocumentManager {
 
   /**
    * Get or load a file's Y.Text. Loads content from filesystem on first access.
+   * Uses a pending-load map to prevent duplicate concurrent loads.
    */
   async getFileText(filePath: string): Promise<Y.Text> {
     const existing = this.managedFiles.get(filePath);
@@ -102,6 +110,20 @@ export class YjsDocumentManager {
       return existing.yText;
     }
 
+    // If another call is already loading this file, wait for it
+    const pending = this.pendingLoads.get(filePath);
+    if (pending) return pending;
+
+    const loadPromise = this.loadFileText(filePath);
+    this.pendingLoads.set(filePath, loadPromise);
+    try {
+      return await loadPromise;
+    } finally {
+      this.pendingLoads.delete(filePath);
+    }
+  }
+
+  private async loadFileText(filePath: string): Promise<Y.Text> {
     // Create Y.Text for this file
     let yText = this.files.get(filePath);
     if (!yText) {
@@ -308,8 +330,18 @@ export class YjsDocumentManager {
     managed.dirty = false;
   }
 
+  private resolveProjectPath(filePath: string): string {
+    const projectRoot = normalize(join(PROJECTS_ROOT, this.projectId));
+    const fullPath = normalize(join(projectRoot, filePath));
+    // Prevent path traversal (e.g. ../../etc/passwd)
+    if (!fullPath.startsWith(projectRoot)) {
+      throw new Error(`[yjs] Path traversal blocked: ${filePath}`);
+    }
+    return fullPath;
+  }
+
   private async readFileFromDisk(filePath: string): Promise<string | null> {
-    const fullPath = join(PROJECTS_ROOT, this.projectId, filePath);
+    const fullPath = this.resolveProjectPath(filePath);
     try {
       return await readFile(fullPath, "utf-8");
     } catch {
@@ -318,7 +350,7 @@ export class YjsDocumentManager {
   }
 
   private async writeFileToDisk(filePath: string, content: string): Promise<void> {
-    const fullPath = join(PROJECTS_ROOT, this.projectId, filePath);
+    const fullPath = this.resolveProjectPath(filePath);
     const dir = dirname(fullPath);
     if (!existsSync(dir)) {
       await mkdir(dir, { recursive: true });

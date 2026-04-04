@@ -37,6 +37,7 @@ import {
   AlertCircle,
   ShieldCheck,
   Plus,
+  Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -52,6 +53,8 @@ import {
   type ApiCustomDomain,
 } from "@/lib/api";
 import { IntegrationsPanel } from "@/modules/integrations/integrations-panel";
+import { SkillsRulesPanel } from "@/modules/settings/components/skills-rules-panel";
+import { McpPanel } from "@/modules/settings/components/mcp-panel";
 import { GitHubSettings } from "@/modules/settings/components/github-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { getGitHubConnectUrl, getStoredTokens } from "@/lib/api";
@@ -65,6 +68,8 @@ interface ProjectSettingsProps {
 type Tab =
   | "general"
   | "integrations"
+  | "mcp"
+  | "skills"
   | "context"
   | "domain"
   | "environments"
@@ -94,7 +99,9 @@ interface Toast {
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "general", label: "General", icon: Settings },
   { id: "integrations", label: "Integrations", icon: Plug },
-  { id: "context", label: "Context Files", icon: FileText },
+  { id: "mcp", label: "MCP Servers", icon: Terminal },
+  { id: "skills", label: "Skills & Rules", icon: Brain },
+  { id: "context", label: "Knowledge", icon: Brain },
   { id: "domain", label: "Custom Domain", icon: Globe },
   { id: "environments", label: "Environments", icon: Server },
   { id: "danger", label: "Danger Zone", icon: AlertTriangle },
@@ -194,7 +201,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
     if (typeof window === "undefined") return "general";
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab");
-    const validTabs: Tab[] = ["general", "integrations", "context", "domain", "environments", "danger"];
+    const validTabs: Tab[] = ["general", "integrations", "mcp", "skills", "context", "domain", "environments", "danger"];
     return validTabs.includes(tab as Tab) ? (tab as Tab) : "general";
   });
   const [project, setProject] = useState<ApiProject | null>(null);
@@ -279,6 +286,16 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
       {activeTab === "integrations" && (
         <IntegrationsPanelWrapper projectId={projectId} />
       )}
+      {activeTab === "mcp" && project.workspace_id && (
+        <McpPanel
+          workspaceId={project.workspace_id}
+        />
+      )}
+      {activeTab === "skills" && project.workspace_id && (
+        <SectionCard title="Skills & Rules" description="Manage reusable skills and rules that shape how the AI works across your workspace.">
+          <SkillsRulesPanel workspaceId={project.workspace_id} />
+        </SectionCard>
+      )}
       {activeTab === "context" && (
         <ContextFilesTab projectId={projectId} addToast={addToast} />
       )}
@@ -301,7 +318,7 @@ function SettingsLoadingSkeleton() {
   return (
     <div className="space-y-6">
       <div className="flex gap-1 rounded-lg border bg-muted/50 p-1">
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: 7 }).map((_, i) => (
           <div key={i} className="h-9 w-28 animate-pulse rounded-md bg-muted" />
         ))}
       </div>
@@ -660,7 +677,7 @@ function ContextFilesTab({
 
   if (loading) {
     return (
-      <SectionCard title="Context Files (.doable/)">
+      <SectionCard title="Knowledge (.doable/)">
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 rounded-lg border p-3">
@@ -679,8 +696,8 @@ function ContextFilesTab({
   return (
     <div className="space-y-4">
       <SectionCard
-        title="Context Files (.doable/)"
-        description="Context files guide the AI's behavior when editing your project. Each file serves a different purpose."
+        title="Knowledge (.doable/)"
+        description="Knowledge files guide the AI's behavior when editing your project. Each file serves a different purpose."
       >
         {/* Token budget */}
         {stats && (
@@ -1274,7 +1291,30 @@ function DomainTab({
 // ═══════════════════════════════════════════════════════════════
 
 function EnvironmentsTab({ project }: { project: ApiProject }) {
-  const environments = [
+  const [environments, setEnvironments] = useState<Array<{
+    id: string; name: string; icon: string; color: string; description: string;
+    is_template: boolean; created_at: string;
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  const workspaceId = project.workspace_id;
+
+  useEffect(() => {
+    if (!workspaceId) { setLoading(false); return; }
+    apiFetch<{ data: typeof environments }>(`/workspaces/${workspaceId}/environments`)
+      .then((res) => setEnvironments(res.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [workspaceId]);
+
+  const COLOR_MAP: Record<string, string> = {
+    blue: "bg-blue-500", green: "bg-green-500", purple: "bg-purple-500",
+    orange: "bg-orange-500", pink: "bg-pink-500", yellow: "bg-yellow-500",
+    red: "bg-red-500", teal: "bg-teal-500",
+  };
+
+  // Deployment environments (static)
+  const deployEnvs = [
     {
       name: "Production",
       status: "active" as const,
@@ -1293,12 +1333,50 @@ function EnvironmentsTab({ project }: { project: ApiProject }) {
 
   return (
     <div className="space-y-6">
+      {/* Environment Presets */}
       <SectionCard
-        title="Environments"
-        description="Manage deployment environments and their configurations."
+        title="Environment Presets"
+        description="Reusable bundles of skills, instructions, MCPs, and integrations applied to this workspace."
+      >
+        {loading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : environments.length === 0 ? (
+          <div className="flex flex-col items-center rounded-lg border-2 border-dashed p-8 text-center">
+            <Server className="mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium">No environment presets</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Create environment presets from the editor&apos;s Environments panel.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {environments.map((env) => (
+              <div key={env.id} className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/30">
+                <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg text-lg text-white", COLOR_MAP[env.color] ?? "bg-blue-500")}>
+                  {env.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold">{env.name}</p>
+                  {env.description && <p className="text-xs text-muted-foreground truncate">{env.description}</p>}
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {new Date(env.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* Deployment Environments */}
+      <SectionCard
+        title="Deployment"
+        description="Deployment environments for publishing your project."
       >
         <div className="space-y-3">
-          {environments.map((env) => (
+          {deployEnvs.map((env) => (
             <div
               key={env.name}
               className="rounded-lg border p-4 transition-colors hover:bg-muted/30"
@@ -1348,20 +1426,6 @@ function EnvironmentsTab({ project }: { project: ApiProject }) {
               </div>
             </div>
           ))}
-        </div>
-      </SectionCard>
-
-      {/* Environment Variables (Placeholder) */}
-      <SectionCard
-        title="Environment Variables"
-        description="Environment-specific configuration values. These are injected at build time."
-      >
-        <div className="flex flex-col items-center rounded-lg border-2 border-dashed p-8 text-center">
-          <Server className="mb-3 h-8 w-8 text-muted-foreground" />
-          <p className="text-sm font-medium">No environment variables configured</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Environment variables will be available in a future update.
-          </p>
         </div>
       </SectionCard>
     </div>

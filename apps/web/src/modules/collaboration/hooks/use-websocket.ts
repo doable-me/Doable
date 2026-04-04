@@ -20,6 +20,17 @@ export function useWebSocket() {
     const { accessToken } = getStoredTokens();
     if (!accessToken) return;
 
+    // Clean up any existing connection first (avoids duplicates on React strict mode remount)
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.onclose = null; // prevent triggering reconnect
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
     setConnectionState("connecting");
     const ws = new WebSocket(`${WS_URL}?token=${accessToken}`);
 
@@ -55,7 +66,11 @@ export function useWebSocket() {
     connect();
     return () => {
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      wsRef.current?.close();
+      if (wsRef.current) {
+        wsRef.current.onclose = null; // prevent reconnect attempt during cleanup
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, [connect]);
 

@@ -97,6 +97,7 @@ import {
   Plug,
   Users,
   BookOpen,
+  Boxes,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -151,12 +152,13 @@ const IntegrationsPanel = dynamic(() => import("@/modules/integrations/integrati
 const SkillsPanel = dynamic(() => import("@/modules/skills/skills-panel").then(m => ({ default: m.SkillsPanel })), { ssr: false });
 const ContextPanel = dynamic(() => import("@/modules/editor/context-files/context-panel").then(m => ({ default: m.ContextPanel })), { ssr: false });
 const HistoryPanel = dynamic(() => import("@/modules/editor/panels/history-panel").then(m => ({ default: m.HistoryPanel })), { ssr: false });
+const EnvironmentsPanel = dynamic(() => import("@/modules/environments/environments-panel").then(m => ({ default: m.EnvironmentsPanel })), { ssr: false });
 
 // ─── Constants ──────────────────────────────────────────────
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Types ──────────────────────────────────────────────────
-type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "integrations" | "skills" | "knowledge" | "team";
+type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "integrations" | "skills" | "knowledge" | "team" | "environments";
 type ChatMode = "agent" | "plan" | "visual-edit";
 type DeviceMode = "desktop" | "tablet" | "mobile";
 
@@ -235,7 +237,7 @@ function detectLanguage(filename: string): string {
 const AUTOSAVE_DELAY_MS = 1500;
 
 /** Tabs that render a full panel (replacing the preview pane) */
-const PANEL_TABS: ActiveTab[] = ["history", "cloud", "analytics", "files", "security", "speed", "integrations", "skills", "knowledge"];
+const PANEL_TABS: ActiveTab[] = ["history", "cloud", "analytics", "files", "security", "speed", "integrations", "skills", "knowledge", "environments"];
 
 /** All items available in the triple-dots "More" menu */
 interface MoreMenuItem {
@@ -255,6 +257,7 @@ const MORE_MENU_ITEMS: MoreMenuItem[] = [
   { key: "knowledge", icon: BookOpen, label: "Knowledge" },
   { key: "integrations", icon: Plug, label: "Integrations" },
   { key: "skills", icon: Sparkles, label: "Skills" },
+  { key: "environments", icon: Boxes, label: "Environments" },
 ];
 
 /** Load pinned toolbar items from localStorage */
@@ -4487,12 +4490,10 @@ export default function EditorPage() {
                     </div>
                   )}
                   {isDesignMode && (
-                    <>
-                      <RemoteSelectionOverlays iframeRef={iframeRef} />
-                      <RemoteVisualCursors iframeRef={iframeRef} />
-                      <VisualEditConflictWarning selectedSelector={visualEdit.selectedElement?.selector ?? null} />
-                    </>
+                    <VisualEditConflictWarning selectedSelector={visualEdit.selectedElement?.selector ?? null} />
                   )}
+                  <RemoteSelectionOverlays iframeRef={iframeRef} />
+                  <RemoteVisualCursors iframeRef={iframeRef} />
                 </div>
               )}
               {/* First generation watermark is now merged into the building overlay above */}
@@ -4551,6 +4552,9 @@ export default function EditorPage() {
             )}
             {activeTab === "skills" && (
               <SkillsPanel workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? "" : ""} projectId={resolvedProjectId} />
+            )}
+            {activeTab === "environments" && (
+              <EnvironmentsPanel workspaceId={workspaceId ?? ""} />
             )}
           </div>
         )}

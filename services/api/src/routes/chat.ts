@@ -35,10 +35,13 @@ import { buildContextPrompt } from "../context/injector.js";
 import { broadcastToRoom } from "../ai/yjs-bridge.js";
 import { processAttachments } from "../ai/attachments.js";
 import { bodyLimit } from "hono/body-limit";
+import { environmentQueries, skillsQueries } from "@doable/db";
 
 export const chatRoutes = new Hono<AuthEnv>();
 const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
 const ctxManager = contextManager(sql);
+const envDb = environmentQueries(sql);
+const skillsDb = skillsQueries(sql);
 
 // Require authentication for all chat and AI routes
 chatRoutes.use("/projects/:id/chat", authMiddleware);
@@ -260,6 +263,38 @@ async function buildProjectContextForMode(
     }
   } catch (err) {
     console.warn("[Chat] Failed to load .doable/ context files:", err);
+  }
+
+  // ── Skills & Rules from environment (or workspace defaults) ──
+  if (workspaceId) {
+    try {
+      const customDefault = await envDb.getDefault(workspaceId);
+      let skills: { skill_name: string; skill_content: string }[] = [];
+      let rules: { rule_name: string; content: string }[] = [];
+
+      if (customDefault) {
+        // Use the custom default environment's items
+        const env = await envDb.getById(customDefault.id);
+        if (env) {
+          skills = env.skills;
+          rules = env.rules;
+        }
+      } else {
+        // No custom default — use all workspace-level skills & rules
+        const items = await envDb.getDefaultItems(workspaceId);
+        skills = items.skills;
+        rules = items.rules;
+      }
+
+      if (skills.length > 0) {
+        context += `\n\n<skills>\n${skills.map((s) => `<skill name="${s.skill_name}">\n${s.skill_content}\n</skill>`).join("\n")}\n</skills>`;
+      }
+      if (rules.length > 0) {
+        context += `\n\n<rules>\n${rules.map((r) => `<rule name="${r.rule_name}">\n${r.content}\n</rule>`).join("\n")}\n</rules>`;
+      }
+    } catch (err) {
+      console.warn("[Chat] Failed to load environment skills/rules:", err);
+    }
   }
 
   // ── File listing and package info ──

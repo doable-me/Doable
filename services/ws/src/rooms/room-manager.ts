@@ -28,6 +28,9 @@ export class RoomManager {
         room.leave(userId);
       }
       if (room.isEmpty) {
+        room.destroy().catch((err) => {
+          console.error(`[RoomManager] Failed to destroy room ${projectId}:`, err);
+        });
         this.rooms.delete(projectId);
       }
     }

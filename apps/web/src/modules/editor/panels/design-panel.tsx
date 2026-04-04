@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import {
   Sparkles,
   ArrowLeft,
@@ -198,13 +198,15 @@ export function DesignPanel({
   const lastElementSelector = useMemo(() => selectedElement?.selector, [selectedElement]);
   const [lastSyncedSelector, setLastSyncedSelector] = useState<string | null>(null);
 
-  if (lastElementSelector && lastElementSelector !== lastSyncedSelector && selectedElement) {
-    syncElementStyles(selectedElement);
-    setLastSyncedSelector(lastElementSelector);
-  }
-  if (!lastElementSelector && lastSyncedSelector) {
-    setLastSyncedSelector(null);
-  }
+  useEffect(() => {
+    if (lastElementSelector && lastElementSelector !== lastSyncedSelector && selectedElement) {
+      syncElementStyles(selectedElement);
+      setLastSyncedSelector(lastElementSelector);
+    }
+    if (!lastElementSelector && lastSyncedSelector) {
+      setLastSyncedSelector(null);
+    }
+  }, [lastElementSelector, lastSyncedSelector, selectedElement, syncElementStyles]);
 
   // ─── Determine which panels to show ────────────────────────
   const showTextPanel = selectedElement?.isTextElement || (selectedElement?.textContent && selectedElement.textContent.length > 0);

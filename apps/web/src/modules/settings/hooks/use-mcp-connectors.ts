@@ -1,0 +1,145 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { apiFetch } from "@/lib/api";
+
+// ─── Types ──────────────────────────────────────────────────
+
+export interface McpTool {
+  name: string;
+  description?: string;
+}
+
+export interface McpConnector {
+  id: string;
+  workspace_id: string;
+  project_id: string | null;
+  created_by: string;
+  scope: "workspace" | "project" | "user";
+  name: string;
+  description: string | null;
+  transport_type: "streamable_http" | "http_sse" | "stdio";
+  server_url: string | null;
+  server_command: string | null;
+  server_args: string[];
+  auth_type: "none" | "api_key" | "oauth2" | "bearer_token";
+  status: "active" | "inactive" | "error" | "connecting";
+  capabilities_cache: Record<string, unknown> | null;
+  last_connected_at: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateConnectorPayload {
+  name: string;
+  description?: string;
+  transportType: "streamable_http" | "http_sse" | "stdio";
+  scope: "workspace" | "project" | "user";
+  serverUrl?: string;
+  serverCommand?: string;
+  serverArgs?: string[];
+  authType: "none" | "api_key" | "bearer_token";
+  projectId?: string;
+}
+
+export interface TestResult {
+  success: boolean;
+  toolCount: number;
+  tools?: McpTool[];
+  error?: string;
+}
+
+export const TRANSPORT_LABELS: Record<
+  McpConnector["transport_type"],
+  { label: string; description: string }
+> = {
+  streamable_http: { label: "HTTP (Streamable)", description: "Connect to an HTTP-based MCP server with streaming support" },
+  http_sse: { label: "Server-Sent Events (SSE)", description: "Connect via HTTP with Server-Sent Events" },
+  stdio: { label: "Local Process (stdio)", description: "Run a local command and communicate via stdin/stdout" },
+};
+
+// ─── Hook ───────────────────────────────────────────────────
+
+export function useMcpConnectors(workspaceId: string) {
+  const [connectors, setConnectors] = useState<McpConnector[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!workspaceId) { setLoading(false); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      const json = await apiFetch<{ data: McpConnector[] }>(
+        `/workspaces/${workspaceId}/connectors`,
+      );
+      setConnectors(json.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load MCP servers");
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const createConnector = useCallback(
+    async (payload: CreateConnectorPayload) => {
+      await apiFetch(`/workspaces/${workspaceId}/connectors`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await refresh();
+    },
+    [workspaceId, refresh],
+  );
+
+  const updateConnector = useCallback(
+    async (id: string, updates: Partial<Pick<McpConnector, "name" | "description" | "status">>) => {
+      await apiFetch(`/workspaces/${workspaceId}/connectors/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(updates),
+      });
+      await refresh();
+    },
+    [workspaceId, refresh],
+  );
+
+  const deleteConnector = useCallback(
+    async (id: string) => {
+      await apiFetch(`/workspaces/${workspaceId}/connectors/${id}`, {
+        method: "DELETE",
+      });
+      await refresh();
+    },
+    [workspaceId, refresh],
+  );
+
+  const testConnector = useCallback(
+    async (id: string): Promise<TestResult> => {
+      try {
+        const json = await apiFetch<{ data: TestResult }>(
+          `/workspaces/${workspaceId}/connectors/${id}/test`,
+          { method: "POST" },
+        );
+        await refresh();
+        return json.data;
+      } catch (err) {
+        return { success: false, toolCount: 0, error: err instanceof Error ? err.message : "Test failed" };
+      }
+    },
+    [workspaceId, refresh],
+  );
+
+  return {
+    connectors,
+    loading,
+    error,
+    refresh,
+    createConnector,
+    updateConnector,
+    deleteConnector,
+    testConnector,
+  };
+}

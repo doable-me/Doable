@@ -1,13 +1,14 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { sql } from "../db/index.js";
-import { workspaceQueries, userQueries } from "@doable/db";
+import { workspaceQueries, userQueries, environmentQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { requireRole } from "../middleware/workspace-role.js";
 import { SLUG_REGEX, SLUG_MIN_LENGTH, SLUG_MAX_LENGTH } from "@doable/shared";
 
 const workspaces = workspaceQueries(sql);
 const users = userQueries(sql);
+const envs = environmentQueries(sql);
 
 export const workspaceRoutes = new Hono<AuthEnv>();
 
@@ -50,6 +51,7 @@ const createSchema = z.object({
   name: z.string().min(1).max(100),
   slug: z.string().min(SLUG_MIN_LENGTH).max(SLUG_MAX_LENGTH).regex(SLUG_REGEX),
   description: z.string().max(500).optional(),
+  environmentId: z.string().uuid().optional(),
 });
 
 workspaceRoutes.post("/", async (c) => {
@@ -70,9 +72,22 @@ workspaceRoutes.post("/", async (c) => {
   }
 
   const workspace = await workspaces.create({
-    ...parsed.data,
+    name: parsed.data.name,
+    slug: parsed.data.slug,
+    description: parsed.data.description,
     ownerId: userId,
   });
+
+  // If an environment was selected, clone it into the new workspace and apply
+  if (parsed.data.environmentId) {
+    try {
+      const cloned = await envs.clone(parsed.data.environmentId, workspace.id, userId);
+      await envs.applyToWorkspace(workspace.id, cloned.id);
+    } catch {
+      // Non-fatal: workspace created but environment clone failed
+      console.warn(`Failed to clone environment ${parsed.data.environmentId} into workspace ${workspace.id}`);
+    }
+  }
 
   return c.json({ data: workspace }, 201);
 });
