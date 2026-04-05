@@ -846,38 +846,275 @@ function ScopeBadge({ scope }: { scope: string }) {
   );
 }
 
-// ─── Project-focused Environment View ───────────────────────
+// ─── Project Environment Tab Types ──────────────────────────
 
-function ProjectEnvironmentView({
+type EnvTab = "knowledge" | "skills" | "integrations" | "settings";
+
+const ENV_TABS: { key: EnvTab; label: string; icon: React.ReactNode }[] = [
+  { key: "knowledge", label: "Knowledge", icon: <Brain className="h-3.5 w-3.5" /> },
+  { key: "skills", label: "Skills", icon: <Sparkles className="h-3.5 w-3.5" /> },
+  { key: "integrations", label: "Integrations", icon: <Plug className="h-3.5 w-3.5" /> },
+  { key: "settings", label: "Settings", icon: <Boxes className="h-3.5 w-3.5" /> },
+];
+
+// ─── Knowledge Tab ──────────────────────────────────────────
+
+function KnowledgeTab({
+  envId,
+  knowledge,
+  hooks,
+  onReload,
+}: {
+  envId: string;
+  knowledge: KnowledgeFile[];
+  hooks: ReturnType<typeof useEnvironments>;
+  onReload: () => Promise<void>;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [filename, setFilename] = useState("");
+  const [content, setContent] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editingFile, setEditingFile] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const handleAdd = async () => {
+    if (!filename.trim()) return;
+    setSaving(true);
+    try {
+      await hooks.addKnowledge(envId, filename.trim(), content);
+      await onReload();
+      setAdding(false);
+      setFilename("");
+      setContent("");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdate = async (fname: string) => {
+    setSavingEdit(true);
+    try {
+      await hooks.updateKnowledge(envId, fname, editContent);
+      await onReload();
+      setEditingFile(null);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleRemove = async (fname: string) => {
+    await hooks.removeKnowledge(envId, fname);
+    await onReload();
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{knowledge.length} file{knowledge.length !== 1 ? "s" : ""}</span>
+        <button
+          onClick={() => setAdding(!adding)}
+          className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          {adding ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+          {adding ? "Cancel" : "Add file"}
+        </button>
+      </div>
+
+      {adding && (
+        <div className="rounded-md border bg-muted/20 p-2.5 space-y-2">
+          <input
+            type="text"
+            value={filename}
+            onChange={(e) => setFilename(e.target.value)}
+            placeholder="knowledge.md"
+            autoFocus
+            className="w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+          />
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="# Knowledge&#10;&#10;Add context about your project..."
+            rows={6}
+            className="w-full rounded border bg-background px-2 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-ring resize-none"
+          />
+          <div className="flex justify-end gap-1">
+            <button onClick={() => setAdding(false)} className="rounded border px-2 py-1 text-xs hover:bg-muted">Cancel</button>
+            <button
+              onClick={handleAdd}
+              disabled={saving || !filename.trim()}
+              className="flex items-center gap-1 rounded bg-primary px-2 py-1 text-xs text-primary-foreground disabled:opacity-50"
+            >
+              {saving && <Loader2 className="h-3 w-3 animate-spin" />} Add
+            </button>
+          </div>
+        </div>
+      )}
+
+      {knowledge.length === 0 && !adding && (
+        <div className="flex flex-col items-center py-8 text-center">
+          <Brain className="h-8 w-8 text-muted-foreground/30 mb-2" />
+          <p className="text-xs text-muted-foreground">No knowledge files yet</p>
+          <p className="text-[11px] text-muted-foreground/60 mt-1">Add files to give your AI context about this project.</p>
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {knowledge.map((k) => (
+          <div key={k.id} className="rounded-md border hover:border-foreground/20 transition-colors">
+            <div className="flex items-center gap-2 px-3 py-2 group">
+              <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-xs font-medium truncate flex-1">{k.filename}</span>
+              <span className="text-[10px] text-muted-foreground">{k.content.length} chars</span>
+              <button
+                onClick={() => { setEditingFile(editingFile === k.filename ? null : k.filename); setEditContent(k.content); }}
+                className="rounded p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                title="Edit"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+              <button
+                onClick={() => void handleRemove(k.filename)}
+                className="rounded p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
+                title="Remove"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            {editingFile === k.filename && (
+              <div className="border-t px-3 py-2 space-y-2">
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  rows={8}
+                  className="w-full rounded border bg-background px-2 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-ring resize-none"
+                />
+                <div className="flex justify-end gap-1">
+                  <button onClick={() => setEditingFile(null)} className="rounded border px-2 py-1 text-xs hover:bg-muted">Cancel</button>
+                  <button
+                    onClick={() => void handleUpdate(k.filename)}
+                    disabled={savingEdit}
+                    className="flex items-center gap-1 rounded bg-primary px-2 py-1 text-xs text-primary-foreground disabled:opacity-50"
+                  >
+                    {savingEdit && <Loader2 className="h-3 w-3 animate-spin" />}
+                    <Check className="h-3 w-3" /> Save
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Skills Tab ─────────────────────────────────────────────
+
+function SkillsTab({
+  envId,
+  detail,
+  availableSkills,
+  availableRules,
+  hooks,
+  onReload,
+}: {
+  envId: string;
+  detail: EnvironmentWithItems;
+  availableSkills: ContextSkill[];
+  availableRules: ContextRule[];
+  hooks: ReturnType<typeof useEnvironments>;
+  onReload: () => Promise<void>;
+}) {
+  return (
+    <div className="space-y-4">
+      <RefPicker<ContextSkill>
+        title="Skills"
+        icon={<Sparkles className="h-3.5 w-3.5" />}
+        available={availableSkills}
+        included={detail.skills}
+        getLabel={(s) => s.skill_name}
+        getSubLabel={(s) => s.skill_content.slice(0, 40)}
+        onAdd={async (id) => { await hooks.addSkillRef(envId, id); await onReload(); }}
+        onRemove={async (id) => { await hooks.removeSkillRef(envId, id); await onReload(); }}
+      />
+      <RefPicker<ContextRule>
+        title="Rules"
+        icon={<BookOpen className="h-3.5 w-3.5" />}
+        available={availableRules}
+        included={detail.rules}
+        getLabel={(r) => r.rule_name}
+        getSubLabel={(r) => r.content.slice(0, 40)}
+        onAdd={async (id) => { await hooks.addRuleRef(envId, id); await onReload(); }}
+        onRemove={async (id) => { await hooks.removeRuleRef(envId, id); await onReload(); }}
+      />
+      <InstructionsSection
+        instructions={detail.instructions}
+        envId={envId}
+        hooks={hooks}
+        onReload={onReload}
+      />
+    </div>
+  );
+}
+
+// ─── Integrations Tab ───────────────────────────────────────
+
+function IntegrationsTab({
+  envId,
+  detail,
+  availableConnectors,
+  hooks,
+  onReload,
+}: {
+  envId: string;
+  detail: EnvironmentWithItems;
+  availableConnectors: Connector[];
+  hooks: ReturnType<typeof useEnvironments>;
+  onReload: () => Promise<void>;
+}) {
+  return (
+    <div className="space-y-4">
+      <RefPicker<Connector>
+        title="Connectors"
+        icon={<Plug className="h-3.5 w-3.5" />}
+        available={availableConnectors}
+        included={detail.connectors}
+        getLabel={(c) => c.name}
+        getSubLabel={(c) => c.transport_type}
+        onAdd={async (id) => { await hooks.addConnectorRef(envId, id); await onReload(); }}
+        onRemove={async (id) => { await hooks.removeConnectorRef(envId, id); await onReload(); }}
+      />
+      {detail.connectors.length === 0 && availableConnectors.length === 0 && (
+        <div className="flex flex-col items-center py-6 text-center">
+          <Plug className="h-8 w-8 text-muted-foreground/30 mb-2" />
+          <p className="text-xs text-muted-foreground">No integrations available</p>
+          <p className="text-[11px] text-muted-foreground/60 mt-1">Add MCP connectors from Workspace Settings first.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Settings Tab ───────────────────────────────────────────
+
+function SettingsTab({
   workspaceId,
   projectId,
+  projectEnv,
+  allEnvs,
+  projectEnvId,
+  setProjectEnvId,
 }: {
   workspaceId: string;
   projectId: string;
+  projectEnv: Environment | null;
+  allEnvs: Environment[];
+  projectEnvId: string | null;
+  setProjectEnvId: (id: string | null) => void;
 }) {
-  const hooks = useEnvironments(workspaceId, { projectId });
-  const { environments, loading, error, refresh } = hooks;
-  const [allEnvs, setAllEnvs] = useState<Environment[]>([]);
-  const [projectEnvId, setProjectEnvId] = useState<string | null>(null);
-  const [loadingAssign, setLoadingAssign] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
-  const [defaultEnvId, setDefaultEnvId] = useState<string | null>(null);
-
-  // Load assignable environments and current assignment
-  useEffect(() => {
-    if (!workspaceId || !projectId) return;
-    Promise.all([
-      apiFetch<{ data: Environment[] }>(`/workspaces/${workspaceId}/environments`),
-      apiFetch<{ data: { environment_id: string } | null }>(`/projects/${projectId}/environment`).catch(() => ({ data: null })),
-      hooks.getDefaultInfo(),
-    ]).then(([envRes, projEnvRes, defaultInfo]) => {
-      setAllEnvs(envRes.data);
-      setProjectEnvId(projEnvRes.data?.environment_id ?? null);
-      setDefaultEnvId(defaultInfo.isCustom && defaultInfo.data ? defaultInfo.data.id : null);
-    }).catch(() => {});
-  }, [workspaceId, projectId, hooks]);
-
-  const projectEnv = environments[0] ?? null; // The project's own environment
+  const [loadingAssign, setLoadingAssign] = useState(false);
 
   const handleAssign = async (envId: string | null) => {
     setLoadingAssign(true);
@@ -901,155 +1138,260 @@ function ProjectEnvironmentView({
   };
 
   return (
+    <div className="space-y-3">
+      {/* Active environment assignment */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <Star className="h-3.5 w-3.5" />
+            Active Environment
+          </div>
+          <button
+            onClick={() => setShowPicker(!showPicker)}
+            className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            {showPicker ? <X className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+            {showPicker ? "Cancel" : "Change"}
+          </button>
+        </div>
+
+        {!showPicker ? (
+          <div className="rounded-lg border p-3">
+            {projectEnvId ? (
+              (() => {
+                const assigned = (projectEnv && projectEnvId === projectEnv.id) ? projectEnv : allEnvs.find(e => e.id === projectEnvId);
+                return assigned ? (
+                  <div className="flex items-center gap-3">
+                    <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg text-lg text-white", getColorClass(assigned.color))}>{assigned.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold truncate">{assigned.name}</span>
+                        <ScopeBadge scope={assigned.scope} />
+                      </div>
+                      {assigned.description && <p className="text-xs text-muted-foreground truncate">{assigned.description}</p>}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Custom environment (loading...)</p>
+                );
+              })()
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/20 text-lg">🌐</div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">Workspace Default</span>
+                    <Badge variant="default" className="text-[10px] px-1.5 py-0 bg-primary/20 text-primary border-primary/30">Auto</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Inheriting workspace skills, rules & connectors</p>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg border bg-muted/10 p-2 space-y-1 max-h-64 overflow-y-auto">
+            <button
+              onClick={() => void handleAssign(null)}
+              disabled={loadingAssign}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors",
+                !projectEnvId ? "bg-primary/10" : "hover:bg-muted/60",
+              )}
+            >
+              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/20 text-sm">🌐</div>
+              <div className="flex-1 min-w-0">
+                <span className="text-xs font-medium">Workspace Default</span>
+                <p className="text-[10px] text-muted-foreground">Inherit all workspace items</p>
+              </div>
+              {!projectEnvId && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+            </button>
+            {allEnvs.filter(e => e.scope !== 'project').map((env) => (
+              <button
+                key={env.id}
+                onClick={() => void handleAssign(env.id)}
+                disabled={loadingAssign}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors",
+                  projectEnvId === env.id ? "bg-primary/10" : "hover:bg-muted/60",
+                )}
+              >
+                <div className={cn("flex h-7 w-7 items-center justify-center rounded-md text-sm text-white", getColorClass(env.color))}>{env.icon}</div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-medium truncate block">{env.name}</span>
+                  {env.description && <p className="text-[10px] text-muted-foreground truncate">{env.description}</p>}
+                </div>
+                <ScopeBadge scope={env.scope} />
+                {projectEnvId === env.id && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+              </button>
+            ))}
+            {allEnvs.filter(e => e.scope !== 'project').length === 0 && (
+              <p className="text-[11px] text-muted-foreground text-center py-3">
+                No custom environments yet. Create one from Workspace Settings.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Workspace defaults */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          <Boxes className="h-3.5 w-3.5" />
+          Workspace Defaults
+        </div>
+        <DefaultEnvironmentCard workspaceId={workspaceId} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Project-focused Environment View ───────────────────────
+
+function ProjectEnvironmentView({
+  workspaceId,
+  projectId,
+}: {
+  workspaceId: string;
+  projectId: string;
+}) {
+  const hooks = useEnvironments(workspaceId, { projectId });
+  const { environments, loading, error, refresh } = hooks;
+  const [activeTab, setActiveTab] = useState<EnvTab>("knowledge");
+  const [detail, setDetail] = useState<EnvironmentWithItems | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [allEnvs, setAllEnvs] = useState<Environment[]>([]);
+  const [projectEnvId, setProjectEnvId] = useState<string | null>(null);
+
+  // Available workspace items for pickers
+  const [availableSkills, setAvailableSkills] = useState<ContextSkill[]>([]);
+  const [availableRules, setAvailableRules] = useState<ContextRule[]>([]);
+  const [availableConnectors, setAvailableConnectors] = useState<Connector[]>([]);
+
+  const projectEnv = environments[0] ?? null;
+
+  // Load workspace envs and current assignment
+  useEffect(() => {
+    if (!workspaceId || !projectId) return;
+    Promise.all([
+      apiFetch<{ data: Environment[] }>(`/workspaces/${workspaceId}/environments`),
+      apiFetch<{ data: { environment_id: string } | null }>(`/projects/${projectId}/environment`).catch(() => ({ data: null })),
+    ]).then(([envRes, projEnvRes]) => {
+      setAllEnvs(envRes.data);
+      setProjectEnvId(projEnvRes.data?.environment_id ?? null);
+    }).catch(() => {});
+  }, [workspaceId, projectId]);
+
+  // Load environment detail + workspace items for pickers
+  const loadDetail = useCallback(async () => {
+    if (!projectEnv) return;
+    setLoadingDetail(true);
+    try {
+      const [d, defaults] = await Promise.all([
+        hooks.getEnvironment(projectEnv.id),
+        hooks.getDefaultInfo(),
+      ]);
+      setDetail(d);
+      const items = defaults.items ?? { skills: [], rules: [], knowledge: [], connectors: [] };
+      if (defaults.isCustom) {
+        const wsItems = await apiFetch<{ data: null; isCustom: false; items: DefaultItems }>(
+          `/workspaces/${workspaceId}/environments-default`,
+        );
+        if (wsItems.items) {
+          setAvailableSkills(wsItems.items.skills);
+          setAvailableRules(wsItems.items.rules);
+          setAvailableConnectors(wsItems.items.connectors);
+        }
+      } else {
+        setAvailableSkills(items.skills);
+        setAvailableRules(items.rules);
+        setAvailableConnectors(items.connectors);
+      }
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, [projectEnv, hooks, workspaceId]);
+
+  // Auto-load detail when project env is available
+  useEffect(() => {
+    if (projectEnv && !detail) void loadDetail();
+  }, [projectEnv, detail, loadDetail]);
+
+  const reloadDetail = useCallback(async () => {
+    if (!projectEnv) return;
+    const d = await hooks.getEnvironment(projectEnv.id);
+    setDetail(d);
+  }, [projectEnv, hooks]);
+
+  return (
     <div className="flex h-full flex-col">
+      {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <Boxes className="h-4 w-4" />
-          <h2 className="text-sm font-semibold">Project Environment</h2>
+          <h2 className="text-sm font-semibold">Environment</h2>
+          {projectEnv && <ScopeBadge scope={projectEnv.scope} />}
         </div>
-        <button onClick={() => void refresh()} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" title="Refresh">
+        <button
+          onClick={() => { void refresh(); setDetail(null); }}
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Refresh"
+        >
           <RefreshCw className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      {/* Tabs */}
+      <div className="flex border-b px-1">
+        {ENV_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors",
+              activeTab === tab.key
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30",
+            )}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto p-3">
         {error && (
-          <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+          <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 mb-3">
             <AlertCircle className="h-4 w-4 text-destructive" />
             <span className="text-xs text-destructive">{error}</span>
           </div>
         )}
 
-        {loading ? (
+        {(loading || loadingDetail) && !detail ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
-        ) : (
+        ) : detail && projectEnv ? (
           <>
-            {/* Project's own knowledge environment */}
-            {projectEnv && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground px-1">
-                  <Brain className="h-3.5 w-3.5" />
-                  Project Knowledge
-                </div>
-                <EnvironmentCard
-                  env={projectEnv}
-                  workspaceId={workspaceId}
-                  isDefault={false}
-                  hooks={hooks}
-                  onDelete={() => {}}
-                  onClone={() => {}}
-                  onSetDefault={() => {}}
-                />
-              </div>
+            {activeTab === "knowledge" && (
+              <KnowledgeTab envId={projectEnv.id} knowledge={detail.knowledge} hooks={hooks} onReload={reloadDetail} />
             )}
-
-            {/* Active environment assignment */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground px-1">
-                  <Star className="h-3.5 w-3.5" />
-                  Active Environment
-                </div>
-                <button
-                  onClick={() => setShowPicker(!showPicker)}
-                  className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  {showPicker ? <X className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
-                  {showPicker ? "Cancel" : "Change"}
-                </button>
-              </div>
-
-              {!showPicker ? (
-                <div className="rounded-lg border p-3">
-                  {projectEnvId ? (
-                    (() => {
-                      // Check if assigned to its own project env first, then look in workspace envs
-                      const assigned = (projectEnv && projectEnvId === projectEnv.id) ? projectEnv : allEnvs.find(e => e.id === projectEnvId);
-                      return assigned ? (
-                        <div className="flex items-center gap-3">
-                          <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg text-lg text-white", getColorClass(assigned.color))}>{assigned.icon}</div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold truncate">{assigned.name}</span>
-                              <ScopeBadge scope={assigned.scope} />
-                            </div>
-                            {assigned.description && <p className="text-xs text-muted-foreground truncate">{assigned.description}</p>}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">Custom environment (loading...)</p>
-                      );
-                    })()
-                  ) : (
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/20 text-lg">🌐</div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold">Workspace Default</span>
-                          <Badge variant="default" className="text-[10px] px-1.5 py-0 bg-primary/20 text-primary border-primary/30">Auto</Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground">Inheriting workspace skills, rules & connectors</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                /* Environment picker */
-                <div className="rounded-lg border bg-muted/10 p-2 space-y-1 max-h-64 overflow-y-auto">
-                  <button
-                    onClick={() => void handleAssign(null)}
-                    disabled={loadingAssign}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors",
-                      !projectEnvId ? "bg-primary/10" : "hover:bg-muted/60",
-                    )}
-                  >
-                    <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/20 text-sm">🌐</div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-medium">Workspace Default</span>
-                      <p className="text-[10px] text-muted-foreground">Inherit all workspace items</p>
-                    </div>
-                    {!projectEnvId && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
-                  </button>
-                  {allEnvs.filter(e => e.scope !== 'project').map((env) => (
-                    <button
-                      key={env.id}
-                      onClick={() => void handleAssign(env.id)}
-                      disabled={loadingAssign}
-                      className={cn(
-                        "flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors",
-                        projectEnvId === env.id ? "bg-primary/10" : "hover:bg-muted/60",
-                      )}
-                    >
-                      <div className={cn("flex h-7 w-7 items-center justify-center rounded-md text-sm text-white", getColorClass(env.color))}>{env.icon}</div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-xs font-medium truncate block">{env.name}</span>
-                        {env.description && <p className="text-[10px] text-muted-foreground truncate">{env.description}</p>}
-                      </div>
-                      <ScopeBadge scope={env.scope} />
-                      {projectEnvId === env.id && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
-                    </button>
-                  ))}
-                  {allEnvs.filter(e => e.scope !== 'project').length === 0 && (
-                    <p className="text-[11px] text-muted-foreground text-center py-3">
-                      No custom environments yet. Create one from Workspace Settings.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Workspace defaults (always visible for reference) */}
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground px-1">
-                <Boxes className="h-3.5 w-3.5" />
-                Workspace Defaults
-              </div>
-              <DefaultEnvironmentCard workspaceId={workspaceId} />
-            </div>
+            {activeTab === "skills" && (
+              <SkillsTab envId={projectEnv.id} detail={detail} availableSkills={availableSkills} availableRules={availableRules} hooks={hooks} onReload={reloadDetail} />
+            )}
+            {activeTab === "integrations" && (
+              <IntegrationsTab envId={projectEnv.id} detail={detail} availableConnectors={availableConnectors} hooks={hooks} onReload={reloadDetail} />
+            )}
+            {activeTab === "settings" && (
+              <SettingsTab workspaceId={workspaceId} projectId={projectId} projectEnv={projectEnv} allEnvs={allEnvs} projectEnvId={projectEnvId} setProjectEnvId={setProjectEnvId} />
+            )}
           </>
+        ) : !loading && (
+          <div className="flex flex-col items-center py-8 text-center">
+            <Boxes className="h-8 w-8 text-muted-foreground/30 mb-2" />
+            <p className="text-xs text-muted-foreground">No environment loaded</p>
+          </div>
         )}
       </div>
     </div>

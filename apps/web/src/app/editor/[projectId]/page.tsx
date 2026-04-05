@@ -94,9 +94,7 @@ import {
   Undo2,
   Bot,
   ClipboardList,
-  Plug,
   Users,
-  BookOpen,
   Boxes,
 } from "lucide-react";
 import {
@@ -148,9 +146,6 @@ const CloudPanel = dynamic(() => import("@/modules/editor/panels/cloud-panel").t
 const AnalyticsPanel = dynamic(() => import("@/modules/editor/panels/analytics-panel").then(m => ({ default: m.AnalyticsPanel })), { ssr: false });
 const SecurityPanel = dynamic(() => import("@/modules/editor/panels/security-panel").then(m => ({ default: m.SecurityPanel })), { ssr: false });
 const SpeedPanel = dynamic(() => import("@/modules/editor/panels/speed-panel").then(m => ({ default: m.SpeedPanel })), { ssr: false });
-const IntegrationsPanel = dynamic(() => import("@/modules/integrations/integrations-panel").then(m => ({ default: m.IntegrationsPanel })), { ssr: false });
-const SkillsPanel = dynamic(() => import("@/modules/skills/skills-panel").then(m => ({ default: m.SkillsPanel })), { ssr: false });
-const ContextPanel = dynamic(() => import("@/modules/editor/context-files/context-panel").then(m => ({ default: m.ContextPanel })), { ssr: false });
 const HistoryPanel = dynamic(() => import("@/modules/editor/panels/history-panel").then(m => ({ default: m.HistoryPanel })), { ssr: false });
 const EnvironmentsPanel = dynamic(() => import("@/modules/environments/environments-panel").then(m => ({ default: m.EnvironmentsPanel })), { ssr: false });
 
@@ -158,7 +153,7 @@ const EnvironmentsPanel = dynamic(() => import("@/modules/environments/environme
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Types ──────────────────────────────────────────────────
-type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "integrations" | "skills" | "knowledge" | "team" | "environments";
+type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "team" | "environment";
 type ChatMode = "agent" | "plan" | "visual-edit";
 type DeviceMode = "desktop" | "tablet" | "mobile";
 
@@ -237,7 +232,7 @@ function detectLanguage(filename: string): string {
 const AUTOSAVE_DELAY_MS = 1500;
 
 /** Tabs that render a full panel (replacing the preview pane) */
-const PANEL_TABS: ActiveTab[] = ["history", "cloud", "analytics", "files", "security", "speed", "integrations", "skills", "knowledge", "environments"];
+const PANEL_TABS: ActiveTab[] = ["history", "cloud", "analytics", "files", "security", "speed", "environment"];
 
 /** All items available in the triple-dots "More" menu */
 interface MoreMenuItem {
@@ -254,10 +249,7 @@ const MORE_MENU_ITEMS: MoreMenuItem[] = [
   { key: "files", icon: FolderOpen, label: "Files" },
   { key: "security", icon: Shield, label: "Security" },
   { key: "speed", icon: Gauge, label: "Speed" },
-  { key: "knowledge", icon: BookOpen, label: "Knowledge" },
-  { key: "integrations", icon: Plug, label: "Integrations" },
-  { key: "skills", icon: Sparkles, label: "Skills" },
-  { key: "environments", icon: Boxes, label: "Environments" },
+  { key: "environment", icon: Boxes, label: "Environment" },
 ];
 
 /** Load pinned toolbar items from localStorage */
@@ -4544,16 +4536,7 @@ export default function EditorPage() {
             {activeTab === "speed" && (
               <SpeedPanel projectId={resolvedProjectId} onClose={handlePanelClose} onSendMessage={sendMessage} />
             )}
-            {activeTab === "knowledge" && (
-              <ContextPanel projectId={resolvedProjectId} workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? undefined : undefined} apiBaseUrl="https://api.doable.me" />
-            )}
-            {activeTab === "integrations" && (
-              <IntegrationsPanel workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? "" : ""} projectId={resolvedProjectId} />
-            )}
-            {activeTab === "skills" && (
-              <SkillsPanel workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? "" : ""} projectId={resolvedProjectId} />
-            )}
-            {activeTab === "environments" && (
+            {activeTab === "environment" && (
               <EnvironmentsPanel workspaceId={workspaceId ?? ""} projectId={resolvedProjectId} />
             )}
           </div>
