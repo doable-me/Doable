@@ -43,6 +43,7 @@ import {
   type KnowledgeFile,
   type Connector,
 } from "./use-environments";
+import { IntegrationsPanel } from "@/modules/integrations/integrations-panel";
 
 // ─── Constants ──────────────────────────────────────────────
 
@@ -1064,44 +1065,6 @@ function SkillsTab({
   );
 }
 
-// ─── Integrations Tab ───────────────────────────────────────
-
-function IntegrationsTab({
-  envId,
-  detail,
-  availableConnectors,
-  hooks,
-  onReload,
-}: {
-  envId: string;
-  detail: EnvironmentWithItems;
-  availableConnectors: Connector[];
-  hooks: ReturnType<typeof useEnvironments>;
-  onReload: () => Promise<void>;
-}) {
-  return (
-    <div className="space-y-4">
-      <RefPicker<Connector>
-        title="Connectors"
-        icon={<Plug className="h-3.5 w-3.5" />}
-        available={availableConnectors}
-        included={detail.connectors}
-        getLabel={(c) => c.name}
-        getSubLabel={(c) => c.transport_type}
-        onAdd={async (id) => { await hooks.addConnectorRef(envId, id); await onReload(); }}
-        onRemove={async (id) => { await hooks.removeConnectorRef(envId, id); await onReload(); }}
-      />
-      {detail.connectors.length === 0 && availableConnectors.length === 0 && (
-        <div className="flex flex-col items-center py-6 text-center">
-          <Plug className="h-8 w-8 text-muted-foreground/30 mb-2" />
-          <p className="text-xs text-muted-foreground">No integrations available</p>
-          <p className="text-[11px] text-muted-foreground/60 mt-1">Add MCP connectors from Workspace Settings first.</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Settings Tab ───────────────────────────────────────────
 
 function SettingsTab({
@@ -1732,7 +1695,9 @@ function ProjectEnvironmentView({
               <SkillsTab envId={projectEnv.id} detail={detail} availableSkills={availableSkills} availableRules={availableRules} hooks={hooks} onReload={reloadDetail} />
             )}
             {activeTab === "integrations" && (
-              <IntegrationsTab envId={projectEnv.id} detail={detail} availableConnectors={availableConnectors} hooks={hooks} onReload={reloadDetail} />
+              <div className="-mx-3 -mt-3 flex flex-col" style={{ height: "calc(100% + 1.5rem)" }}>
+                <IntegrationsPanel workspaceId={workspaceId} projectId={projectId} variant="panel" />
+              </div>
             )}
             {activeTab === "variables" && (
               <VariablesTab workspaceId={workspaceId} projectId={projectId} />
