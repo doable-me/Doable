@@ -29,7 +29,10 @@ import {
   EyeOff,
   Globe,
   Shield,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api";
@@ -857,12 +860,14 @@ function ScopeBadge({ scope }: { scope: string }) {
 type EnvTab = "knowledge" | "skills" | "integrations" | "variables" | "settings";
 
 const ENV_TABS: { key: EnvTab; label: string; icon: React.ReactNode }[] = [
+  { key: "integrations", label: "Integrations", icon: <Plug className="h-3.5 w-3.5" /> },
   { key: "knowledge", label: "Knowledge", icon: <Brain className="h-3.5 w-3.5" /> },
   { key: "skills", label: "Skills", icon: <Sparkles className="h-3.5 w-3.5" /> },
-  { key: "integrations", label: "Integrations", icon: <Plug className="h-3.5 w-3.5" /> },
   { key: "variables", label: "Variables", icon: <Key className="h-3.5 w-3.5" /> },
   { key: "settings", label: "Settings", icon: <Boxes className="h-3.5 w-3.5" /> },
 ];
+
+const ENV_PANEL_MODE_KEY = "doable:env-panel-mode";
 
 // ─── Knowledge Tab ──────────────────────────────────────────
 
@@ -1570,7 +1575,19 @@ function ProjectEnvironmentView({
 }) {
   const hooks = useEnvironments(workspaceId, { projectId });
   const { environments, loading, error, refresh } = hooks;
-  const [activeTab, setActiveTab] = useState<EnvTab>("knowledge");
+  const [activeTab, setActiveTab] = useState<EnvTab>("integrations");
+  const [detached, setDetached] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(ENV_PANEL_MODE_KEY) === "detached";
+  });
+
+  const toggleDetached = useCallback(() => {
+    setDetached((prev) => {
+      const next = !prev;
+      localStorage.setItem(ENV_PANEL_MODE_KEY, next ? "detached" : "inline");
+      return next;
+    });
+  }, []);
   const [detail, setDetail] = useState<EnvironmentWithItems | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [allEnvs, setAllEnvs] = useState<Environment[]>([]);
@@ -1636,8 +1653,8 @@ function ProjectEnvironmentView({
     setDetail(d);
   }, [projectEnv, hooks]);
 
-  return (
-    <div className="flex h-full flex-col">
+  const panelContent = (
+    <div className={cn("flex flex-col", detached ? "h-full" : "h-full")}>
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
@@ -1645,23 +1662,41 @@ function ProjectEnvironmentView({
           <h2 className="text-sm font-semibold">Environment</h2>
           {projectEnv && <ScopeBadge scope={projectEnv.scope} />}
         </div>
-        <button
-          onClick={() => { void refresh(); setDetail(null); }}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          title="Refresh"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => { void refresh(); setDetail(null); }}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            title="Refresh"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={toggleDetached}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            title={detached ? "Dock to sidebar" : "Open as popup"}
+          >
+            {detached ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          </button>
+          {detached && (
+            <button
+              onClick={toggleDetached}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Close"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b px-1">
+      <div className="flex border-b px-1 overflow-x-auto">
         {ENV_TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors",
+              "flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap",
               activeTab === tab.key
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30",
@@ -1715,6 +1750,20 @@ function ProjectEnvironmentView({
       </div>
     </div>
   );
+
+  if (detached) {
+    return (
+      <Dialog open onOpenChange={() => toggleDetached()}>
+        <DialogContent
+          className="max-w-4xl w-[90vw] h-[85vh] max-h-[85vh] p-0 overflow-hidden flex flex-col"
+        >
+          {panelContent}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  return panelContent;
 }
 
 // ─── Main Panel ─────────────────────────────────────────────
