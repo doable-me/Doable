@@ -27,7 +27,9 @@ environmentRoutes.get("/:workspaceId/environments", async (c) => {
   const userId = c.get("userId");
   const err = await requireMember(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
-  const data = await envs.listForWorkspace(workspaceId);
+  const scope = c.req.query("scope") as "workspace" | "project" | "user" | undefined;
+  const projectId = c.req.query("projectId");
+  const data = await envs.listForWorkspace(workspaceId, { scope: scope || undefined, projectId: projectId || undefined });
   return c.json({ data });
 });
 

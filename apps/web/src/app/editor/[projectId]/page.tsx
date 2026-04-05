@@ -4554,7 +4554,7 @@ export default function EditorPage() {
               <SkillsPanel workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? "" : ""} projectId={resolvedProjectId} />
             )}
             {activeTab === "environments" && (
-              <EnvironmentsPanel workspaceId={workspaceId ?? ""} />
+              <EnvironmentsPanel workspaceId={workspaceId ?? ""} projectId={resolvedProjectId} />
             )}
           </div>
         )}

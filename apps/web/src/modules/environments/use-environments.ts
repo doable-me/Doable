@@ -104,7 +104,7 @@ export interface DefaultItems {
 
 // ─── Hook ───────────────────────────────────────────────
 
-export function useEnvironments(workspaceId: string) {
+export function useEnvironments(workspaceId: string, opts?: { scope?: 'workspace' | 'project' | 'user'; projectId?: string }) {
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,8 +114,12 @@ export function useEnvironments(workspaceId: string) {
     setLoading(true);
     setError(null);
     try {
+      const params = new URLSearchParams();
+      if (opts?.scope) params.set("scope", opts.scope);
+      if (opts?.projectId) params.set("projectId", opts.projectId);
+      const qs = params.toString();
       const res = await apiFetch<{ data: Environment[] }>(
-        `/workspaces/${workspaceId}/environments`,
+        `/workspaces/${workspaceId}/environments${qs ? `?${qs}` : ""}`,
       );
       setEnvironments(res.data);
     } catch (err) {
@@ -123,7 +127,7 @@ export function useEnvironments(workspaceId: string) {
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, opts?.scope, opts?.projectId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 

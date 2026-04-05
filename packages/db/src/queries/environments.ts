@@ -74,13 +74,32 @@ export interface EnvironmentWithItems extends EnvironmentRow {
 export function environmentQueries(sql: postgres.Sql) {
   return {
     // ── List environments for a workspace (own + applied) ──
-    async listForWorkspace(workspaceId: string): Promise<EnvironmentRow[]> {
+    async listForWorkspace(workspaceId: string, opts?: { scope?: 'workspace' | 'project' | 'user'; projectId?: string }): Promise<EnvironmentRow[]> {
+      if (opts?.projectId) {
+        // When filtering by project, return only the project's environment
+        return sql<EnvironmentRow[]>`
+          SELECT * FROM environments
+          WHERE project_id = ${opts.projectId} AND scope = 'project'
+          ORDER BY name
+        `;
+      }
+      if (opts?.scope) {
+        return sql<EnvironmentRow[]>`
+          SELECT DISTINCT e.* FROM environments e
+          LEFT JOIN workspace_environments we
+            ON we.environment_id = e.id AND we.workspace_id = ${workspaceId}
+          WHERE (e.workspace_id = ${workspaceId} OR we.workspace_id IS NOT NULL)
+            AND e.scope = ${opts.scope}
+          ORDER BY e.name
+        `;
+      }
+      // Default: exclude project-scoped envs (those are accessed via their projects)
       return sql<EnvironmentRow[]>`
         SELECT DISTINCT e.* FROM environments e
         LEFT JOIN workspace_environments we
           ON we.environment_id = e.id AND we.workspace_id = ${workspaceId}
-        WHERE e.workspace_id = ${workspaceId}
-           OR we.workspace_id IS NOT NULL
+        WHERE (e.workspace_id = ${workspaceId} OR we.workspace_id IS NOT NULL)
+          AND e.scope != 'project'
         ORDER BY e.name
       `;
     },
@@ -387,13 +406,13 @@ export function environmentQueries(sql: postgres.Sql) {
       return env ?? null;
     },
 
-    async getOrCreateForProject(projectId: string, workspaceId: string, createdBy: string): Promise<EnvironmentRow> {
+    async getOrCreateForProject(projectId: string, workspaceId: string, createdBy: string, projectName?: string): Promise<EnvironmentRow> {
       const existing = await this.getForProject(projectId);
       if (existing) return existing;
       return this.create({
         workspaceId,
         createdBy,
-        name: "Project Knowledge",
+        name: projectName || "Project Knowledge",
         description: "Project context and knowledge files",
         icon: "📁",
         color: "green",

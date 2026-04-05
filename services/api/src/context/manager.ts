@@ -23,9 +23,9 @@ export function contextManager(sql: postgres.Sql) {
 
   /** Helper: get the environment_id for a project, creating if needed */
   async function ensureProjectEnv(projectId: string): Promise<string> {
-    // Look up project's workspace_id and a suitable created_by
-    const [proj] = await sql<{ workspace_id: string }[]>`
-      SELECT workspace_id FROM projects WHERE id = ${projectId}
+    // Look up project's workspace_id, name, and a suitable created_by
+    const [proj] = await sql<{ workspace_id: string; name: string }[]>`
+      SELECT workspace_id, name FROM projects WHERE id = ${projectId}
     `;
     if (!proj) throw new Error(`Project ${projectId} not found`);
 
@@ -34,7 +34,7 @@ export function contextManager(sql: postgres.Sql) {
     `;
     const createdBy = ws?.owner_id ?? "system";
 
-    const env = await envDb.getOrCreateForProject(projectId, proj.workspace_id, createdBy);
+    const env = await envDb.getOrCreateForProject(projectId, proj.workspace_id, createdBy, proj.name);
     return env.id;
   }
 
