@@ -182,6 +182,15 @@ async function doStartDevServer(
   // which may not be created by npm install on Node 24+/Windows.
   const viteEntry = path.join(projectPath, "node_modules", "vite", "bin", "vite.js");
 
+  // Resolve user-defined env vars (workspace + project merged)
+  let userEnvVars: Record<string, string> = {};
+  try {
+    const { resolveProjectEnvVars } = await import("../env/resolve.js");
+    userEnvVars = await resolveProjectEnvVars(projectId, "development");
+  } catch (err) {
+    console.warn("[DevServer] Failed to resolve env vars:", err);
+  }
+
   const child = spawn(
     process.execPath,
     [viteEntry, "--host", DEV_SERVER_HOST, "--port", String(port), "--strictPort", "--base", base],
@@ -191,6 +200,7 @@ async function doStartDevServer(
       stdio: "pipe",
       env: {
         ...process.env,
+        ...userEnvVars,
         FORCE_COLOR: "0",
         // Prevent Vite from opening browser
         BROWSER: "none",

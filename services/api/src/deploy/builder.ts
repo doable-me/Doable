@@ -26,7 +26,8 @@ export type BuildLogCallback = (chunk: string) => void | Promise<void>;
  */
 export async function runBuild(
   projectDir: string,
-  onLog?: BuildLogCallback
+  onLog?: BuildLogCallback,
+  opts?: { projectId?: string; target?: "development" | "preview" | "production" },
 ): Promise<BuildResult> {
   const start = Date.now();
 
@@ -44,6 +45,17 @@ export async function runBuild(
 
   const outputDir = path.join(projectDir, "dist");
 
+  // Resolve user-defined env vars if projectId provided
+  let userEnvVars: Record<string, string> = {};
+  if (opts?.projectId) {
+    try {
+      const { resolveProjectEnvVars } = await import("../env/resolve.js");
+      userEnvVars = await resolveProjectEnvVars(opts.projectId, opts.target ?? "production");
+    } catch (err) {
+      onLog?.(`WARN: Failed to resolve env vars: ${err}\n`);
+    }
+  }
+
   return new Promise<BuildResult>((resolve) => {
     const chunks: string[] = [];
 
@@ -53,6 +65,7 @@ export async function runBuild(
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
+        ...userEnvVars,
         NODE_ENV: "production",
       },
     });

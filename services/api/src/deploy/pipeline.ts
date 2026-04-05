@@ -122,7 +122,7 @@ export async function runPipeline(
 
     const buildStart = Date.now();
     const projectDir = path.join(PROJECTS_ROOT, projectId);
-    const buildResult = await runBuild(projectDir, onBuildLog);
+    const buildResult = await runBuild(projectDir, onBuildLog, { projectId, target: environment as "development" | "preview" | "production" });
     const buildTimeMs = Date.now() - buildStart;
 
     if (!buildResult.success) {
