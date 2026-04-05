@@ -234,30 +234,71 @@ environmentRoutes.delete("/:workspaceId/environments/:envId/rules/:ruleId", asyn
   return c.json({ data: { deleted: true } });
 });
 
-// --- Knowledge (context file) refs ---
+// --- Knowledge (direct CRUD via environment_knowledge) ---
+
+const knowledgeCreateSchema = z.object({
+  filename: z.string().min(1).max(255),
+  content: z.string().default(""),
+});
+
+const knowledgeUpdateSchema = z.object({
+  content: z.string(),
+});
+
+// List knowledge files for an environment
+environmentRoutes.get("/:workspaceId/environments/:envId/knowledge", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const envId = c.req.param("envId");
+  const userId = c.get("userId");
+  const err = await requireMember(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+  const files = await envs.listKnowledge(envId);
+  return c.json({ data: files });
+});
+
+// Create / upsert a knowledge file
 environmentRoutes.post(
   "/:workspaceId/environments/:envId/knowledge",
-  zValidator("json", refSchema),
+  zValidator("json", knowledgeCreateSchema),
   async (c) => {
-    const { workspaceId, envId } = c.req.param() as { workspaceId: string; envId: string };
+    const workspaceId = c.req.param("workspaceId");
+    const envId = c.req.param("envId");
     const userId = c.get("userId");
-    const { id: contextFileId } = c.req.valid("json");
+    const { filename, content } = c.req.valid("json");
     const err = await requireMember(workspaceId, userId);
     if (err) return c.json({ error: err }, 403);
-    const row = await envs.addContextRef(envId, contextFileId);
+    const row = await envs.upsertKnowledge(envId, filename, content);
     return c.json({ data: row }, 201);
   },
 );
 
-environmentRoutes.delete("/:workspaceId/environments/:envId/knowledge/:contextFileId", async (c) => {
+// Update a knowledge file by filename
+environmentRoutes.put(
+  "/:workspaceId/environments/:envId/knowledge/:filename",
+  zValidator("json", knowledgeUpdateSchema),
+  async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    const envId = c.req.param("envId");
+    const filename = c.req.param("filename");
+    const userId = c.get("userId");
+    const { content } = c.req.valid("json");
+    const err = await requireMember(workspaceId, userId);
+    if (err) return c.json({ error: err }, 403);
+    const row = await envs.upsertKnowledge(envId, filename, content);
+    return c.json({ data: row });
+  },
+);
+
+// Delete a knowledge file by filename
+environmentRoutes.delete("/:workspaceId/environments/:envId/knowledge/:filename", async (c) => {
   const workspaceId = c.req.param("workspaceId");
   const envId = c.req.param("envId");
-  const contextFileId = c.req.param("contextFileId");
+  const filename = c.req.param("filename");
   const userId = c.get("userId");
   const err = await requireMember(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
-  const deleted = await envs.removeContextRef(envId, contextFileId);
-  if (!deleted) return c.json({ error: "Ref not found" }, 404);
+  const deleted = await envs.removeKnowledge(envId, filename);
+  if (!deleted) return c.json({ error: "Knowledge file not found" }, 404);
   return c.json({ data: { deleted: true } });
 });
 

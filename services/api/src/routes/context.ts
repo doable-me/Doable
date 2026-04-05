@@ -178,6 +178,7 @@ workspaceContextRoutes.put(
   async (c) => {
     const workspaceId = c.req.param("wid");
     const filename = c.req.param("filename");
+    const userId = c.get("userId");
     const { content } = c.req.valid("json");
 
     const parseResult = filenameSchema.safeParse(filename);
@@ -185,7 +186,7 @@ workspaceContextRoutes.put(
       return c.json({ error: "Invalid filename" }, 400);
     }
 
-    const file = await ctx.setWorkspaceContext(workspaceId!, filename!, content);
+    const file = await ctx.setWorkspaceContext(workspaceId!, filename!, content, userId);
     return c.json({ data: file });
   }
 );

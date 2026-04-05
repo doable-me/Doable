@@ -14,6 +14,9 @@ export interface Environment {
   icon: string;
   color: string;
   is_template: boolean;
+  scope: "workspace" | "project" | "user";
+  project_id: string | null;
+  user_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -72,22 +75,30 @@ export interface EnvInstruction {
   created_at: string;
 }
 
+export interface KnowledgeFile {
+  id: string;
+  environment_id: string;
+  filename: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface EnvironmentWithItems extends Environment {
   skills: ContextSkill[];
   rules: ContextRule[];
   instructions: EnvInstruction[];
-  knowledge: ContextFile[];
+  knowledge: KnowledgeFile[];
   connectors: Connector[];
   skillRefs: string[];
   ruleRefs: string[];
-  contextRefs: string[];
   connectorRefs: string[];
 }
 
 export interface DefaultItems {
   skills: ContextSkill[];
   rules: ContextRule[];
-  knowledge: ContextFile[];
+  knowledge: KnowledgeFile[];
   connectors: Connector[];
 }
 
@@ -228,18 +239,27 @@ export function useEnvironments(workspaceId: string) {
     [workspaceId],
   );
 
-  const addContextRef = useCallback(
-    async (envId: string, contextFileId: string) => {
+  const addKnowledge = useCallback(
+    async (envId: string, filename: string, content: string = "") => {
       await apiFetch(`/workspaces/${workspaceId}/environments/${envId}/knowledge`, {
-        method: "POST", body: JSON.stringify({ id: contextFileId }),
+        method: "POST", body: JSON.stringify({ filename, content }),
       });
     },
     [workspaceId],
   );
 
-  const removeContextRef = useCallback(
-    async (envId: string, contextFileId: string) => {
-      await apiFetch(`/workspaces/${workspaceId}/environments/${envId}/knowledge/${contextFileId}`, {
+  const updateKnowledge = useCallback(
+    async (envId: string, filename: string, content: string) => {
+      await apiFetch(`/workspaces/${workspaceId}/environments/${envId}/knowledge/${filename}`, {
+        method: "PUT", body: JSON.stringify({ content }),
+      });
+    },
+    [workspaceId],
+  );
+
+  const removeKnowledge = useCallback(
+    async (envId: string, filename: string) => {
+      await apiFetch(`/workspaces/${workspaceId}/environments/${envId}/knowledge/${filename}`, {
         method: "DELETE",
       });
     },
@@ -309,8 +329,9 @@ export function useEnvironments(workspaceId: string) {
     removeSkillRef,
     addRuleRef,
     removeRuleRef,
-    addContextRef,
-    removeContextRef,
+    addKnowledge,
+    updateKnowledge,
+    removeKnowledge,
     addConnectorRef,
     removeConnectorRef,
     addInstruction,

@@ -35,7 +35,7 @@ import {
   type DefaultItems,
   type ContextSkill,
   type ContextRule,
-  type ContextFile,
+  type KnowledgeFile,
   type Connector,
 } from "./use-environments";
 
@@ -469,7 +469,7 @@ function DefaultEnvironmentCard({ workspaceId }: { workspaceId: string }) {
           ) : items ? (
             <div className="space-y-3">
               <p className="text-[11px] text-muted-foreground">
-                This shows workspace-level items shared across all projects. The Knowledge tab in the editor sidebar manages per-project files, which are separate from the workspace knowledge shown here.
+                Workspace-level items automatically included in all projects unless overridden by a project environment.
               </p>
 
               <ItemList title="Skills" icon={<Sparkles className="h-3.5 w-3.5" />} items={items.skills.map((s) => ({ name: s.skill_name, sub: s.skill_content.slice(0, 50) }))} />
@@ -484,7 +484,7 @@ function DefaultEnvironmentCard({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function ItemList({ title, icon, items, emptyMessage }: { title: string; icon: React.ReactNode; items: { name: string; sub: string }[]; emptyMessage?: string }) {
+function ItemList({ title, icon, items, emptyMessage, onRemove }: { title: string; icon: React.ReactNode; items: { name: string; sub: string }[]; emptyMessage?: string; onRemove?: (index: number) => void }) {
   return (
     <div>
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-1">
@@ -495,9 +495,18 @@ function ItemList({ title, icon, items, emptyMessage }: { title: string; icon: R
       ) : (
         <div className="pl-1 space-y-0.5">
           {items.map((item, i) => (
-            <div key={i} className="flex items-center gap-2 px-2 py-1 text-xs">
+            <div key={i} className="flex items-center gap-2 px-2 py-1 text-xs group">
               <span className="font-medium truncate">{item.name}</span>
               <span className="text-[10px] text-muted-foreground truncate ml-auto max-w-[120px]">{item.sub}</span>
+              {onRemove && (
+                <button
+                  onClick={() => onRemove(i)}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-destructive transition-all"
+                  title="Remove"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -638,7 +647,6 @@ function EnvironmentCard({
   // Available workspace items for pickers
   const [availableSkills, setAvailableSkills] = useState<ContextSkill[]>([]);
   const [availableRules, setAvailableRules] = useState<ContextRule[]>([]);
-  const [availableKnowledge, setAvailableKnowledge] = useState<ContextFile[]>([]);
   const [availableConnectors, setAvailableConnectors] = useState<Connector[]>([]);
 
   const loadDetail = useCallback(async () => {
@@ -660,13 +668,11 @@ function EnvironmentCard({
         if (wsItems.items) {
           setAvailableSkills(wsItems.items.skills);
           setAvailableRules(wsItems.items.rules);
-          setAvailableKnowledge(wsItems.items.knowledge);
           setAvailableConnectors(wsItems.items.connectors);
         }
       } else {
         setAvailableSkills(items.skills);
         setAvailableRules(items.rules);
-        setAvailableKnowledge(items.knowledge);
         setAvailableConnectors(items.connectors);
       }
     } finally {
@@ -743,16 +749,13 @@ function EnvironmentCard({
                 onRemove={async (id) => { await hooks.removeRuleRef(env.id, id); await reloadDetail(); }}
               />
 
-              {/* Knowledge picker */}
-              <RefPicker<ContextFile>
+              {/* Knowledge (directly owned by environment) */}
+              <ItemList
                 title="Knowledge"
                 icon={<Brain className="h-3.5 w-3.5" />}
-                available={availableKnowledge}
-                included={detail.knowledge}
-                getLabel={(k) => k.filename}
-                getSubLabel={(k) => k.content.slice(0, 40)}
-                onAdd={async (id) => { await hooks.addContextRef(env.id, id); await reloadDetail(); }}
-                onRemove={async (id) => { await hooks.removeContextRef(env.id, id); await reloadDetail(); }}
+                items={detail.knowledge.map((k) => ({ name: k.filename, sub: `${k.content.length} chars` }))}
+                emptyMessage="No knowledge files"
+                onRemove={async (i) => { await hooks.removeKnowledge(env.id, detail.knowledge[i].filename); await reloadDetail(); }}
               />
 
               {/* Connectors picker */}

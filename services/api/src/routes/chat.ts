@@ -278,21 +278,19 @@ async function buildProjectContextForMode(
 
       let skills: { skill_name: string; skill_content: string }[] = [];
       let rules: { rule_name: string; content: string }[] = [];
-      let knowledge: { filename: string; content: string }[] = [];
       let instructions: { filename: string; content: string }[] = [];
 
       if (environment) {
         // Custom environment (from project or workspace level)
         skills = environment.skills;
         rules = environment.rules;
-        knowledge = environment.knowledge;
+        // Knowledge is already loaded via resolveEffectiveContext above (multi-scope merged)
         instructions = environment.instructions;
       } else {
         // No custom default — use all workspace-level skills & rules
         const items = await envDb.getDefaultItems(workspaceId);
         skills = items.skills;
         rules = items.rules;
-        knowledge = items.knowledge;
         // No instructions for virtual default
       }
 
@@ -301,9 +299,6 @@ async function buildProjectContextForMode(
       }
       if (rules.length > 0) {
         context += `\n\n<rules>\n${rules.map((r) => `<rule name="${r.rule_name}">\n${r.content}\n</rule>`).join("\n")}\n</rules>`;
-      }
-      if (knowledge.length > 0) {
-        context += `\n\n<knowledge>\n${knowledge.map((k) => `<file name="${k.filename}">\n${k.content}\n</file>`).join("\n")}\n</knowledge>`;
       }
       if (instructions.length > 0) {
         context += `\n\n<environment-instructions>\n${instructions.map((i) => `<instruction file="${i.filename}">\n${i.content}\n</instruction>`).join("\n")}\n</environment-instructions>`;

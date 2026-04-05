@@ -1,6 +1,5 @@
 import type postgres from "postgres";
 import type { ContextSkillRow, ContextRuleRow } from "./skills.js";
-import type { WorkspaceContextFileRow } from "./context.js";
 import type { McpConnectorRow } from "./connectors.js";
 
 // ─── Row Types ────────────────────────────────────────────
@@ -14,6 +13,18 @@ export interface EnvironmentRow {
   icon: string;
   color: string;
   is_template: boolean;
+  scope: "workspace" | "project" | "user";
+  project_id: string | null;
+  user_id: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface EnvironmentKnowledgeRow {
+  id: string;
+  environment_id: string;
+  filename: string;
+  content: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -45,17 +56,16 @@ export interface WorkspaceEnvironmentRow {
   applied_at: Date;
 }
 
-/** Environment with resolved items from workspace tables */
+/** Environment with resolved items */
 export interface EnvironmentWithItems extends EnvironmentRow {
   skills: ContextSkillRow[];
   rules: ContextRuleRow[];
   instructions: EnvironmentInstructionRow[];
-  knowledge: WorkspaceContextFileRow[];
+  knowledge: EnvironmentKnowledgeRow[];
   connectors: McpConnectorRow[];
   /** IDs of referenced items (for the picker UI) */
   skillRefs: string[];
   ruleRefs: string[];
-  contextRefs: string[];
   connectorRefs: string[];
 }
 
@@ -111,12 +121,10 @@ export function environmentQueries(sql: postgres.Sql) {
           WHERE environment_id = ${id}
           ORDER BY filename
         `,
-        sql<(WorkspaceContextFileRow & { ref_id: string })[]>`
-          SELECT wcf.*, ecr.id AS ref_id
-          FROM workspace_context_files wcf
-          JOIN environment_context_refs ecr ON ecr.context_file_id = wcf.id
-          WHERE ecr.environment_id = ${id}
-          ORDER BY wcf.filename
+        sql<EnvironmentKnowledgeRow[]>`
+          SELECT * FROM environment_knowledge
+          WHERE environment_id = ${id}
+          ORDER BY filename
         `,
         sql<(McpConnectorRow & { ref_id: string })[]>`
           SELECT mc.*, ecnr.id AS ref_id
@@ -136,7 +144,6 @@ export function environmentQueries(sql: postgres.Sql) {
         connectors,
         skillRefs: skills.map((s) => s.id),
         ruleRefs: rules.map((r) => r.id),
-        contextRefs: knowledge.map((k) => k.id),
         connectorRefs: connectors.map((c) => c.id),
       };
     },
@@ -145,7 +152,7 @@ export function environmentQueries(sql: postgres.Sql) {
     async getDefaultItems(workspaceId: string): Promise<{
       skills: ContextSkillRow[];
       rules: ContextRuleRow[];
-      knowledge: WorkspaceContextFileRow[];
+      knowledge: EnvironmentKnowledgeRow[];
       connectors: McpConnectorRow[];
     }> {
       const [skills, rules, knowledge, connectors] = await Promise.all([
@@ -159,10 +166,11 @@ export function environmentQueries(sql: postgres.Sql) {
           WHERE workspace_id = ${workspaceId} AND scope = 'workspace'
           ORDER BY rule_name
         `,
-        sql<WorkspaceContextFileRow[]>`
-          SELECT * FROM workspace_context_files
-          WHERE workspace_id = ${workspaceId}
-          ORDER BY filename
+        sql<EnvironmentKnowledgeRow[]>`
+          SELECT ek.* FROM environment_knowledge ek
+          JOIN environments e ON e.id = ek.environment_id
+          WHERE e.workspace_id = ${workspaceId} AND e.scope = 'workspace'
+          ORDER BY ek.filename
         `,
         sql<McpConnectorRow[]>`
           SELECT * FROM mcp_connectors
@@ -182,9 +190,12 @@ export function environmentQueries(sql: postgres.Sql) {
       icon?: string;
       color?: string;
       isTemplate?: boolean;
+      scope?: "workspace" | "project" | "user";
+      projectId?: string;
+      userId?: string;
     }): Promise<EnvironmentRow> {
       const [env] = await sql<EnvironmentRow[]>`
-        INSERT INTO environments (workspace_id, created_by, name, description, icon, color, is_template)
+        INSERT INTO environments (workspace_id, created_by, name, description, icon, color, is_template, scope, project_id, user_id)
         VALUES (
           ${data.workspaceId},
           ${data.createdBy},
@@ -192,7 +203,10 @@ export function environmentQueries(sql: postgres.Sql) {
           ${data.description ?? ""},
           ${data.icon ?? "🔧"},
           ${data.color ?? "blue"},
-          ${data.isTemplate ?? false}
+          ${data.isTemplate ?? false},
+          ${data.scope ?? "workspace"},
+          ${data.projectId ?? null},
+          ${data.userId ?? null}
         )
         RETURNING *
       `;
@@ -325,6 +339,116 @@ export function environmentQueries(sql: postgres.Sql) {
       return result.count > 0;
     },
 
+    // ── Knowledge CRUD (direct ownership via environment_knowledge) ──
+
+    async listKnowledge(environmentId: string): Promise<EnvironmentKnowledgeRow[]> {
+      return sql<EnvironmentKnowledgeRow[]>`
+        SELECT * FROM environment_knowledge
+        WHERE environment_id = ${environmentId}
+        ORDER BY filename
+      `;
+    },
+
+    async getKnowledgeFile(environmentId: string, filename: string): Promise<EnvironmentKnowledgeRow | null> {
+      const [row] = await sql<EnvironmentKnowledgeRow[]>`
+        SELECT * FROM environment_knowledge
+        WHERE environment_id = ${environmentId} AND filename = ${filename}
+      `;
+      return row ?? null;
+    },
+
+    async upsertKnowledge(environmentId: string, filename: string, content: string): Promise<EnvironmentKnowledgeRow> {
+      const [row] = await sql<EnvironmentKnowledgeRow[]>`
+        INSERT INTO environment_knowledge (environment_id, filename, content)
+        VALUES (${environmentId}, ${filename}, ${content})
+        ON CONFLICT (environment_id, filename)
+        DO UPDATE SET content = ${content}, updated_at = now()
+        RETURNING *
+      `;
+      return row!;
+    },
+
+    async removeKnowledge(environmentId: string, filename: string): Promise<boolean> {
+      const result = await sql`
+        DELETE FROM environment_knowledge
+        WHERE environment_id = ${environmentId} AND filename = ${filename}
+      `;
+      return result.count > 0;
+    },
+
+    // ── Scoped environment helpers ──
+
+    async getForProject(projectId: string): Promise<EnvironmentRow | null> {
+      const [env] = await sql<EnvironmentRow[]>`
+        SELECT * FROM environments
+        WHERE project_id = ${projectId} AND scope = 'project'
+        LIMIT 1
+      `;
+      return env ?? null;
+    },
+
+    async getOrCreateForProject(projectId: string, workspaceId: string, createdBy: string): Promise<EnvironmentRow> {
+      const existing = await this.getForProject(projectId);
+      if (existing) return existing;
+      return this.create({
+        workspaceId,
+        createdBy,
+        name: "Project Knowledge",
+        description: "Project context and knowledge files",
+        icon: "📁",
+        color: "green",
+        scope: "project",
+        projectId,
+      });
+    },
+
+    async getForWorkspace(workspaceId: string): Promise<EnvironmentRow | null> {
+      const [env] = await sql<EnvironmentRow[]>`
+        SELECT * FROM environments
+        WHERE workspace_id = ${workspaceId} AND scope = 'workspace' AND project_id IS NULL AND user_id IS NULL
+        LIMIT 1
+      `;
+      return env ?? null;
+    },
+
+    async getOrCreateForWorkspace(workspaceId: string, createdBy: string): Promise<EnvironmentRow> {
+      const existing = await this.getForWorkspace(workspaceId);
+      if (existing) return existing;
+      return this.create({
+        workspaceId,
+        createdBy,
+        name: "Workspace Knowledge",
+        description: "Workspace-level knowledge files",
+        icon: "🌐",
+        color: "blue",
+        scope: "workspace",
+      });
+    },
+
+    async getForUser(userId: string, workspaceId: string): Promise<EnvironmentRow | null> {
+      const [env] = await sql<EnvironmentRow[]>`
+        SELECT * FROM environments
+        WHERE user_id = ${userId} AND workspace_id = ${workspaceId} AND scope = 'user'
+        LIMIT 1
+      `;
+      return env ?? null;
+    },
+
+    async getOrCreateForUser(userId: string, workspaceId: string): Promise<EnvironmentRow> {
+      const existing = await this.getForUser(userId, workspaceId);
+      if (existing) return existing;
+      return this.create({
+        workspaceId,
+        createdBy: userId,
+        name: "My Knowledge",
+        description: "Personal knowledge files",
+        icon: "👤",
+        color: "purple",
+        scope: "user",
+        userId,
+      });
+    },
+
     // ── Workspace ↔ Environment linking ──
 
     async applyToWorkspace(workspaceId: string, environmentId: string, isDefault?: boolean): Promise<WorkspaceEnvironmentRow> {
@@ -372,7 +496,7 @@ export function environmentQueries(sql: postgres.Sql) {
       `;
     },
 
-    // ── Clone an environment (copies refs + instructions) ──
+    // ── Clone an environment (copies knowledge, refs & instructions) ──
     async clone(sourceId: string, targetWorkspaceId: string, createdBy: string, newName?: string): Promise<EnvironmentRow> {
       const source = await this.getById(sourceId);
       if (!source) throw new Error("Source environment not found");
@@ -386,11 +510,11 @@ export function environmentQueries(sql: postgres.Sql) {
         color: source.color,
       });
 
-      // Clone refs + instructions
+      // Clone refs, knowledge & instructions
       await Promise.all([
         ...source.skills.map((s) => this.addSkillRef(env.id, s.id)),
         ...source.rules.map((r) => this.addRuleRef(env.id, r.id)),
-        ...source.knowledge.map((k) => this.addContextRef(env.id, k.id)),
+        ...source.knowledge.map((k) => this.upsertKnowledge(env.id, k.filename, k.content)),
         ...source.connectors.map((c) => this.addConnectorRef(env.id, c.id)),
         ...source.instructions.map((i) => this.addInstruction(env.id, i.filename, i.content)),
       ]);

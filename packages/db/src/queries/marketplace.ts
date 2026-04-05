@@ -1,7 +1,6 @@
 import type postgres from "postgres";
 import type { EnvironmentRow, EnvironmentWithItems } from "./environments.js";
 import type { ContextSkillRow, ContextRuleRow } from "./skills.js";
-import type { WorkspaceContextFileRow } from "./context.js";
 
 // ─── Row Types ────────────────────────────────────────────
 
@@ -544,10 +543,8 @@ export function marketplaceQueries(sql: postgres.Sql) {
     ): Promise<EnvironmentRow> {
       const { environmentQueries } = await import("./environments.js");
       const { skillsQueries } = await import("./skills.js");
-      const { contextQueries } = await import("./context.js");
       const envDb = environmentQueries(sql);
       const skillDb = skillsQueries(sql);
-      const ctxDb = contextQueries(sql);
 
       // 1. Create the environment
       const env = await envDb.create({
@@ -587,15 +584,9 @@ export function marketplaceQueries(sql: postgres.Sql) {
         await envDb.addInstruction(env.id, instr.filename, instr.content);
       }
 
-      // 5. Import knowledge files — upsert workspace_context_files and ref them
+      // 5. Import knowledge files — directly into environment_knowledge
       for (const kf of bundle.knowledgeFiles) {
-        const existing = await ctxDb.getWorkspaceContextFile(workspaceId, kf.filename);
-        if (existing) {
-          await envDb.addContextRef(env.id, existing.id);
-        } else {
-          const created = await ctxDb.upsertWorkspaceContext(workspaceId, kf.filename, kf.content);
-          await envDb.addContextRef(env.id, created.id);
-        }
+        await envDb.upsertKnowledge(env.id, kf.filename, kf.content);
       }
 
       return env;
