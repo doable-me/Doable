@@ -26,19 +26,25 @@ export function projectQueries(sql: postgres.Sql) {
 
     async listByWorkspace(
       workspaceId: string,
-      opts: { page?: number; pageSize?: number; status?: ProjectStatus } = {}
+      opts: { page?: number; pageSize?: number; status?: ProjectStatus; search?: string; folderId?: string } = {}
     ): Promise<{ rows: ProjectRow[]; total: number }> {
       const page = opts.page ?? 1;
       const pageSize = opts.pageSize ?? 20;
       const offset = (page - 1) * pageSize;
 
       const statusFilter = opts.status ? sql`AND status = ${opts.status}` : sql``;
+      const folderFilter = opts.folderId ? sql`AND folder_id = ${opts.folderId}` : sql``;
+      const searchFilter = opts.search
+        ? sql`AND (name ILIKE ${"%" + opts.search + "%"} OR description ILIKE ${"%" + opts.search + "%"})`
+        : sql``;
 
       const [countResult] = await sql<[{ count: string }]>`
         SELECT count(*)::text FROM projects
         WHERE workspace_id = ${workspaceId}
           AND deleted_at IS NULL
           ${statusFilter}
+          ${folderFilter}
+          ${searchFilter}
       `;
 
       const rows = await sql<ProjectRow[]>`
@@ -46,6 +52,8 @@ export function projectQueries(sql: postgres.Sql) {
         WHERE workspace_id = ${workspaceId}
           AND deleted_at IS NULL
           ${statusFilter}
+          ${folderFilter}
+          ${searchFilter}
         ORDER BY updated_at DESC
         LIMIT ${pageSize} OFFSET ${offset}
       `;

@@ -6,6 +6,7 @@ import { sql } from "../db/index.js";
 import { projectQueries } from "@doable/db";
 import { starQueries } from "@doable/db";
 import { workspaceQueries } from "@doable/db";
+import { projectViewQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { getProjectPath } from "../ai/project-files.js";
 import { getThumbnailPath } from "../thumbnails/capture.js";
@@ -21,6 +22,7 @@ import {
 const projects = projectQueries(sql);
 const stars = starQueries(sql);
 const workspacesQ = workspaceQueries(sql);
+const projectViews = projectViewQueries(sql);
 
 export const projectRoutes = new Hono<AuthEnv>();
 
@@ -107,7 +109,8 @@ projectRoutes.get("/", async (c) => {
     | "published"
     | "error"
     | undefined;
-  const search = c.req.query("search");
+  const search = c.req.query("search") || undefined;
+  const folderId = c.req.query("folderId") || undefined;
 
   const workspaceId = await getUserWorkspaceId(userId, explicitWorkspaceId ?? undefined);
   if (!workspaceId) {
@@ -127,21 +130,14 @@ projectRoutes.get("/", async (c) => {
     page,
     pageSize,
     status,
+    search,
+    folderId,
   });
-
-  // Apply search filter in-memory for simplicity
-  const filtered = search
-    ? rows.filter(
-        (p) =>
-          p.name.toLowerCase().includes(search.toLowerCase()) ||
-          p.description?.toLowerCase().includes(search.toLowerCase())
-      )
-    : rows;
 
   const starredIds = await stars.listStarredProjectIds(userId);
   const starredSet = new Set(starredIds);
 
-  const data = filtered.map((p) => ({
+  const data = rows.map((p) => ({
     ...p,
     starred: starredSet.has(p.id),
   }));
@@ -149,10 +145,10 @@ projectRoutes.get("/", async (c) => {
   return c.json({
     data,
     pagination: {
-      total: search ? filtered.length : total,
+      total,
       page,
       pageSize,
-      totalPages: Math.ceil((search ? filtered.length : total) / pageSize),
+      totalPages: Math.ceil(total / pageSize),
     },
   });
 });
@@ -223,6 +219,60 @@ projectRoutes.post("/", async (c) => {
   });
 
   return c.json({ data: project }, 201);
+});
+
+// ─── Recently Viewed Projects ───────────────────────────────
+// NOTE: Must be defined BEFORE "/:id" to avoid matching "recently-viewed" as an id
+projectRoutes.get("/recently-viewed", async (c) => {
+  const userId = c.get("userId");
+  const explicitWorkspaceId = c.req.query("workspaceId");
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10));
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(1, parseInt(c.req.query("pageSize") ?? String(DEFAULT_PAGE_SIZE), 10))
+  );
+
+  const workspaceId = await getUserWorkspaceId(userId, explicitWorkspaceId ?? undefined);
+  if (!workspaceId) {
+    return c.json({ data: [], pagination: { total: 0, page: 1, pageSize, totalPages: 0 } });
+  }
+
+  const { rows, total } = await projectViews.listRecentlyViewed(userId, workspaceId, {
+    page,
+    pageSize,
+  });
+
+  const starredIds = await stars.listStarredProjectIds(userId);
+  const starredSet = new Set(starredIds);
+
+  const data = rows.map((p) => ({
+    ...p,
+    starred: starredSet.has(p.id),
+  }));
+
+  return c.json({
+    data,
+    pagination: {
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    },
+  });
+});
+
+// ─── Record Project View ────────────────────────────────────
+projectRoutes.post("/:id/view", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  await projectViews.recordView(userId, id);
+  return c.json({ ok: true });
 });
 
 // ─── Get Project ────────────────────────────────────────────

@@ -8,6 +8,8 @@ import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-att
 import {
   apiListProjects,
   apiListStarredProjects,
+  apiListRecentlyViewed,
+  apiRecordProjectView,
   apiCreateProject,
   apiToggleStarProject,
   apiDeleteProject,
@@ -978,12 +980,21 @@ export default function DashboardPage() {
 
   // Data
   const [projects, setProjects] = useState<ApiProject[]>([]);
+  const [recentProjects, setRecentProjects] = useState<ApiProject[]>([]);
   const [templates, setTemplates] = useState<ApiTemplate[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Pagination
+  const PAGE_SIZE = 12;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalProjects, setTotalProjects] = useState(0);
+  const [recentPage, setRecentPage] = useState(1);
+  const [totalRecent, setTotalRecent] = useState(0);
 
   // Voice input
   const speechRecognition = useSpeechRecognition((transcript: string) => {
@@ -1004,6 +1015,7 @@ export default function DashboardPage() {
     return "grid";
   });
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [starredFilter, setStarredFilter] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("updated_at");
@@ -1056,18 +1068,53 @@ export default function DashboardPage() {
     localStorage.setItem(VIEW_MODE_KEY, viewMode);
   }, [viewMode]);
 
-  // ---- Fetch projects ----
-  const fetchProjects = useCallback(async () => {
+  // ---- Debounce search ----
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // ---- Fetch projects (paginated) ----
+  const fetchProjects = useCallback(async (page = 1, append = false) => {
     try {
-      setError(null);
-      const res = await apiListProjects({ pageSize: 100 });
-      setProjects(res.data);
+      if (!append) setError(null);
+      if (page > 1) setIsLoadingMore(true);
+      const res = await apiListProjects({
+        page,
+        pageSize: PAGE_SIZE,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        search: debouncedSearch.trim() || undefined,
+        folderId: activeFolderId ?? undefined,
+      });
+      setProjects((prev) => (append ? [...prev, ...res.data] : res.data));
+      setCurrentPage(page);
+      setTotalProjects(res.pagination.total);
     } catch (err) {
       console.error("Failed to fetch projects:", err);
-      setError("Failed to load projects");
-      setProjects([]);
+      if (!append) {
+        setError("Failed to load projects");
+        setProjects([]);
+      }
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  }, [statusFilter, debouncedSearch, activeFolderId]);
+
+  // ---- Fetch recently viewed (paginated) ----
+  const fetchRecentlyViewed = useCallback(async (page = 1, append = false) => {
+    try {
+      if (page > 1) setIsLoadingMore(true);
+      const res = await apiListRecentlyViewed({ page, pageSize: PAGE_SIZE });
+      setRecentProjects((prev) => (append ? [...prev, ...res.data] : res.data));
+      setRecentPage(page);
+      setTotalRecent(res.pagination.total);
+    } catch (err) {
+      console.error("Failed to fetch recently viewed:", err);
+      if (!append) setRecentProjects([]);
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }, []);
 
@@ -1096,8 +1143,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchProjects();
+    fetchRecentlyViewed();
     fetchFolders();
-  }, [fetchProjects, fetchFolders]);
+  }, [fetchProjects, fetchRecentlyViewed, fetchFolders]);
 
   useEffect(() => {
     if (activeTab === "templates" && templates.length === 0 && !isLoadingTemplates) {
@@ -1198,8 +1246,14 @@ export default function DashboardPage() {
     }
   };
 
+  // Helper to update both project arrays at once
+  const updateBothArrays = (updater: (prev: ApiProject[]) => ApiProject[]) => {
+    setProjects(updater);
+    setRecentProjects(updater);
+  };
+
   const toggleStar = async (id: string) => {
-    setProjects((prev) =>
+    updateBothArrays((prev) =>
       prev.map((p) => (p.id === id ? { ...p, starred: !p.starred } : p))
     );
     try {
@@ -1207,15 +1261,15 @@ export default function DashboardPage() {
       emitDashboardEvent(DASHBOARD_EVENTS.PROJECTS_CHANGED);
     } catch (err) {
       console.error("Failed to toggle star:", err);
-      setProjects((prev) =>
+      updateBothArrays((prev) =>
         prev.map((p) => (p.id === id ? { ...p, starred: !p.starred } : p))
       );
     }
   };
 
   const handleDelete = async (id: string) => {
-    const name = projects.find((p) => p.id === id)?.name || "Project";
-    setProjects((prev) => prev.filter((p) => p.id !== id));
+    const name = projects.find((p) => p.id === id)?.name || recentProjects.find((p) => p.id === id)?.name || "Project";
+    updateBothArrays((prev) => prev.filter((p) => p.id !== id));
     setSelectedIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -1230,13 +1284,14 @@ export default function DashboardPage() {
       console.error("Failed to delete project:", err);
       addToast("error", `Failed to delete "${name}"`);
       fetchProjects();
+      fetchRecentlyViewed();
     }
   };
 
   const handleBulkDelete = async () => {
     const ids: string[] = Array.from(selectedIds);
     const count = ids.length;
-    setProjects((prev) => prev.filter((p) => !selectedIds.has(p.id)));
+    updateBothArrays((prev) => prev.filter((p) => !selectedIds.has(p.id)));
     setSelectedIds(new Set());
     setBulkDeleteConfirm(false);
     try {
@@ -1247,6 +1302,7 @@ export default function DashboardPage() {
       console.error("Failed to delete projects:", err);
       addToast("error", "Failed to delete some projects");
       fetchProjects();
+      fetchRecentlyViewed();
     }
   };
 
@@ -1254,6 +1310,7 @@ export default function DashboardPage() {
     try {
       const res = await apiDuplicateProject(id);
       setProjects((prev) => [res.data, ...prev]);
+      setTotalProjects((t) => t + 1);
       emitDashboardEvent(DASHBOARD_EVENTS.PROJECTS_CHANGED);
     } catch (err) {
       console.error("Failed to duplicate project:", err);
@@ -1264,7 +1321,7 @@ export default function DashboardPage() {
     if (!renamingProject || !renameValue.trim()) return;
     try {
       const res = await apiUpdateProject(renamingProject.id, { name: renameValue.trim() });
-      setProjects((prev) =>
+      updateBothArrays((prev) =>
         prev.map((p) => (p.id === renamingProject.id ? { ...p, ...res.data } : p))
       );
       setRenamingProject(null);
@@ -1278,7 +1335,7 @@ export default function DashboardPage() {
   const handleMoveToFolder = async (projectId: string, folderId: string | null) => {
     try {
       await apiUpdateProject(projectId, { folderId });
-      setProjects((prev) =>
+      updateBothArrays((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, folder_id: folderId } : p))
       );
       setMoveToFolderProject(null);
@@ -1293,7 +1350,7 @@ export default function DashboardPage() {
     const ids: string[] = Array.from(selectedIds);
     try {
       await Promise.all(ids.map((id) => apiUpdateProject(id, { folderId })));
-      setProjects((prev) =>
+      updateBothArrays((prev) =>
         prev.map((p) => (selectedIds.has(p.id) ? { ...p, folder_id: folderId } : p))
       );
       setSelectedIds(new Set());
@@ -1305,6 +1362,8 @@ export default function DashboardPage() {
   };
 
   const navigateToProject = (id: string) => {
+    // Record view for recently-viewed tracking (fire-and-forget)
+    apiRecordProjectView(id).catch(() => {});
     router.push(`/editor/${id}`);
   };
 
@@ -1336,37 +1395,15 @@ export default function DashboardPage() {
   };
 
   // ---- Filtered & sorted projects ----
+  // Server handles: search, status, folder, pagination
+  // Client handles: starred filter, sort
+  const sourceProjects = activeTab === "recent" ? recentProjects : projects;
   const displayProjects = useMemo(() => {
-    let filtered = [...projects];
+    let filtered = [...sourceProjects];
 
-    // Folder filter
-    if (activeFolderId) {
-      filtered = filtered.filter((p) => p.folder_id === activeFolderId);
-    }
-
-    // Sidebar filter
-    if (sidebarFilter === "starred") {
+    // Starred filter (sidebar or toolbar)
+    if (sidebarFilter === "starred" || starredFilter) {
       filtered = filtered.filter((p) => p.starred);
-    }
-
-    // Status filter
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((p) => p.status === statusFilter);
-    }
-
-    // Starred filter
-    if (starredFilter && sidebarFilter !== "starred") {
-      filtered = filtered.filter((p) => p.starred);
-    }
-
-    // Search
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          (p.description && p.description.toLowerCase().includes(q))
-      );
     }
 
     // Sort
@@ -1386,11 +1423,25 @@ export default function DashboardPage() {
     });
 
     return filtered;
-  }, [projects, activeFolderId, sidebarFilter, statusFilter, starredFilter, searchQuery, sortKey, sortDir]);
+  }, [sourceProjects, sidebarFilter, starredFilter, sortKey, sortDir]);
+
+  // ---- Pagination helpers ----
+  const hasMore = activeTab === "recent"
+    ? recentProjects.length < totalRecent
+    : projects.length < totalProjects;
+
+  const loadMore = () => {
+    if (isLoadingMore) return;
+    if (activeTab === "recent") {
+      fetchRecentlyViewed(recentPage + 1, true);
+    } else {
+      fetchProjects(currentPage + 1, true);
+    }
+  };
 
   // ---- Context menu project ----
   const contextProject = contextMenu.projectId
-    ? projects.find((p) => p.id === contextMenu.projectId) ?? null
+    ? (projects.find((p) => p.id === contextMenu.projectId) ?? recentProjects.find((p) => p.id === contextMenu.projectId) ?? null)
     : null;
 
   // ---- Tab config ----
@@ -1871,11 +1922,29 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Results count */}
+        {/* Load More + Results count */}
         {!isLoading && activeTab !== "templates" && displayProjects.length > 0 && (
-          <div className="mt-4 text-center">
+          <div className="mt-6 flex flex-col items-center gap-3">
+            {hasMore && (
+              <button
+                onClick={loadMore}
+                disabled={isLoadingMore}
+                className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/50 px-5 py-2.5 text-sm font-medium text-zinc-300 hover:bg-zinc-700/50 hover:text-white transition-colors disabled:opacity-50"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  "Load more"
+                )}
+              </button>
+            )}
             <span className="text-xs text-zinc-600">
-              {displayProjects.length} project{displayProjects.length !== 1 ? "s" : ""}
+              Showing {displayProjects.length} of{" "}
+              {activeTab === "recent" ? totalRecent : totalProjects} project
+              {(activeTab === "recent" ? totalRecent : totalProjects) !== 1 ? "s" : ""}
               {searchQuery && ` matching "${searchQuery}"`}
             </span>
           </div>
@@ -1918,7 +1987,7 @@ export default function DashboardPage() {
             <DialogTitle className="text-zinc-200">Delete project</DialogTitle>
             <DialogDescription className="text-zinc-400">
               Are you sure you want to delete &ldquo;
-              {projects.find((p) => p.id === deleteConfirmId)?.name}
+              {projects.find((p) => p.id === deleteConfirmId)?.name ?? recentProjects.find((p) => p.id === deleteConfirmId)?.name}
               &rdquo;? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>

@@ -223,6 +223,7 @@ export interface ApiWorkspace {
   memberCount: number;
   credits: {
     dailyRemaining: number;
+    dailyTotal: number;
     monthlyRemaining: number;
     rolloverCredits: number;
   } | null;
@@ -234,6 +235,7 @@ export async function apiListProjects(opts?: {
   workspaceId?: string;
   search?: string;
   status?: string;
+  folderId?: string;
   page?: number;
   pageSize?: number;
 }): Promise<{ data: ApiProject[]; pagination: { total: number; page: number; pageSize: number; totalPages: number } }> {
@@ -241,6 +243,7 @@ export async function apiListProjects(opts?: {
   if (opts?.workspaceId) params.set("workspaceId", opts.workspaceId);
   if (opts?.search) params.set("search", opts.search);
   if (opts?.status) params.set("status", opts.status);
+  if (opts?.folderId) params.set("folderId", opts.folderId);
   if (opts?.page) params.set("page", String(opts.page));
   if (opts?.pageSize) params.set("pageSize", String(opts.pageSize));
   const qs = params.toString();
@@ -300,6 +303,21 @@ export async function apiToggleStarProject(id: string): Promise<{ data: { projec
 
 export async function apiListStarredProjects(): Promise<{ data: ApiProject[] }> {
   return apiFetch("/projects/starred");
+}
+
+export async function apiListRecentlyViewed(opts?: {
+  page?: number;
+  pageSize?: number;
+}): Promise<{ data: ApiProject[]; pagination: { total: number; page: number; pageSize: number; totalPages: number } }> {
+  const params = new URLSearchParams();
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.pageSize) params.set("pageSize", String(opts.pageSize));
+  const qs = params.toString();
+  return apiFetch(`/projects/recently-viewed${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiRecordProjectView(id: string): Promise<void> {
+  await apiFetch(`/projects/${id}/view`, { method: "POST" });
 }
 
 // ─── Workspace API Methods ────────────────────────────────
