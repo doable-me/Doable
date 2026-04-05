@@ -469,12 +469,12 @@ function DefaultEnvironmentCard({ workspaceId }: { workspaceId: string }) {
           ) : items ? (
             <div className="space-y-3">
               <p className="text-[11px] text-muted-foreground">
-                This virtual environment includes everything configured at workspace level. Edit items in their respective panels (Knowledge, Skills, Integrations).
+                This shows workspace-level items shared across all projects. The Knowledge tab in the editor sidebar manages per-project files, which are separate from the workspace knowledge shown here.
               </p>
 
               <ItemList title="Skills" icon={<Sparkles className="h-3.5 w-3.5" />} items={items.skills.map((s) => ({ name: s.skill_name, sub: s.skill_content.slice(0, 50) }))} />
               <ItemList title="Rules" icon={<BookOpen className="h-3.5 w-3.5" />} items={items.rules.map((r) => ({ name: r.rule_name, sub: r.content.slice(0, 50) }))} />
-              <ItemList title="Knowledge" icon={<Brain className="h-3.5 w-3.5" />} items={items.knowledge.map((k) => ({ name: k.filename, sub: k.content.slice(0, 50) }))} />
+              <ItemList title="Knowledge" icon={<Brain className="h-3.5 w-3.5" />} items={items.knowledge.map((k) => ({ name: k.filename, sub: k.content.slice(0, 50) }))} emptyMessage="None — add workspace knowledge in Workspace Settings" />
               <ItemList title="Connectors" icon={<Plug className="h-3.5 w-3.5" />} items={items.connectors.map((c) => ({ name: c.name, sub: c.transport_type }))} />
             </div>
           ) : null}
@@ -484,14 +484,14 @@ function DefaultEnvironmentCard({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function ItemList({ title, icon, items }: { title: string; icon: React.ReactNode; items: { name: string; sub: string }[] }) {
+function ItemList({ title, icon, items, emptyMessage }: { title: string; icon: React.ReactNode; items: { name: string; sub: string }[]; emptyMessage?: string }) {
   return (
     <div>
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-1">
         {icon} {title} <span className="text-[10px]">({items.length})</span>
       </div>
       {items.length === 0 ? (
-        <p className="text-[11px] text-muted-foreground/60 italic pl-5">None configured</p>
+        <p className="text-[11px] text-muted-foreground/60 italic pl-5">{emptyMessage ?? "None configured"}</p>
       ) : (
         <div className="pl-1 space-y-0.5">
           {items.map((item, i) => (
@@ -785,6 +785,27 @@ function EnvironmentCard({
                 <button onClick={onClone} className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs hover:bg-muted">
                   <Copy className="h-3 w-3" /> Clone
                 </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await apiFetch<{ data: unknown }>(
+                        `/workspaces/${workspaceId}/environments/${env.id}/export`,
+                      );
+                      const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: "application/json" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `${env.name.toLowerCase().replace(/\s+/g, "-")}-environment.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } catch (err) {
+                      console.error("Export failed:", err);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs hover:bg-muted"
+                >
+                  <FileText className="h-3 w-3" /> Export
+                </button>
                 {!confirmDelete ? (
                   <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 rounded-md border border-destructive/30 px-2.5 py-1.5 text-xs text-destructive hover:bg-destructive/10">
                     <Trash2 className="h-3 w-3" /> Delete
@@ -848,6 +869,30 @@ export function EnvironmentsPanel({ workspaceId }: EnvironmentsPanelProps) {
             className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs hover:bg-muted">
             <LayoutGrid className="h-3.5 w-3.5" /> Templates
           </button>
+          <label className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs hover:bg-muted cursor-pointer">
+            <FileText className="h-3.5 w-3.5" /> Import
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                  const text = await file.text();
+                  const bundle = JSON.parse(text);
+                  await apiFetch(`/workspaces/${workspaceId}/environments/import`, {
+                    method: "POST",
+                    body: JSON.stringify(bundle),
+                  });
+                  void refresh();
+                } catch (err) {
+                  console.error("Import failed:", err);
+                }
+                e.target.value = "";
+              }}
+            />
+          </label>
           <button onClick={() => setShowCreate(!showCreate)}
             className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs text-primary-foreground hover:bg-primary/90">
             <Plus className="h-3.5 w-3.5" /> New

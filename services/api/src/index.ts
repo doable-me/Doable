@@ -32,6 +32,7 @@ import { connectorRoutes } from "./routes/connectors.js";
 import { integrationRoutes } from "./routes/integrations.js";
 import { skillsRoutes } from "./routes/skills.js";
 import { environmentRoutes } from "./routes/environments.js";
+import { marketplaceRoutes } from "./routes/marketplace.js";
 import { teamChatRoutes } from "./routes/team-chat.js";
 import { planRoutes } from "./routes/plan.js";
 import { directSaveRoutes } from "./direct-save/index.js";
@@ -170,6 +171,8 @@ app.route("/workspaces", connectorRoutes);
 app.route("/", integrationRoutes);
 app.route("/workspaces", skillsRoutes);
 app.route("/workspaces", environmentRoutes);
+app.route("/", marketplaceRoutes);
+app.route("/workspaces", marketplaceRoutes);
 app.route("/workspaces/:wid/context", workspaceContextRoutes);
 app.route("/team-chat", teamChatRoutes);
 

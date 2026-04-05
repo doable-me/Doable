@@ -1296,16 +1296,24 @@ function EnvironmentsTab({ project }: { project: ApiProject }) {
     is_template: boolean; created_at: string;
   }>>([]);
   const [loading, setLoading] = useState(true);
+  const [projectEnvId, setProjectEnvId] = useState<string | null>(null);
+  const [savingProjectEnv, setSavingProjectEnv] = useState(false);
 
   const workspaceId = project.workspace_id;
 
   useEffect(() => {
     if (!workspaceId) { setLoading(false); return; }
-    apiFetch<{ data: typeof environments }>(`/workspaces/${workspaceId}/environments`)
-      .then((res) => setEnvironments(res.data))
+    Promise.all([
+      apiFetch<{ data: typeof environments }>(`/workspaces/${workspaceId}/environments`),
+      apiFetch<{ data: { environment_id: string } | null }>(`/projects/${project.id}/environment`),
+    ])
+      .then(([envRes, projEnvRes]) => {
+        setEnvironments(envRes.data);
+        setProjectEnvId(projEnvRes.data?.environment_id ?? null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [workspaceId]);
+  }, [workspaceId, project.id]);
 
   const COLOR_MAP: Record<string, string> = {
     blue: "bg-blue-500", green: "bg-green-500", purple: "bg-purple-500",
@@ -1333,6 +1341,69 @@ function EnvironmentsTab({ project }: { project: ApiProject }) {
 
   return (
     <div className="space-y-6">
+      {/* Per-Project Environment Override */}
+      <SectionCard
+        title="Project Environment"
+        description="Override the workspace default environment for this project. The AI will use this environment's skills, rules, knowledge, and connectors."
+      >
+        {loading ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : environments.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">
+            No environments in this workspace yet. Create one from the Environments panel.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-col gap-2">
+              <select
+                value={projectEnvId ?? ""}
+                disabled={savingProjectEnv}
+                onChange={async (e) => {
+                  const envId = e.target.value;
+                  setSavingProjectEnv(true);
+                  try {
+                    if (envId) {
+                      await apiFetch(`/projects/${project.id}/environment`, {
+                        method: "PUT",
+                        body: JSON.stringify({ environmentId: envId }),
+                      });
+                      setProjectEnvId(envId);
+                    } else {
+                      await apiFetch(`/projects/${project.id}/environment`, { method: "DELETE" });
+                      setProjectEnvId(null);
+                    }
+                  } catch (err) {
+                    console.error("Failed to set project environment:", err);
+                  } finally {
+                    setSavingProjectEnv(false);
+                  }
+                }}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Use workspace default</option>
+                {environments.map((env) => (
+                  <option key={env.id} value={env.id}>
+                    {env.icon} {env.name}
+                  </option>
+                ))}
+              </select>
+              {projectEnvId && (
+                <p className="text-xs text-muted-foreground">
+                  This project uses a custom environment override. The workspace default is bypassed.
+                </p>
+              )}
+              {!projectEnvId && (
+                <p className="text-xs text-muted-foreground">
+                  Inheriting from workspace default. Select an environment above to override.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </SectionCard>
+
       {/* Environment Presets */}
       <SectionCard
         title="Environment Presets"

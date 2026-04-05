@@ -58,6 +58,7 @@ import {
   Shield,
   Compass,
   LayoutTemplate,
+  Store,
 } from "lucide-react";
 import type { Folder } from "@doable/shared";
 
@@ -643,6 +644,12 @@ export function DashboardSidebar() {
               label="Discover"
               active={pathname === "/discover"}
               onClick={() => router.push("/discover")}
+            />
+            <NavItem
+              icon={Store}
+              label="Marketplace"
+              active={pathname.startsWith("/marketplace")}
+              onClick={() => router.push("/marketplace")}
             />
             {/* Resources — route not yet implemented, hidden to avoid dead link */}
           </div>

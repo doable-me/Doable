@@ -35,13 +35,14 @@ import { buildContextPrompt } from "../context/injector.js";
 import { broadcastToRoom } from "../ai/yjs-bridge.js";
 import { processAttachments } from "../ai/attachments.js";
 import { bodyLimit } from "hono/body-limit";
-import { environmentQueries, skillsQueries } from "@doable/db";
+import { environmentQueries, skillsQueries, marketplaceQueries } from "@doable/db";
 
 export const chatRoutes = new Hono<AuthEnv>();
 const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
 const ctxManager = contextManager(sql);
 const envDb = environmentQueries(sql);
 const skillsDb = skillsQueries(sql);
+const mktDb = marketplaceQueries(sql);
 
 // Require authentication for all chat and AI routes
 chatRoutes.use("/projects/:id/chat", authMiddleware);
@@ -265,25 +266,34 @@ async function buildProjectContextForMode(
     console.warn("[Chat] Failed to load .doable/ context files:", err);
   }
 
-  // ── Skills & Rules from environment (or workspace defaults) ──
+  // ── Skills, Rules, Knowledge & Instructions from effective environment ──
   if (workspaceId) {
     try {
-      const customDefault = await envDb.getDefault(workspaceId);
+      // Resolve: project env > workspace default env > all workspace items
+      const { environment, source } = await mktDb.resolveEffectiveEnvironment(
+        workspaceId,
+        // projectId is always available in this function
+        projectId,
+      );
+
       let skills: { skill_name: string; skill_content: string }[] = [];
       let rules: { rule_name: string; content: string }[] = [];
+      let knowledge: { filename: string; content: string }[] = [];
+      let instructions: { filename: string; content: string }[] = [];
 
-      if (customDefault) {
-        // Use the custom default environment's items
-        const env = await envDb.getById(customDefault.id);
-        if (env) {
-          skills = env.skills;
-          rules = env.rules;
-        }
+      if (environment) {
+        // Custom environment (from project or workspace level)
+        skills = environment.skills;
+        rules = environment.rules;
+        knowledge = environment.knowledge;
+        instructions = environment.instructions;
       } else {
         // No custom default — use all workspace-level skills & rules
         const items = await envDb.getDefaultItems(workspaceId);
         skills = items.skills;
         rules = items.rules;
+        knowledge = items.knowledge;
+        // No instructions for virtual default
       }
 
       if (skills.length > 0) {
@@ -291,6 +301,12 @@ async function buildProjectContextForMode(
       }
       if (rules.length > 0) {
         context += `\n\n<rules>\n${rules.map((r) => `<rule name="${r.rule_name}">\n${r.content}\n</rule>`).join("\n")}\n</rules>`;
+      }
+      if (knowledge.length > 0) {
+        context += `\n\n<knowledge>\n${knowledge.map((k) => `<file name="${k.filename}">\n${k.content}\n</file>`).join("\n")}\n</knowledge>`;
+      }
+      if (instructions.length > 0) {
+        context += `\n\n<environment-instructions>\n${instructions.map((i) => `<instruction file="${i.filename}">\n${i.content}\n</instruction>`).join("\n")}\n</environment-instructions>`;
       }
     } catch (err) {
       console.warn("[Chat] Failed to load environment skills/rules:", err);

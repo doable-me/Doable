@@ -519,7 +519,7 @@ export const KnowledgeTab = ({
         <div className="flex items-center gap-2">
           <Brain className="h-3.5 w-3.5 text-muted-foreground" />
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Knowledge Base
+            Project Knowledge
           </h3>
         </div>
         <button

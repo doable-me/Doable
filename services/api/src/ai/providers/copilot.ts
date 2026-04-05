@@ -960,11 +960,12 @@ export function createDoableTools(projectId: string): Tool[] {
 import { getConnectorManager } from "../../mcp/connector-manager.js";
 import { createMcpTools } from "../../mcp/tool-bridge.js";
 import type { McpConnectorConfig } from "../../mcp/types.js";
-import { connectorQueries } from "@doable/db";
+import { connectorQueries, marketplaceQueries } from "@doable/db";
 
 /**
  * Create all tools (built-in + native integrations + MCP) for a Copilot session.
  * Native integration and MCP failures are logged but don't block built-in tools.
+ * Uses effective environment resolution to filter connectors.
  */
 export async function createAllTools(
   projectId: string,
@@ -975,10 +976,28 @@ export async function createAllTools(
 
   if (!workspaceId) return builtinTools;
 
+  // Resolve effective environment to filter connectors
+  let connectorFilter: string[] | undefined;
+  try {
+    const { sql } = await import("../../db/index.js");
+    const mktDb = marketplaceQueries(sql);
+    const { environment } = await mktDb.resolveEffectiveEnvironment(workspaceId, projectId);
+    if (environment && environment.connectorRefs.length > 0) {
+      connectorFilter = environment.connectorRefs;
+    }
+    // If environment exists but has no connector refs, load nothing from MCP
+    // If no environment (virtual default), load all connectors (connectorFilter = undefined)
+    if (environment && environment.connectorRefs.length === 0) {
+      connectorFilter = []; // empty filter = no MCP tools
+    }
+  } catch (err) {
+    console.warn("[CopilotEngine] Failed to resolve effective environment:", err);
+  }
+
   // Load native integration tools and MCP tools in parallel
   const [integrationTools, mcpTools] = await Promise.all([
     loadIntegrationTools(workspaceId, projectId, userId),
-    loadMcpTools(workspaceId, projectId, userId),
+    loadMcpTools(workspaceId, projectId, userId, connectorFilter),
   ]);
 
   return [...builtinTools, ...integrationTools, ...mcpTools];
@@ -1010,23 +1029,32 @@ async function loadIntegrationTools(
   }
 }
 
-/** Load MCP connector tools */
+/** Load MCP connector tools, optionally filtered by environment connector refs */
 async function loadMcpTools(
   workspaceId: string,
   projectId: string,
   userId?: string,
+  connectorFilter?: string[],
 ): Promise<Tool[]> {
   try {
+    // If environment explicitly has no connectors, skip loading
+    if (connectorFilter && connectorFilter.length === 0) return [];
+
     const { sql } = await import("../../db/index.js");
     const connectors = connectorQueries(sql);
     const manager = getConnectorManager();
 
     // Get effective connectors for this scope
-    const connectorRows = await connectors.getEffectiveConnectors(
+    const allConnectorRows = await connectors.getEffectiveConnectors(
       workspaceId,
       projectId,
       userId,
     );
+
+    // Filter by environment connector refs if provided
+    const connectorRows = connectorFilter
+      ? allConnectorRows.filter((r) => connectorFilter.includes(r.id))
+      : allConnectorRows;
 
     if (connectorRows.length === 0) return [];
 

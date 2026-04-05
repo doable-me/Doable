@@ -22,3 +22,4 @@ export * from "./queries/connectors.js";
 export * from "./queries/team-chat.js";
 export * from "./queries/activity-events.js";
 export * from "./queries/environments.js";
+export * from "./queries/marketplace.js";
