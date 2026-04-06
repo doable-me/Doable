@@ -193,7 +193,7 @@ githubRoutes.post("/:projectId/github/connect", async (c) => {
     repoOwner: string;
     repoName: string;
     branch?: string;
-    projectPath: string;
+    projectPath?: string;
     createNew?: boolean;
     isPrivate?: boolean;
     description?: string;
@@ -208,9 +208,9 @@ githubRoutes.post("/:projectId/github/connect", async (c) => {
     }
   }
 
-  if (!token || !body.repoOwner || !body.repoName || !body.projectPath) {
+  if (!token || !body.repoOwner || !body.repoName) {
     return c.json(
-      { error: "Missing required fields: repoOwner, repoName, projectPath (and a GitHub token)" },
+      { error: "Missing required fields: repoOwner, repoName (and a GitHub token)" },
       400
     );
   }
@@ -219,9 +219,9 @@ githubRoutes.post("/:projectId/github/connect", async (c) => {
     // Validate token
     await githubClient.authenticate(token);
 
-    console.log(`[GitHub] connect projectId=${projectId} projectPath=${body.projectPath}`);
+    const projectPath = getProjectPath(projectId);
 
-    const result = await githubSync.initialPush(projectId, body.projectPath, {
+    const result = await githubSync.initialPush(projectId, projectPath, {
       token,
       repoOwner: body.repoOwner,
       repoName: body.repoName,
@@ -241,7 +241,7 @@ githubRoutes.post("/:projectId/github/connect", async (c) => {
 
     return c.json({ data: result }, 201);
   } catch (err) {
-    console.error(`[GitHub] connect error for ${projectId}:`, err);
+    console.error(`[GitHub] connect error for ${projectId}: ${err instanceof Error ? err.message : err}`);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: "Failed to connect GitHub", message }, 500);
   }
@@ -266,13 +266,14 @@ githubRoutes.post("/:projectId/github/push", async (c) => {
   }
 
   try {
+    const projectPath = getProjectPath(projectId);
     const pushFn = body.force
       ? githubSync.forcePushToGitHub
       : githubSync.pushToGitHub;
 
     const result = await pushFn(
       projectId,
-      body.projectPath,
+      projectPath,
       body.message,
       userId
     );
@@ -305,9 +306,10 @@ githubRoutes.post("/:projectId/github/pull", async (c) => {
   }
 
   try {
+    const projectPath = getProjectPath(projectId);
     const result = await githubSync.pullFromGitHub(
       projectId,
-      body.projectPath,
+      projectPath,
       userId
     );
 
