@@ -17,6 +17,7 @@ import {
   type DiscoveredModel,
 } from "../hooks/use-test-connection";
 import { ProviderCard } from "./provider-card";
+import { ProviderIcon, PROVIDER_COLORS } from "./provider-icons";
 import {
   Loader2,
   Search,
@@ -609,9 +610,24 @@ function StepConfigure({
   const isAzure = preset.sdkType === "azure";
   const isLocal = preset.category === "local";
   const requiresAuth = preset.authMethod !== "none";
+  const brandColor = PROVIDER_COLORS[preset.id];
 
   return (
     <div className="space-y-4">
+      {/* Provider header with icon */}
+      <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-800/40 p-3">
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
+          style={brandColor ? { backgroundColor: `${brandColor}18` } : { backgroundColor: "rgba(113,113,122,0.15)" }}
+        >
+          <ProviderIcon providerId={preset.id} size={28} />
+        </div>
+        <div>
+          <p className="text-sm font-medium text-zinc-200">{preset.name}</p>
+          <p className="text-xs text-zinc-500">{preset.description}</p>
+        </div>
+      </div>
+
       {/* Label */}
       <div>
         <label className="mb-1.5 block text-xs font-medium text-zinc-400">
@@ -737,8 +753,24 @@ function StepValidate({
   result: TestConnectionResult | null;
   onTest: () => void;
 }) {
+  const brandColor = PROVIDER_COLORS[preset.id];
+
   return (
     <div className="space-y-4">
+      {/* Provider header with icon */}
+      <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-800/40 p-3">
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
+          style={brandColor ? { backgroundColor: `${brandColor}18` } : { backgroundColor: "rgba(113,113,122,0.15)" }}
+        >
+          <ProviderIcon providerId={preset.id} size={28} />
+        </div>
+        <div>
+          <p className="text-sm font-medium text-zinc-200">{preset.name}</p>
+          <p className="text-xs text-zinc-500">Validate connection</p>
+        </div>
+      </div>
+
       {/* Test button */}
       <div className="flex flex-col items-center py-6">
         {!result && !testing && (

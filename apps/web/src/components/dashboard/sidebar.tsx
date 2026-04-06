@@ -59,6 +59,7 @@ import {
   Compass,
   LayoutTemplate,
   Store,
+  BarChart3,
 } from "lucide-react";
 import type { Folder } from "@doable/shared";
 
@@ -888,7 +889,6 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
                 <Settings className="mr-2 h-4 w-4" />
                 Settings
               </DropdownMenuItem>
-              {user?.isPlatformAdmin && (
               <DropdownMenuItem
                 className="text-zinc-300 focus:bg-white/5 focus:text-white"
                 onClick={() => router.push("/ai-settings")}
@@ -896,7 +896,13 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
                 <Bot className="mr-2 h-4 w-4" />
                 AI Settings
               </DropdownMenuItem>
-              )}
+              <DropdownMenuItem
+                className="text-zinc-300 focus:bg-white/5 focus:text-white"
+                onClick={() => router.push("/usage")}
+              >
+                <BarChart3 className="mr-2 h-4 w-4" />
+                Usage
+              </DropdownMenuItem>
               <DropdownMenuItem
                 className="text-zinc-300 focus:bg-white/5 focus:text-white"
                 onClick={() => router.push("/billing")}

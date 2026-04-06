@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ApiAiProvider } from "@/lib/api";
-import { Key, Plus, Trash2, CheckCircle, XCircle, Loader2, RefreshCw, Zap } from "lucide-react";
+import { Key, Plus, Trash2, Loader2, RefreshCw } from "lucide-react";
 import { ProviderWizard } from "./provider-wizard";
 import { ProviderHealthBadge } from "./provider-health-badge";
 
@@ -54,7 +54,7 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
         <div>
           <h2 className="text-lg font-semibold text-zinc-200">Custom AI Providers</h2>
           <p className="text-sm text-zinc-500">
-            Connect cloud, local, or gateway LLM providers.
+            Bring your own API keys for OpenAI, Anthropic, local models, and 50+ more.
           </p>
         </div>
         <button
@@ -107,21 +107,13 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
                   onClick={() => handleValidate(provider.id)}
                   disabled={validating === provider.id}
                   className="rounded p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
-                  title="Test connection"
+                  title="Test connection &amp; refresh models"
                 >
                   {validating === provider.id ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Zap className="h-4 w-4" />
+                    <RefreshCw className="h-4 w-4" />
                   )}
-                </button>
-                <button
-                  onClick={() => handleValidate(provider.id)}
-                  disabled={validating === provider.id}
-                  className="rounded p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
-                  title="Refresh models"
-                >
-                  <RefreshCw className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => onRemove(provider.id)}

@@ -433,3 +433,12 @@ export interface ProjectRemixRow {
   forked_by: string;
   created_at: Date;
 }
+
+export interface ShareLinkVisitRow {
+  id: string;
+  project_id: string;
+  visitor_user_id: string;
+  visit_count: number;
+  first_visited_at: Date;
+  last_visited_at: Date;
+}

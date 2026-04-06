@@ -25,3 +25,4 @@ export * from "./queries/environments.js";
 export * from "./queries/marketplace.js";
 export * from "./queries/env-vars.js";
 export * from "./queries/project-views.js";
+export * from "./queries/share-tracking.js";

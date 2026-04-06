@@ -250,6 +250,34 @@ export async function apiListProjects(opts?: {
   return apiFetch(`/projects${qs ? `?${qs}` : ""}`);
 }
 
+export async function apiListSharedProjects(opts?: {
+  page?: number;
+  pageSize?: number;
+}): Promise<{ data: ApiProject[]; pagination: { total: number; page: number; pageSize: number; totalPages: number } }> {
+  const params = new URLSearchParams();
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.pageSize) params.set("pageSize", String(opts.pageSize));
+  const qs = params.toString();
+  return apiFetch(`/projects/shared${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiGetShareStats(projectId: string): Promise<{
+  data: {
+    uniqueVisitors: number;
+    totalVisits: number;
+    visitors: Array<{
+      user_id: string;
+      display_name: string | null;
+      email: string;
+      visit_count: number;
+      first_visited_at: string;
+      last_visited_at: string;
+    }>;
+  };
+}> {
+  return apiFetch(`/projects/${projectId}/share-stats`);
+}
+
 export async function apiCreateProject(data: {
   name: string;
   description?: string;

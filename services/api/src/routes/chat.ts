@@ -13,7 +13,7 @@ import {
 } from "../ai/providers/copilot.js";
 import { getCopilotManager } from "../ai/providers/copilot-manager.js";
 import { createUsageCollector } from "../ai/usage-collector.js";
-import { aiSettingsQueries } from "@doable/db";
+import { aiSettingsQueries, shareTrackingQueries } from "@doable/db";
 import {
   createProject,
   isProjectScaffolded,
@@ -40,6 +40,7 @@ import { environmentQueries, skillsQueries, marketplaceQueries } from "@doable/d
 
 export const chatRoutes = new Hono<AuthEnv>();
 const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
+const shareTrackingDb = shareTrackingQueries(sql);
 const ctxManager = contextManager(sql);
 const envDb = environmentQueries(sql);
 const skillsDb = skillsQueries(sql);
@@ -56,13 +57,27 @@ chatRoutes.use("/projects/:id/chat", async (c, next) => {
   const userId = c.get("userId");
   if (projectId && userId) {
     try {
-      const [project] = await sql`SELECT visibility FROM projects WHERE id = ${projectId}`;
+      const [project] = await sql`SELECT visibility, workspace_id FROM projects WHERE id = ${projectId}`;
       if (project?.visibility === 'public') {
         await sql`
           INSERT INTO project_collaborators (project_id, user_id, role)
           VALUES (${projectId}, ${userId}, 'editor')
           ON CONFLICT DO NOTHING
         `;
+        // Track this visit for "Shared with me" and share analytics
+        // (only if visitor is not a workspace member — the query handles dedup)
+        const [isMember] = await sql`
+          SELECT 1 FROM workspace_members
+          WHERE workspace_id = ${project.workspace_id} AND user_id = ${userId}
+        `;
+        if (!isMember) {
+          await shareTrackingDb.recordVisit(projectId, userId);
+          // Also increment the public_projects view counter
+          await sql`
+            UPDATE public_projects SET view_count = view_count + 1
+            WHERE project_id = ${projectId}
+          `;
+        }
       }
     } catch { /* non-critical */ }
   }

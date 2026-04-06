@@ -1,41 +1,7 @@
 "use client";
 
 import type { ProviderPreset } from "@doable/shared";
-
-// ─── Color mapping for provider icon circles ───────────────
-const ICON_COLORS: Record<string, string> = {
-  a: "bg-purple-600",
-  b: "bg-blue-600",
-  c: "bg-cyan-600",
-  d: "bg-amber-600",
-  e: "bg-emerald-600",
-  f: "bg-fuchsia-600",
-  g: "bg-green-600",
-  h: "bg-rose-600",
-  i: "bg-indigo-600",
-  j: "bg-yellow-600",
-  k: "bg-sky-600",
-  l: "bg-lime-600",
-  m: "bg-pink-600",
-  n: "bg-orange-600",
-  o: "bg-teal-600",
-  p: "bg-violet-600",
-  q: "bg-red-600",
-  r: "bg-blue-500",
-  s: "bg-emerald-500",
-  t: "bg-purple-500",
-  u: "bg-amber-500",
-  v: "bg-cyan-500",
-  w: "bg-rose-500",
-  x: "bg-indigo-500",
-  y: "bg-green-500",
-  z: "bg-fuchsia-500",
-};
-
-function getIconColor(name: string): string {
-  const letter = name.charAt(0).toLowerCase();
-  return ICON_COLORS[letter] ?? "bg-zinc-600";
-}
+import { ProviderIcon, PROVIDER_COLORS } from "./provider-icons";
 
 interface ProviderCardProps {
   preset: ProviderPreset;
@@ -43,19 +9,19 @@ interface ProviderCardProps {
 }
 
 export function ProviderCard({ preset, onClick }: ProviderCardProps) {
-  const firstLetter = preset.name.charAt(0).toUpperCase();
-  const iconColor = getIconColor(preset.name);
+  const brandColor = PROVIDER_COLORS[preset.id];
 
   return (
     <button
       onClick={onClick}
       className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-800/70 w-full"
     >
-      {/* Icon circle */}
+      {/* Provider icon */}
       <div
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${iconColor} text-white font-bold text-sm`}
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
+        style={brandColor ? { backgroundColor: `${brandColor}18` } : { backgroundColor: "rgba(113,113,122,0.15)" }}
       >
-        {firstLetter}
+        <ProviderIcon providerId={preset.id} size={24} />
       </div>
 
       {/* Content */}

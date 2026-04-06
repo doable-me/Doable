@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, memo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, type ApiEffectiveAiConfig, type ApiAiProvider } from "@/lib/api";
+import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, apiGetShareStats, type ApiEffectiveAiConfig, type ApiAiProvider } from "@/lib/api";
 import { consumeBridge, hasBridge, type BridgeSSEEvent } from "@/lib/prompt-bridge";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
@@ -1288,6 +1288,18 @@ export default function EditorPage() {
 
   // ─── Toolbar dialog/modal state ────────────────────────────
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareStats, setShareStats] = useState<{
+    uniqueVisitors: number;
+    totalVisits: number;
+    visitors: Array<{
+      user_id: string;
+      display_name: string | null;
+      email: string;
+      visit_count: number;
+      first_visited_at: string;
+      last_visited_at: string;
+    }>;
+  } | null>(null);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [githubDialogOpen, setGithubDialogOpen] = useState(false);
@@ -1353,6 +1365,14 @@ export default function EditorPage() {
     // Record view for recently-viewed tracking (fire-and-forget)
     apiRecordProjectView(resolvedProjectId).catch(() => {});
   }, [resolvedProjectId]);
+
+  // ─── Fetch share stats when share dialog opens ────────────
+  useEffect(() => {
+    if (!shareDialogOpen || !resolvedProjectId) return;
+    apiGetShareStats(resolvedProjectId)
+      .then((res) => setShareStats(res.data))
+      .catch(() => setShareStats(null));
+  }, [shareDialogOpen, resolvedProjectId]);
 
   // ─── Fetch effective AI config for enforcement + user prefs ─
   useEffect(() => {
@@ -5029,6 +5049,57 @@ export default function EditorPage() {
                     {shareCopied === "collab" ? <><Check className="h-4 w-4" /> Copied!</> : <><Copy className="h-4 w-4" /> Copy Link</>}
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Share Analytics — only shown when link sharing is enabled */}
+            {projectVisibility === "public" && shareStats && (shareStats.uniqueVisitors > 0 || shareStats.totalVisits > 0) && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-4 rounded-lg bg-zinc-800/50 border border-zinc-700/50 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Eye className="h-4 w-4 text-zinc-400" />
+                    <div>
+                      <p className="text-sm font-medium text-zinc-200">{shareStats.uniqueVisitors}</p>
+                      <p className="text-xs text-zinc-500">{shareStats.uniqueVisitors === 1 ? "visitor" : "visitors"}</p>
+                    </div>
+                  </div>
+                  <div className="h-8 w-px bg-zinc-700/50" />
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-zinc-400" />
+                    <div>
+                      <p className="text-sm font-medium text-zinc-200">{shareStats.totalVisits}</p>
+                      <p className="text-xs text-zinc-500">total views</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Visitor list */}
+                {shareStats.visitors.length > 0 && (
+                  <div className="rounded-lg bg-zinc-800/50 border border-zinc-700/50 overflow-hidden">
+                    <div className="px-4 py-2 border-b border-zinc-700/50">
+                      <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider">People who viewed this project</p>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto divide-y divide-zinc-700/30">
+                      {shareStats.visitors.map((visitor) => (
+                        <div key={visitor.user_id} className="flex items-center justify-between px-4 py-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="h-7 w-7 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-medium text-zinc-300 shrink-0">
+                              {(visitor.display_name || visitor.email).charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm text-zinc-200 truncate">{visitor.display_name || visitor.email.split("@")[0]}</p>
+                              <p className="text-xs text-zinc-500 truncate">{visitor.email}</p>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0 ml-3">
+                            <p className="text-xs text-zinc-400">{visitor.visit_count} {visitor.visit_count === 1 ? "visit" : "visits"}</p>
+                            <p className="text-xs text-zinc-600">{new Date(visitor.last_visited_at).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

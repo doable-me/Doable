@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { ApiGitHubCopilotAccount, ApiAiProvider, ApiWorkspaceAiDefaults } from "@/lib/api";
 import { Shield, Loader2, Check, Eye } from "lucide-react";
+import { useCopilotModels } from "./model-config-tab";
 
 interface AccessControlTabProps {
   defaults: ApiWorkspaceAiDefaults | null;
@@ -17,16 +18,6 @@ interface AccessControlTabProps {
   }) => Promise<void>;
 }
 
-const COPILOT_MODELS = [
-  { id: "", label: "Auto (recommended)" },
-  { id: "claude-sonnet-4", label: "Claude Sonnet 4" },
-  { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
-  { id: "gpt-4o", label: "GPT-4o" },
-  { id: "gpt-4o-mini", label: "GPT-4o Mini" },
-  { id: "o3-mini", label: "o3-mini" },
-  { id: "o4-mini", label: "o4-mini" },
-];
-
 type Source = "copilot" | "custom";
 
 export function AccessControlTab({ defaults, accounts, providers, onUpdate }: AccessControlTabProps) {
@@ -38,6 +29,10 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Dynamic model list — replaces former static COPILOT_MODELS
+  const activeCopilotId = source === "copilot" ? copilotAccountId : "";
+  const { models: copilotModels } = useCopilotModels(activeCopilotId || undefined);
 
   // Sync from defaults
   useEffect(() => {
@@ -80,8 +75,8 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
             <Shield className="h-4 w-4 text-brand-400" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-200">Enforcement Policy</h3>
-            <p className="text-xs text-zinc-500">Control which AI model all workspace members must use</p>
+            <h3 className="text-sm font-semibold text-zinc-200">AI Rules for Your Team</h3>
+            <p className="text-xs text-zinc-500">Lock everyone in your workspace to a specific AI model — no one can change it</p>
           </div>
         </div>
 
@@ -100,10 +95,10 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
                 }`}
               />
             </button>
-            <span className="text-sm text-zinc-200">Enforce AI configuration for all workspace members</span>
+            <span className="text-sm text-zinc-200">Require everyone to use the same AI model</span>
           </label>
           <p className="text-xs text-zinc-500 mt-2 ml-14">
-            When enabled, all members will use the model you specify below. Their personal preferences will be overridden.
+            When turned on, every workspace member uses the model you pick below. They won&apos;t be able to change it.
           </p>
         </div>
 
@@ -148,13 +143,16 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
                       onChange={(e) => setCopilotAccountId(e.target.value)}
                       className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
                     >
-                      <option value="">Default (gh CLI)</option>
+                      <option value="">Server Default</option>
                       {validAccounts.map((a) => (
                         <option key={a.id} value={a.id}>{a.label} (@{a.github_login})</option>
                       ))}
                     </select>
+                    {copilotAccountId === "" && (
+                      <p className="text-[10px] text-zinc-500 mt-1">Uses the server&apos;s built-in GitHub authentication.</p>
+                    )}
                     {validAccounts.length === 0 && (
-                      <p className="text-[10px] text-zinc-600 mt-1">No accounts connected. Add one in Connections tab.</p>
+                      <p className="text-[10px] text-zinc-600 mt-1">No accounts connected yet. Go to the Connections tab to add one.</p>
                     )}
                   </div>
                   <div>
@@ -164,7 +162,7 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
                       onChange={(e) => setModel(e.target.value)}
                       className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
                     >
-                      {COPILOT_MODELS.map((m) => (
+                      {copilotModels.map((m) => (
                         <option key={m.id} value={m.id}>{m.label}</option>
                       ))}
                     </select>
@@ -185,7 +183,7 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
                       ))}
                     </select>
                     {validProviders.length === 0 && (
-                      <p className="text-[10px] text-zinc-600 mt-1">No providers configured. Add one in Connections tab.</p>
+                      <p className="text-[10px] text-zinc-600 mt-1">No providers set up yet. Go to the Connections tab to add one.</p>
                     )}
                   </div>
                   <div>
@@ -212,8 +210,8 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
             <Eye className="h-4 w-4 text-blue-400" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-200">Model Selector Visibility</h3>
-            <p className="text-xs text-zinc-500">Control whether users can see the model selection dropdown</p>
+            <h3 className="text-sm font-semibold text-zinc-200">Let Members Choose Their Model</h3>
+            <p className="text-xs text-zinc-500">Show or hide the model picker in the editor for workspace members</p>
           </div>
         </div>
 
@@ -230,10 +228,10 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
               }`}
             />
           </button>
-          <span className="text-sm text-zinc-200">Allow users to see the model selector</span>
+          <span className="text-sm text-zinc-200">Show model picker to workspace members</span>
         </label>
         <p className="text-xs text-zinc-500 mt-2 ml-14">
-          When disabled, users will not see the model dropdown in the editor. The workspace default or enforced model will be used silently.
+          When turned off, members won&apos;t see which model they&apos;re using. The workspace default (or enforced model) runs automatically in the background.
         </p>
       </div>
 

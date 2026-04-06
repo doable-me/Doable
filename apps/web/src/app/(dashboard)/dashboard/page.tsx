@@ -8,6 +8,7 @@ import { useImageAttachments, type ImageAttachment } from "@/hooks/use-image-att
 import {
   apiListProjects,
   apiListStarredProjects,
+  apiListSharedProjects,
   apiListRecentlyViewed,
   apiRecordProjectView,
   apiCreateProject,
@@ -1008,6 +1009,11 @@ export default function DashboardPage() {
   const [recentPage, setRecentPage] = useState(1);
   const [totalRecent, setTotalRecent] = useState(0);
 
+  // Shared-with-me
+  const [sharedProjects, setSharedProjects] = useState<ApiProject[]>([]);
+  const [sharedPage, setSharedPage] = useState(1);
+  const [totalShared, setTotalShared] = useState(0);
+
   // Voice input
   const speechRecognition = useSpeechRecognition((transcript: string) => {
     setPrompt((prev) => (prev ? prev + " " + transcript : transcript));
@@ -1150,6 +1156,23 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // ---- Fetch shared-with-me projects (paginated) ----
+  const fetchSharedProjects = useCallback(async (page = 1, append = false) => {
+    try {
+      if (page > 1) setIsLoadingMore(true);
+      const res = await apiListSharedProjects({ page, pageSize: PAGE_SIZE });
+      setSharedProjects((prev) => (append ? [...prev, ...res.data] : res.data));
+      setSharedPage(page);
+      setTotalShared(res.pagination.total);
+    } catch (err) {
+      console.error("Failed to fetch shared projects:", err);
+      if (!append) setSharedProjects([]);
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  }, []);
+
   const fetchTemplates = useCallback(async () => {
     setIsLoadingTemplates(true);
     try {
@@ -1194,6 +1217,7 @@ export default function DashboardPage() {
       setActiveTab(filter === "all" ? "recent" : "projects");
       if (filter === "starred") setStarredFilter(true);
       else setStarredFilter(false);
+      if (filter === "shared") fetchSharedProjects();
     };
     const handleFolder = (e: Event) => {
       const folderId = (e as CustomEvent<string>).detail;
@@ -1453,8 +1477,10 @@ export default function DashboardPage() {
 
   // ---- Filtered & sorted projects ----
   // Server handles: search, status, folder, pagination
-  // Client handles: starred filter, sort
-  const sourceProjects = activeTab === "recent" ? recentProjects : projects;
+  // Client handles: starred filter, shared filter, sort
+  const sourceProjects = sidebarFilter === "shared"
+    ? sharedProjects
+    : activeTab === "recent" ? recentProjects : projects;
   const displayProjects = useMemo(() => {
     let filtered = [...sourceProjects];
 
@@ -1483,13 +1509,17 @@ export default function DashboardPage() {
   }, [sourceProjects, sidebarFilter, starredFilter, sortKey, sortDir]);
 
   // ---- Pagination helpers ----
-  const hasMore = activeTab === "recent"
-    ? recentProjects.length < totalRecent
-    : projects.length < totalProjects;
+  const hasMore = sidebarFilter === "shared"
+    ? sharedProjects.length < totalShared
+    : activeTab === "recent"
+      ? recentProjects.length < totalRecent
+      : projects.length < totalProjects;
 
   const loadMore = () => {
     if (isLoadingMore) return;
-    if (activeTab === "recent") {
+    if (sidebarFilter === "shared") {
+      fetchSharedProjects(sharedPage + 1, true);
+    } else if (activeTab === "recent") {
       fetchRecentlyViewed(recentPage + 1, true);
     } else {
       fetchProjects(currentPage + 1, true);

@@ -73,22 +73,24 @@ export function ConnectionsTab({
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="text-base font-semibold text-zinc-200 flex items-center gap-2">
-              <Github className="h-4 w-4" /> GitHub Copilot Accounts
+              <Github className="h-4 w-4" /> GitHub AI Accounts
             </h2>
-            <p className="text-xs text-zinc-500 mt-0.5">Connect GitHub accounts with Copilot subscriptions.</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Connect GitHub accounts that have AI access (Copilot subscription) to use GitHub-hosted models.</p>
           </div>
           <div className="flex gap-2">
             <a
               href={`${API_URL}/auth/github/copilot${workspaceId ? `?workspaceId=${workspaceId}` : ""}`}
               className="flex items-center gap-1.5 rounded-lg bg-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
+              title="Sign in with GitHub to connect your account automatically"
             >
-              <Github className="h-3.5 w-3.5" /> OAuth
+              <Github className="h-3.5 w-3.5" /> Sign in with GitHub
             </a>
             <button
               onClick={() => setShowAccountForm(!showAccountForm)}
               className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-brand-500 transition-colors"
+              title="Add an account using a personal access token"
             >
-              <Plus className="h-3.5 w-3.5" /> Token
+              <Plus className="h-3.5 w-3.5" /> Add with Token
             </button>
           </div>
         </div>
@@ -98,7 +100,7 @@ export function ConnectionsTab({
             <input type="text" placeholder="Label (e.g. 'Work Account')" value={accountLabel}
               onChange={(e) => setAccountLabel(e.target.value)}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500" />
-            <input type="password" placeholder="GitHub Personal Access Token" value={accountToken}
+            <input type="password" placeholder="Paste your GitHub access token here" value={accountToken}
               onChange={(e) => setAccountToken(e.target.value)}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500" />
             {accountError && <p className="text-xs text-red-400">{accountError}</p>}

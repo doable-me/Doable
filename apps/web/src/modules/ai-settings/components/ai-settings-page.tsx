@@ -57,20 +57,24 @@ export function AiSettingsPage() {
   const aiDefaults = useWorkspaceAISettings(activeWorkspaceId);
   const userPrefs = useUserAiPreferences(activeWorkspaceId ?? undefined);
 
-  // Only platform admins can access AI settings
-  const hasAccess = featureAllowed !== null ? featureAllowed : isPlatformAdmin;
+  // Any workspace member can access AI settings (for personal model preferences).
+  // Only block if the feature is explicitly disabled or per-user denied.
+  const isHardDenied =
+    featureAllowed === false &&
+    (featureDeniedReason === "feature_disabled" || featureDeniedReason === "user_override_denied");
+  const hasAccess = !isHardDenied;
 
-  // Redirect denied users
+  // Redirect only when explicitly denied (not for insufficient_role)
   useEffect(() => {
-    if (loaded && featureAllowed !== null && !hasAccess) {
+    if (loaded && isHardDenied) {
       router.replace("/");
     }
-  }, [loaded, featureAllowed, hasAccess, router]);
+  }, [loaded, isHardDenied, router]);
 
   if (!loaded) return null;
 
-  // Feature explicitly denied by platform admin
-  if (featureAllowed === false) {
+  // Feature explicitly disabled or per-user denied
+  if (isHardDenied) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-10">
         <div className="flex flex-col items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
@@ -142,6 +146,8 @@ export function AiSettingsPage() {
           userPreferences={userPrefs.preferences}
           enforcement={userPrefs.enforcement}
           onUserPreferenceUpdate={userPrefs.update}
+          onRefreshProviders={providers.refresh}
+          isPlatformAdmin={isPlatformAdmin}
         />
       )}
       {activeTab === "connections" && (

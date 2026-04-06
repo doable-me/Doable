@@ -46,13 +46,18 @@ usageRoutes.get("/:workspaceId/usage/me", async (c) => {
   const err = await requireMember(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const from = parseDateParam(c.req.query("from"), monthStart);
-  const to = parseDateParam(c.req.query("to"), now);
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
 
-  const summary = await usageService.getUserSummary(userId, workspaceId, from, to);
-  return c.json({ data: summary });
+    const summary = await usageService.getUserSummary(userId, workspaceId, from, to);
+    return c.json({ data: summary });
+  } catch (e) {
+    console.error("[Usage] GET /usage/me:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load usage summary" }, 500);
+  }
 });
 
 // ─── GET /:workspaceId/usage/me/history ──────────────────
@@ -64,18 +69,23 @@ usageRoutes.get("/:workspaceId/usage/me/history", async (c) => {
   const err = await requireMember(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
-  const now = new Date();
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const from = parseDateParam(c.req.query("from"), thirtyDaysAgo);
-  const to = parseDateParam(c.req.query("to"), now);
-  const groupBy = (c.req.query("groupBy") ?? "day") as "day" | "week" | "month";
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const from = parseDateParam(c.req.query("from"), thirtyDaysAgo);
+    const to = parseDateParam(c.req.query("to"), now);
+    const groupBy = (c.req.query("groupBy") ?? "day") as "day" | "week" | "month";
 
-  if (!["day", "week", "month"].includes(groupBy)) {
-    return c.json({ error: "groupBy must be day, week, or month" }, 400);
+    if (!["day", "week", "month"].includes(groupBy)) {
+      return c.json({ error: "groupBy must be day, week, or month" }, 400);
+    }
+
+    const periods = await usageService.getUserHistory(userId, workspaceId, from, to, groupBy);
+    return c.json({ data: { periods } });
+  } catch (e) {
+    console.error("[Usage] GET /usage/me/history:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load usage history" }, 500);
   }
-
-  const periods = await usageService.getUserHistory(userId, workspaceId, from, to, groupBy);
-  return c.json({ data: { periods } });
 });
 
 // ─── GET /:workspaceId/usage/me/breakdown ────────────────
@@ -87,13 +97,18 @@ usageRoutes.get("/:workspaceId/usage/me/breakdown", async (c) => {
   const err = await requireMember(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
-  const now = new Date();
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const from = parseDateParam(c.req.query("from"), thirtyDaysAgo);
-  const to = parseDateParam(c.req.query("to"), now);
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const from = parseDateParam(c.req.query("from"), thirtyDaysAgo);
+    const to = parseDateParam(c.req.query("to"), now);
 
-  const breakdown = await usageService.getUserBreakdown(userId, workspaceId, from, to);
-  return c.json({ data: breakdown });
+    const breakdown = await usageService.getUserBreakdown(userId, workspaceId, from, to);
+    return c.json({ data: breakdown });
+  } catch (e) {
+    console.error("[Usage] GET /usage/me/breakdown:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load usage breakdown" }, 500);
+  }
 });
 
 // ─── GET /:workspaceId/usage ─────────────────────────────
@@ -105,13 +120,18 @@ usageRoutes.get("/:workspaceId/usage", async (c) => {
   const err = await requireAdmin(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const from = parseDateParam(c.req.query("from"), monthStart);
-  const to = parseDateParam(c.req.query("to"), now);
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
 
-  const summary = await usageService.getWorkspaceSummary(workspaceId, from, to);
-  return c.json({ data: summary });
+    const summary = await usageService.getWorkspaceSummary(workspaceId, from, to);
+    return c.json({ data: summary });
+  } catch (e) {
+    console.error("[Usage] GET /usage:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load workspace usage" }, 500);
+  }
 });
 
 // ─── GET /:workspaceId/usage/members ─────────────────────
@@ -123,13 +143,18 @@ usageRoutes.get("/:workspaceId/usage/members", async (c) => {
   const err = await requireAdmin(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const from = parseDateParam(c.req.query("from"), monthStart);
-  const to = parseDateParam(c.req.query("to"), now);
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
 
-  const members = await usageService.getMemberBreakdown(workspaceId, from, to);
-  return c.json({ data: members });
+    const members = await usageService.getMemberBreakdown(workspaceId, from, to);
+    return c.json({ data: members });
+  } catch (e) {
+    console.error("[Usage] GET /usage/members:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load member usage" }, 500);
+  }
 });
 
 // ─── GET /:workspaceId/usage/providers ───────────────────
@@ -141,11 +166,16 @@ usageRoutes.get("/:workspaceId/usage/providers", async (c) => {
   const err = await requireAdmin(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const from = parseDateParam(c.req.query("from"), monthStart);
-  const to = parseDateParam(c.req.query("to"), now);
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
 
-  const providers = await usageService.getProviderBreakdown(workspaceId, from, to);
-  return c.json({ data: providers });
+    const providers = await usageService.getProviderBreakdown(workspaceId, from, to);
+    return c.json({ data: providers });
+  } catch (e) {
+    console.error("[Usage] GET /usage/providers:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load provider usage" }, 500);
+  }
 });

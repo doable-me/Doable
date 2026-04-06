@@ -7,6 +7,7 @@ import { projectQueries } from "@doable/db";
 import { starQueries } from "@doable/db";
 import { workspaceQueries } from "@doable/db";
 import { projectViewQueries } from "@doable/db";
+import { shareTrackingQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { getProjectPath } from "../ai/project-files.js";
 import { getThumbnailPath } from "../thumbnails/capture.js";
@@ -23,6 +24,7 @@ const projects = projectQueries(sql);
 const stars = starQueries(sql);
 const workspacesQ = workspaceQueries(sql);
 const projectViews = projectViewQueries(sql);
+const shareTracking = shareTrackingQueries(sql);
 
 export const projectRoutes = new Hono<AuthEnv>();
 
@@ -92,6 +94,40 @@ projectRoutes.get("/starred", async (c) => {
     .map((p) => ({ ...p, starred: true }));
 
   return c.json({ data });
+});
+
+// ─── List Shared-With-Me Projects ───────────────────────────
+// NOTE: Must be defined BEFORE "/:id" to avoid matching "shared" as an id
+projectRoutes.get("/shared", async (c) => {
+  const userId = c.get("userId");
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10));
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(1, parseInt(c.req.query("pageSize") ?? String(DEFAULT_PAGE_SIZE), 10))
+  );
+
+  const { rows, total } = await shareTracking.listSharedWithUser(userId, {
+    page,
+    pageSize,
+  });
+
+  const starredIds = await stars.listStarredProjectIds(userId);
+  const starredSet = new Set(starredIds);
+
+  const data = rows.map((p) => ({
+    ...p,
+    starred: starredSet.has(p.id),
+  }));
+
+  return c.json({
+    data,
+    pagination: {
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    },
+  });
 });
 
 // ─── List Projects ──────────────────────────────────────────
@@ -272,7 +308,38 @@ projectRoutes.post("/:id/view", async (c) => {
   }
 
   await projectViews.recordView(userId, id);
+
+  // Track share visit if user is accessing a project outside their own workspace
+  if (access.project.visibility === "public") {
+    const wsRole = await workspacesQ.getMemberRole(access.project.workspace_id, userId);
+    if (!wsRole) {
+      await shareTracking.recordVisit(id, userId);
+    }
+  }
+
   return c.json({ ok: true });
+});
+
+// ─── Share Analytics ────────────────────────────────────────
+// Returns visitor count, total visits, and visitor list for a project.
+// Only accessible by workspace members (project owners/admins).
+projectRoutes.get("/:id/share-stats", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const project = await projects.findById(id);
+  if (!project) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  // Only workspace members can view share stats (they "own" the project)
+  const wsRole = await workspacesQ.getMemberRole(project.workspace_id, userId);
+  if (!wsRole) {
+    return c.json({ error: "Access denied" }, 403);
+  }
+
+  const stats = await shareTracking.getShareStats(id);
+  return c.json({ data: stats });
 });
 
 // ─── Get Project ────────────────────────────────────────────
