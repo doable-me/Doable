@@ -603,6 +603,27 @@ export interface ApiAiProvider {
   added_by: string;
   created_at: string;
   updated_at: string;
+  /** Provider preset ID (e.g. "openai", "ollama") */
+  preset_id?: string | null;
+  /** Health status from last check */
+  health_status?: "healthy" | "degraded" | "down" | "unknown" | null;
+  /** Latency from last health check (ms) */
+  health_latency_ms?: number | null;
+  /** Timestamp of last health check */
+  last_health_check?: string | null;
+  /** Whether provider supports tool calling */
+  supports_tools?: boolean | null;
+  /** Whether provider supports vision */
+  supports_vision?: boolean | null;
+  /** Cached model list from discovery */
+  models_cache?: Array<{
+    id: string;
+    name: string;
+    supports_tools?: boolean;
+    supports_vision?: boolean;
+  }> | null;
+  /** Display order */
+  display_order?: number | null;
 }
 
 export interface ApiWorkspaceAiDefaults {

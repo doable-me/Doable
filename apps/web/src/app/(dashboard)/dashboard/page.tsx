@@ -1251,8 +1251,8 @@ export default function DashboardPage() {
 
   // ---- Actions ----
 
-  const handleSubmit = async (textOverride?: string) => {
-    const inputText = textOverride ?? prompt;
+  const handleSubmit = async (textOverride?: string | unknown) => {
+    const inputText = typeof textOverride === "string" ? textOverride : prompt;
     const hasContent = inputText.trim() || imageAttachments.attachments.length > 0;
     if (!hasContent || isCreating) return;
     setIsCreating(true);

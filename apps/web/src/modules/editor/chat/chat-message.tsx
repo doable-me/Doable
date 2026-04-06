@@ -5,6 +5,7 @@ import { Bot, User, Copy, Check, Loader2, Brain, Wrench, ListChecks, Undo2 } fro
 import type { ChatMessage as ChatMessageType } from "../hooks/use-editor-store";
 import { useEditorStore } from "../hooks/use-editor-store";
 import { MessageAttachments } from "./attachment-preview";
+import { TokenCounter } from "./token-counter";
 import { apiFetch } from "@/lib/api";
 
 // ─── Simple Markdown Renderer ───────────────────────────────
@@ -317,6 +318,11 @@ export const ChatMessage = memo(function ChatMessage({
           <div className="mt-1.5">
             <ToolActivitySummary toolCalls={message.toolCallDetails} />
           </div>
+        )}
+
+        {/* Per-message usage display (tokens, cost, duration) */}
+        {!isUser && !message.isStreaming && message.usage && (
+          <TokenCounter usage={message.usage} />
         )}
 
         {/* Undo button for AI messages that made file changes */}

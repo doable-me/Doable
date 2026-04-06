@@ -157,6 +157,7 @@ export function AiSettingsPage() {
           onAddProvider={providers.add}
           onRemoveProvider={providers.remove}
           onValidateProvider={providers.validate}
+          onRefreshProviders={providers.refresh}
         />
       )}
       {activeTab === "access" && (

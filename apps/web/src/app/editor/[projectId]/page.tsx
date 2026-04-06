@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, memo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, type ApiEffectiveAiConfig } from "@/lib/api";
+import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, type ApiEffectiveAiConfig, type ApiAiProvider } from "@/lib/api";
 import { consumeBridge, hasBridge, type BridgeSSEEvent } from "@/lib/prompt-bridge";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
@@ -1159,16 +1159,70 @@ export default function EditorPage() {
     let cancelled = false;
     (async () => {
       try {
+        // Fetch copilot models
         const json = await apiFetch<{ data: { id: string; name: string }[] }>("/ai/models");
         if (cancelled) return;
         const fetched = json.data ?? [];
-        if (fetched.length > 0) {
-          setAvailableModels(fetched.map((m) => ({ id: m.id, label: m.name, group: "copilot" as const })));
+        const copilotOpts: ModelOption[] = fetched.length > 0
+          ? fetched.map((m) => ({ id: m.id, label: m.name, group: "copilot" as const }))
+          : [];
+
+        // Fetch custom provider models if workspace is available
+        let providerOpts: ModelOption[] = [];
+        if (workspaceId) {
+          try {
+            const provRes = await apiListAiProviders(workspaceId);
+            if (!cancelled) {
+              const providers: ApiAiProvider[] = provRes.data ?? [];
+              for (const p of providers) {
+                if (!p.is_valid) continue;
+                const isLocal = p.preset_id
+                  ? ["ollama", "lm-studio", "llamacpp", "localai", "jan", "gpt4all", "koboldcpp", "vllm-local", "text-gen-webui"].includes(p.preset_id)
+                  : (p.base_url ?? "").includes("localhost") || (p.base_url ?? "").includes("127.0.0.1");
+                // Use cached models if available, otherwise add provider as a single option
+                const cachedModels = Array.isArray(p.models_cache) ? p.models_cache : [];
+                if (cachedModels.length > 0) {
+                  for (const m of cachedModels) {
+                    providerOpts.push({
+                      id: m.id,
+                      label: m.name || m.id,
+                      group: "custom",
+                      providerId: p.id,
+                      providerName: p.label,
+                      healthStatus: (p.health_status as ModelOption["healthStatus"]) ?? "unknown",
+                      healthLatencyMs: p.health_latency_ms ?? undefined,
+                      isLocal,
+                      supportsVision: m.supports_vision ?? p.supports_vision ?? false,
+                      supportsTools: m.supports_tools ?? p.supports_tools ?? true,
+                    });
+                  }
+                } else {
+                  // No cached models — add a generic entry so the provider shows up
+                  providerOpts.push({
+                    id: p.label.toLowerCase().replace(/\s+/g, "-"),
+                    label: `${p.label} (default)`,
+                    group: "custom",
+                    providerId: p.id,
+                    providerName: p.label,
+                    healthStatus: (p.health_status as ModelOption["healthStatus"]) ?? "unknown",
+                    healthLatencyMs: p.health_latency_ms ?? undefined,
+                    isLocal,
+                    supportsVision: p.supports_vision ?? false,
+                    supportsTools: p.supports_tools ?? true,
+                  });
+                }
+              }
+            }
+          } catch { /* ignore provider fetch failure */ }
+        }
+
+        if (!cancelled) {
+          setAvailableModels([...copilotOpts, ...providerOpts]);
         }
       } catch { /* use fallback */ }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [workspaceId]);
 
   const handleModelSelect = useCallback((modelId: string, providerId: string | null, copilotAccountId: string | null) => {
     // Block user changes when AI enforcement is active

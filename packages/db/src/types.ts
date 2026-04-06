@@ -238,6 +238,17 @@ export interface AiProviderRow {
   encrypted_api_key: string | null;
   encrypted_bearer_token: string | null;
   azure_api_version: string | null;
+  wire_api: "completions" | "responses" | null;
+  preset_id: string | null;
+  supports_tools: boolean;
+  supports_vision: boolean;
+  supports_mcp: boolean;
+  last_health_check: string | null;  // timestamptz comes as string
+  health_status: "healthy" | "degraded" | "down" | "unknown";
+  health_latency_ms: number | null;
+  display_order: number;
+  models_cache: unknown | null;  // JSONB
+  default_timeout_ms: number | null;
   is_valid: boolean;
   added_by: string;
   created_at: Date;

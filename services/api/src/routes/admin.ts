@@ -513,6 +513,7 @@ adminRoutes.post("/users/bulk-update", async (c) => {
 
 // GET /admin/users/ai-allocations
 adminRoutes.get("/users/ai-allocations", async (c) => {
+  try {
   const adminId = c.get("userId");
   const adminWorkspaceId = await getUserOwnedWorkspace(adminId);
 
@@ -561,6 +562,10 @@ adminRoutes.get("/users/ai-allocations", async (c) => {
   }
 
   return c.json({ data: rows, workspaceId: adminWorkspaceId, accounts, providers });
+  } catch (err) {
+    console.error("[admin/ai-allocations] Error:", err);
+    return c.json({ error: "Internal Server Error" }, 500);
+  }
 });
 
 const adminAllocateSchema = z.object({
@@ -750,8 +755,9 @@ adminRoutes.get("/copilot-sessions", async (c) => {
   const chatSessions = getChatSessionsSnapshot();
   const mem = process.memoryUsage();
 
-  // Enrich with project names from DB
-  const projectIds = [...new Set(poolSnapshot.map((e) => e.projectId))];
+  // Enrich with project names from DB (filter out non-UUID keys like "models")
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const projectIds = [...new Set(poolSnapshot.map((e) => e.projectId))].filter((id) => uuidRe.test(id));
   let projectNames: Record<string, string> = {};
   if (projectIds.length > 0) {
     const rows = await sql<{ id: string; name: string }[]>`

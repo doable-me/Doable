@@ -98,10 +98,13 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
     ): Promise<Omit<AiProviderRow, "encrypted_api_key" | "encrypted_bearer_token">[]> {
       return sql`
         SELECT id, workspace_id, label, provider_type, base_url,
-               azure_api_version, is_valid, added_by, created_at, updated_at
+               azure_api_version, wire_api, is_valid, added_by, created_at, updated_at,
+               preset_id, supports_tools, supports_vision, supports_mcp,
+               last_health_check, health_status, health_latency_ms,
+               display_order, models_cache, default_timeout_ms
         FROM ai_providers
         WHERE workspace_id = ${workspaceId}
-        ORDER BY created_at ASC
+        ORDER BY display_order ASC, created_at ASC
       `;
     },
 
@@ -120,6 +123,34 @@ export function aiSettingsQueries(sql: postgres.Sql, encryptionKey = "doable-dev
             ELSE NULL END AS decrypted_bearer_token
         FROM ai_providers
         WHERE id = ${id} AND is_valid = true
+      `;
+      if (!row) return null;
+      return {
+        row,
+        apiKey: row.decrypted_api_key,
+        bearerToken: row.decrypted_bearer_token,
+      };
+    },
+
+    /**
+     * Get provider with decrypted key, regardless of is_valid status.
+     * Used by validate/discover routes that need to test invalid providers.
+     */
+    async getProviderWithKeyAnyStatus(id: string): Promise<{
+      row: AiProviderRow;
+      apiKey: string | null;
+      bearerToken: string | null;
+    } | null> {
+      const [row] = await sql<(AiProviderRow & { decrypted_api_key: string | null; decrypted_bearer_token: string | null })[]>`
+        SELECT *,
+          CASE WHEN encrypted_api_key IS NOT NULL
+            THEN pgp_sym_decrypt(encrypted_api_key::bytea, ${ENCRYPTION_KEY})
+            ELSE NULL END AS decrypted_api_key,
+          CASE WHEN encrypted_bearer_token IS NOT NULL
+            THEN pgp_sym_decrypt(encrypted_bearer_token::bytea, ${ENCRYPTION_KEY})
+            ELSE NULL END AS decrypted_bearer_token
+        FROM ai_providers
+        WHERE id = ${id}
       `;
       if (!row) return null;
       return {

@@ -12,6 +12,7 @@ import {
   type CopilotEngine,
 } from "../ai/providers/copilot.js";
 import { getCopilotManager } from "../ai/providers/copilot-manager.js";
+import { createUsageCollector } from "../ai/usage-collector.js";
 import { aiSettingsQueries } from "@doable/db";
 import {
   createProject,
@@ -152,6 +153,7 @@ async function resolveAiEngine(
           baseUrl: providerData.row.base_url,
           apiKey: providerData.apiKey ?? undefined,
           bearerToken: providerData.bearerToken ?? undefined,
+          ...(providerData.row.wire_api ? { wireApi: providerData.row.wire_api as "completions" | "responses" } : {}),
           ...(providerData.row.azure_api_version
             ? { azure: { apiVersion: providerData.row.azure_api_version } }
             : {}),
@@ -744,6 +746,17 @@ chatRoutes.post(
       const { model: resolvedModel, provider: resolvedProvider, githubToken: resolvedGithubToken } = aiConfig;
       const workspaceId: string | undefined = workspaceRow[0]?.workspace_id;
 
+      // ── Usage collector (non-blocking, fire-and-forget) ──
+      const usageCollector = workspaceId ? createUsageCollector({
+        userId,
+        workspaceId,
+        projectId,
+        provider: resolvedProvider ? "byok" : "copilot",
+        providerLabel: resolvedProvider?.type ?? "GitHub Copilot",
+        byokProviderId: providerId,
+        mode,
+      }) : null;
+
       // Build context + tools in parallel (both need workspaceId but not each other)
       const previewUrl = getDevServerUrl(projectId);
       const [projectContext, allTools] = await Promise.all([
@@ -1030,6 +1043,12 @@ ERROR RECOVERY — if you encounter errors:
         console.warn("[Chat] DB session lookup failed:", e);
       }
 
+      // Pass the DB session ID to the usage collector so per-request logs
+      // are associated with the correct ai_sessions row.
+      if (usageCollector && dbSessionId) {
+        usageCollector.setSessionId(dbSessionId);
+      }
+
       // Resolve user display info for message attribution
       let senderDisplayName = "";
       let senderColor = "";
@@ -1227,6 +1246,9 @@ ERROR RECOVERY — if you encounter errors:
             const event = raceResult.value as Record<string, unknown>;
             const evtType = event.type as string;
             const evtData = event.data as Record<string, unknown> | undefined;
+
+            // Feed every event to the usage collector (no-op for non-usage events)
+            if (usageCollector) usageCollector.onUsageEvent(event);
 
             // Track the start of a new assistant turn when its first delta arrives.
             // This ensures msgIdDeltaStart is set BEFORE deltas are accumulated,
@@ -1659,12 +1681,22 @@ ERROR RECOVERY — if you encounter errors:
         }
 
         clearInterval(keepAlive);
+        // Flush usage data before closing the stream
+        if (usageCollector) {
+          try { await usageCollector.flush(); } catch { /* non-critical */ }
+          const usage = usageCollector.getAccumulatedUsage();
+          if (usage.tokensAvailable) {
+            await stream.writeSSE({ data: JSON.stringify({ type: "usage", data: usage }) });
+          }
+        }
         console.log(`[Chat] Sending [DONE] for ${projectId}`);
         await stream.writeSSE({ data: "[DONE]" });
     } catch (err) {
       activeRequests.delete(projectId);
       sql`DELETE FROM ai_active_streams WHERE project_id = ${projectId}`.catch(() => {});
       clearInterval(keepAlive);
+      // Flush partial usage data so it's not lost on error
+      if (usageCollector) await usageCollector.flush().catch(() => {});
       // Copilot SDK is the core engine — surface the real error, don't work around it
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Chat] Copilot SDK error:", errMsg);
@@ -2072,6 +2104,7 @@ chatRoutes.post(
           baseUrl: providerData.row.base_url,
           apiKey: providerData.apiKey ?? undefined,
           bearerToken: providerData.bearerToken ?? undefined,
+          ...(providerData.row.wire_api ? { wireApi: providerData.row.wire_api as "completions" | "responses" } : {}),
           ...(providerData.row.azure_api_version ? { azure: { apiVersion: providerData.row.azure_api_version } } : {}),
         };
       };

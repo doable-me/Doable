@@ -38,6 +38,7 @@ export interface CopilotEngineConfig {
 /** BYOK provider configuration — passed directly to the Copilot SDK */
 export interface ByokProviderConfig {
   type?: "openai" | "azure" | "anthropic";
+  wireApi?: "completions" | "responses";
   baseUrl: string;
   apiKey?: string;
   bearerToken?: string;

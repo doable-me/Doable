@@ -323,6 +323,24 @@ export function useChat(
                   if (stepId && status) {
                     useEditorStore.getState().updatePlanStep(stepId, { status });
                   }
+                } else if (parsed.type === "usage") {
+                  // Capture usage metrics (token counts, cost, duration)
+                  const u = parsed.data;
+                  if (u && typeof u === "object") {
+                    updateMessageFields(assistantId, {
+                      usage: {
+                        promptTokens: u.promptTokens ?? u.prompt_tokens ?? 0,
+                        completionTokens: u.completionTokens ?? u.completion_tokens ?? 0,
+                        totalTokens: u.totalTokens ?? u.total_tokens ?? 0,
+                        estimatedCostUsd: u.estimatedCostUsd ?? u.estimated_cost_usd ?? 0,
+                        durationMs: u.durationMs ?? u.duration_ms ?? 0,
+                        model: u.model ?? "",
+                        tokensAvailable: u.tokensAvailable ?? u.tokens_available ?? true,
+                        isLocal: u.isLocal ?? u.is_local ?? false,
+                        toolCallCount: u.toolCallCount ?? u.tool_call_count ?? 0,
+                      },
+                    });
+                  }
                 } else if (parsed.type === "error") {
                   accumulated += `\n\n**Error:** ${typeof parsed.data === "string" ? parsed.data : "Unknown error"}`;
                   if (rafHandle) cancelAnimationFrame(rafHandle);

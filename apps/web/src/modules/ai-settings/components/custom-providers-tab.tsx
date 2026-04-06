@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import type { ApiAiProvider } from "@/lib/api";
-import { Key, Plus, Trash2, CheckCircle, XCircle, Loader2, RefreshCw } from "lucide-react";
+import { Key, Plus, Trash2, CheckCircle, XCircle, Loader2, RefreshCw, Zap } from "lucide-react";
+import { ProviderWizard } from "./provider-wizard";
+import { ProviderHealthBadge } from "./provider-health-badge";
 
 interface Props {
   workspaceId: string | null;
@@ -18,52 +20,12 @@ interface Props {
   }) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
   onValidate: (id: string) => Promise<{ valid: boolean; error?: string }>;
+  onRefresh?: () => void;
 }
 
-const PROVIDER_DEFAULTS: { [K in "openai" | "azure" | "anthropic"]: { baseUrl: string; label: string } } = {
-  openai: { baseUrl: "https://api.openai.com/v1", label: "OpenAI" },
-  anthropic: { baseUrl: "https://api.anthropic.com/v1", label: "Anthropic" },
-  azure: { baseUrl: "", label: "Azure OpenAI" },
-};
-
-export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onRemove, onValidate }: Props) {
-  const [showForm, setShowForm] = useState(false);
-  const [label, setLabel] = useState("");
-  const [providerType, setProviderType] = useState<"openai" | "azure" | "anthropic">("openai");
-  const [baseUrl, setBaseUrl] = useState(PROVIDER_DEFAULTS.openai.baseUrl);
-  const [apiKey, setApiKey] = useState("");
-  const [azureApiVersion, setAzureApiVersion] = useState("2024-02-15-preview");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onRemove, onValidate, onRefresh }: Props) {
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
-
-  const handleTypeChange = (type: "openai" | "azure" | "anthropic") => {
-    setProviderType(type);
-    setBaseUrl(PROVIDER_DEFAULTS[type].baseUrl);
-    if (!label) setLabel(PROVIDER_DEFAULTS[type].label);
-  };
-
-  const handleAdd = async () => {
-    if (!label.trim() || !baseUrl.trim()) return;
-    setSubmitting(true);
-    setError("");
-    try {
-      await onAdd({
-        label: label.trim(),
-        providerType,
-        baseUrl: baseUrl.trim(),
-        apiKey: apiKey.trim() || undefined,
-        azureApiVersion: providerType === "azure" ? azureApiVersion : undefined,
-      });
-      setLabel("");
-      setApiKey("");
-      setShowForm(false);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to add provider");
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const handleValidate = async (id: string) => {
     setValidating(id);
@@ -72,6 +34,10 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
     } finally {
       setValidating(null);
     }
+  };
+
+  const handleProviderAdded = () => {
+    onRefresh?.();
   };
 
   if (loading) {
@@ -88,11 +54,11 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
         <div>
           <h2 className="text-lg font-semibold text-zinc-200">Custom AI Providers</h2>
           <p className="text-sm text-zinc-500">
-            Bring your own API keys for OpenAI, Anthropic, or Azure OpenAI.
+            Connect cloud, local, or gateway LLM providers.
           </p>
         </div>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => setWizardOpen(true)}
           className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-500 transition-colors"
         >
           <Plus className="h-4 w-4" />
@@ -100,78 +66,20 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
         </button>
       </div>
 
-      {showForm && (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
-          {/* Provider type selector */}
-          <div className="flex gap-2">
-            {(["openai", "anthropic", "azure"] as const).map((type) => (
-              <button
-                key={type}
-                onClick={() => handleTypeChange(type)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  providerType === type
-                    ? "bg-brand-600 text-white"
-                    : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                {PROVIDER_DEFAULTS[type].label}
-              </button>
-            ))}
-          </div>
-          <input
-            type="text"
-            placeholder="Label"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
-          />
-          <input
-            type="text"
-            placeholder="Base URL"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
-          />
-          <input
-            type="password"
-            placeholder="API Key"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
-          />
-          {providerType === "azure" && (
-            <input
-              type="text"
-              placeholder="API Version (e.g. 2024-02-15-preview)"
-              value={azureApiVersion}
-              onChange={(e) => setAzureApiVersion(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
-            />
-          )}
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => setShowForm(false)} className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-200">
-              Cancel
-            </button>
-            <button
-              onClick={handleAdd}
-              disabled={submitting || !label.trim() || !baseUrl.trim()}
-              className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50"
-            >
-              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
-              Add Provider
-            </button>
-          </div>
-        </div>
-      )}
-
       {providers.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-700 py-12 text-center">
           <Key className="mx-auto h-10 w-10 text-zinc-600 mb-3" />
           <p className="text-sm text-zinc-400">No custom providers configured.</p>
           <p className="text-xs text-zinc-500 mt-1">
-            Add your own API keys to use models from OpenAI, Anthropic, or Azure.
+            Add your own API keys to use models from OpenAI, Anthropic, local engines, and 50+ more.
           </p>
+          <button
+            onClick={() => setWizardOpen(true)}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add your first provider
+          </button>
         </div>
       ) : (
         <div className="space-y-2">
@@ -190,13 +98,11 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
                     {provider.provider_type} &middot; {provider.base_url}
                   </p>
                 </div>
-                {provider.is_valid ? (
-                  <CheckCircle className="h-4 w-4 text-green-400" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-red-400" />
-                )}
+                <ProviderHealthBadge
+                  status={provider.is_valid ? "healthy" : "down"}
+                />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => handleValidate(provider.id)}
                   disabled={validating === provider.id}
@@ -206,8 +112,16 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
                   {validating === provider.id ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <RefreshCw className="h-4 w-4" />
+                    <Zap className="h-4 w-4" />
                   )}
+                </button>
+                <button
+                  onClick={() => handleValidate(provider.id)}
+                  disabled={validating === provider.id}
+                  className="rounded p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                  title="Refresh models"
+                >
+                  <RefreshCw className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => onRemove(provider.id)}
@@ -221,6 +135,14 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
           ))}
         </div>
       )}
+
+      {/* Provider Setup Wizard */}
+      <ProviderWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        workspaceId={workspaceId}
+        onProviderAdded={handleProviderAdded}
+      />
     </div>
   );
 }

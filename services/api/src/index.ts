@@ -25,6 +25,9 @@ import { getDevServerInternalUrl } from "./projects/dev-server.js";
 import { thumbnailRoutes } from "./routes/thumbnails.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { aiSettingsRoutes } from "./routes/ai-settings.js";
+import { providerCatalogRoutes } from "./routes/provider-catalog.js";
+import { providerBridgeRoutes } from "./routes/provider-bridge.js";
+import { usageRoutes } from "./routes/usage.js";
 import { adminRoutes } from "./routes/admin.js";
 import { securityRoutes } from "./routes/security.js";
 import { communityRoutes } from "./routes/community.js";
@@ -123,7 +126,7 @@ app.use(
 // triggers many subrequests (HTML + JS chunks + CSS + assets) which would
 // quickly exhaust the limit and cause preview loads to fail with 429.
 app.use("*", async (c, next) => {
-  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/thumbnails/") || c.req.path.startsWith("/analytics/") || c.req.path === "/visual-edit-bridge.js") {
+  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/thumbnails/") || c.req.path.startsWith("/analytics/") || c.req.path.startsWith("/admin/") || c.req.path === "/visual-edit-bridge.js") {
     await next();
     return;
   }
@@ -155,6 +158,9 @@ app.route("/", editorRoutes);
 app.route("/projects", projectRoutes);
 app.route("/workspaces", workspaceRoutes);
 app.route("/workspaces", aiSettingsRoutes);
+app.route("/ai", providerCatalogRoutes);
+app.route("/workspaces", providerBridgeRoutes);
+app.route("/workspaces", usageRoutes);
 app.route("/folders", folderRoutes);
 app.route("/billing", billingRoutes);
 app.route("/deploy", deployRoutes);

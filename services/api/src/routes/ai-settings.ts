@@ -4,6 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { sql } from "../db/index.js";
 import { aiSettingsQueries, workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { providerDiscovery, type ProviderConfig } from "../ai/provider-discovery.js";
 import type { WorkspaceRole } from "@doable/shared";
 
 const aiSettings = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
@@ -311,6 +312,8 @@ aiSettingsRoutes.delete("/:workspaceId/ai-settings/providers/:id", async (c) => 
 });
 
 // POST /workspaces/:workspaceId/ai-settings/providers/:id/validate
+// Enhanced: uses ProviderDiscoveryService for proper error classification,
+// latency tracking, and health status updates (PRD 23 Phase 5).
 aiSettingsRoutes.post("/:workspaceId/ai-settings/providers/:id/validate", async (c) => {
   const workspaceId = c.req.param("workspaceId");
   const providerId = c.req.param("id");
@@ -319,45 +322,54 @@ aiSettingsRoutes.post("/:workspaceId/ai-settings/providers/:id/validate", async 
   const err = await requireAdmin(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
-  const providerData = await aiSettings.getProviderWithKey(providerId);
+  // Use getProviderWithKeyAnyStatus so we can re-validate currently-invalid providers
+  const providerData = await aiSettings.getProviderWithKeyAnyStatus(providerId);
   if (!providerData) return c.json({ error: "Provider not found" }, 404);
+
+  // Verify the provider belongs to this workspace
+  if (providerData.row.workspace_id !== workspaceId) {
+    return c.json({ error: "Provider not found" }, 404);
+  }
 
   const { row, apiKey, bearerToken } = providerData;
 
-  // Test connectivity by hitting the models endpoint
+  const config: ProviderConfig = {
+    type: row.provider_type as ProviderConfig["type"],
+    baseUrl: row.base_url,
+    apiKey: apiKey ?? undefined,
+    bearerToken: bearerToken ?? undefined,
+    azure: row.provider_type === "azure"
+      ? { apiVersion: row.azure_api_version ?? undefined }
+      : undefined,
+  };
+
+  const result = await providerDiscovery.validateProvider(config);
+
+  // Update health status and validity in DB
+  const healthStatus = result.ok ? "healthy" : (result.error === "rate_limited" ? "degraded" : "down");
+
   try {
-    const headers: Record<string, string> = {};
-    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-    else if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
-
-    const modelsUrl = row.provider_type === "azure"
-      ? `${row.base_url}/openai/models?api-version=${row.azure_api_version ?? "2024-02-15-preview"}`
-      : `${row.base_url}/models`;
-
-    if (row.provider_type === "azure" && apiKey) {
-      headers["api-key"] = apiKey;
-      delete headers["Authorization"];
-    }
-
-    const res = await fetch(modelsUrl, { headers, signal: AbortSignal.timeout(10_000) });
-    const valid = res.ok;
-
-    if (!valid) {
-      await aiSettings.updateProvider(providerId, { isValid: false });
-    } else {
-      await aiSettings.updateProvider(providerId, { isValid: true });
-    }
-
-    return c.json({ data: { valid, status: res.status } });
-  } catch (fetchErr) {
-    await aiSettings.updateProvider(providerId, { isValid: false });
-    return c.json({
-      data: {
-        valid: false,
-        error: fetchErr instanceof Error ? fetchErr.message : "Connection failed",
-      },
-    });
+    await sql`
+      UPDATE ai_providers
+      SET health_status = ${healthStatus},
+          health_latency_ms = ${result.latencyMs},
+          last_health_check = now(),
+          is_valid = ${result.ok}
+      WHERE id = ${providerId}
+    `;
+  } catch (dbErr) {
+    console.error("[AI Settings] Failed to update health status:", dbErr);
   }
+
+  return c.json({
+    data: {
+      valid: result.ok,
+      latencyMs: result.latencyMs,
+      error: result.errorMessage ?? result.error,
+      healthStatus,
+      models: result.models,
+    },
+  });
 });
 
 // ─── Available Models ─────────────────────────────────────

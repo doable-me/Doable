@@ -43,6 +43,18 @@ export interface ChatMessage {
   hadToolCalls?: boolean;
   /** Persisted tool call details from DB (for rendering summaries after refresh) */
   toolCallDetails?: Array<{ name: string; arguments?: unknown }>;
+  /** Usage metrics from the AI response (token counts, cost, duration) */
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    estimatedCostUsd: number;
+    durationMs: number;
+    model: string;
+    tokensAvailable: boolean;
+    isLocal?: boolean;
+    toolCallCount?: number;
+  };
 }
 
 export type EditorMode = "agent" | "plan";
