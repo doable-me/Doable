@@ -156,7 +156,20 @@ export class UsageService {
         WHERE model_id = ${model} AND is_active = true
       `;
 
-      // Step 2: Lowercase + strip provider prefix
+      // Step 2: Dots to dashes (SDK reports "claude-opus-4.6", pricing uses "claude-opus-4-6")
+      if (!pricing) {
+        const dotNormalized = model.replace(/\./g, "-");
+        if (dotNormalized !== model) {
+          [pricing] = await sql`
+            SELECT input_cost_per_1m, output_cost_per_1m,
+                   cache_creation_cost_per_1m, cache_read_cost_per_1m
+            FROM model_pricing
+            WHERE model_id = ${dotNormalized} AND is_active = true
+          `;
+        }
+      }
+
+      // Step 3: Lowercase + strip provider prefix
       if (!pricing) {
         const normalized = model.toLowerCase().split("/").pop() ?? model.toLowerCase();
         [pricing] = await sql`

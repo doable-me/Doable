@@ -21,9 +21,11 @@ export interface CreditUsageRow {
   workspace_id: string;
   user_id: string;
   project_id: string | null;
-  credits_used: number;
-  action: string;
-  metadata: Record<string, unknown> | null;
+  credits_consumed: number;
+  action_type: string;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  model: string | null;
   created_at: Date;
 }
 
@@ -52,7 +54,7 @@ export function billingQueries(sql: postgres.Sql) {
       workspaceId: string,
       userId: string,
       action: string,
-      opts?: { projectId?: string; amount?: number; metadata?: Record<string, unknown> }
+      opts?: { projectId?: string; amount?: number }
     ): Promise<{ success: boolean; remaining: number }> {
       const amount = opts?.amount ?? 1;
 
@@ -107,14 +109,13 @@ export function billingQueries(sql: postgres.Sql) {
         `;
 
         await tx`
-          INSERT INTO credit_usage (workspace_id, user_id, project_id, credits_used, action, metadata)
+          INSERT INTO credit_usage_log (workspace_id, user_id, project_id, credits_consumed, action_type)
           VALUES (
             ${workspaceId},
             ${userId},
             ${opts?.projectId ?? null},
             ${amount},
-            ${action},
-            ${opts?.metadata ? sql.json(opts.metadata as postgres.JSONValue) : null}
+            ${action}
           )
         `;
 
@@ -173,14 +174,14 @@ export function billingQueries(sql: postgres.Sql) {
       const toDate = opts?.to ?? new Date();
 
       const [countResult] = await sql<[{ count: string }]>`
-        SELECT count(*)::text FROM credit_usage
+        SELECT count(*)::text FROM credit_usage_log
         WHERE workspace_id = ${workspaceId}
           AND created_at >= ${fromDate}
           AND created_at <= ${toDate}
       `;
 
       const rows = await sql<CreditUsageRow[]>`
-        SELECT * FROM credit_usage
+        SELECT * FROM credit_usage_log
         WHERE workspace_id = ${workspaceId}
           AND created_at >= ${fromDate}
           AND created_at <= ${toDate}

@@ -540,7 +540,8 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
   const planDefault = workspacePlan === "free" ? 5 : workspacePlan === "pro" ? 50 : 200;
   const dailyTotal = credits?.dailyTotal ?? planDefault;
   const creditsRemaining = Math.max(0, credits?.dailyRemaining ?? 0);
-  const creditsPercent = dailyTotal > 0 ? (creditsRemaining / dailyTotal) * 100 : 0;
+  const isUnlimited = dailyTotal >= 2_000_000_000;
+  const creditsPercent = isUnlimited ? 100 : dailyTotal > 0 ? (creditsRemaining / dailyTotal) * 100 : 0;
 
   const folderTree = buildFolderTree(folders);
 
@@ -609,7 +610,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-zinc-500">Credits today</span>
               <span className="text-zinc-400">
-                {creditsRemaining}/{dailyTotal}
+                {isUnlimited ? "Unlimited" : `${creditsRemaining}/${dailyTotal}`}
               </span>
             </div>
             <div className="h-1.5 w-full rounded-full bg-zinc-800">

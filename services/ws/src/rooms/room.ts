@@ -257,12 +257,19 @@ export class Room {
     this.broadcast({ type: "awareness:user_selection", userId, data }, userId);
   }
 
-  // Phase C: Visual edit selection
-  updateVisualEditSelection(userId: string, selector: string, boundingRect: { x: number; y: number; width: number; height: number }, excludeWs?: WebSocket): void {
+  // Phase C: Visual edit selection (atomic conflict check + update)
+  updateVisualEditSelection(userId: string, selector: string, boundingRect: { x: number; y: number; width: number; height: number }, excludeWs?: WebSocket): { succeeded: boolean; conflict?: { userId: string; displayName: string } } {
     const connections = this.members.get(userId);
-    if (!connections?.length) return;
+    if (!connections?.length) return { succeeded: false };
+
+    // Atomic: check conflict and update in same synchronous block
+    const conflict = this.getVisualEditConflict(userId, selector);
+    if (conflict) {
+      return { succeeded: false, conflict };
+    }
+
     for (const m of connections) m.visualEditSelector = selector;
-    const member = connections[0]!;
+    const member = connections[connections.length - 1]!;
     const message: WsServerMessage = {
       type: "visual-edit:select",
       userId,
@@ -276,6 +283,7 @@ export class Room {
     } else {
       this.broadcast(message, userId);
     }
+    return { succeeded: true };
   }
 
   clearVisualEditSelection(userId: string, excludeWs?: WebSocket): void {

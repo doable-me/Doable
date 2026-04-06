@@ -15,13 +15,25 @@ const PLAN_DAILY_LIMITS: Record<string, number> = {
   free: 5,
   pro: 50,
   business: 200,
+  enterprise: 2_147_483_647,
 };
 
 const PLAN_MONTHLY_LIMITS: Record<string, number> = {
   free: 0,
   pro: 100,
   business: 100,
+  enterprise: 2_147_483_647,
 };
+
+const UNLIMITED_THRESHOLD = 2_000_000_000;
+
+function isUnlimited(value: number): boolean {
+  return value >= UNLIMITED_THRESHOLD;
+}
+
+function formatCredits(value: number): string {
+  return isUnlimited(value) ? "Unlimited" : value.toLocaleString();
+}
 
 function CreditBar({
   label,
@@ -34,16 +46,16 @@ function CreditBar({
   total: number;
   color: string;
 }) {
-  const used = Math.max(0, total - remaining);
-  const percentage = total > 0 ? Math.min((remaining / total) * 100, 100) : 0;
-  const isLow = remaining <= Math.ceil(total * 0.2);
+  const unlimited = isUnlimited(total);
+  const percentage = unlimited ? 100 : total > 0 ? Math.min((remaining / total) * 100, 100) : 0;
+  const isLow = !unlimited && remaining <= Math.ceil(total * 0.2);
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium text-zinc-200">{label}</span>
         <span className={cn("tabular-nums text-zinc-400", isLow && "text-orange-400")}>
-          {remaining} / {total} remaining
+          {unlimited ? "Unlimited" : `${remaining} / ${total} remaining`}
         </span>
       </div>
       <div className="h-2.5 w-full overflow-hidden rounded-full bg-zinc-800">
@@ -79,6 +91,7 @@ export function CreditDisplay({ credits, loading, className }: CreditDisplayProp
 
   const totalAvailable =
     credits.daily_remaining + credits.monthly_remaining + credits.rollover_credits;
+  const showUnlimited = isUnlimited(totalAvailable) || isUnlimited(credits.daily_remaining);
 
   // Determine plan limits — use actual remaining as floor if no plan info
   const planKey = (credits as any).plan_type ?? "free";
@@ -90,7 +103,7 @@ export function CreditDisplay({ credits, loading, className }: CreditDisplayProp
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">Credits</h3>
         <div className="rounded-full bg-brand-500/10 border border-brand-500/20 px-3 py-1 text-sm font-medium text-brand-400">
-          {totalAvailable} available
+          {showUnlimited ? "Unlimited" : `${totalAvailable} available`}
         </div>
       </div>
 
@@ -148,7 +161,8 @@ export function CreditToolbarIndicator({
   if (loading || !credits) return null;
 
   const total = credits.daily_remaining + credits.monthly_remaining + credits.rollover_credits;
-  const isLow = credits.daily_remaining <= 1 && total <= 2;
+  const unlimited = isUnlimited(total) || isUnlimited(credits.daily_remaining);
+  const isLow = !unlimited && credits.daily_remaining <= 1 && total <= 2;
 
   return (
     <button
@@ -159,9 +173,9 @@ export function CreditToolbarIndicator({
           ? "bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
           : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
       )}
-      title={`${total} credits remaining`}
+      title={unlimited ? "Unlimited credits" : `${total} credits remaining`}
     >
-      <span className="tabular-nums">{total}</span>
+      <span className="tabular-nums">{unlimited ? "∞" : total}</span>
       <span className="text-zinc-500">credits</span>
     </button>
   );
@@ -170,7 +184,7 @@ export function CreditToolbarIndicator({
 function CreditStat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg bg-zinc-800/50 border border-zinc-700/30 p-3 text-center">
-      <p className="text-2xl font-bold tabular-nums text-white">{value}</p>
+      <p className="text-2xl font-bold tabular-nums text-white">{formatCredits(value)}</p>
       <p className="text-xs text-zinc-500">{label}</p>
     </div>
   );

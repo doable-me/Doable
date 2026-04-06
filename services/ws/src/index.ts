@@ -12,6 +12,8 @@ const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "internal-dev-secret";
 
 // ─── State ──────────────────────────────────────────────
 const rooms = new RoomManager();
+const CURSOR_MOVE_MIN_INTERVAL_MS = 50;
+const lastCursorMove = new Map<string, number>();
 
 interface ClientState {
   userId: string;
@@ -231,10 +233,12 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
       }
     }
     clients.delete(ws);
+    lastCursorMove.delete(state.userId);
   });
 
   ws.on("error", () => {
     clients.delete(ws);
+    lastCursorMove.delete(state.userId);
   });
 });
 
@@ -440,16 +444,15 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          // Check if another user is already editing this element
-          const conflict = room.getVisualEditConflict(state.userId, msg.selector);
-          if (conflict) {
+          // Atomic conflict check + selection update
+          const result = room.updateVisualEditSelection(state.userId, msg.selector, msg.boundingRect, ws);
+          if (!result.succeeded && result.conflict) {
             send(ws, {
               type: "error",
               code: "VISUAL_EDIT_CONFLICT",
-              message: `${conflict.displayName} is already editing this element`,
+              message: `${result.conflict.displayName} is already editing this element`,
             });
           }
-          room.updateVisualEditSelection(state.userId, msg.selector, msg.boundingRect, ws);
         }
       }
       break;
@@ -498,6 +501,12 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
 
     case "visual-edit:cursor-move": {
       if (state.projectId) {
+        // Server-side rate limiting to prevent DoS from buggy clients
+        const now = Date.now();
+        const lastTime = lastCursorMove.get(state.userId) ?? 0;
+        if (now - lastTime < CURSOR_MOVE_MIN_INTERVAL_MS) break;
+        lastCursorMove.set(state.userId, now);
+
         const room = rooms.get(state.projectId);
         if (room) {
           room.broadcastExceptWs({

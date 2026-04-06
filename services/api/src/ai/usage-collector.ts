@@ -80,10 +80,16 @@ async function getPricing(model: string): Promise<{
       pricingCacheTime = now;
     }
 
-    // Try exact match first, then prefix match (e.g. "claude-sonnet-4-6-20260401" -> "claude-sonnet-4-6")
+    // Try exact match first
     if (pricingCache.has(model)) return pricingCache.get(model)!;
+
+    // Normalize: dots to dashes (SDK reports "claude-opus-4.6", pricing uses "claude-opus-4-6")
+    const normalized = model.replace(/\./g, "-");
+    if (normalized !== model && pricingCache.has(normalized)) return pricingCache.get(normalized)!;
+
+    // Prefix match (e.g. "claude-sonnet-4-6-20260401" -> "claude-sonnet-4-6")
     for (const [key, value] of pricingCache) {
-      if (model.startsWith(key)) return value;
+      if (model.startsWith(key) || normalized.startsWith(key)) return value;
     }
     return null;
   } catch {
