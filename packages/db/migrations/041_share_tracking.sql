@@ -17,3 +17,6 @@ CREATE TABLE IF NOT EXISTS share_link_visits (
 CREATE INDEX IF NOT EXISTS idx_share_link_visits_visitor ON share_link_visits (visitor_user_id);
 CREATE INDEX IF NOT EXISTS idx_share_link_visits_project ON share_link_visits (project_id);
 CREATE INDEX IF NOT EXISTS idx_share_link_visits_last_visited ON share_link_visits (last_visited_at DESC);
+
+-- Grant access to the application database user
+GRANT ALL PRIVILEGES ON share_link_visits TO doable;
