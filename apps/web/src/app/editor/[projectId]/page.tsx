@@ -3,7 +3,8 @@
 import { useState, useRef, useCallback, useEffect, memo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, type ApiEffectiveAiConfig } from "@/lib/api";
+import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, type ApiEffectiveAiConfig } from "@/lib/api";
+import { consumeBridge, hasBridge, type BridgeSSEEvent } from "@/lib/prompt-bridge";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -97,13 +98,6 @@ import {
   Users,
   Boxes,
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -242,7 +236,6 @@ interface MoreMenuItem {
 }
 
 const MORE_MENU_ITEMS: MoreMenuItem[] = [
-  { key: "history", icon: Clock, label: "History" },
   { key: "design", icon: Palette, label: "Design" },
   { key: "cloud", icon: Cloud, label: "Cloud" },
   { key: "analytics", icon: BarChart3, label: "Analytics" },
@@ -660,6 +653,204 @@ async function streamChat(
 
   // Stream ended without [DONE] — still call onDone
   onDone();
+}
+
+// ─── Bridge SSE consumer ────────────────────────────────────
+// Replays buffered SSE events from the prompt bridge, then continues
+// reading from the live reader. Uses the same callback interface as
+// streamChat so the editor state machine works identically.
+
+interface BridgeCallbacks {
+  onChunk: (text: string) => void;
+  onDone: () => void;
+  onError: (error: string) => void;
+  onToolCompleted?: (toolName: string, args: Record<string, unknown>) => void;
+  onToolStarted?: (toolName: string, args: Record<string, unknown>) => void;
+  onThinking?: (text: string) => void;
+  onStatusChange?: (status: string) => void;
+  onClarification?: (questions: ClarificationQuestion[]) => void;
+  onPlan?: (plan: Plan) => void;
+  onPlanStepUpdate?: (stepId: string, status: string) => void;
+}
+
+function processOneSSEPayload(
+  payload: string,
+  cb: BridgeCallbacks,
+  pendingToolNames: string[],
+): boolean /* true = done */ {
+  if (payload === "[DONE]") {
+    cb.onDone();
+    return true;
+  }
+
+  try {
+    const parsed = JSON.parse(payload) as {
+      type?: string;
+      data?: unknown;
+      content?: string;
+      name?: string;
+      args?: Record<string, unknown>;
+    };
+
+    if (parsed.type === "tool_call" && cb.onToolStarted) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+      const toolArgs = (d?.arguments as Record<string, unknown>) ?? {};
+      const friendly = (d?.friendlyMessage as string) ?? "";
+      if (friendly && cb.onThinking) cb.onThinking(friendly);
+      if (toolName) {
+        pendingToolNames.push(toolName);
+        cb.onToolStarted(toolName, toolArgs);
+      }
+    }
+
+    if (parsed.type === "tool.completed" && cb.onToolCompleted) {
+      const toolName = parsed.name ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).name as string : "");
+      const toolArgs = parsed.args ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).args as Record<string, unknown> : {});
+      cb.onToolCompleted(toolName ?? "", toolArgs ?? {});
+    }
+
+    if ((parsed.type === "tool_result" || parsed.type === "tool.completed") && cb.onToolCompleted) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      let toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+      const toolArgs = (d?.result as Record<string, unknown>) ?? (d?.args as Record<string, unknown>) ?? {};
+      if (!toolName && pendingToolNames.length > 0) {
+        toolName = pendingToolNames.shift()!;
+      } else if (toolName && pendingToolNames.length > 0 && pendingToolNames[0] === toolName) {
+        pendingToolNames.shift();
+      }
+      if (toolName) cb.onToolCompleted(toolName, toolArgs);
+    }
+
+    if (parsed.type === "code_diff" && cb.onToolCompleted) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      const filePath = (d?.filePath as string) ?? "";
+      const action = (d?.action as string) ?? "edit";
+      if (filePath) cb.onToolCompleted(`${action}_file`, { path: filePath });
+    }
+
+    if (parsed.type === "clarification" && cb.onClarification) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      const questions = d?.questions as ClarificationQuestion[] | undefined;
+      if (Array.isArray(questions) && questions.length > 0) cb.onClarification(questions);
+    }
+
+    if (parsed.type === "plan" && cb.onPlan) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      const plan = d?.plan as Plan | undefined;
+      if (plan) cb.onPlan(plan);
+    }
+
+    if (parsed.type === "plan_step_update" && cb.onPlanStepUpdate) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      const stepId = d?.stepId as string | undefined;
+      const status = d?.status as string | undefined;
+      if (stepId && status) cb.onPlanStepUpdate(stepId, status);
+    }
+
+    if (parsed.type === "thinking" && cb.onThinking) {
+      const thinkingContent = typeof parsed.data === "string" ? parsed.data : "";
+      if (thinkingContent) cb.onThinking(thinkingContent);
+    }
+
+    if (parsed.type === "status" && cb.onStatusChange) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      const statusMsg = (d?.message as string) ?? "";
+      if (statusMsg) cb.onStatusChange(statusMsg);
+    }
+
+    if (parsed.type === "auto_fix_complete" && cb.onStatusChange) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      const success = d?.success as boolean;
+      cb.onStatusChange(success ? "All issues resolved" : "");
+    }
+
+    if (parsed.type === "error") {
+      const errMsg = typeof parsed.data === "string" ? parsed.data : "An unknown error occurred.";
+      cb.onError(errMsg);
+      return true;
+    }
+
+    // Extract text content
+    let text = "";
+    if (parsed.type === "text_delta") {
+      text = typeof parsed.data === "string" ? parsed.data : "";
+    } else if (parsed.type === "assistant.message") {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      text = typeof d?.content === "string" ? d.content : "";
+    } else if (!parsed.type || parsed.type === "content") {
+      if (typeof parsed.data === "string") text = parsed.data;
+      else if (typeof parsed.content === "string") text = parsed.content;
+    }
+    if (text) cb.onChunk(text);
+  } catch {
+    if (payload && !payload.startsWith("{") && !payload.includes("model_call")) {
+      cb.onChunk(payload);
+    }
+  }
+
+  return false;
+}
+
+async function resumeBridgeStream(
+  bufferedEvents: BridgeSSEEvent[],
+  reader: ReadableStreamDefaultReader<Uint8Array> | null,
+  sseBuffer: string,
+  isDone: boolean,
+  error: string | undefined,
+  signal: AbortSignal,
+  cb: BridgeCallbacks,
+) {
+  const pendingToolNames: string[] = [];
+
+  // If bridge had an error, surface it immediately
+  if (error) {
+    cb.onError(error);
+    return;
+  }
+
+  // 1. Replay buffered events
+  for (const evt of bufferedEvents) {
+    if (signal.aborted) return;
+    const done = processOneSSEPayload(evt.raw, cb, pendingToolNames);
+    if (done) return;
+  }
+
+  // 2. If stream already ended, we're done
+  if (isDone || !reader) {
+    cb.onDone();
+    return;
+  }
+
+  // 3. Continue reading from the live stream
+  const decoder = new TextDecoder();
+  let buffer = sseBuffer;
+
+  try {
+    while (true) {
+      if (signal.aborted) return;
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+        const payload = trimmed.slice(6);
+        const finished = processOneSSEPayload(payload, cb, pendingToolNames);
+        if (finished) return;
+      }
+    }
+  } catch {
+    if (signal.aborted) return;
+    cb.onError("Connection interrupted — the server may have restarted. Please send your message again.");
+    return;
+  }
+
+  cb.onDone();
 }
 
 // ─── Markdown Rendering (static — outside component for memoization) ────
@@ -1105,6 +1296,8 @@ export default function EditorPage() {
     apiGetProject(resolvedProjectId)
       .then((res) => setWorkspaceId(res.data.workspace_id))
       .catch(console.error);
+    // Record view for recently-viewed tracking (fire-and-forget)
+    apiRecordProjectView(resolvedProjectId).catch(() => {});
   }, [resolvedProjectId]);
 
   // ─── Fetch effective AI config for enforcement + user prefs ─
@@ -1729,24 +1922,202 @@ export default function EditorPage() {
   }, [resolvedProjectId]);
 
   // Auto-send prompt from dashboard navigation.
-  // Reads from sessionStorage (primary) or URL query param (fallback).
-  // Sends immediately on mount — the chat API auto-scaffolds if needed.
-  // No need to wait for the frontend scaffold; that only gates the preview.
+  // Checks for an in-flight bridge stream first (started on dashboard before navigation).
+  // Falls back to sessionStorage / URL param → sendMessage for cold navigations.
   useEffect(() => {
     if (autoSentRef.current) return;
     autoSentRef.current = true;
-    // Read mode from URL — if "plan", switch to plan mode and pass it directly to sendMessage
+
+    // Read mode from URL — if "plan", switch to plan mode
     const urlMode = new URLSearchParams(window.location.search).get("mode") as ChatMode | null;
     if (urlMode === "plan") {
       setChatMode("plan");
     }
-    // Read from sessionStorage first (most reliable), then fall back to URL
+
+    // ── Strategy 1: consume in-flight bridge (fastest path) ──
+    if (hasBridge(resolvedProjectId)) {
+      const bridge = consumeBridge(resolvedProjectId);
+      if (bridge && messages.length === 0) {
+        // Clean up sessionStorage (bridge makes it redundant)
+        const storageKey = `doable_initial_prompt_${resolvedProjectId}`;
+        sessionStorage.removeItem(storageKey);
+
+        const trimmed = bridge.prompt.trim();
+        const userMsg: ChatMsg = {
+          id: Date.now().toString(),
+          role: "user",
+          content: trimmed,
+          timestamp: nowTimestamp(),
+          ...(bridge.attachments?.length ? {
+            attachments: bridge.attachments.map((a) => ({
+              type: a.mimeType || a.type || "application/octet-stream",
+              data: a.data,
+              name: a.name,
+              preview: a.preview,
+              fileType: a.type,
+            })),
+          } : {}),
+        };
+        const assistantId = (Date.now() + 1).toString();
+        const assistantMsg: ChatMsg = {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          timestamp: nowTimestamp(),
+          isStreaming: true,
+        };
+
+        setMessages([userMsg, assistantMsg]);
+        setIsFirstGeneration(true);
+        setIsStreaming(true);
+        setLiveStatus(bridge.statusMessage || "Understanding your request...");
+        setInputValue("");
+
+        const controller = bridge.abortController;
+        abortRef.current = controller;
+
+        // Resume the in-flight stream with the standard callback set
+        resumeBridgeStream(
+          bridge.events,
+          bridge.reader,
+          bridge.sseBuffer,
+          bridge.isDone,
+          bridge.error,
+          controller.signal,
+          {
+            onChunk: (chunk: string) => {
+              if (!chunkBufferRef.current && rafIdRef.current === null) {
+                setLiveStatus("Writing response...");
+              }
+              chunkBufferRef.current += chunk;
+              if (rafIdRef.current === null) {
+                rafIdRef.current = requestAnimationFrame(() => {
+                  const buffered = chunkBufferRef.current;
+                  chunkBufferRef.current = "";
+                  rafIdRef.current = null;
+                  if (buffered) {
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === assistantId ? { ...m, content: m.content + buffered } : m
+                      )
+                    );
+                  }
+                });
+              }
+            },
+            onDone: () => {
+              if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              if (chunkBufferRef.current) {
+                const remaining = chunkBufferRef.current;
+                chunkBufferRef.current = "";
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId ? { ...m, content: m.content + remaining } : m
+                  )
+                );
+              }
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, isStreaming: false, toolActions: m.toolActions?.map((a) => a.status === "running" ? { ...a, status: "completed" as const } : a) }
+                    : m
+                )
+              );
+              setIsStreaming(false);
+              setLiveStatus("");
+              setIsFirstGeneration(false);
+              setHasActiveToolCalls(false);
+              loadFileTree();
+              if (selectedFile) {
+                delete fileContentsCache.current[selectedFile];
+                loadFileContent(selectedFile);
+              }
+              if (previewRefreshTimer.current) clearTimeout(previewRefreshTimer.current);
+              previewRefreshTimer.current = setTimeout(() => {
+                previewRefreshTimer.current = null;
+                if (iframeRef.current && previewUrl) {
+                  iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+                }
+              }, 1500);
+              setAiSuggestions(FALLBACK_SUGGESTIONS);
+              setMessages((prev) => {
+                const lastAssistant = prev.find((m) => m.id === assistantId);
+                if (lastAssistant?.content) {
+                  fetchAISuggestions(resolvedProjectId, trimmed, lastAssistant.content).then((s) => {
+                    setAiSuggestions(s);
+                    if (s.length > 0) {
+                      setMessages((prev2) => prev2.map((m) => m.id === assistantId ? { ...m, suggestions: s } : m));
+                    }
+                  });
+                }
+                return prev;
+              });
+            },
+            onError: (error: string) => {
+              if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              chunkBufferRef.current = "";
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: error, isStreaming: false, isError: true } : m
+                )
+              );
+              setIsStreaming(false);
+              setLiveStatus("");
+              setIsFirstGeneration(false);
+              setHasActiveToolCalls(false);
+            },
+            onToolCompleted: handleToolCompleted,
+            onToolStarted: handleToolStarted,
+            onThinking: (thinkingText: string) => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, thinkingContent: (m.thinkingContent || "") + thinkingText }
+                    : m
+                )
+              );
+              if (thinkingText.length < 60 && !thinkingText.includes("\n")) {
+                setLiveStatus(thinkingText);
+                return;
+              }
+              const humanized = humanizeThinking(thinkingText);
+              if (humanized) setLiveStatus(humanized);
+            },
+            onStatusChange: (status: string) => {
+              if (status) setLiveStatus(status);
+            },
+            onClarification: (questions) => {
+              setPendingQuestions(questions);
+              setPlanPhase("clarifying");
+            },
+            onPlan: (plan) => {
+              setActivePlan(plan);
+              setPlanPhase("reviewing");
+            },
+            onPlanStepUpdate: (stepId, status) => {
+              setActivePlan((prev) => {
+                if (!prev) return prev;
+                return { ...prev, steps: prev.steps.map((s) => s.id === stepId ? { ...s, status: status as any } : s) };
+              });
+            },
+          },
+        );
+        return; // bridge consumed — skip fallback path
+      }
+    }
+
+    // ── Strategy 2: fallback — read from sessionStorage / URL param ──
     const storageKey = `doable_initial_prompt_${resolvedProjectId}`;
     const stored = sessionStorage.getItem(storageKey);
     const fromUrl = new URLSearchParams(window.location.search).get("prompt");
     if (stored) sessionStorage.removeItem(storageKey);
 
-    // Parse stored value — may be JSON { prompt, attachments } or plain string
     let prompt: string | null = null;
     let storedAttachments: Attachment[] | undefined;
     if (stored) {
@@ -1756,21 +2127,19 @@ export default function EditorPage() {
           prompt = parsed.prompt;
           storedAttachments = parsed.attachments;
         } else {
-          prompt = stored; // plain string fallback
+          prompt = stored;
         }
       } catch {
-        prompt = stored; // not JSON, use as-is
+        prompt = stored;
       }
     }
     if (!prompt) prompt = fromUrl;
     if (!prompt) return;
-    // Don't auto-send if messages already exist (page was refreshed with localStorage history)
     if (messages.length > 0) return;
     // Small delay so the UI renders the chat panel first
-    // Pass urlMode directly — don't rely on React state which may not have flushed
     setTimeout(() => {
       sendMessage(prompt!, storedAttachments, urlMode === "plan" ? "plan" : undefined);
-    }, 300);
+    }, 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedProjectId]);
 
@@ -2650,7 +3019,7 @@ export default function EditorPage() {
   }, [handleToggleFullscreen, shareDialogOpen, publishModalOpen, publishStatus, deleteConfirmOpen, isDeleting, githubDialogOpen, shortcutsDialogOpen]);
 
   // Determine what panels to show based on active tab
-  const showChat = activeTab === "chat" || activeTab === "preview" || isPanelView || isDesignMode;
+  const showChat = showSidebar && (activeTab === "chat" || activeTab === "preview" || isPanelView || isDesignMode);
   const showCode = activeTab === "code";
   const showPreview = ((activeTab === "preview" || activeTab === "chat") && !isPanelView) || isDesignMode;
 
@@ -2930,7 +3299,7 @@ export default function EditorPage() {
     />
     <div className="flex h-screen flex-col bg-[#1C1C1C] text-zinc-200">
       {/* ─── Top Bar ──────────────────────────────────────────── */}
-      <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#1C1C1C] px-3">
+      <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#1C1C1C] px-2 md:px-3">
         {/* Left: Logo + Back arrow + Project name with dropdown */}
         <div className="flex items-center gap-2.5 min-w-0">
           {/* Doable logo icon */}
@@ -2943,7 +3312,7 @@ export default function EditorPage() {
           </button>
 
           {/* Editable project name with dropdown chevron + status subtitle */}
-          <div className="flex flex-col min-w-0">
+          <div className="hidden sm:flex flex-col min-w-0">
             {isEditingName ? (
               <div className="flex items-center gap-1">
                 <input
@@ -3009,26 +3378,23 @@ export default function EditorPage() {
           )}
         </div>
 
-        {/* Center: View toggle icon buttons (Lovable-style) */}
+        {/* Center: View toggle icon buttons */}
         <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none">
           {/* Core toolbar buttons */}
           {([
             { key: "history" as ActiveTab, icon: Clock, label: "History", isToggle: false },
             { key: "chat" as ActiveTab, icon: PanelLeftClose, label: "Toggle sidebar", isToggle: true },
             { key: "preview" as ActiveTab, icon: Globe, label: "Preview", isToggle: false },
             { key: "code" as ActiveTab, icon: Code2, label: "Code", isToggle: false },
-            { key: "team" as ActiveTab, icon: Users, label: "Team", isToggle: false, isPopout: true },
-          ]).map(({ key, icon: Icon, label, isToggle, isPopout }, idx) => {
-            const isActive = !isToggle && !isPopout && activeTab === key;
+          ]).map(({ key, icon: Icon, label, isToggle }, idx) => {
+            const isActive = !isToggle && activeTab === key;
             return (
               <button
                 key={`${key}-${idx}`}
                 onClick={() => {
                   if (isToggle) {
                     setShowSidebar((v) => !v);
-                  } else if (isPopout) {
-                    // Open the floating chat popout instead of switching tabs
-                    window.dispatchEvent(new CustomEvent("doable:open-chat-popout"));
                   } else {
                     setActiveTab(key);
                   }
@@ -3070,6 +3436,7 @@ export default function EditorPage() {
               </button>
             );
           })}
+          </div>
 
           {/* More menu (triple-dots) */}
           <div className="relative" ref={moreMenuRef}>
@@ -3089,6 +3456,8 @@ export default function EditorPage() {
             {/* Dropdown */}
             {showMoreMenu && (
               <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-52 rounded-lg border border-zinc-700/60 bg-[#232322] shadow-xl shadow-black/40 py-1 z-50">
+                {/* View tabs with pin/unpin */}
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">Views</div>
                 {MORE_MENU_ITEMS.map(({ key, icon: MenuIcon, label }) => {
                   const isActive = activeTab === key;
                   const isPinned = pinnedItems.includes(key);
@@ -3128,6 +3497,54 @@ export default function EditorPage() {
                     </div>
                   );
                 })}
+                {/* Separator */}
+                <div className="my-1 border-t border-zinc-700/60" />
+                {/* Project actions */}
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">Project</div>
+                <button
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+                  onClick={() => { router.push(`/projects/${resolvedProjectId}/settings`); setShowMoreMenu(false); }}
+                >
+                  <Settings className="h-4 w-4 flex-shrink-0" />
+                  <span>Settings</span>
+                </button>
+                <button
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+                  onClick={() => { handleDownloadZip(); setShowMoreMenu(false); }}
+                >
+                  <Download className="h-4 w-4 flex-shrink-0" />
+                  <span>Download project</span>
+                </button>
+                <button
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+                  onClick={() => { handleDuplicateProject(); setShowMoreMenu(false); }}
+                >
+                  <CopyPlus className="h-4 w-4 flex-shrink-0" />
+                  <span>{isDuplicating ? "Duplicating..." : "Duplicate project"}</span>
+                </button>
+                <button
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+                  onClick={() => { handleCopyProjectLink(); setShowMoreMenu(false); }}
+                >
+                  <Link className="h-4 w-4 flex-shrink-0" />
+                  <span>Copy project link</span>
+                </button>
+                <button
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+                  onClick={() => { setShortcutsDialogOpen(true); setShowMoreMenu(false); }}
+                >
+                  <Keyboard className="h-4 w-4 flex-shrink-0" />
+                  <span>Keyboard shortcuts</span>
+                </button>
+                {/* Separator */}
+                <div className="my-1 border-t border-zinc-700/60" />
+                <button
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:bg-red-950/50 hover:text-red-300 transition-colors"
+                  onClick={() => { setDeleteConfirmOpen(true); setShowMoreMenu(false); }}
+                >
+                  <Trash2 className="h-4 w-4 flex-shrink-0" />
+                  <span>Delete project</span>
+                </button>
               </div>
             )}
           </div>
@@ -3238,63 +3655,8 @@ export default function EditorPage() {
           </button>
         </div>
 
-        {/* Right: Triple-dots + Share + GitHub + Upgrade + Publish */}
-        <div className="flex items-center gap-1.5">
-          {/* Triple-dots menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className="flex h-7 w-7 items-center justify-center rounded-md bg-[#272725] text-[#FCFBF8] hover:brightness-125 transition-colors"
-              title="More options"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56 bg-[#1C1C1C] border-zinc-700 text-zinc-200" align="end">
-              <DropdownMenuItem
-                className="gap-2 text-zinc-300 hover:bg-zinc-800 hover:text-white cursor-pointer"
-                onClick={() => router.push(`/projects/${resolvedProjectId}/settings`)}
-              >
-                <Settings className="h-4 w-4" />
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="gap-2 text-zinc-300 hover:bg-zinc-800 hover:text-white cursor-pointer"
-                onClick={handleDownloadZip}
-              >
-                <Download className="h-4 w-4" />
-                Download project
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="gap-2 text-zinc-300 hover:bg-zinc-800 hover:text-white cursor-pointer"
-                onClick={handleDuplicateProject}
-              >
-                <CopyPlus className="h-4 w-4" />
-                {isDuplicating ? "Duplicating..." : "Duplicate project"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="gap-2 text-zinc-300 hover:bg-zinc-800 hover:text-white cursor-pointer"
-                onClick={handleCopyProjectLink}
-              >
-                <Link className="h-4 w-4" />
-                Copy project link
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="gap-2 text-zinc-300 hover:bg-zinc-800 hover:text-white cursor-pointer"
-                onClick={() => setShortcutsDialogOpen(true)}
-              >
-                <Keyboard className="h-4 w-4" />
-                Keyboard shortcuts
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-zinc-700" />
-              <DropdownMenuItem
-                className="gap-2 text-red-400 hover:bg-red-950/50 hover:text-red-300 cursor-pointer"
-                onClick={() => setDeleteConfirmOpen(true)}
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete project
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
+        {/* Right: Share + GitHub + Upgrade + Publish */}
+        <div className="flex items-center gap-1 md:gap-1.5">
           {/* Collaboration presence avatars */}
           <CollabHeaderItems />
 
@@ -3324,8 +3686,7 @@ export default function EditorPage() {
             className="flex h-7 items-center gap-1.5 rounded-md bg-[#5337CD] px-2.5 text-sm text-[#F0F6FF] hover:brightness-110 transition-colors"
             style={{ boxShadow: "rgba(255,255,255,0.2) 0px 0.5px 0px 0px inset, rgba(255,255,255,0.1) 0px 0px 0px 0.5px inset, rgba(0,0,0,0.05) 0px 1px 2px 0px" }}
           >
-            <Zap className="h-4 w-4" />
-            Upgrade
+            <Zap className="h-4 w-4" /><span className="hidden md:inline">Upgrade</span>
           </button>
           {/* Publish */}
           <button
@@ -3338,7 +3699,8 @@ export default function EditorPage() {
             className="flex h-7 items-center gap-1.5 rounded-md bg-[#1E52F1] px-2.5 text-sm text-[#F0F6FF] hover:brightness-110 transition-colors"
             style={{ boxShadow: "rgba(255,255,255,0.2) 0px 0.5px 0px 0px inset, rgba(255,255,255,0.1) 0px 0px 0px 0.5px inset, rgba(0,0,0,0.05) 0px 1px 2px 0px" }}
           >
-            Publish
+            <Rocket className="h-4 w-4 md:hidden" />
+            <span className="hidden md:inline">Publish</span>
           </button>
         </div>
       </header>
@@ -3351,7 +3713,7 @@ export default function EditorPage() {
             className="flex flex-col border-r border-zinc-800/60 bg-[#1C1C1C]"
             style={{
               width: (showPreview || isPanelView) ? `${splitPos}%` : "100%",
-              minWidth: "320px",
+              minWidth: "260px",
             }}
           >
             {/* ─── Design Mode: Show DesignPanel ─────────────── */}
@@ -3708,7 +4070,11 @@ export default function EditorPage() {
                                 </div>
                               )}
                           {msg.isStreaming && msg.content && (
-                            <span className="inline-block w-1.5 h-4 bg-brand-400 animate-pulse ml-0.5 align-middle rounded-sm" />
+                            <span className="streaming-caret inline-flex items-center ml-0.5 align-middle gap-[3px]">
+                              <span className="status-dot-1 inline-block h-1.5 w-1.5 rounded-full bg-brand-400" />
+                              <span className="status-dot-2 inline-block h-1.5 w-1.5 rounded-full bg-brand-400" />
+                              <span className="status-dot-3 inline-block h-1.5 w-1.5 rounded-full bg-brand-400" />
+                            </span>
                           )}
                         </div>
 

@@ -23,10 +23,14 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const { login, isAuthenticated, isLoading: authLoading } = useAuth();
 
-  // Redirect to dashboard if already signed in
+  // Redirect to dashboard if already signed in (forward prompt if present)
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      router.replace("/dashboard");
+      const urlPrompt = new URLSearchParams(window.location.search).get("prompt");
+      const target = urlPrompt
+        ? `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`
+        : "/dashboard";
+      router.replace(target);
     }
   }, [authLoading, isAuthenticated, router]);
 
@@ -75,7 +79,11 @@ export default function LoginPage() {
 
     try {
       await login({ email, password });
-      router.push("/dashboard");
+      const urlPrompt = new URLSearchParams(window.location.search).get("prompt");
+      const dashboardUrl = urlPrompt
+        ? `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`
+        : "/dashboard";
+      router.push(dashboardUrl);
     } catch (err: unknown) {
       if (err && typeof err === "object" && "body" in err) {
         const apiErr = err as { body: { error: string } };

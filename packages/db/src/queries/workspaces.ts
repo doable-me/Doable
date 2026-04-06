@@ -316,6 +316,7 @@ export function workspaceQueries(sql: postgres.Sql) {
           gen_random_uuid() as id,
           ${workspaceId}::uuid as workspace_id,
           COALESCE(SUM(daily_credits - daily_credits_used), 0)::int as daily_remaining,
+          COALESCE(SUM(daily_credits), 0)::int as daily_total,
           COALESCE(SUM(monthly_credits - monthly_credits_used), 0)::int as monthly_remaining,
           COALESCE(SUM(rollover_credits), 0)::int as rollover_credits,
           MIN(daily_reset_at) as last_daily_reset,

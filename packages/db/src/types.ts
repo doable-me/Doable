@@ -112,6 +112,7 @@ export interface AiSessionRow {
   project_id: string;
   user_id: string;
   mode: AiSessionMode;
+  copilot_session_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -132,6 +133,7 @@ export interface CreditsRow {
   id: string;
   workspace_id: string;
   daily_remaining: number;
+  daily_total: number;
   monthly_remaining: number;
   rollover_credits: number;
   last_daily_reset: Date | null;

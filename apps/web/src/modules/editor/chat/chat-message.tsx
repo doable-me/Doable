@@ -300,10 +300,10 @@ export const ChatMessage = memo(function ChatMessage({
           <div className={`prose-editor text-sm leading-relaxed ${message.undone ? "text-muted-foreground opacity-60" : "text-foreground"}`}>
             <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
             {isActivelyStreaming && (
-              <span className="inline-flex items-center gap-0.5 ml-1 align-middle">
-                <span className="inline-block w-1 h-1 rounded-full bg-brand-500 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1s" }} />
-                <span className="inline-block w-1 h-1 rounded-full bg-brand-500 animate-bounce" style={{ animationDelay: "150ms", animationDuration: "1s" }} />
-                <span className="inline-block w-1 h-1 rounded-full bg-brand-500 animate-bounce" style={{ animationDelay: "300ms", animationDuration: "1s" }} />
+              <span className="streaming-caret inline-flex items-center ml-1 align-middle gap-[3px]">
+                <span className="status-dot-1 inline-block h-1.5 w-1.5 rounded-full bg-brand-500" />
+                <span className="status-dot-2 inline-block h-1.5 w-1.5 rounded-full bg-brand-500" />
+                <span className="status-dot-3 inline-block h-1.5 w-1.5 rounded-full bg-brand-500" />
               </span>
             )}
           </div>

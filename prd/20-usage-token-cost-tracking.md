@@ -14,24 +14,56 @@ This PRD specifies a **complete usage observability system** — from per-reques
 
 ### 1.1 The Problem
 
-Both AI providers return token usage data, but we discard it:
+The Copilot SDK sends **rich usage events** that the chat route explicitly discards. With [PRD 23](23-universal-llm-provider-bridge.md) adding support for 61 providers (39 cloud + 22 local), usage tracking becomes critical — users paying for BYOK API keys need visibility into their spend.
 
-| Provider | Token Data Available | Currently Captured |
-|----------|---------------------|-------------------|
-| **GitHub Copilot SDK** | `result` object from `sendAndWait()` may contain usage | Nothing extracted |
-| **Anthropic Direct API** | `message_delta` SSE event includes `usage` object with `input_tokens`, `output_tokens` | Nothing extracted |
+**Current state of SDK usage events (all discarded in `chat.ts:2521-2522`):**
+
+| SDK Event | Data Available | Currently Captured |
+|-----------|---------------|-------------------|
+| **`assistant.usage`** | `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `cost`, `duration`, `ttftMs`, `interTokenLatencyMs`, `model`, `apiCallId`, `copilotUsage[]` | **Discarded** |
+| **`session.shutdown`** | `totalPremiumRequests`, `totalApiDurationMs`, per-model `modelMetrics` (requests, usage breakdown), `codeChanges` (linesAdded/Removed/filesModified) | **Discarded** |
+| **`session.usage_info`** | `tokenLimit`, `currentTokens`, `messagesLength`, `systemTokens`, `conversationTokens`, `toolDefinitionsTokens` | **Discarded** |
+| **`session.truncation`** | `preTruncationTokensInMessages`, `postTruncationTokensInMessages`, `tokensRemovedDuringTruncation` | **Discarded** |
+| **`session.compaction_complete`** | `preCompactionTokens`, `postCompactionTokens`, `compactionTokensUsed` (input/output/cachedInput) | **Discarded** |
+
+**Provider response usage formats (all 61 providers via [PRD 23](23-universal-llm-provider-bridge.md)):**
+
+| Provider Type | Usage Format | Notes |
+|---------------|-------------|-------|
+| **OpenAI-compatible** (37 providers) | `usage: { prompt_tokens, completion_tokens, total_tokens }` | Standard format; some add extensions |
+| **Anthropic** (1 provider) | `usage: { input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens }` | 4-category token breakdown |
+| **Azure OpenAI** (1 provider) | Same as OpenAI | Via Azure headers |
+| **OpenRouter** | OpenAI format + `usage.cost` field (unique: includes cost in response) | Only provider that returns cost directly |
+| **Groq** | OpenAI format + `queue_time`, `prompt_time`, `completion_time`, `total_time` | Includes timing data |
+| **Local engines** (22 engines) | OpenAI format (when available) | Some local engines don't return usage; may need client-side estimation |
 
 ### 1.2 Extraction Points
 
-Token extraction MUST happen at the provider level, not the route level, so every AI call is tracked regardless of which route triggers it.
+Token extraction happens via **SDK session events** (primary path) and **provider response parsing** (fallback for direct API calls).
 
-| Provider | Extraction Point | Data to Capture |
-|----------|-----------------|-----------------|
-| **Copilot SDK** | After `session.sendAndWait()` returns | `prompt_tokens`, `completion_tokens`, `total_tokens` from result metadata |
-| **Copilot SDK** | `onSessionEnd` hook | Session-level token summary if available |
-| **Anthropic API** | `message_start` SSE event | `usage.input_tokens` (prompt token count) |
-| **Anthropic API** | `message_delta` SSE event | `usage.output_tokens` (completion token count) |
-| **Anthropic API** | Response headers | `x-ratelimit-*` headers for rate awareness |
+**Primary path — Copilot SDK events (covers all 61 providers via BYOK):**
+
+| Event | Extraction Point | Data to Capture |
+|-------|-----------------|-----------------|
+| **`assistant.usage`** | `session.on("assistant.usage")` — emitted per API call | `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `cost`, `duration`, `ttftMs`, `model` |
+| **`session.shutdown`** | `session.on("session.shutdown")` — emitted at session end | `totalPremiumRequests`, per-model `modelMetrics`, `codeChanges` |
+| **`session.usage_info`** | `session.on("session.usage_info")` — context window snapshot | `tokenLimit`, `currentTokens`, `systemTokens`, `conversationTokens` |
+
+**Fallback path — direct Anthropic API (secondary system, not currently active):**
+
+| Event | Extraction Point | Data to Capture |
+|-------|-----------------|-----------------|
+| `message_start` SSE | `AnthropicProvider.complete()` | `usage.input_tokens` |
+| `message_delta` SSE | `AnthropicProvider.complete()` | `usage.output_tokens` |
+| Response headers | All requests | `x-ratelimit-*` for rate awareness |
+
+**Client-side estimation (for providers that don't return token counts):**
+
+Some local engines (GPT4All, older Ollama versions) may not return usage data. In these cases, estimate using `tiktoken` with `cl100k_base` encoding:
+- Input: encode messages array, add ChatML overhead `(messageCount * 3) + contentTokens + 5`
+- Output: encode response text
+- For inputs >10KB, fallback to `characterCount / 8`
+- Mark `tokens_available = false` in the usage log
 
 ### 1.3 Provider Response Interface
 
@@ -39,38 +71,85 @@ Every provider MUST return a standardized usage object alongside the response:
 
 ```
 UsageMetrics {
-  provider          — "copilot" | "anthropic" | "openai" | "azure"
+  provider          — "copilot" | "anthropic" | "openai" | "azure" | preset_id from PRD 23
   model             — exact model identifier (e.g., "claude-sonnet-4-20250514")
   promptTokens      — input token count
   completionTokens  — output token count
   totalTokens       — sum (or provider-reported total)
   thinkingTokens    — extended thinking tokens (Anthropic, if applicable)
-  cachedTokens      — cache-hit tokens (if applicable)
+  cacheCreationTokens — cache creation/write tokens (Anthropic/Copilot SDK)
+  cacheReadTokens   — cache-hit/read tokens (Anthropic/Copilot SDK)
   toolCallCount     — number of tool invocations in this request
   estimatedCostUsd  — calculated from model pricing table
   durationMs        — wall-clock time from request start to completion
+  ttftMs            — time to first token (from SDK's assistant.usage event)
+  tokensAvailable   — boolean: whether provider returned real token data
+  byokProviderId    — uuid FK: which BYOK provider was used (nullable, for cost attribution)
 }
 ```
 
+> **Note on the 4-category token model**: Following the pattern established by Anthropic's API and the Copilot SDK's `assistant.usage` event, we track **four** token categories: `promptTokens` (input), `completionTokens` (output), `cacheCreationTokens` (cache writes), and `cacheReadTokens` (cache hits). This matches what CCS tracks in its `ModelBreakdown` type and enables accurate cost calculation for providers with cache-based pricing (Anthropic, OpenAI). For providers that only report 2 categories (input/output), cache fields are stored as 0.
+
 ### 1.4 Cost Estimation
 
-A **model pricing table** stored in the database (editable by platform admin) maps model identifiers to per-token costs:
+A **model pricing table** stored in the database (editable by platform admin) maps model identifiers to per-token costs. With 61 providers ([PRD 23](23-universal-llm-provider-bridge.md)), the pricing registry must support multi-step model name resolution:
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `model_id` | text PK | Model identifier (e.g., "claude-sonnet-4-20250514") |
-| `provider` | text | Provider name |
+| `provider` | text | Provider name or preset_id |
 | `display_name` | text | Human-readable name |
 | `input_cost_per_1m` | numeric | USD cost per 1M input tokens |
 | `output_cost_per_1m` | numeric | USD cost per 1M output tokens |
 | `thinking_cost_per_1m` | numeric | USD cost per 1M thinking tokens (nullable) |
-| `cached_input_cost_per_1m` | numeric | USD cost per 1M cached input tokens (nullable) |
+| `cache_creation_cost_per_1m` | numeric | USD cost per 1M cache creation tokens (nullable) |
+| `cache_read_cost_per_1m` | numeric | USD cost per 1M cache read tokens (nullable) |
 | `is_active` | boolean | Whether this model is currently available |
 | `updated_at` | timestamptz | Last price update |
 
-Cost is calculated at write time: `estimatedCostUsd = (promptTokens * input_cost / 1M) + (completionTokens * output_cost / 1M)`.
+**Cost calculation** (4-category model, following CCS pattern):
+```
+estimatedCostUsd =
+  (promptTokens / 1M) * input_cost_per_1m
+  + (completionTokens / 1M) * output_cost_per_1m
+  + (cacheCreationTokens / 1M) * cache_creation_cost_per_1m
+  + (cacheReadTokens / 1M) * cache_read_cost_per_1m
+```
 
-> **Copilot SDK caveat**: GitHub Copilot may not expose token counts in all cases. When token data is unavailable, store `NULL` for token fields but still log the request with `credits_consumed`, `model`, and `duration_ms`. Track a `tokens_available` boolean so dashboards can distinguish "zero tokens" from "tokens unknown".
+**Model name resolution** (multi-step, following CCS's approach):
+1. Exact match against `model_id`
+2. Normalized match (lowercase, strip provider prefixes like `openrouter/`)
+3. Strip date suffixes (e.g., `-20250514`)
+4. Alias lookup (e.g., `gpt-4o` → `gpt-4o-2024-08-06`)
+5. Family prefix match (e.g., `claude-sonnet-4*` → base Claude Sonnet 4 pricing)
+6. Unknown fallback: `$3/$15` per 1M tokens (configurable)
+
+**Initial pricing data** (seeded from provider documentation — covers top models across all 61 providers):
+
+| Model | Provider | Input/1M | Output/1M | Cache Create/1M | Cache Read/1M |
+|-------|----------|----------|-----------|-----------------|---------------|
+| claude-opus-4-6 | Anthropic | $5.00 | $25.00 | $6.25 | $0.50 |
+| claude-sonnet-4-6 | Anthropic | $3.00 | $15.00 | $3.75 | $0.30 |
+| claude-haiku-4-5 | Anthropic | $1.00 | $5.00 | $1.25 | $0.10 |
+| gpt-4.1 | OpenAI | $2.00 | $8.00 | — | — |
+| gpt-4.1-mini | OpenAI | $0.40 | $1.60 | — | — |
+| gpt-4o | OpenAI | $2.50 | $10.00 | — | $1.25 |
+| o3 | OpenAI | $2.00 | $8.00 | — | — |
+| o4-mini | OpenAI | $1.10 | $4.40 | — | — |
+| gemini-2.5-pro | Google | $1.25 | $10.00 | — | — |
+| gemini-2.5-flash | Google | $0.15 | $0.60 | — | — |
+| deepseek-v3.2 | DeepSeek | $0.28 | $0.42 | — | $0.028 |
+| llama-3.3-70b | Groq/Together/etc. | $0.59 | $0.79 | — | — |
+| mistral-large | Mistral | $2.00 | $6.00 | — | — |
+| grok-4 | xAI | $3.00 | $15.00 | — | — |
+
+> **BYOK cost attribution**: When a user uses their own API key (BYOK), cost is calculated the same way but attributed to the user, not the platform. The `byokProviderId` field in `ai_usage_log` links to the `ai_providers` table from [PRD 23](23-universal-llm-provider-bridge.md), enabling per-provider spend tracking.
+
+> **GitHub Copilot subscription**: For users using GitHub Copilot subscription (not BYOK), the SDK's `assistant.usage.cost` field represents a billing multiplier, not USD. The `copilotUsage` array in the event contains itemized breakdowns. For Copilot subscription users, `estimatedCostUsd` should be calculated from the model's public pricing (same as if they were calling the API directly), clearly labeled as "estimated" since their actual cost is covered by the subscription.
+
+> **Local providers**: Local inference engines (Ollama, LM Studio, vLLM, etc.) have $0 token cost. The pricing table should have entries with `0.00` costs for local provider models. Track tokens for context window awareness, but display cost as "$0.00 (local)" in the UI.
+
+> **OpenRouter special case**: OpenRouter is unique among providers — it returns the actual `cost` directly in the API response's `usage` object. When the provider is OpenRouter, prefer the provider-reported cost over our calculated estimate.
 
 ---
 
@@ -87,7 +166,8 @@ The existing `credit_usage_log` table is repurposed and extended. A new `ai_usag
 | `workspace_id` | uuid FK | Owning workspace |
 | `project_id` | uuid FK (nullable) | Project context |
 | `session_id` | text FK (nullable) | AI session ID |
-| `provider` | text | Provider used (copilot, anthropic, openai, azure) |
+| `provider` | text | Provider used — see Provider Identification below |
+| `provider_label` | text | Human-readable provider name (e.g., "GitHub Copilot", "OpenRouter (My Key)", "Ollama (local)") |
 | `model` | text | Model identifier |
 | `mode` | text | AI mode (agent, plan, chat, visual-edit) |
 | `prompt_tokens` | integer (nullable) | Input tokens |
@@ -96,17 +176,42 @@ The existing `credit_usage_log` table is repurposed and extended. A new `ai_usag
 | `cached_tokens` | integer (nullable) | Cache-hit tokens |
 | `total_tokens` | integer (nullable) | Total tokens |
 | `tool_call_count` | integer | Number of tool invocations |
+| `cache_creation_tokens` | integer (nullable) | Cache write tokens (Anthropic/SDK) |
+| `cache_read_tokens` | integer (nullable) | Cache hit tokens (Anthropic/SDK) |
 | `estimated_cost_usd` | numeric(12,6) | Estimated cost in USD |
 | `credits_consumed` | integer | Credits deducted |
 | `duration_ms` | integer | Request wall-clock time |
+| `ttft_ms` | integer (nullable) | Time to first token (from SDK) |
 | `tokens_available` | boolean | Whether provider returned token data |
+| `byok_provider_id` | uuid FK (nullable) | BYOK provider used (refs ai_providers from PRD 23) |
+| `is_local` | boolean | Whether the provider is a local engine ($0 cost) |
 | `error` | text (nullable) | Error message if request failed |
 | `created_at` | timestamptz | Request timestamp |
+
+**Provider Identification**: The `provider` field distinguishes the billing source, not just the API type:
+
+| `provider` value | `byok_provider_id` | Meaning |
+|-----------------|---------------------|---------|
+| `copilot` | NULL | GitHub Copilot subscription (cost covered by subscription) |
+| `byok` | UUID → `ai_providers` | User's own API key (cost billed to user's account with that provider) |
+| `local` | UUID → `ai_providers` | Local engine like Ollama, LM Studio ($0 cost) |
+
+The `provider_label` is denormalized for fast dashboard rendering — e.g., "GitHub Copilot", "OpenRouter (My API Key)", "Ollama (local)". It's derived from `ai_providers.label` for BYOK/local, or hardcoded as "GitHub Copilot" for subscription.
+
+This enables **usage grouped by provider** at every dashboard level:
+- "You spent $4.20 on OpenRouter, $1.80 on Anthropic Direct, and $0.00 on Ollama this month"
+- "GitHub Copilot handled 340 requests (subscription), BYOK providers handled 120 requests ($6.00)"
+- Per-provider trend charts, per-provider model breakdowns
+
+**Copilot Session Tracking**: The `session_id` links to `ai_sessions.copilot_session_id` (added in migration 037), enabling per-session usage rollups. A single Copilot SDK session may span multiple `assistant.usage` events (one per API call within the session's agentic loop). The `session.shutdown` event provides the authoritative session-level totals via `modelMetrics`.
 
 **Indexes:**
 - `(user_id, created_at DESC)` — user usage history
 - `(workspace_id, created_at DESC)` — workspace usage history
 - `(project_id, created_at DESC)` — project usage history
+- `(provider, created_at DESC)` — per-provider usage queries
+- `(byok_provider_id, created_at DESC)` — per-BYOK-key usage
+- `(session_id, created_at DESC)` — per-session usage rollup
 - `(created_at)` — time-series queries and cleanup
 
 ### 2.2 Daily Aggregates: `ai_usage_daily`
@@ -189,6 +294,8 @@ Available to workspace owners and admins:
 | `/workspaces/:id/usage/members` | GET | Per-member usage breakdown |
 | `/workspaces/:id/usage/projects` | GET | Per-project usage breakdown |
 | `/workspaces/:id/usage/models` | GET | Per-model/provider cost breakdown |
+| `/workspaces/:id/usage/providers` | GET | Per-provider cost breakdown (Copilot sub vs. each BYOK key vs. local) |
+| `/workspaces/:id/usage/sessions` | GET | Per-Copilot-session usage (tokens, cost, duration, tool calls per session) |
 | `/workspaces/:id/usage/members/:userId` | GET | Detailed usage for a specific member |
 | `/workspaces/:id/usage/export` | GET | Export usage data as CSV |
 
@@ -244,10 +351,11 @@ Accessible from **Settings → Usage** or sidebar shortcut. Shows the authentica
 | **Summary Cards** | Today's tokens, this month's tokens, this month's estimated cost, credits remaining |
 | **Usage Chart** | Line/bar chart of daily token usage over selected period (7d/30d/90d) |
 | **Credit Gauge** | Visual gauge showing daily + monthly credits consumed vs. available |
+| **By Provider** | Table: provider name (GitHub Copilot / each BYOK key / local), request count, tokens, cost — shows spend per API key |
 | **By Project** | Table: project name, request count, tokens, cost — sortable |
 | **By Model** | Table: model name, request count, tokens, cost — shows which models are used most |
 | **By Mode** | Pie/donut chart: agent vs. plan vs. chat usage distribution |
-| **Recent Requests** | Scrollable list of recent AI interactions with token counts and cost per request |
+| **Recent Requests** | Scrollable list of recent AI interactions with provider, model, token counts and cost per request |
 
 ### 4.2 Per-Message Usage (Inline)
 
@@ -286,6 +394,7 @@ Accessible from **Workspace Settings → Usage** (owner/admin only):
 | **Trend Chart** | Daily/weekly usage over time with cost overlay |
 | **Member Leaderboard** | Table: member name, requests, tokens, cost, credits used — sorted by consumption |
 | **Project Breakdown** | Table: project name, requests, tokens, cost — shows cost attribution |
+| **Provider Distribution** | Chart: GitHub Copilot vs. each BYOK provider vs. local — cost + request split |
 | **Model Distribution** | Chart showing which AI models are used and their relative cost |
 | **Budget Status** | Progress bar showing usage against workspace credit allocation |
 
@@ -335,7 +444,7 @@ Accessible from **Admin Panel → Usage** (platform admins only):
 | **Workspace Ranking** | Top workspaces by token consumption and cost |
 | **User Ranking** | Top users by consumption (across all workspaces) |
 | **Model Cost Breakdown** | Per-model cost distribution (pie chart + table) |
-| **Provider Distribution** | Copilot vs. Anthropic vs. BYOK usage split |
+| **Provider Distribution** | Copilot subscription vs. each BYOK provider vs. local engines — grouped by `provider` + `byok_provider_id` |
 | **Request Volume** | Requests per hour/day heatmap |
 
 ### 6.2 Model Pricing Management
@@ -599,3 +708,4 @@ No backfill of historical data is possible (token counts were never captured). T
 | [PRD 15 — Development Phases](15-development-phases.md) | Phase 1.6, Phase 2.8, Phase 3.7 all reference usage tracking |
 | [PRD 16 — Copilot SDK Core](16-copilot-sdk-core.md) | Token extraction from Copilot SDK response objects |
 | [PRD 17 — Multi-User Infrastructure](17-multi-user-infrastructure.md) | Per-user rate limiting informed by usage data; per-member credit caps |
+| [PRD 23 — Universal LLM Provider Bridge](23-universal-llm-provider-bridge.md) | 61 providers (39 cloud + 22 local) all need usage tracking; BYOK spend attribution; `ai_providers` table linked via `byok_provider_id`; local providers show $0 cost; provider catalog `preset_id` used for grouping in dashboards |

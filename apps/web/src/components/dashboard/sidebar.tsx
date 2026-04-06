@@ -298,7 +298,7 @@ function FolderNode({
 }
 
 // ---- Main Sidebar Component ----
-export function DashboardSidebar() {
+export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, logout } = useAuth();
@@ -416,6 +416,7 @@ export function DashboardSidebar() {
     setActiveFolder(null);
     emitDashboardEvent(DASHBOARD_EVENTS.NAVIGATE_FILTER, filter);
     if (pathname !== "/dashboard") router.push("/dashboard");
+    onNavigate?.();
   };
 
   const handleFolderSelect = (folderId: string) => {
@@ -423,6 +424,7 @@ export function DashboardSidebar() {
     setActiveFilter("all");
     emitDashboardEvent(DASHBOARD_EVENTS.NAVIGATE_FOLDER, folderId);
     if (pathname !== "/dashboard") router.push("/dashboard");
+    onNavigate?.();
   };
 
   const handleCreateFolder = async () => {
@@ -533,17 +535,17 @@ export function DashboardSidebar() {
   const workspaceName = activeWorkspace?.name ?? `${displayName}'s workspace`;
   const workspacePlan = activeWorkspace?.plan ?? "free";
   const memberCount = (activeWorkspace as ApiWorkspace)?.memberCount ?? 1;
-  const dailyCredits = (activeWorkspace as ApiWorkspace)?.credits?.dailyRemaining ?? 0;
+  const credits = (activeWorkspace as ApiWorkspace)?.credits;
   const planDefault = workspacePlan === "free" ? 5 : workspacePlan === "pro" ? 50 : 200;
-  const dailyTotal = Math.max(planDefault, dailyCredits);
-  const creditsRemaining = Math.max(0, dailyCredits);
+  const dailyTotal = credits?.dailyTotal ?? planDefault;
+  const creditsRemaining = Math.max(0, credits?.dailyRemaining ?? 0);
   const creditsPercent = dailyTotal > 0 ? (creditsRemaining / dailyTotal) * 100 : 0;
 
   const folderTree = buildFolderTree(folders);
 
   return (
     <>
-      <aside className="flex h-screen w-[260px] shrink-0 flex-col border-r border-zinc-800 bg-[#0a0a0a]">
+      <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-zinc-800 bg-[#0a0a0a]">
         {/* Logo */}
         <a href="/dashboard" className="flex items-center gap-2.5 px-5 pt-5 pb-4 hover:opacity-80 transition-opacity cursor-pointer">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-brand-700 shadow-sm shadow-brand-900/30">
@@ -637,19 +639,19 @@ export function DashboardSidebar() {
               icon={LayoutTemplate}
               label="Templates"
               active={pathname === "/dashboard/templates"}
-              onClick={() => router.push("/dashboard/templates")}
+              onClick={() => { router.push("/dashboard/templates"); onNavigate?.(); }}
             />
             <NavItem
               icon={Compass}
               label="Discover"
               active={pathname === "/discover"}
-              onClick={() => router.push("/discover")}
+              onClick={() => { router.push("/discover"); onNavigate?.(); }}
             />
             <NavItem
               icon={Store}
               label="Marketplace"
               active={pathname.startsWith("/marketplace")}
-              onClick={() => router.push("/marketplace")}
+              onClick={() => { router.push("/marketplace"); onNavigate?.(); }}
             />
             {/* Resources — route not yet implemented, hidden to avoid dead link */}
           </div>
@@ -736,7 +738,7 @@ export function DashboardSidebar() {
                       e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id);
                       e.dataTransfer.effectAllowed = "move";
                     }}
-                    onClick={() => router.push(`/editor/${project.id}`)}
+                    onClick={() => { router.push(`/editor/${project.id}`); onNavigate?.(); }}
                     className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-colors"
                   >
                     <Star className="h-3 w-3 fill-yellow-400 text-yellow-400 shrink-0" />
@@ -775,7 +777,7 @@ export function DashboardSidebar() {
                       e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id);
                       e.dataTransfer.effectAllowed = "move";
                     }}
-                    onClick={() => router.push(`/editor/${project.id}`)}
+                    onClick={() => { router.push(`/editor/${project.id}`); onNavigate?.(); }}
                     className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-colors"
                   >
                     <div className="flex h-5 w-5 items-center justify-center rounded bg-zinc-800 text-[10px] shrink-0">

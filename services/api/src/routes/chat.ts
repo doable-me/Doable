@@ -882,93 +882,125 @@ ERROR RECOVERY — if you encounter errors:
         ? allTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED.has(t.name ?? ""))
         : allTools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
 
+      // Shared tool-progress callbacks used by both create and resume paths
+      const toolProgress = {
+        onToolStart: (toolName: string, args: unknown) => {
+          recordAssistantToolCall(toolName, args as Record<string, unknown>);
+          const friendly = friendlyToolMessage(toolName, args as Record<string, unknown>);
+          stream.writeSSE({ data: JSON.stringify({
+            type: "tool_call", data: { name: toolName, friendlyMessage: friendly },
+          }) }).catch(() => {});
+        },
+        onToolEnd: (toolName: string, _args: unknown, result: unknown) => {
+          hadToolCalls = true;
+          const friendly = friendlyToolResult(toolName, result, true);
+          stream.writeSSE({ data: JSON.stringify({
+            type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly },
+          }) }).catch(() => {});
+
+          // Plan Mode: Emit structured plan/clarification events
+          if (toolName === "ask_clarification" && result) {
+            try {
+              const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
+              if (output) {
+                const questions = JSON.parse(output);
+                if (Array.isArray(questions) && questions.length > 0) {
+                  stream.writeSSE({ data: JSON.stringify({
+                    type: "clarification", data: { questions },
+                  }) }).catch(() => {});
+                }
+              }
+            } catch { /* non-critical */ }
+          }
+          if (toolName === "create_plan" && result) {
+            try {
+              const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
+              if (output) {
+                const plan = JSON.parse(output);
+                if (plan?.id) {
+                  stream.writeSSE({ data: JSON.stringify({
+                    type: "plan", data: { plan },
+                  }) }).catch(() => {});
+                  // Save plan to DB
+                  sql`INSERT INTO plans (id, project_id, summary, complexity, status, created_at)
+                      VALUES (${plan.id}, ${projectId}, ${plan.summary}, ${plan.complexity}, 'draft', now())
+                      ON CONFLICT (id) DO NOTHING`.catch(() => {});
+                  if (Array.isArray(plan.steps)) {
+                    for (const step of plan.steps) {
+                      sql`INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
+                          VALUES (${step.id}, ${plan.id}, ${step.order}, ${step.title}, ${step.description}, ${step.details ?? null}, 'pending', ${step.filePaths ?? null})
+                          ON CONFLICT (id) DO NOTHING`.catch(() => {});
+                    }
+                  }
+                }
+              }
+            } catch { /* non-critical */ }
+          }
+        },
+        onSessionEnd: (reason: string, error?: string) => {
+          if (error) console.error(`[Chat] Session ended: ${reason} — ${error}`);
+        },
+        onError: (error: string, context: string) => {
+          console.error(`[Chat] Hook error (${context}): ${error}`);
+          stream.writeSSE({ data: JSON.stringify({
+            type: "error", data: `${context}: ${error}`,
+          }) }).catch(() => {});
+        },
+      };
+
       let sessionId = projectSessions.get(sessionKey);
       if (!sessionId) {
         await stream.writeSSE({
           data: JSON.stringify({ type: "status", data: { phase: "connecting", message: "Connecting to AI..." } }),
         });
 
-        // Use withAutoRetry to handle stale Copilot API tokens —
-        // if session creation fails with an auth error, the manager evicts
-        // the cached engine, creates a fresh one, and retries.
         const manager = getCopilotManager();
-        sessionId = await manager.withAutoRetry(projectId, resolvedGithubToken, async (eng) => {
-          return eng.createSession({
-            projectId,
-            userId,
-            model: resolvedModel,
-            provider: resolvedProvider,
-            workingDirectory: projectPath,
-            systemPrompt,
-            tools: sessionTools,
-            // SDK hooks — called via RPC for guaranteed progress updates
-            toolProgress: {
-              onToolStart: (toolName, args) => {
-                recordAssistantToolCall(toolName, args as Record<string, unknown>);
-                const friendly = friendlyToolMessage(toolName, args as Record<string, unknown>);
-                stream.writeSSE({ data: JSON.stringify({
-                  type: "tool_call", data: { name: toolName, friendlyMessage: friendly },
-                }) }).catch(() => {});
-              },
-              onToolEnd: (toolName, _args, result) => {
-                hadToolCalls = true;
-                const friendly = friendlyToolResult(toolName, result, true);
-                stream.writeSSE({ data: JSON.stringify({
-                  type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly },
-                }) }).catch(() => {});
 
-                // Plan Mode: Emit structured plan/clarification events
-                if (toolName === "ask_clarification" && result) {
-                  try {
-                    const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
-                    if (output) {
-                      const questions = JSON.parse(output);
-                      if (Array.isArray(questions) && questions.length > 0) {
-                        stream.writeSSE({ data: JSON.stringify({
-                          type: "clarification", data: { questions },
-                        }) }).catch(() => {});
-                      }
-                    }
-                  } catch { /* non-critical */ }
-                }
-                if (toolName === "create_plan" && result) {
-                  try {
-                    const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
-                    if (output) {
-                      const plan = JSON.parse(output);
-                      if (plan?.id) {
-                        stream.writeSSE({ data: JSON.stringify({
-                          type: "plan", data: { plan },
-                        }) }).catch(() => {});
-                        // Save plan to DB
-                        sql`INSERT INTO plans (id, project_id, summary, complexity, status, created_at)
-                            VALUES (${plan.id}, ${projectId}, ${plan.summary}, ${plan.complexity}, 'draft', now())
-                            ON CONFLICT (id) DO NOTHING`.catch(() => {});
-                        if (Array.isArray(plan.steps)) {
-                          for (const step of plan.steps) {
-                            sql`INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
-                                VALUES (${step.id}, ${plan.id}, ${step.order}, ${step.title}, ${step.description}, ${step.details ?? null}, 'pending', ${step.filePaths ?? null})
-                                ON CONFLICT (id) DO NOTHING`.catch(() => {});
-                          }
-                        }
-                      }
-                    }
-                  } catch { /* non-critical */ }
-                }
-              },
-              onSessionEnd: (reason, error) => {
-                if (error) console.error(`[Chat] Session ended: ${reason} — ${error}`);
-              },
-              onError: (error, context) => {
-                console.error(`[Chat] Hook error (${context}): ${error}`);
-                stream.writeSSE({ data: JSON.stringify({
-                  type: "error", data: `${context}: ${error}`,
-                }) }).catch(() => {});
-              },
-            },
+        // Try to resume a previous SDK session from the database.
+        // The SDK persists conversation state to disk, so resumeSession()
+        // restores full context (all prior messages + tool call history).
+        let resumed = false;
+        try {
+          const [dbRow] = await sql`
+            SELECT id, copilot_session_id FROM ai_sessions
+            WHERE project_id = ${projectId} AND copilot_session_id IS NOT NULL
+            ORDER BY updated_at DESC LIMIT 1
+          `;
+          if (dbRow?.copilot_session_id) {
+            sessionId = await manager.withAutoRetry(projectId, resolvedGithubToken, async (eng) => {
+              return eng.resumeSession(dbRow.copilot_session_id, {
+                tools: sessionTools,
+                toolProgress,
+              });
+            });
+            projectSessions.set(sessionKey, sessionId!);
+            resumed = true;
+            console.log(`[Chat] Resumed SDK session ${dbRow.copilot_session_id.slice(0, 8)}… for ${projectId.slice(0, 8)}…`);
+          }
+        } catch (err) {
+          // Resume failed (stale/deleted session) — fall through to create
+          console.log(`[Chat] Session resume failed for ${projectId.slice(0, 8)}…, creating new:`, err instanceof Error ? err.message : err);
+          sessionId = undefined;
+        }
+
+        if (!resumed) {
+          // Use withAutoRetry to handle stale Copilot API tokens —
+          // if session creation fails with an auth error, the manager evicts
+          // the cached engine, creates a fresh one, and retries.
+          sessionId = await manager.withAutoRetry(projectId, resolvedGithubToken, async (eng) => {
+            return eng.createSession({
+              projectId,
+              userId,
+              model: resolvedModel,
+              provider: resolvedProvider,
+              workingDirectory: projectPath,
+              systemPrompt,
+              tools: sessionTools,
+              toolProgress,
+            });
           });
-        });
-        projectSessions.set(sessionKey, sessionId);
+          projectSessions.set(sessionKey, sessionId);
+        }
       }
 
       // Persist session to database — shared per-project (not per-user)
@@ -981,10 +1013,15 @@ ERROR RECOVERY — if you encounter errors:
         `;
         if (dbSession) {
           dbSessionId = dbSession.id;
+          // Store the SDK session ID so we can resume after restart
+          if (sessionId) {
+            sql`UPDATE ai_sessions SET copilot_session_id = ${sessionId}, updated_at = now()
+                WHERE id = ${dbSession.id}`.catch(() => {});
+          }
         } else {
           const [newSession] = await sql`
-            INSERT INTO ai_sessions (project_id, user_id, mode)
-            VALUES (${projectId}, ${userId}, ${mode})
+            INSERT INTO ai_sessions (project_id, user_id, mode, copilot_session_id)
+            VALUES (${projectId}, ${userId}, ${mode}, ${sessionId ?? null})
             RETURNING id
           `;
           dbSessionId = newSession?.id;
@@ -1142,8 +1179,14 @@ ERROR RECOVERY — if you encounter errors:
               sessionId = await currentEngine.createSession({
                 projectId, userId, model: resolvedModel, provider: resolvedProvider,
                 workingDirectory: projectPath, systemPrompt, tools: recreationTools,
+                toolProgress,
               });
               projectSessions.set(sessionKey, sessionId);
+              // Persist new SDK session ID to DB
+              if (dbSessionId) {
+                sql`UPDATE ai_sessions SET copilot_session_id = ${sessionId}, updated_at = now()
+                    WHERE id = ${dbSessionId}`.catch(() => {});
+              }
               messageStream = currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
             } else {
               throw err;

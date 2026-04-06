@@ -46,10 +46,14 @@ export default function SignupPage() {
   const router = useRouter();
   const { register, isAuthenticated, isLoading: authLoading } = useAuth();
 
-  // Redirect to dashboard if already signed in
+  // Redirect to dashboard if already signed in (forward prompt if present)
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      router.replace("/dashboard");
+      const urlPrompt = new URLSearchParams(window.location.search).get("prompt");
+      const target = urlPrompt
+        ? `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`
+        : "/dashboard";
+      router.replace(target);
     }
   }, [authLoading, isAuthenticated, router]);
 
@@ -105,7 +109,12 @@ export default function SignupPage() {
         password,
         displayName: displayName || undefined,
       });
-      router.push("/dashboard");
+      // Forward the original prompt (from home page) to dashboard
+      const urlPrompt = new URLSearchParams(window.location.search).get("prompt");
+      const dashboardUrl = urlPrompt
+        ? `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`
+        : "/dashboard";
+      router.push(dashboardUrl);
     } catch (err: unknown) {
       if (err && typeof err === "object" && "body" in err) {
         const apiErr = err as { body: { error: string } };

@@ -25,6 +25,7 @@ export default function HomePage() {
   const router = useRouter();
 
   // Redirect to dashboard if already authenticated
+  // Redirect to dashboard if already authenticated
   useEffect(() => {
     const token = localStorage.getItem("doable_access_token");
     if (token) {
@@ -35,8 +36,14 @@ export default function HomePage() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!prompt.trim()) return;
-    // Navigate to signup/app with the prompt as a query param
-    router.push(`/signup?prompt=${encodeURIComponent(prompt.trim())}`);
+    const encoded = encodeURIComponent(prompt.trim());
+    // Already logged in → go directly to dashboard with prompt
+    const token = localStorage.getItem("doable_access_token");
+    if (token) {
+      router.push(`/dashboard?prompt=${encoded}`);
+    } else {
+      router.push(`/signup?prompt=${encoded}`);
+    }
   }
 
   return (

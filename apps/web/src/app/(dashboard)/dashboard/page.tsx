@@ -17,9 +17,11 @@ import {
   apiUpdateProject,
   apiListTemplates,
   apiFetch,
+  getStoredTokens,
   type ApiProject,
   type ApiTemplate,
 } from "@/lib/api";
+import { startBridge, onBridgeStatus, type BridgeStatus } from "@/lib/prompt-bridge";
 import { useToasts } from "@/hooks/use-toasts";
 import { ToastContainer } from "@/components/ui/toast-container";
 import {
@@ -303,6 +305,7 @@ function ChatInput({
   onChange,
   onSubmit,
   isCreating,
+  creatingStatus,
   attachments,
   onOpenFilePicker,
   onRemoveImage,
@@ -316,6 +319,7 @@ function ChatInput({
   onChange: (v: string) => void;
   onSubmit: () => void;
   isCreating: boolean;
+  creatingStatus: string;
   attachments: ImageAttachment[];
   onOpenFilePicker: () => void;
   onRemoveImage: (index: number) => void;
@@ -442,6 +446,13 @@ function ChatInput({
           </div>
         </div>
       </div>
+      {/* Granular status while creating + connecting */}
+      {isCreating && creatingStatus && (
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs text-zinc-400 animate-in fade-in duration-200">
+          <Loader2 className="h-3 w-3 animate-spin text-brand-400" />
+          <span>{creatingStatus}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -987,6 +998,7 @@ export default function DashboardPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [creatingStatus, setCreatingStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   // Pagination
@@ -1067,6 +1079,26 @@ export default function DashboardPage() {
   useEffect(() => {
     localStorage.setItem(VIEW_MODE_KEY, viewMode);
   }, [viewMode]);
+
+  // ---- Auto-submit prompt from URL (home page → signup → dashboard) ----
+  const autoSubmitRef = useRef(false);
+  useEffect(() => {
+    if (autoSubmitRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const urlPrompt = params.get("prompt");
+    if (!urlPrompt) return;
+    autoSubmitRef.current = true;
+    // Clean URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete("prompt");
+    window.history.replaceState({}, "", url.toString());
+    // Set the prompt in the input for visual feedback and trigger submit
+    setPrompt(urlPrompt);
+    setTimeout(() => {
+      handleSubmit(urlPrompt);
+    }, 50);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---- Debounce search ----
   useEffect(() => {
@@ -1219,30 +1251,55 @@ export default function DashboardPage() {
 
   // ---- Actions ----
 
-  const handleSubmit = async () => {
-    const hasContent = prompt.trim() || imageAttachments.attachments.length > 0;
+  const handleSubmit = async (textOverride?: string) => {
+    const inputText = textOverride ?? prompt;
+    const hasContent = inputText.trim() || imageAttachments.attachments.length > 0;
     if (!hasContent || isCreating) return;
     setIsCreating(true);
+    setCreatingStatus("Creating project…");
     try {
-      const text = prompt.trim() || "See attached image(s)";
+      const text = inputText.trim() || "See attached image(s)";
       const projectName = text.slice(0, 100);
       const res = await apiCreateProject({
         name: projectName,
         description: text,
         prompt: text,
       });
-      // Store prompt + attachments in sessionStorage as JSON
+      const projectId = res.data.id;
+
+      // Store prompt + attachments in sessionStorage (fallback for if bridge fails)
       const payload = JSON.stringify({
         prompt: text,
         attachments: imageAttachments.attachments,
       });
-      sessionStorage.setItem(`doable_initial_prompt_${res.data.id}`, payload);
+      sessionStorage.setItem(`doable_initial_prompt_${projectId}`, payload);
+
+      // Start SSE stream immediately — editor picks it up mid-flight
+      setCreatingStatus("Connecting to AI…");
+      const mode = startMode === "plan" ? "plan" : "agent";
+      const { accessToken } = getStoredTokens();
+      const bridgeAttachments = imageAttachments.attachments.map((a) => ({
+        type: a.type,
+        data: a.data,
+        name: a.name,
+      }));
+      startBridge(projectId, text, mode, accessToken, bridgeAttachments.length > 0 ? bridgeAttachments : undefined);
+
+      // Subscribe to bridge status for the brief time we're still on the dashboard
+      const unsub = onBridgeStatus((_status: BridgeStatus, msg: string) => {
+        setCreatingStatus(msg);
+      });
+
       imageAttachments.clearAll();
-      router.push(`/editor/${res.data.id}?prompt=${encodeURIComponent(text)}${startMode === "plan" ? "&mode=plan" : ""}`);
+      // Navigate — bridge stream continues in background during SPA transition
+      router.push(`/editor/${projectId}?prompt=${encodeURIComponent(text)}${startMode === "plan" ? "&mode=plan" : ""}`);
+      // Cleanup listener after a short delay (navigation may take a moment)
+      setTimeout(unsub, 5000);
     } catch (err) {
       console.error("Failed to create project:", err);
       setError("Failed to create project. Please try again.");
       setIsCreating(false);
+      setCreatingStatus("");
     }
   };
 
@@ -1486,7 +1543,7 @@ export default function DashboardPage() {
             background: "linear-gradient(to top, #0a0a0a 0%, #0a0a0ae0 50%, transparent 100%)",
           }} />
           {/* Content */}
-          <div className="relative z-10 px-8 py-16 max-w-7xl mx-auto">
+          <div className="relative z-10 px-4 sm:px-8 py-16 max-w-7xl mx-auto">
             <div className="text-center mb-6">
               <h1 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight transition-all duration-500">
                 {greeting}
@@ -1498,6 +1555,7 @@ export default function DashboardPage() {
                 onChange={setPrompt}
                 onSubmit={handleSubmit}
                 isCreating={isCreating}
+                creatingStatus={creatingStatus}
                 attachments={imageAttachments.attachments}
                 onOpenFilePicker={imageAttachments.openFilePicker}
                 onRemoveImage={imageAttachments.removeImage}
@@ -1521,7 +1579,7 @@ export default function DashboardPage() {
       )}
 
       {/* Content */}
-      <div className="relative z-10 mx-auto max-w-7xl px-6 pt-0 pb-10">
+      <div className="relative z-10 mx-auto max-w-7xl px-3 sm:px-6 pt-0 pb-10">
         {/* Folder/Filter breadcrumb */}
         {(activeFolderId || sidebarFilter !== "all") && (
           <div className="mb-6">
@@ -1567,9 +1625,8 @@ export default function DashboardPage() {
 
         {/* Toolbar: Tabs + Search + Filters + View Toggle */}
         <div className="flex flex-col gap-3 mb-6">
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Tab Bar */}
-            <div className="flex items-center gap-1 flex-1 min-w-0">
+          {/* Row 1: Tab Bar */}
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pl-1 md:pl-0">
               {tabs.map((tab) => (
                 <button
                   key={tab.key}
@@ -1593,10 +1650,12 @@ export default function DashboardPage() {
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               )}
-            </div>
+          </div>
 
+          {/* Row 2: Search + Filters + View Toggle */}
+          <div className="flex items-center gap-2 flex-wrap">
             {/* Search */}
-            <div className="relative">
+            <div className="relative flex-1 min-w-[140px] max-w-[280px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
               <input
                 ref={searchRef}
@@ -1604,7 +1663,7 @@ export default function DashboardPage() {
                 placeholder="Search projects..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 w-56 rounded-lg border border-zinc-800 bg-zinc-900/80 pl-9 pr-8 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 transition-colors"
+                className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900/80 pl-9 pr-8 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 transition-colors"
               />
               {searchQuery && (
                 <button

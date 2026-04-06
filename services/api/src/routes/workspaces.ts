@@ -35,6 +35,7 @@ workspaceRoutes.get("/", async (c) => {
         credits: credits
           ? {
               dailyRemaining: credits.daily_remaining,
+              dailyTotal: credits.daily_total,
               monthlyRemaining: credits.monthly_remaining,
               rolloverCredits: credits.rollover_credits,
             }
