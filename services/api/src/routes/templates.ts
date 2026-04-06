@@ -43,9 +43,6 @@ templateRoutes.get("/:id/preview", async (c) => {
   const html = buildTemplatePreviewHtml(template);
 
   return c.html(html, 200, {
-    "Access-Control-Allow-Origin": "http://localhost:3000",
-    "Access-Control-Allow-Methods": "GET",
-    "Access-Control-Allow-Headers": "Content-Type",
     "Cache-Control": "public, max-age=300",
   });
 });

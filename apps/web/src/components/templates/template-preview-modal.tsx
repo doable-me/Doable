@@ -3,6 +3,8 @@
 import { useEffect, useCallback } from "react";
 import { X } from "lucide-react";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
 interface TemplatePreviewModalProps {
   template: {
     id: string;
@@ -86,7 +88,7 @@ export function TemplatePreviewModal({
           {/* Preview area */}
           <div className="flex-1 bg-white overflow-hidden">
             <iframe
-              src={`http://localhost:4000/templates/${template.id}/preview`}
+              src={`${API_URL}/templates/${template.id}/preview`}
               title={`Preview of ${template.name}`}
               className="w-full h-full border-0"
             />
