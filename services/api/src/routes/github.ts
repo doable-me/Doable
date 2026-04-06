@@ -219,6 +219,8 @@ githubRoutes.post("/:projectId/github/connect", async (c) => {
     // Validate token
     await githubClient.authenticate(token);
 
+    console.log(`[GitHub] connect projectId=${projectId} projectPath=${body.projectPath}`);
+
     const result = await githubSync.initialPush(projectId, body.projectPath, {
       token,
       repoOwner: body.repoOwner,
@@ -239,6 +241,7 @@ githubRoutes.post("/:projectId/github/connect", async (c) => {
 
     return c.json({ data: result }, 201);
   } catch (err) {
+    console.error(`[GitHub] connect error for ${projectId}:`, err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: "Failed to connect GitHub", message }, 500);
   }
