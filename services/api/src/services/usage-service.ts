@@ -576,6 +576,99 @@ export class UsageService {
   }
 
   /**
+   * Get hourly activity for a time range (for heatmap / hourly chart).
+   */
+  async getUserHourlyActivity(
+    userId: string,
+    workspaceId: string,
+    from: Date,
+    to: Date,
+  ): Promise<Array<{ hour: number; requestCount: number; totalTokens: number; totalCostUsd: number }>> {
+    const rows = await sql`
+      SELECT
+        EXTRACT(HOUR FROM created_at)::int AS hour,
+        COUNT(*)::int AS request_count,
+        COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+        COALESCE(SUM(estimated_cost_usd), 0)::numeric AS total_cost_usd
+      FROM ai_usage_log
+      WHERE user_id = ${userId}
+        AND workspace_id = ${workspaceId}
+        AND created_at >= ${from}
+        AND created_at <= ${to}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+
+    // Fill in all 24 hours, zero-filling missing ones
+    const hourMap = new Map(rows.map((r) => [Number(r.hour), r]));
+    return Array.from({ length: 24 }, (_, h) => {
+      const r = hourMap.get(h);
+      return {
+        hour: h,
+        requestCount: r ? Number(r.request_count) : 0,
+        totalTokens: r ? Number(r.total_tokens) : 0,
+        totalCostUsd: r ? Math.round(Number(r.total_cost_usd) * 1_000_000) / 1_000_000 : 0,
+      };
+    });
+  }
+
+  /**
+   * Get token split (prompt vs completion vs thinking) for a time range.
+   */
+  async getUserTokenSplit(
+    userId: string,
+    workspaceId: string,
+    from: Date,
+    to: Date,
+  ): Promise<{ promptTokens: number; completionTokens: number; thinkingTokens: number; cachedTokens: number }> {
+    const [row] = await sql`
+      SELECT
+        COALESCE(SUM(prompt_tokens), 0)::bigint AS prompt_tokens,
+        COALESCE(SUM(completion_tokens), 0)::bigint AS completion_tokens,
+        COALESCE(SUM(thinking_tokens), 0)::bigint AS thinking_tokens,
+        COALESCE(SUM(cached_tokens), 0)::bigint AS cached_tokens
+      FROM ai_usage_log
+      WHERE user_id = ${userId}
+        AND workspace_id = ${workspaceId}
+        AND created_at >= ${from}
+        AND created_at <= ${to}
+    `;
+    return {
+      promptTokens: Number(row?.prompt_tokens ?? 0),
+      completionTokens: Number(row?.completion_tokens ?? 0),
+      thinkingTokens: Number(row?.thinking_tokens ?? 0),
+      cachedTokens: Number(row?.cached_tokens ?? 0),
+    };
+  }
+
+  /**
+   * Get credits consumed for the user in a workspace (today and this month).
+   */
+  async getUserCredits(
+    userId: string,
+    workspaceId: string,
+  ): Promise<{ todayCredits: number; monthCredits: number; dailyLimit: number; monthlyLimit: number; planType: string }> {
+    // Get balance info
+    const [balance] = await sql`
+      SELECT daily_credits, daily_credits_used, monthly_credits, monthly_credits_used, plan_type
+      FROM credit_balances
+      WHERE user_id = ${userId} AND workspace_id = ${workspaceId}
+    `;
+
+    if (!balance) {
+      return { todayCredits: 0, monthCredits: 0, dailyLimit: 5, monthlyLimit: 0, planType: "free" };
+    }
+
+    return {
+      todayCredits: Number(balance.daily_credits_used),
+      monthCredits: Number(balance.monthly_credits_used),
+      dailyLimit: Number(balance.daily_credits),
+      monthlyLimit: Number(balance.monthly_credits),
+      planType: String(balance.plan_type),
+    };
+  }
+
+  /**
    * Refresh daily aggregates for a given date.
    * Uses INSERT ... ON CONFLICT DO UPDATE (upsert pattern).
    * Should be called periodically (e.g., end of day or on-demand).

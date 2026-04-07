@@ -207,3 +207,100 @@ export function useWorkspaceProviders(workspaceId: string | null) {
 
   return { providers, loading, refresh };
 }
+
+// ── New hooks: hourly, token split, credits ────────────────────────────
+
+export interface HourlyActivity {
+  hour: number;
+  requestCount: number;
+  totalTokens: number;
+  totalCostUsd: number;
+}
+
+export interface TokenSplit {
+  promptTokens: number;
+  completionTokens: number;
+  thinkingTokens: number;
+  cachedTokens: number;
+}
+
+export interface CreditInfo {
+  todayCredits: number;
+  monthCredits: number;
+  dailyLimit: number;
+  monthlyLimit: number;
+  planType: string;
+}
+
+export function useMyHourlyActivity(workspaceId: string | null, period: "7d" | "30d" | "90d") {
+  const [hours, setHours] = useState<HourlyActivity[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!workspaceId) return;
+    setLoading(true);
+    try {
+      const days = period === "7d" ? 7 : period === "30d" ? 30 : 90;
+      const to = new Date();
+      const from = new Date();
+      from.setDate(from.getDate() - days);
+      const res = await apiFetch<{ data: HourlyActivity[] }>(
+        `/workspaces/${workspaceId}/usage/me/hourly?from=${from.toISOString()}&to=${to.toISOString()}`
+      );
+      setHours(res.data);
+    } catch (err) {
+      console.error("Failed to load hourly activity:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId, period]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+  return { hours, loading, refresh };
+}
+
+export function useMyTokenSplit(workspaceId: string | null) {
+  const [split, setSplit] = useState<TokenSplit | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!workspaceId) return;
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ data: TokenSplit }>(
+        `/workspaces/${workspaceId}/usage/me/tokens`
+      );
+      setSplit(res.data);
+    } catch (err) {
+      console.error("Failed to load token split:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+  return { split, loading, refresh };
+}
+
+export function useMyCredits(workspaceId: string | null) {
+  const [credits, setCredits] = useState<CreditInfo | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!workspaceId) return;
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ data: CreditInfo }>(
+        `/workspaces/${workspaceId}/usage/me/credits`
+      );
+      setCredits(res.data);
+    } catch (err) {
+      console.error("Failed to load credits:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+  return { credits, loading, refresh };
+}

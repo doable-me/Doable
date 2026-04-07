@@ -88,6 +88,70 @@ usageRoutes.get("/:workspaceId/usage/me/history", async (c) => {
   }
 });
 
+// ─── GET /:workspaceId/usage/me/hourly ───────────────────
+// Hourly activity heatmap for current user
+usageRoutes.get("/:workspaceId/usage/me/hourly", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const userId = c.get("userId");
+
+  const err = await requireMember(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const from = parseDateParam(c.req.query("from"), thirtyDaysAgo);
+    const to = parseDateParam(c.req.query("to"), now);
+
+    const hours = await usageService.getUserHourlyActivity(userId, workspaceId, from, to);
+    return c.json({ data: hours });
+  } catch (e) {
+    console.error("[Usage] GET /usage/me/hourly:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load hourly usage" }, 500);
+  }
+});
+
+// ─── GET /:workspaceId/usage/me/tokens ───────────────────
+// Token split (prompt / completion / thinking / cached) for current user
+usageRoutes.get("/:workspaceId/usage/me/tokens", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const userId = c.get("userId");
+
+  const err = await requireMember(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+
+    const split = await usageService.getUserTokenSplit(userId, workspaceId, from, to);
+    return c.json({ data: split });
+  } catch (e) {
+    console.error("[Usage] GET /usage/me/tokens:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load token split" }, 500);
+  }
+});
+
+// ─── GET /:workspaceId/usage/me/credits ──────────────────
+// Credits consumed / remaining for current user
+usageRoutes.get("/:workspaceId/usage/me/credits", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const userId = c.get("userId");
+
+  const err = await requireMember(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const credits = await usageService.getUserCredits(userId, workspaceId);
+    return c.json({ data: credits });
+  } catch (e) {
+    console.error("[Usage] GET /usage/me/credits:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load credit info" }, 500);
+  }
+});
+
 // ─── GET /:workspaceId/usage/me/breakdown ────────────────
 // Breakdown by project, model, and mode for current user
 usageRoutes.get("/:workspaceId/usage/me/breakdown", async (c) => {
