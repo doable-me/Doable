@@ -2653,9 +2653,15 @@ function sanitizeText(text: string): string {
 
   let result = text;
 
-  // 0. Strip leftover thinking markers (<think>, </think>, <|channel>thought, <channel>)
+  // 0. Strip leftover thinking/reasoning markers from all known model families
+  //    <think>, </think> — DeepSeek-R1, Qwen3, Llama 3.x
+  //    <|channel>thought, <channel>, <|channel|> — Gemma 4
+  //    <rationale>, </rationale> — Claude (when prompted)
+  //    <answer>, </answer> — DeepSeek (post-thinking answer marker)
   result = result.replace(/<\/?think>/gi, "");
   result = result.replace(/<\|?channel\|?>(?:thought)?/gi, "");
+  result = result.replace(/<\/?rationale>/gi, "");
+  result = result.replace(/<\/?answer>/gi, "");
 
   // 1. Strip absolute server paths
   //    e.g. /home/user/doable/projects/abc-123-def/src/App.tsx → src/App.tsx
@@ -2675,9 +2681,12 @@ function sanitizeText(text: string): string {
 /**
  * Stateful parser for model thinking markers.
  *
- * Supports two formats:
- * 1. Gemma 4: `<|channel>thought\n...reasoning...\n<channel>\n`
- * 2. DeepSeek/Qwen/etc: `<think>\n...reasoning...\n</think>`
+ * Supports ALL known model thinking/reasoning tag formats:
+ * 1. Gemma 4:              `<|channel>thought\n...\n<channel>\n` or `<|channel|>thought`
+ * 2. DeepSeek-R1/Qwen3/Llama: `<think>\n...\n</think>`
+ * 3. DeepSeek distilled:   (may omit opening `<think>`, only emit `</think>` at end)
+ * 4. Claude (prompted):    `<rationale>\n...\n</rationale>`
+ * 5. DeepSeek answer:      `<answer>` tag stripped (content kept as text)
  *
  * Because streaming delivers tokens one at a time, the markers may be split
  * across multiple delta events. This class buffers partial markers and routes
@@ -2690,6 +2699,21 @@ class ChannelTokenRouter {
   private inThinking = false;
   /** Buffer for potential partial opening/closing markers */
   private buffer = "";
+  /** Track whether any text has been emitted yet (for distilled model detection) */
+  private hasEmittedText = false;
+
+  // ── Regex patterns for opening/closing markers ──────────────────────
+  // Opening: <think>, <rationale>, <|channel>thought, <|channel|>thought
+  private static OPEN_RE = /<think>|<rationale>|<\|?channel\|?>thought/i;
+  // Closing: </think>, </rationale>, <|channel|>, <channel>, <|channel>
+  private static CLOSE_RE = /<\/think>|<\/rationale>|<\|?channel\|?>/i;
+  // Partial trailing: could be start of any marker (buffered across deltas)
+  private static PARTIAL_OPEN_RE =
+    /<\/?(?:\|?c?h?a?n?n?e?l?\|?>?t?h?o?u?g?h?t?|t?h?i?n?k?>?|r?a?t?i?o?n?a?l?e?>?)$/i;
+  private static PARTIAL_CLOSE_RE =
+    /<\/?(?:\|?c?h?a?n?n?e?l?\|?>?|t?h?i?n?k?>?|r?a?t?i?o?n?a?l?e?>?)$/i;
+  // Answer tag: <answer>, </answer> — strip marker, keep content as text
+  private static ANSWER_RE = /<\/?answer>/gi;
 
   /**
    * Process a delta token and return categorized chunks.
@@ -2700,16 +2724,16 @@ class ChannelTokenRouter {
     const input = this.buffer + delta;
     this.buffer = "";
 
-    let remaining = input;
+    // Strip <answer> / </answer> markers entirely (keep surrounding content)
+    let remaining = input.replace(ChannelTokenRouter.ANSWER_RE, "");
 
     while (remaining.length > 0) {
       if (this.inThinking) {
         // Inside thinking block — look for any closing marker
-        // Matches: </think>, <|channel|>, <channel>, <|channel>
-        const closeIdx = remaining.search(/<\/think>|<\|?channel\|?>/i);
+        const closeIdx = remaining.search(ChannelTokenRouter.CLOSE_RE);
         if (closeIdx === -1) {
           // Check if trailing chars could be a partial closing marker
-          const trailingMatch = remaining.match(/<\/?(?:\|?c?h?a?n?n?e?l?\|?>?|t?h?i?n?k?>?)$/i);
+          const trailingMatch = remaining.match(ChannelTokenRouter.PARTIAL_CLOSE_RE);
           if (trailingMatch && trailingMatch.index !== undefined) {
             const before = remaining.slice(0, trailingMatch.index);
             if (before) results.push({ type: "thinking", content: before });
@@ -2722,7 +2746,7 @@ class ChannelTokenRouter {
           // Found closing marker
           const before = remaining.slice(0, closeIdx);
           if (before) results.push({ type: "thinking", content: before });
-          const closeMatch = remaining.slice(closeIdx).match(/<\/think>|<\|?channel\|?>[^\n]*/i);
+          const closeMatch = remaining.slice(closeIdx).match(ChannelTokenRouter.CLOSE_RE);
           const markerLen = closeMatch ? closeMatch[0].length : 1;
           remaining = remaining.slice(closeIdx + markerLen);
           if (remaining.startsWith("\n")) remaining = remaining.slice(1);
@@ -2730,24 +2754,47 @@ class ChannelTokenRouter {
         }
       } else {
         // Outside thinking block — look for any opening marker
-        // Matches: <think>, <|channel>thought, <channel>thought
-        const openIdx = remaining.search(/<think>|<\|?channel\|?>thought/i);
-        if (openIdx === -1) {
-          // Check if trailing chars could be a partial opening marker
-          const trailingMatch = remaining.match(/<\/?(?:\|?c?h?a?n?n?e?l?\|?>?t?h?o?u?g?h?t?|t?h?i?n?k?>?)$/i);
+        const openIdx = remaining.search(ChannelTokenRouter.OPEN_RE);
+
+        // Also check for orphaned </think> or </rationale> (distilled models
+        // that omit the opening tag — all content before it is thinking)
+        const orphanCloseIdx = remaining.search(ChannelTokenRouter.CLOSE_RE);
+
+        if (openIdx === -1 && orphanCloseIdx !== -1 && !this.hasEmittedText) {
+          // Distilled-model case: </think> without prior <think>.
+          // Everything before the close marker was thinking all along.
+          const before = remaining.slice(0, orphanCloseIdx);
+          if (before) results.push({ type: "thinking", content: before });
+          const closeMatch = remaining.slice(orphanCloseIdx).match(ChannelTokenRouter.CLOSE_RE);
+          const markerLen = closeMatch ? closeMatch[0].length : 1;
+          remaining = remaining.slice(orphanCloseIdx + markerLen);
+          if (remaining.startsWith("\n")) remaining = remaining.slice(1);
+          // Don't set inThinking — it was already closed
+        } else if (openIdx === -1) {
+          // No opening marker — check for partial trailing marker
+          const trailingMatch = remaining.match(ChannelTokenRouter.PARTIAL_OPEN_RE);
           if (trailingMatch && trailingMatch.index !== undefined && trailingMatch[0].startsWith("<")) {
             const before = remaining.slice(0, trailingMatch.index);
-            if (before) results.push({ type: "text", content: before });
+            if (before) {
+              results.push({ type: "text", content: before });
+              this.hasEmittedText = true;
+            }
             this.buffer = trailingMatch[0];
           } else {
-            if (remaining) results.push({ type: "text", content: remaining });
+            if (remaining) {
+              results.push({ type: "text", content: remaining });
+              this.hasEmittedText = true;
+            }
           }
           remaining = "";
         } else {
           // Found opening marker
           const before = remaining.slice(0, openIdx);
-          if (before) results.push({ type: "text", content: before });
-          const openMatch = remaining.slice(openIdx).match(/<think>|<\|?channel\|?>thought[^\n]*/i);
+          if (before) {
+            results.push({ type: "text", content: before });
+            this.hasEmittedText = true;
+          }
+          const openMatch = remaining.slice(openIdx).match(/<think>|<rationale>|<\|?channel\|?>thought[^\n]*/i);
           const markerLen = openMatch ? openMatch[0].length : 1;
           remaining = remaining.slice(openIdx + markerLen);
           if (remaining.startsWith("\n")) remaining = remaining.slice(1);

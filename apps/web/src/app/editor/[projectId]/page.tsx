@@ -1891,6 +1891,15 @@ export default function EditorPage() {
                 thinkingFromContent += (channelMatch[1] ?? "").trim() + "\n";
               }
               displayContent = displayContent.replace(channelRegex, "").trim();
+              // Also strip <rationale>...</rationale> markers (Claude prompted)
+              const rationaleRegex = /<rationale>([\s\S]*?)<\/rationale>/gi;
+              let rationaleMatch: RegExpExecArray | null;
+              while ((rationaleMatch = rationaleRegex.exec(displayContent)) !== null) {
+                thinkingFromContent += (rationaleMatch[1] ?? "").trim() + "\n";
+              }
+              displayContent = displayContent.replace(rationaleRegex, "").trim();
+              // Strip <answer>...</answer> wrappers (keep inner content as display text)
+              displayContent = displayContent.replace(/<\/?answer>/gi, "").trim();
               const thinkingContent = m.thinking_content || thinkingFromContent.trim() || undefined;
 
               return {
