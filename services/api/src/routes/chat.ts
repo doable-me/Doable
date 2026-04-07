@@ -2653,6 +2653,10 @@ function sanitizeText(text: string): string {
 
   let result = text;
 
+  // 0. Strip leftover thinking markers (<think>, </think>, <|channel>thought, <channel>)
+  result = result.replace(/<\/?think>/gi, "");
+  result = result.replace(/<\|?channel\|?>(?:thought)?/gi, "");
+
   // 1. Strip absolute server paths
   //    e.g. /home/user/doable/projects/abc-123-def/src/App.tsx → src/App.tsx
   result = result.replace(
@@ -2669,10 +2673,11 @@ function sanitizeText(text: string): string {
 }
 
 /**
- * Stateful parser for Gemma 4's `<|channel>thought` / `<channel>` markers.
+ * Stateful parser for model thinking markers.
  *
- * Gemma 4 emits thinking content inline as:
- *   <|channel>thought\n...reasoning...\n<channel>\n
+ * Supports two formats:
+ * 1. Gemma 4: `<|channel>thought\n...reasoning...\n<channel>\n`
+ * 2. DeepSeek/Qwen/etc: `<think>\n...reasoning...\n</think>`
  *
  * Because streaming delivers tokens one at a time, the markers may be split
  * across multiple delta events. This class buffers partial markers and routes
@@ -2681,17 +2686,10 @@ function sanitizeText(text: string): string {
  * Usage: one instance per streaming session.
  */
 class ChannelTokenRouter {
-  /** True when we're inside a `<|channel>thought` block */
+  /** True when we're inside a thinking block */
   private inThinking = false;
   /** Buffer for potential partial opening/closing markers */
   private buffer = "";
-
-  // Patterns that open a thinking block (with optional trailing content on same line)
-  private static OPEN_RE = /^<\|?channel\|?>thought\s*/i;
-  // Patterns that close a thinking block
-  private static CLOSE_RE = /^<\|?channel\|?>\s*/i;
-  // Potential start of a marker (for buffering partial tokens)
-  private static PARTIAL_RE = /^<\|?c?h?a?n?n?e?l?\|?>?$/i;
 
   /**
    * Process a delta token and return categorized chunks.
@@ -2702,44 +2700,41 @@ class ChannelTokenRouter {
     const input = this.buffer + delta;
     this.buffer = "";
 
-    // Process input line by line to catch channel markers that may appear at line boundaries
     let remaining = input;
 
     while (remaining.length > 0) {
       if (this.inThinking) {
-        // Inside thinking block — look for closing marker
-        const closeIdx = remaining.search(/<\|?channel\|?>/i);
+        // Inside thinking block — look for any closing marker
+        // Matches: </think>, <|channel|>, <channel>, <|channel>
+        const closeIdx = remaining.search(/<\/think>|<\|?channel\|?>/i);
         if (closeIdx === -1) {
-          // Check if the end could be the start of a closing marker
-          const trailingMatch = remaining.match(/<\|?c?h?a?n?n?e?l?\|?>?$/i);
+          // Check if trailing chars could be a partial closing marker
+          const trailingMatch = remaining.match(/<\/?(?:\|?c?h?a?n?n?e?l?\|?>?|t?h?i?n?k?>?)$/i);
           if (trailingMatch && trailingMatch.index !== undefined) {
-            // Emit content before the potential partial marker
             const before = remaining.slice(0, trailingMatch.index);
             if (before) results.push({ type: "thinking", content: before });
             this.buffer = trailingMatch[0];
           } else {
-            // All content is thinking
             if (remaining) results.push({ type: "thinking", content: remaining });
           }
           remaining = "";
         } else {
-          // Found closing marker — emit thinking content before it, then switch back
+          // Found closing marker
           const before = remaining.slice(0, closeIdx);
           if (before) results.push({ type: "thinking", content: before });
-          // Skip the closing marker itself (find its end)
-          const closeMatch = remaining.slice(closeIdx).match(/<\|?channel\|?>[^\n]*/i);
+          const closeMatch = remaining.slice(closeIdx).match(/<\/think>|<\|?channel\|?>[^\n]*/i);
           const markerLen = closeMatch ? closeMatch[0].length : 1;
           remaining = remaining.slice(closeIdx + markerLen);
-          // Skip trailing newline after close marker
           if (remaining.startsWith("\n")) remaining = remaining.slice(1);
           this.inThinking = false;
         }
       } else {
-        // Outside thinking block — look for opening marker
-        const openIdx = remaining.search(/<\|?channel\|?>thought/i);
+        // Outside thinking block — look for any opening marker
+        // Matches: <think>, <|channel>thought, <channel>thought
+        const openIdx = remaining.search(/<think>|<\|?channel\|?>thought/i);
         if (openIdx === -1) {
-          // Check if the end could be the start of an opening marker
-          const trailingMatch = remaining.match(/<\|?c?h?a?n?n?e?l?\|?>?t?h?o?u?g?h?t?$/i);
+          // Check if trailing chars could be a partial opening marker
+          const trailingMatch = remaining.match(/<\/?(?:\|?c?h?a?n?n?e?l?\|?>?t?h?o?u?g?h?t?|t?h?i?n?k?>?)$/i);
           if (trailingMatch && trailingMatch.index !== undefined && trailingMatch[0].startsWith("<")) {
             const before = remaining.slice(0, trailingMatch.index);
             if (before) results.push({ type: "text", content: before });
@@ -2749,14 +2744,12 @@ class ChannelTokenRouter {
           }
           remaining = "";
         } else {
-          // Found opening marker — emit text before it, then switch to thinking
+          // Found opening marker
           const before = remaining.slice(0, openIdx);
           if (before) results.push({ type: "text", content: before });
-          // Skip the opening marker and optional trailing whitespace/newline
-          const openMatch = remaining.slice(openIdx).match(/<\|?channel\|?>thought[^\n]*/i);
+          const openMatch = remaining.slice(openIdx).match(/<think>|<\|?channel\|?>thought[^\n]*/i);
           const markerLen = openMatch ? openMatch[0].length : 1;
           remaining = remaining.slice(openIdx + markerLen);
-          // Skip trailing newline after open marker
           if (remaining.startsWith("\n")) remaining = remaining.slice(1);
           this.inThinking = true;
         }
