@@ -969,10 +969,24 @@ ERROR RECOVERY — if you encounter errors:
         onSessionEnd: (reason: string, error?: string) => {
           if (error) console.error(`[Chat] Session ended: ${reason} —`, typeof error === 'object' ? JSON.stringify(error) : error);
         },
-        onError: (error: string, context: string) => {
-          console.error(`[Chat] Hook error (${context}): ${error}`);
+        onError: (error: unknown, context: string) => {
+          const errorStr = typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error);
+          console.error(`[Chat] Hook error (${context}):`, errorStr);
+          // Humanize the error for the user — don't expose internal context names
+          let userMessage: string;
+          if (errorStr.includes("404") || errorStr.includes("not found")) {
+            userMessage = "The AI model returned an error (404). The model may be unavailable or the model ID is incorrect. Check your AI settings.";
+          } else if (errorStr.includes("401") || errorStr.includes("unauthorized") || errorStr.includes("not authorized")) {
+            userMessage = "Authentication failed with the AI provider. Please check your API key in AI settings.";
+          } else if (errorStr.includes("429") || errorStr.includes("rate limit")) {
+            userMessage = "Rate limit reached. Please wait a moment and try again.";
+          } else if (errorStr.includes("500") || errorStr.includes("internal server")) {
+            userMessage = "The AI provider returned a server error. Please try again.";
+          } else {
+            userMessage = "An error occurred while communicating with the AI model. Please try again.";
+          }
           stream.writeSSE({ data: JSON.stringify({
-            type: "error", data: `${context}: ${error}`,
+            type: "error", data: userMessage,
           }) }).catch(() => {});
         },
       };
@@ -2750,11 +2764,21 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
       return null;
 
     // ─── Errors ───────────────────────────────────────────
-    case "session.error":
-      return {
-        type: "error",
-        data: sanitizeText(String(data?.message ?? "Unknown error")),
-      };
+    case "session.error": {
+      const rawMsg = String(data?.message ?? data?.errorType ?? "Unknown error");
+      const statusCode = data?.statusCode as number | undefined;
+      let userMsg: string;
+      if (statusCode === 404 || rawMsg.includes("404")) {
+        userMsg = "The AI model is unavailable (404). Check your model ID and provider settings.";
+      } else if (statusCode === 401 || rawMsg.includes("unauthorized") || rawMsg.includes("not authorized")) {
+        userMsg = "Authentication failed with the AI provider. Check your API key.";
+      } else if (statusCode === 429 || rawMsg.includes("rate limit")) {
+        userMsg = "Rate limit reached. Please wait and try again.";
+      } else {
+        userMsg = sanitizeText(rawMsg);
+      }
+      return { type: "error", data: userMsg };
+    }
 
     // ─── Done ─────────────────────────────────────────────
     case "session.idle":
