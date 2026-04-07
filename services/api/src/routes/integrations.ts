@@ -447,7 +447,13 @@ integrationRoutes.get("/integrations/oauth/callback", async (c) => {
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? process.env.PUBLIC_URL ?? "http://localhost:3000";
 const EA_API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
-const EA_REDIRECT_URI = process.env.INTEGRATIONS_OAUTH_REDIRECT_URI ?? `${EA_API_URL}/integrations/enhanced-auth/callback`;
+// Enhanced auth has its own callback path (different from the regular OAuth
+// flow at /integrations/oauth/callback) and therefore its own env var so the
+// two flows can be registered as separate OAuth apps with the provider. Prefer
+// the enhanced-auth-specific var; fall back to the default callback path (NOT
+// to INTEGRATIONS_OAUTH_REDIRECT_URI, which is a path mismatch that silently
+// broke the Supabase "Sign in with" flow).
+const EA_REDIRECT_URI = process.env.INTEGRATIONS_ENHANCED_AUTH_REDIRECT_URI ?? `${EA_API_URL}/integrations/enhanced-auth/callback`;
 
 // GET /integrations/enhanced-auth/:id/authorize
 integrationRoutes.get("/integrations/enhanced-auth/:id/authorize", authMiddleware, async (c) => {
