@@ -54,7 +54,8 @@ export type WsServerMessage =
   | { type: "visual-edit:deselect"; userId: string }
   | { type: "visual-edit:style-change"; userId: string; selector: string; property: string; value: string }
   | { type: "visual-edit:text-change"; userId: string; selector: string; newText: string }
-  | { type: "visual-edit:cursor-move"; userId: string; displayName: string; color: string; x: number; y: number };
+  | { type: "visual-edit:cursor-move"; userId: string; displayName: string; color: string; x: number; y: number }
+  | { type: "visual-edit:preview-refresh" };
 
 export interface AiQueueItem {
   id: string;
@@ -97,7 +98,8 @@ export type WsClientMessage =
   | { type: "visual-edit:deselect" }
   | { type: "visual-edit:style-change"; selector: string; property: string; value: string }
   | { type: "visual-edit:text-change"; selector: string; newText: string }
-  | { type: "visual-edit:cursor-move"; x: number; y: number };
+  | { type: "visual-edit:cursor-move"; x: number; y: number }
+  | { type: "visual-edit:preview-refresh" };
 
 // ─── User Color ──────────────────────────────────────────
 const COLORS = [
