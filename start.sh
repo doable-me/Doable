@@ -16,9 +16,9 @@ tmux kill-session -t "$SESSION" 2>/dev/null || true
 tmux new-session -d -s "$SESSION" -n "api" -c "$(pwd)"
 tmux send-keys -t "$SESSION:api" "pnpm dev:api" Enter
 
-# Web — Next.js (binds 127.0.0.1 via package.json dev script)
-tmux new-window -t "$SESSION" -n "web" -c "$(pwd)/apps/web"
-tmux send-keys -t "$SESSION:web" "pnpm dev" Enter
+# Web — Next.js production server (build then start)
+tmux new-window -t "$SESSION" -n "web" -c "$(pwd)"
+tmux send-keys -t "$SESSION:web" "pnpm --filter web build && pnpm --filter web start" Enter
 
 # WS — WebSocket server with tsx watch
 tmux new-window -t "$SESSION" -n "ws" -c "$(pwd)"

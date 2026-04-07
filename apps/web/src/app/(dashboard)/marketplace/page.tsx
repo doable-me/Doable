@@ -14,7 +14,7 @@ export default function MarketplacePage() {
       try {
         const res = await apiListWorkspaces();
         if (res.data.length > 0) {
-          setWorkspace(res.data[0]);
+          setWorkspace(res.data[0] ?? null);
         }
       } finally {
         setLoading(false);
