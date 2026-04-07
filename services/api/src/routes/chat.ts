@@ -695,6 +695,8 @@ chatRoutes.post(
     let lastFlushLen = 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let assistantToolCalls: any[] = [];
+    // Hoisted outside the try so the catch path can flush usage on errors.
+    let usageCollector: ReturnType<typeof createUsageCollector> | null = null;
 
     const recordAssistantToolCall = (name?: string, args?: unknown) => {
       if (!name) return;
@@ -763,7 +765,7 @@ chatRoutes.post(
       const workspaceId: string | undefined = workspaceRow[0]?.workspace_id;
 
       // ── Usage collector (non-blocking, fire-and-forget) ──
-      const usageCollector = workspaceId ? createUsageCollector({
+      usageCollector = workspaceId ? createUsageCollector({
         userId,
         workspaceId,
         projectId,
