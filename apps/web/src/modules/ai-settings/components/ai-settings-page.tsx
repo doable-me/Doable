@@ -81,9 +81,7 @@ export function AiSettingsPage() {
           <ShieldAlert className="h-12 w-12 text-zinc-600 mb-4" />
           <h2 className="text-lg font-semibold text-white">Access Restricted</h2>
           <p className="mt-2 text-sm text-zinc-400 max-w-md">
-            {featureDeniedReason === "insufficient_role"
-              ? "You need admin access to this workspace to view AI Settings."
-              : featureDeniedReason === "feature_disabled"
+            {featureDeniedReason === "feature_disabled"
               ? "AI Settings has been disabled by a platform administrator."
               : featureDeniedReason === "user_override_denied"
               ? "Your access to AI Settings has been restricted by a platform administrator."

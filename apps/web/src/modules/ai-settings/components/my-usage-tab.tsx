@@ -204,12 +204,12 @@ function AreaChart({
   // Smooth bezier path
   const pathD = points.reduce((acc, pt, i) => {
     if (i === 0) return `M ${pt.x} ${pt.y}`;
-    const prev = points[i - 1];
+    const prev = points[i - 1]!;
     const cpx = (prev.x + pt.x) / 2;
     return `${acc} C ${cpx} ${prev.y}, ${cpx} ${pt.y}, ${pt.x} ${pt.y}`;
   }, "");
 
-  const areaD = `${pathD} L ${points[points.length - 1].x} ${H - PY} L ${points[0].x} ${H - PY} Z`;
+  const areaD = `${pathD} L ${points[points.length - 1]!.x} ${H - PY} L ${points[0]!.x} ${H - PY} Z`;
 
   const formatDateLabel = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -397,7 +397,7 @@ function TokenDonut({
   const segments = values.map((v, i) => {
     const pct = v / total;
     const dash = circumference * pct;
-    const seg = { dash, gap: circumference - dash, offset, color: DONUT_COLORS[i].stroke, pct, value: v };
+    const seg = { dash, gap: circumference - dash, offset, color: DONUT_COLORS[i]!.stroke, pct, value: v };
     offset -= dash;
     return seg;
   });
@@ -440,14 +440,14 @@ function TokenDonut({
                 <div className="flex justify-between items-baseline">
                   <span className="text-xs text-zinc-300">{c.label}</span>
                   <span className="text-[10px] text-zinc-500 tabular-nums">
-                    {formatTokenCount(values[i])} ({total > 0 ? Math.round((values[i] / total) * 100) : 0}%)
+                    {formatTokenCount(values[i] ?? 0)} ({total > 0 ? Math.round(((values[i] ?? 0) / total) * 100) : 0}%)
                   </span>
                 </div>
                 <div className="h-1 bg-zinc-800 rounded-full mt-1 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-700 ease-out`}
                     style={{
-                      width: `${total > 0 ? (values[i] / total) * 100 : 0}%`,
+                      width: `${total > 0 ? ((values[i] ?? 0) / total) * 100 : 0}%`,
                       backgroundColor: c.stroke,
                     }}
                   />

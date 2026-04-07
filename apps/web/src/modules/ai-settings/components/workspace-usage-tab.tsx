@@ -124,7 +124,7 @@ export function WorkspaceUsageTab({ workspaceId }: WorkspaceUsageTabProps) {
 function MemberBars({
   members,
 }: {
-  members: { userId: string; displayName?: string; email: string; requestCount: number; totalTokens: number; totalCostUsd: number }[];
+  members: { userId: string; displayName?: string | null; email: string; requestCount: number; totalTokens: number; totalCostUsd: number }[];
 }) {
   const maxTokens = Math.max(...members.map((m) => m.totalTokens), 1);
 
@@ -176,7 +176,7 @@ function MemberBars({
 function ProviderDonut({
   providers,
 }: {
-  providers: { provider: string; providerLabel?: string; requestCount: number; totalTokens: number; totalCostUsd: number; uniqueModels: number }[];
+  providers: { provider: string; providerLabel?: string | null; requestCount: number; totalTokens: number; totalCostUsd: number; uniqueModels: number }[];
 }) {
   const total = providers.reduce((s, p) => s + p.totalCostUsd, 0);
   const radius = 50;

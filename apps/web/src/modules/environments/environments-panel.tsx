@@ -766,7 +766,7 @@ function EnvironmentCard({
                 icon={<Brain className="h-3.5 w-3.5" />}
                 items={detail.knowledge.map((k) => ({ name: k.filename, sub: `${k.content.length} chars` }))}
                 emptyMessage="No knowledge files"
-                onRemove={async (i) => { await hooks.removeKnowledge(env.id, detail.knowledge[i].filename); await reloadDetail(); }}
+                onRemove={async (i) => { const k = detail.knowledge[i]; if (k) { await hooks.removeKnowledge(env.id, k.filename); await reloadDetail(); } }}
               />
 
               {/* Connectors picker */}
