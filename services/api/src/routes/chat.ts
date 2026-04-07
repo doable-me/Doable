@@ -961,6 +961,21 @@ ERROR RECOVERY — if you encounter errors:
               }
             } catch { /* non-critical */ }
           }
+          // Phase 2A: forward `provision_supabase` requests to the chat UI.
+          // The tool handler returns `{ _sseHint: "provision_supabase_required", ... }`
+          // — we emit a dedicated SSE event so the client can pop the
+          // org/region picker dialog and POST to /api/integrations/supabase/provision.
+          if (toolName === "provision_supabase" && result) {
+            try {
+              const r = result as Record<string, unknown>;
+              if (r._sseHint === "provision_supabase_required") {
+                stream.writeSSE({ data: JSON.stringify({
+                  type: "provision_supabase_required",
+                  data: { name: r.name ?? "", reason: r.reason ?? "" },
+                }) }).catch(() => {});
+              }
+            } catch { /* non-critical */ }
+          }
           if (toolName === "create_plan" && result) {
             try {
               const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;

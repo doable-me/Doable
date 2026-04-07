@@ -123,6 +123,17 @@ export interface EnhancedAuthConfig {
   requiresResourceSelection: boolean;
   /** Label for the resource picker, e.g. "Select a project" */
   resourceLabel?: string;
+  /**
+   * Optional platform-managed provisioner (Phase 2A).
+   * When `enabled`, the integration definition advertises support for the
+   * "create a brand-new resource under the user's own account" flow — e.g.
+   * Lovable-style one-click Supabase project creation. The OAuth grant must
+   * include every entry in `requiredScopes` for the provisioner to succeed.
+   */
+  provisioner?: {
+    enabled: boolean;
+    requiredScopes: string[];
+  };
 }
 
 // ─── Connection Types ────────────────────────────────────

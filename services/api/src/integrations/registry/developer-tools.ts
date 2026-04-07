@@ -377,6 +377,13 @@ export const DEVELOPER_TOOLS_INTEGRATIONS: Record<string, IntegrationDefinition>
       },
       requiresResourceSelection: true,
       resourceLabel: "Select a Supabase project",
+      // Phase 2A: Lovable-style one-click project creation. When enabled, the
+      // chat UI can call the `provision_supabase` tool to create a brand-new
+      // project under the user's own organization without opening the dashboard.
+      provisioner: {
+        enabled: true,
+        requiredScopes: ["projects:create"],
+      },
     },
     envKeyMap: {
       // url + anonKey are browser-safe (Vite ships them in import.meta.env.VITE_*).

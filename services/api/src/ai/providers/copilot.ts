@@ -944,6 +944,41 @@ export function createDoableTools(projectId: string): Tool[] {
       },
     }),
 
+    // ─── Phase 2A: Supabase platform-managed provisioner ─────
+    //
+    // Signals the chat UI that the user wants to create a brand-new
+    // Supabase project for their app. The handler does NOT call the
+    // provisioning route directly — it returns a tagged result that the
+    // SSE pipe forwards as a `provision_supabase_required` event. The
+    // client opens an org/region picker dialog, then POSTs to
+    // /api/integrations/supabase/provision and streams progress back.
+    defineTool("provision_supabase", {
+      description:
+        "Create a brand-new Supabase database for this project under the user's own Supabase organization. Use this when the user asks to add a database, signs up for Supabase, or wants persistent storage and you have not yet detected a connected Supabase integration. The Doable platform handles project creation, key fetching, and credential storage automatically — you do NOT need to ask the user for any credentials.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          name: {
+            type: "string" as const,
+            description:
+              "Optional human-friendly name for the new Supabase project. Defaults to the Doable project name.",
+          },
+        },
+      },
+      handler: async (args: { name?: string }) => {
+        emitToolEvent(projectId, "provision_supabase", "start", { name: args.name ?? "" });
+        const result = {
+          success: true,
+          _sseHint: "provision_supabase_required" as const,
+          reason:
+            "The chat UI should open the Supabase project creation dialog. The user will pick an organization and region, then Doable will create the project and store the credentials automatically. After the dialog finishes, the new VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY env vars will be available in the next chat turn — you can then write code that uses them.",
+          name: args.name ?? "",
+        };
+        emitToolEvent(projectId, "provision_supabase", "end", { name: args.name ?? "" });
+        return result;
+      },
+    }),
+
     defineTool("mark_step_complete", {
       description:
         "Mark a plan step as completed during build execution.",

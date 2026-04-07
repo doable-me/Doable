@@ -1,10 +1,21 @@
 "use client";
 
-import { useCallback, useRef, useEffect } from "react";
+import { useCallback, useRef, useEffect, useState } from "react";
 import { useEditorStore, type ChatMessage } from "./use-editor-store";
 import type { Attachment } from "@/hooks/use-attachments";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+/**
+ * Phase 2A — Supabase provisioning state surfaced to consumers of useChat()
+ * so the chat surface can render the "create new Supabase project" dialog.
+ */
+export interface SupabaseProvisionRequest {
+  /** Default project name suggested by the AI tool call (may be empty). */
+  name: string;
+  /** Friendly explanation from the AI tool result. */
+  reason: string;
+}
 
 function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -26,6 +37,12 @@ export function useChat(
   const ownMessageIds = useRef<Set<string>>(new Set());
   // Track remote streaming message IDs → assistant message IDs in the store
   const remoteStreamMap = useRef<Map<string, string>>(new Map());
+
+  // Phase 2A: Supabase provisioning request — set when the AI calls
+  // `provision_supabase`. The chat surface watches this and opens
+  // <SupabaseProvisionDialog>; cleared by `dismissSupabaseProvision`.
+  const [supabaseProvisionRequest, setSupabaseProvisionRequest] =
+    useState<SupabaseProvisionRequest | null>(null);
 
   const {
     messages,
@@ -304,6 +321,26 @@ export function useChat(
                   updateMessageFields(assistantId, {
                     liveStatus: status ? `status:${status}` : "",
                   });
+                } else if (parsed.type === "provision_progress") {
+                  // Phase 2A: supabase provisioning progress. Surface it
+                  // as a live status on the assistant message so the user
+                  // can watch the steps roll in (creating → waiting → ...).
+                  const phase = parsed.data?.phase as string | undefined;
+                  const message = parsed.data?.message as string | undefined;
+                  if (phase && message) {
+                    updateMessageFields(assistantId, {
+                      liveStatus: `provision:${phase}:${message}`,
+                    });
+                  }
+                } else if (parsed.type === "provision_supabase_required") {
+                  // Phase 2A: AI tool signalled that we need to open the
+                  // Supabase provisioning dialog. The consumer of useChat()
+                  // reads `supabaseProvisionRequest` and renders the dialog.
+                  const name =
+                    (parsed.data?.name as string | undefined) ?? "";
+                  const reason =
+                    (parsed.data?.reason as string | undefined) ?? "";
+                  setSupabaseProvisionRequest({ name, reason });
                 } else if (parsed.type === "version_created") {
                   // Git commit was created for this AI response — store SHA for undo
                   const sha = parsed.data?.sha ?? parsed.sha;
@@ -588,6 +625,28 @@ export function useChat(
     clearMessages();
   }, [projectId, clearMessages]);
 
+  /**
+   * Phase 2A: dismiss the Supabase provisioning dialog. If
+   * `andContinue` is true, the hook auto-submits a "continue" chat
+   * message so the AI picks up with code generation using the new
+   * env vars it now has access to via the vault-bridge manifest.
+   */
+  const dismissSupabaseProvision = useCallback(
+    (andContinue?: boolean) => {
+      setSupabaseProvisionRequest(null);
+      if (andContinue) {
+        // Small delay so the dialog teardown doesn't race the chat
+        // stream starting up again.
+        setTimeout(() => {
+          sendMessage(
+            "The new Supabase project is ready and the credentials are connected. Please continue building now — use VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the client code, and SUPABASE_SERVICE_ROLE_KEY only in server-side code.",
+          );
+        }, 100);
+      }
+    },
+    [sendMessage],
+  );
+
   return {
     messages,
     isStreaming,
@@ -598,5 +657,7 @@ export function useChat(
     answerClarification,
     approvePlan,
     abandonPlan,
+    supabaseProvisionRequest,
+    dismissSupabaseProvision,
   };
 }
