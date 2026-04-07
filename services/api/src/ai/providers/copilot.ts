@@ -157,9 +157,7 @@ export class CopilotEngine {
     this.ensureClient();
 
     if (config.provider) {
-      console.log(`[CopilotEngine] Session using BYOK provider: type=${config.provider.type}, baseUrl=${config.provider.baseUrl}, model=${config.model ?? this.config.model}, hasApiKey=${!!config.provider.apiKey}`);
-    } else {
-      console.log(`[CopilotEngine] Session using GitHub Copilot (no BYOK provider), model=${config.model ?? this.config.model}`);
+      console.log(`[CopilotEngine] Session using BYOK provider: type=${config.provider.type}, model=${config.model ?? this.config.model}`);
     }
 
     const sessionConfig: SessionConfig = {
