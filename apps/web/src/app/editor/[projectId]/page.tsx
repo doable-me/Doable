@@ -1879,16 +1879,16 @@ export default function EditorPage() {
               let displayContent = m.content || "";
               let thinkingFromContent = "";
               const thinkRegex = /<think>([\s\S]*?)<\/think>/gi;
-              let thinkMatch;
+              let thinkMatch: RegExpExecArray | null;
               while ((thinkMatch = thinkRegex.exec(displayContent)) !== null) {
-                thinkingFromContent += thinkMatch[1].trim() + "\n";
+                thinkingFromContent += (thinkMatch[1] ?? "").trim() + "\n";
               }
               displayContent = displayContent.replace(thinkRegex, "").trim();
               // Also strip <|channel>thought...<channel> markers
               const channelRegex = /<\|?channel\|?>thought([\s\S]*?)<\|?channel\|?>/gi;
-              let channelMatch;
+              let channelMatch: RegExpExecArray | null;
               while ((channelMatch = channelRegex.exec(displayContent)) !== null) {
-                thinkingFromContent += channelMatch[1].trim() + "\n";
+                thinkingFromContent += (channelMatch[1] ?? "").trim() + "\n";
               }
               displayContent = displayContent.replace(channelRegex, "").trim();
               const thinkingContent = m.thinking_content || thinkingFromContent.trim() || undefined;
