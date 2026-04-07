@@ -513,8 +513,26 @@ integrationRoutes.get("/integrations/enhanced-auth/:id/authorize", authMiddlewar
     redirect_uri: EA_REDIRECT_URI,
     scope: ea.oauth2Config.scopes.join(" "),
     state,
-    access_type: "offline",
   };
+
+  // `access_type=offline` is a Google-specific parameter that asks Google
+  // to return a refresh token. Other providers (Supabase, GitHub, …) use
+  // strict validators and REJECT the whole authorize request with
+  // "Unrecognized key(s) in object: 'access_type'". Only send it when the
+  // provider is Google, or when the integration has opted in via
+  // `extraParams: { access_type: "offline" }`.
+  const isGoogle = ea.oauth2Config.authUrl.includes("accounts.google.com");
+  if (isGoogle) {
+    query.access_type = "offline";
+  }
+  // Merge any provider-specific extra params declared on the integration's
+  // oauth2Config. This also covers the Google case via data, but we keep
+  // the explicit branch above so the behavior is obvious at read time.
+  if (ea.oauth2Config.extraParams) {
+    for (const [k, v] of Object.entries(ea.oauth2Config.extraParams)) {
+      query[k] = v;
+    }
+  }
 
   if (ea.oauth2Config.pkce) {
     codeVerifier = crypto.randomBytes(32).toString("base64url").slice(0, 43);
