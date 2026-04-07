@@ -156,6 +156,12 @@ export class CopilotEngine {
   async createSession(config: CopilotSessionConfig): Promise<string> {
     this.ensureClient();
 
+    if (config.provider) {
+      console.log(`[CopilotEngine] Session using BYOK provider: type=${config.provider.type}, baseUrl=${config.provider.baseUrl}, model=${config.model ?? this.config.model}, hasApiKey=${!!config.provider.apiKey}`);
+    } else {
+      console.log(`[CopilotEngine] Session using GitHub Copilot (no BYOK provider), model=${config.model ?? this.config.model}`);
+    }
+
     const sessionConfig: SessionConfig = {
       onPermissionRequest: approveAll,
       streaming: true, // Enable token-by-token streaming (assistant.message_delta events)
