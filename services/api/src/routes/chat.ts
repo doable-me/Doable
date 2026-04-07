@@ -1245,6 +1245,7 @@ ERROR RECOVERY — if you encounter errors:
           // Must be generous enough for tool calls (file writes, npm installs).
           const SDK_IDLE_TIMEOUT_MS = 180_000;
           const TIMEOUT_SENTINEL = Symbol("timeout");
+          const channelRouter = new ChannelTokenRouter();
           const iterator = messageStream![Symbol.asyncIterator]();
           let iterDone = false;
           while (!iterDone) {
@@ -1305,18 +1306,40 @@ ERROR RECOVERY — if you encounter errors:
                 const deltasSoFar = assistantContent.slice(msgIdDeltaStart);
                 if (content.length > deltasSoFar.length) {
                   // Deltas missed part of this message — emit the missing suffix
+                  // Route through channel router so <|channel>thought blocks
+                  // are split into thinking vs text correctly
                   const missing = content.slice(deltasSoFar.length);
-                  await stream.writeSSE({
-                    data: JSON.stringify({ type: "text_delta", data: sanitizeText(missing) }),
-                  });
+                  const routedChunks = channelRouter.process(missing);
+                  for (const chunk of routedChunks) {
+                    if (!chunk.content) continue;
+                    if (chunk.type === "text") {
+                      const cleaned = sanitizeText(chunk.content);
+                      if (cleaned) {
+                        await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
+                      }
+                    } else {
+                      assistantThinking += chunk.content;
+                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                    }
+                  }
                   // Replace the per-message portion with the authoritative full text
-                  assistantContent = assistantContent.slice(0, msgIdDeltaStart) + content;
+                  assistantContent = assistantContent.slice(0, msgIdDeltaStart) + sanitizeText(content);
                 } else if (!deltasSoFar && !assistantContent) {
-                  // No deltas at all — use full content
-                  await stream.writeSSE({
-                    data: JSON.stringify({ type: "text_delta", data: sanitizeText(content) }),
-                  });
-                  assistantContent = content;
+                  // No deltas at all — use full content via channel router
+                  const routedChunks = channelRouter.process(content);
+                  for (const chunk of routedChunks) {
+                    if (!chunk.content) continue;
+                    if (chunk.type === "text") {
+                      const cleaned = sanitizeText(chunk.content);
+                      if (cleaned) {
+                        await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
+                      }
+                    } else {
+                      assistantThinking += chunk.content;
+                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                    }
+                  }
+                  assistantContent = sanitizeText(content);
                 }
               }
             }
@@ -1357,25 +1380,41 @@ ERROR RECOVERY — if you encounter errors:
                   }
                 }
               }
-              // Accumulate assistant content for DB persistence
+
+              // ── Route text_delta through the channel token parser ──
+              // Gemma 4 inlines thinking in <|channel>thought...<channel> blocks
+              // within message_delta text. The channelRouter splits them so
+              // thinking content goes to the "thinking" SSE event and visible
+              // text goes to "text_delta".
               if (sseData.type === "text_delta") {
-                const delta = typeof sseData.data === "string" ? sseData.data : "";
-                assistantContent += delta;
-                // Flush to DB every ~500 chars so content survives crashes
-                if (assistantMessageId && assistantContent.length - lastFlushLen > 500) {
-                  lastFlushLen = assistantContent.length;
-                  sql`UPDATE ai_messages SET content = ${assistantContent} WHERE id = ${assistantMessageId}`.catch(() => {});
+                const rawDelta = typeof sseData.data === "string" ? sseData.data : "";
+                const routed = channelRouter.process(rawDelta);
+                for (const chunk of routed) {
+                  if (!chunk.content) continue;
+                  if (chunk.type === "text") {
+                    const cleaned = sanitizeText(chunk.content);
+                    if (!cleaned) continue;
+                    // Accumulate for DB
+                    assistantContent += cleaned;
+                    if (assistantMessageId && assistantContent.length - lastFlushLen > 500) {
+                      lastFlushLen = assistantContent.length;
+                      sql`UPDATE ai_messages SET content = ${assistantContent} WHERE id = ${assistantMessageId}`.catch(() => {});
+                    }
+                    broadcastToRoom(projectId, {
+                      type: "ai:stream-chunk", chunk: cleaned, messageId, isThinking: false,
+                    }, userId).catch(() => {});
+                    await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
+                  } else {
+                    // thinking
+                    assistantThinking += chunk.content;
+                    broadcastToRoom(projectId, {
+                      type: "ai:stream-chunk", chunk: chunk.content, messageId, isThinking: true,
+                    }, userId).catch(() => {});
+                    await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                  }
                 }
-                // Broadcast text chunks to other collaborators via WS
-                broadcastToRoom(projectId, {
-                  type: "ai:stream-chunk",
-                  chunk: typeof sseData.data === "string" ? sseData.data : "",
-                  messageId,
-                  isThinking: false,
-                }, userId).catch(() => {});
-              }
-              // Accumulate and broadcast thinking chunks
-              if (sseData.type === "thinking") {
+              } else if (sseData.type === "thinking") {
+                // Native reasoning_delta — accumulate and broadcast
                 const thinkingDelta = typeof sseData.data === "string" ? sseData.data : "";
                 assistantThinking += thinkingDelta;
                 broadcastToRoom(projectId, {
@@ -1384,34 +1423,36 @@ ERROR RECOVERY — if you encounter errors:
                   messageId,
                   isThinking: true,
                 }, userId).catch(() => {});
+                await stream.writeSSE({ data: JSON.stringify(sseData) });
+              } else {
+                // All non-text SSE events (tool_call, tool_result, status, error, etc.)
+                // Broadcast tool_call / tool_result events
+                if (sseData.type === "tool_call" || sseData.type === "tool_result") {
+                  broadcastToRoom(projectId, {
+                    type: "ai:tool-event",
+                    messageId,
+                    event: sseData.type,
+                    data: (sseData.data ?? {}) as Record<string, unknown>,
+                  }, userId).catch(() => {});
+                }
+                // Broadcast status & auto_fix_complete events
+                if (sseData.type === "status" || sseData.type === "auto_fix_complete") {
+                  broadcastToRoom(projectId, {
+                    type: "ai:status",
+                    messageId,
+                    data: sseData.data,
+                  }, userId).catch(() => {});
+                }
+                // Broadcast errors
+                if (sseData.type === "error") {
+                  broadcastToRoom(projectId, {
+                    type: "ai:error",
+                    messageId,
+                    error: sseData.data,
+                  }, userId).catch(() => {});
+                }
+                await stream.writeSSE({ data: JSON.stringify(sseData) });
               }
-              // Broadcast tool_call / tool_result events so collaborators see tool activity
-              if (sseData.type === "tool_call" || sseData.type === "tool_result") {
-                broadcastToRoom(projectId, {
-                  type: "ai:tool-event",
-                  messageId,
-                  event: sseData.type,
-                  data: (sseData.data ?? {}) as Record<string, unknown>,
-                }, userId).catch(() => {});
-              }
-              // Broadcast status & auto_fix_complete events
-              if (sseData.type === "status" || sseData.type === "auto_fix_complete") {
-                broadcastToRoom(projectId, {
-                  type: "ai:status",
-                  messageId,
-                  data: sseData.data,
-                }, userId).catch(() => {});
-              }
-              // Broadcast errors
-              if (sseData.type === "error") {
-                broadcastToRoom(projectId, {
-                  type: "ai:error",
-                  messageId,
-                  error: sseData.data,
-                }, userId).catch(() => {});
-              }
-              // tool calls are recorded by recordAssistantToolCall from hooks/SSE
-              await stream.writeSSE({ data: JSON.stringify(sseData) });
             }
 
             // Break out of the loop when the SDK signals the SESSION is complete.
@@ -1434,8 +1475,24 @@ ERROR RECOVERY — if you encounter errors:
               "assistant.turn_start", "assistant.turn_end", "permission.requested",
               "permission.completed", "assistant.reasoning", "assistant.message",
               "assistant.streaming_delta", "assistant.reasoning_delta",
+              "external_tool.requested", "external_tool.completed",
             ].includes(evtType)) {
               console.log(`[Chat] Unmapped SDK event: "${evtType}" for ${projectId}`);
+            }
+          }
+
+          // Flush any buffered channel-router content at stream end
+          for (const chunk of channelRouter.flush()) {
+            if (!chunk.content) continue;
+            if (chunk.type === "text") {
+              const cleaned = sanitizeText(chunk.content);
+              if (cleaned) {
+                assistantContent += cleaned;
+                await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
+              }
+            } else {
+              assistantThinking += chunk.content;
+              await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
             }
           }
 
@@ -1542,6 +1599,7 @@ ERROR RECOVERY — if you encounter errors:
                 "session.idle", "done",
               ]);
               const FIX_IDLE_TIMEOUT_MS = 30_000;
+              const FIX_TIMEOUT_SENTINEL = Symbol("fix-timeout");
               const fixStream = fixEngine.sendMessage(
                 sessionId!,
                 buildAutoFixPrompt(previewError.message),
@@ -1551,12 +1609,12 @@ ERROR RECOVERY — if you encounter errors:
               while (!fixDone) {
                 const fixResult = await Promise.race([
                   fixIter.next(),
-                  new Promise<{ done: true; value: undefined }>((resolve) =>
-                    setTimeout(() => resolve({ done: true, value: undefined }), FIX_IDLE_TIMEOUT_MS),
+                  new Promise<{ done: true; value: typeof FIX_TIMEOUT_SENTINEL }>((resolve) =>
+                    setTimeout(() => resolve({ done: true, value: FIX_TIMEOUT_SENTINEL }), FIX_IDLE_TIMEOUT_MS),
                   ),
                 ]);
                 if (fixResult.done) {
-                  if (!fixResult.value) {
+                  if (fixResult.value === FIX_TIMEOUT_SENTINEL) {
                     console.log(`[Chat] Auto-fix generator idle for ${FIX_IDLE_TIMEOUT_MS / 1000}s — forcing exit for ${projectId}`);
                   }
                   fixDone = true;
@@ -2489,11 +2547,114 @@ function sanitizeText(text: string): string {
     result = result.replace(pattern, replacement);
   }
 
-  // 3. Strip model-specific thinking/channel tokens
-  //    Gemma 4 emits <|channel>thought, <channel>, <|channel|>, etc.
-  result = result.replace(/<\|?channel\|?>[^\n]*/g, "");
-
   return result;
+}
+
+/**
+ * Stateful parser for Gemma 4's `<|channel>thought` / `<channel>` markers.
+ *
+ * Gemma 4 emits thinking content inline as:
+ *   <|channel>thought\n...reasoning...\n<channel>\n
+ *
+ * Because streaming delivers tokens one at a time, the markers may be split
+ * across multiple delta events. This class buffers partial markers and routes
+ * content between them as `thinking` instead of `text_delta`.
+ *
+ * Usage: one instance per streaming session.
+ */
+class ChannelTokenRouter {
+  /** True when we're inside a `<|channel>thought` block */
+  private inThinking = false;
+  /** Buffer for potential partial opening/closing markers */
+  private buffer = "";
+
+  // Patterns that open a thinking block (with optional trailing content on same line)
+  private static OPEN_RE = /^<\|?channel\|?>thought\s*/i;
+  // Patterns that close a thinking block
+  private static CLOSE_RE = /^<\|?channel\|?>\s*/i;
+  // Potential start of a marker (for buffering partial tokens)
+  private static PARTIAL_RE = /^<\|?c?h?a?n?n?e?l?\|?>?$/i;
+
+  /**
+   * Process a delta token and return categorized chunks.
+   * Returns array of { type: "text" | "thinking", content: string }
+   */
+  process(delta: string): Array<{ type: "text" | "thinking"; content: string }> {
+    const results: Array<{ type: "text" | "thinking"; content: string }> = [];
+    const input = this.buffer + delta;
+    this.buffer = "";
+
+    // Process input line by line to catch channel markers that may appear at line boundaries
+    let remaining = input;
+
+    while (remaining.length > 0) {
+      if (this.inThinking) {
+        // Inside thinking block — look for closing marker
+        const closeIdx = remaining.search(/<\|?channel\|?>/i);
+        if (closeIdx === -1) {
+          // Check if the end could be the start of a closing marker
+          const trailingMatch = remaining.match(/<\|?c?h?a?n?n?e?l?\|?>?$/i);
+          if (trailingMatch && trailingMatch.index !== undefined) {
+            // Emit content before the potential partial marker
+            const before = remaining.slice(0, trailingMatch.index);
+            if (before) results.push({ type: "thinking", content: before });
+            this.buffer = trailingMatch[0];
+          } else {
+            // All content is thinking
+            if (remaining) results.push({ type: "thinking", content: remaining });
+          }
+          remaining = "";
+        } else {
+          // Found closing marker — emit thinking content before it, then switch back
+          const before = remaining.slice(0, closeIdx);
+          if (before) results.push({ type: "thinking", content: before });
+          // Skip the closing marker itself (find its end)
+          const closeMatch = remaining.slice(closeIdx).match(/<\|?channel\|?>[^\n]*/i);
+          const markerLen = closeMatch ? closeMatch[0].length : 1;
+          remaining = remaining.slice(closeIdx + markerLen);
+          // Skip trailing newline after close marker
+          if (remaining.startsWith("\n")) remaining = remaining.slice(1);
+          this.inThinking = false;
+        }
+      } else {
+        // Outside thinking block — look for opening marker
+        const openIdx = remaining.search(/<\|?channel\|?>thought/i);
+        if (openIdx === -1) {
+          // Check if the end could be the start of an opening marker
+          const trailingMatch = remaining.match(/<\|?c?h?a?n?n?e?l?\|?>?t?h?o?u?g?h?t?$/i);
+          if (trailingMatch && trailingMatch.index !== undefined && trailingMatch[0].startsWith("<")) {
+            const before = remaining.slice(0, trailingMatch.index);
+            if (before) results.push({ type: "text", content: before });
+            this.buffer = trailingMatch[0];
+          } else {
+            if (remaining) results.push({ type: "text", content: remaining });
+          }
+          remaining = "";
+        } else {
+          // Found opening marker — emit text before it, then switch to thinking
+          const before = remaining.slice(0, openIdx);
+          if (before) results.push({ type: "text", content: before });
+          // Skip the opening marker and optional trailing whitespace/newline
+          const openMatch = remaining.slice(openIdx).match(/<\|?channel\|?>thought[^\n]*/i);
+          const markerLen = openMatch ? openMatch[0].length : 1;
+          remaining = remaining.slice(openIdx + markerLen);
+          // Skip trailing newline after open marker
+          if (remaining.startsWith("\n")) remaining = remaining.slice(1);
+          this.inThinking = true;
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /** Flush any buffered content at stream end */
+  flush(): Array<{ type: "text" | "thinking"; content: string }> {
+    if (!this.buffer) return [];
+    const content = this.buffer;
+    this.buffer = "";
+    return [{ type: this.inThinking ? "thinking" : "text", content }];
+  }
 }
 
 function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {

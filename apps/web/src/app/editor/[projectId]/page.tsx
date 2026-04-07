@@ -1016,7 +1016,7 @@ function humanizeThinking(text: string): string {
   if (!text) return "";
   const lower = text.toLowerCase();
   // Filter out technical/system content
-  if (lower.includes("powershell") || lower.includes("bash") || lower.includes("shell")) return "";
+  if (lower.includes("powershell") || lower.includes("bash") || lower.includes("shell")) return "Running commands";
   if (lower.includes("layout") || lower.includes("structure") || lower.includes("page")) return "Planning the layout";
   if (lower.includes("component") || lower.includes("button") || lower.includes("card")) return "Designing components";
   if (lower.includes("style") || lower.includes("css") || lower.includes("tailwind") || lower.includes("color") || lower.includes("font")) return "Styling your design";
@@ -1028,7 +1028,13 @@ function humanizeThinking(text: string): string {
   if (lower.includes("responsive") || lower.includes("mobile") || lower.includes("breakpoint")) return "Making it responsive";
   if (lower.includes("animation") || lower.includes("transition") || lower.includes("motion")) return "Adding animations";
   if (lower.includes("form") || lower.includes("input") || lower.includes("validation")) return "Building form logic";
-  return "";
+  if (lower.includes("import") || lower.includes("require") || lower.includes("module")) return "Setting up imports";
+  if (lower.includes("function") || lower.includes("class") || lower.includes("interface")) return "Writing logic";
+  if (lower.includes("test") || lower.includes("debug")) return "Working on tests";
+  if (lower.includes("file") || lower.includes("create") || lower.includes("write")) return "Creating files";
+  if (lower.includes("read") || lower.includes("analyz") || lower.includes("understand")) return "Analyzing the code";
+  // Fallback: show "Thinking..." for any content we can't categorize
+  return "Thinking...";
 }
 
 /** Shown while AI suggestions load, or if the suggestions API fails */
