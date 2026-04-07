@@ -16,7 +16,7 @@
 
 import { CopilotEngine } from "./copilot.js";
 
-const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — shorter for per-project pool
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;  // 5 minutes — aggressive cleanup for 4GB server
 const MAX_AGE_MS      = 60 * 60 * 1000; // 60 minutes
 const MAX_ENGINES     = 20;              // Hard cap — ~1-2GB at full capacity
 

@@ -1293,6 +1293,19 @@ ERROR RECOVERY — if you encounter errors:
             const evtType = event.type as string;
             const evtData = event.data as Record<string, unknown> | undefined;
 
+            // ── Debug: trace SDK events to diagnose silent model failures ──
+            if (evtType === "session.error" || evtType === "session.idle" || evtType === "done") {
+              console.log(`[Chat][${projectId.slice(0, 8)}] terminal event: ${evtType}`, evtData ? JSON.stringify(evtData).slice(0, 300) : "");
+            } else if (evtType === "assistant.message_delta" || evtType === "assistant.streaming_delta") {
+              // Only log once per message to avoid flooding
+              const deltaMessageId = evtData?.messageId as string | undefined;
+              if (deltaMessageId && deltaMessageId !== lastCapturedMsgId) {
+                console.log(`[Chat][${projectId.slice(0, 8)}] first delta for msg ${deltaMessageId?.slice(0, 8)}`);
+              }
+            } else if (evtType.startsWith("tool.") || evtType === "tool_call") {
+              console.log(`[Chat][${projectId.slice(0, 8)}] ${evtType}: ${(evtData?.toolName ?? evtData?.name ?? "").toString().slice(0, 50)}`);
+            }
+
             // Feed every event to the usage collector (no-op for non-usage events)
             if (usageCollector) usageCollector.onUsageEvent(event);
 
@@ -1514,6 +1527,9 @@ ERROR RECOVERY — if you encounter errors:
               await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
             }
           }
+
+          // ── Debug: stream summary ──
+          console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${assistantContent.length} chars, thinking: ${assistantThinking.length} chars, toolCalls: ${hadToolCalls}, tools: ${assistantToolCalls.length}`);
 
           // If the loop exited (via timeout or terminal event) with pending
           // tool_calls that never got a tool_result, flush synthetic results

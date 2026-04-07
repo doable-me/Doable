@@ -42,6 +42,7 @@ import { planRoutes } from "./routes/plan.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 import { getConnectorManager } from "./mcp/connector-manager.js";
+import { getCopilotManager } from "./ai/providers/copilot-manager.js";
 import { getOAuthRedirectUri } from "./integrations/oauth2.js";
 
 // ─── Visual Edit Bridge Script ───────────────────────────────
@@ -68,7 +69,12 @@ const apiRateLimiter = rateLimiter({
 });
 
 // ─── Global Middleware ──────────────────────────────────────
-app.use("*", logger());
+// Custom logger that suppresses high-frequency polling endpoints
+const QUIET_PATHS = ["/admin/copilot-sessions", "/analytics/track"];
+app.use("*", async (c, next) => {
+  if (QUIET_PATHS.some((p) => c.req.path === p)) return next();
+  return logger()(c, next);
+});
 app.use("*", timing());
 
 // Secure headers for all routes EXCEPT /preview/* and /thumbnails/* —
@@ -274,9 +280,12 @@ server.on("upgrade", (req, socket, head) => {
 process.on("SIGTERM", async () => {
   console.log("[Server] SIGTERM received, shutting down...");
   try {
-    await getConnectorManager().shutdown();
+    await Promise.all([
+      getConnectorManager().shutdown(),
+      getCopilotManager().stopAll(),
+    ]);
   } catch (err) {
-    console.error("[Server] Error during MCP shutdown:", err);
+    console.error("[Server] Error during shutdown:", err);
   }
   process.exit(0);
 });
