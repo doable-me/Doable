@@ -1543,7 +1543,22 @@ ERROR RECOVERY — if you encounter errors:
             try {
               const retryStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
               const retryRouter = new ChannelTokenRouter();
-              for await (const retryEvent of retryStream) {
+              const RETRY_TIMEOUT_MS = 30_000; // 30s max for retry
+              const retryIterator = retryStream[Symbol.asyncIterator]();
+              let retryDone = false;
+              while (!retryDone) {
+                const retryRace = await Promise.race([
+                  retryIterator.next(),
+                  new Promise<{ done: true; value: "retry-timeout" }>((r) =>
+                    setTimeout(() => r({ done: true, value: "retry-timeout" }), RETRY_TIMEOUT_MS),
+                  ),
+                ]);
+                if (retryRace.done) {
+                  if (retryRace.value === "retry-timeout") console.warn(`[Chat][${projectId.slice(0, 8)}] retry timed out after ${RETRY_TIMEOUT_MS / 1000}s`);
+                  retryDone = true;
+                  break;
+                }
+                const retryEvent = retryRace.value;
                 const rType = (retryEvent as Record<string, unknown>).type as string;
                 const rData = (retryEvent as Record<string, unknown>).data as Record<string, unknown> | undefined;
                 if (usageCollector) usageCollector.onUsageEvent(retryEvent);
@@ -1572,7 +1587,7 @@ ERROR RECOVERY — if you encounter errors:
                   if (retrySseData.type === "tool_call" || retrySseData.type === "tool_result") hadToolCalls = true;
                   await stream.writeSSE({ data: JSON.stringify(retrySseData) });
                 }
-                if (rType === "session.idle" || rType === "done") break;
+                if (rType === "session.idle" || rType === "done") { retryDone = true; break; }
               }
               for (const chunk of retryRouter.flush()) {
                 if (!chunk.content) continue;
