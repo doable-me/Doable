@@ -156,12 +156,17 @@ export function ConnectFlow({
     if (!item || !onGetEnhancedAuthUrl) return;
     setLoading(true);
     setError(null);
+    // Opened synchronously below so the popup blocker treats it as a user
+    // gesture; tracked here so the catch path can close it if the async
+    // fetch for the authorization URL fails (otherwise the user is stranded
+    // with a blank about:blank popup and no visible error).
+    let popup: Window | null = null;
     try {
       const width = 600;
       const height = 700;
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
-      const popup = window.open(
+      popup = window.open(
         "about:blank",
         "doable-enhanced-auth",
         `width=${width},height=${height},left=${left},top=${top},popup=1`
@@ -177,13 +182,16 @@ export function ConnectFlow({
       popup.location.href = url;
 
       const pollTimer = setInterval(() => {
-        if (popup.closed) {
+        if (popup!.closed) {
           clearInterval(pollTimer);
           setLoading(false);
           onOpenChange(false);
         }
       }, 500);
     } catch (err) {
+      // Close the blank popup so the user isn't stranded staring at
+      // about:blank while the error sits hidden behind it in the modal.
+      try { popup?.close(); } catch { /* popup may already be closed */ }
       const msg = err instanceof Error ? err.message : "Failed to start enhanced auth";
       if (msg.includes("not configured") || msg.includes("CLIENT_ID") || msg.includes("OAuth")) {
         setError(`Enhanced auth is not set up for ${item.displayName} yet. You can still connect manually below.`);
