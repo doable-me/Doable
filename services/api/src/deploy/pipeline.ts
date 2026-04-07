@@ -122,7 +122,14 @@ export async function runPipeline(
 
     const buildStart = Date.now();
     const projectDir = path.join(PROJECTS_ROOT, projectId);
-    const buildResult = await runBuild(projectDir, onBuildLog, { projectId, target: environment as "development" | "preview" | "production" });
+    // Pass userId so the build env picks up vault-backed integration
+    // credentials for the deploying user (Phase 1C/1D of the integration↔AI
+    // chat bridge). User env_vars still override vault values on collision.
+    const buildResult = await runBuild(projectDir, onBuildLog, {
+      projectId,
+      target: environment as "development" | "preview" | "production",
+      userId,
+    });
     const buildTimeMs = Date.now() - buildStart;
 
     if (!buildResult.success) {

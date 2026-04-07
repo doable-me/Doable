@@ -127,6 +127,20 @@ function buildArgs(pm: PackageManager, packages: string[], isDev: boolean): stri
   }
 }
 
+/**
+ * Spawn the package manager to install the requested packages.
+ *
+ * Note (Phase 1D of integration↔AI chat bridge): vault-backed integration env
+ * vars are intentionally NOT injected here. All three supported package
+ * managers run with `--ignore-scripts` (see `buildArgs` above), which disables
+ * postinstall lifecycle scripts entirely. Postinstall scripts are the only
+ * thing that would consume env vars during install, so threading vault
+ * credentials through this path would buy nothing while expanding the surface
+ * area where decrypted secrets live in process memory. The Vite dev server
+ * (which actually consumes those env vars at runtime) gets restarted right
+ * after install completes — see the `restartDevServer` call above — and that
+ * spawn picks up the vault env via the normal `startDevServer` path.
+ */
 function runInstall(
   pm: string,
   args: string[],
