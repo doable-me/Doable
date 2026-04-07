@@ -795,12 +795,30 @@ integrationRoutes.post("/integrations/enhanced-auth/:id/complete", async (c) => 
 
     deleteEnhancedAuthSession(sessionKey);
 
+    // postMessage the success back to the opener BEFORE calling window.close.
+    // COOP and some browsers strip the parent's popup reference after a
+    // cross-origin round-trip, so the parent's setInterval(popup.closed) poll
+    // can hang forever or fire after an arbitrary delay. postMessage works
+    // cross-origin and lets the parent refresh its catalog immediately.
+    const safeDisplayName = result.displayName.replace(/["<>\\]/g, "");
     return c.html(`<!DOCTYPE html><html><head><title>Connected</title></head><body>
       <p style="font-family:sans-serif;padding:40px;text-align:center;color:#eee;background:#0d0d1a;">
         Connected <strong>${result.displayName}</strong> successfully!<br/>
         This window will close automatically.
       </p>
-      <script>window.close();</script>
+      <script>
+        try {
+          if (window.opener) {
+            window.opener.postMessage({
+              type: "doable:enhanced-auth-complete",
+              integrationId: ${JSON.stringify(integrationId)},
+              displayName: ${JSON.stringify(safeDisplayName)},
+              status: "success"
+            }, "*");
+          }
+        } catch (e) { /* opener may be gone */ }
+        window.close();
+      </script>
     </body></html>`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -809,6 +827,18 @@ integrationRoutes.post("/integrations/enhanced-auth/:id/complete", async (c) => 
         Connection failed: ${msg.replace(/</g, "&lt;")}
       </p>
       <p><a href="javascript:window.close()">Close this window</a></p>
+      <script>
+        try {
+          if (window.opener) {
+            window.opener.postMessage({
+              type: "doable:enhanced-auth-complete",
+              integrationId: ${JSON.stringify(integrationId)},
+              status: "error",
+              error: ${JSON.stringify(msg.slice(0, 300))}
+            }, "*");
+          }
+        } catch (e) { /* opener may be gone */ }
+      </script>
     </body></html>`, 400);
   }
 });
