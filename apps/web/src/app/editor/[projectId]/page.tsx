@@ -1875,16 +1875,34 @@ export default function EditorPage() {
                   isRemote: true,
                 };
               }
+              // Extract <think>...</think> tags from stored content into thinkingContent
+              let displayContent = m.content || "";
+              let thinkingFromContent = "";
+              const thinkRegex = /<think>([\s\S]*?)<\/think>/gi;
+              let thinkMatch;
+              while ((thinkMatch = thinkRegex.exec(displayContent)) !== null) {
+                thinkingFromContent += thinkMatch[1].trim() + "\n";
+              }
+              displayContent = displayContent.replace(thinkRegex, "").trim();
+              // Also strip <|channel>thought...<channel> markers
+              const channelRegex = /<\|?channel\|?>thought([\s\S]*?)<\|?channel\|?>/gi;
+              let channelMatch;
+              while ((channelMatch = channelRegex.exec(displayContent)) !== null) {
+                thinkingFromContent += channelMatch[1].trim() + "\n";
+              }
+              displayContent = displayContent.replace(channelRegex, "").trim();
+              const thinkingContent = m.thinking_content || thinkingFromContent.trim() || undefined;
+
               return {
                 id: m.id,
                 role: m.role as "user" | "assistant",
-                content: m.content || "",
+                content: displayContent,
                 timestamp: new Date(m.created_at).toLocaleTimeString([], {
                   hour: "numeric",
                   minute: "2-digit",
                 }),
                 isStreaming: false,
-                thinkingContent: m.thinking_content || undefined,
+                thinkingContent,
                 toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
                   ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => ({
                       id: `hist-${m.id}-${i}`,
