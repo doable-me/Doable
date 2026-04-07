@@ -1272,6 +1272,15 @@ ERROR RECOVERY — if you encounter errors:
             const evtType = event.type as string;
             const evtData = event.data as Record<string, unknown> | undefined;
 
+            // ── DEBUG: log every SDK event type + data keys for diagnosis ──
+            {
+              const dataKeys = evtData ? Object.keys(evtData).join(",") : "no-data";
+              const preview = evtData
+                ? JSON.stringify(evtData).slice(0, 200)
+                : "";
+              console.log(`[Chat][SDK-EVT] ${evtType} keys=[${dataKeys}] ${preview}`);
+            }
+
             // Feed every event to the usage collector (no-op for non-usage events)
             if (usageCollector) usageCollector.onUsageEvent(event);
 
