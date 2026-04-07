@@ -1189,11 +1189,15 @@ ERROR RECOVERY — if you encounter errors:
             // Send an immediate status so the frontend exits "Connecting to AI..."
             // before the model responds (BYOK providers can take 30s+ to first token).
             await stream.writeSSE({
-              data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "AI is thinking..." } }),
+              data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "Waiting for AI model to respond..." } }),
             });
             // Force the generator to yield once — "Session not found" throws here
             // because async generators are lazy (the body doesn't run until iterated).
             const first = await originalStream.next();
+            // Once we get the first event, update status to show the model is actively generating.
+            await stream.writeSSE({
+              data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "AI is writing code..." } }),
+            });
             // Wrap in a helper that re-yields the first value then continues.
             // IMPORTANT: use `originalStream` — not `messageStream` — to avoid
             // self-delegation after the reassignment below.
