@@ -920,9 +920,9 @@ function StepModels({
 
       {/* Model list */}
       <div className="space-y-1.5">
-        {displayModels.map((model) => (
+        {displayModels.map((model, index) => (
           <div
-            key={model.id}
+            key={`${model.id}-${index}`}
             className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
               model.selected
                 ? "border-zinc-700 bg-zinc-800/80"
