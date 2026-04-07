@@ -686,6 +686,7 @@ chatRoutes.post(
     let hadToolCalls = false;
     let versionSha: string | undefined;
     const pendingToolNames: string[] = [];
+    const toolCallIdMap = new Map<string, string>(); // toolCallId → toolName
     let assistantContent = "";
     let assistantThinking = "";
     let lastCapturedMsgId: string | undefined;
@@ -1272,15 +1273,6 @@ ERROR RECOVERY — if you encounter errors:
             const evtType = event.type as string;
             const evtData = event.data as Record<string, unknown> | undefined;
 
-            // ── DEBUG: log every SDK event type + data keys for diagnosis ──
-            {
-              const dataKeys = evtData ? Object.keys(evtData).join(",") : "no-data";
-              const preview = evtData
-                ? JSON.stringify(evtData).slice(0, 200)
-                : "";
-              console.log(`[Chat][SDK-EVT] ${evtType} keys=[${dataKeys}] ${preview}`);
-            }
-
             // Feed every event to the usage collector (no-op for non-usage events)
             if (usageCollector) usageCollector.onUsageEvent(event);
 
@@ -1331,6 +1323,13 @@ ERROR RECOVERY — if you encounter errors:
 
             const sseData = mapEventToSSE(event);
             if (sseData) {
+              // Track toolCallId → toolName for proper pairing
+              if (evtType === "tool.execution_start" || evtType === "tool.running") {
+                const tcId = evtData?.toolCallId as string | undefined;
+                const tcName = evtData?.toolName as string | undefined;
+                if (tcId && tcName) toolCallIdMap.set(tcId, tcName);
+              }
+
               // When a tool_call is emitted, record the name for pairing
               if (sseData.type === "tool_call") {
                 const toolData = sseData.data as Record<string, unknown>;
@@ -1339,12 +1338,23 @@ ERROR RECOVERY — if you encounter errors:
                   recordAssistantToolCall(toolData.name as string, toolData?.arguments);
                 }
               }
-              // When a tool_result is emitted, inject the name from the queue
+              // When a tool_result is emitted, inject the name from the map or queue
               if (sseData.type === "tool_result") {
                 hadToolCalls = true;
                 const resultData = sseData.data as Record<string, unknown>;
-                if (!resultData?.name && pendingToolNames.length > 0) {
-                  resultData.name = pendingToolNames.shift();
+                if (!resultData?.name) {
+                  // Try toolCallId-based lookup first (more accurate than queue)
+                  const tcId = evtData?.toolCallId as string | undefined;
+                  const mappedName = tcId ? toolCallIdMap.get(tcId) : undefined;
+                  if (mappedName) {
+                    resultData.name = mappedName;
+                    toolCallIdMap.delete(tcId!);
+                    // Also remove from pendingToolNames queue
+                    const idx = pendingToolNames.indexOf(mappedName);
+                    if (idx !== -1) pendingToolNames.splice(idx, 1);
+                  } else if (pendingToolNames.length > 0) {
+                    resultData.name = pendingToolNames.shift();
+                  }
                 }
               }
               // Accumulate assistant content for DB persistence
@@ -2479,6 +2489,10 @@ function sanitizeText(text: string): string {
     result = result.replace(pattern, replacement);
   }
 
+  // 3. Strip model-specific thinking/channel tokens
+  //    Gemma 4 emits <|channel>thought, <channel>, <|channel|>, etc.
+  result = result.replace(/<\|?channel\|?>[^\n]*/g, "");
+
   return result;
 }
 
@@ -2551,21 +2565,10 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
         },
       };
     }
-    case "external_tool.requested": {
-      const toolName = (data?.toolName ?? data?.name ?? data?.tool_name) as string | undefined;
-      const toolArgs = data?.arguments as Record<string, unknown> | undefined;
-      const safeArgs = toolArgs ? { ...toolArgs } : undefined;
-      if (safeArgs) {
-        delete safeArgs.content;
-      }
-      return {
-        type: "tool_call",
-        data: {
-          name: toolName,
-          friendlyMessage: toolName ? friendlyToolMessage(toolName, toolArgs) : undefined,
-        },
-      };
-    }
+    // external_tool.requested is a duplicate of tool.execution_start — skip to
+    // avoid double tool_call SSE events that confuse frontend pairing.
+    case "external_tool.requested":
+      return null;
 
     // ─── Tool results (completed) ─────────────────────────
     case "tool.completed":
@@ -2580,17 +2583,10 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
         },
       };
     }
-    case "external_tool.completed": {
-      const extToolName = (data?.toolName ?? data?.name ?? data?.tool_name) as string;
-      return {
-        type: "tool_result",
-        data: {
-          name: extToolName,
-          success: data?.success ?? true,
-          friendlyMessage: friendlyToolResult(extToolName, data?.result, data?.success ?? true),
-        },
-      };
-    }
+    // external_tool.completed is a duplicate of tool.execution_complete — skip
+    // to avoid double tool_result SSE events.
+    case "external_tool.completed":
+      return null;
 
     // ─── Errors ───────────────────────────────────────────
     case "session.error":
