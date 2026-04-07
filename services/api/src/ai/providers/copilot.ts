@@ -276,6 +276,9 @@ export class CopilotEngine {
       eventQueue.push(event);
 
       if (event.type === "session.idle" || event.type === "session.error") {
+        if (event.type === "session.error") {
+          console.error(`[CopilotEngine] session.error event (${sessionId.slice(0, 8)}…):`, JSON.stringify(event.data));
+        }
         done = true;
       }
 

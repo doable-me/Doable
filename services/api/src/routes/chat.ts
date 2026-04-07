@@ -966,7 +966,7 @@ ERROR RECOVERY — if you encounter errors:
           }
         },
         onSessionEnd: (reason: string, error?: string) => {
-          if (error) console.error(`[Chat] Session ended: ${reason} — ${error}`);
+          if (error) console.error(`[Chat] Session ended: ${reason} —`, typeof error === 'object' ? JSON.stringify(error) : error);
         },
         onError: (error: string, context: string) => {
           console.error(`[Chat] Hook error (${context}): ${error}`);
