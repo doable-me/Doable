@@ -100,9 +100,13 @@ export function useChat(
             const current = useEditorStore.getState().messages.find(
               (m) => m.id === assistantId
             );
+            const preview = (chunk || "").replace(/\s+/g, " ").trim();
+            const statusText = preview.length <= 80
+              ? preview
+              : preview.slice(0, 77).replace(/\s+\S*$/, "") + "\u2026";
             updateMessageFields(assistantId, {
               thinkingContent: (current?.thinkingContent ?? "") + chunk,
-              liveStatus: "thinking",
+              liveStatus: statusText || "thinking",
             });
           } else {
             // Accumulate text content
@@ -269,9 +273,14 @@ export function useChat(
                 } else if (parsed.type === "thinking") {
                   const text = typeof parsed.data === "string" ? parsed.data : "";
                   thinkingAccumulated += text;
+                  // Show a short preview of actual thinking in the live status
+                  const preview = text.replace(/\s+/g, " ").trim();
+                  const statusText = preview.length <= 80
+                    ? preview
+                    : preview.slice(0, 77).replace(/\s+\S*$/, "") + "\u2026";
                   updateMessageFields(assistantId, {
                     thinkingContent: thinkingAccumulated,
-                    liveStatus: "thinking",
+                    liveStatus: statusText || "thinking",
                   });
                 } else if (parsed.type === "tool_call") {
                   const friendly =

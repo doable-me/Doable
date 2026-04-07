@@ -510,11 +510,6 @@ async function streamChat(
             const d = parsed.data as Record<string, unknown> | undefined;
             const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
             const toolArgs = (d?.arguments as Record<string, unknown>) ?? {};
-            // Use backend's human-friendly message if available
-            const friendly = (d?.friendlyMessage as string) ?? "";
-            if (friendly && onThinking) {
-              onThinking(friendly);
-            }
             if (toolName) {
               pendingToolNames.push(toolName);
               onToolStarted(toolName, toolArgs);
@@ -696,8 +691,6 @@ function processOneSSEPayload(
       const d = parsed.data as Record<string, unknown> | undefined;
       const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
       const toolArgs = (d?.arguments as Record<string, unknown>) ?? {};
-      const friendly = (d?.friendlyMessage as string) ?? "";
-      if (friendly && cb.onThinking) cb.onThinking(friendly);
       if (toolName) {
         pendingToolNames.push(toolName);
         cb.onToolStarted(toolName, toolArgs);
@@ -1014,27 +1007,13 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
 /** Convert AI thinking text into a short, human-friendly status message */
 function humanizeThinking(text: string): string {
   if (!text) return "";
-  const lower = text.toLowerCase();
-  // Filter out technical/system content
-  if (lower.includes("powershell") || lower.includes("bash") || lower.includes("shell")) return "Running commands";
-  if (lower.includes("layout") || lower.includes("structure") || lower.includes("page")) return "Planning the layout";
-  if (lower.includes("component") || lower.includes("button") || lower.includes("card")) return "Designing components";
-  if (lower.includes("style") || lower.includes("css") || lower.includes("tailwind") || lower.includes("color") || lower.includes("font")) return "Styling your design";
-  if (lower.includes("api") || lower.includes("fetch") || lower.includes("data") || lower.includes("state")) return "Setting up data flow";
-  if (lower.includes("install") || lower.includes("package") || lower.includes("dependency") || lower.includes("npm")) return "Setting up dependencies";
-  if (lower.includes("route") || lower.includes("navigation") || lower.includes("link")) return "Configuring navigation";
-  if (lower.includes("fix") || lower.includes("error") || lower.includes("bug") || lower.includes("issue")) return "Fixing an issue";
-  if (lower.includes("image") || lower.includes("icon") || lower.includes("asset")) return "Adding visual elements";
-  if (lower.includes("responsive") || lower.includes("mobile") || lower.includes("breakpoint")) return "Making it responsive";
-  if (lower.includes("animation") || lower.includes("transition") || lower.includes("motion")) return "Adding animations";
-  if (lower.includes("form") || lower.includes("input") || lower.includes("validation")) return "Building form logic";
-  if (lower.includes("import") || lower.includes("require") || lower.includes("module")) return "Setting up imports";
-  if (lower.includes("function") || lower.includes("class") || lower.includes("interface")) return "Writing logic";
-  if (lower.includes("test") || lower.includes("debug")) return "Working on tests";
-  if (lower.includes("file") || lower.includes("create") || lower.includes("write")) return "Creating files";
-  if (lower.includes("read") || lower.includes("analyz") || lower.includes("understand")) return "Analyzing the code";
-  // Fallback: show "Thinking..." for any content we can't categorize
-  return "Thinking...";
+  // Show a short preview of the actual thinking text for the live status
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= 80) return clean;
+  // Truncate at a word boundary
+  const truncated = clean.slice(0, 77);
+  const lastSpace = truncated.lastIndexOf(" ");
+  return (lastSpace > 40 ? truncated.slice(0, lastSpace) : truncated) + "\u2026";
 }
 
 /** Shown while AI suggestions load, or if the suggestions API fails */

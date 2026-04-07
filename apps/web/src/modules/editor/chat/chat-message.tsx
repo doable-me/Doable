@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useState, useMemo } from "react";
+import { memo, useCallback, useState, useMemo, useRef, useEffect } from "react";
 import { Bot, User, Copy, Check, Loader2, Brain, Wrench, ListChecks, Undo2 } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "../hooks/use-editor-store";
 import { useEditorStore } from "../hooks/use-editor-store";
@@ -139,12 +139,17 @@ function ToolActivitySummary({ toolCalls }: { toolCalls: Array<{ name: string; a
 function StreamingStatus({ status }: { status?: string }) {
   if (!status) return null;
 
-  // Parse status — format is "type:friendly message" or just "type"
+  // Known prefixed formats: "type:friendly message"
+  const KNOWN_PREFIXES = new Set(["plan", "tool_call", "tool_result", "status"]);
   const colonIdx = status.indexOf(":");
-  const statusType = colonIdx > 0 ? status.slice(0, colonIdx) : status;
-  const friendlyMsg = colonIdx > 0 ? status.slice(colonIdx + 1) : "";
+  const maybeType = colonIdx > 0 ? status.slice(0, colonIdx) : "";
+  const isPrefixed = KNOWN_PREFIXES.has(maybeType);
 
-  const isThinking = statusType === "thinking";
+  const statusType = isPrefixed ? maybeType : "";
+  const friendlyMsg = isPrefixed ? status.slice(colonIdx + 1) : "";
+
+  // If it's literally "thinking" (old format) or unprefixed text, treat as thinking
+  const isThinking = status === "thinking" || (!isPrefixed && statusType === "");
   const isPlan = statusType === "plan";
   const isToolCall = statusType === "tool_call";
   const isToolResult = statusType === "tool_result";
@@ -162,7 +167,7 @@ function StreamingStatus({ status }: { status?: string }) {
   );
 
   const label = isThinking
-    ? "Thinking\u2026"
+    ? (status === "thinking" ? "Thinking\u2026" : status)
     : isPlan
       ? friendlyMsg || "Planning\u2026"
       : isToolCall
@@ -181,6 +186,66 @@ function StreamingStatus({ status }: { status?: string }) {
   );
 }
 
+// ─── Thinking Section (live-streaming, auto-scroll) ─────────
+function ThinkingSection({ content, isStreaming }: { content: string; isStreaming: boolean }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(isStreaming);
+  const wasStreamingRef = useRef(isStreaming);
+
+  // Auto-open when streaming starts
+  useEffect(() => {
+    if (isStreaming && !wasStreamingRef.current) setIsOpen(true);
+    wasStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
+  // Auto-scroll to bottom as new content streams in
+  useEffect(() => {
+    if (isOpen && isStreaming && scrollRef.current) {
+      const el = scrollRef.current;
+      // Only auto-scroll if user hasn't scrolled up manually
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      if (isNearBottom) {
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+  }, [content, isOpen, isStreaming]);
+
+  return (
+    <div className="mb-2 rounded-md border border-border/50 bg-muted/20 text-xs">
+      <button
+        type="button"
+        onClick={() => setIsOpen((p) => !p)}
+        className="w-full cursor-pointer select-none px-2.5 py-1.5 text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+      >
+        <Brain className={`h-3 w-3 text-brand-400 ${isStreaming ? "animate-pulse" : ""}`} />
+        <span className="flex-1 text-left">
+          {isStreaming ? "Thinking\u2026" : "Thought process"}
+        </span>
+        <svg
+          className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div
+          ref={scrollRef}
+          className="px-2.5 pb-2 text-muted-foreground/80 whitespace-pre-wrap max-h-72 overflow-y-auto text-[11px] leading-relaxed scroll-smooth"
+        >
+          {content}
+          {isStreaming && (
+            <span className="inline-block w-1.5 h-3 bg-brand-400/60 animate-pulse ml-0.5 align-text-bottom rounded-sm" />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Message Component ──────────────────────────────────────
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -190,8 +255,9 @@ export const ChatMessage = memo(function ChatMessage({
   message,
 }: ChatMessageProps) {
   const isUser = message.role === "user";
-  const isWaiting = message.isStreaming && !message.content;
-  const isActivelyStreaming = message.isStreaming && !!message.content;
+  const hasThinking = !!message.thinkingContent;
+  const isWaiting = message.isStreaming && !message.content && !hasThinking;
+  const isActivelyStreaming = message.isStreaming && !!(message.content || hasThinking);
   const [undoing, setUndoing] = useState(false);
   const { projectId, updateMessageFields } = useEditorStore();
 
@@ -258,7 +324,7 @@ export const ChatMessage = memo(function ChatMessage({
               minute: "2-digit",
             })}
           </span>
-          {isActivelyStreaming && (
+          {(isActivelyStreaming || (message.isStreaming && hasThinking)) && (
             <Loader2 className="h-3 w-3 animate-spin text-brand-500" />
           )}
         </div>
@@ -268,17 +334,9 @@ export const ChatMessage = memo(function ChatMessage({
           <MessageAttachments attachments={message.attachments} />
         )}
 
-        {/* Thinking content — show inline when AI is thinking */}
-        {message.thinkingContent && message.isStreaming && (
-          <details className="mb-2 rounded-md border border-border/50 bg-muted/20 text-xs">
-            <summary className="cursor-pointer select-none px-2.5 py-1.5 text-muted-foreground hover:text-foreground flex items-center gap-1.5">
-              <Brain className="h-3 w-3 text-brand-400 animate-pulse" />
-              Thinking...
-            </summary>
-            <div className="px-2.5 pb-2 text-muted-foreground/70 whitespace-pre-wrap max-h-32 overflow-y-auto text-[11px] leading-relaxed">
-              {message.thinkingContent}
-            </div>
-          </details>
+        {/* Thinking content — live-streaming with auto-scroll */}
+        {message.thinkingContent && (
+          <ThinkingSection content={message.thinkingContent} isStreaming={!!message.isStreaming} />
         )}
 
         {/* Live status indicator */}
