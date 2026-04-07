@@ -2533,8 +2533,21 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
         },
       };
     }
-    case "external_tool.requested":
-      return null; // Skip — duplicate of tool.execution_start
+    case "external_tool.requested": {
+      const toolName = (data?.toolName ?? data?.name ?? data?.tool_name) as string | undefined;
+      const toolArgs = data?.arguments as Record<string, unknown> | undefined;
+      const safeArgs = toolArgs ? { ...toolArgs } : undefined;
+      if (safeArgs) {
+        delete safeArgs.content;
+      }
+      return {
+        type: "tool_call",
+        data: {
+          name: toolName,
+          friendlyMessage: toolName ? friendlyToolMessage(toolName, toolArgs) : undefined,
+        },
+      };
+    }
 
     // ─── Tool results (completed) ─────────────────────────
     case "tool.completed":
@@ -2549,8 +2562,17 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
         },
       };
     }
-    case "external_tool.completed":
-      return null; // Skip — duplicate of tool.execution_complete
+    case "external_tool.completed": {
+      const extToolName = (data?.toolName ?? data?.name ?? data?.tool_name) as string;
+      return {
+        type: "tool_result",
+        data: {
+          name: extToolName,
+          success: data?.success ?? true,
+          friendlyMessage: friendlyToolResult(extToolName, data?.result, data?.success ?? true),
+        },
+      };
+    }
 
     // ─── Errors ───────────────────────────────────────────
     case "session.error":
