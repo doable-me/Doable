@@ -361,6 +361,37 @@ aiSettingsRoutes.post("/:workspaceId/ai-settings/providers/:id/validate", async 
     console.error("[AI Settings] Failed to update health status:", dbErr);
   }
 
+  // Auto-save discovered models to ai_provider_models table
+  if (result.ok && result.models && result.models.length > 0) {
+    try {
+      for (const model of result.models) {
+        await sql`
+          INSERT INTO ai_provider_models (provider_id, model_id, display_name, context_window, supports_tools, supports_vision)
+          VALUES (
+            ${providerId},
+            ${model.id},
+            ${model.name ?? null},
+            ${model.contextWindow ?? null},
+            ${model.capabilities?.tools ?? true},
+            ${model.capabilities?.vision ?? false}
+          )
+          ON CONFLICT (provider_id, model_id) DO UPDATE SET
+            display_name = EXCLUDED.display_name,
+            context_window = EXCLUDED.context_window,
+            supports_tools = EXCLUDED.supports_tools,
+            supports_vision = EXCLUDED.supports_vision
+        `;
+      }
+      await sql`
+        UPDATE ai_providers
+        SET models_cache = ${JSON.stringify({ models: result.models, discoveredAt: new Date().toISOString() })}::jsonb
+        WHERE id = ${providerId}
+      `;
+    } catch (dbErr) {
+      console.error("[AI Settings] Failed to save discovered models:", dbErr);
+    }
+  }
+
   return c.json({
     data: {
       valid: result.ok,

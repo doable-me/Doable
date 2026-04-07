@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type {
   ApiGitHubCopilotAccount,
   ApiAiProvider,
@@ -22,6 +22,7 @@ import {
   Eye,
   Wrench,
   Info,
+  RefreshCw,
 } from "lucide-react";
 import { ProviderWizard } from "./provider-wizard";
 
@@ -124,6 +125,9 @@ interface ProviderModelInfo {
 function useProviderModels(workspaceId: string | null, providerId: string) {
   const [models, setModels] = useState<ProviderModelInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     if (!workspaceId || !providerId) {
@@ -134,10 +138,32 @@ function useProviderModels(workspaceId: string | null, providerId: string) {
     setLoading(true);
     (async () => {
       try {
+        // First try cached models
         const res = await apiFetch<{
           data: { models: ProviderModelInfo[]; cachedAt: string | null };
         }>(`/workspaces/${workspaceId}/ai-settings/providers/${providerId}/models`);
-        if (!cancelled) setModels(res.data?.models ?? []);
+        const cached = res.data?.models ?? [];
+
+        if (cached.length > 0) {
+          if (!cancelled) setModels(cached);
+        } else {
+          // No cached models — trigger discovery
+          try {
+            const disc = await apiFetch<{ data: ProviderModelInfo[] }>(
+              `/workspaces/${workspaceId}/ai-settings/providers/${providerId}/discover-models`,
+              { method: "POST" },
+            );
+            if (!cancelled) setModels((disc.data ?? []).map((m: Record<string, unknown>) => ({
+              id: (m as ProviderModelInfo).id,
+              name: (m as ProviderModelInfo).name ?? null,
+              contextWindow: (m as ProviderModelInfo).contextWindow ?? null,
+              supportsTools: (m as ProviderModelInfo).supportsTools ?? true,
+              supportsVision: (m as ProviderModelInfo).supportsVision ?? false,
+            })));
+          } catch {
+            if (!cancelled) setModels([]);
+          }
+        }
       } catch {
         if (!cancelled) setModels([]);
       } finally {
@@ -145,9 +171,9 @@ function useProviderModels(workspaceId: string | null, providerId: string) {
       }
     })();
     return () => { cancelled = true; };
-  }, [workspaceId, providerId]);
+  }, [workspaceId, providerId, refreshKey]);
 
-  return { models, loading };
+  return { models, loading, refresh };
 }
 
 // ─── Types ──────────────────────────────────────────────────
@@ -214,6 +240,7 @@ function InlineConfigFields({
   workspaceId,
   providerModels,
   providerModelsLoading,
+  onRefreshModels,
   onAddProviderClick,
 }: {
   state: ModelSectionState;
@@ -224,6 +251,7 @@ function InlineConfigFields({
   workspaceId: string | null;
   providerModels: ProviderModelInfo[];
   providerModelsLoading: boolean;
+  onRefreshModels?: () => void;
   onAddProviderClick?: () => void;
 }) {
   const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -480,6 +508,7 @@ function ModelSection({
   workspaceId,
   providerModels,
   providerModelsLoading,
+  onRefreshModels,
   onAddProviderClick,
 }: {
   title: string;
@@ -494,6 +523,7 @@ function ModelSection({
   workspaceId: string | null;
   providerModels: ProviderModelInfo[];
   providerModelsLoading: boolean;
+  onRefreshModels?: () => void;
   onAddProviderClick?: () => void;
 }) {
   return (
@@ -521,6 +551,7 @@ function ModelSection({
         workspaceId={workspaceId}
         providerModels={providerModels}
         providerModelsLoading={providerModelsLoading}
+        onRefreshModels={onRefreshModels}
         onAddProviderClick={onAddProviderClick}
       />
     </div>
@@ -557,8 +588,8 @@ export function ModelConfigTab({
   // ── Provider models per workspace section ──
   const primaryCustomProviderId = primary.source === "custom" ? primary.providerId : "";
   const suggestionCustomProviderId = suggestions.source === "custom" ? suggestions.providerId : "";
-  const { models: primaryProviderModels, loading: primaryProviderModelsLoading } = useProviderModels(workspaceId, primaryCustomProviderId);
-  const { models: suggestionProviderModels, loading: suggestionProviderModelsLoading } = useProviderModels(workspaceId, suggestionCustomProviderId);
+  const { models: primaryProviderModels, loading: primaryProviderModelsLoading, refresh: refreshPrimaryModels } = useProviderModels(workspaceId, primaryCustomProviderId);
+  const { models: suggestionProviderModels, loading: suggestionProviderModelsLoading, refresh: refreshSuggestionModels } = useProviderModels(workspaceId, suggestionCustomProviderId);
 
   // ── User preferences (primary override) ──
   const [userPrimary, setUserPrimary] = useState<ModelSectionState>({
@@ -570,7 +601,7 @@ export function ModelConfigTab({
   const activeUserCopilotId = userPrimary.source === "copilot" ? userPrimary.copilotAccountId : "";
   const { models: userCopilotModels } = useCopilotModels(activeUserCopilotId || undefined);
   const userCustomProviderId = userPrimary.source === "custom" ? userPrimary.providerId : "";
-  const { models: userProviderModels, loading: userProviderModelsLoading } = useProviderModels(workspaceId, userCustomProviderId);
+  const { models: userProviderModels, loading: userProviderModelsLoading, refresh: refreshUserModels } = useProviderModels(workspaceId, userCustomProviderId);
 
   // ── User preferences (suggestion override) ──
   const [userSuggestion, setUserSuggestion] = useState<ModelSectionState>({
@@ -582,7 +613,7 @@ export function ModelConfigTab({
   const activeUserSugCopilotId = userSuggestion.source === "copilot" ? userSuggestion.copilotAccountId : "";
   const { models: userSugCopilotModels } = useCopilotModels(activeUserSugCopilotId || undefined);
   const userSugCustomProviderId = userSuggestion.source === "custom" ? userSuggestion.providerId : "";
-  const { models: userSugProviderModels, loading: userSugProviderModelsLoading } = useProviderModels(workspaceId, userSugCustomProviderId);
+  const { models: userSugProviderModels, loading: userSugProviderModelsLoading, refresh: refreshUserSugModels } = useProviderModels(workspaceId, userSugCustomProviderId);
 
   const [userSaving, setUserSaving] = useState(false);
   const [userSaved, setUserSaved] = useState(false);
@@ -754,6 +785,7 @@ export function ModelConfigTab({
                     workspaceId={workspaceId}
                     providerModels={userProviderModels}
                     providerModelsLoading={userProviderModelsLoading}
+                    onRefreshModels={refreshUserModels}
                     onAddProviderClick={() => setWizardOpen(true)}
                   />
                 </div>
@@ -774,6 +806,7 @@ export function ModelConfigTab({
                     workspaceId={workspaceId}
                     providerModels={userSugProviderModels}
                     providerModelsLoading={userSugProviderModelsLoading}
+                    onRefreshModels={refreshUserSugModels}
                     onAddProviderClick={() => setWizardOpen(true)}
                   />
                 </div>
@@ -827,6 +860,7 @@ export function ModelConfigTab({
         workspaceId={workspaceId}
         providerModels={primaryProviderModels}
         providerModelsLoading={primaryProviderModelsLoading}
+        onRefreshModels={refreshPrimaryModels}
         onAddProviderClick={() => setWizardOpen(true)}
       />}
 
@@ -846,6 +880,7 @@ export function ModelConfigTab({
         workspaceId={workspaceId}
         providerModels={suggestionProviderModels}
         providerModelsLoading={suggestionProviderModelsLoading}
+        onRefreshModels={refreshSuggestionModels}
         onAddProviderClick={() => setWizardOpen(true)}
       />}
 
