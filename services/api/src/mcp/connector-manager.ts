@@ -1,6 +1,10 @@
 import type { McpConnectorConfig, McpToolDefinition, ResolvedMcpTool } from "./types.js";
 import { McpClient } from "./client.js";
 import { createTransport } from "./transport.js";
+import { connectorQueries } from "@doable/db";
+import { sql } from "../db/index.js";
+
+const connectors = connectorQueries(sql);
 
 interface ConnectorEntry {
   config: McpConnectorConfig;
@@ -172,12 +176,48 @@ export class ConnectorManager {
 
   private async connect(config: McpConnectorConfig): Promise<McpClient> {
     const headers: Record<string, string> = {};
-    // Auth headers would be decrypted and added here based on config.authType
+    let stdioEnv: Record<string, string> | undefined;
+
+    // Stdio transports may need server env vars even without auth headers,
+    // so always fetch the decrypted row for stdio. HTTP transports only need
+    // a decrypt round-trip when an auth scheme is configured.
+    const needsDecrypt =
+      config.transportType === "stdio" ||
+      (config.authType && config.authType !== "none");
+
+    if (needsDecrypt) {
+      const decrypted = await connectors.getDecrypted(config.id);
+      const creds = (decrypted?.credentials ?? {}) as Record<string, unknown>;
+      stdioEnv = decrypted?.serverEnv ?? undefined;
+
+      switch (config.authType) {
+        case "bearer_token":
+          if (creds.token) {
+            headers["Authorization"] = `Bearer ${String(creds.token)}`;
+          }
+          break;
+        case "api_key": {
+          const headerName =
+            (creds.header as string | undefined) ?? "X-API-Key";
+          if (creds.apiKey) {
+            headers[headerName] = String(creds.apiKey);
+          }
+          break;
+        }
+        case "oauth2":
+          if (creds.access_token) {
+            headers["Authorization"] = `Bearer ${String(creds.access_token)}`;
+          }
+          break;
+        // 'none' or unknown — leave headers empty (existing behavior)
+      }
+    }
 
     const transport = createTransport(config.transportType, {
       serverUrl: config.serverUrl,
       serverCommand: config.serverCommand,
       serverArgs: config.serverArgs,
+      serverEnv: stdioEnv,
       headers,
     });
 

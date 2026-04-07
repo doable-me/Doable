@@ -1,5 +1,10 @@
 import type postgres from "postgres";
 
+// Mirrors the fallback used in services/api/src/integrations/credential-vault.ts
+// and packages/db/src/queries/env-vars.ts. Keeping it duplicated avoids a
+// cross-package import (this file lives in @doable/db, the vault in services/api).
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
+
 // ─── Row Types ────────────────────────────────────────────
 
 export interface McpConnectorRow {
@@ -75,6 +80,51 @@ export function connectorQueries(sql: postgres.Sql) {
       return row ?? null;
     },
 
+    /**
+     * Get a connector with decrypted credentials and stdio env.
+     * Returns null if connector doesn't exist. Decrypted fields are
+     * null when the corresponding encrypted column is NULL.
+     */
+    async getDecrypted(id: string): Promise<
+      | (McpConnectorRow & {
+          credentials: Record<string, unknown> | null;
+          serverEnv: Record<string, string> | null;
+        })
+      | null
+    > {
+      const [row] = await sql<
+        Array<
+          McpConnectorRow & {
+            credentials_decrypted: string | null;
+            server_env_decrypted: string | null;
+          }
+        >
+      >`
+        SELECT *,
+          CASE WHEN credentials_encrypted IS NOT NULL
+            THEN pgp_sym_decrypt(credentials_encrypted, ${ENCRYPTION_KEY})
+            ELSE NULL
+          END AS credentials_decrypted,
+          CASE WHEN server_env_encrypted IS NOT NULL
+            THEN pgp_sym_decrypt(server_env_encrypted, ${ENCRYPTION_KEY})
+            ELSE NULL
+          END AS server_env_decrypted
+        FROM mcp_connectors
+        WHERE id = ${id}
+      `;
+      if (!row) return null;
+      const { credentials_decrypted, server_env_decrypted, ...rest } = row;
+      return {
+        ...(rest as McpConnectorRow),
+        credentials: credentials_decrypted
+          ? (JSON.parse(credentials_decrypted) as Record<string, unknown>)
+          : null,
+        serverEnv: server_env_decrypted
+          ? (JSON.parse(server_env_decrypted) as Record<string, string>)
+          : null,
+      };
+    },
+
     /** Create a new MCP connector */
     async createConnector(params: {
       workspaceId: string;
@@ -88,18 +138,32 @@ export function connectorQueries(sql: postgres.Sql) {
       serverArgs?: string[];
       authType?: string;
       projectId?: string;
+      /** Auth credentials object — JSON-stringified and encrypted at rest */
+      credentials?: unknown;
+      /** Env vars passed to stdio MCP servers — encrypted at rest */
+      serverEnv?: Record<string, string>;
     }): Promise<McpConnectorRow> {
+      const credJson = params.credentials !== undefined
+        ? JSON.stringify(params.credentials)
+        : null;
+      const envJson = params.serverEnv !== undefined
+        ? JSON.stringify(params.serverEnv)
+        : null;
+
       const [row] = await sql<McpConnectorRow[]>`
         INSERT INTO mcp_connectors (
           workspace_id, created_by, scope, name, description,
           transport_type, server_url, server_command, server_args,
-          auth_type, project_id
+          auth_type, project_id,
+          credentials_encrypted, server_env_encrypted
         ) VALUES (
           ${params.workspaceId}, ${params.createdBy}, ${params.scope},
           ${params.name}, ${params.description ?? null},
           ${params.transportType}, ${params.serverUrl ?? null},
           ${params.serverCommand ?? null}, ${JSON.stringify(params.serverArgs ?? [])},
-          ${params.authType ?? "none"}, ${params.projectId ?? null}
+          ${params.authType ?? "none"}, ${params.projectId ?? null},
+          ${credJson !== null ? sql`pgp_sym_encrypt(${credJson}, ${ENCRYPTION_KEY})` : null},
+          ${envJson !== null ? sql`pgp_sym_encrypt(${envJson}, ${ENCRYPTION_KEY})` : null}
         )
         RETURNING *
       `;
@@ -120,6 +184,10 @@ export function connectorQueries(sql: postgres.Sql) {
         capabilitiesCache?: Record<string, unknown>;
         lastConnectedAt?: Date;
         errorMessage?: string | null;
+        /** Auth credentials object — JSON-stringified and encrypted at rest */
+        credentials?: unknown;
+        /** Env vars passed to stdio MCP servers — encrypted at rest */
+        serverEnv?: Record<string, string>;
       },
     ): Promise<McpConnectorRow | null> {
       // Build dynamic update — only set provided fields
@@ -137,7 +205,18 @@ export function connectorQueries(sql: postgres.Sql) {
       if (updates.lastConnectedAt !== undefined) { sets.push("last_connected_at"); vals.push(updates.lastConnectedAt); }
       if (updates.capabilitiesCache !== undefined) { sets.push("capabilities_cache"); vals.push(JSON.stringify(updates.capabilitiesCache)); }
 
-      if (sets.length === 0) return this.getConnector(id);
+      if (sets.length === 0
+        && updates.credentials === undefined
+        && updates.serverEnv === undefined) {
+        return this.getConnector(id);
+      }
+
+      const credJson = updates.credentials !== undefined
+        ? JSON.stringify(updates.credentials)
+        : null;
+      const envJson = updates.serverEnv !== undefined
+        ? JSON.stringify(updates.serverEnv)
+        : null;
 
       // Use a simple update with all fields
       const [row] = await sql<McpConnectorRow[]>`
@@ -148,6 +227,12 @@ export function connectorQueries(sql: postgres.Sql) {
           server_command = COALESCE(${updates.serverCommand ?? null}, server_command),
           status = COALESCE(${updates.status ?? null}, status),
           error_message = ${updates.errorMessage !== undefined ? updates.errorMessage : null},
+          credentials_encrypted = ${credJson !== null
+            ? sql`pgp_sym_encrypt(${credJson}, ${ENCRYPTION_KEY})`
+            : sql`credentials_encrypted`},
+          server_env_encrypted = ${envJson !== null
+            ? sql`pgp_sym_encrypt(${envJson}, ${ENCRYPTION_KEY})`
+            : sql`server_env_encrypted`},
           updated_at = now()
         WHERE id = ${id}
         RETURNING *

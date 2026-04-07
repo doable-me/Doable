@@ -321,16 +321,59 @@ function AddServerForm({
   const [serverUrl, setServerUrl] = useState("");
   const [serverCommand, setServerCommand] = useState("");
   const [serverArgs, setServerArgs] = useState("");
-  const [authType, setAuthType] = useState<"none" | "api_key" | "bearer_token">("none");
+  const [authType, setAuthType] = useState<"none" | "api_key" | "bearer_token" | "oauth2">("none");
+  // Credential fields — only the ones relevant to the selected authType are sent
+  const [bearerToken, setBearerToken] = useState("");
+  const [apiKeyHeader, setApiKeyHeader] = useState("");
+  const [apiKeyValue, setApiKeyValue] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  // Stdio server env vars (key/value pairs)
+  const [envPairs, setEnvPairs] = useState<Array<{ key: string; value: string }>>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isHttp = transportType !== "stdio";
 
+  const addEnvPair = useCallback(() => {
+    setEnvPairs((prev) => [...prev, { key: "", value: "" }]);
+  }, []);
+  const updateEnvPair = useCallback((index: number, field: "key" | "value", value: string) => {
+    setEnvPairs((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)),
+    );
+  }, []);
+  const removeEnvPair = useCallback((index: number) => {
+    setEnvPairs((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleSubmit = useCallback(async () => {
     if (!name.trim()) { setError("Name is required"); return; }
     if (isHttp && !serverUrl.trim()) { setError("Server URL is required for HTTP transports"); return; }
     if (!isHttp && !serverCommand.trim()) { setError("Command is required for stdio transport"); return; }
+
+    // Build credentials by authType — only include fields that have values
+    let credentials: Record<string, unknown> | undefined;
+    if (authType === "bearer_token" && bearerToken.trim()) {
+      credentials = { token: bearerToken.trim() };
+    } else if (authType === "api_key" && apiKeyValue.trim()) {
+      credentials = {
+        apiKey: apiKeyValue.trim(),
+        ...(apiKeyHeader.trim() ? { header: apiKeyHeader.trim() } : {}),
+      };
+    } else if (authType === "oauth2" && accessToken.trim()) {
+      credentials = { access_token: accessToken.trim() };
+    }
+
+    // Build stdio server env from non-empty key/value pairs
+    let serverEnv: Record<string, string> | undefined;
+    if (!isHttp) {
+      const filtered = envPairs.filter((p) => p.key.trim() && p.value.trim());
+      if (filtered.length > 0) {
+        serverEnv = Object.fromEntries(
+          filtered.map((p) => [p.key.trim(), p.value.trim()]),
+        );
+      }
+    }
 
     setError(null);
     setSaving(true);
@@ -346,13 +389,19 @@ function AddServerForm({
           ? serverArgs.split(",").map((s) => s.trim()).filter(Boolean)
           : undefined,
         authType,
+        credentials,
+        serverEnv,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add server");
     } finally {
       setSaving(false);
     }
-  }, [name, description, transportType, serverUrl, serverCommand, serverArgs, authType, isHttp, onSubmit]);
+  }, [
+    name, description, transportType, serverUrl, serverCommand, serverArgs,
+    authType, bearerToken, apiKeyHeader, apiKeyValue, accessToken,
+    envPairs, isHttp, onSubmit,
+  ]);
 
   return (
     <div className="rounded-xl border bg-card">
@@ -464,11 +513,12 @@ function AddServerForm({
         {/* Auth Type */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">Authentication</label>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {([
               ["none", "None"],
               ["api_key", "API Key"],
               ["bearer_token", "Bearer Token"],
+              ["oauth2", "OAuth Token"],
             ] as const).map(([key, label]) => (
               <button
                 key={key}
@@ -485,6 +535,112 @@ function AddServerForm({
             ))}
           </div>
         </div>
+
+        {/* Credential fields by auth type */}
+        {authType === "bearer_token" && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Bearer Token</label>
+            <input
+              type="password"
+              value={bearerToken}
+              onChange={(e) => setBearerToken(e.target.value)}
+              placeholder="Token sent as Authorization: Bearer ..."
+              autoComplete="off"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+        )}
+
+        {authType === "api_key" && (
+          <>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Header Name</label>
+              <input
+                type="text"
+                value={apiKeyHeader}
+                onChange={(e) => setApiKeyHeader(e.target.value)}
+                placeholder="X-API-Key (default)"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">API Key</label>
+              <input
+                type="password"
+                value={apiKeyValue}
+                onChange={(e) => setApiKeyValue(e.target.value)}
+                placeholder="Sent as the header value"
+                autoComplete="off"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          </>
+        )}
+
+        {authType === "oauth2" && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Access Token</label>
+            <input
+              type="password"
+              value={accessToken}
+              onChange={(e) => setAccessToken(e.target.value)}
+              placeholder="OAuth access token (manual entry)"
+              autoComplete="off"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+        )}
+
+        {/* Stdio environment variables */}
+        {!isHttp && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">Environment Variables</label>
+              <button
+                type="button"
+                onClick={addEnvPair}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                Add
+              </button>
+            </div>
+            {envPairs.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">
+                Optional. Passed to the stdio process via its environment.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {envPairs.map((pair, i) => (
+                  <div key={i} className="flex gap-2">
+                    <input
+                      type="text"
+                      value={pair.key}
+                      onChange={(e) => updateEnvPair(i, "key", e.target.value)}
+                      placeholder="KEY"
+                      className="flex-1 rounded-md border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    <input
+                      type="password"
+                      value={pair.value}
+                      onChange={(e) => updateEnvPair(i, "value", e.target.value)}
+                      placeholder="value"
+                      autoComplete="off"
+                      className="flex-1 rounded-md border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeEnvPair(i)}
+                      className="rounded-md px-2 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Error */}
         {error && (
