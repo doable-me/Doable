@@ -325,6 +325,17 @@ async function buildProjectContextForMode(
     }
   }
 
+  // ── Connected integrations manifest (vault-bridge) ──
+  if (workspaceId && userId) {
+    try {
+      const { buildConnectedIntegrationsContext } = await import("../integrations/prompt-manifest.js");
+      const block = await buildConnectedIntegrationsContext(projectId, workspaceId, userId);
+      if (block) context += `\n\n${block}`;
+    } catch (err) {
+      console.warn("[Chat] integrations manifest failed:", err);
+    }
+  }
+
   // ── File listing and package info ──
   if (!isProjectScaffolded(projectId)) return context;
 
@@ -744,7 +755,12 @@ chatRoutes.post(
             data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Starting live preview..." } }),
           });
           console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
-          await startDevServer(projectId);
+          // Pass userId so vault-backed integration credentials get injected
+          // into the spawned Vite process (Phase 1C/1D of the integration↔AI
+          // chat bridge). Other startDevServer call sites that lack a user
+          // context fall back to user `env_vars` only — still valid, just no
+          // user-scoped vault credentials.
+          await startDevServer(projectId, { userId });
         } catch (err) {
           console.error(`[Chat] Dev server start failed for project ${projectId}:`, err);
         }
@@ -837,6 +853,8 @@ Before you create or edit ANY file, mentally walk through this checklist:
 ═══════════════════════════════════════════════════════════════
 
 CRITICAL RULES — violating these will break the live preview:
+
+0. **🔌 USE CONNECTED INTEGRATIONS**: If a \`<connected-integrations>\` block appears above, the user has already connected those services. You MUST reference the listed env vars (via \`import.meta.env.VITE_*\` for client vars, \`process.env.*\` for server vars) and call the listed tools. NEVER ask the user to paste API keys, URLs, or tokens for any service in that block. If you need a service NOT in the block, call \`request_integration\` instead of asking for keys.
 
 1. **🚨 INSTALL BEFORE IMPORT (the #1 cause of errors) 🚨**: You MUST call install_package to install any npm package BEFORE writing any file that imports it. Check the "Installed dependencies" list above — if a package is NOT listed there, you MUST install it first. The preview WILL crash with "Failed to resolve import" errors otherwise.
 
