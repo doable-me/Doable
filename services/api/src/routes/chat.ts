@@ -1531,6 +1531,74 @@ ERROR RECOVERY — if you encounter errors:
           // ── Debug: stream summary ──
           console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${assistantContent.length} chars, thinking: ${assistantThinking.length} chars, toolCalls: ${hadToolCalls}, tools: ${assistantToolCalls.length}`);
 
+          // ── Empty response detection + auto-retry ──
+          // When the model produces absolutely nothing (0 content, 0 thinking,
+          // 0 tool calls) the user sees a dead spinner. Retry once before giving up.
+          // NIM free-tier models often return empty on first try due to rate limits.
+          if (!assistantContent && !assistantThinking && !hadToolCalls) {
+            console.warn(`[Chat][${projectId.slice(0, 8)}] empty response — auto-retrying once`);
+            await stream.writeSSE({
+              data: JSON.stringify({ type: "status", data: { phase: "retrying", message: "Model returned empty — retrying..." } }),
+            });
+            try {
+              const retryStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
+              const retryRouter = new ChannelTokenRouter();
+              for await (const retryEvent of retryStream) {
+                const rType = (retryEvent as Record<string, unknown>).type as string;
+                const rData = (retryEvent as Record<string, unknown>).data as Record<string, unknown> | undefined;
+                if (usageCollector) usageCollector.onUsageEvent(retryEvent);
+                const retrySseData = mapEventToSSE(retryEvent);
+                if (retrySseData?.type === "text_delta") {
+                  const rawDelta = typeof retrySseData.data === "string" ? retrySseData.data : "";
+                  for (const chunk of retryRouter.process(rawDelta)) {
+                    if (!chunk.content) continue;
+                    if (chunk.type === "text") {
+                      const cleaned = sanitizeText(chunk.content);
+                      if (cleaned) {
+                        assistantContent += cleaned;
+                        await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
+                      }
+                    } else {
+                      assistantThinking += chunk.content;
+                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                    }
+                  }
+                } else if (retrySseData?.type === "thinking") {
+                  const td = typeof retrySseData.data === "string" ? retrySseData.data : "";
+                  assistantThinking += td;
+                  await stream.writeSSE({ data: JSON.stringify(retrySseData) });
+                } else if (retrySseData && retrySseData.type !== "done") {
+                  // Forward tool_call, tool_result, error, status, etc.
+                  if (retrySseData.type === "tool_call" || retrySseData.type === "tool_result") hadToolCalls = true;
+                  await stream.writeSSE({ data: JSON.stringify(retrySseData) });
+                }
+                if (rType === "session.idle" || rType === "done") break;
+              }
+              for (const chunk of retryRouter.flush()) {
+                if (!chunk.content) continue;
+                if (chunk.type === "text") {
+                  const cleaned = sanitizeText(chunk.content);
+                  if (cleaned) { assistantContent += cleaned; await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) }); }
+                } else {
+                  assistantThinking += chunk.content;
+                  await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                }
+              }
+              console.log(`[Chat][${projectId.slice(0, 8)}] retry result — content: ${assistantContent.length} chars, thinking: ${assistantThinking.length} chars, toolCalls: ${hadToolCalls}`);
+            } catch (retryErr) {
+              console.warn(`[Chat][${projectId.slice(0, 8)}] retry failed:`, retryErr instanceof Error ? retryErr.message : String(retryErr));
+            }
+            // If STILL empty after retry, inform the user
+            if (!assistantContent && !assistantThinking && !hadToolCalls) {
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: "error",
+                  data: "The AI model returned an empty response after retrying. This is usually a rate limiting issue. Try again in a moment, or switch to a different model in AI Settings.",
+                }),
+              });
+            }
+          }
+
           // If the loop exited (via timeout or terminal event) with pending
           // tool_calls that never got a tool_result, flush synthetic results
           // so the frontend can mark those actions as completed.
