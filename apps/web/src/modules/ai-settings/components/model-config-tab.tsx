@@ -153,12 +153,12 @@ function useProviderModels(workspaceId: string | null, providerId: string) {
               `/workspaces/${workspaceId}/ai-settings/providers/${providerId}/discover-models`,
               { method: "POST" },
             );
-            if (!cancelled) setModels((disc.data ?? []).map((m: Record<string, unknown>) => ({
-              id: (m as ProviderModelInfo).id,
-              name: (m as ProviderModelInfo).name ?? null,
-              contextWindow: (m as ProviderModelInfo).contextWindow ?? null,
-              supportsTools: (m as ProviderModelInfo).supportsTools ?? true,
-              supportsVision: (m as ProviderModelInfo).supportsVision ?? false,
+            if (!cancelled) setModels((disc.data ?? []).map((m: ProviderModelInfo) => ({
+              id: m.id,
+              name: m.name ?? null,
+              contextWindow: m.contextWindow ?? null,
+              supportsTools: m.supportsTools ?? true,
+              supportsVision: m.supportsVision ?? false,
             })));
           } catch {
             if (!cancelled) setModels([]);
