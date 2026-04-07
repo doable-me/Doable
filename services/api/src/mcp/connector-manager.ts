@@ -178,38 +178,45 @@ export class ConnectorManager {
     const headers: Record<string, string> = {};
     let stdioEnv: Record<string, string> | undefined;
 
-    // Stdio transports may need server env vars even without auth headers,
-    // so always fetch the decrypted row for stdio. HTTP transports only need
-    // a decrypt round-trip when an auth scheme is configured.
-    const needsDecrypt =
-      config.transportType === "stdio" ||
-      (config.authType && config.authType !== "none");
+    // Phase 2B: virtual connectors (preset-synthesized) carry their env map
+    // inline and have NO DB row, so calling `connectors.getDecrypted(config.id)`
+    // would return null and silently drop their env. Short-circuit here.
+    if (config.inlineServerEnv) {
+      stdioEnv = config.inlineServerEnv;
+    } else {
+      // Stdio transports may need server env vars even without auth headers,
+      // so always fetch the decrypted row for stdio. HTTP transports only need
+      // a decrypt round-trip when an auth scheme is configured.
+      const needsDecrypt =
+        config.transportType === "stdio" ||
+        (config.authType && config.authType !== "none");
 
-    if (needsDecrypt) {
-      const decrypted = await connectors.getDecrypted(config.id);
-      const creds = (decrypted?.credentials ?? {}) as Record<string, unknown>;
-      stdioEnv = decrypted?.serverEnv ?? undefined;
+      if (needsDecrypt) {
+        const decrypted = await connectors.getDecrypted(config.id);
+        const creds = (decrypted?.credentials ?? {}) as Record<string, unknown>;
+        stdioEnv = decrypted?.serverEnv ?? undefined;
 
-      switch (config.authType) {
-        case "bearer_token":
-          if (creds.token) {
-            headers["Authorization"] = `Bearer ${String(creds.token)}`;
+        switch (config.authType) {
+          case "bearer_token":
+            if (creds.token) {
+              headers["Authorization"] = `Bearer ${String(creds.token)}`;
+            }
+            break;
+          case "api_key": {
+            const headerName =
+              (creds.header as string | undefined) ?? "X-API-Key";
+            if (creds.apiKey) {
+              headers[headerName] = String(creds.apiKey);
+            }
+            break;
           }
-          break;
-        case "api_key": {
-          const headerName =
-            (creds.header as string | undefined) ?? "X-API-Key";
-          if (creds.apiKey) {
-            headers[headerName] = String(creds.apiKey);
-          }
-          break;
+          case "oauth2":
+            if (creds.access_token) {
+              headers["Authorization"] = `Bearer ${String(creds.access_token)}`;
+            }
+            break;
+          // 'none' or unknown — leave headers empty (existing behavior)
         }
-        case "oauth2":
-          if (creds.access_token) {
-            headers["Authorization"] = `Bearer ${String(creds.access_token)}`;
-          }
-          break;
-        // 'none' or unknown — leave headers empty (existing behavior)
       }
     }
 

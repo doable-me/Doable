@@ -1056,6 +1056,7 @@ export function createDoableTools(projectId: string): Tool[] {
 import { getConnectorManager } from "../../mcp/connector-manager.js";
 import { createMcpTools } from "../../mcp/tool-bridge.js";
 import type { McpConnectorConfig } from "../../mcp/types.js";
+import type { DecryptedConnection } from "../../integrations/types.js";
 import { connectorQueries, marketplaceQueries } from "@doable/db";
 
 /**
@@ -1140,7 +1141,7 @@ async function loadMcpTools(
     const connectors = connectorQueries(sql);
     const manager = getConnectorManager();
 
-    // Get effective connectors for this scope
+    // ── 1. DB-backed MCP connectors (user-created rows) ─────
     const allConnectorRows = await connectors.getEffectiveConnectors(
       workspaceId,
       projectId,
@@ -1151,8 +1152,6 @@ async function loadMcpTools(
     const connectorRows = connectorFilter
       ? allConnectorRows.filter((r) => connectorFilter.includes(r.id))
       : allConnectorRows;
-
-    if (connectorRows.length === 0) return [];
 
     // Convert DB rows to runtime configs
     const configs = new Map<string, McpConnectorConfig>();
@@ -1177,7 +1176,80 @@ async function loadMcpTools(
       configs.set(row.id, config);
     }
 
-    // Resolve tools from all active connectors
+    // ── 2. Virtual MCP connectors synthesized from integration rows (Phase 2B) ──
+    // For every connected integration that has a preset builder (e.g., Supabase),
+    // synthesize an ephemeral stdio connector pointed at the official MCP server.
+    // These are NOT persisted — they're rebuilt every turn from the vault so
+    // rotating a token on the underlying `integration_connections` row is a
+    // transparent, zero-DB-write operation.
+    try {
+      const { credentialVault } = await import(
+        "../../integrations/credential-vault.js"
+      );
+      const { buildVirtualMcpConnectors } = await import(
+        "../../mcp/presets/index.js"
+      );
+      const effectiveConns = await credentialVault.getEffective(
+        workspaceId,
+        projectId,
+        userId,
+      );
+
+      // Dedupe by integration_id, preferring higher-priority scopes first
+      // (getEffective returns rows ordered by `scope DESC`, same pattern as
+      // vault-bridge.ts). Then decrypt the survivors — one round-trip per
+      // distinct integration.
+      const seen = new Set<string>();
+      const deduped: typeof effectiveConns = [];
+      for (const c of effectiveConns) {
+        if (seen.has(c.integration_id)) continue;
+        seen.add(c.integration_id);
+        deduped.push(c);
+      }
+
+      const decrypted = await Promise.all(
+        deduped.map(async (c) => {
+          try {
+            const creds = await credentialVault.decrypt(c.id);
+            if (!creds || typeof creds !== "object") return null;
+            const { credentials_encrypted: _ignored, ...rest } =
+              c as typeof c & { credentials_encrypted?: unknown };
+            return { ...rest, credentials: creds } as DecryptedConnection;
+          } catch (err) {
+            console.warn(
+              `[CopilotEngine] decrypt failed for ${c.integration_id}:`,
+              err instanceof Error ? err.message : err,
+            );
+            return null;
+          }
+        }),
+      );
+
+      const virtualConfigs = buildVirtualMcpConnectors(
+        decrypted.filter((c): c is DecryptedConnection => c !== null),
+      );
+      for (const cfg of virtualConfigs) {
+        // DB rows always win — don't let a preset shadow a user-configured
+        // connector that happens to share the same name.
+        if (!configs.has(cfg.id)) {
+          configs.set(cfg.id, cfg);
+        }
+      }
+      if (virtualConfigs.length > 0) {
+        console.log(
+          `[CopilotEngine] Synthesized ${virtualConfigs.length} virtual MCP connector(s) from integrations`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "[CopilotEngine] Virtual MCP connector synthesis failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    if (configs.size === 0) return [];
+
+    // Resolve tools from all active connectors (DB + virtual)
     const resolvedTools = await manager.getEffectiveTools(
       Array.from(configs.values()),
     );
