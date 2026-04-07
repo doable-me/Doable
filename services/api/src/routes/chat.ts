@@ -1186,6 +1186,11 @@ ERROR RECOVERY — if you encounter errors:
           let messageStream: AsyncGenerator<import("@github/copilot-sdk").SessionEvent>;
           try {
             const originalStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
+            // Send an immediate status so the frontend exits "Connecting to AI..."
+            // before the model responds (BYOK providers can take 30s+ to first token).
+            await stream.writeSSE({
+              data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "AI is thinking..." } }),
+            });
             // Force the generator to yield once — "Session not found" throws here
             // because async generators are lazy (the body doesn't run until iterated).
             const first = await originalStream.next();
