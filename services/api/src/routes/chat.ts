@@ -972,6 +972,11 @@ ERROR RECOVERY — if you encounter errors:
         onError: (error: unknown, context: string) => {
           const errorStr = typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error);
           console.error(`[Chat] Hook error (${context}):`, errorStr);
+          // Don't send uninformative hook errors to the user.
+          // The SDK fires model_call hook errors with {} — the real error details
+          // arrive in session.error which has statusCode/errorType. Sending the
+          // hook error just shows a confusing message that gets overwritten.
+          if (!errorStr || errorStr === '{}' || errorStr === 'undefined') return;
           // Humanize the error for the user — don't expose internal context names
           let userMessage: string;
           if (errorStr.includes("404") || errorStr.includes("not found")) {
