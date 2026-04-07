@@ -101,7 +101,9 @@ export class CopilotEngine {
     this.client = new CopilotClient({
       ...(this.config.cliPath ? { cliPath: this.config.cliPath } : {}),
       ...(this.config.cliUrl ? { cliUrl: this.config.cliUrl } : {}),
-      ...(this.config.githubToken ? { githubToken: this.config.githubToken } : {}),
+      ...(this.config.githubToken
+        ? { githubToken: this.config.githubToken }
+        : { useLoggedInUser: false }), // BYOK-only: skip GitHub auth when no token
     });
 
     await this.client.start();

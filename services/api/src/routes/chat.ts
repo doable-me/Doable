@@ -1234,17 +1234,18 @@ ERROR RECOVERY — if you encounter errors:
           // against a 180-second deadline so the stream always completes.
           // Must be generous enough for tool calls (file writes, npm installs).
           const SDK_IDLE_TIMEOUT_MS = 180_000;
+          const TIMEOUT_SENTINEL = Symbol("timeout");
           const iterator = messageStream![Symbol.asyncIterator]();
           let iterDone = false;
           while (!iterDone) {
             const raceResult = await Promise.race([
               iterator.next(),
-              new Promise<{ done: true; value: undefined }>((resolve) =>
-                setTimeout(() => resolve({ done: true, value: undefined }), SDK_IDLE_TIMEOUT_MS),
+              new Promise<{ done: true; value: typeof TIMEOUT_SENTINEL }>((resolve) =>
+                setTimeout(() => resolve({ done: true, value: TIMEOUT_SENTINEL }), SDK_IDLE_TIMEOUT_MS),
               ),
             ]);
             if (raceResult.done) {
-              if (!raceResult.value) {
+              if (raceResult.value === TIMEOUT_SENTINEL) {
                 // Timeout fired — SDK went silent. Notify the user so they
                 // aren't left staring at a spinner.
                 console.log(`[Chat] SDK generator idle for ${SDK_IDLE_TIMEOUT_MS / 1000}s — forcing stream exit for ${projectId}`);
