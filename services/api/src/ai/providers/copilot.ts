@@ -979,6 +979,57 @@ export function createDoableTools(projectId: string): Tool[] {
       },
     }),
 
+    // ─── Phase 1H: request a not-yet-connected integration ──
+    //
+    // Called when the AI needs a third-party service the user has not
+    // connected yet. The handler is a no-op aside from tagging the result
+    // with `_sseHint: "integration_required"`; the chat.ts onToolEnd
+    // sniffer forwards that to an SSE `integration_required` event, which
+    // the chat UI renders as an inline "Connect X" card. Prevents the AI
+    // from ever asking the user to paste API keys directly.
+    defineTool("request_integration", {
+      description:
+        "Request a third-party service that the user has not yet connected. Call this INSTEAD of asking the user to paste API keys, URLs, or tokens. Doable will surface a one-click Connect button in the chat. Use the integration ID from the registry (e.g. 'supabase', 'stripe', 'github', 'postgres'). Provide a one-sentence reason so the user understands why this service is needed.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          integrationId: {
+            type: "string" as const,
+            description:
+              "Registry ID of the integration (e.g. 'supabase', 'stripe', 'github', 'postgres').",
+          },
+          reason: {
+            type: "string" as const,
+            description:
+              "One sentence the user will see explaining what feature you need it for (e.g. 'to store and authenticate todo items').",
+          },
+        },
+        required: ["integrationId", "reason"] as const,
+      },
+      handler: async (args: { integrationId: string; reason: string }) => {
+        // Best-effort registry lookup so the SSE event carries display metadata.
+        let displayName = args.integrationId;
+        let logoUrl: string | undefined;
+        try {
+          const { getIntegration } = await import("../../integrations/registry/index.js");
+          const def = getIntegration(args.integrationId);
+          if (def) {
+            displayName = def.displayName;
+            logoUrl = def.logoUrl;
+          }
+        } catch { /* registry lookup is best-effort */ }
+        return {
+          success: true,
+          _sseHint: "integration_required" as const,
+          integrationId: args.integrationId,
+          displayName,
+          logoUrl,
+          reason: args.reason,
+          message: `Requested integration "${displayName}". The user will see a Connect button in the chat.`,
+        };
+      },
+    }),
+
     defineTool("mark_step_complete", {
       description:
         "Mark a plan step as completed during build execution.",

@@ -255,11 +255,30 @@ export async function createIntegrationTools(
                 ...(result.error ? { error: result.error } : {}),
               };
             } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              // Phase 1H: detect "credentials missing / not connected" style
+              // errors from the Activepieces runner and tag them so the
+              // chat.ts onToolEnd sniffer emits an `integration_required`
+              // SSE event instead of surfacing a bare error string.
+              const isMissing =
+                /credentials?_missing|not connected to/i.test(msg) ||
+                (err as { code?: string } | null)?.code === "credentials_missing";
+              if (isMissing) {
+                return {
+                  success: false,
+                  output: "",
+                  error: msg,
+                  _sseHint: "integration_required" as const,
+                  integrationId: conn.integration_id,
+                  displayName: def.displayName,
+                  logoUrl: def.logoUrl,
+                  reason: `to call ${action.name}`,
+                };
+              }
               return {
                 success: false,
                 output: "",
-                error:
-                  err instanceof Error ? err.message : String(err),
+                error: msg,
               };
             }
           },

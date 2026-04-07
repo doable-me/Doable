@@ -17,6 +17,23 @@ export interface SupabaseProvisionRequest {
   reason: string;
 }
 
+/**
+ * Phase 1H — "Connect X" affordance surfaced to consumers of useChat()
+ * when the AI calls `request_integration` OR an Activepieces tool fails
+ * with a credentials-missing error. The chat surface renders an inline
+ * Connect card that opens the existing integrations connect flow.
+ */
+export interface PendingIntegrationRequest {
+  /** Registry ID (e.g. "stripe", "github"). */
+  integrationId: string;
+  /** Registry display name (e.g. "Stripe"). */
+  displayName: string;
+  /** Optional logo URL from the registry. */
+  logoUrl?: string;
+  /** One-sentence reason from the AI explaining why this service is needed. */
+  reason: string;
+}
+
 function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -43,6 +60,13 @@ export function useChat(
   // <SupabaseProvisionDialog>; cleared by `dismissSupabaseProvision`.
   const [supabaseProvisionRequest, setSupabaseProvisionRequest] =
     useState<SupabaseProvisionRequest | null>(null);
+
+  // Phase 1H: integration Connect card. Set when the AI calls
+  // `request_integration` OR an Activepieces tool fails with
+  // credentials_missing. Cleared by `dismissIntegrationRequest` or
+  // auto-cleared once the user reconnects via the integrations panel.
+  const [pendingIntegrationRequest, setPendingIntegrationRequest] =
+    useState<PendingIntegrationRequest | null>(null);
 
   const {
     messages,
@@ -341,6 +365,20 @@ export function useChat(
                   const reason =
                     (parsed.data?.reason as string | undefined) ?? "";
                   setSupabaseProvisionRequest({ name, reason });
+                } else if (parsed.type === "integration_required") {
+                  // Phase 1H: AI needs a service the user hasn't connected
+                  // yet (or an Activepieces tool failed with
+                  // credentials_missing). Surface an inline Connect card.
+                  const integrationId = parsed.data?.integrationId as string | undefined;
+                  if (integrationId) {
+                    setPendingIntegrationRequest({
+                      integrationId,
+                      displayName:
+                        (parsed.data?.displayName as string | undefined) ?? integrationId,
+                      logoUrl: parsed.data?.logoUrl as string | undefined,
+                      reason: (parsed.data?.reason as string | undefined) ?? "",
+                    });
+                  }
                 } else if (parsed.type === "version_created") {
                   // Git commit was created for this AI response — store SHA for undo
                   const sha = parsed.data?.sha ?? parsed.sha;
@@ -647,6 +685,26 @@ export function useChat(
     [sendMessage],
   );
 
+  /**
+   * Phase 1H: dismiss the inline "Connect X" card. If `andContinue` is
+   * true, auto-submits a "continue" chat message so the AI retries using
+   * the newly-connected integration (whose env vars and tools are now in
+   * the next turn's `<connected-integrations>` system-prompt block).
+   */
+  const dismissIntegrationRequest = useCallback(
+    (andContinue?: boolean) => {
+      setPendingIntegrationRequest(null);
+      if (andContinue) {
+        setTimeout(() => {
+          sendMessage(
+            "The requested integration is now connected. Please continue and use its env vars and tools from the connected-integrations block.",
+          );
+        }, 100);
+      }
+    },
+    [sendMessage],
+  );
+
   return {
     messages,
     isStreaming,
@@ -659,5 +717,7 @@ export function useChat(
     abandonPlan,
     supabaseProvisionRequest,
     dismissSupabaseProvision,
+    pendingIntegrationRequest,
+    dismissIntegrationRequest,
   };
 }

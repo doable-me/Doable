@@ -976,6 +976,25 @@ ERROR RECOVERY — if you encounter errors:
               }
             } catch { /* non-critical */ }
           }
+          // Phase 1H: surface integration_required as an inline Connect card.
+          // Fires for ANY tool whose result is tagged with `_sseHint:
+          // "integration_required"` — that's both the explicit
+          // `request_integration` tool AND tool-bridge.ts tagging a
+          // credentials_missing Activepieces failure the same way.
+          if (result && typeof result === "object") {
+            const r = result as Record<string, unknown>;
+            if (r._sseHint === "integration_required" && r.integrationId) {
+              stream.writeSSE({ data: JSON.stringify({
+                type: "integration_required",
+                data: {
+                  integrationId: r.integrationId,
+                  displayName: r.displayName ?? r.integrationId,
+                  logoUrl: r.logoUrl,
+                  reason: r.reason ?? "",
+                },
+              }) }).catch(() => {});
+            }
+          }
           if (toolName === "create_plan" && result) {
             try {
               const output = typeof result === "string" ? result : (result as Record<string, unknown>)?.output as string;
