@@ -1527,6 +1527,16 @@ ERROR RECOVERY — if you encounter errors:
             if (evtType === "assistant.message_delta" || evtType === "assistant.streaming_delta") {
               const deltaMessageId = evtData?.messageId as string | undefined;
               if (deltaMessageId && deltaMessageId !== lastCapturedMsgId) {
+                // New assistant turn — inject paragraph break so multi-turn
+                // responses don't concatenate without whitespace.
+                if (assistantContent && lastCapturedMsgId) {
+                  const sep = "\n\n";
+                  assistantContent += sep;
+                  stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: sep }) }).catch(() => {});
+                  broadcastToRoom(projectId, {
+                    type: "ai:stream-chunk", chunk: sep, messageId, isThinking: false,
+                  }, userId).catch(() => {});
+                }
                 lastCapturedMsgId = deltaMessageId;
                 msgIdDeltaStart = assistantContent.length;
               }
@@ -1541,6 +1551,15 @@ ERROR RECOVERY — if you encounter errors:
 
               // Detect a new assistant turn (new messageId)
               if (msgId && msgId !== lastCapturedMsgId) {
+                // New assistant turn — inject paragraph break (same as delta handler)
+                if (assistantContent && lastCapturedMsgId) {
+                  const sep = "\n\n";
+                  assistantContent += sep;
+                  stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: sep }) }).catch(() => {});
+                  broadcastToRoom(projectId, {
+                    type: "ai:stream-chunk", chunk: sep, messageId, isThinking: false,
+                  }, userId).catch(() => {});
+                }
                 lastCapturedMsgId = msgId;
                 msgIdDeltaStart = assistantContent.length; // deltas for this message start here
               }
