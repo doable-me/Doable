@@ -2,9 +2,11 @@ import { serve } from "@hono/node-server";
 import { request as httpRequest } from "node:http";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
+import { sql } from "./db/index.js";
 import { healthRoutes } from "./routes/health.js";
 import { authRoutes } from "./routes/auth.js";
 import { projectRoutes } from "./routes/projects.js";
@@ -201,7 +203,14 @@ app.notFound((c) => {
 
 // ─── Global Error Handler ───────────────────────────────────
 app.onError((err, c) => {
-  // Return 400 for malformed JSON instead of 500
+  // Honor Hono's HTTPException status (e.g. zValidator's 400 on malformed
+  // JSON body, bodyLimit 413, and any explicit throw new HTTPException()).
+  // Without this branch those were being masked as 500 (ed4cac5 regression).
+  if (err instanceof HTTPException) {
+    return err.getResponse();
+  }
+  // Raw SyntaxError from routes that call c.req.json() directly without a
+  // zValidator wrapper.
   if (err instanceof SyntaxError && err.message.includes("JSON")) {
     return c.json({ error: "Invalid JSON in request body" }, 400);
   }
@@ -228,6 +237,24 @@ const server = serve({
   port,
   hostname: host,
 });
+
+// ─── Startup sweep: clear orphaned ai_active_streams rows ───
+// Rows older than 10 minutes at boot time are from a prior run's crash
+// (a healthy request finishes cleanup within minutes via success/catch
+// paths in chat.ts). Without this sweep, a SIGKILL/OOM mid-stream leaves
+// a row permanently flagged as "streaming", which can trip concurrency
+// gates or stale the /chat/status 5-minute reaper on first read.
+sql`DELETE FROM ai_active_streams WHERE started_at < now() - interval '10 minutes'`
+  .then((result) => {
+    if (result.count > 0) {
+      console.log(
+        `[startup] cleared ${result.count} orphaned ai_active_streams row(s) from prior run`
+      );
+    }
+  })
+  .catch((err: unknown) =>
+    console.warn("[startup] ai_active_streams sweep failed:", err)
+  );
 
 // ─── WebSocket Proxy for Vite HMR ─────────────────────────────
 // Proxies WebSocket upgrade requests on /preview/:projectId/...

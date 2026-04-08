@@ -306,6 +306,13 @@ projectFileRoutes.put("/projects/:id/files/*", async (c) => {
 
     await writeFile(projectId, filePath, body.content);
 
+    // Bump project's updated_at so the dashboard's "recently edited" sort
+    // reflects this save. Fire-and-forget — don't block the response.
+    sql`UPDATE projects SET updated_at = now() WHERE id = ${projectId}`.catch(
+      (err: unknown) =>
+        console.warn("[project-files] updated_at bump failed:", err)
+    );
+
     emitActivity(sql, {
       projectId,
       userId: c.get("userId"),
