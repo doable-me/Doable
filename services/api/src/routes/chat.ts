@@ -1496,13 +1496,24 @@ ERROR RECOVERY — if you encounter errors:
             ]);
             if (CONTENT_EVENTS.has(evtType)) {
               silentIterations = 0;
-              sawTurnEnd = false; // new content after turn_end = multi-turn, reset
+            }
+
+            // Only genuine assistant MESSAGE events should cancel the turn_end
+            // grace period (= new turn started). Tool lifecycle events (tool.*) can
+            // fire alongside or after turn_end and must NOT reset the flag.
+            const MESSAGE_CONTENT_EVENTS = new Set([
+              "assistant.message_delta", "assistant.streaming_delta",
+              "assistant.message", "assistant.reasoning_delta", "assistant.reasoning",
+            ]);
+            if (MESSAGE_CONTENT_EVENTS.has(evtType)) {
+              sawTurnEnd = false; // new assistant content after turn_end = multi-turn, reset
             }
 
             // Track turn_end to trigger short grace period
             if (evtType === "assistant.turn_end") {
               sawTurnEnd = true;
               turnEndAt = Date.now();
+              console.log(`[Chat][${projectId.slice(0, 8)}] assistant.turn_end — grace period started`);
             }
 
             // ── Debug: trace SDK events to diagnose silent model failures ──
