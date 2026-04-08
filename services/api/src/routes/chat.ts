@@ -2793,6 +2793,7 @@ function friendlyToolMessage(
       }
     }
     if (cmd) {
+      cmd = sanitizeCommand(cmd);
       if (cmd.length > 80) cmd = `${cmd.slice(0, 77)}...`;
       return `Running: ${cmd}`;
     }
@@ -2945,7 +2946,58 @@ const JARGON_MAP: Array<[RegExp, string]> = [
 /** Strip server-side absolute paths from text, leaving only relative project paths */
 const SERVER_PATH_RE = /(?:[A-Za-z]:)?(?:[\\/][^\s:,)"'`]+)?[\\/]projects[\\/][a-f0-9-]+[\\/]/gi;
 function stripServerPaths(text: string): string {
-  return text.replace(SERVER_PATH_RE, "");
+  let result = text;
+  // 1. Full project paths: /root/doable/projects/<uuid>/ → (empty, leaves relative)
+  result = result.replace(SERVER_PATH_RE, "");
+  // 2. Base server dir: /root/doable/ or /home/<user>/doable/
+  result = result.replace(/(?:\/root\/doable|\/home\/[^\s/]+\/doable)\//g, "");
+  // 3. Bare project dir reference without trailing file: /root/doable/projects/<uuid>
+  result = result.replace(/(?:\/root\/doable|\/home\/[^\s/]+\/doable)\/projects\/[a-f0-9-]+/g, ".");
+  return result;
+}
+
+/**
+ * Sanitize a shell command for display to end users.
+ * Strips server paths, internal tool details, and makes commands user-friendly.
+ */
+function sanitizeCommand(cmd: string): string {
+  let result = stripServerPaths(cmd);
+
+  // Replace MCP tool invocations with friendly descriptions
+  // "npx mcp-supabase execute-sql ..." → "Setting up database..."
+  if (/\bnpx\s+mcp-supabase\s+execute-sql\b/.test(result)) {
+    const sqlMatch = result.match(/(?:CREATE\s+TABLE|ALTER\s+TABLE|INSERT|UPDATE|DELETE|SELECT|DROP|CREATE\s+INDEX)/i);
+    if (sqlMatch) {
+      const op = sqlMatch[0].toLowerCase();
+      if (op.startsWith("create")) return "Setting up database table";
+      if (op.startsWith("alter")) return "Updating database schema";
+      if (op.startsWith("insert")) return "Adding data to database";
+      if (op.startsWith("select")) return "Querying database";
+      if (op.startsWith("drop")) return "Removing database table";
+      return "Running database operation";
+    }
+    return "Running database operation";
+  }
+  // Other MCP tools and npx @scoped/... invocations — strip the prefix
+  result = result.replace(/\bnpx\s+mcp-\S+\s+/g, "");
+  result = result.replace(/\bnpx\s+@\S+\s+/g, "");
+
+  // Replace `find / ...` with friendly description
+  const findMatch = result.match(/\bfind\s+\/(?:\S+\s)?.*-name\s+["']?([^"'\s]+)/);
+  if (findMatch) {
+    return `Searching for ${findMatch[1]}`;
+  }
+  result = result.replace(/\bfind\s+\/(?:\S+\s)?/g, "find . ");
+
+  // Strip shell noise: 2>/dev/null, 2>&1, | head -N, | tail -N
+  result = result.replace(/\s*2>\/dev\/null/g, "");
+  result = result.replace(/\s*2>&1/g, "");
+  result = result.replace(/\s*\|\s*(?:head|tail)\s+-\d+/g, "");
+
+  // Clean up leftover whitespace
+  result = result.replace(/\s{2,}/g, " ").trim();
+
+  return result;
 }
 
 function sanitizeText(text: string): string {
@@ -3179,7 +3231,7 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
         }
         // Strip server paths from command strings
         if (typeof safeArgs.command === "string") {
-          safeArgs.command = stripServerPaths(safeArgs.command as string);
+          safeArgs.command = sanitizeCommand(safeArgs.command as string);
         }
       }
       return {
