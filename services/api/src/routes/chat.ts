@@ -1563,7 +1563,7 @@ ERROR RECOVERY — if you encounter errors:
                       }
                     } else {
                       assistantThinking += chunk.content;
-                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
                     }
                   }
                   // Replace the per-message portion with the authoritative full text
@@ -1580,7 +1580,7 @@ ERROR RECOVERY — if you encounter errors:
                       }
                     } else {
                       assistantThinking += chunk.content;
-                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
                     }
                   }
                   assistantContent = sanitizeText(content);
@@ -1660,9 +1660,9 @@ ERROR RECOVERY — if you encounter errors:
                     // thinking
                     assistantThinking += chunk.content;
                     broadcastToRoom(projectId, {
-                      type: "ai:stream-chunk", chunk: chunk.content, messageId, isThinking: true,
+                      type: "ai:stream-chunk", chunk: stripServerPaths(chunk.content), messageId, isThinking: true,
                     }, userId).catch(() => {});
-                    await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                    await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
                     lastSseEmitAt = Date.now();
                   }
                 }
@@ -1676,7 +1676,7 @@ ERROR RECOVERY — if you encounter errors:
                   messageId,
                   isThinking: true,
                 }, userId).catch(() => {});
-                await stream.writeSSE({ data: JSON.stringify(sseData) });
+                await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(thinkingDelta) }) });
                 lastSseEmitAt = Date.now();
               } else {
                 // All non-text SSE events (tool_call, tool_result, status, error, etc.)
@@ -1751,7 +1751,7 @@ ERROR RECOVERY — if you encounter errors:
               }
             } else {
               assistantThinking += chunk.content;
-              await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+              await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
             }
           }
 
@@ -1802,13 +1802,13 @@ ERROR RECOVERY — if you encounter errors:
                       }
                     } else {
                       assistantThinking += chunk.content;
-                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
                     }
                   }
                 } else if (retrySseData?.type === "thinking") {
                   const td = typeof retrySseData.data === "string" ? retrySseData.data : "";
                   assistantThinking += td;
-                  await stream.writeSSE({ data: JSON.stringify(retrySseData) });
+                  await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(td) }) });
                 } else if (retrySseData && retrySseData.type !== "done") {
                   // Forward tool_call, tool_result, error, status, etc.
                   if (retrySseData.type === "tool_call" || retrySseData.type === "tool_result") hadToolCalls = true;
@@ -1823,7 +1823,7 @@ ERROR RECOVERY — if you encounter errors:
                   if (cleaned) { assistantContent += cleaned; await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) }); }
                 } else {
                   assistantThinking += chunk.content;
-                  await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                  await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
                 }
               }
               console.log(`[Chat][${projectId.slice(0, 8)}] retry result — content: ${assistantContent.length} chars, thinking: ${assistantThinking.length} chars, toolCalls: ${hadToolCalls}`);
@@ -2923,6 +2923,12 @@ const JARGON_MAP: Array<[RegExp, string]> = [
   [/\.jsx\s+file\b/gi, "component"],
 ];
 
+/** Strip server-side absolute paths from text, leaving only relative project paths */
+const SERVER_PATH_RE = /(?:[A-Za-z]:)?(?:[\\/][^\s:,)"'`]+)?[\\/]projects[\\/][a-f0-9-]+[\\/]/gi;
+function stripServerPaths(text: string): string {
+  return text.replace(SERVER_PATH_RE, "");
+}
+
 function sanitizeText(text: string): string {
   if (!text) return text;
 
@@ -2939,11 +2945,7 @@ function sanitizeText(text: string): string {
   result = result.replace(/<\/?answer>/gi, "");
 
   // 1. Strip absolute server paths
-  //    e.g. /home/user/doable/projects/abc-123-def/src/App.tsx → src/App.tsx
-  result = result.replace(
-    /(?:[A-Za-z]:)?(?:[\\/][^\s:,)"']+)?[\\/]projects[\\/][a-f0-9-]+[\\/]/gi,
-    "",
-  );
+  result = stripServerPaths(result);
 
   // 2. Humanize technical jargon
   for (const [pattern, replacement] of JARGON_MAP) {
@@ -3129,7 +3131,7 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     case "assistant.reasoning_delta": {
       const reasoningDelta = (data?.deltaContent ?? "") as string;
       if (!reasoningDelta) return null;
-      return { type: "thinking", data: reasoningDelta };
+      return { type: "thinking", data: stripServerPaths(reasoningDelta) };
     }
 
     // ─── Final reasoning block ────────────────────────────
@@ -3139,17 +3141,27 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
 
     // ─── Thinking / reasoning (legacy events) ─────────────
     case "assistant.thinking":
-      return { type: "thinking", data: data?.content ?? "" };
+      return { type: "thinking", data: stripServerPaths(String(data?.content ?? "")) };
 
     // ─── Tool calls (starting) ────────────────────────────
     case "tool.running":
     case "tool.execution_start": {
       const toolName = (data?.toolName ?? data?.name) as string | undefined;
       const toolArgs = data?.arguments as Record<string, unknown> | undefined;
-      // Strip file paths from arguments before sending to frontend
+      // Strip file paths and content from arguments before sending to frontend
       const safeArgs = toolArgs ? { ...toolArgs } : undefined;
       if (safeArgs) {
         delete safeArgs.content; // Never send full file content to chat
+        // Strip server paths from path-like args
+        for (const key of ["path", "filePath", "file", "directory", "cwd"] as const) {
+          if (typeof safeArgs[key] === "string") {
+            safeArgs[key] = stripServerPaths(safeArgs[key] as string);
+          }
+        }
+        // Strip server paths from command strings
+        if (typeof safeArgs.command === "string") {
+          safeArgs.command = stripServerPaths(safeArgs.command as string);
+        }
       }
       return {
         type: "tool_call",
