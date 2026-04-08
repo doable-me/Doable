@@ -54,7 +54,17 @@ export class ApiError extends Error {
 
 let refreshPromise: Promise<AuthTokens | null> | null = null;
 
-async function refreshTokens(): Promise<AuthTokens | null> {
+/**
+ * Swap the stored refresh token for a fresh access+refresh pair.
+ * Writes the new pair to localStorage so any other tab, external script,
+ * or next apiFetch call reads the up-to-date value. Returns null if no
+ * refresh token is stored or the server rejects the swap.
+ *
+ * Safe to call proactively — deduped by the apiFetch 401 retry and by
+ * the AuthProvider's background keep-alive interval so we never fire two
+ * refresh requests at once.
+ */
+export async function refreshAccessToken(): Promise<AuthTokens | null> {
   const { refreshToken } = getStoredTokens();
   if (!refreshToken) return null;
 
@@ -78,6 +88,9 @@ async function refreshTokens(): Promise<AuthTokens | null> {
     return null;
   }
 }
+
+// Internal alias kept for the existing 401-retry path below.
+const refreshTokens = refreshAccessToken;
 
 export async function apiFetch<T>(
   path: string,

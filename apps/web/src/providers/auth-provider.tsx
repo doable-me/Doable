@@ -17,6 +17,7 @@ import {
   storeTokens,
   clearTokens,
   getStoredTokens,
+  refreshAccessToken,
 } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────
@@ -142,6 +143,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       });
   }, []);
+
+  // Keep localStorage tokens fresh by proactively refreshing ~2min before
+  // expiry. Without this, idle sessions leave a stale access token in
+  // localStorage until the next apiFetch triggers a 401 retry — breaking
+  // new tabs and any external/integration script that reads localStorage
+  // to get "the current token".
+  useEffect(() => {
+    if (!user || user.id === "demo-user-1") return;
+    // Access token TTL is 15 min — refresh every 13 min so there's always
+    // a fresh window; the server-side 401 retry is still a safety net.
+    const intervalMs = 13 * 60 * 1000;
+    const id = setInterval(() => {
+      void refreshAccessToken();
+    }, intervalMs);
+    return () => clearInterval(id);
+  }, [user]);
 
   const login = useCallback(async (data: LoginData) => {
     const res = await apiLogin(data);
