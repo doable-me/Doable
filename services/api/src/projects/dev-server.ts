@@ -101,12 +101,26 @@ function releasePort(port: number): void {
 // ─── Public API ──────────────────────────────────────────
 
 /**
+ * Optional caller context for dev-server startup.
+ *
+ * `userId` enables vault-backed integration credentials to be injected into
+ * the spawned Vite process via `resolveProjectEnvVars`. Without it, only the
+ * user's `env_vars` table is consulted (legacy behavior). The workspace is
+ * looked up from the project record inside `resolveProjectEnvVars`, so callers
+ * never need to pass it.
+ */
+export interface StartDevServerOptions {
+  userId?: string;
+}
+
+/**
  * Start a Vite dev server for the given project.
  * If already running, returns the existing server info.
  * If a start is already in-flight, waits for that instead of spawning a duplicate.
  */
 export async function startDevServer(
   projectId: string,
+  opts?: StartDevServerOptions,
 ): Promise<{ url: string; port: number }> {
   // Return existing server if running and the process is still alive
   const existing = servers.get(projectId);
@@ -130,7 +144,7 @@ export async function startDevServer(
     return inflight;
   }
 
-  const startPromise = doStartDevServer(projectId);
+  const startPromise = doStartDevServer(projectId, opts);
   startingServers.set(projectId, startPromise);
 
   try {
@@ -146,6 +160,7 @@ export async function startDevServer(
  */
 async function doStartDevServer(
   projectId: string,
+  opts?: StartDevServerOptions,
 ): Promise<{ url: string; port: number }> {
   const port = await allocatePort();
   const projectPath = getProjectPath(projectId);
@@ -182,11 +197,20 @@ async function doStartDevServer(
   // which may not be created by npm install on Node 24+/Windows.
   const viteEntry = path.join(projectPath, "node_modules", "vite", "bin", "vite.js");
 
-  // Resolve user-defined env vars (workspace + project merged)
+  // Resolve env vars for the dev server. When `opts.userId` is provided, this
+  // also pulls vault-backed integration credentials (Phase 1C of the
+  // integration↔AI chat bridge); user `env_vars` always override the vault.
+  // The workspace is looked up from the project record inside the resolver,
+  // so we only thread `userId` here.
   let userEnvVars: Record<string, string> = {};
   try {
     const { resolveProjectEnvVars } = await import("../env/resolve.js");
-    userEnvVars = await resolveProjectEnvVars(projectId, "development");
+    userEnvVars = await resolveProjectEnvVars(
+      projectId,
+      "development",
+      undefined,
+      opts?.userId,
+    );
   } catch (err) {
     console.warn("[DevServer] Failed to resolve env vars:", err);
   }
@@ -484,6 +508,7 @@ export function getRunningServers(): Array<{
  */
 export async function restartDevServer(
   projectId: string,
+  opts?: StartDevServerOptions,
 ): Promise<{ url: string; port: number }> {
   console.log(`[DevServer] Restarting server for project ${projectId}`);
   await stopDevServer(projectId);
@@ -499,7 +524,7 @@ export async function restartDevServer(
     // Cache dir may not exist yet — that's fine
   }
 
-  return startDevServer(projectId);
+  return startDevServer(projectId, opts);
 }
 
 /**

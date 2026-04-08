@@ -1376,18 +1376,60 @@ export default function EditorPage() {
       setSelectedProviderId(effectiveAiConfig.enforced_provider_id ?? null);
       setSelectedCopilotAccountId(effectiveAiConfig.enforced_copilot_account_id ?? null);
     } else {
-      // Not enforced — use server-side user preferences as source of truth if available
-      if (effectiveAiConfig.user_model) {
-        setSelectedModelId(effectiveAiConfig.user_model);
-        localStorage.setItem("doable_selected_model", effectiveAiConfig.user_model);
-      }
-      if (effectiveAiConfig.user_provider_id) {
-        setSelectedProviderId(effectiveAiConfig.user_provider_id);
-        localStorage.setItem("doable_selected_provider_id", effectiveAiConfig.user_provider_id);
-      }
-      if (effectiveAiConfig.user_copilot_account_id) {
-        setSelectedCopilotAccountId(effectiveAiConfig.user_copilot_account_id);
-        localStorage.setItem("doable_selected_copilot_account", effectiveAiConfig.user_copilot_account_id);
+      // Not enforced — pick the active side based on `*_source`. With migration
+      // 042, both copilot and custom configs may be persisted at once; the
+      // active side is determined by the source flag, not by "which is set".
+      // Prefer the user override (if active and populated), else fall back to
+      // the workspace default.
+      const userActive =
+        (effectiveAiConfig.user_source === "copilot" && !!effectiveAiConfig.user_copilot_account_id) ||
+        (effectiveAiConfig.user_source === "custom" && !!effectiveAiConfig.user_provider_id);
+
+      if (userActive) {
+        if (effectiveAiConfig.user_source === "custom") {
+          if (effectiveAiConfig.user_provider_id) {
+            setSelectedProviderId(effectiveAiConfig.user_provider_id);
+            localStorage.setItem("doable_selected_provider_id", effectiveAiConfig.user_provider_id);
+          }
+          setSelectedCopilotAccountId(null);
+          if (effectiveAiConfig.user_provider_model) {
+            setSelectedModelId(effectiveAiConfig.user_provider_model);
+            localStorage.setItem("doable_selected_model", effectiveAiConfig.user_provider_model);
+          }
+        } else {
+          if (effectiveAiConfig.user_copilot_account_id) {
+            setSelectedCopilotAccountId(effectiveAiConfig.user_copilot_account_id);
+            localStorage.setItem("doable_selected_copilot_account", effectiveAiConfig.user_copilot_account_id);
+          }
+          setSelectedProviderId(null);
+          if (effectiveAiConfig.user_copilot_model) {
+            setSelectedModelId(effectiveAiConfig.user_copilot_model);
+            localStorage.setItem("doable_selected_model", effectiveAiConfig.user_copilot_model);
+          }
+        }
+      } else {
+        // Workspace defaults
+        if (effectiveAiConfig.default_source === "custom") {
+          if (effectiveAiConfig.default_provider_id) {
+            setSelectedProviderId(effectiveAiConfig.default_provider_id);
+            localStorage.setItem("doable_selected_provider_id", effectiveAiConfig.default_provider_id);
+          }
+          setSelectedCopilotAccountId(null);
+          if (effectiveAiConfig.default_provider_model) {
+            setSelectedModelId(effectiveAiConfig.default_provider_model);
+            localStorage.setItem("doable_selected_model", effectiveAiConfig.default_provider_model);
+          }
+        } else {
+          if (effectiveAiConfig.default_copilot_account_id) {
+            setSelectedCopilotAccountId(effectiveAiConfig.default_copilot_account_id);
+            localStorage.setItem("doable_selected_copilot_account", effectiveAiConfig.default_copilot_account_id);
+          }
+          setSelectedProviderId(null);
+          if (effectiveAiConfig.default_copilot_model) {
+            setSelectedModelId(effectiveAiConfig.default_copilot_model);
+            localStorage.setItem("doable_selected_model", effectiveAiConfig.default_copilot_model);
+          }
+        }
       }
     }
   }, [effectiveAiConfig]);

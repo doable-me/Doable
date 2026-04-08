@@ -255,13 +255,23 @@ export interface AiProviderRow {
   updated_at: Date;
 }
 
+export type AiSource = "copilot" | "custom";
+
 export interface WorkspaceAiSettingsRow {
   workspace_id: string;
+  default_source: AiSource;
   default_copilot_account_id: string | null;
+  default_copilot_model: string | null;
   default_provider_id: string | null;
+  default_provider_model: string | null;
+  /** @deprecated kept for back-compat; use default_copilot_model / default_provider_model */
   default_model: string | null;
+  suggestion_source: AiSource;
   suggestion_copilot_account_id: string | null;
+  suggestion_copilot_model: string | null;
   suggestion_provider_id: string | null;
+  suggestion_provider_model: string | null;
+  /** @deprecated kept for back-compat; use suggestion_copilot_model / suggestion_provider_model */
   suggestion_model: string | null;
   enforce_ai: boolean;
   enforced_copilot_account_id: string | null;
@@ -276,9 +286,18 @@ export interface WorkspaceAiSettingsRow {
 export interface UserAiPreferencesRow {
   workspace_id: string;
   user_id: string;
+  source: AiSource;
   copilot_account_id: string | null;
+  copilot_model: string | null;
   provider_id: string | null;
+  provider_model: string | null;
+  /** @deprecated kept for back-compat; use copilot_model / provider_model */
   model: string | null;
+  suggestion_source: AiSource;
+  suggestion_copilot_account_id: string | null;
+  suggestion_copilot_model: string | null;
+  suggestion_provider_id: string | null;
+  suggestion_provider_model: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -405,12 +424,30 @@ export interface EffectiveAiConfigRow {
   enforced_provider_id: string | null;
   enforced_model: string | null;
   show_model_selector: boolean;
+  // Workspace defaults
+  default_source: AiSource;
   default_copilot_account_id: string | null;
+  default_copilot_model: string | null;
   default_provider_id: string | null;
-  default_model: string | null;
+  default_provider_model: string | null;
+  // Workspace suggestion defaults
+  suggestion_source: AiSource;
+  suggestion_copilot_account_id: string | null;
+  suggestion_copilot_model: string | null;
+  suggestion_provider_id: string | null;
+  suggestion_provider_model: string | null;
+  // Per-user override
+  user_source: AiSource | null;
   user_copilot_account_id: string | null;
+  user_copilot_model: string | null;
   user_provider_id: string | null;
-  user_model: string | null;
+  user_provider_model: string | null;
+  // Per-user suggestion override
+  user_suggestion_source: AiSource | null;
+  user_suggestion_copilot_account_id: string | null;
+  user_suggestion_copilot_model: string | null;
+  user_suggestion_provider_id: string | null;
+  user_suggestion_provider_model: string | null;
 }
 
 export interface PublicProjectRow {

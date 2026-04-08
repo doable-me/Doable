@@ -8,7 +8,13 @@ if (!DATABASE_URL) {
 
 const poolSize = parseInt(process.env.DATABASE_POOL_SIZE ?? "20", 10);
 
-export const sql = DATABASE_URL
+// Widen the type to `postgres.Sql` (= Sql<{}>) so the client is structurally
+// compatible with the `@doable/db` query functions, which all declare their
+// parameter as `postgres.Sql`. The `types: { bigint }` runtime option still
+// runs — big integers still come back as native `bigint` — we just don't
+// advertise that in the exported TYPE, which would otherwise force every
+// query callsite through an `as unknown as postgres.Sql` cast.
+export const sql: postgres.Sql = DATABASE_URL
   ? postgres(DATABASE_URL, {
       max: poolSize,
       idle_timeout: 20,
@@ -18,7 +24,7 @@ export const sql = DATABASE_URL
       },
       onnotice: () => {},
     })
-  : (new Proxy({} as postgres.Sql<{ bigint: bigint }>, {
+  : (new Proxy({} as postgres.Sql, {
       get: (_target, prop) => {
         if (prop === "end") return async () => {};
         return () => {
@@ -28,7 +34,7 @@ export const sql = DATABASE_URL
       apply: () => {
         throw new Error("Database not configured. Set DATABASE_URL in .env");
       },
-    }) as postgres.Sql<{ bigint: bigint }>);
+    }) as postgres.Sql);
 
 /**
  * Run a health check query against the database.

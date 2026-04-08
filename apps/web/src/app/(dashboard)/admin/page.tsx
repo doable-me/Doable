@@ -75,13 +75,40 @@ interface UserAiAllocation {
   platform_role: string | null;
   role: string | null;
   workspace_plan: string | null;
+  source: "copilot" | "custom" | null;
   copilot_account_id: string | null;
   copilot_account_label: string | null;
+  copilot_model: string | null;
   provider_id: string | null;
   provider_label: string | null;
   provider_type: string | null;
+  provider_model: string | null;
+  /** @deprecated use copilot_model / provider_model */
   model: string | null;
   preference_updated_at: string | null;
+}
+
+// Helpers shared by AiStatusBadge and UserRow
+function rowActiveSide(row: UserAiAllocation): "copilot" | "custom" | null {
+  if (row.source) return row.source;
+  // Legacy rows where source isn't set yet — fall back to "which id is set".
+  if (row.provider_id) return "custom";
+  if (row.copilot_account_id) return "copilot";
+  return null;
+}
+
+function rowActiveModel(row: UserAiAllocation): string | null {
+  const side = rowActiveSide(row);
+  if (side === "custom") return row.provider_model ?? row.model;
+  if (side === "copilot") return row.copilot_model ?? row.model;
+  return null;
+}
+
+function rowHasAllocation(row: UserAiAllocation): boolean {
+  const side = rowActiveSide(row);
+  if (side === "custom") return !!row.provider_id;
+  if (side === "copilot") return !!row.copilot_account_id;
+  return false;
 }
 
 // ─── Feature Row ────────────────────────────────────────────
@@ -190,26 +217,27 @@ function FeatureRow({
 // ─── AI Allocation Status Badge ─────────────────────────────
 
 function AiStatusBadge({ row }: { row: UserAiAllocation }) {
-  const hasAllocation = !!(row.copilot_account_id || row.provider_id || row.model);
-  if (!hasAllocation) {
+  if (!rowHasAllocation(row)) {
     return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500">No AI configured</span>;
   }
-  if (row.copilot_account_id) {
+  const side = rowActiveSide(row);
+  const activeModel = rowActiveModel(row);
+  if (side === "copilot" && row.copilot_account_id) {
     return (
       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600/15 text-emerald-400">
-        Copilot: {row.copilot_account_label ?? "Unknown"}{row.model ? ` / ${row.model}` : ""}
+        Copilot: {row.copilot_account_label ?? "Unknown"}{activeModel ? ` / ${activeModel}` : ""}
       </span>
     );
   }
-  if (row.provider_id) {
+  if (side === "custom" && row.provider_id) {
     const typeName = row.provider_type ? row.provider_type.charAt(0).toUpperCase() + row.provider_type.slice(1) : "Provider";
     return (
       <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-600/15 text-blue-400">
-        {typeName}: {row.provider_label ?? "Unknown"}{row.model ? ` / ${row.model}` : ""}
+        {typeName}: {row.provider_label ?? "Unknown"}{activeModel ? ` / ${activeModel}` : ""}
       </span>
     );
   }
-  return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-700/50 text-zinc-400">Model: {row.model}</span>;
+  return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-700/50 text-zinc-400">Configured</span>;
 }
 
 // ─── Role / Plan color helpers ──────────────────────────────
@@ -240,16 +268,24 @@ function UserRow({
   providers: Omit<ApiAiProvider, "workspace_id" | "added_by" | "created_at" | "updated_at">[];
   onChangeRole: (userId: string, role: string) => void;
   onChangePlan: (userId: string, plan: string) => void;
-  onAllocate: (userId: string, data: { copilotAccountId?: string | null; providerId?: string | null; model?: string | null }) => Promise<void>;
+  onAllocate: (userId: string, data: {
+    source?: "copilot" | "custom";
+    copilotAccountId?: string | null;
+    copilotModel?: string | null;
+    providerId?: string | null;
+    providerModel?: string | null;
+  }) => Promise<void>;
   onReset: (userId: string) => Promise<void>;
   onGetCredits: (userId: string) => Promise<{ daily_total: number; daily_remaining: number; monthly_total: number; monthly_remaining: number; rollover_credits: number }>;
   onSetCredits: (userId: string, data: { dailyCredits?: number; monthlyCredits?: number; rolloverCredits?: number; resetUsage?: boolean }) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
+  // Both sides are kept; `source` selects which one is active.
   const [source, setSource] = useState<"copilot" | "custom">("copilot");
   const [copilotAccountId, setCopilotAccountId] = useState("");
+  const [copilotModel, setCopilotModel] = useState("");
   const [providerId, setProviderId] = useState("");
-  const [model, setModel] = useState("");
+  const [providerModel, setProviderModel] = useState("");
   const [saving, setSaving] = useState(false);
   const [editingCredits, setEditingCredits] = useState(false);
   const [creditDaily, setCreditDaily] = useState(0);
@@ -260,32 +296,31 @@ function UserRow({
   const [creditLoading, setCreditLoading] = useState(false);
   const [creditSaving, setCreditSaving] = useState(false);
 
-  const hasAllocation = !!(u.copilot_account_id || u.provider_id || u.model);
+  const hasAllocation = rowHasAllocation(u);
   const validAccounts = accounts.filter((a) => a.is_valid);
   const validProviders = providers.filter((p) => p.is_valid);
   const isSelf = u.user_id === currentUserId;
 
   function startEdit() {
-    if (u.provider_id) {
-      setSource("custom");
-      setProviderId(u.provider_id);
-      setCopilotAccountId("");
-    } else {
-      setSource("copilot");
-      setCopilotAccountId(u.copilot_account_id ?? "");
-      setProviderId("");
-    }
-    setModel(u.model ?? "");
+    // Preload BOTH sides so neither tab loses data when the admin switches.
+    setSource(rowActiveSide(u) ?? "copilot");
+    setCopilotAccountId(u.copilot_account_id ?? "");
+    setCopilotModel(u.copilot_model ?? "");
+    setProviderId(u.provider_id ?? "");
+    setProviderModel(u.provider_model ?? "");
     setEditing(true);
   }
 
   async function save() {
     setSaving(true);
     try {
+      // Persist BOTH sides + the active source. No null wipes.
       await onAllocate(u.user_id, {
-        copilotAccountId: source === "copilot" ? (copilotAccountId || null) : null,
-        providerId: source === "custom" ? (providerId || null) : null,
-        model: model || null,
+        source,
+        copilotAccountId: copilotAccountId || null,
+        copilotModel: copilotModel || null,
+        providerId: providerId || null,
+        providerModel: providerModel || null,
       });
       setEditing(false);
     } finally {
@@ -420,7 +455,7 @@ function UserRow({
           <div className="mb-3">
             <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
               <button
-                onClick={() => { setSource("copilot"); setProviderId(""); }}
+                onClick={() => setSource("copilot")}
                 className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                   source === "copilot" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
                 }`}
@@ -428,7 +463,7 @@ function UserRow({
                 GitHub Copilot
               </button>
               <button
-                onClick={() => { setSource("custom"); setCopilotAccountId(""); }}
+                onClick={() => setSource("custom")}
                 className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                   source === "custom" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
                 }`}
@@ -436,6 +471,9 @@ function UserRow({
                 Custom Provider
               </button>
             </div>
+            <p className="text-[10px] text-zinc-500 mt-1">
+              Both configurations are saved. The selected tab is what this user will use.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 mb-3">
@@ -458,8 +496,8 @@ function UserRow({
                   <label className="block text-[10px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">Model</label>
                   <input
                     type="text"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
+                    value={copilotModel}
+                    onChange={(e) => setCopilotModel(e.target.value)}
                     placeholder="e.g. claude-sonnet-4 (blank = auto)"
                     className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
                   />
@@ -484,8 +522,8 @@ function UserRow({
                   <label className="block text-[10px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">Model</label>
                   <input
                     type="text"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
+                    value={providerModel}
+                    onChange={(e) => setProviderModel(e.target.value)}
                     placeholder="e.g. gpt-4o"
                     className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
                   />
@@ -667,7 +705,13 @@ export default function AdminPage() {
     }
   }, [activeTab, isPlatformAdmin, loadAllocations]);
 
-  async function handleAllocate(userId: string, data: { copilotAccountId?: string | null; providerId?: string | null; model?: string | null }) {
+  async function handleAllocate(userId: string, data: {
+    source?: "copilot" | "custom";
+    copilotAccountId?: string | null;
+    copilotModel?: string | null;
+    providerId?: string | null;
+    providerModel?: string | null;
+  }) {
     try {
       await apiFetch(`/admin/users/${userId}/ai-allocation`, {
         method: "PUT",
@@ -809,11 +853,14 @@ export default function AdminPage() {
         platform_role: u.platform_role ?? "member",
         role: null,
         workspace_plan: null,
+        source: null,
         copilot_account_id: null,
         copilot_account_label: null,
+        copilot_model: null,
         provider_id: null,
         provider_label: null,
         provider_type: null,
+        provider_model: null,
         model: null,
         preference_updated_at: null,
       }));

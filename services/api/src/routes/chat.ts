@@ -133,22 +133,46 @@ async function resolveAiEngine(
           // Enforcement overrides any request-level provider/copilot values
           resolvedProvider = undefined;
         } else if (!selectedCopilotAccountId && !selectedProviderId && !resolvedProvider) {
-          // No enforcement and no explicit overrides — walk down the chain
+          // No enforcement and no explicit overrides — walk down the chain.
+          //
+          // IMPORTANT: With migration 042, both copilot AND custom configs
+          // can be persisted simultaneously. The active side is determined
+          // by the explicit `*_source` column — never by "which id is set".
+          // Pick exactly one side based on source so the inactive side is
+          // ignored even when it has a value.
 
           // ── Tier 3: User preferences ──
-          if (config.user_copilot_account_id || config.user_provider_id) {
-            selectedCopilotAccountId = config.user_copilot_account_id ?? undefined;
-            selectedProviderId = config.user_provider_id ?? undefined;
-            if (!resolvedModel && config.user_model) {
-              resolvedModel = config.user_model;
+          // A user override is "active" if the row exists and the side
+          // selected by `user_source` actually has a value to use.
+          const hasUserOverride =
+            (config.user_source === "copilot" && config.user_copilot_account_id) ||
+            (config.user_source === "custom" && config.user_provider_id);
+
+          if (hasUserOverride) {
+            if (config.user_source === "custom") {
+              selectedProviderId = config.user_provider_id ?? undefined;
+              if (!resolvedModel && config.user_provider_model) {
+                resolvedModel = config.user_provider_model;
+              }
+            } else {
+              selectedCopilotAccountId = config.user_copilot_account_id ?? undefined;
+              if (!resolvedModel && config.user_copilot_model) {
+                resolvedModel = config.user_copilot_model;
+              }
             }
           }
           // ── Tier 4: Workspace defaults ──
           else {
-            selectedCopilotAccountId = config.default_copilot_account_id ?? undefined;
-            selectedProviderId = config.default_provider_id ?? undefined;
-            if (!resolvedModel && config.default_model) {
-              resolvedModel = config.default_model;
+            if (config.default_source === "custom") {
+              selectedProviderId = config.default_provider_id ?? undefined;
+              if (!resolvedModel && config.default_provider_model) {
+                resolvedModel = config.default_provider_model;
+              }
+            } else {
+              selectedCopilotAccountId = config.default_copilot_account_id ?? undefined;
+              if (!resolvedModel && config.default_copilot_model) {
+                resolvedModel = config.default_copilot_model;
+              }
             }
           }
         }
@@ -322,6 +346,17 @@ async function buildProjectContextForMode(
       }
     } catch (err) {
       console.warn("[Chat] Failed to load environment skills/rules:", err);
+    }
+  }
+
+  // ── Connected integrations manifest (vault-bridge) ──
+  if (workspaceId && userId) {
+    try {
+      const { buildConnectedIntegrationsContext } = await import("../integrations/prompt-manifest.js");
+      const block = await buildConnectedIntegrationsContext(projectId, workspaceId, userId);
+      if (block) context += `\n\n${block}`;
+    } catch (err) {
+      console.warn("[Chat] integrations manifest failed:", err);
     }
   }
 
@@ -695,6 +730,8 @@ chatRoutes.post(
     let lastFlushLen = 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let assistantToolCalls: any[] = [];
+    // Hoisted outside the try so the catch path can flush usage on errors.
+    let usageCollector: ReturnType<typeof createUsageCollector> | null = null;
 
     const recordAssistantToolCall = (name?: string, args?: unknown) => {
       if (!name) return;
@@ -742,7 +779,12 @@ chatRoutes.post(
             data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Starting live preview..." } }),
           });
           console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
-          await startDevServer(projectId);
+          // Pass userId so vault-backed integration credentials get injected
+          // into the spawned Vite process (Phase 1C/1D of the integration↔AI
+          // chat bridge). Other startDevServer call sites that lack a user
+          // context fall back to user `env_vars` only — still valid, just no
+          // user-scoped vault credentials.
+          await startDevServer(projectId, { userId });
         } catch (err) {
           console.error(`[Chat] Dev server start failed for project ${projectId}:`, err);
         }
@@ -763,7 +805,7 @@ chatRoutes.post(
       const workspaceId: string | undefined = workspaceRow[0]?.workspace_id;
 
       // ── Usage collector (non-blocking, fire-and-forget) ──
-      const usageCollector = workspaceId ? createUsageCollector({
+      usageCollector = workspaceId ? createUsageCollector({
         userId,
         workspaceId,
         projectId,
@@ -835,6 +877,8 @@ Before you create or edit ANY file, mentally walk through this checklist:
 ═══════════════════════════════════════════════════════════════
 
 CRITICAL RULES — violating these will break the live preview:
+
+0. **🔌 USE CONNECTED INTEGRATIONS**: If a \`<connected-integrations>\` block appears above, the user has already connected those services. You MUST reference the listed env vars (via \`import.meta.env.VITE_*\` for client vars, \`process.env.*\` for server vars) and call the listed tools. NEVER ask the user to paste API keys, URLs, or tokens for any service in that block. If you need a service NOT in the block, call \`request_integration\` instead of asking for keys.
 
 1. **🚨 INSTALL BEFORE IMPORT (the #1 cause of errors) 🚨**: You MUST call install_package to install any npm package BEFORE writing any file that imports it. Check the "Installed dependencies" list above — if a package is NOT listed there, you MUST install it first. The preview WILL crash with "Failed to resolve import" errors otherwise.
 
@@ -940,6 +984,40 @@ ERROR RECOVERY — if you encounter errors:
                 }
               }
             } catch { /* non-critical */ }
+          }
+          // Phase 2A: forward `provision_supabase` requests to the chat UI.
+          // The tool handler returns `{ _sseHint: "provision_supabase_required", ... }`
+          // — we emit a dedicated SSE event so the client can pop the
+          // org/region picker dialog and POST to /api/integrations/supabase/provision.
+          if (toolName === "provision_supabase" && result) {
+            try {
+              const r = result as Record<string, unknown>;
+              if (r._sseHint === "provision_supabase_required") {
+                stream.writeSSE({ data: JSON.stringify({
+                  type: "provision_supabase_required",
+                  data: { name: r.name ?? "", reason: r.reason ?? "" },
+                }) }).catch(() => {});
+              }
+            } catch { /* non-critical */ }
+          }
+          // Phase 1H: surface integration_required as an inline Connect card.
+          // Fires for ANY tool whose result is tagged with `_sseHint:
+          // "integration_required"` — that's both the explicit
+          // `request_integration` tool AND tool-bridge.ts tagging a
+          // credentials_missing Activepieces failure the same way.
+          if (result && typeof result === "object") {
+            const r = result as Record<string, unknown>;
+            if (r._sseHint === "integration_required" && r.integrationId) {
+              stream.writeSSE({ data: JSON.stringify({
+                type: "integration_required",
+                data: {
+                  integrationId: r.integrationId,
+                  displayName: r.displayName ?? r.integrationId,
+                  logoUrl: r.logoUrl,
+                  reason: r.reason ?? "",
+                },
+              }) }).catch(() => {});
+            }
           }
           if (toolName === "create_plan" && result) {
             try {
@@ -2256,8 +2334,15 @@ chatRoutes.get("/ai/models", async (c) => {
       githubToken = (await aiSettingsDb.getCopilotAccountToken(copilotAccountId)) ?? undefined;
     }
 
+    // Key the pooled engine by account so each Copilot account gets its own
+    // engine with its own token. Reusing a single "models" key would return
+    // the engine cached for whichever token was passed first, and switching
+    // accounts in the UI would silently keep listing the original account's
+    // models — see CopilotEngineManager.getEngine, which doesn't compare
+    // tokens against the cached entry.
+    const engineKey = `models:${copilotAccountId ?? "default"}`;
     const manager = getCopilotManager();
-    const engine = await manager.getEngine("models", githubToken);
+    const engine = await manager.getEngine(engineKey, githubToken);
     const models = await engine.listModels();
     return c.json({ data: models });
   } catch (err) {
@@ -2341,14 +2426,28 @@ chatRoutes.post(
             label: "enforced",
           });
         } else {
-          // Suggestion-specific config (primary attempt)
-          if (settings.suggestion_model || settings.suggestion_copilot_account_id || settings.suggestion_provider_id) {
+          // Suggestion-specific config — pick the side selected by
+          // suggestion_source. Both copilot and custom may be persisted; we
+          // must consult only the active side, never both.
+          const useCustomSuggestion =
+            settings.suggestion_source === "custom" && !!settings.suggestion_provider_id;
+          const useCopilotSuggestion =
+            settings.suggestion_source === "copilot" && !!settings.suggestion_copilot_account_id;
+
+          if (useCustomSuggestion) {
             configs.push({
-              model: settings.suggestion_model ?? "gpt-4o-mini",
+              model: settings.suggestion_provider_model ?? "gpt-4o-mini",
+              githubToken: undefined,
+              provider: await resolveProvider(settings.suggestion_provider_id),
+              label: "suggestion",
+            });
+          } else if (useCopilotSuggestion) {
+            configs.push({
+              model: settings.suggestion_copilot_model ?? "gpt-4o-mini",
               githubToken: settings.suggestion_copilot_account_id
                 ? ((await aiSettingsDb.getCopilotAccountToken(settings.suggestion_copilot_account_id)) ?? undefined)
                 : undefined,
-              provider: await resolveProvider(settings.suggestion_provider_id),
+              provider: undefined,
               label: "suggestion",
             });
           }

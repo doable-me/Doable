@@ -63,6 +63,32 @@ export interface IntegrationDefinition {
   supportsUserProvidedCredentials: boolean;
   /** Optional enhanced auth — offers OAuth-based "easy connect" alongside manual form */
   enhancedAuth?: EnhancedAuthConfig;
+  /** Optional env-var mapping — declares which credential fields the vault-bridge
+   *  exposes to the user's project runtime, split by browser-safe vs server-only.
+   *  Used by `services/api/src/env/vault-bridge.ts` to construct the env map and the
+   *  AI's `<connected-integrations>` system prompt manifest. */
+  envKeyMap?: EnvKeyMapping;
+}
+
+// ─── Env Key Mapping (Phase 1A) ──────────────────────────
+//
+// Per-integration declaration mapping credential fields to env var names.
+// `client.*` values get bundled into the browser via Vite's `import.meta.env.VITE_*`
+// allowlist and MUST therefore start with `VITE_`. `server.*` values are server-only
+// — they MUST NOT start with `VITE_` (the vault-bridge enforces both rules at runtime
+// and refuses to expose any field that violates them).
+//
+// `runtimeHint` is a one-line description shown in the system prompt manifest
+// (e.g. "Postgres database + auth + storage") so the AI knows what the integration
+// is for without ever seeing decrypted credential values.
+
+export interface EnvKeyMapping {
+  /** Browser-safe credential fields. Each value MUST start with `VITE_`. */
+  client?: Record<string, string>;
+  /** Server-only credential fields. Each value MUST NOT start with `VITE_`. */
+  server?: Record<string, string>;
+  /** One-line description shown in the AI system-prompt manifest. */
+  runtimeHint?: string;
 }
 
 // ─── Enhanced Auth Types ────────────────────────────────
@@ -97,6 +123,17 @@ export interface EnhancedAuthConfig {
   requiresResourceSelection: boolean;
   /** Label for the resource picker, e.g. "Select a project" */
   resourceLabel?: string;
+  /**
+   * Optional platform-managed provisioner (Phase 2A).
+   * When `enabled`, the integration definition advertises support for the
+   * "create a brand-new resource under the user's own account" flow — e.g.
+   * Lovable-style one-click Supabase project creation. The OAuth grant must
+   * include every entry in `requiredScopes` for the provisioner to succeed.
+   */
+  provisioner?: {
+    enabled: boolean;
+    requiredScopes: string[];
+  };
 }
 
 // ─── Connection Types ────────────────────────────────────

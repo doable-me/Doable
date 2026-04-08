@@ -527,7 +527,7 @@ function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage):
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          room.broadcastExceptWs({ type: "visual-edit:preview-refresh" } as any, ws);
+          room.broadcastExceptWs({ type: "visual-edit:preview-refresh" }, ws);
           console.log("[ws] broadcast preview-refresh to room");
         }
       }

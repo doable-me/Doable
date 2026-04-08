@@ -37,6 +37,11 @@ export const DEVELOPER_TOOLS_INTEGRATIONS: Record<string, IntegrationDefinition>
     tier: "built_in",
     requiresOAuthApp: true,
     supportsUserProvidedCredentials: true,
+    envKeyMap: {
+      // GitHub OAuth tokens are server-only — never expose to the browser bundle.
+      server: { access_token: "GITHUB_TOKEN" },
+      runtimeHint: "GitHub API access (repos, issues, PRs).",
+    },
   },
 
   gitlab: {
@@ -252,6 +257,17 @@ export const DEVELOPER_TOOLS_INTEGRATIONS: Record<string, IntegrationDefinition>
     tier: "built_in",
     requiresOAuthApp: false,
     supportsUserProvidedCredentials: true,
+    envKeyMap: {
+      // Postgres connection details are server-only — DB creds must never reach the browser.
+      server: {
+        host: "PGHOST",
+        port: "PGPORT",
+        database: "PGDATABASE",
+        user: "PGUSER",
+        password: "PGPASSWORD",
+      },
+      runtimeHint: "PostgreSQL database connection.",
+    },
   },
 
   mysql: {
@@ -361,6 +377,25 @@ export const DEVELOPER_TOOLS_INTEGRATIONS: Record<string, IntegrationDefinition>
       },
       requiresResourceSelection: true,
       resourceLabel: "Select a Supabase project",
+      // Phase 2A: Lovable-style one-click project creation. When enabled, the
+      // chat UI can call the `provision_supabase` tool to create a brand-new
+      // project under the user's own organization without opening the dashboard.
+      provisioner: {
+        enabled: true,
+        requiredScopes: ["projects:create"],
+      },
+    },
+    envKeyMap: {
+      // url + anonKey are browser-safe (Vite ships them in import.meta.env.VITE_*).
+      // serviceRoleKey is full-access — server-only, NEVER browser-bundled.
+      client: {
+        url: "VITE_SUPABASE_URL",
+        anonKey: "VITE_SUPABASE_ANON_KEY",
+      },
+      server: {
+        serviceRoleKey: "SUPABASE_SERVICE_ROLE_KEY",
+      },
+      runtimeHint: "Postgres DB + auth + storage (Supabase).",
     },
   },
 

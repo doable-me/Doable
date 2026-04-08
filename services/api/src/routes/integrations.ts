@@ -447,7 +447,13 @@ integrationRoutes.get("/integrations/oauth/callback", async (c) => {
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? process.env.PUBLIC_URL ?? "http://localhost:3000";
 const EA_API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
-const EA_REDIRECT_URI = process.env.INTEGRATIONS_OAUTH_REDIRECT_URI ?? `${EA_API_URL}/integrations/enhanced-auth/callback`;
+// Enhanced auth has its own callback path (different from the regular OAuth
+// flow at /integrations/oauth/callback) and therefore its own env var so the
+// two flows can be registered as separate OAuth apps with the provider. Prefer
+// the enhanced-auth-specific var; fall back to the default callback path (NOT
+// to INTEGRATIONS_OAUTH_REDIRECT_URI, which is a path mismatch that silently
+// broke the Supabase "Sign in with" flow).
+const EA_REDIRECT_URI = process.env.INTEGRATIONS_ENHANCED_AUTH_REDIRECT_URI ?? `${EA_API_URL}/integrations/enhanced-auth/callback`;
 
 // GET /integrations/enhanced-auth/:id/authorize
 integrationRoutes.get("/integrations/enhanced-auth/:id/authorize", authMiddleware, async (c) => {
@@ -507,8 +513,26 @@ integrationRoutes.get("/integrations/enhanced-auth/:id/authorize", authMiddlewar
     redirect_uri: EA_REDIRECT_URI,
     scope: ea.oauth2Config.scopes.join(" "),
     state,
-    access_type: "offline",
   };
+
+  // `access_type=offline` is a Google-specific parameter that asks Google
+  // to return a refresh token. Other providers (Supabase, GitHub, …) use
+  // strict validators and REJECT the whole authorize request with
+  // "Unrecognized key(s) in object: 'access_type'". Only send it when the
+  // provider is Google, or when the integration has opted in via
+  // `extraParams: { access_type: "offline" }`.
+  const isGoogle = ea.oauth2Config.authUrl.includes("accounts.google.com");
+  if (isGoogle) {
+    query.access_type = "offline";
+  }
+  // Merge any provider-specific extra params declared on the integration's
+  // oauth2Config. This also covers the Google case via data, but we keep
+  // the explicit branch above so the behavior is obvious at read time.
+  if (ea.oauth2Config.extraParams) {
+    for (const [k, v] of Object.entries(ea.oauth2Config.extraParams)) {
+      query[k] = v;
+    }
+  }
 
   if (ea.oauth2Config.pkce) {
     codeVerifier = crypto.randomBytes(32).toString("base64url").slice(0, 43);
@@ -771,12 +795,30 @@ integrationRoutes.post("/integrations/enhanced-auth/:id/complete", async (c) => 
 
     deleteEnhancedAuthSession(sessionKey);
 
+    // postMessage the success back to the opener BEFORE calling window.close.
+    // COOP and some browsers strip the parent's popup reference after a
+    // cross-origin round-trip, so the parent's setInterval(popup.closed) poll
+    // can hang forever or fire after an arbitrary delay. postMessage works
+    // cross-origin and lets the parent refresh its catalog immediately.
+    const safeDisplayName = result.displayName.replace(/["<>\\]/g, "");
     return c.html(`<!DOCTYPE html><html><head><title>Connected</title></head><body>
       <p style="font-family:sans-serif;padding:40px;text-align:center;color:#eee;background:#0d0d1a;">
         Connected <strong>${result.displayName}</strong> successfully!<br/>
         This window will close automatically.
       </p>
-      <script>window.close();</script>
+      <script>
+        try {
+          if (window.opener) {
+            window.opener.postMessage({
+              type: "doable:enhanced-auth-complete",
+              integrationId: ${JSON.stringify(integrationId)},
+              displayName: ${JSON.stringify(safeDisplayName)},
+              status: "success"
+            }, "*");
+          }
+        } catch (e) { /* opener may be gone */ }
+        window.close();
+      </script>
     </body></html>`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -785,6 +827,18 @@ integrationRoutes.post("/integrations/enhanced-auth/:id/complete", async (c) => 
         Connection failed: ${msg.replace(/</g, "&lt;")}
       </p>
       <p><a href="javascript:window.close()">Close this window</a></p>
+      <script>
+        try {
+          if (window.opener) {
+            window.opener.postMessage({
+              type: "doable:enhanced-auth-complete",
+              integrationId: ${JSON.stringify(integrationId)},
+              status: "error",
+              error: ${JSON.stringify(msg.slice(0, 300))}
+            }, "*");
+          }
+        } catch (e) { /* opener may be gone */ }
+      </script>
     </body></html>`, 400);
   }
 });

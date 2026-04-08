@@ -79,6 +79,14 @@ export interface McpConnectorConfig {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * Phase 2B: inline stdio env override for VIRTUAL connectors that have no
+   * DB row. When set, the connector-manager skips the `connectors.getDecrypted`
+   * round-trip and passes this map straight to the stdio transport. Only used
+   * by preset-synthesized connectors (e.g., the Supabase MCP preset) — never
+   * persisted and never exposed to clients.
+   */
+  inlineServerEnv?: Record<string, string>;
 }
 
 /** Resolved MCP tool with connector info */

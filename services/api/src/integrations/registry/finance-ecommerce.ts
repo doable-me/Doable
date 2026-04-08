@@ -31,6 +31,18 @@ export const FINANCE_ECOMMERCE_INTEGRATIONS: Record<string, IntegrationDefinitio
     tier: "built_in",
     requiresOAuthApp: false,
     supportsUserProvidedCredentials: true,
+    envKeyMap: {
+      // publishableKey is browser-safe (`pk_*`); secretKey is server-only (`sk_*`).
+      // The vault-bridge will silently skip whichever field is absent on a given
+      // connection — secret_text connections that only stored a secret key still work.
+      client: {
+        publishableKey: "VITE_STRIPE_PUBLISHABLE_KEY",
+      },
+      server: {
+        secretKey: "STRIPE_SECRET_KEY",
+      },
+      runtimeHint: "Stripe payments and subscriptions.",
+    },
   },
 
   quickbooks: {

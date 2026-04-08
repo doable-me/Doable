@@ -39,8 +39,12 @@ export interface CreateConnectorPayload {
   serverUrl?: string;
   serverCommand?: string;
   serverArgs?: string[];
-  authType: "none" | "api_key" | "bearer_token";
+  authType: "none" | "api_key" | "bearer_token" | "oauth2";
   projectId?: string;
+  /** Auth credentials — shape depends on authType. Encrypted server-side. */
+  credentials?: Record<string, unknown>;
+  /** Env vars passed to stdio MCP servers. Encrypted server-side. */
+  serverEnv?: Record<string, string>;
 }
 
 export interface TestResult {

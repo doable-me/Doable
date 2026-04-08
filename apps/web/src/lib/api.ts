@@ -654,14 +654,27 @@ export interface ApiAiProvider {
   display_order?: number | null;
 }
 
+export type ApiAiSource = "copilot" | "custom";
+
 export interface ApiWorkspaceAiDefaults {
   workspace_id: string;
+  // Workspace defaults
+  default_source: ApiAiSource;
   default_copilot_account_id: string | null;
+  default_copilot_model: string | null;
   default_provider_id: string | null;
+  default_provider_model: string | null;
+  /** @deprecated kept for back-compat; use default_copilot_model / default_provider_model */
   default_model: string | null;
+  // Workspace suggestion defaults
+  suggestion_source: ApiAiSource;
   suggestion_copilot_account_id: string | null;
+  suggestion_copilot_model: string | null;
   suggestion_provider_id: string | null;
+  suggestion_provider_model: string | null;
+  /** @deprecated kept for back-compat; use suggestion_copilot_model / suggestion_provider_model */
   suggestion_model: string | null;
+  // Enforcement
   enforce_ai: boolean;
   enforced_copilot_account_id: string | null;
   enforced_provider_id: string | null;
@@ -673,9 +686,20 @@ export interface ApiWorkspaceAiDefaults {
 export interface ApiUserAiPreferences {
   workspace_id: string;
   user_id: string;
+  // Primary override
+  source: ApiAiSource;
   copilot_account_id: string | null;
+  copilot_model: string | null;
   provider_id: string | null;
+  provider_model: string | null;
+  /** @deprecated kept for back-compat; use copilot_model / provider_model */
   model: string | null;
+  // Suggestion override
+  suggestion_source: ApiAiSource;
+  suggestion_copilot_account_id: string | null;
+  suggestion_copilot_model: string | null;
+  suggestion_provider_id: string | null;
+  suggestion_provider_model: string | null;
   updated_at: string;
 }
 
@@ -692,12 +716,30 @@ export interface ApiEffectiveAiConfig {
   enforced_provider_id: string | null;
   enforced_model: string | null;
   show_model_selector: boolean;
+  // Workspace defaults
+  default_source: ApiAiSource;
   default_copilot_account_id: string | null;
+  default_copilot_model: string | null;
   default_provider_id: string | null;
-  default_model: string | null;
+  default_provider_model: string | null;
+  // Workspace suggestion defaults
+  suggestion_source: ApiAiSource;
+  suggestion_copilot_account_id: string | null;
+  suggestion_copilot_model: string | null;
+  suggestion_provider_id: string | null;
+  suggestion_provider_model: string | null;
+  // Per-user override
+  user_source: ApiAiSource | null;
   user_copilot_account_id: string | null;
+  user_copilot_model: string | null;
   user_provider_id: string | null;
-  user_model: string | null;
+  user_provider_model: string | null;
+  // Per-user suggestion override
+  user_suggestion_source: ApiAiSource | null;
+  user_suggestion_copilot_account_id: string | null;
+  user_suggestion_copilot_model: string | null;
+  user_suggestion_provider_id: string | null;
+  user_suggestion_provider_model: string | null;
 }
 
 export async function apiListCopilotAccounts(workspaceId: string): Promise<{ data: ApiGitHubCopilotAccount[] }> {
@@ -783,12 +825,19 @@ export async function apiGetAiDefaults(workspaceId: string): Promise<{ data: Api
 export async function apiUpdateAiDefaults(
   workspaceId: string,
   data: {
+    // Workspace defaults
+    defaultSource?: ApiAiSource;
     defaultCopilotAccountId?: string | null;
+    defaultCopilotModel?: string | null;
     defaultProviderId?: string | null;
-    defaultModel?: string | null;
+    defaultProviderModel?: string | null;
+    // Workspace suggestion defaults
+    suggestionSource?: ApiAiSource;
     suggestionCopilotAccountId?: string | null;
+    suggestionCopilotModel?: string | null;
     suggestionProviderId?: string | null;
-    suggestionModel?: string | null;
+    suggestionProviderModel?: string | null;
+    // Enforcement
     enforceAi?: boolean;
     enforcedCopilotAccountId?: string | null;
     enforcedProviderId?: string | null;
@@ -811,9 +860,18 @@ export async function apiGetUserAiPreferences(workspaceId: string) {
 export async function apiUpdateUserAiPreferences(
   workspaceId: string,
   data: {
+    // Primary override
+    source?: ApiAiSource;
     copilotAccountId?: string | null;
+    copilotModel?: string | null;
     providerId?: string | null;
-    model?: string | null;
+    providerModel?: string | null;
+    // Suggestion override
+    suggestionSource?: ApiAiSource;
+    suggestionCopilotAccountId?: string | null;
+    suggestionCopilotModel?: string | null;
+    suggestionProviderId?: string | null;
+    suggestionProviderModel?: string | null;
   }
 ) {
   return apiFetch<{ data: ApiUserAiPreferences }>(
@@ -830,11 +888,15 @@ export interface ApiUserAiAllocation {
   display_name: string | null;
   avatar_url: string | null;
   role: string;
+  source: ApiAiSource | null;
   copilot_account_id: string | null;
   copilot_account_label: string | null;
+  copilot_model: string | null;
   provider_id: string | null;
   provider_label: string | null;
   provider_type: string | null;
+  provider_model: string | null;
+  /** @deprecated use copilot_model / provider_model */
   model: string | null;
   preference_updated_at: string | null;
 }
@@ -846,7 +908,18 @@ export async function apiListUserAllocations(workspaceId: string): Promise<{ dat
 export async function apiUpdateUserAllocation(
   workspaceId: string,
   targetUserId: string,
-  data: { copilotAccountId?: string | null; providerId?: string | null; model?: string | null }
+  data: {
+    source?: ApiAiSource;
+    copilotAccountId?: string | null;
+    copilotModel?: string | null;
+    providerId?: string | null;
+    providerModel?: string | null;
+    suggestionSource?: ApiAiSource;
+    suggestionCopilotAccountId?: string | null;
+    suggestionCopilotModel?: string | null;
+    suggestionProviderId?: string | null;
+    suggestionProviderModel?: string | null;
+  }
 ): Promise<{ data: ApiUserAiPreferences }> {
   return apiFetch(`/workspaces/${workspaceId}/ai-settings/user-allocations/${targetUserId}`, {
     method: "PUT",

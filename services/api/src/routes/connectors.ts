@@ -78,6 +78,12 @@ const createConnectorSchema = z.object({
   serverArgs: z.array(z.string()).optional(),
   authType: z.enum(["none", "api_key", "oauth2", "bearer_token"]).default("none"),
   projectId: z.string().uuid().optional(),
+  // Opaque credentials object — shape depends on authType
+  // (e.g. { token } for bearer_token, { apiKey, header } for api_key,
+  // { access_token } for oauth2). Encrypted at rest in credentials_encrypted.
+  credentials: z.record(z.string(), z.unknown()).optional(),
+  // Env vars passed to stdio MCP servers — encrypted at rest.
+  serverEnv: z.record(z.string(), z.string()).optional(),
 });
 
 // POST /:workspaceId/connectors
@@ -118,6 +124,8 @@ connectorRoutes.post(
       serverArgs: body.serverArgs,
       authType: body.authType,
       projectId: body.projectId,
+      credentials: body.credentials,
+      serverEnv: body.serverEnv,
     });
 
     return c.json({ data: row }, 201);
@@ -149,6 +157,8 @@ const updateConnectorSchema = z.object({
   serverArgs: z.array(z.string()).optional(),
   authType: z.enum(["none", "api_key", "oauth2", "bearer_token"]).optional(),
   status: z.enum(["active", "inactive"]).optional(),
+  credentials: z.record(z.string(), z.unknown()).optional(),
+  serverEnv: z.record(z.string(), z.string()).optional(),
 });
 
 // PATCH /:workspaceId/connectors/:id

@@ -6,12 +6,22 @@ import { useEditorStore } from "../hooks/use-editor-store";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { ClarificationFlow, PlanCard, PlanProgress } from "./plan";
-import { MessageSquare, Sparkles } from "lucide-react";
+import { MessageSquare, Sparkles, Wrench, X } from "lucide-react";
 
 export function ChatPanel() {
   const projectId = useEditorStore((s) => s.projectId);
-  const { messages, isStreaming, sendMessage, stopStreaming, loadHistory, answerClarification, approvePlan, abandonPlan } =
-    useChat(projectId);
+  const {
+    messages,
+    isStreaming,
+    sendMessage,
+    stopStreaming,
+    loadHistory,
+    answerClarification,
+    approvePlan,
+    abandonPlan,
+    pendingIntegrationRequest,
+    dismissIntegrationRequest,
+  } = useChat(projectId);
 
   const activePlan = useEditorStore((s) => s.activePlan);
   const planPhase = useEditorStore((s) => s.planPhase);
@@ -111,12 +121,97 @@ export function ChatPanel() {
         )}
       </div>
 
+      {/* Phase 1H: inline "Connect X" card — shown when the AI calls
+          request_integration or an Activepieces tool fails with a
+          credentials-missing error. Opens the integrations connect flow. */}
+      {pendingIntegrationRequest && (
+        <IntegrationConnectCard
+          request={pendingIntegrationRequest}
+          onDismiss={() => dismissIntegrationRequest(false)}
+          onConnected={() => dismissIntegrationRequest(true)}
+        />
+      )}
+
       {/* Input */}
       <ChatInput
         onSend={(content, attachments) => sendMessage(content, attachments)}
         onStop={stopStreaming}
         isStreaming={isStreaming}
       />
+    </div>
+  );
+}
+
+// ─── Phase 1H: inline Connect card ────────────────────────
+//
+// Opens the existing integrations connect flow by deep-linking to the
+// workspace-settings integrations tab with a `?connect={integrationId}`
+// query param. The integrations tab reads the param on mount and auto-
+// opens the <ConnectFlow> dialog for the requested integration. When the
+// user completes the flow, they come back and click "I just connected"
+// which fires the `onConnected` callback, auto-submitting a "continue"
+// message to the AI so it retries with the new manifest entry.
+function IntegrationConnectCard({
+  request,
+  onDismiss,
+  onConnected,
+}: {
+  request: { integrationId: string; displayName: string; logoUrl?: string; reason: string };
+  onDismiss: () => void;
+  onConnected: () => void;
+}) {
+  return (
+    <div className="mx-3 mb-2 rounded-lg border border-brand-500/40 bg-brand-500/5 p-3">
+      <div className="flex items-start gap-3">
+        {request.logoUrl ? (
+          <img
+            src={request.logoUrl}
+            alt=""
+            className="h-8 w-8 flex-shrink-0 rounded-md bg-background"
+          />
+        ) : (
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-background">
+            <Wrench className="h-4 w-4 text-brand-500" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-semibold text-foreground">
+              Connect {request.displayName}
+            </p>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Dismiss"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+          {request.reason && (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {request.reason}
+            </p>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <a
+              href={`/workspace-settings?tab=integrations&connect=${encodeURIComponent(request.integrationId)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center rounded-md bg-brand-500 px-3 py-1 text-xs font-medium text-white hover:bg-brand-600"
+            >
+              Connect
+            </a>
+            <button
+              type="button"
+              onClick={onConnected}
+              className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs font-medium text-foreground hover:bg-muted"
+            >
+              I just connected — continue
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

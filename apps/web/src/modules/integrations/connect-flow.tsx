@@ -156,12 +156,23 @@ export function ConnectFlow({
     if (!item || !onGetEnhancedAuthUrl) return;
     setLoading(true);
     setError(null);
+    // Opened synchronously below so the popup blocker treats it as a user
+    // gesture; tracked here so the catch path can close it if the async
+    // fetch for the authorization URL fails (otherwise the user is stranded
+    // with a blank about:blank popup and no visible error).
+    let popup: Window | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let messageHandler: ((ev: MessageEvent) => void) | null = null;
+    const cleanup = () => {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (messageHandler) { window.removeEventListener("message", messageHandler); messageHandler = null; }
+    };
     try {
       const width = 600;
       const height = 700;
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
-      const popup = window.open(
+      popup = window.open(
         "about:blank",
         "doable-enhanced-auth",
         `width=${width},height=${height},left=${left},top=${top},popup=1`
@@ -176,14 +187,41 @@ export function ConnectFlow({
       const url = await onGetEnhancedAuthUrl(item.id);
       popup.location.href = url;
 
-      const pollTimer = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(pollTimer);
+      // Primary success signal: postMessage from the callback HTML. This
+      // works across the cross-origin round-trip that can break the
+      // popup.closed poll when COOP isolates the opener after the popup
+      // navigates away. The callback route emits a
+      // `doable:enhanced-auth-complete` message before calling window.close.
+      messageHandler = (ev: MessageEvent) => {
+        const data = ev.data;
+        if (!data || typeof data !== "object") return;
+        if (data.type !== "doable:enhanced-auth-complete") return;
+        if (data.integrationId && data.integrationId !== item.id) return;
+        if (data.status === "error" && typeof data.error === "string") {
+          setError(`Connection failed: ${data.error}`);
+        }
+        cleanup();
+        setLoading(false);
+        try { popup?.close(); } catch { /* may already be closed */ }
+        onOpenChange(false);
+      };
+      window.addEventListener("message", messageHandler);
+
+      // Fallback: still poll popup.closed in case the postMessage never
+      // arrives (e.g. the user closes the popup manually before the HTML
+      // with the script loads).
+      pollTimer = setInterval(() => {
+        if (popup!.closed) {
+          cleanup();
           setLoading(false);
           onOpenChange(false);
         }
       }, 500);
     } catch (err) {
+      cleanup();
+      // Close the blank popup so the user isn't stranded staring at
+      // about:blank while the error sits hidden behind it in the modal.
+      try { popup?.close(); } catch { /* popup may already be closed */ }
       const msg = err instanceof Error ? err.message : "Failed to start enhanced auth";
       if (msg.includes("not configured") || msg.includes("CLIENT_ID") || msg.includes("OAuth")) {
         setError(`Enhanced auth is not set up for ${item.displayName} yet. You can still connect manually below.`);

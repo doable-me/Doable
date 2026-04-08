@@ -200,7 +200,7 @@ export async function handleOAuthCallback(code: string, state: string): Promise<
 
   if (oauthApp) {
     clientId = oauthApp.client_id;
-    clientSecret = oauthApp.clientSecret ?? oauthApp.client_secret;
+    clientSecret = oauthApp.clientSecret;
   } else {
     const envKey = integrationId.toUpperCase().replace(/-/g, "_");
     const isGoogle = oauth.authUrl.includes("accounts.google.com");

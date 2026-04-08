@@ -136,12 +136,16 @@ export function useWorkspaceAISettings(workspaceId: string | null) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const update = async (data: {
+    defaultSource?: "copilot" | "custom";
     defaultCopilotAccountId?: string | null;
+    defaultCopilotModel?: string | null;
     defaultProviderId?: string | null;
-    defaultModel?: string | null;
+    defaultProviderModel?: string | null;
+    suggestionSource?: "copilot" | "custom";
     suggestionCopilotAccountId?: string | null;
+    suggestionCopilotModel?: string | null;
     suggestionProviderId?: string | null;
-    suggestionModel?: string | null;
+    suggestionProviderModel?: string | null;
     enforceAi?: boolean;
     enforcedCopilotAccountId?: string | null;
     enforcedProviderId?: string | null;
@@ -178,9 +182,16 @@ export function useUserAiPreferences(workspaceId: string | undefined) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const update = useCallback(async (data: {
+    source?: "copilot" | "custom";
     copilotAccountId?: string | null;
+    copilotModel?: string | null;
     providerId?: string | null;
-    model?: string | null;
+    providerModel?: string | null;
+    suggestionSource?: "copilot" | "custom";
+    suggestionCopilotAccountId?: string | null;
+    suggestionCopilotModel?: string | null;
+    suggestionProviderId?: string | null;
+    suggestionProviderModel?: string | null;
   }) => {
     if (!workspaceId) return;
     const res = await apiUpdateUserAiPreferences(workspaceId, data);
@@ -235,9 +246,16 @@ export function useUserAllocations(workspaceId: string | null) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const updateOne = async (targetUserId: string, data: {
+    source?: "copilot" | "custom";
     copilotAccountId?: string | null;
+    copilotModel?: string | null;
     providerId?: string | null;
-    model?: string | null;
+    providerModel?: string | null;
+    suggestionSource?: "copilot" | "custom";
+    suggestionCopilotAccountId?: string | null;
+    suggestionCopilotModel?: string | null;
+    suggestionProviderId?: string | null;
+    suggestionProviderModel?: string | null;
   }) => {
     if (!workspaceId) return;
     await apiUpdateUserAllocation(workspaceId, targetUserId, data);

@@ -27,7 +27,16 @@ export type BuildLogCallback = (chunk: string) => void | Promise<void>;
 export async function runBuild(
   projectDir: string,
   onLog?: BuildLogCallback,
-  opts?: { projectId?: string; target?: "development" | "preview" | "production" },
+  opts?: {
+    projectId?: string;
+    target?: "development" | "preview" | "production";
+    /**
+     * When provided alongside `projectId`, vault-backed integration
+     * credentials are merged into the build env (Phase 1C/1D of the
+     * integration↔AI chat bridge). User `env_vars` always override the vault.
+     */
+    userId?: string;
+  },
 ): Promise<BuildResult> {
   const start = Date.now();
 
@@ -45,12 +54,19 @@ export async function runBuild(
 
   const outputDir = path.join(projectDir, "dist");
 
-  // Resolve user-defined env vars if projectId provided
+  // Resolve user-defined env vars if projectId provided. When `opts.userId` is
+  // also provided, vault-backed integration credentials are merged in
+  // automatically; user `env_vars` always win on key collision.
   let userEnvVars: Record<string, string> = {};
   if (opts?.projectId) {
     try {
       const { resolveProjectEnvVars } = await import("../env/resolve.js");
-      userEnvVars = await resolveProjectEnvVars(opts.projectId, opts.target ?? "production");
+      userEnvVars = await resolveProjectEnvVars(
+        opts.projectId,
+        opts.target ?? "production",
+        undefined,
+        opts.userId,
+      );
     } catch (err) {
       onLog?.(`WARN: Failed to resolve env vars: ${err}\n`);
     }

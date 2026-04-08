@@ -51,26 +51,35 @@ const supabaseModule: EnhancedAuthModule = {
 
     const keys = (await keysRes.json()) as Array<{ name: string; api_key: string }>;
 
-    // Prefer service_role key (full access), fall back to anon key
+    // Capture both keys when available so vault-bridge can map them to
+    // VITE_SUPABASE_ANON_KEY (client) and SUPABASE_SERVICE_ROLE_KEY (server).
     const serviceKey = keys.find((k) => k.name === "service_role");
     const anonKey = keys.find((k) => k.name === "anon");
-    const chosenKey = serviceKey ?? anonKey;
 
-    if (!chosenKey) {
+    if (!serviceKey && !anonKey) {
       throw new Error("No API keys found for this project");
     }
 
     const url = `https://${projectRef}.supabase.co`;
 
-    // Return EXACTLY the shape @activepieces/piece-supabase expects
+    // `apiKey` field is unchanged — @activepieces/piece-supabase reads it for tool calls.
+    // `anonKey` and `serviceRoleKey` are NEW and consumed by the env vault-bridge
+    // (envKeyMap.client.anonKey / envKeyMap.server.serviceRoleKey).
     return {
       authType: "custom_auth" as const,
-      credentials: { url, apiKey: chosenKey.api_key },
+      credentials: {
+        url,
+        apiKey: serviceKey?.api_key ?? anonKey?.api_key,
+        anonKey: anonKey?.api_key,
+        serviceRoleKey: serviceKey?.api_key,
+      },
       displayName: `Supabase: ${resource.name}`,
       metadata: {
         projectRef,
         region: resource.meta?.region,
-        keyType: chosenKey.name,
+        keyType: serviceKey
+          ? (anonKey ? "service_role+anon" : "service_role")
+          : "anon",
         connectedVia: "enhanced_auth",
       },
     };

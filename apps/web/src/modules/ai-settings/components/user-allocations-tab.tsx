@@ -11,9 +11,11 @@ interface Props {
   providers: ApiAiProvider[];
   enforcement: ApiEnforcementStatus | null;
   onUpdate: (targetUserId: string, data: {
+    source?: "copilot" | "custom";
     copilotAccountId?: string | null;
+    copilotModel?: string | null;
     providerId?: string | null;
-    model?: string | null;
+    providerModel?: string | null;
   }) => Promise<void>;
   onCopyMySettings: (targetUserIds: string[]) => Promise<number>;
   onReset: (targetUserId: string) => Promise<void>;
@@ -21,10 +23,34 @@ interface Props {
 
 type Source = "copilot" | "custom";
 
+/**
+ * A row "has an allocation" iff the active side (per `source`) actually
+ * has a value. Both copilot and custom configs may be persisted at once;
+ * `source` selects which is active.
+ */
+function rowHasAllocation(row: ApiUserAiAllocation): boolean {
+  if (row.source === "custom") return !!row.provider_id;
+  if (row.source === "copilot") return !!row.copilot_account_id;
+  // Legacy rows (no source set yet) — fall back to "any side populated".
+  return !!(row.copilot_account_id || row.provider_id);
+}
+
+function rowActiveModel(row: ApiUserAiAllocation): string | null {
+  if (row.source === "custom") return row.provider_model;
+  if (row.source === "copilot") return row.copilot_model;
+  return row.copilot_model ?? row.provider_model;
+}
+
 function AllocationStatus({ row }: { row: ApiUserAiAllocation }) {
-  const hasAllocation = !!(row.copilot_account_id || row.provider_id || row.model);
-  if (!hasAllocation) {
+  if (!rowHasAllocation(row)) {
     return <span className="text-xs text-zinc-500">Using workspace defaults</span>;
+  }
+  if (row.source === "custom" && row.provider_id) {
+    return (
+      <span className="text-xs text-blue-400">
+        {row.provider_type ? row.provider_type.charAt(0).toUpperCase() + row.provider_type.slice(1) : "Provider"}: {row.provider_label ?? "Unknown"}
+      </span>
+    );
   }
   if (row.copilot_account_id) {
     return (
@@ -33,22 +59,17 @@ function AllocationStatus({ row }: { row: ApiUserAiAllocation }) {
       </span>
     );
   }
-  if (row.provider_id) {
-    return (
-      <span className="text-xs text-blue-400">
-        {row.provider_type ? row.provider_type.charAt(0).toUpperCase() + row.provider_type.slice(1) : "Provider"}: {row.provider_label ?? "Unknown"}
-      </span>
-    );
-  }
-  return <span className="text-xs text-zinc-400">Model: {row.model}</span>;
+  return <span className="text-xs text-zinc-400">--</span>;
 }
 
 export function UserAllocationsTab({ allocations, loading, accounts, providers, enforcement, onUpdate, onCopyMySettings, onReset }: Props) {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  // Both sides are tracked simultaneously; `editSource` selects active.
   const [editSource, setEditSource] = useState<Source>("copilot");
   const [editCopilotAccountId, setEditCopilotAccountId] = useState("");
+  const [editCopilotModel, setEditCopilotModel] = useState("");
   const [editProviderId, setEditProviderId] = useState("");
-  const [editModel, setEditModel] = useState("");
+  const [editProviderModel, setEditProviderModel] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkCopying, setBulkCopying] = useState(false);
@@ -60,16 +81,13 @@ export function UserAllocationsTab({ allocations, loading, accounts, providers, 
 
   function startEdit(row: ApiUserAiAllocation) {
     setEditingUserId(row.user_id);
-    if (row.provider_id) {
-      setEditSource("custom");
-      setEditProviderId(row.provider_id);
-      setEditCopilotAccountId("");
-    } else {
-      setEditSource("copilot");
-      setEditCopilotAccountId(row.copilot_account_id ?? "");
-      setEditProviderId("");
-    }
-    setEditModel(row.model ?? "");
+    // Preload BOTH sides so the admin can edit either tab without losing
+    // the other one. Source defaults to whatever the row currently uses.
+    setEditSource(row.source ?? (row.provider_id ? "custom" : "copilot"));
+    setEditCopilotAccountId(row.copilot_account_id ?? "");
+    setEditCopilotModel(row.copilot_model ?? "");
+    setEditProviderId(row.provider_id ?? "");
+    setEditProviderModel(row.provider_model ?? "");
   }
 
   function cancelEdit() {
@@ -80,10 +98,13 @@ export function UserAllocationsTab({ allocations, loading, accounts, providers, 
     if (!editingUserId) return;
     setSaving(true);
     try {
+      // Persist BOTH sides + the active source. No more null wipes.
       await onUpdate(editingUserId, {
-        copilotAccountId: editSource === "copilot" ? (editCopilotAccountId || null) : null,
-        providerId: editSource === "custom" ? (editProviderId || null) : null,
-        model: editModel || null,
+        source: editSource,
+        copilotAccountId: editCopilotAccountId || null,
+        copilotModel: editCopilotModel || null,
+        providerId: editProviderId || null,
+        providerModel: editProviderModel || null,
       });
       setEditingUserId(null);
     } finally {
@@ -239,14 +260,13 @@ export function UserAllocationsTab({ allocations, loading, accounts, providers, 
                 <td className="px-3 py-3">
                   <div className="flex items-center gap-1.5">
                     <div className={`h-1.5 w-1.5 rounded-full ${
-                      row.copilot_account_id || row.provider_id || row.model
-                        ? "bg-emerald-400" : "bg-zinc-600"
+                      rowHasAllocation(row) ? "bg-emerald-400" : "bg-zinc-600"
                     }`} />
                     <AllocationStatus row={row} />
                   </div>
                 </td>
                 <td className="px-3 py-3">
-                  <span className="text-xs text-zinc-400">{row.model || "--"}</span>
+                  <span className="text-xs text-zinc-400">{rowActiveModel(row) || "--"}</span>
                 </td>
                 <td className="px-3 py-3 text-right">
                   <div className="flex items-center justify-end gap-1">
@@ -257,7 +277,7 @@ export function UserAllocationsTab({ allocations, loading, accounts, providers, 
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
-                    {(row.copilot_account_id || row.provider_id || row.model) && (
+                    {rowHasAllocation(row) && (
                       <button
                         onClick={() => onReset(row.user_id)}
                         className="rounded p-1.5 text-zinc-500 hover:text-amber-400 hover:bg-zinc-800 transition-colors"
@@ -302,12 +322,12 @@ export function UserAllocationsTab({ allocations, loading, accounts, providers, 
                 </button>
               </div>
 
-              {/* Source toggle */}
+              {/* Source toggle — both sides are kept; only `editSource` flips */}
               <div className="mb-4">
                 <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">Provider Source</label>
                 <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
                   <button
-                    onClick={() => { setEditSource("copilot"); setEditProviderId(""); }}
+                    onClick={() => setEditSource("copilot")}
                     className={`px-4 py-2 text-sm font-medium transition-colors ${
                       editSource === "copilot"
                         ? "bg-brand-600 text-white"
@@ -317,7 +337,7 @@ export function UserAllocationsTab({ allocations, loading, accounts, providers, 
                     GitHub Copilot
                   </button>
                   <button
-                    onClick={() => { setEditSource("custom"); setEditCopilotAccountId(""); }}
+                    onClick={() => setEditSource("custom")}
                     className={`px-4 py-2 text-sm font-medium transition-colors ${
                       editSource === "custom"
                         ? "bg-brand-600 text-white"
@@ -327,6 +347,9 @@ export function UserAllocationsTab({ allocations, loading, accounts, providers, 
                     Custom Provider
                   </button>
                 </div>
+                <p className="text-[10px] text-zinc-500 mt-1.5">
+                  Both configurations are kept. The selected tab is what this user will use.
+                </p>
               </div>
 
               {/* Fields */}
@@ -350,8 +373,8 @@ export function UserAllocationsTab({ allocations, loading, accounts, providers, 
                       <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
                       <input
                         type="text"
-                        value={editModel}
-                        onChange={(e) => setEditModel(e.target.value)}
+                        value={editCopilotModel}
+                        onChange={(e) => setEditCopilotModel(e.target.value)}
                         placeholder="e.g. claude-sonnet-4 (leave blank for auto)"
                         className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
                       />
@@ -376,8 +399,8 @@ export function UserAllocationsTab({ allocations, loading, accounts, providers, 
                       <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
                       <input
                         type="text"
-                        value={editModel}
-                        onChange={(e) => setEditModel(e.target.value)}
+                        value={editProviderModel}
+                        onChange={(e) => setEditProviderModel(e.target.value)}
                         placeholder="e.g. gpt-4o"
                         className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
                       />
