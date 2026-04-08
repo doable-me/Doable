@@ -33,7 +33,13 @@ customDomainRoutes.get("/project/:projectId", async (c) => {
     return c.json({ error: "Project not found" }, 404);
   }
 
-  // TODO: verify user has access to this project's workspace
+  // Verify user has access to this project's workspace
+  const [member] = await sql<{ role: string }[]>`
+    SELECT role FROM workspace_members WHERE workspace_id = ${project.workspace_id} AND user_id = ${userId}
+  `;
+  if (!member) {
+    return c.json({ error: "Not authorized" }, 403);
+  }
 
   const rows = await domains.listByProject(projectId);
   return c.json({ data: rows });
@@ -102,12 +108,17 @@ customDomainRoutes.delete("/:domainId", async (c) => {
     return c.json({ error: "Domain not found" }, 404);
   }
 
-  // Verify user owns the project
+  // Verify user owns the project and has admin/owner access
   const project = await projects.findById(domain.project_id);
   if (!project) {
     return c.json({ error: "Project not found" }, 404);
   }
-  // TODO: verify user has admin/owner access to workspace
+  const [member] = await sql<{ role: string }[]>`
+    SELECT role FROM workspace_members WHERE workspace_id = ${project.workspace_id} AND user_id = ${userId}
+  `;
+  if (!member || !['admin', 'owner'].includes(member.role)) {
+    return c.json({ error: "Not authorized — admin or owner role required" }, 403);
+  }
 
   try {
     await removeDomain(domainId);
