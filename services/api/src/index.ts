@@ -201,6 +201,10 @@ app.notFound((c) => {
 
 // ─── Global Error Handler ───────────────────────────────────
 app.onError((err, c) => {
+  // Return 400 for malformed JSON instead of 500
+  if (err instanceof SyntaxError && err.message.includes("JSON")) {
+    return c.json({ error: "Invalid JSON in request body" }, 400);
+  }
   console.error(`[ERROR] ${c.req.method} ${c.req.path}:`, err);
   return c.json(
     {
@@ -232,11 +236,19 @@ const server = serve({
 server.on("upgrade", (req, socket, head) => {
   const url = req.url ?? "";
   const match = url.match(/^\/preview\/([^/]+)\//);
-  if (!match) return socket.destroy();
+  if (!match) {
+    socket.write('HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n');
+    socket.destroy();
+    return;
+  }
 
   const projectId = match[1];
   const devUrl = getDevServerInternalUrl(projectId);
-  if (!devUrl) return socket.destroy();
+  if (!devUrl) {
+    socket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
+    socket.destroy();
+    return;
+  }
 
   // Parse the Vite dev server's host:port
   const target = new URL(devUrl);
