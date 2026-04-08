@@ -270,7 +270,7 @@ export class CopilotEngine {
     let done = false;
 
     // Inactivity timeout: if no events at all for this long, assume dead
-    const EVENT_TIMEOUT_MS = 120_000; // 2 minutes — generous for agentic tool loops
+    const EVENT_TIMEOUT_MS = 45_000; // 45s — fail fast on silent SDK
     let lastEventTime = Date.now();
 
     // Subscribe to ALL events from the SDK (streaming deltas, tools, idle, error).
@@ -286,6 +286,12 @@ export class CopilotEngine {
           console.error(`[CopilotEngine] session.error event (${sessionId.slice(0, 8)}…):`, JSON.stringify(event.data));
         }
         done = true;
+      }
+
+      // Soft signal: assistant.turn_end means text is done, but session.idle
+      // remains authoritative for terminal completion. Log for visibility only.
+      if ((event as { type?: string }).type === "assistant.turn_end") {
+        console.log(`[CopilotEngine] assistant.turn_end (soft signal) (${sessionId.slice(0, 8)}…)`);
       }
 
       if (resolveWaiting) {
@@ -306,8 +312,17 @@ export class CopilotEngine {
     // Send message via session.send() — returns the messageId once the CLI
     // acknowledges receipt. Processing continues asynchronously; events
     // flow through session.on() registered above.
+    // Wrap in 15s timeout — if the CLI doesn't even ack receipt in 15s, it's dead.
     try {
-      const messageId = await session.send(messageOptions);
+      const messageId = await Promise.race([
+        session.send(messageOptions),
+        new Promise<never>((_, rej) =>
+          setTimeout(
+            () => rej(new Error("session.send timed out after 15s — CLI not acking")),
+            15_000,
+          ),
+        ),
+      ]);
       console.log(`[CopilotEngine] session.send() → msgId ${messageId} (${sessionId.slice(0, 8)}…)`);
     } catch (err) {
       unsubscribe();
@@ -368,7 +383,7 @@ export class CopilotEngine {
     prompt: string,
     fileAttachments?: Array<{ type: "file"; path: string; displayName?: string }>,
     onActivity?: (type: string, detail: string) => void,
-    inactivityMs = 120_000, // 2 minutes of silence = timeout
+    inactivityMs = 45_000, // 45s of silence = timeout
   ): Promise<{ content: string; messageId?: string } | null> {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -469,7 +484,16 @@ export class CopilotEngine {
       });
 
       // Send the message (non-blocking) — events flow through session.on()
-      session.send(messageOptions).then((msgId) => {
+      // Wrap in 15s timeout — if the CLI doesn't even ack receipt in 15s, it's dead.
+      Promise.race([
+        session.send(messageOptions),
+        new Promise<never>((_, rej) =>
+          setTimeout(
+            () => rej(new Error("session.send timed out after 15s — CLI not acking")),
+            15_000,
+          ),
+        ),
+      ]).then((msgId) => {
         console.log(`[CopilotEngine] session.send() resolved — messageId: ${msgId}`);
         touch("send", "message accepted");
       }).catch((err) => {

@@ -716,6 +716,40 @@ chatRoutes.post(
       } catch { /* stream already closed */ }
     }, 10_000);
 
+    // Soft heartbeat: fires unconditionally after 3s of SSE silence so the
+    // frontend's stale-stream detector resets AND the user always sees a
+    // live status. Message rotates based on how long the SDK has been
+    // genuinely silent (lastRealEventAt) — never says "timeout" on a
+    // healthy slow run. Goal: chat must always feel responsive.
+    let lastSseEmitAt = Date.now();
+    let lastRealEventAt = Date.now();
+    let lastToolName: string | undefined;
+    let friendlyLastTool: string | undefined;
+    const softHeartbeat = setInterval(async () => {
+      const sseSilence = Date.now() - lastSseEmitAt;
+      if (sseSilence < 3_000) return;
+      const realSilence = Date.now() - lastRealEventAt;
+      let msg: string;
+      if (realSilence < 15_000) {
+        msg = friendlyLastTool ? `Working on ${friendlyLastTool}\u2026` : "Thinking\u2026";
+      } else if (realSilence < 30_000) {
+        msg = friendlyLastTool ? `Still working on ${friendlyLastTool}\u2026` : "Still thinking\u2026";
+      } else if (realSilence < 60_000) {
+        msg = "Working on a complex step \u2014 hold on\u2026";
+      } else {
+        msg = "This one's taking a while \u2014 still going\u2026";
+      }
+      try {
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: "status",
+            data: { phase: "thinking", message: msg },
+          }),
+        });
+        lastSseEmitAt = Date.now();
+      } catch { /* stream already closed */ }
+    }, 3_000);
+
     // Track assistant state across the whole request lifecycle so both
     // success and error paths can persist the same in-flight data.
     let hadToolCalls = false;
@@ -738,13 +772,28 @@ chatRoutes.post(
       const normalizedArgs = args && typeof args === "object"
         ? (args as Record<string, unknown>)
         : undefined;
-      const last = assistantToolCalls[assistantToolCalls.length - 1] as { name?: string; arguments?: unknown } | undefined;
-      // Avoid obvious duplicates when multiple event channels emit the same start.
-      if (
-        last?.name === name &&
-        JSON.stringify(last?.arguments ?? null) === JSON.stringify(normalizedArgs ?? null)
-      ) {
-        return;
+      const argsKey = JSON.stringify(normalizedArgs ?? null);
+
+      // Multiple channels record the same tool call with varying timing:
+      //   path A: SDK onPreToolUse hook (RPC, may arrive late after the event)
+      //   path B: SDK iterator yields tool.execution_start (mapEventToSSE)
+      //   path C: custom tool bridge via onToolEvent
+      // Dedupe rules:
+      //  1. Exact (name + args) match anywhere in the array → skip.
+      //  2. Incoming has args, an existing entry with same name has NO args
+      //     → upgrade the existing entry in place.
+      //  3. Incoming has NO args, an existing entry with same name HAS args
+      //     → skip (keep the richer version).
+      for (let i = 0; i < assistantToolCalls.length; i++) {
+        const e = assistantToolCalls[i] as { name?: string; arguments?: unknown };
+        if (e.name !== name) continue;
+        const existingKey = JSON.stringify(e.arguments ?? null);
+        if (existingKey === argsKey) return; // exact dup
+        if (normalizedArgs && !e.arguments) {
+          assistantToolCalls[i] = { name, arguments: normalizedArgs };
+          return;
+        }
+        if (!normalizedArgs && e.arguments) return;
       }
       assistantToolCalls.push({ name, arguments: normalizedArgs });
       hadToolCalls = true;
@@ -1336,15 +1385,20 @@ ERROR RECOVERY — if you encounter errors:
 
           // Wrap the SDK's async generator with a per-iteration timeout.
           // The SDK sometimes stops yielding events without closing the
-          // generator or emitting a terminal event, causing `for await`
-          // to hang indefinitely. This helper races each `.next()` call
-          // against a 180-second deadline so the stream always completes.
-          // Must be generous enough for tool calls (file writes, npm installs).
-          const SDK_IDLE_TIMEOUT_MS = 180_000;
+          // generator or emitting a terminal event. We race each .next()
+          // against a 60s deadline. On timeout we DON'T bail immediately —
+          // healthy slow runs can have legitimate 60s+ thinking gaps. We
+          // emit a calm reassuring status, increment a silentIterations
+          // counter, and keep waiting. Only after 3 consecutive silent
+          // iterations (180s of pure SDK silence) do we declare a real
+          // hang and surface a clean error.
+          const SDK_IDLE_TIMEOUT_MS = 90_000;
+          const MAX_SILENT_ITERATIONS = 3;
           const TIMEOUT_SENTINEL = Symbol("timeout");
           const channelRouter = new ChannelTokenRouter();
           const iterator = messageStream![Symbol.asyncIterator]();
           let iterDone = false;
+          let silentIterations = 0;
           while (!iterDone) {
             const raceResult = await Promise.race([
               iterator.next(),
@@ -1354,19 +1408,40 @@ ERROR RECOVERY — if you encounter errors:
             ]);
             if (raceResult.done) {
               if (raceResult.value === TIMEOUT_SENTINEL) {
-                // Timeout fired — SDK went silent. Notify the user so they
-                // aren't left staring at a spinner.
-                console.log(`[Chat] SDK generator idle for ${SDK_IDLE_TIMEOUT_MS / 1000}s — forcing stream exit for ${projectId}`);
-                await stream.writeSSE({
-                  data: JSON.stringify({
-                    type: "status",
-                    data: { phase: "timeout", message: "AI response timed out — your changes have been saved." },
-                  }),
-                });
+                silentIterations++;
+                if (silentIterations >= MAX_SILENT_ITERATIONS) {
+                  // True hang — bail with a clean error.
+                  console.error(`[Chat] SDK genuinely silent for ${(silentIterations * SDK_IDLE_TIMEOUT_MS) / 1000}s — bailing for ${projectId}`);
+                  try {
+                    await stream.writeSSE({
+                      data: JSON.stringify({
+                        type: "error",
+                        data: "AI didn't respond in time \u2014 please try again.",
+                      }),
+                    });
+                  } catch { /* stream already closed */ }
+                  iterDone = true;
+                  break;
+                }
+                // Not a real hang yet — emit a calm reassuring status and keep waiting.
+                console.log(`[Chat] SDK idle ${SDK_IDLE_TIMEOUT_MS / 1000}s (iter ${silentIterations}/${MAX_SILENT_ITERATIONS}), continuing for ${projectId}`);
+                try {
+                  await stream.writeSSE({
+                    data: JSON.stringify({
+                      type: "status",
+                      data: { phase: "thinking", message: "Working on a complex step \u2014 still here\u2026" },
+                    }),
+                  });
+                  lastSseEmitAt = Date.now();
+                } catch { /* stream already closed */ }
+                continue;
               }
               iterDone = true;
               break;
             }
+            // Real SDK event arrived — reset the silence counters.
+            silentIterations = 0;
+            lastRealEventAt = Date.now();
             const event = raceResult.value as Record<string, unknown>;
             const evtType = event.type as string;
             const evtData = event.data as Record<string, unknown> | undefined;
@@ -1469,6 +1544,10 @@ ERROR RECOVERY — if you encounter errors:
                 if (toolData?.name) {
                   pendingToolNames.push(toolData.name as string);
                   recordAssistantToolCall(toolData.name as string, toolData?.arguments);
+                  // Heartbeat: remember the in-flight tool so soft heartbeat
+                  // can tell the user what's still running.
+                  lastToolName = toolData.name as string;
+                  friendlyLastTool = (toolData.friendlyMessage as string | undefined) ?? lastToolName;
                 }
               }
               // When a tool_result is emitted, inject the name from the map or queue
@@ -1489,6 +1568,9 @@ ERROR RECOVERY — if you encounter errors:
                     resultData.name = pendingToolNames.shift();
                   }
                 }
+                // Heartbeat: tool finished, clear the in-flight marker
+                lastToolName = undefined;
+                friendlyLastTool = undefined;
               }
 
               // ── Route text_delta through the channel token parser ──
@@ -1514,6 +1596,7 @@ ERROR RECOVERY — if you encounter errors:
                       type: "ai:stream-chunk", chunk: cleaned, messageId, isThinking: false,
                     }, userId).catch(() => {});
                     await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
+                    lastSseEmitAt = Date.now();
                   } else {
                     // thinking
                     assistantThinking += chunk.content;
@@ -1521,6 +1604,7 @@ ERROR RECOVERY — if you encounter errors:
                       type: "ai:stream-chunk", chunk: chunk.content, messageId, isThinking: true,
                     }, userId).catch(() => {});
                     await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: chunk.content }) });
+                    lastSseEmitAt = Date.now();
                   }
                 }
               } else if (sseData.type === "thinking") {
@@ -1534,6 +1618,7 @@ ERROR RECOVERY — if you encounter errors:
                   isThinking: true,
                 }, userId).catch(() => {});
                 await stream.writeSSE({ data: JSON.stringify(sseData) });
+                lastSseEmitAt = Date.now();
               } else {
                 // All non-text SSE events (tool_call, tool_result, status, error, etc.)
                 // Broadcast tool_call / tool_result events
@@ -1562,6 +1647,7 @@ ERROR RECOVERY — if you encounter errors:
                   }, userId).catch(() => {});
                 }
                 await stream.writeSSE({ data: JSON.stringify(sseData) });
+                lastSseEmitAt = Date.now();
               }
             }
 
@@ -1576,6 +1662,9 @@ ERROR RECOVERY — if you encounter errors:
             ]);
             if (SESSION_TERMINAL_EVENTS.has(evtType)) {
               console.log(`[Chat] Session terminal event "${evtType}" — exiting stream loop for ${projectId}`);
+              // Heartbeat: clear the in-flight tool marker
+              lastToolName = undefined;
+              friendlyLastTool = undefined;
               break;
             }
             // Log unexpected event types for debugging
@@ -1979,6 +2068,7 @@ ERROR RECOVERY — if you encounter errors:
         }
 
         clearInterval(keepAlive);
+        clearInterval(softHeartbeat);
         // Flush usage data before closing the stream
         if (usageCollector) {
           try { await usageCollector.flush(); } catch { /* non-critical */ }
@@ -1987,12 +2077,20 @@ ERROR RECOVERY — if you encounter errors:
             await stream.writeSSE({ data: JSON.stringify({ type: "usage", data: usage }) });
           }
         }
+        // Explicit "done" signal so the frontend can render a complete state
+        // before the stream tears down.
+        try {
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "status", data: { phase: "complete", message: "Done" } }),
+          });
+        } catch { /* stream already closed */ }
         console.log(`[Chat] Sending [DONE] for ${projectId}`);
         await stream.writeSSE({ data: "[DONE]" });
     } catch (err) {
       activeRequests.delete(projectId);
       sql`DELETE FROM ai_active_streams WHERE project_id = ${projectId}`.catch(() => {});
       clearInterval(keepAlive);
+      clearInterval(softHeartbeat);
       // Flush partial usage data so it's not lost on error
       if (usageCollector) await usageCollector.flush().catch(() => {});
       // Copilot SDK is the core engine — surface the real error, don't work around it
@@ -2583,25 +2681,51 @@ function friendlyToolMessage(
   const context = describeFileContext(filePath);
   const lower = toolName.toLowerCase();
 
+  // Shell-ish tools: surface the actual command being run
+  if (
+    lower.includes("bash") ||
+    lower.includes("shell") ||
+    lower.includes("cmd") ||
+    lower.includes("exec") ||
+    lower.includes("run") ||
+    lower.includes("terminal") ||
+    lower.includes("command")
+  ) {
+    let cmd: string | undefined;
+    const rawCmd = args?.command ?? args?.cmd;
+    if (typeof rawCmd === "string" && rawCmd.trim()) {
+      cmd = rawCmd.trim();
+    } else if (args) {
+      for (const value of Object.values(args)) {
+        if (typeof value === "string" && value.trim()) {
+          cmd = value.trim();
+          break;
+        }
+      }
+    }
+    if (cmd) {
+      if (cmd.length > 80) cmd = `${cmd.slice(0, 77)}...`;
+      return `Running: ${cmd}`;
+    }
+    return "Running command";
+  }
+
   if (lower.includes("create") || lower.includes("write")) {
     if (pretty) return `Building your ${context} \u2014 ${pretty}`;
-    return "Crafting something new for your project";
+    return `Running ${toolName}`;
   }
   if (lower.includes("edit") || lower.includes("update") || lower.includes("patch")) {
     if (pretty) return `Refining ${pretty}`;
-    return "Polishing your design";
+    return `Running ${toolName}`;
   }
   if (lower.includes("read")) {
     if (pretty) return `Reviewing ${pretty}`;
-    return "Studying your project";
-  }
-  if (lower.includes("list")) {
-    return "Exploring your project";
+    return `Running ${toolName}`;
   }
   if (lower.includes("search")) {
     const pattern = args?.pattern as string | undefined;
     if (pattern) return `Searching for "${pattern}"`;
-    return "Searching through your project";
+    return `Running ${toolName}`;
   }
   if (lower.includes("install") || lower.includes("package")) {
     const rawPkgs = args?.packages;
@@ -2612,30 +2736,12 @@ function friendlyToolMessage(
     }
     return "Adding new capabilities";
   }
-  if (lower.includes("build")) {
-    return "Preparing your app for the world";
-  }
   if (lower.includes("delete") || lower.includes("remove")) {
     if (pretty) return `Cleaning up ${pretty}`;
-    return "Tidying your project";
+    return `Running ${toolName}`;
   }
-  if (lower.includes("deploy")) {
-    return "Publishing your creation";
-  }
-  if (lower.includes("sql") || lower.includes("query") || lower.includes("database") || lower.includes("db")) {
-    return "Setting up your database";
-  }
-  if (lower.includes("run") || lower.includes("exec") || lower.includes("shell") || lower.includes("command")) {
-    return "Running a quick task";
-  }
-  if (lower.includes("spawn") || lower.includes("agent") || lower.includes("sub")) {
-    return "Coordinating the build";
-  }
-  if (lower.includes("scan") || lower.includes("report") || lower.includes("inspect") || lower.includes("analyze")) {
-    return "Scanning project structure";
-  }
-  // Fallback: friendly generic message instead of raw tool name
-  return "Working on your project";
+  // Final fallback: show the raw tool name so the user at least sees what's happening
+  return `Running ${toolName}`;
 }
 
 /**
@@ -2980,6 +3086,7 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
         data: {
           name: toolName,
           friendlyMessage: toolName ? friendlyToolMessage(toolName, toolArgs) : undefined,
+          arguments: safeArgs, // frontend can render command preview
         },
       };
     }

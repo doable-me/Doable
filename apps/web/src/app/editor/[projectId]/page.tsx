@@ -475,6 +475,9 @@ async function streamChat(
   let buffer = "";
   // Track pending tool names so tool_result can resolve via the last tool_call
   const pendingToolNames: string[] = [];
+  // Stale-stream detector: bail out if no meaningful events for STALE_STREAM_MS
+  let lastMeaningfulEvent = Date.now();
+  const STALE_STREAM_MS = 75_000;
 
   try {
     while (true) {
@@ -504,6 +507,10 @@ async function streamChat(
             name?: string;
             args?: Record<string, unknown>;
           };
+
+          if (parsed.type !== "keep_alive") {
+            lastMeaningfulEvent = Date.now();
+          }
 
           // Handle tool_call events — show "in progress" card immediately
           if (parsed.type === "tool_call" && onToolStarted) {
@@ -586,9 +593,14 @@ async function streamChat(
           // Handle status events from auto-fix system
           if (parsed.type === "status" && onStatusChange) {
             const d = parsed.data as Record<string, unknown> | undefined;
-            const statusMsg = (d?.message as string) ?? "";
-            if (statusMsg) {
-              onStatusChange(statusMsg);
+            const phase = d?.phase as string | undefined;
+            if (phase === "complete") {
+              onStatusChange("Done");
+            } else {
+              const statusMsg = (d?.message as string) ?? "";
+              if (statusMsg) {
+                onStatusChange(statusMsg);
+              }
             }
           }
 
@@ -634,7 +646,14 @@ async function streamChat(
           // prevent leaked metadata from appearing as chat text.
           if (payload && !payload.startsWith("{") && !payload.includes("model_call")) {
             onChunk(payload);
+            lastMeaningfulEvent = Date.now();
           }
+        }
+
+        if (Date.now() - lastMeaningfulEvent > STALE_STREAM_MS) {
+          console.warn("[Chat] Stream stale — exiting");
+          onError("AI seems stuck — please try again.");
+          return;
         }
       }
     }
@@ -966,6 +985,23 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
   const fileName = args?.path ?? args?.filePath ?? args?.file ?? "";
   const shortName = typeof fileName === "string" ? fileName.split("/").pop() ?? "" : "";
 
+  // Shell-ish tools: surface the actual command being run
+  const lower0 = toolName.toLowerCase();
+  if (lower0.includes("bash") || lower0.includes("shell") || lower0.includes("powershell")
+      || lower0.includes("cmd") || lower0.includes("exec") || lower0.includes("run_command")
+      || lower0.includes("terminal")) {
+    let cmd: string | undefined;
+    const rawCmd = args?.command ?? args?.cmd ?? args?.input;
+    if (typeof rawCmd === "string" && rawCmd.trim()) {
+      cmd = rawCmd.trim();
+    }
+    if (cmd) {
+      if (cmd.length > 80) cmd = cmd.slice(0, 77) + "\u2026";
+      return `$ ${cmd}`;
+    }
+    return "Running command";
+  }
+
   if (toolName.toLowerCase().includes("create") || toolName.toLowerCase().includes("write")) {
     return shortName ? `Creating ${shortName}` : "Creating file";
   }
@@ -1000,7 +1036,12 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
     .replace(/[_-]/g, " ")
     .replace(/\b(powershell|bash|shell|cmd|exec|run)\b/gi, "")
     .trim();
-  if (!cleaned) return "Working on it";
+  // If stripping leaves nothing, fall back to the original tool name rather
+  // than a vague "Working on it" — the user wants to see what's actually
+  // happening, not a friendly placeholder.
+  if (!cleaned) {
+    return toolName.replace(/\b\w/g, (c) => c.toUpperCase());
+  }
   return cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
@@ -1318,6 +1359,8 @@ export default function EditorPage() {
 
   // ─── Live status for AI activity ─────────────────────────
   const [liveStatus, setLiveStatus] = useState<string>("");
+  // Elapsed seconds since the current stream started (drives the inline timer + slow hint)
+  const [chatElapsedSec, setChatElapsedSec] = useState(0);
   // Track first generation to show loading overlay instead of default template
   const [isFirstGeneration, setIsFirstGeneration] = useState(false);
   // Track whether tool calls are active (for building overlay on follow-up builds)
@@ -1332,6 +1375,20 @@ export default function EditorPage() {
   const rafIdRef = useRef<number | null>(null);
   const autoSentRef = useRef(false);
   const scaffoldInitRef = useRef(false);
+
+  // ─── Tick elapsed seconds while a chat stream is active ──
+  useEffect(() => {
+    if (!isStreaming) {
+      setChatElapsedSec(0);
+      return;
+    }
+    const start = Date.now();
+    setChatElapsedSec(0);
+    const id = window.setInterval(() => {
+      setChatElapsedSec(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [isStreaming]);
 
   // ─── Replace URL from /editor/new to /editor/{id} to prevent re-scaffold on refresh ─
   useEffect(() => {
@@ -3486,14 +3543,22 @@ export default function EditorPage() {
               </button>
             )}
             {/* Preview status subtitle */}
-            <span className="text-[11px] text-[#9b9a97] leading-tight truncate">
-              {isStreaming && liveStatus
-                ? liveStatus
-                : scaffoldStatus === "ready"
+            <span className="text-[11px] text-[#9b9a97] leading-tight truncate flex items-center gap-1.5">
+              {isStreaming && liveStatus ? (
+                <>
+                  <span className="truncate">{liveStatus}</span>
+                  <span className="font-mono tabular-nums text-[#9b9a77]/70 text-[10px] flex-shrink-0">{chatElapsedSec}s</span>
+                  {chatElapsedSec >= 20 && (
+                    <span className="italic text-[#9b9a77]/60 text-[10px] flex-shrink-0">Taking longer than usual</span>
+                  )}
+                </>
+              ) : (
+                scaffoldStatus === "ready"
                   ? "Previewing last saved version"
                   : scaffoldStatus === "error"
                     ? "Preview unavailable"
-                    : "Loading Live Preview..."}
+                    : "Loading Live Preview..."
+              )}
             </span>
           </div>
 
