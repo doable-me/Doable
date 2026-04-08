@@ -2376,8 +2376,41 @@ chatRoutes.post(
     const { error, context } = c.req.valid("json");
     const userId = c.get("userId")!;
 
-    // Must have an active session for this project
-    const sessionId = projectSessions.get(projectId);
+    if (!isProjectScaffolded(projectId)) {
+      return c.json({ error: "Project is not scaffolded." }, 400);
+    }
+
+    // Try to get existing session, or resume from DB if API restarted
+    let sessionId = projectSessions.get(projectId);
+    if (!sessionId) {
+      try {
+        const [dbRow] = await sql`
+          SELECT copilot_session_id FROM ai_sessions
+          WHERE project_id = ${projectId} AND copilot_session_id IS NOT NULL
+          ORDER BY updated_at DESC LIMIT 1
+        `;
+        if (dbRow?.copilot_session_id) {
+          const aiConfig = await resolveAiEngine(projectId, userId, {});
+          const tools = await createAllTools(projectId, undefined, userId);
+          const PLAN_ONLY_TOOLS = new Set(["ask_clarification", "create_plan", "mark_step_complete"]);
+          const sessionTools = tools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
+
+          const manager = getCopilotManager();
+          sessionId = await manager.withAutoRetry(projectId, aiConfig.githubToken, async (eng) => {
+            return eng.resumeSession(dbRow.copilot_session_id, {
+              tools: sessionTools,
+            });
+          });
+          if (sessionId) {
+            projectSessions.set(projectId, sessionId);
+            console.log(`[Chat] fix-error resumed session ${dbRow.copilot_session_id.slice(0, 8)}… for ${projectId.slice(0, 8)}…`);
+          }
+        }
+      } catch (err) {
+        console.warn(`[Chat] fix-error session resume failed for ${projectId.slice(0, 8)}…:`, err instanceof Error ? err.message : err);
+      }
+    }
+
     if (!sessionId) {
       return c.json(
         { error: "No active chat session for this project. Send a chat message first." },
@@ -2385,11 +2418,8 @@ chatRoutes.post(
       );
     }
 
-    if (!isProjectScaffolded(projectId)) {
-      return c.json({ error: "Project is not scaffolded." }, 400);
-    }
-
-    const engine = await getCopilotEngine();
+    // Use the manager's engine (per-project), not the singleton
+    const engine = getCopilotManager().tryGetEngine(projectId) ?? await getCopilotEngine();
 
     return streamSSE(c, async (stream) => {
       let hadToolCalls = false;
