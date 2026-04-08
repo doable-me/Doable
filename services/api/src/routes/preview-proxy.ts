@@ -151,6 +151,62 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
     if (contentType.includes("text/html")) {
       const html = await resp.text();
 
+      // Storage namespacing — prefixes every localStorage/sessionStorage key with
+      // __<projectId>__ so state does not leak across project previews that all
+      // share the same http://127.0.0.1:4000 origin (Bug 12). Must run BEFORE any
+      // user scripts — including the dark-mode early-apply script in index.html —
+      // so that the very first localStorage.getItem("theme") reads the namespaced
+      // key. Patches Storage.prototype so both localStorage and sessionStorage are
+      // covered by a single patch.
+      //
+      // Known open: Service Workers, IndexedDB, Cache API, BroadcastChannel, and
+      // permission grants are NOT namespaced by this patch. Those cross-project
+      // leaks are tracked in bugs/bug-12-preview-localstorage-leaks-across-projects.md.
+      const storageNamespaceSnippet = `<script>
+(function() {
+  try {
+    var PREFIX = ${JSON.stringify(`__${projectId}__`)};
+    var proto = Storage.prototype;
+    var origGet = proto.getItem;
+    var origSet = proto.setItem;
+    var origRemove = proto.removeItem;
+    var origKey = proto.key;
+    var lengthDesc = Object.getOwnPropertyDescriptor(proto, 'length');
+    var origLengthGet = lengthDesc && lengthDesc.get;
+
+    function collectKeys(storage) {
+      var keys = [];
+      var total = origLengthGet ? origLengthGet.call(storage) : 0;
+      for (var i = 0; i < total; i++) {
+        var k = origKey.call(storage, i);
+        if (k !== null && k.indexOf(PREFIX) === 0) keys.push(k);
+      }
+      return keys;
+    }
+
+    proto.getItem = function(k) { return origGet.call(this, PREFIX + k); };
+    proto.setItem = function(k, v) { return origSet.call(this, PREFIX + k, v); };
+    proto.removeItem = function(k) { return origRemove.call(this, PREFIX + k); };
+    proto.key = function(index) {
+      var keys = collectKeys(this);
+      if (index < 0 || index >= keys.length) return null;
+      return keys[index].slice(PREFIX.length);
+    };
+    proto.clear = function() {
+      var keys = collectKeys(this);
+      for (var i = 0; i < keys.length; i++) origRemove.call(this, keys[i]);
+    };
+    if (origLengthGet) {
+      Object.defineProperty(proto, 'length', {
+        configurable: true,
+        enumerable: true,
+        get: function() { return collectKeys(this).length; }
+      });
+    }
+  } catch (e) { /* swallow — never break the preview because of namespacing */ }
+})();
+</script>`;
+
       // Error capture script — injected FIRST so it catches errors from all subsequent scripts.
       // Catches uncaught errors, unhandled promise rejections, console.error calls,
       // and Vite error overlays, then batches them to the parent frame via postMessage.
@@ -243,6 +299,27 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       const bodySnippet = `<script>${VISUAL_EDIT_BRIDGE_INLINE}</script>`;
 
       let injected = html;
+
+      // Inject storage namespacing at the START of <head> so it runs before
+      // ANY other script in the page (including the user's dark-mode early-apply
+      // script inside index.html). We specifically do NOT reuse the </head>
+      // injection path below because scripts injected at </head> run AFTER the
+      // inline dark-mode script that reads localStorage.getItem("theme").
+      const headOpenMatch = injected.match(/<head(\s[^>]*)?>/i);
+      if (headOpenMatch && typeof headOpenMatch.index === "number") {
+        const insertAt = headOpenMatch.index + headOpenMatch[0].length;
+        injected =
+          injected.slice(0, insertAt) +
+          storageNamespaceSnippet +
+          injected.slice(insertAt);
+      } else if (injected.includes("<body")) {
+        // No <head> tag — prepend before <body>
+        injected = injected.replace(/<body/i, `${storageNamespaceSnippet}<body`);
+      } else {
+        // No <head> or <body> — prepend at the very start
+        injected = `${storageNamespaceSnippet}${injected}`;
+      }
+
       if (injected.includes("</head>")) {
         injected = injected.replace("</head>", `${errorCaptureSnippet}${headSnippet}</head>`);
       } else if (injected.includes("<body")) {

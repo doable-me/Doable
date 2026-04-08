@@ -1426,6 +1426,13 @@ ERROR RECOVERY — if you encounter errors:
           let iterDone = false;
           let silentIterations = 0;
           let sawTurnEnd = false;
+          // Persistent "any turn_end ever seen" flag — unlike sawTurnEnd, this
+          // is NOT reset by subsequent message deltas, so we remember that the
+          // SDK has committed at least one sub-turn even mid-multi-turn. Used
+          // only by the clean-completion bypass in the silent-bail path — we
+          // do NOT shorten the mid-stream timeout based on it, because slow
+          // thinking between tool sub-turns can legitimately exceed 20–60s.
+          let anyTurnEndSeen = false;
           let turnEndAt = 0;
           const TURN_END_GRACE_MS = 10_000; // 10s grace after turn_end
           while (!iterDone) {
@@ -1449,6 +1456,18 @@ ERROR RECOVERY — if you encounter errors:
                 }
                 silentIterations++;
                 if (silentIterations >= MAX_SILENT_ITERATIONS) {
+                  // If anything has already been produced (content, tool
+                  // calls, or at least one turn_end), treat the silence as a
+                  // clean-but-degraded completion — not a user-facing error.
+                  // SDK v0.1.32 sometimes stops firing events without a
+                  // terminal signal after multi-tool turns; the turn really
+                  // is done, we just never heard about it. Only "nothing came
+                  // back at all" is a true hang.
+                  if (assistantContent.length > 0 || hadToolCalls || anyTurnEndSeen) {
+                    console.warn(`[Chat] SDK idle after turn produced content — treating as clean completion for ${projectId}`);
+                    iterDone = true;
+                    break;
+                  }
                   // True hang — bail with a clean error.
                   console.error(`[Chat] SDK silent for ${silentIterations}×${SDK_IDLE_TIMEOUT_MS / 1000}s — bailing for ${projectId}`);
                   try {
@@ -1512,6 +1531,7 @@ ERROR RECOVERY — if you encounter errors:
             // Track turn_end to trigger short grace period
             if (evtType === "assistant.turn_end") {
               sawTurnEnd = true;
+              anyTurnEndSeen = true;
               turnEndAt = Date.now();
               console.log(`[Chat][${projectId.slice(0, 8)}] assistant.turn_end — grace period started`);
             }
