@@ -706,6 +706,32 @@ chatRoutes.post(
     // so HTTP headers are sent right away and Cloudflare Tunnel / proxies
     // don't time out waiting for the initial response.
     c.header("X-Accel-Buffering", "no"); // Prevent proxy buffering of SSE
+
+    // Hook client disconnect → cancel the in-flight Copilot SDK call.
+    // Without this, closing the client fetch (AbortController, tab close,
+    // network loss) severs the SSE writer but the server keeps running the
+    // LLM call to completion — billing tokens, polluting chat history with
+    // the full off-track response, and leaving an ai_active_streams row
+    // flagged until natural completion. engine.abortSession() calls
+    // session.abort() which terminates the SDK call cleanly.
+    c.req.raw.signal.addEventListener("abort", () => {
+      const sessionKeyForAbort = mode === "visual-edit" ? `${projectId}:visual-edit` : projectId;
+      const sid = projectSessions.get(sessionKeyForAbort);
+      if (!sid) return;
+      // CRITICAL: must target the per-project pool engine that owns the
+      // session, NOT the singleton getCopilotEngine(). The manager pool
+      // (CopilotEngineManager) keeps a Map<projectId, engine> and each
+      // project's session lives on its own engine instance. Calling
+      // getCopilotEngine().abortSession(sid) hits a different engine
+      // whose sessions Map is empty, so the abort is silently a no-op.
+      const eng = getCopilotManager().tryGetEngine(projectId);
+      if (!eng) return;
+      eng.abortSession(sid).catch(() => {
+        /* client is gone; nothing to report to */
+      });
+      console.log(`[Chat] client disconnected — aborting session ${sid.slice(0, 8)}… on pool engine`);
+    });
+
     return streamSSE(c, async (stream) => {
     // Keep-alive: send periodic SSE pings to prevent Cloudflare Tunnel
     // and other proxies from closing the connection during slow operations
@@ -1392,26 +1418,39 @@ ERROR RECOVERY — if you encounter errors:
           // counter, and keep waiting. Only after 3 consecutive silent
           // iterations (180s of pure SDK silence) do we declare a real
           // hang and surface a clean error.
-          const SDK_IDLE_TIMEOUT_MS = 90_000;
-          const MAX_SILENT_ITERATIONS = 3;
+          const SDK_IDLE_TIMEOUT_MS = 60_000;
+          const MAX_SILENT_ITERATIONS = 2;
           const TIMEOUT_SENTINEL = Symbol("timeout");
           const channelRouter = new ChannelTokenRouter();
           const iterator = messageStream![Symbol.asyncIterator]();
           let iterDone = false;
           let silentIterations = 0;
+          let sawTurnEnd = false;
+          let turnEndAt = 0;
+          const TURN_END_GRACE_MS = 10_000; // 10s grace after turn_end
           while (!iterDone) {
+            // Use shorter timeout after turn_end: session should go idle quickly
+            const effectiveTimeout = sawTurnEnd
+              ? TURN_END_GRACE_MS
+              : SDK_IDLE_TIMEOUT_MS;
             const raceResult = await Promise.race([
               iterator.next(),
               new Promise<{ done: true; value: typeof TIMEOUT_SENTINEL }>((resolve) =>
-                setTimeout(() => resolve({ done: true, value: TIMEOUT_SENTINEL }), SDK_IDLE_TIMEOUT_MS),
+                setTimeout(() => resolve({ done: true, value: TIMEOUT_SENTINEL }), effectiveTimeout),
               ),
             ]);
             if (raceResult.done) {
               if (raceResult.value === TIMEOUT_SENTINEL) {
+                // After turn_end, bail immediately on first timeout (10s grace)
+                if (sawTurnEnd) {
+                  console.log(`[Chat] turn_end grace expired (${TURN_END_GRACE_MS / 1000}s) — treating as complete for ${projectId}`);
+                  iterDone = true;
+                  break;
+                }
                 silentIterations++;
                 if (silentIterations >= MAX_SILENT_ITERATIONS) {
                   // True hang — bail with a clean error.
-                  console.error(`[Chat] SDK genuinely silent for ${(silentIterations * SDK_IDLE_TIMEOUT_MS) / 1000}s — bailing for ${projectId}`);
+                  console.error(`[Chat] SDK silent for ${silentIterations}×${SDK_IDLE_TIMEOUT_MS / 1000}s — bailing for ${projectId}`);
                   try {
                     await stream.writeSSE({
                       data: JSON.stringify({
@@ -1439,12 +1478,32 @@ ERROR RECOVERY — if you encounter errors:
               iterDone = true;
               break;
             }
-            // Real SDK event arrived — reset the silence counters.
-            silentIterations = 0;
+            // Real SDK event arrived
             lastRealEventAt = Date.now();
             const event = raceResult.value as Record<string, unknown>;
             const evtType = event.type as string;
             const evtData = event.data as Record<string, unknown> | undefined;
+
+            // Only reset silence counter for CONTENT-BEARING events.
+            // Non-content events (background_tasks_changed, tools_updated, etc.)
+            // should NOT prevent timeout from progressing.
+            const CONTENT_EVENTS = new Set([
+              "assistant.message_delta", "assistant.streaming_delta",
+              "assistant.message", "assistant.reasoning_delta", "assistant.reasoning",
+              "tool.execution_start", "tool.execution_complete", "tool.execution_partial_result",
+              "tool.running", "tool_call",
+              "session.idle", "session.error", "done",
+            ]);
+            if (CONTENT_EVENTS.has(evtType)) {
+              silentIterations = 0;
+              sawTurnEnd = false; // new content after turn_end = multi-turn, reset
+            }
+
+            // Track turn_end to trigger short grace period
+            if (evtType === "assistant.turn_end") {
+              sawTurnEnd = true;
+              turnEndAt = Date.now();
+            }
 
             // ── Debug: trace SDK events to diagnose silent model failures ──
             if (evtType === "session.error" || evtType === "session.idle" || evtType === "done") {
@@ -1658,7 +1717,7 @@ ERROR RECOVERY — if you encounter errors:
             // kill the stream after the first tool call, losing all
             // subsequent thinking/text/tool streaming.
             const SESSION_TERMINAL_EVENTS = new Set([
-              "session.idle", "done",
+              "session.idle", "session.error", "done",
             ]);
             if (SESSION_TERMINAL_EVENTS.has(evtType)) {
               console.log(`[Chat] Session terminal event "${evtType}" — exiting stream loop for ${projectId}`);
@@ -1670,6 +1729,7 @@ ERROR RECOVERY — if you encounter errors:
             // Log unexpected event types for debugging
             if (!sseData && !SESSION_TERMINAL_EVENTS.has(evtType) && ![
               "pending_messages.modified", "session.tools_updated", "session.usage_info",
+              "session.background_tasks_changed",
               "assistant.usage", "hook.start", "hook.end", "user.message",
               "assistant.turn_start", "assistant.turn_end", "permission.requested",
               "permission.completed", "assistant.reasoning", "assistant.message",
@@ -1754,7 +1814,7 @@ ERROR RECOVERY — if you encounter errors:
                   if (retrySseData.type === "tool_call" || retrySseData.type === "tool_result") hadToolCalls = true;
                   await stream.writeSSE({ data: JSON.stringify(retrySseData) });
                 }
-                if (rType === "session.idle" || rType === "done") { retryDone = true; break; }
+                if (rType === "session.idle" || rType === "session.error" || rType === "done") { retryDone = true; break; }
               }
               for (const chunk of retryRouter.flush()) {
                 if (!chunk.content) continue;
@@ -2248,14 +2308,24 @@ chatRoutes.delete("/projects/:id/chat", async (c) => {
 // ─── POST /projects/:id/chat/abort ─ Abort current request ──
 chatRoutes.post("/projects/:id/chat/abort", async (c) => {
   const projectId = c.req.param("id");
-  const sessionId = projectSessions.get(projectId);
+  // The main chat handler keys normal-mode sessions by projectId and
+  // visual-edit by `${projectId}:visual-edit`. Try both so the abort
+  // hits whichever session is currently active.
+  const sessionId =
+    projectSessions.get(projectId) ??
+    projectSessions.get(`${projectId}:visual-edit`);
 
   if (sessionId) {
-    try {
-      const engine = await getCopilotEngine();
-      await engine.abortSession(sessionId);
-    } catch {
-      // Ignore
+    // CRITICAL: abort must run on the per-project POOL engine that owns
+    // the session. getCopilotEngine() returns a singleton with an empty
+    // sessions map and the abort flag lands on the wrong engine instance.
+    const engine = getCopilotManager().tryGetEngine(projectId);
+    if (engine) {
+      try {
+        await engine.abortSession(sessionId);
+      } catch {
+        // Ignore
+      }
     }
   }
 
