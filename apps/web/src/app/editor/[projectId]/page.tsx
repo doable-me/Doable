@@ -1371,6 +1371,11 @@ export default function EditorPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Dedupe suggestion fetches: React StrictMode runs state updaters twice
+  // in development, and fetchAISuggestions is (historically) called inside
+  // a setMessages((prev) => {...}) updater. Without this guard, every
+  // completed chat message triggers TWO parallel POSTs to /chat/suggestions.
+  const suggestedForRef = useRef<string | null>(null);
   const chunkBufferRef = useRef("");
   const rafIdRef = useRef<number | null>(null);
   const autoSentRef = useRef(false);
@@ -2230,7 +2235,11 @@ export default function EditorPage() {
               setAiSuggestions(FALLBACK_SUGGESTIONS);
               setMessages((prev) => {
                 const lastAssistant = prev.find((m) => m.id === assistantId);
-                if (lastAssistant?.content) {
+                if (
+                  lastAssistant?.content &&
+                  suggestedForRef.current !== assistantId
+                ) {
+                  suggestedForRef.current = assistantId;
                   fetchAISuggestions(resolvedProjectId, trimmed, lastAssistant.content).then((s) => {
                     setAiSuggestions(s);
                     if (s.length > 0) {
@@ -2648,7 +2657,11 @@ export default function EditorPage() {
           // Read current assistant content from state via updater
           setMessages((prev) => {
             const lastAssistant = prev.find((m) => m.id === assistantId);
-            if (lastAssistant?.content) {
+            if (
+              lastAssistant?.content &&
+              suggestedForRef.current !== assistantId
+            ) {
+              suggestedForRef.current = assistantId;
               fetchAISuggestions(
                 resolvedProjectId,
                 trimmed,
@@ -2803,6 +2816,20 @@ export default function EditorPage() {
   const handleStopStreaming = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    // Also tell the server to cancel the in-flight Copilot SDK call.
+    // Without this explicit POST, the server would detect the fetch
+    // disconnect via c.req.raw.signal (recent fix) — belt-and-suspenders
+    // in case the disconnect signal is delayed by proxies.
+    const { accessToken } = getStoredTokens();
+    fetch(`${API_URL}/projects/${resolvedProjectId}/chat/abort`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+    }).catch(() => {
+      /* best-effort — server-side disconnect hook is the primary path */
+    });
     setMessages((prev) =>
       prev.map((m) =>
         m.isStreaming

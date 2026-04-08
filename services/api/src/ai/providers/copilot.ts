@@ -82,6 +82,17 @@ export class CopilotEngine {
   private client: CopilotClient | null = null;
   private config: CopilotEngineConfig;
   private sessions = new Map<string, CopilotSession>();
+  // Sessions that have received an abort signal. sendMessage() checks this
+  // on every loop iteration and bails early. Needed because SDK v0.1.32's
+  // session.abort() does not reliably propagate cancellation to an in-flight
+  // sendMessage iterator — without this flag the server keeps consuming
+  // events (and billing tokens) long after the client disconnected.
+  private abortedSessions = new Set<string>();
+  // Wake callbacks — the sendMessage generator registers one while it's
+  // awaiting the next event from the SDK. abortSession() invokes it so the
+  // await resolves immediately and the loop can observe the abort flag,
+  // instead of blocking up to the full event-timeout (45s) before noticing.
+  private sessionWakeups = new Map<string, () => void>();
 
   constructor(config: CopilotEngineConfig = {}) {
     this.config = config;
@@ -329,10 +340,38 @@ export class CopilotEngine {
       throw err;
     }
 
+    // Clear any prior abort flag for this session — a fresh sendMessage()
+    // call means we're starting over, not honoring a stale cancellation.
+    this.abortedSessions.delete(sessionId);
+
+    // Register a wake callback that abortSession() can invoke to unblock
+    // the "no events yet, wait 45s" await below. A stable wrapper that
+    // just delegates to whatever resolveWaiting is at the moment.
+    const wake = () => {
+      if (resolveWaiting) {
+        const r = resolveWaiting;
+        resolveWaiting = null;
+        r();
+      }
+    };
+    this.sessionWakeups.set(sessionId, wake);
+
     // Yield events as they arrive until a terminal event (session.idle / session.error)
     try {
       let eventCount = 0;
       while (!done || eventQueue.length > 0) {
+        // Check the abort flag on every loop iteration so a client-initiated
+        // cancellation (via abortSession()) terminates the stream promptly
+        // even if the SDK's own session.abort() didn't fire session.idle.
+        if (this.abortedSessions.has(sessionId)) {
+          console.log(`[CopilotEngine] ABORT loop break for ${sessionId.slice(0, 8)}… (${eventCount} events emitted, ${eventQueue.length} queued)`);
+          yield {
+            type: "session.idle",
+            data: { reason: "aborted" },
+          } as unknown as SessionEvent;
+          done = true;
+          break;
+        }
         if (eventQueue.length > 0) {
           const evt = eventQueue.shift()!;
           eventCount++;
@@ -347,7 +386,7 @@ export class CopilotEngine {
               }
             }, EVENT_TIMEOUT_MS);
           });
-          if (timedOut && !done && eventQueue.length === 0) {
+          if (timedOut && !done && eventQueue.length === 0 && !this.abortedSessions.has(sessionId)) {
             const elapsed = Date.now() - lastEventTime;
             console.error(`[CopilotEngine] No events for ${Math.round(elapsed / 1000)}s — timeout (${sessionId.slice(0, 8)}…)`);
             yield {
@@ -363,6 +402,10 @@ export class CopilotEngine {
       }
     } finally {
       unsubscribe();
+      this.sessionWakeups.delete(sessionId);
+      // Whether we exited naturally, via abort, or via error, clear the
+      // abort flag so the next sendMessage() on this session starts clean.
+      this.abortedSessions.delete(sessionId);
     }
   }
 
@@ -525,11 +568,43 @@ export class CopilotEngine {
 
   /**
    * Abort the current message processing in a session.
+   *
+   * Sets an abort flag that sendMessage() checks on every loop iteration,
+   * so the async generator bails out even if the SDK's own abort doesn't
+   * propagate cancellation. Also calls session.abort() as a best-effort —
+   * on SDK versions where it works, that's the cleaner path.
+   *
+   * Known limitation: on SDK v0.1.32 the upstream CLI subprocess keeps
+   * generating tokens in the background (we can stop listening but cannot
+   * stop the billing). Full cancellation requires an SDK upgrade or
+   * killing the CLI subprocess directly.
    */
   async abortSession(sessionId: string): Promise<void> {
+    const short = sessionId.slice(0, 8);
+    const hasSession = this.sessions.has(sessionId);
+    const hasWake = this.sessionWakeups.has(sessionId);
+    console.log(
+      `[CopilotEngine] ABORT called for ${short}… (hasSession=${hasSession}, hasWake=${hasWake})`
+    );
+    this.abortedSessions.add(sessionId);
+    // Wake the sendMessage generator if it's currently awaiting the next
+    // SDK event — without this, the loop stays frozen in its inactivity
+    // await (up to 45s) before it can observe the abort flag.
+    const wake = this.sessionWakeups.get(sessionId);
+    if (wake) {
+      console.log(`[CopilotEngine] ABORT wake() firing for ${short}…`);
+      wake();
+    }
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    await session.abort();
+    try {
+      await session.abort();
+      console.log(`[CopilotEngine] ABORT session.abort() returned for ${short}…`);
+    } catch (err) {
+      console.log(
+        `[CopilotEngine] ABORT session.abort() threw for ${short}…: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   /**

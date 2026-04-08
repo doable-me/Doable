@@ -127,6 +127,16 @@ export class CopilotEngineManager {
   }
 
   /**
+   * Return the pool engine for a project WITHOUT creating one if absent.
+   * Used by the abort path: we want to target the exact engine instance
+   * that owns the in-flight session, not spin up a fresh one just to call
+   * abort on an empty sessions map.
+   */
+  tryGetEngine(projectId: string): CopilotEngine | null {
+    return this.pool.get(projectId)?.engine ?? null;
+  }
+
+  /**
    * Evict a cached engine so the next getEngine() call creates a fresh one.
    * Call this when a request fails with an auth/permission error.
    */
