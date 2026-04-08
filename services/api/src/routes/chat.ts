@@ -133,22 +133,46 @@ async function resolveAiEngine(
           // Enforcement overrides any request-level provider/copilot values
           resolvedProvider = undefined;
         } else if (!selectedCopilotAccountId && !selectedProviderId && !resolvedProvider) {
-          // No enforcement and no explicit overrides — walk down the chain
+          // No enforcement and no explicit overrides — walk down the chain.
+          //
+          // IMPORTANT: With migration 042, both copilot AND custom configs
+          // can be persisted simultaneously. The active side is determined
+          // by the explicit `*_source` column — never by "which id is set".
+          // Pick exactly one side based on source so the inactive side is
+          // ignored even when it has a value.
 
           // ── Tier 3: User preferences ──
-          if (config.user_copilot_account_id || config.user_provider_id) {
-            selectedCopilotAccountId = config.user_copilot_account_id ?? undefined;
-            selectedProviderId = config.user_provider_id ?? undefined;
-            if (!resolvedModel && config.user_model) {
-              resolvedModel = config.user_model;
+          // A user override is "active" if the row exists and the side
+          // selected by `user_source` actually has a value to use.
+          const hasUserOverride =
+            (config.user_source === "copilot" && config.user_copilot_account_id) ||
+            (config.user_source === "custom" && config.user_provider_id);
+
+          if (hasUserOverride) {
+            if (config.user_source === "custom") {
+              selectedProviderId = config.user_provider_id ?? undefined;
+              if (!resolvedModel && config.user_provider_model) {
+                resolvedModel = config.user_provider_model;
+              }
+            } else {
+              selectedCopilotAccountId = config.user_copilot_account_id ?? undefined;
+              if (!resolvedModel && config.user_copilot_model) {
+                resolvedModel = config.user_copilot_model;
+              }
             }
           }
           // ── Tier 4: Workspace defaults ──
           else {
-            selectedCopilotAccountId = config.default_copilot_account_id ?? undefined;
-            selectedProviderId = config.default_provider_id ?? undefined;
-            if (!resolvedModel && config.default_model) {
-              resolvedModel = config.default_model;
+            if (config.default_source === "custom") {
+              selectedProviderId = config.default_provider_id ?? undefined;
+              if (!resolvedModel && config.default_provider_model) {
+                resolvedModel = config.default_provider_model;
+              }
+            } else {
+              selectedCopilotAccountId = config.default_copilot_account_id ?? undefined;
+              if (!resolvedModel && config.default_copilot_model) {
+                resolvedModel = config.default_copilot_model;
+              }
             }
           }
         }
@@ -2310,8 +2334,15 @@ chatRoutes.get("/ai/models", async (c) => {
       githubToken = (await aiSettingsDb.getCopilotAccountToken(copilotAccountId)) ?? undefined;
     }
 
+    // Key the pooled engine by account so each Copilot account gets its own
+    // engine with its own token. Reusing a single "models" key would return
+    // the engine cached for whichever token was passed first, and switching
+    // accounts in the UI would silently keep listing the original account's
+    // models — see CopilotEngineManager.getEngine, which doesn't compare
+    // tokens against the cached entry.
+    const engineKey = `models:${copilotAccountId ?? "default"}`;
     const manager = getCopilotManager();
-    const engine = await manager.getEngine("models", githubToken);
+    const engine = await manager.getEngine(engineKey, githubToken);
     const models = await engine.listModels();
     return c.json({ data: models });
   } catch (err) {
@@ -2395,14 +2426,28 @@ chatRoutes.post(
             label: "enforced",
           });
         } else {
-          // Suggestion-specific config (primary attempt)
-          if (settings.suggestion_model || settings.suggestion_copilot_account_id || settings.suggestion_provider_id) {
+          // Suggestion-specific config — pick the side selected by
+          // suggestion_source. Both copilot and custom may be persisted; we
+          // must consult only the active side, never both.
+          const useCustomSuggestion =
+            settings.suggestion_source === "custom" && !!settings.suggestion_provider_id;
+          const useCopilotSuggestion =
+            settings.suggestion_source === "copilot" && !!settings.suggestion_copilot_account_id;
+
+          if (useCustomSuggestion) {
             configs.push({
-              model: settings.suggestion_model ?? "gpt-4o-mini",
+              model: settings.suggestion_provider_model ?? "gpt-4o-mini",
+              githubToken: undefined,
+              provider: await resolveProvider(settings.suggestion_provider_id),
+              label: "suggestion",
+            });
+          } else if (useCopilotSuggestion) {
+            configs.push({
+              model: settings.suggestion_copilot_model ?? "gpt-4o-mini",
               githubToken: settings.suggestion_copilot_account_id
                 ? ((await aiSettingsDb.getCopilotAccountToken(settings.suggestion_copilot_account_id)) ?? undefined)
                 : undefined,
-              provider: await resolveProvider(settings.suggestion_provider_id),
+              provider: undefined,
               label: "suggestion",
             });
           }

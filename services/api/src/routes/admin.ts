@@ -438,42 +438,51 @@ async function allocateAiToUser(
   adminId: string,
   targetUserId: string,
   targetWorkspaceId: string,
-  sourceCopilotAccountId: string | null,
-  sourceProviderId: string | null,
-  model: string | null
+  alloc: {
+    source: "copilot" | "custom";
+    copilotAccountId: string | null;
+    copilotModel: string | null;
+    providerId: string | null;
+    providerModel: string | null;
+  }
 ) {
   let localCopilotId: string | null = null;
   let localProviderId: string | null = null;
 
   // Clone copilot account into user's workspace
-  if (sourceCopilotAccountId) {
+  if (alloc.copilotAccountId) {
     localCopilotId = await cloneCopilotAccountToWorkspace(
-      sourceCopilotAccountId, targetWorkspaceId, adminId, ENCRYPTION_KEY
+      alloc.copilotAccountId, targetWorkspaceId, adminId, ENCRYPTION_KEY
     );
   }
 
   // Clone provider into user's workspace
-  if (sourceProviderId) {
+  if (alloc.providerId) {
     localProviderId = await cloneProviderToWorkspace(
-      sourceProviderId, targetWorkspaceId, adminId, ENCRYPTION_KEY
+      alloc.providerId, targetWorkspaceId, adminId, ENCRYPTION_KEY
     );
   }
 
-  // Write user preferences with the LOCAL (workspace-scoped) IDs
+  // Write user preferences with the LOCAL (workspace-scoped) IDs.
+  // Both copilot and custom sides are persisted; `source` selects active.
   await aiSettings.upsertUserPreferences({
     workspaceId: targetWorkspaceId,
     userId: targetUserId,
+    source: alloc.source,
     copilotAccountId: localCopilotId,
+    copilotModel: alloc.copilotModel,
     providerId: localProviderId,
-    model,
+    providerModel: alloc.providerModel,
   });
 
   // Also set workspace defaults so all projects in that workspace use this config
   await aiSettings.upsertSettings({
     workspaceId: targetWorkspaceId,
+    defaultSource: alloc.source,
     defaultCopilotAccountId: localCopilotId,
+    defaultCopilotModel: alloc.copilotModel,
     defaultProviderId: localProviderId,
-    defaultModel: model,
+    defaultProviderModel: alloc.providerModel,
     updatedBy: adminId,
   });
 }
@@ -569,9 +578,11 @@ adminRoutes.get("/users/ai-allocations", async (c) => {
 });
 
 const adminAllocateSchema = z.object({
+  source: z.enum(["copilot", "custom"]).optional(),
   copilotAccountId: z.string().uuid().nullable().optional(),
+  copilotModel: z.string().max(100).nullable().optional(),
   providerId: z.string().uuid().nullable().optional(),
-  model: z.string().max(100).nullable().optional(),
+  providerModel: z.string().max(100).nullable().optional(),
 });
 
 // PUT /admin/users/:userId/ai-allocation
@@ -591,12 +602,19 @@ adminRoutes.put("/users/:userId/ai-allocation", async (c) => {
     await ensureWorkspaceMember(adminWorkspaceId, targetUserId, adminId);
   }
 
-  await allocateAiToUser(
-    adminId, targetUserId, targetWorkspaceId,
-    parsed.data.copilotAccountId ?? null,
-    parsed.data.providerId ?? null,
-    parsed.data.model ?? null
-  );
+  // If source isn't explicitly provided, infer it from whichever side has
+  // an id — preserves the legacy admin UI behavior until it's updated.
+  const source: "copilot" | "custom" =
+    parsed.data.source ??
+    (parsed.data.providerId ? "custom" : "copilot");
+
+  await allocateAiToUser(adminId, targetUserId, targetWorkspaceId, {
+    source,
+    copilotAccountId: parsed.data.copilotAccountId ?? null,
+    copilotModel: source === "copilot" ? (parsed.data.copilotModel ?? null) : null,
+    providerId: parsed.data.providerId ?? null,
+    providerModel: source === "custom" ? (parsed.data.providerModel ?? null) : null,
+  });
 
   return c.json({ data: { ok: true } });
 });
@@ -615,22 +633,36 @@ adminRoutes.post("/users/ai-allocations/copy-my-settings", async (c) => {
   const adminWorkspaceId = await getUserOwnedWorkspace(adminId);
   if (!adminWorkspaceId) return c.json({ error: "No workspace found for admin" }, 400);
 
-  // Get admin's effective AI settings (personal override → workspace defaults)
+  // Get admin's effective AI settings (personal override → workspace defaults).
+  // Both copilot and custom sides are read so target users inherit the full
+  // setup, with `source` selecting which side is currently active.
+  let source: "copilot" | "custom" = "copilot";
   let copilotAccountId: string | null = null;
+  let copilotModel: string | null = null;
   let providerId: string | null = null;
-  let model: string | null = null;
+  let providerModel: string | null = null;
 
   const adminPrefs = await aiSettings.getUserPreferences(adminWorkspaceId, adminId);
-  if (adminPrefs && (adminPrefs.copilot_account_id || adminPrefs.provider_id || adminPrefs.model)) {
+  if (
+    adminPrefs &&
+    (adminPrefs.copilot_account_id ||
+      adminPrefs.provider_id ||
+      adminPrefs.copilot_model ||
+      adminPrefs.provider_model)
+  ) {
+    source = adminPrefs.source;
     copilotAccountId = adminPrefs.copilot_account_id;
+    copilotModel = adminPrefs.copilot_model;
     providerId = adminPrefs.provider_id;
-    model = adminPrefs.model;
+    providerModel = adminPrefs.provider_model;
   } else {
     const wsDefaults = await aiSettings.getSettings(adminWorkspaceId);
     if (wsDefaults) {
+      source = wsDefaults.default_source;
       copilotAccountId = wsDefaults.default_copilot_account_id;
+      copilotModel = wsDefaults.default_copilot_model;
       providerId = wsDefaults.default_provider_id;
-      model = wsDefaults.default_model;
+      providerModel = wsDefaults.default_provider_model;
     }
   }
 
@@ -640,7 +672,13 @@ adminRoutes.post("/users/ai-allocations/copy-my-settings", async (c) => {
     if (!targetWsId) continue;
 
     await ensureWorkspaceMember(adminWorkspaceId, targetId, adminId);
-    await allocateAiToUser(adminId, targetId, targetWsId, copilotAccountId, providerId, model);
+    await allocateAiToUser(adminId, targetId, targetWsId, {
+      source,
+      copilotAccountId,
+      copilotModel,
+      providerId,
+      providerModel,
+    });
     updated++;
   }
 

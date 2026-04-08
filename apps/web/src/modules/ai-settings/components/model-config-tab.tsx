@@ -180,12 +180,26 @@ function useProviderModels(workspaceId: string | null, providerId: string) {
 
 type Source = "copilot" | "custom";
 
+/**
+ * Both copilot and custom configs are persisted simultaneously. The active
+ * side is determined by `source`, and each side keeps its own model so
+ * switching tabs doesn't clobber the other tab's selection.
+ */
 interface ModelSectionState {
   source: Source;
   copilotAccountId: string;
+  copilotModel: string;
   providerId: string;
-  model: string;
+  providerModel: string;
 }
+
+const EMPTY_MODEL_STATE: ModelSectionState = {
+  source: "copilot",
+  copilotAccountId: "",
+  copilotModel: "",
+  providerId: "",
+  providerModel: "",
+};
 
 interface Props {
   workspaceId: string | null;
@@ -194,19 +208,30 @@ interface Props {
   accounts: ApiGitHubCopilotAccount[];
   providers: ApiAiProvider[];
   onUpdate: (data: {
+    defaultSource?: "copilot" | "custom";
     defaultCopilotAccountId?: string | null;
+    defaultCopilotModel?: string | null;
     defaultProviderId?: string | null;
-    defaultModel?: string | null;
+    defaultProviderModel?: string | null;
+    suggestionSource?: "copilot" | "custom";
     suggestionCopilotAccountId?: string | null;
+    suggestionCopilotModel?: string | null;
     suggestionProviderId?: string | null;
-    suggestionModel?: string | null;
+    suggestionProviderModel?: string | null;
   }) => Promise<void>;
   userPreferences?: ApiUserAiPreferences | null;
   enforcement?: ApiEnforcementStatus | null;
   onUserPreferenceUpdate?: (data: {
+    source?: "copilot" | "custom";
     copilotAccountId?: string | null;
+    copilotModel?: string | null;
     providerId?: string | null;
-    model?: string | null;
+    providerModel?: string | null;
+    suggestionSource?: "copilot" | "custom";
+    suggestionCopilotAccountId?: string | null;
+    suggestionCopilotModel?: string | null;
+    suggestionProviderId?: string | null;
+    suggestionProviderModel?: string | null;
   }) => Promise<void>;
   onRefreshProviders?: () => void;
   isPlatformAdmin?: boolean;
@@ -214,17 +239,33 @@ interface Props {
 
 // ─── Helpers ────────────────────────────────────────────────
 
-function deriveSource(defaults: ApiWorkspaceAiDefaults | null, prefix: "default" | "suggestion"): ModelSectionState {
-  const copilotKey = prefix === "default" ? "default_copilot_account_id" : "suggestion_copilot_account_id";
-  const providerKey = prefix === "default" ? "default_provider_id" : "suggestion_provider_id";
-  const modelKey = prefix === "default" ? "default_model" : "suggestion_model";
-
-  const providerId = defaults?.[providerKey] ?? "";
-  const copilotAccountId = defaults?.[copilotKey] ?? "";
-  const model = defaults?.[modelKey] ?? "";
-  const source: Source = providerId ? "custom" : "copilot";
-
-  return { source, copilotAccountId, providerId, model };
+/**
+ * Build a ModelSectionState from a workspace defaults row. Both sides are
+ * always populated (so switching tabs doesn't lose data); `source` records
+ * which one is currently active. Source comes from the explicit `*_source`
+ * column added in migration 042 — never inferred from "which id is non-null".
+ */
+function deriveSource(
+  defaults: ApiWorkspaceAiDefaults | null,
+  prefix: "default" | "suggestion",
+): ModelSectionState {
+  if (!defaults) return EMPTY_MODEL_STATE;
+  if (prefix === "default") {
+    return {
+      source: defaults.default_source ?? "copilot",
+      copilotAccountId: defaults.default_copilot_account_id ?? "",
+      copilotModel: defaults.default_copilot_model ?? "",
+      providerId: defaults.default_provider_id ?? "",
+      providerModel: defaults.default_provider_model ?? "",
+    };
+  }
+  return {
+    source: defaults.suggestion_source ?? "copilot",
+    copilotAccountId: defaults.suggestion_copilot_account_id ?? "",
+    copilotModel: defaults.suggestion_copilot_model ?? "",
+    providerId: defaults.suggestion_provider_id ?? "",
+    providerModel: defaults.suggestion_provider_model ?? "",
+  };
 }
 
 // ─── Inline Config Fields ───────────────────────────────────
@@ -266,7 +307,9 @@ function InlineConfigFields({
     setCustomModelMode(false);
   }, [state.providerId]);
 
-  const modelInList = providerModels.some((m) => m.id === state.model);
+  // Each side keeps its own model. Switching tabs preserves both — only
+  // `source` flips, indicating which one is currently active.
+  const modelInList = providerModels.some((m) => m.id === state.providerModel);
   const showModelDropdown =
     state.source === "custom" &&
     state.providerId &&
@@ -282,7 +325,7 @@ function InlineConfigFields({
         </label>
         <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
           <button
-            onClick={() => onChange({ ...state, source: "copilot", providerId: "" })}
+            onClick={() => onChange({ ...state, source: "copilot" })}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               state.source === "copilot"
                 ? "bg-brand-600 text-white"
@@ -292,7 +335,7 @@ function InlineConfigFields({
             GitHub Copilot
           </button>
           <button
-            onClick={() => onChange({ ...state, source: "custom", copilotAccountId: "" })}
+            onClick={() => onChange({ ...state, source: "custom" })}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               state.source === "custom"
                 ? "bg-brand-600 text-white"
@@ -302,6 +345,10 @@ function InlineConfigFields({
             Custom Provider
           </button>
         </div>
+        <p className="text-[10px] text-zinc-500 mt-1.5">
+          Both configurations are saved. Switching tabs only changes which one is active —
+          your other tab&apos;s selection is kept.
+        </p>
       </div>
 
       {/* Source-specific config */}
@@ -354,8 +401,8 @@ function InlineConfigFields({
             <div>
               <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
               <select
-                value={state.model}
-                onChange={(e) => onChange({ ...state, model: e.target.value })}
+                value={state.copilotModel}
+                onChange={(e) => onChange({ ...state, copilotModel: e.target.value })}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
               >
                 {copilotModels.map((m) => (
@@ -374,7 +421,7 @@ function InlineConfigFields({
               <div className="flex gap-2">
                 <select
                   value={state.providerId}
-                  onChange={(e) => onChange({ ...state, providerId: e.target.value, model: "" })}
+                  onChange={(e) => onChange({ ...state, providerId: e.target.value, providerModel: "" })}
                   className="flex-1 min-w-0 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
                 >
                   <option value="">Select a provider...</option>
@@ -417,13 +464,13 @@ function InlineConfigFields({
               ) : showModelDropdown ? (
                 <>
                   <select
-                    value={modelInList ? state.model : CUSTOM_MODEL_SENTINEL}
+                    value={modelInList ? state.providerModel : CUSTOM_MODEL_SENTINEL}
                     onChange={(e) => {
                       if (e.target.value === CUSTOM_MODEL_SENTINEL) {
                         setCustomModelMode(true);
-                        onChange({ ...state, model: "" });
+                        onChange({ ...state, providerModel: "" });
                       } else {
-                        onChange({ ...state, model: e.target.value });
+                        onChange({ ...state, providerModel: e.target.value });
                       }
                     }}
                     className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
@@ -438,16 +485,16 @@ function InlineConfigFields({
                     ))}
                     <option value={CUSTOM_MODEL_SENTINEL}>Type custom model ID...</option>
                   </select>
-                  {state.model && modelInList && (
-                    <ModelCapabilityBadges model={providerModels.find((m) => m.id === state.model)} />
+                  {state.providerModel && modelInList && (
+                    <ModelCapabilityBadges model={providerModels.find((m) => m.id === state.providerModel)} />
                   )}
                 </>
               ) : (
                 <>
                   <input
                     type="text"
-                    value={state.model}
-                    onChange={(e) => onChange({ ...state, model: e.target.value })}
+                    value={state.providerModel}
+                    onChange={(e) => onChange({ ...state, providerModel: e.target.value })}
                     placeholder={state.providerId ? "e.g. gpt-4o" : "Select a provider first"}
                     disabled={!state.providerId}
                     className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500 disabled:opacity-50"
@@ -592,24 +639,14 @@ export function ModelConfigTab({
   const { models: suggestionProviderModels, loading: suggestionProviderModelsLoading, refresh: refreshSuggestionModels } = useProviderModels(workspaceId, suggestionCustomProviderId);
 
   // ── User preferences (primary override) ──
-  const [userPrimary, setUserPrimary] = useState<ModelSectionState>({
-    source: "copilot",
-    copilotAccountId: "",
-    providerId: "",
-    model: "",
-  });
+  const [userPrimary, setUserPrimary] = useState<ModelSectionState>(EMPTY_MODEL_STATE);
   const activeUserCopilotId = userPrimary.source === "copilot" ? userPrimary.copilotAccountId : "";
   const { models: userCopilotModels } = useCopilotModels(activeUserCopilotId || undefined);
   const userCustomProviderId = userPrimary.source === "custom" ? userPrimary.providerId : "";
   const { models: userProviderModels, loading: userProviderModelsLoading, refresh: refreshUserModels } = useProviderModels(workspaceId, userCustomProviderId);
 
   // ── User preferences (suggestion override) ──
-  const [userSuggestion, setUserSuggestion] = useState<ModelSectionState>({
-    source: "copilot",
-    copilotAccountId: "",
-    providerId: "",
-    model: "",
-  });
+  const [userSuggestion, setUserSuggestion] = useState<ModelSectionState>(EMPTY_MODEL_STATE);
   const activeUserSugCopilotId = userSuggestion.source === "copilot" ? userSuggestion.copilotAccountId : "";
   const { models: userSugCopilotModels } = useCopilotModels(activeUserSugCopilotId || undefined);
   const userSugCustomProviderId = userSuggestion.source === "custom" ? userSuggestion.providerId : "";
@@ -635,29 +672,42 @@ export function ModelConfigTab({
   // ── Sync user preferences when loaded ──
   useEffect(() => {
     if (userPreferences) {
-      const hasProvider = !!userPreferences.provider_id;
       setUserPrimary({
-        source: hasProvider ? "custom" : "copilot",
+        source: userPreferences.source ?? "copilot",
         copilotAccountId: userPreferences.copilot_account_id ?? "",
+        copilotModel: userPreferences.copilot_model ?? "",
         providerId: userPreferences.provider_id ?? "",
-        model: userPreferences.model ?? "",
+        providerModel: userPreferences.provider_model ?? "",
       });
-      // Suggestion override fields — the API doesn't store these yet,
-      // so they reset to defaults on page load. Backend extension pending.
+      setUserSuggestion({
+        source: userPreferences.suggestion_source ?? "copilot",
+        copilotAccountId: userPreferences.suggestion_copilot_account_id ?? "",
+        copilotModel: userPreferences.suggestion_copilot_model ?? "",
+        providerId: userPreferences.suggestion_provider_id ?? "",
+        providerModel: userPreferences.suggestion_provider_model ?? "",
+      });
     }
   }, [userPreferences]);
 
   // ── Save workspace defaults ──
+  // Both copilot and custom configs are persisted on every save. The
+  // `*_source` field records which one is currently active. We never null
+  // out the inactive side — that was the old destructive behavior that made
+  // tab selection feel broken.
   const handleSave = async () => {
     setSaving(true);
     try {
       await onUpdate({
-        defaultCopilotAccountId: primary.source === "copilot" ? (primary.copilotAccountId || null) : null,
-        defaultProviderId: primary.source === "custom" ? (primary.providerId || null) : null,
-        defaultModel: primary.model || null,
-        suggestionCopilotAccountId: suggestions.source === "copilot" ? (suggestions.copilotAccountId || null) : null,
-        suggestionProviderId: suggestions.source === "custom" ? (suggestions.providerId || null) : null,
-        suggestionModel: suggestions.model || null,
+        defaultSource: primary.source,
+        defaultCopilotAccountId: primary.copilotAccountId || null,
+        defaultCopilotModel: primary.copilotModel || null,
+        defaultProviderId: primary.providerId || null,
+        defaultProviderModel: primary.providerModel || null,
+        suggestionSource: suggestions.source,
+        suggestionCopilotAccountId: suggestions.copilotAccountId || null,
+        suggestionCopilotModel: suggestions.copilotModel || null,
+        suggestionProviderId: suggestions.providerId || null,
+        suggestionProviderModel: suggestions.providerModel || null,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -667,14 +717,23 @@ export function ModelConfigTab({
   };
 
   // ── Save user preferences ──
+  // Saves both primary and suggestion overrides at once, each with both
+  // copilot and custom sides plus its source flag.
   const handleUserPrefSave = async () => {
     if (!onUserPreferenceUpdate) return;
     setUserSaving(true);
     try {
       await onUserPreferenceUpdate({
-        copilotAccountId: userPrimary.source === "copilot" ? (userPrimary.copilotAccountId || null) : null,
-        providerId: userPrimary.source === "custom" ? (userPrimary.providerId || null) : null,
-        model: userPrimary.model || null,
+        source: userPrimary.source,
+        copilotAccountId: userPrimary.copilotAccountId || null,
+        copilotModel: userPrimary.copilotModel || null,
+        providerId: userPrimary.providerId || null,
+        providerModel: userPrimary.providerModel || null,
+        suggestionSource: userSuggestion.source,
+        suggestionCopilotAccountId: userSuggestion.copilotAccountId || null,
+        suggestionCopilotModel: userSuggestion.copilotModel || null,
+        suggestionProviderId: userSuggestion.providerId || null,
+        suggestionProviderModel: userSuggestion.providerModel || null,
       });
       setUserSaved(true);
       setTimeout(() => setUserSaved(false), 2000);

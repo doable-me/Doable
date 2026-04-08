@@ -451,11 +451,17 @@ aiSettingsRoutes.get("/:workspaceId/ai-settings/defaults", async (c) => {
   return c.json({
     data: settings ?? {
       workspace_id: workspaceId,
+      default_source: "copilot",
       default_copilot_account_id: null,
+      default_copilot_model: null,
       default_provider_id: null,
+      default_provider_model: null,
       default_model: null,
+      suggestion_source: "copilot",
       suggestion_copilot_account_id: null,
+      suggestion_copilot_model: null,
       suggestion_provider_id: null,
+      suggestion_provider_model: null,
       suggestion_model: null,
       enforce_ai: false,
       enforced_copilot_account_id: null,
@@ -468,12 +474,19 @@ aiSettingsRoutes.get("/:workspaceId/ai-settings/defaults", async (c) => {
 });
 
 const updateDefaultsSchema = z.object({
+  // Workspace defaults
+  defaultSource: z.enum(["copilot", "custom"]).optional(),
   defaultCopilotAccountId: z.string().uuid().nullable().optional(),
+  defaultCopilotModel: z.string().max(100).nullable().optional(),
   defaultProviderId: z.string().uuid().nullable().optional(),
-  defaultModel: z.string().max(100).nullable().optional(),
+  defaultProviderModel: z.string().max(100).nullable().optional(),
+  // Workspace suggestion defaults
+  suggestionSource: z.enum(["copilot", "custom"]).optional(),
   suggestionCopilotAccountId: z.string().uuid().nullable().optional(),
+  suggestionCopilotModel: z.string().max(100).nullable().optional(),
   suggestionProviderId: z.string().uuid().nullable().optional(),
-  suggestionModel: z.string().max(100).nullable().optional(),
+  suggestionProviderModel: z.string().max(100).nullable().optional(),
+  // Enforcement
   enforceAi: z.boolean().optional(),
   enforcedCopilotAccountId: z.string().uuid().nullable().optional(),
   enforcedProviderId: z.string().uuid().nullable().optional(),
@@ -495,12 +508,16 @@ aiSettingsRoutes.put(
 
     const settings = await aiSettings.upsertSettings({
       workspaceId,
+      defaultSource: body.defaultSource,
       defaultCopilotAccountId: body.defaultCopilotAccountId,
+      defaultCopilotModel: body.defaultCopilotModel,
       defaultProviderId: body.defaultProviderId,
-      defaultModel: body.defaultModel,
+      defaultProviderModel: body.defaultProviderModel,
+      suggestionSource: body.suggestionSource,
       suggestionCopilotAccountId: body.suggestionCopilotAccountId,
+      suggestionCopilotModel: body.suggestionCopilotModel,
       suggestionProviderId: body.suggestionProviderId,
-      suggestionModel: body.suggestionModel,
+      suggestionProviderModel: body.suggestionProviderModel,
       enforceAi: body.enforceAi,
       enforcedCopilotAccountId: body.enforcedCopilotAccountId,
       enforcedProviderId: body.enforcedProviderId,
@@ -542,9 +559,18 @@ aiSettingsRoutes.get("/:workspaceId/ai-settings/user-preferences", async (c) => 
 });
 
 const updateUserPreferencesSchema = z.object({
+  // Primary override
+  source: z.enum(["copilot", "custom"]).optional(),
   copilotAccountId: z.string().uuid().nullable().optional(),
+  copilotModel: z.string().max(100).nullable().optional(),
   providerId: z.string().uuid().nullable().optional(),
-  model: z.string().max(100).nullable().optional(),
+  providerModel: z.string().max(100).nullable().optional(),
+  // Suggestion override
+  suggestionSource: z.enum(["copilot", "custom"]).optional(),
+  suggestionCopilotAccountId: z.string().uuid().nullable().optional(),
+  suggestionCopilotModel: z.string().max(100).nullable().optional(),
+  suggestionProviderId: z.string().uuid().nullable().optional(),
+  suggestionProviderModel: z.string().max(100).nullable().optional(),
 });
 
 // PUT /workspaces/:workspaceId/ai-settings/user-preferences
@@ -568,9 +594,16 @@ aiSettingsRoutes.put(
     const result = await aiSettings.upsertUserPreferences({
       workspaceId,
       userId,
-      copilotAccountId: body.copilotAccountId ?? null,
-      providerId: body.providerId ?? null,
-      model: body.model ?? null,
+      source: body.source,
+      copilotAccountId: body.copilotAccountId,
+      copilotModel: body.copilotModel,
+      providerId: body.providerId,
+      providerModel: body.providerModel,
+      suggestionSource: body.suggestionSource,
+      suggestionCopilotAccountId: body.suggestionCopilotAccountId,
+      suggestionCopilotModel: body.suggestionCopilotModel,
+      suggestionProviderId: body.suggestionProviderId,
+      suggestionProviderModel: body.suggestionProviderModel,
     });
 
     return c.json({ data: result });
@@ -592,9 +625,16 @@ aiSettingsRoutes.get("/:workspaceId/ai-settings/user-allocations", async (c) => 
 });
 
 const updateUserAllocationSchema = z.object({
+  source: z.enum(["copilot", "custom"]).optional(),
   copilotAccountId: z.string().uuid().nullable().optional(),
+  copilotModel: z.string().max(100).nullable().optional(),
   providerId: z.string().uuid().nullable().optional(),
-  model: z.string().max(100).nullable().optional(),
+  providerModel: z.string().max(100).nullable().optional(),
+  suggestionSource: z.enum(["copilot", "custom"]).optional(),
+  suggestionCopilotAccountId: z.string().uuid().nullable().optional(),
+  suggestionCopilotModel: z.string().max(100).nullable().optional(),
+  suggestionProviderId: z.string().uuid().nullable().optional(),
+  suggestionProviderModel: z.string().max(100).nullable().optional(),
 });
 
 // PUT /workspaces/:workspaceId/ai-settings/user-allocations/:targetUserId
@@ -617,9 +657,16 @@ aiSettingsRoutes.put(
     const result = await aiSettings.upsertUserPreferences({
       workspaceId,
       userId: targetUserId,
-      copilotAccountId: body.copilotAccountId ?? null,
-      providerId: body.providerId ?? null,
-      model: body.model ?? null,
+      source: body.source,
+      copilotAccountId: body.copilotAccountId,
+      copilotModel: body.copilotModel,
+      providerId: body.providerId,
+      providerModel: body.providerModel,
+      suggestionSource: body.suggestionSource,
+      suggestionCopilotAccountId: body.suggestionCopilotAccountId,
+      suggestionCopilotModel: body.suggestionCopilotModel,
+      suggestionProviderId: body.suggestionProviderId,
+      suggestionProviderModel: body.suggestionProviderModel,
     });
 
     return c.json({ data: result });
@@ -642,22 +689,51 @@ aiSettingsRoutes.post(
     const err = await requireAdmin(workspaceId, userId);
     if (err) return c.json({ error: err }, 403);
 
-    // Get admin's own preferences, or fall back to workspace defaults
+    // Get admin's own preferences, or fall back to workspace defaults.
+    // Both copilot and custom configs are copied so the target user inherits
+    // the full setup, with `source` selecting which one is currently active.
+    let source: "copilot" | "custom" = "copilot";
     let copilotAccountId: string | null = null;
+    let copilotModel: string | null = null;
     let providerId: string | null = null;
-    let model: string | null = null;
+    let providerModel: string | null = null;
+    let suggestionSource: "copilot" | "custom" = "copilot";
+    let suggestionCopilotAccountId: string | null = null;
+    let suggestionCopilotModel: string | null = null;
+    let suggestionProviderId: string | null = null;
+    let suggestionProviderModel: string | null = null;
 
     const adminPrefs = await aiSettings.getUserPreferences(workspaceId, userId);
-    if (adminPrefs && (adminPrefs.copilot_account_id || adminPrefs.provider_id || adminPrefs.model)) {
+    if (
+      adminPrefs &&
+      (adminPrefs.copilot_account_id ||
+        adminPrefs.provider_id ||
+        adminPrefs.copilot_model ||
+        adminPrefs.provider_model)
+    ) {
+      source = adminPrefs.source;
       copilotAccountId = adminPrefs.copilot_account_id;
+      copilotModel = adminPrefs.copilot_model;
       providerId = adminPrefs.provider_id;
-      model = adminPrefs.model;
+      providerModel = adminPrefs.provider_model;
+      suggestionSource = adminPrefs.suggestion_source;
+      suggestionCopilotAccountId = adminPrefs.suggestion_copilot_account_id;
+      suggestionCopilotModel = adminPrefs.suggestion_copilot_model;
+      suggestionProviderId = adminPrefs.suggestion_provider_id;
+      suggestionProviderModel = adminPrefs.suggestion_provider_model;
     } else {
       const wsDefaults = await aiSettings.getSettings(workspaceId);
       if (wsDefaults) {
+        source = wsDefaults.default_source;
         copilotAccountId = wsDefaults.default_copilot_account_id;
+        copilotModel = wsDefaults.default_copilot_model;
         providerId = wsDefaults.default_provider_id;
-        model = wsDefaults.default_model;
+        providerModel = wsDefaults.default_provider_model;
+        suggestionSource = wsDefaults.suggestion_source;
+        suggestionCopilotAccountId = wsDefaults.suggestion_copilot_account_id;
+        suggestionCopilotModel = wsDefaults.suggestion_copilot_model;
+        suggestionProviderId = wsDefaults.suggestion_provider_id;
+        suggestionProviderModel = wsDefaults.suggestion_provider_model;
       }
     }
 
@@ -668,9 +744,16 @@ aiSettingsRoutes.post(
       await aiSettings.upsertUserPreferences({
         workspaceId,
         userId: targetId,
+        source,
         copilotAccountId,
+        copilotModel,
         providerId,
-        model,
+        providerModel,
+        suggestionSource,
+        suggestionCopilotAccountId,
+        suggestionCopilotModel,
+        suggestionProviderId,
+        suggestionProviderModel,
       });
       updated++;
     }
@@ -710,12 +793,26 @@ aiSettingsRoutes.get("/:workspaceId/ai-settings/effective", async (c) => {
       enforced_provider_id: null,
       enforced_model: null,
       show_model_selector: false,
+      default_source: "copilot" as const,
       default_copilot_account_id: null,
+      default_copilot_model: null,
       default_provider_id: null,
-      default_model: null,
+      default_provider_model: null,
+      suggestion_source: "copilot" as const,
+      suggestion_copilot_account_id: null,
+      suggestion_copilot_model: null,
+      suggestion_provider_id: null,
+      suggestion_provider_model: null,
+      user_source: null,
       user_copilot_account_id: null,
+      user_copilot_model: null,
       user_provider_id: null,
-      user_model: null,
+      user_provider_model: null,
+      user_suggestion_source: null,
+      user_suggestion_copilot_account_id: null,
+      user_suggestion_copilot_model: null,
+      user_suggestion_provider_id: null,
+      user_suggestion_provider_model: null,
     },
   });
 });
