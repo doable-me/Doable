@@ -2380,6 +2380,10 @@ chatRoutes.post(
       return c.json({ error: "Project is not scaffolded." }, 400);
     }
 
+    // Resolve AI config once (needed for both session resume and engine)
+    const aiConfig = await resolveAiEngine(projectId, userId, {});
+    const manager = getCopilotManager();
+
     // Try to get existing session, or resume from DB if API restarted
     let sessionId = projectSessions.get(projectId);
     if (!sessionId) {
@@ -2390,12 +2394,10 @@ chatRoutes.post(
           ORDER BY updated_at DESC LIMIT 1
         `;
         if (dbRow?.copilot_session_id) {
-          const aiConfig = await resolveAiEngine(projectId, userId, {});
           const tools = await createAllTools(projectId, undefined, userId);
           const PLAN_ONLY_TOOLS = new Set(["ask_clarification", "create_plan", "mark_step_complete"]);
           const sessionTools = tools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
 
-          const manager = getCopilotManager();
           sessionId = await manager.withAutoRetry(projectId, aiConfig.githubToken, async (eng) => {
             return eng.resumeSession(dbRow.copilot_session_id, {
               tools: sessionTools,
@@ -2418,8 +2420,8 @@ chatRoutes.post(
       );
     }
 
-    // Use the manager's engine (per-project), not the singleton
-    const engine = getCopilotManager().tryGetEngine(projectId) ?? await getCopilotEngine();
+    // Use the manager's per-project engine
+    const engine = await manager.getEngine(projectId, aiConfig.githubToken);
 
     return streamSSE(c, async (stream) => {
       let hadToolCalls = false;
