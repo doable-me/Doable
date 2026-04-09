@@ -1807,8 +1807,15 @@ ERROR RECOVERY — if you encounter errors:
                   break;
                 }
 
+                // Safety net: if we've been through many iterations and have content, bail
+                if (silentIterations >= 3 && (assistantContent.length > 0 || hadToolCalls || anyTurnEndSeen)) {
+                  console.warn(`[Chat] safety net: ${silentIterations} silent iterations with content — force-completing for ${projectId}`);
+                  iterDone = true;
+                  break;
+                }
+
                 // Not done yet — emit status and continue waiting
-                console.log(`[Chat] waiting: ${Math.round(elapsed / 1000)}s silence, tools=${toolsInFlight}, turnEnd=${sawTurnEnd}, content=${assistantContent.length}c for ${projectId}`);
+                console.log(`[Chat] waiting: ${Math.round(elapsed / 1000)}s silence, tools=${toolsInFlight}, turnEnd=${sawTurnEnd}, content=${assistantContent.length}c, textDelta=${lastTextDeltaAt > 0 ? Math.round((Date.now() - lastTextDeltaAt) / 1000) + 's ago' : 'never'} for ${projectId}`);
                 try {
                   await stream.writeSSE({
                     data: JSON.stringify({
@@ -1833,11 +1840,14 @@ ERROR RECOVERY — if you encounter errors:
             // Non-content events (background_tasks_changed, tools_updated, etc.)
             // should NOT prevent timeout from progressing.
             const CONTENT_EVENTS = new Set([
-              "assistant.message_delta", "assistant.streaming_delta",
+              "assistant.message_delta",
               "assistant.message", "assistant.reasoning_delta", "assistant.reasoning",
               "tool.execution_start", "tool.execution_complete", "tool.execution_partial_result",
               "tool.running", "tool_call",
               "session.idle", "session.error", "done",
+              // NOTE: assistant.streaming_delta is intentionally excluded — it's a
+              // byte-count metadata event that fires continuously even after the AI
+              // has stopped producing text. Including it prevents timeout detection.
             ]);
             if (CONTENT_EVENTS.has(evtType)) {
               silentIterations = 0;
@@ -1866,7 +1876,15 @@ ERROR RECOVERY — if you encounter errors:
             ]);
             if (MESSAGE_CONTENT_EVENTS.has(evtType)) {
               sawTurnEnd = false; // new assistant content after turn_end = multi-turn, reset
-              lastTextDeltaAt = Date.now(); // track when text last flowed
+            }
+            // Track ACTUAL text/thinking token delivery — NOT streaming_delta
+            // which is just a byte-count metadata event that fires continuously.
+            // Only events with real displayable content should reset the timer.
+            const REAL_TEXT_EVENTS = new Set([
+              "assistant.message_delta", "assistant.reasoning_delta",
+            ]);
+            if (REAL_TEXT_EVENTS.has(evtType)) {
+              lastTextDeltaAt = Date.now();
             }
 
             // assistant.usage after content = strong "done" signal
