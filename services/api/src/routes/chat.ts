@@ -1648,7 +1648,6 @@ ERROR RECOVERY — if you encounter errors:
           let anyTurnEndSeen = false;
           let turnEndAt = 0;
           const TURN_END_GRACE_MS = 10_000; // 10s grace after turn_end
-          try {
           while (!iterDone) {
             // Use shorter timeout after turn_end: session should go idle quickly
             const effectiveTimeout = sawTurnEnd
@@ -2004,21 +2003,18 @@ ERROR RECOVERY — if you encounter errors:
               console.log(`[Chat] Unmapped SDK event: "${evtType}" for ${projectId}`);
             }
           }
-          } finally {
-            // Always close the iterator so the CopilotEngine generator's
-            // `finally` block runs and unsubscribes its `session.on` listener.
-            // Without this, SDK v0.1.32 keeps firing background
-            // `assistant.turn_end` events for 30-90s after the turn is done,
-            // flooding logs with `[CopilotEngine] assistant.turn_end (soft
-            // signal)` lines and leaking eventQueue memory until the engine
-            // pool eventually GCs the session. See bugs/bug-17 for details.
-            try {
-              await iterator.return?.(undefined);
-            } catch {
-              // Generator may already be closed (terminal session.idle path);
-              // ignore.
-            }
-          }
+          // NOTE on iterator cleanup (bug-17 fix): iterator.return() MUST
+          // run AFTER the post-processing code below (flush, save, [DONE]).
+          // Previously it ran in a `finally` block wrapping the while loop,
+          // which meant it fired BEFORE the post-processing — and the
+          // generator's cleanup (calling session unsubscribe) apparently
+          // interfered with the Hono SSE stream's ability to write further
+          // frames. Symptom: the clean-completion bypass path produced
+          // empty DB rows, no [DONE], and stale isStreaming on the frontend,
+          // while the abort/terminal-event path (which doesn't go through
+          // iterator.return) worked correctly. Moving iterator.return() to
+          // a deferred cleanup call after [DONE] is sent fixes all three.
+          // See bugs/bug-27 for the trail.
 
           // Flush any buffered channel-router content at stream end
           for (const chunk of channelRouter.flush()) {
@@ -2430,6 +2426,19 @@ ERROR RECOVERY — if you encounter errors:
         } catch { /* stream already closed */ }
         console.log(`[Chat] Sending [DONE] for ${projectId}`);
         await stream.writeSSE({ data: "[DONE]" });
+
+        // Deferred iterator cleanup (bug-17 fix, repositioned for bug-27).
+        // Closes the CopilotEngine async generator so its `finally` block
+        // runs and unsubscribes the session.on listener. MUST happen AFTER
+        // [DONE] is sent — when it was in a `finally` wrapping the while
+        // loop, the generator cleanup interfered with the SSE stream and
+        // the entire post-processing block (flush → save → [DONE]) was
+        // silently skipped on the clean-completion path.
+        try {
+          await iterator.return?.(undefined);
+        } catch {
+          // Generator may already be closed (terminal session.idle path).
+        }
     } catch (err) {
       activeRequests.delete(projectId);
       sql`DELETE FROM ai_active_streams WHERE project_id = ${projectId}`.catch(() => {});
