@@ -44,10 +44,23 @@ interface SupabaseOrganization {
   name: string;
 }
 
+interface ExistingSupabaseProject {
+  id: string;
+  name: string;
+  description?: string;
+  meta?: {
+    region?: string;
+    organizationId?: string;
+    projectRef?: string;
+  };
+}
+
 interface ProvisionPhase {
   phase: string;
   message: string;
 }
+
+type DialogMode = "existing" | "new";
 
 export interface SupabaseProvisionDialogProps {
   open: boolean;
@@ -87,6 +100,12 @@ export function SupabaseProvisionDialog({
   const [signingIn, setSigningIn] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
 
+  // Existing-project mode state
+  const [mode, setMode] = useState<DialogMode>("existing");
+  const [existingProjects, setExistingProjects] = useState<ExistingSupabaseProject[] | null>(null);
+  const [connectingExistingRef, setConnectingExistingRef] = useState<string | null>(null);
+  const [connectExistingError, setConnectExistingError] = useState<string | null>(null);
+
   // Reset state whenever the dialog is opened
   useEffect(() => {
     if (!open) return;
@@ -101,6 +120,10 @@ export function SupabaseProvisionDialog({
     setError(null);
     setSigningIn(false);
     setSignInError(null);
+    setMode("existing");
+    setExistingProjects(null);
+    setConnectingExistingRef(null);
+    setConnectExistingError(null);
   }, [open, defaultName]);
 
   /**
@@ -146,18 +169,56 @@ export function SupabaseProvisionDialog({
     }
   }, [workspaceId]);
 
-  // Fetch the user's Supabase orgs when the dialog opens
+  /**
+   * Fetch the user's existing Supabase projects across all orgs. Used
+   * by the "Connect an existing project" mode of the dialog. Kept
+   * separate from fetchOrgs() so the two lists are independent and the
+   * dialog can show them side-by-side if we ever add a combined view.
+   */
+  const fetchExistingProjects = useCallback(async (): Promise<void> => {
+    try {
+      const accessToken = await getAccessToken();
+      const res = await fetch(
+        `${API_BASE}/api/integrations/supabase/projects?workspaceId=${encodeURIComponent(workspaceId)}`,
+        {
+          headers: accessToken
+            ? { Authorization: `Bearer ${accessToken}` }
+            : {},
+        },
+      );
+      if (res.status === 412) {
+        // OAuth still required — fetchOrgs will surface the sign-in
+        // branch; nothing to do here.
+        return;
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Failed to list projects (${res.status})`);
+      }
+      const data = (await res.json()) as { data: ExistingSupabaseProject[] };
+      setExistingProjects(data.data);
+    } catch (err) {
+      setConnectExistingError(err instanceof Error ? err.message : String(err));
+    }
+  }, [workspaceId]);
+
+  // Fetch the user's Supabase orgs + existing projects when the dialog
+  // opens. Orgs drive the "Create new" form; existing projects drive
+  // the "Connect existing" list. Both lists need the same supabase-mgmt
+  // OAuth token, so if fetchOrgs reports oauth_required we skip the
+  // existing-projects fetch (it would hit the same 412).
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      await fetchOrgs();
-      if (cancelled) return;
+      const orgsOk = await fetchOrgs();
+      if (cancelled || !orgsOk) return;
+      await fetchExistingProjects();
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, fetchOrgs]);
+  }, [open, fetchOrgs, fetchExistingProjects]);
 
   /**
    * Kick off the enhanced-auth OAuth flow for Supabase Management API in
@@ -295,6 +356,54 @@ export function SupabaseProvisionDialog({
     }
   }, [signingIn, workspaceId, fetchOrgs]);
 
+  /**
+   * Connect an existing Supabase project (picked from the list) to this
+   * Doable project. POSTs to /use-existing which pulls the picked
+   * project's anon + service_role keys via the Management API and
+   * writes an `integration_id="supabase"` row scoped to this project.
+   * On success, closes the dialog with done=true (same path as the
+   * Create new flow), which signals the AI chat to continue with the
+   * newly-available env vars.
+   */
+  const handleConnectExisting = useCallback(
+    async (picked: ExistingSupabaseProject) => {
+      if (connectingExistingRef) return;
+      setConnectingExistingRef(picked.id);
+      setConnectExistingError(null);
+      try {
+        const accessToken = await getAccessToken();
+        const res = await fetch(
+          `${API_BASE}/api/integrations/supabase/use-existing`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(accessToken
+                ? { Authorization: `Bearer ${accessToken}` }
+                : {}),
+            },
+            body: JSON.stringify({
+              projectRef: picked.id,
+              projectId,
+            }),
+          },
+        );
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `Failed to connect (${res.status})`);
+        }
+        // Mirror the Create-new success path: close with done=true so
+        // the page-level onClose handler nudges the AI to continue.
+        onClose(true);
+      } catch (err) {
+        setConnectExistingError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setConnectingExistingRef(null);
+      }
+    },
+    [connectingExistingRef, projectId, onClose],
+  );
+
   const handleSubmit = useCallback(async () => {
     if (!orgId || !region || submitting) return;
     setSubmitting(true);
@@ -391,10 +500,10 @@ export function SupabaseProvisionDialog({
     >
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create a Supabase database</DialogTitle>
+          <DialogTitle>Connect Supabase</DialogTitle>
           <DialogDescription>
             {reason ??
-              "Doable will create a brand-new Supabase project under your own Supabase organization, fetch the API keys, and connect them automatically."}
+              "Pick an existing Supabase project from your organization, or let Doable create a brand-new one. Either way the API keys are wired up automatically."}
           </DialogDescription>
         </DialogHeader>
 
@@ -441,6 +550,94 @@ export function SupabaseProvisionDialog({
           </div>
         ) : (
           <div className="flex flex-col gap-4 py-2">
+            {/* Mode toggle — only show when the user actually has existing
+                projects to pick from. If the list is empty (brand-new
+                Supabase account), skip the toggle and go straight to the
+                create-new form. */}
+            {existingProjects && existingProjects.length > 0 ? (
+              <div className="flex gap-1 rounded-md bg-muted/40 p-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setMode("existing")}
+                  disabled={submitting || !!connectingExistingRef}
+                  className={`flex-1 rounded px-3 py-1.5 font-medium transition-colors ${
+                    mode === "existing"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Connect existing project
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("new")}
+                  disabled={submitting || !!connectingExistingRef}
+                  className={`flex-1 rounded px-3 py-1.5 font-medium transition-colors ${
+                    mode === "new"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Create new
+                </button>
+              </div>
+            ) : null}
+
+            {/* ── Connect existing project mode ── */}
+            {mode === "existing" && existingProjects && existingProjects.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Pick a project — Doable will fetch its API keys and wire them
+                  into this app automatically.
+                </p>
+                <div className="flex max-h-80 flex-col gap-1.5 overflow-y-auto">
+                  {existingProjects.map((p) => {
+                    const busy = connectingExistingRef === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleConnectExisting(p)}
+                        disabled={!!connectingExistingRef}
+                        className="flex items-center justify-between gap-3 rounded-md border border-input bg-background px-3 py-2 text-left text-sm transition-colors hover:border-primary/60 hover:bg-muted/50 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium text-foreground">
+                            {p.name}
+                          </div>
+                          {p.meta?.region ? (
+                            <div className="truncate text-xs text-muted-foreground">
+                              {p.meta.region}
+                            </div>
+                          ) : null}
+                        </div>
+                        {busy ? (
+                          <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Connect</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {connectExistingError ? (
+                  <div className="flex items-start gap-2 text-xs text-red-600">
+                    <AlertCircle className="h-3.5 w-3.5 mt-0.5" />
+                    <span>{connectExistingError}</span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* ── Create new project mode ── */}
+            {(mode === "new" || !existingProjects || existingProjects.length === 0) ? (
+              <>
+            {existingProjects && existingProjects.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                You don&apos;t have any Supabase projects yet — let&apos;s create
+                your first one.
+              </p>
+            ) : null}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium">Project name</label>
               <Input
@@ -482,7 +679,6 @@ export function SupabaseProvisionDialog({
                 ))}
               </select>
             </div>
-
             {progress.length > 0 ? (
               <div className="flex flex-col gap-1 rounded-md border bg-muted/40 p-3 text-xs">
                 {progress.map((p, i) => {
@@ -513,6 +709,8 @@ export function SupabaseProvisionDialog({
                 <span>{error}</span>
               </div>
             ) : null}
+              </>
+            ) : null}
           </div>
         )}
 
@@ -520,10 +718,11 @@ export function SupabaseProvisionDialog({
           <Button
             variant="outline"
             onClick={() => onClose(false)}
-            disabled={submitting}
+            disabled={submitting || !!connectingExistingRef}
           >
             Cancel
           </Button>
+          {mode === "new" || !existingProjects || existingProjects.length === 0 ? (
           <Button
             onClick={handleSubmit}
             disabled={disabled || oauthRequired}
@@ -537,6 +736,7 @@ export function SupabaseProvisionDialog({
               "Create project"
             )}
           </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

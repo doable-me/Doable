@@ -41,6 +41,7 @@ import {
 } from "../../../integrations/supabase/provisioner.js";
 import { runMigration } from "../../../integrations/supabase/migrate.js";
 import { deployEdgeFunction } from "../../../integrations/supabase/edge-functions.js";
+import supabaseEnhancedAuthModule from "../../../integrations/enhanced-auth/supabase.js";
 
 const workspaces = workspaceQueries(sql);
 
@@ -110,6 +111,153 @@ supabaseProvisionRoutes.get(
         500,
       );
     }
+  },
+);
+
+// ─── GET /api/integrations/supabase/projects ──────────────
+//
+// Lists the user's existing Supabase projects (across all their orgs)
+// via the Management API. Powers the "Connect an existing project"
+// branch of the provision dialog — lets a user hook their app to a
+// project they've already created in the Supabase dashboard instead
+// of always provisioning a new one.
+//
+// Returns the same shape as the enhanced-auth resource picker uses:
+// { id (projectRef), name, description, meta: { region, organizationId, projectRef } }
+supabaseProvisionRoutes.get(
+  "/api/integrations/supabase/projects",
+  authMiddleware,
+  async (c) => {
+    const userId = c.get("userId");
+    const workspaceId = c.req.query("workspaceId");
+    if (!workspaceId) {
+      return c.json({ error: "workspaceId query parameter is required" }, 400);
+    }
+    const memberErr = await requireMember(workspaceId, userId);
+    if (memberErr) return c.json({ error: memberErr }, 403);
+
+    const token = await getMgmtAccessToken(userId, workspaceId);
+    if (!token) {
+      return c.json({ error: "supabase_oauth_required" }, 412);
+    }
+
+    try {
+      const projects = await supabaseEnhancedAuthModule.listResources(token);
+      return c.json({ data: projects });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        500,
+      );
+    }
+  },
+);
+
+// ─── POST /api/integrations/supabase/use-existing ─────────
+//
+// Connects an existing Supabase project to a Doable project without
+// provisioning a new one. Body: { projectRef, projectId } where
+// projectRef is the Supabase project reference (from
+// /api/integrations/supabase/projects) and projectId is the Doable
+// project that should receive the credentials.
+//
+// Uses the user's supabase-mgmt OAuth token to pull the picked
+// project's API keys via the enhanced-auth module's extractCredentials
+// helper, then stores them under integration_id="supabase" with
+// scope="project" so they only apply to this Doable project (matches
+// the connection shape a brand-new provisioned project produces, so
+// the vault-bridge + MCP preset pick it up identically).
+const useExistingSchema = z.object({
+  projectRef: z.string().min(1),
+  projectId: z.string().uuid(),
+});
+
+supabaseProvisionRoutes.post(
+  "/api/integrations/supabase/use-existing",
+  authMiddleware,
+  zValidator("json", useExistingSchema),
+  async (c) => {
+    const userId = c.get("userId");
+    const body = c.req.valid("json");
+
+    // Look up the Doable project to scope the credential row correctly.
+    const [project] = await sql`
+      SELECT id, workspace_id, name FROM projects WHERE id = ${body.projectId}
+    `;
+    if (!project) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+    const workspaceId = project.workspace_id as string;
+
+    const memberErr = await requireMember(workspaceId, userId);
+    if (memberErr) return c.json({ error: memberErr }, 403);
+
+    const token = await getMgmtAccessToken(userId, workspaceId);
+    if (!token) {
+      return c.json({ error: "supabase_oauth_required" }, 412);
+    }
+
+    // Find the picked project by ref via listResources. The module's
+    // extractCredentials takes a full resource object (to pull region
+    // + name into the connection metadata), so we need the list hit
+    // anyway — can't skip straight to /v1/projects/{ref}/api-keys.
+    let resource;
+    try {
+      const projects = await supabaseEnhancedAuthModule.listResources(token);
+      resource = projects.find((p) => p.id === body.projectRef);
+      if (!resource) {
+        return c.json({ error: "Supabase project not found — it may have been deleted or is not accessible with your token" }, 404);
+      }
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+
+    // Pull the picked project's keys and assemble the credential row.
+    // extractCredentials returns the same shape used by the existing
+    // enhanced-auth /complete handler, so downstream consumers (vault-
+    // bridge, MCP preset, Activepieces tools) treat this row
+    // identically to a provisioner-created or manually-entered row.
+    let extracted;
+    try {
+      extracted = await supabaseEnhancedAuthModule.extractCredentials(token, resource);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+
+    // Clean up any stale project-scoped supabase row for this Doable
+    // project before inserting. credentialVault.store is INSERT only
+    // (no upsert), so without this the rows accumulate on every
+    // "change project" click.
+    await sql`
+      DELETE FROM integration_connections
+      WHERE user_id = ${userId}
+        AND integration_id = 'supabase'
+        AND workspace_id = ${workspaceId}
+        AND project_id = ${body.projectId}
+    `;
+
+    const stored = await credentialVault.store({
+      workspaceId,
+      userId,
+      integrationId: "supabase",
+      scope: "project",
+      projectId: body.projectId,
+      authType: extracted.authType,
+      credentials: extracted.credentials,
+      displayName: extracted.displayName,
+      metadata: {
+        ...extracted.metadata,
+        connectedVia: "use_existing",
+      },
+    });
+
+    return c.json({
+      data: {
+        connectionId: stored.id,
+        projectRef: body.projectRef,
+        displayName: extracted.displayName,
+      },
+    });
   },
 );
 
