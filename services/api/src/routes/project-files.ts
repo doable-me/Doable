@@ -85,6 +85,51 @@ projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   await next();
 });
 
+// ─── Authorization: verify the authenticated user can access this project ──
+// Checks workspace membership first, then project_collaborators.
+// Returns 404 "Project not found" to avoid leaking project existence.
+projectFileRoutes.use("/projects/:id/*", async (c, next) => {
+  const projectId = c.req.param("id");
+  const userId = c.get("userId");
+
+  // Look up the project and verify access
+  const [project] = await sql<{ workspace_id: string }[]>`
+    SELECT workspace_id FROM projects WHERE id = ${projectId}
+  `;
+
+  if (!project) {
+    // Project doesn't exist in DB — allow through for scaffold (which creates the DB record).
+    // The scaffold endpoint handles its own DB record creation.
+    await next();
+    return;
+  }
+
+  // 1. Workspace member — has access to all projects in the workspace
+  const [wsMember] = await sql`
+    SELECT 1 FROM workspace_members
+    WHERE workspace_id = ${project.workspace_id} AND user_id = ${userId}
+    LIMIT 1
+  `;
+  if (wsMember) {
+    await next();
+    return;
+  }
+
+  // 2. Project collaborator — has access to this specific project only
+  const [collab] = await sql`
+    SELECT 1 FROM project_collaborators
+    WHERE project_id = ${projectId} AND user_id = ${userId}
+    LIMIT 1
+  `;
+  if (collab) {
+    await next();
+    return;
+  }
+
+  // No access — return 404 to avoid leaking that the project exists
+  return c.json({ error: "Project not found" }, 404);
+});
+
 projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
   const projectId = c.req.param("id");
 
