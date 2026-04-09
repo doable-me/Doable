@@ -9,7 +9,7 @@ import { getCopilotManager } from "../ai/providers/copilot-manager.js";
 import { getChatSessionsSnapshot } from "./chat.js";
 
 const featureFlags = featureFlagQueries(sql);
-const aiSettings = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
+const aiSettings = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key");
 const credits = creditQueries(sql);
 const workspaces = workspaceQueries(sql);
 

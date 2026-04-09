@@ -39,7 +39,7 @@ import { bodyLimit } from "hono/body-limit";
 import { environmentQueries, skillsQueries, marketplaceQueries } from "@doable/db";
 
 export const chatRoutes = new Hono<AuthEnv>();
-const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
+const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key");
 const shareTrackingDb = shareTrackingQueries(sql);
 const ctxManager = contextManager(sql);
 const envDb = environmentQueries(sql);

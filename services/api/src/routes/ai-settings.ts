@@ -7,7 +7,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { providerDiscovery, type ProviderConfig } from "../ai/provider-discovery.js";
 import type { WorkspaceRole } from "@doable/shared";
 
-const aiSettings = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY);
+const aiSettings = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key");
 const workspaces = workspaceQueries(sql);
 
 export const aiSettingsRoutes = new Hono<AuthEnv>();
