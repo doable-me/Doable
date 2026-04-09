@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --env-file=../../.env src/index.ts",
+    "dev": "tsx watch --ignore=./projects --ignore=./node_modules --env-file=../../.env src/index.ts",
     "build": "tsc && tsc-alias",
     "start": "node --env-file=../../.env dist/index.js",
     "type-check": "tsc --noEmit",

@@ -7,9 +7,10 @@
  * reach the API server, not the individual Vite ports.
  *
  * HTTP requests (HTML, JS, CSS, images, fonts) are proxied normally.
- * Vite HMR WebSocket is NOT proxied — the preview relies on manual
- * refresh (which matches how Lovable-style editors work: the preview
- * refreshes after the AI finishes writing code, not in real-time).
+ * Vite HMR WebSocket IS proxied via the upgrade handler in index.ts,
+ * so live preview updates via HMR work automatically as the AI writes
+ * files. The preview iframe detects HMR activity and signals the parent
+ * editor frame via postMessage.
  *
  * For HTML responses, the analytics tracking script is injected before
  * </head> so visitor metrics are collected automatically.
@@ -291,6 +292,55 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       window.location.reload();
     }
   });
+
+  // ─── HMR detection ─────────────────────────────────────────
+  // Detect Vite HMR activity and signal the parent editor frame.
+  // This lets the editor skip full-page reloads when HMR is active.
+  if (window.__vite_plugin_react_preamble_installed__ !== undefined || true) {
+    var hmrSocket = null;
+    // Vite's HMR client fires custom events on import.meta.hot
+    // We detect updates by listening to the WebSocket directly
+    var origWS = window.WebSocket;
+    window.WebSocket = function(url, protocols) {
+      var ws = protocols ? new origWS(url, protocols) : new origWS(url);
+      // Detect Vite HMR WebSocket (connects to the dev server)
+      if (url && (url.includes('/__vite') || url.includes('ws') || url.includes(':' + location.port))) {
+        hmrSocket = ws;
+        ws.addEventListener('message', function(e) {
+          try {
+            var data = JSON.parse(e.data);
+            // Vite sends 'update' type for HMR updates, 'full-reload' for full page reloads
+            if (data.type === 'update' || data.type === 'full-reload') {
+              window.parent.postMessage({
+                type: 'doable-hmr-update',
+                updateType: data.type,
+                timestamp: Date.now()
+              }, '*');
+            }
+            // Also signal when HMR connects successfully
+            if (data.type === 'connected') {
+              window.parent.postMessage({
+                type: 'doable-hmr-connected',
+                timestamp: Date.now()
+              }, '*');
+            }
+          } catch(ex) {}
+        });
+        ws.addEventListener('open', function() {
+          window.parent.postMessage({
+            type: 'doable-hmr-connected',
+            timestamp: Date.now()
+          }, '*');
+        });
+      }
+      return ws;
+    };
+    window.WebSocket.prototype = origWS.prototype;
+    window.WebSocket.CONNECTING = origWS.CONNECTING;
+    window.WebSocket.OPEN = origWS.OPEN;
+    window.WebSocket.CLOSING = origWS.CLOSING;
+    window.WebSocket.CLOSED = origWS.CLOSED;
+  }
 
   window.addEventListener('load', function() {
     window.parent.postMessage({ type: 'doable-preview-loaded' }, '*');

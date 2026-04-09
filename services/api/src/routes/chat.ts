@@ -13,6 +13,7 @@ import {
 } from "../ai/providers/copilot.js";
 import { getCopilotManager } from "../ai/providers/copilot-manager.js";
 import { createUsageCollector } from "../ai/usage-collector.js";
+import { createTraceCollector, type TraceCollector } from "../ai/trace-collector.js";
 import { aiSettingsQueries, shareTrackingQueries } from "@doable/db";
 import {
   createProject,
@@ -354,7 +355,12 @@ async function buildProjectContextForMode(
     try {
       const { buildConnectedIntegrationsContext } = await import("../integrations/prompt-manifest.js");
       const block = await buildConnectedIntegrationsContext(projectId, workspaceId, userId);
-      if (block) context += `\n\n${block}`;
+      if (block) {
+        console.log(`[Chat] Connected integrations manifest injected (${block.length} chars, integrations: ${(block.match(/^- /gm) || []).length})`);
+        context += `\n\n${block}`;
+      } else {
+        console.log(`[Chat] No connected integrations found for workspace=${workspaceId?.slice(0,8)} project=${projectId?.slice(0,8)} user=${userId?.slice(0,8)}`);
+      }
     } catch (err) {
       console.warn("[Chat] integrations manifest failed:", err);
     }
@@ -882,6 +888,15 @@ chatRoutes.post(
       eng.abortSession(sid).catch(() => {
         /* client is gone; nothing to report to */
       });
+      // Persist trace on abort — traceCollector/usageCollector are defined
+      // inside the streamSSE callback below, so we reference them via a
+      // closure-safe getter to avoid ReferenceError in the outer scope.
+      try {
+        // @ts-ignore — traceCollector may not be in scope if abort fires before streamSSE runs
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        if (typeof traceCollector !== "undefined" && traceCollector) { traceCollector.onError("Client disconnected / Stop Doable clicked", "abort_signal"); traceCollector.complete("aborted").catch(() => {}); }
+      } catch { /* traceCollector not yet in scope — ignore */ }
       console.log(`[Chat] client disconnected — aborting session ${sid.slice(0, 8)}… on pool engine`);
     });
 
@@ -945,6 +960,7 @@ chatRoutes.post(
     let assistantToolCalls: any[] = [];
     // Hoisted outside the try so the catch path can flush usage on errors.
     let usageCollector: ReturnType<typeof createUsageCollector> | null = null;
+    let traceCollector: TraceCollector | null = null;
 
     const recordAssistantToolCall = (name?: string, args?: unknown) => {
       if (!name) return;
@@ -1042,6 +1058,17 @@ chatRoutes.post(
         byokProviderId: providerId,
         mode,
       }) : null;
+
+      // ── Trace collector — full observability for every event ──
+      traceCollector = workspaceId ? createTraceCollector({
+        projectId,
+        userId,
+        workspaceId,
+        provider: resolvedProvider ? "byok" : "copilot",
+        providerLabel: resolvedProvider?.type ?? "GitHub Copilot",
+        model: resolvedModel,
+      }) : null;
+      traceCollector?.recordUserMessage(augmentedContent);
 
       // Build context + tools in parallel (both need workspaceId but not each other)
       const previewUrl = getDevServerUrl(projectId);
@@ -1218,6 +1245,7 @@ ERROR RECOVERY — if you encounter errors:
       const toolProgress = {
         onToolStart: (toolName: string, args: unknown) => {
           recordAssistantToolCall(toolName, args as Record<string, unknown>);
+          traceCollector?.onToolStart(toolName, args);
           const friendly = friendlyToolMessage(toolName, args as Record<string, unknown>);
           stream.writeSSE({ data: JSON.stringify({
             type: "tool_call", data: { name: toolName, friendlyMessage: friendly },
@@ -1241,6 +1269,7 @@ ERROR RECOVERY — if you encounter errors:
         },
         onToolEnd: (toolName: string, _args: unknown, result: unknown) => {
           hadToolCalls = true;
+          traceCollector?.onToolEnd(toolName, _args, result);
           const friendly = friendlyToolResult(toolName, result, true);
           stream.writeSSE({ data: JSON.stringify({
             type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly },
@@ -1655,8 +1684,6 @@ ERROR RECOVERY — if you encounter errors:
           // counter, and keep waiting. Only after 3 consecutive silent
           // iterations (180s of pure SDK silence) do we declare a real
           // hang and surface a clean error.
-          const SDK_IDLE_TIMEOUT_MS = 60_000;
-          const MAX_SILENT_ITERATIONS = 2;
           const TIMEOUT_SENTINEL = Symbol("timeout");
           const channelRouter = new ChannelTokenRouter();
           const iterator = messageStream![Symbol.asyncIterator]();
@@ -1666,61 +1693,59 @@ ERROR RECOVERY — if you encounter errors:
           let anyTurnEndSeen = false;
           let turnEndAt = 0;
 
-          // ── State-driven completion logic ─────────────────────────
+          // ── Smart completion state machine ───────────────────────
           //
-          // Instead of hardcoded timers with guessed durations, we track
-          // the AI's actual work state and only exit when the signals
-          // confirm the AI is genuinely done:
+          // Instead of long fixed timeouts, we combine multiple signals
+          // to detect "AI is done" within 10-15s of actual completion:
           //
-          //   1. AUTHORITATIVE: session.idle / session.error → exit
-          //      immediately. The SDK is telling us the session is done.
+          //   1. AUTHORITATIVE: session.idle / session.error → instant exit.
           //
-          //   2. TOOLS IN FLIGHT: if any tool.execution_start has fired
-          //      without a matching tool.execution_complete, the AI is
-          //      still working. NEVER exit while tools are in-flight,
-          //      regardless of turn_end or silence — the AI will resume
-          //      after the tool returns.
+          //   2. TURN_END + NO TOOLS + 10s SILENCE: the AI finished text,
+          //      isn't waiting on tools, and stopped producing tokens.
+          //      10s grace handles multi-turn continuation safely.
           //
-          //   3. TURN_END + NO TOOLS: if we see assistant.turn_end AND
-          //      zero tools are in-flight, the AI has finished a sub-
-          //      turn's text and isn't waiting on any tool. Start a
-          //      grace timer. If new content/tool events arrive, cancel
-          //      the timer (multi-turn continuation).
+          //   3. TEXT SILENCE AFTER CONTENT: if we've received text deltas
+          //      that stopped for 15s AND have content AND no tools in
+          //      flight, the AI is done even if turn_end never arrived.
           //
-          //   4. TOTAL SILENCE: if the SDK emits nothing for a long
-          //      time (the fallback timer), check whether any content
-          //      or tools were produced. If yes, treat as degraded-
-          //      but-clean completion. If no, it's a true hang.
+          //   4. USAGE EVENT AS DONE SIGNAL: assistant.usage often fires
+          //      right after the AI finishes. If we see it after text +
+          //      turn_end, exit immediately — no timeout needed.
           //
-          // The only hardcoded timers are the FALLBACK for when the SDK
-          // fails to emit terminal signals — not the primary mechanism.
+          //   5. HARD FALLBACK: 90s of absolute silence with tools in
+          //      flight (tool hung), or 30s of silence with no content
+          //      at all (SDK failed to start).
+          //
           let toolsInFlight = 0;
-          // Grace period: only fires when turn_end seen + zero tools
-          // in flight. 15s is generous but bounded — the AI has 15s to
-          // start a new sub-turn after finishing the last one. If it
-          // doesn't, we assume it's done. This is the FALLBACK, not
-          // the primary signal (session.idle is primary).
-          const IDLE_GRACE_MS = 15_000;
-          // Hard fallback for when the SDK never fires session.idle.
-          // 90s of total silence = definitely dead.
-          const HARD_FALLBACK_MS = 90_000;
+          let lastTextDeltaAt = 0;        // timestamp of most recent text/thinking delta
+          let sawUsageAfterContent = false; // assistant.usage after we have content = strong done signal
           let lastActivityAt = Date.now();
 
+          // Timeouts based on state — much tighter than before
+          const TURN_END_GRACE_MS = 10_000;     // 10s after turn_end + no tools
+          const TEXT_SILENCE_MS = 15_000;        // 15s after last text delta + content + no tools
+          const HARD_FALLBACK_MS = 90_000;       // 90s absolute silence with tools (tool hung)
+          const NO_CONTENT_TIMEOUT_MS = 30_000;  // 30s with zero content = SDK failed
+
           while (!iterDone) {
-            // Timeout depends on current state:
-            //   - Tools in flight → use the hard fallback (90s). The AI
-            //     is waiting on a tool; silence is expected.
-            //   - turn_end seen + no tools → use the grace period (15s).
-            //     The AI finished text and isn't running tools; if it
-            //     doesn't resume within 15s, it's done.
-            //   - Otherwise → use the standard 60s idle timeout.
+            // ── Smart timeout selection based on current state ──
+            // The tightest applicable timeout wins:
             let effectiveTimeout: number;
             if (toolsInFlight > 0) {
+              // Tools running — give them time, but not forever
               effectiveTimeout = HARD_FALLBACK_MS;
             } else if (sawTurnEnd) {
-              effectiveTimeout = IDLE_GRACE_MS;
+              // turn_end seen + no tools = AI finished a sub-turn
+              effectiveTimeout = TURN_END_GRACE_MS;
+            } else if (lastTextDeltaAt > 0 && (assistantContent.length > 0 || hadToolCalls)) {
+              // We have content and text stopped flowing — tight timeout
+              effectiveTimeout = TEXT_SILENCE_MS;
+            } else if (assistantContent.length === 0 && !hadToolCalls && !anyTurnEndSeen) {
+              // No content at all yet — moderate timeout
+              effectiveTimeout = NO_CONTENT_TIMEOUT_MS;
             } else {
-              effectiveTimeout = SDK_IDLE_TIMEOUT_MS;
+              // Fallback
+              effectiveTimeout = TEXT_SILENCE_MS;
             }
 
             const raceResult = await Promise.race([
@@ -1733,23 +1758,43 @@ ERROR RECOVERY — if you encounter errors:
               if (raceResult.value === TIMEOUT_SENTINEL) {
                 const elapsed = Date.now() - lastActivityAt;
 
-                // Case 3: turn_end seen + no tools in flight → grace expired.
-                // The AI had its chance to continue and didn't. Clean exit.
+                // ── State-machine completion checks (tightest signal first) ──
+
+                // Case A: turn_end seen + no tools → AI finished cleanly
                 if (sawTurnEnd && toolsInFlight === 0) {
-                  console.log(`[Chat] turn_end + idle ${Math.round(elapsed / 1000)}s, 0 tools in-flight — treating as complete for ${projectId}`);
+                  console.log(`[Chat] turn_end + ${Math.round(elapsed / 1000)}s silence, 0 tools — complete for ${projectId}`);
                   iterDone = true;
                   break;
                 }
 
-                // Case 4: total silence fallback.
-                silentIterations++;
-                if (silentIterations >= MAX_SILENT_ITERATIONS) {
-                  if (assistantContent.length > 0 || hadToolCalls || anyTurnEndSeen) {
-                    console.warn(`[Chat] SDK idle ${Math.round(elapsed / 1000)}s after turn produced content (tools in-flight: ${toolsInFlight}) — treating as clean completion for ${projectId}`);
+                // Case B: text stopped flowing + we have content + no tools
+                if (lastTextDeltaAt > 0 && toolsInFlight === 0 && (assistantContent.length > 0 || hadToolCalls)) {
+                  const textSilence = Date.now() - lastTextDeltaAt;
+                  if (textSilence >= TEXT_SILENCE_MS) {
+                    console.log(`[Chat] text silence ${Math.round(textSilence / 1000)}s + content + 0 tools — complete for ${projectId}`);
                     iterDone = true;
                     break;
                   }
-                  console.error(`[Chat] SDK silent for ${silentIterations}×${SDK_IDLE_TIMEOUT_MS / 1000}s — bailing for ${projectId}`);
+                }
+
+                // Case C: usage event was the last signal after content — instant done
+                if (sawUsageAfterContent && toolsInFlight === 0) {
+                  console.log(`[Chat] assistant.usage after content + silence — complete for ${projectId}`);
+                  iterDone = true;
+                  break;
+                }
+
+                // Case D: hard fallback — absolute silence
+                silentIterations++;
+                if (toolsInFlight > 0 && elapsed >= HARD_FALLBACK_MS) {
+                  // Tool hung for 90s — force exit
+                  console.warn(`[Chat] tool in-flight for ${Math.round(elapsed / 1000)}s — force-completing for ${projectId}`);
+                  iterDone = true;
+                  break;
+                }
+                if (assistantContent.length === 0 && !hadToolCalls && !anyTurnEndSeen && elapsed >= NO_CONTENT_TIMEOUT_MS) {
+                  // SDK never produced anything — bail
+                  console.error(`[Chat] no content after ${Math.round(elapsed / 1000)}s — bailing for ${projectId}`);
                   try {
                     await stream.writeSSE({
                       data: JSON.stringify({
@@ -1761,7 +1806,9 @@ ERROR RECOVERY — if you encounter errors:
                   iterDone = true;
                   break;
                 }
-                console.log(`[Chat] SDK idle ${SDK_IDLE_TIMEOUT_MS / 1000}s (iter ${silentIterations}/${MAX_SILENT_ITERATIONS}, tools: ${toolsInFlight}), continuing for ${projectId}`);
+
+                // Not done yet — emit status and continue waiting
+                console.log(`[Chat] waiting: ${Math.round(elapsed / 1000)}s silence, tools=${toolsInFlight}, turnEnd=${sawTurnEnd}, content=${assistantContent.length}c for ${projectId}`);
                 try {
                   await stream.writeSSE({
                     data: JSON.stringify({
@@ -1819,6 +1866,12 @@ ERROR RECOVERY — if you encounter errors:
             ]);
             if (MESSAGE_CONTENT_EVENTS.has(evtType)) {
               sawTurnEnd = false; // new assistant content after turn_end = multi-turn, reset
+              lastTextDeltaAt = Date.now(); // track when text last flowed
+            }
+
+            // assistant.usage after content = strong "done" signal
+            if (evtType === "assistant.usage" && (assistantContent.length > 0 || hadToolCalls)) {
+              sawUsageAfterContent = true;
             }
 
             // Track turn_end to trigger short grace period
@@ -1844,6 +1897,8 @@ ERROR RECOVERY — if you encounter errors:
 
             // Feed every event to the usage collector (no-op for non-usage events)
             if (usageCollector) usageCollector.onUsageEvent(event);
+            // Feed every event to the trace collector for full observability
+            traceCollector?.onSdkEvent(event as Record<string, unknown>);
 
             // Track the start of a new assistant turn when its first delta arrives.
             // This ensures msgIdDeltaStart is set BEFORE deltas are accumulated,
@@ -1996,11 +2051,13 @@ ERROR RECOVERY — if you encounter errors:
                     broadcastToRoom(projectId, {
                       type: "ai:stream-chunk", chunk: cleaned, messageId, isThinking: false,
                     }, userId).catch(() => {});
+                    traceCollector?.onTextDelta(cleaned);
                     await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
                     lastSseEmitAt = Date.now();
                   } else {
                     // thinking
                     assistantThinking += chunk.content;
+                    traceCollector?.onThinkingDelta(chunk.content);
                     broadcastToRoom(projectId, {
                       type: "ai:stream-chunk", chunk: stripServerPaths(chunk.content), messageId, isThinking: true,
                     }, userId).catch(() => {});
@@ -2012,6 +2069,7 @@ ERROR RECOVERY — if you encounter errors:
                 // Native reasoning_delta — accumulate and broadcast
                 const thinkingDelta = typeof sseData.data === "string" ? sseData.data : "";
                 assistantThinking += thinkingDelta;
+                traceCollector?.onThinkingDelta(thinkingDelta);
                 broadcastToRoom(projectId, {
                   type: "ai:stream-chunk",
                   chunk: thinkingDelta,
@@ -2022,6 +2080,7 @@ ERROR RECOVERY — if you encounter errors:
                 lastSseEmitAt = Date.now();
               } else {
                 // All non-text SSE events (tool_call, tool_result, status, error, etc.)
+                traceCollector?.onSseEmit(sseData.type, sseData.data);
                 // Broadcast tool_call / tool_result events
                 if (sseData.type === "tool_call" || sseData.type === "tool_result") {
                   broadcastToRoom(projectId, {
@@ -2111,7 +2170,7 @@ ERROR RECOVERY — if you encounter errors:
           // ── Debug: stream summary ──
           console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${assistantContent.length} chars, thinking: ${assistantThinking.length} chars, toolCalls: ${hadToolCalls}, tools: ${assistantToolCalls.length}`);
 
-          // ── Incomplete-build detection + auto-continue (BUG-120: capped) ──
+          // ── Incomplete-build detection + smart auto-continue ──────
           // The Copilot model sometimes treats exploration (list_files,
           // read_file, install_package, Supabase API calls) as a complete
           // "turn" and emits session.idle without writing any files. The
@@ -2120,9 +2179,23 @@ ERROR RECOVERY — if you encounter errors:
           // whether any create_file / edit_file tool calls were made. If
           // the AI did tool calls but NEVER wrote/edited a file, auto-
           // send a "continue building" nudge on the same session.
-          const MAX_AUTO_CONTINUE = 3;
+          //
+          // STALL DETECTION: Instead of a low hardcoded cap, we detect
+          // when the AI is spinning its wheels — reading the same files
+          // repeatedly without writing anything new. Two consecutive
+          // continues with the same read pattern = stuck, stop immediately.
+          // Also catches "wandering" investigation loops: if the AI reads
+          // files across 3+ continues without ever writing, stop regardless
+          // of which files were read (covers the case where fingerprints
+          // differ each cycle but nothing is ever produced).
+          // The ceiling (6) is a safety net; the real exits are stall detection.
+          const MAX_AUTO_CONTINUE = 6;
+          const MAX_READ_ONLY_CYCLES = 3;
           const FILE_WRITE_TOOLS = new Set(["create_file", "edit_file", "write_file", "create", "edit", "write"]);
+          const READ_TOOLS = new Set(["read_file", "list_files", "search_files", "read", "list", "search"]);
           let autoContinueCount = 0;
+          let prevReadFingerprint = "";
+          let consecutiveReadOnlyCycles = 0;
 
           while (autoContinueCount < MAX_AUTO_CONTINUE && mode !== "plan") {
             const wroteFiles = assistantToolCalls.some(
@@ -2130,13 +2203,64 @@ ERROR RECOVERY — if you encounter errors:
             );
             if (!hadToolCalls || wroteFiles) break;
 
+            // ── Stall detection ──
+            // Build a fingerprint of which files were read in this continue cycle.
+            // If the same files are being read with no new writes, the AI is stuck.
+            const toolCallsSinceLastContinue = autoContinueCount === 0
+              ? assistantToolCalls
+              : assistantToolCalls.slice(-20); // approximate: last batch of tool calls
+            const readFiles = toolCallsSinceLastContinue
+              .filter((tc) => READ_TOOLS.has((tc as { name?: string }).name ?? ""))
+              .map((tc) => {
+                const args = tc as Record<string, unknown>;
+                return String(args.path ?? args.file_path ?? args.filePath ?? args.name ?? "");
+              })
+              .sort()
+              .join("|");
+            const currentFingerprint = readFiles;
+
+            if (autoContinueCount > 0 && currentFingerprint === prevReadFingerprint && currentFingerprint !== "") {
+              traceCollector?.onError(`Stall: same files read in consecutive continues: ${currentFingerprint.slice(0, 100)}`, "auto_continue_fingerprint");
+              console.warn(`[Chat][${projectId.slice(0, 8)}] stall detected — same files read in consecutive continues (${currentFingerprint.slice(0, 100)}), stopping`);
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: "error",
+                  data: { message: "The AI appears to be stuck reading the same files without making progress. Try rephrasing your request or check the preview for errors." },
+                }),
+              }).catch(() => {});
+              break;
+            }
+            prevReadFingerprint = currentFingerprint;
+
+            // ── Write-free cycle cap ──
+            // Catches "wandering" loops where the AI reads different files each
+            // cycle but never writes anything — fingerprints differ so the above
+            // check misses it, but the result is the same: no progress.
+            consecutiveReadOnlyCycles++;
+            if (consecutiveReadOnlyCycles >= MAX_READ_ONLY_CYCLES) {
+              traceCollector?.onError(`Stall: ${consecutiveReadOnlyCycles} consecutive read-only continues with no writes`, "auto_continue_write_free");
+              console.warn(`[Chat][${projectId.slice(0, 8)}] stall detected — ${consecutiveReadOnlyCycles} consecutive read-only continues with no writes, stopping`);
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: "error",
+                  data: { message: "The AI has been investigating without making changes. Please provide more specific guidance, or check the preview console for errors." },
+                }),
+              }).catch(() => {});
+              break;
+            }
+
             autoContinueCount++;
+            traceCollector?.onAutoContinue(autoContinueCount, `read-only cycle ${autoContinueCount}/${MAX_AUTO_CONTINUE} — ${assistantToolCalls.length} tool calls, 0 writes`);
             console.log(`[Chat][${projectId.slice(0, 8)}] AI explored but wrote 0 files (${assistantToolCalls.length} tool calls) — auto-continue attempt ${autoContinueCount}/${MAX_AUTO_CONTINUE}`);
+
+            // Track tool call count before this continue so we can slice new ones later
+            const toolCountBefore = assistantToolCalls.length;
+
             try {
               await stream.writeSSE({
                 data: JSON.stringify({
                   type: "status",
-                  data: { phase: "continuing", message: `Continuing to build\u2026 (attempt ${autoContinueCount}/${MAX_AUTO_CONTINUE})` },
+                  data: { phase: "continuing", message: `Continuing to build\u2026 (step ${autoContinueCount})` },
                 }),
               });
               const continueStream = currentEngine.sendMessage(
@@ -2148,6 +2272,7 @@ ERROR RECOVERY — if you encounter errors:
                 const evtType = (evt as Record<string, unknown>).type as string;
                 const evtData = (evt as Record<string, unknown>).data as Record<string, unknown> | undefined;
                 if (usageCollector) usageCollector.onUsageEvent(evt);
+                traceCollector?.onSdkEvent(evt as Record<string, unknown>);
                 if (evtType === "tool.execution_start" || evtType === "tool.running") {
                   const toolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
                   recordAssistantToolCall(toolName, evtData as Record<string, unknown>);
@@ -2181,17 +2306,17 @@ ERROR RECOVERY — if you encounter errors:
             }
           }
 
-          // If we exhausted all auto-continue attempts without writing files, notify the user
+          // If we hit the safety ceiling without writing files, notify the user
           if (autoContinueCount >= MAX_AUTO_CONTINUE) {
             const stillNoFiles = !assistantToolCalls.some(
               (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
             );
             if (stillNoFiles) {
-              console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue exhausted ${MAX_AUTO_CONTINUE} attempts — stopping`);
+              console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue hit ceiling of ${MAX_AUTO_CONTINUE} — stopping`);
               await stream.writeSSE({
                 data: JSON.stringify({
                   type: "error",
-                  data: { message: "Auto-fix stopped after 3 attempts. Check the preview for build errors." },
+                  data: { message: "The AI needed more steps than expected. It may be blocked by a configuration issue. Check the preview for errors or try a simpler request." },
                 }),
               }).catch(() => {});
             }
@@ -2463,6 +2588,7 @@ ERROR RECOVERY — if you encounter errors:
         }
 
         // Auto-create a version snapshot after AI finishes making changes
+        traceCollector?.onSseEmit("post_processing_start", { phase: "version_control", hadToolCalls });
         if (hadToolCalls && isProjectScaffolded(projectId)) {
           try {
             const projectPath = getProjectPath(projectId);
@@ -2514,6 +2640,8 @@ ERROR RECOVERY — if you encounter errors:
           }
         }
 
+        traceCollector?.onSseEmit("post_processing", { phase: "version_control_done" });
+
         // Capture thumbnail asynchronously (don't block the response)
         if (hadToolCalls) {
           scheduleThumbnailCapture(projectId);
@@ -2529,6 +2657,7 @@ ERROR RECOVERY — if you encounter errors:
         // Final save of assistant message (update the pre-inserted row).
         // Save even when content is empty if tool calls were made — the task card
         // in history depends on tool_calls being persisted.
+        traceCollector?.onSseEmit("post_processing", { phase: "db_save_start" });
         if (assistantMessageId && (assistantContent || hadToolCalls)) {
           try {
             const toolActionsJson = assistantToolCalls.length > 0
@@ -2577,6 +2706,23 @@ ERROR RECOVERY — if you encounter errors:
           if (usage.tokensAvailable) {
             await stream.writeSSE({ data: JSON.stringify({ type: "usage", data: usage }) });
           }
+          // Complete the trace with usage data
+          if (traceCollector) {
+            traceCollector.setSessionId(sessionId ?? "");
+            if (assistantMessageId) traceCollector.setMessageId(assistantMessageId);
+            traceCollector.complete("completed", {
+              promptTokens: usage.promptTokens,
+              completionTokens: usage.completionTokens,
+              thinkingTokens: usage.thinkingTokens,
+              totalTokens: usage.totalTokens,
+              estimatedCostUsd: usage.estimatedCostUsd,
+              model: usage.model,
+            }).catch(() => {});
+          }
+        } else if (traceCollector) {
+          traceCollector.setSessionId(sessionId ?? "");
+          if (assistantMessageId) traceCollector.setMessageId(assistantMessageId);
+          traceCollector.complete("completed").catch(() => {});
         }
         // Explicit "done" signal so the frontend can render a complete state
         // before the stream tears down.
@@ -2609,6 +2755,15 @@ ERROR RECOVERY — if you encounter errors:
       if (usageCollector) await usageCollector.flush().catch(() => {});
       // Copilot SDK is the core engine — surface the real error, don't work around it
       const errMsg = err instanceof Error ? err.message : String(err);
+      // Complete trace with error status
+      if (traceCollector) {
+        traceCollector.onError(errMsg, "catch_block");
+        traceCollector.complete("error", usageCollector ? {
+          promptTokens: usageCollector.getAccumulatedUsage().promptTokens,
+          completionTokens: usageCollector.getAccumulatedUsage().completionTokens,
+          totalTokens: usageCollector.getAccumulatedUsage().totalTokens,
+        } : undefined).catch(() => {});
+      }
       console.error("[Chat] Copilot SDK error:", errMsg);
 
       // Save partial assistant message so chat history isn't lost on error.
@@ -3868,6 +4023,98 @@ chatRoutes.delete("/projects/:id/chat/queue/:queueId", async (c) => {
     }).catch(() => {});
 
     return c.json({ data: { cancelled: true } });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// ─── Chat Traces / Observability ───────────────────────────
+
+/** List traces for a project (summary view, no events blob) */
+chatRoutes.get("/projects/:id/traces", authMiddleware, async (c) => {
+  const projectId = c.req.param("id");
+  const limit = Math.min(Number(c.req.query("limit") || 50), 200);
+  const offset = Number(c.req.query("offset") || 0);
+  const status = c.req.query("status"); // optional filter
+
+  try {
+    const rows = status
+      ? await sql`
+          SELECT id, project_id, session_id, message_id, user_id,
+                 turn_started_at, turn_ended_at, duration_ms, ttft_ms,
+                 tool_call_count, auto_continue_count,
+                 thinking_chars, response_chars,
+                 prompt_tokens, completion_tokens, thinking_tokens, total_tokens,
+                 estimated_cost_usd, model, status, error_message,
+                 provider, provider_label, created_at
+          FROM chat_traces
+          WHERE project_id = ${projectId} AND status = ${status}
+          ORDER BY turn_started_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `
+      : await sql`
+          SELECT id, project_id, session_id, message_id, user_id,
+                 turn_started_at, turn_ended_at, duration_ms, ttft_ms,
+                 tool_call_count, auto_continue_count,
+                 thinking_chars, response_chars,
+                 prompt_tokens, completion_tokens, thinking_tokens, total_tokens,
+                 estimated_cost_usd, model, status, error_message,
+                 provider, provider_label, created_at
+          FROM chat_traces
+          WHERE project_id = ${projectId}
+          ORDER BY turn_started_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `;
+
+    return c.json({ data: rows });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+/** Get a single trace with full events array */
+chatRoutes.get("/projects/:id/traces/:traceId", authMiddleware, async (c) => {
+  const projectId = c.req.param("id");
+  const traceId = c.req.param("traceId");
+
+  try {
+    const [row] = await sql`
+      SELECT * FROM chat_traces
+      WHERE id = ${traceId} AND project_id = ${projectId}
+    `;
+    if (!row) return c.json({ error: "Trace not found" }, 404);
+    return c.json({ data: row });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+/** Get trace stats for a project (aggregate summary) */
+chatRoutes.get("/projects/:id/trace-stats", authMiddleware, async (c) => {
+  const projectId = c.req.param("id");
+
+  try {
+    const [stats] = await sql`
+      SELECT
+        COUNT(*)::int AS total_traces,
+        COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+        COUNT(*) FILTER (WHERE status = 'error')::int AS errors,
+        COUNT(*) FILTER (WHERE status = 'stalled')::int AS stalled,
+        COUNT(*) FILTER (WHERE status = 'aborted')::int AS aborted,
+        AVG(duration_ms)::int AS avg_duration_ms,
+        AVG(ttft_ms)::int AS avg_ttft_ms,
+        SUM(tool_call_count)::int AS total_tool_calls,
+        SUM(auto_continue_count)::int AS total_auto_continues,
+        SUM(total_tokens)::int AS total_tokens,
+        SUM(estimated_cost_usd)::numeric(10,4) AS total_cost_usd,
+        AVG(tool_call_count)::numeric(10,1) AS avg_tools_per_turn,
+        MAX(duration_ms)::int AS max_duration_ms,
+        MIN(turn_started_at) AS first_trace,
+        MAX(turn_started_at) AS last_trace
+      FROM chat_traces
+      WHERE project_id = ${projectId}
+    `;
+    return c.json({ data: stats });
   } catch (err) {
     return c.json({ error: String(err) }, 500);
   }

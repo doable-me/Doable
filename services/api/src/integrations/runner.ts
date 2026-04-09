@@ -74,7 +74,7 @@ function resolveAuth(authType: string, credentials: unknown): unknown {
         ? credentials
         : (credentials as any)?.secret_text ?? credentials;
     case "custom_auth":
-      return credentials;
+      return { props: credentials };
     case "basic_auth":
       return credentials;
     case "none":

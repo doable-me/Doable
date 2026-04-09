@@ -21,48 +21,70 @@ export function PreviewPanel() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hasError, setHasError] = useState(false);
   const prevStreamingRef = useRef(isStreaming);
+  const hmrConnectedRef = useRef(false);
+  const lastHmrUpdateRef = useRef(0);
+
+  // ─── Listen for HMR signals from preview iframe ───────────
+  // The preview injects a script that detects Vite HMR WebSocket activity
+  // and posts messages to the parent frame. When HMR is active, we skip
+  // full-page reloads and let Vite handle live updates automatically.
+  useEffect(() => {
+    function handleMessage(e: MessageEvent) {
+      if (!e.data || typeof e.data !== "object") return;
+      if (e.data.type === "doable-hmr-connected") {
+        hmrConnectedRef.current = true;
+      } else if (e.data.type === "doable-hmr-update") {
+        lastHmrUpdateRef.current = Date.now();
+        hmrConnectedRef.current = true;
+      }
+    }
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
+  // Reset HMR state when iframe reloads (e.g. new project, manual refresh)
+  const onLoadWithHmrReset = useCallback(() => {
+    hmrConnectedRef.current = false;
+    onLoad();
+  }, [onLoad]);
 
   // ─── Auto-refresh after AI code generation ──────────────────
-  // When streaming transitions from true -> false, the AI finished generating code.
-  // Auto-refresh the preview after a short delay to pick up the changes.
+  // When streaming transitions from true -> false, the AI finished.
+  // If HMR was delivering updates, skip the reload — the preview is
+  // already up to date. Otherwise do one final refresh as a safety net.
   useEffect(() => {
     if (prevStreamingRef.current && !isStreaming) {
-      // AI just finished — refresh preview
-      const timer = setTimeout(() => {
-        setHasError(false);
-        refresh();
-      }, 800);
-      return () => clearTimeout(timer);
+      const recentHmr = Date.now() - lastHmrUpdateRef.current < 5000;
+      if (!recentHmr) {
+        // No HMR activity during this stream — do a full refresh
+        const timer = setTimeout(() => {
+          setHasError(false);
+          refresh();
+        }, 800);
+        return () => clearTimeout(timer);
+      }
+      // HMR was active — preview is already current, no refresh needed
     }
     prevStreamingRef.current = isStreaming;
   }, [isStreaming, refresh]);
 
-  // ─── Live refresh during streaming ─────────────────────────
-  // Refresh preview when tool_result events fire (file was written/edited).
-  // toolResultVersion increments on every tool_result SSE event.
+  // ─── Fallback refresh during streaming (only when HMR is not active) ─
+  // If HMR is connected, Vite pushes updates automatically — no polling needed.
+  // If HMR is NOT connected (first build, dev server just started), fall back
+  // to refreshing on tool_result events so the user still sees progress.
   const toolResultVersion = useEditorStore((s) => s.toolResultVersion);
   const prevToolResultRef = useRef(toolResultVersion);
   useEffect(() => {
     if (!isStreaming || toolResultVersion === prevToolResultRef.current) return;
     prevToolResultRef.current = toolResultVersion;
+    // Only do a full refresh if HMR is not connected
+    if (hmrConnectedRef.current) return;
     const timer = setTimeout(() => {
       setHasError(false);
       refresh();
-    }, 1200);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [isStreaming, toolResultVersion, refresh]);
-
-  // ─── Periodic fallback refresh during streaming ────────────
-  // If no tool_result events arrive, refresh every 5s during streaming
-  // so the user sees progress even without HMR.
-  useEffect(() => {
-    if (!isStreaming) return;
-    const interval = setInterval(() => {
-      setHasError(false);
-      refresh();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [isStreaming, refresh]);
 
   // ─── Route detection from file tree ─────────────────────────
   const routes = useMemo(() => {
@@ -235,7 +257,7 @@ export function PreviewPanel() {
           <iframe
             ref={iframeRef}
             src={previewUrl}
-            onLoad={onLoad}
+            onLoad={onLoadWithHmrReset}
             onError={handleError}
             className="h-full w-full border-0"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
