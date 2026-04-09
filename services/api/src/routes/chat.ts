@@ -1878,21 +1878,52 @@ ERROR RECOVERY — if you encounter errors:
 
             // ── Inline completion check for metadata events ──
             // Metadata events (streaming_delta, etc.) resolve the iterator but
-            // carry no content. If the text silence threshold is already exceeded,
-            // exit NOW instead of looping back to start a fresh timeout.
-            if (isMetadataOnly && lastTextDeltaAt > 0 && toolsInFlight === 0 && (assistantContent.length > 0 || hadToolCalls)) {
-              const textSilence = Date.now() - lastTextDeltaAt;
-              if (textSilence >= TEXT_SILENCE_MS) {
-                console.log(`[Chat] text silence ${Math.round(textSilence / 1000)}s detected on metadata event — complete for ${projectId}`);
-                iterDone = true;
-                break;
+            // carry no content. They fire every few ms indefinitely, preventing
+            // any timeout from triggering. We MUST check completion conditions
+            // inline whenever we receive a metadata event.
+            if (isMetadataOnly && toolsInFlight === 0) {
+              const now = Date.now();
+
+              // Text/content silence after producing visible output
+              if (lastTextDeltaAt > 0 && (assistantContent.length > 0 || hadToolCalls)) {
+                const textSilence = now - lastTextDeltaAt;
+                if (textSilence >= TEXT_SILENCE_MS) {
+                  console.log(`[Chat] text silence ${Math.round(textSilence / 1000)}s on metadata — complete for ${projectId}`);
+                  iterDone = true;
+                  break;
+                }
               }
-            }
-            // Same check for turn_end + metadata
-            if (isMetadataOnly && sawTurnEnd && toolsInFlight === 0) {
-              const turnEndElapsed = Date.now() - turnEndAt;
-              if (turnEndElapsed >= TURN_END_GRACE_MS) {
-                console.log(`[Chat] turn_end grace ${Math.round(turnEndElapsed / 1000)}s expired on metadata event — complete for ${projectId}`);
+
+              // Thinking-only silence: AI produced reasoning but no text/tools
+              // for HARD_FALLBACK_MS. The model is stuck.
+              if (lastTextDeltaAt > 0 && assistantThinking.length > 0 && assistantContent.length === 0 && !hadToolCalls) {
+                const thinkingSilence = now - lastTextDeltaAt;
+                if (thinkingSilence >= HARD_FALLBACK_MS) {
+                  console.log(`[Chat] thinking-only silence ${Math.round(thinkingSilence / 1000)}s, no text/tools — complete for ${projectId}`);
+                  iterDone = true;
+                  break;
+                }
+              }
+
+              // Turn_end grace expired
+              if (sawTurnEnd) {
+                const turnEndElapsed = now - turnEndAt;
+                if (turnEndElapsed >= TURN_END_GRACE_MS) {
+                  console.log(`[Chat] turn_end grace ${Math.round(turnEndElapsed / 1000)}s expired on metadata — complete for ${projectId}`);
+                  iterDone = true;
+                  break;
+                }
+              }
+
+              // Absolute hard limit: nothing useful for 90s
+              const totalElapsed = now - lastActivityAt;
+              if (totalElapsed >= HARD_FALLBACK_MS && !hadToolCalls && assistantContent.length === 0) {
+                console.log(`[Chat] hard fallback ${Math.round(totalElapsed / 1000)}s, no content — bailing for ${projectId}`);
+                try {
+                  await stream.writeSSE({
+                    data: JSON.stringify({ type: "error", data: "AI didn't respond in time \u2014 please try again." }),
+                  });
+                } catch { /* stream closed */ }
                 iterDone = true;
                 break;
               }
