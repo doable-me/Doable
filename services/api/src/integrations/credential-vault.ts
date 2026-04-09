@@ -47,11 +47,13 @@ export const credentialVault = {
       SELECT ic.*,
              pgp_sym_decrypt(ic.credentials_encrypted, ${ENCRYPTION_KEY}) as credentials_decrypted
       FROM integration_connections ic
-      WHERE ic.user_id = ${userId}
-        AND ic.integration_id = ${integrationId}
+      WHERE ic.integration_id = ${integrationId}
         AND ic.workspace_id = ${workspaceId}
         AND ic.status = 'active'
-      ORDER BY ic.updated_at DESC
+        AND (ic.user_id = ${userId} OR ic.scope = 'workspace')
+      ORDER BY
+        CASE WHEN ic.user_id = ${userId} THEN 0 ELSE 1 END,
+        ic.updated_at DESC
       LIMIT 1
     `;
     if (!row) return null;
