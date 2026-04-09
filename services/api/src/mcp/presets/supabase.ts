@@ -86,9 +86,13 @@ const CONNECTOR_NAME = "Supabase";
 function extractAccessToken(conn: DecryptedConnection): string | null {
   const creds = conn.credentials as Record<string, unknown> | null;
   if (!creds) return null;
+  // Try management API token first (OAuth flow), then fall back to
+  // serviceRoleKey (use-existing flow) which works for all Supabase API calls.
   const token =
     (creds.access_token as string | undefined) ??
-    (creds.accessToken as string | undefined);
+    (creds.accessToken as string | undefined) ??
+    (creds.serviceRoleKey as string | undefined) ??
+    (creds.service_role_key as string | undefined);
   return token && token.length > 0 ? token : null;
 }
 
