@@ -1726,8 +1726,8 @@ ERROR RECOVERY — if you encounter errors:
           // Timeouts based on state — much tighter than before
           const TURN_END_GRACE_MS = 10_000;     // 10s after turn_end + no tools
           const TEXT_SILENCE_MS = 15_000;        // 15s after last text delta + content + no tools
-          const HARD_FALLBACK_MS = 90_000;       // 90s absolute silence with tools (tool hung)
-          const NO_CONTENT_TIMEOUT_MS = 30_000;  // 30s with zero content = SDK failed
+          const HARD_FALLBACK_MS = 180_000;      // 3min — AI can think for 100s+ on complex tasks
+          const NO_CONTENT_TIMEOUT_MS = 60_000;  // 60s with truly zero activity = SDK failed
 
           while (!iterDone) {
             // ── Smart timeout selection based on current state ──
