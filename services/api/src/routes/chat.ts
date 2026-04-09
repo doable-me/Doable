@@ -2111,6 +2111,73 @@ ERROR RECOVERY — if you encounter errors:
           // ── Debug: stream summary ──
           console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${assistantContent.length} chars, thinking: ${assistantThinking.length} chars, toolCalls: ${hadToolCalls}, tools: ${assistantToolCalls.length}`);
 
+          // ── Incomplete-build detection + auto-continue ──
+          // The Copilot model sometimes treats exploration (list_files,
+          // read_file, install_package, Supabase API calls) as a complete
+          // "turn" and emits session.idle without writing any files. The
+          // user asked for a full build but got "I'll build a CRM..."
+          // followed by exploration, then silence. Detect this by checking
+          // whether any create_file / edit_file tool calls were made. If
+          // the AI did tool calls but NEVER wrote/edited a file, auto-
+          // send a "continue building" nudge on the same session.
+          const FILE_WRITE_TOOLS = new Set(["create_file", "edit_file", "write_file", "create", "edit", "write"]);
+          const wroteFiles = assistantToolCalls.some(
+            (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
+          );
+          if (hadToolCalls && !wroteFiles && mode !== "plan") {
+            console.log(`[Chat][${projectId.slice(0, 8)}] AI explored but wrote 0 files (${assistantToolCalls.length} tool calls) — auto-continuing`);
+            try {
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: "status",
+                  data: { phase: "continuing", message: "Continuing to build\u2026" },
+                }),
+              });
+              // Send a nudge to the same session. The AI has full context
+              // from the exploration phase and should now proceed to write files.
+              const continueStream = currentEngine.sendMessage(
+                sessionId!,
+                "You explored the project and installed packages but haven't created any files yet. Continue building NOW — create all the files the user asked for. Do NOT stop until the app is working in the preview.",
+                undefined,
+              );
+              // Run the continue stream through the same iterator/SSE pipeline
+              for await (const evt of continueStream) {
+                const evtType = (evt as Record<string, unknown>).type as string;
+                const evtData = (evt as Record<string, unknown>).data as Record<string, unknown> | undefined;
+                if (usageCollector) usageCollector.onUsageEvent(evt);
+                // Track tool calls from the continuation
+                if (evtType === "tool.execution_start" || evtType === "tool.running") {
+                  const toolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
+                  recordAssistantToolCall(toolName, evtData as Record<string, unknown>);
+                }
+                if (evtType === "tool.execution_start") {
+                  hadToolCalls = true;
+                }
+                const sseData = mapEventToSSE(evt);
+                if (!sseData) continue;
+                if (sseData.type === "text_delta") {
+                  const raw = typeof sseData.data === "string" ? sseData.data : "";
+                  const cleaned = sanitizeText(raw);
+                  if (cleaned) {
+                    assistantContent += cleaned;
+                    await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
+                  }
+                } else if (sseData.type === "thinking") {
+                  const t = typeof sseData.data === "string" ? sseData.data : "";
+                  if (t) assistantThinking += t;
+                  await stream.writeSSE({ data: JSON.stringify(sseData) });
+                } else {
+                  await stream.writeSSE({ data: JSON.stringify(sseData) });
+                }
+                const SESSION_TERMINAL = new Set(["session.idle", "session.error", "done"]);
+                if (SESSION_TERMINAL.has(evtType)) break;
+              }
+              console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue done — content now: ${assistantContent.length} chars, tools: ${assistantToolCalls.length}`);
+            } catch (err) {
+              console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue failed:`, err instanceof Error ? err.message : err);
+            }
+          }
+
           // ── Empty response detection + auto-retry ──
           // When the model produces absolutely nothing (0 content, 0 thinking,
           // 0 tool calls) the user sees a dead spinner. Retry once before giving up.
