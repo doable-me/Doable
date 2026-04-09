@@ -1422,6 +1422,17 @@ export default function EditorPage() {
   const autoSentRef = useRef(false);
   const scaffoldInitRef = useRef(false);
 
+  // ─── Safety net: clear building overlay when streaming ends ──
+  // Multiple code paths (stop, remote stream end, auto-fix, polling) can
+  // set isStreaming=false but forget to reset the overlay flags.  This
+  // single effect guarantees the overlay always clears when streaming stops.
+  useEffect(() => {
+    if (!isStreaming) {
+      setIsFirstGeneration(false);
+      setHasActiveToolCalls(false);
+    }
+  }, [isStreaming]);
+
   // ─── Tick elapsed seconds while a chat stream is active ──
   useEffect(() => {
     if (!isStreaming) {
@@ -2138,6 +2149,8 @@ export default function EditorPage() {
                 clearInterval(poll);
                 setLiveStatus("");
                 setIsStreaming(false);
+                setIsFirstGeneration(false);
+                setHasActiveToolCalls(false);
                 // Final reload everything
                 await loadFromApi();
                 loadFileTree();
@@ -2898,6 +2911,7 @@ export default function EditorPage() {
     );
     setIsStreaming(false);
     setLiveStatus("");
+    setIsFirstGeneration(false);
     setHasActiveToolCalls(false);
   }, []);
 
@@ -3448,6 +3462,7 @@ export default function EditorPage() {
     );
     setIsStreaming(false);
     setLiveStatus("");
+    setIsFirstGeneration(false);
     setHasActiveToolCalls(false);
     delete remoteStreamIdsRef.current[data.messageId];
 
