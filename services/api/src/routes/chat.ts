@@ -708,6 +708,17 @@ function buildAutoFixPrompt(error: string): string {
 
 // ─── In-memory session mapping (projectId → copilot sessionId) ─
 const projectSessions = new Map<string, string>();
+// Tracks which chat mode each cached session was LAST resolved with.
+// The Copilot SDK locks a session's tool list at session create/resume
+// time, so if we cache a session created in plan mode and then reuse
+// it for a build-mode message, `create_plan` stays in the tool list
+// and the AI can still call it — bypassing our
+// PLAN_ONLY_TOOLS / PLAN_MODE_ALLOWED filtering.
+// See bugs/bug-24 for the full trail. On mode mismatch, we evict the
+// cached sessionId to force a fresh resumeSession() call, which
+// re-applies mode-filtered tools and preserves conversation context
+// via the SDK's on-disk persistence.
+const projectSessionModes = new Map<string, string>();
 
 // Track active streaming requests per project so /ai-status can report
 // whether the AI is still working (survives page refresh).
@@ -1323,6 +1334,25 @@ ERROR RECOVERY — if you encounter errors:
         },
       };
 
+      // bug-24: evict the cached session if the caller's current mode
+      // differs from the mode the session was last resolved under. The
+      // Copilot SDK locks the session's tool list at createSession /
+      // resumeSession time, so a plan-mode session reused for a build-
+      // mode message keeps `create_plan` / `ask_clarification` /
+      // `mark_step_complete` available, letting the AI generate stale
+      // plans that never should have been possible. Evicting here
+      // forces the resume/create branch below to run with the
+      // current-mode-filtered `sessionTools`, which the SDK then
+      // applies to the rehydrated session. Conversation context is
+      // preserved because resumeSession() re-reads it from the SDK's
+      // on-disk store.
+      const cachedSessionMode = projectSessionModes.get(sessionKey);
+      if (cachedSessionMode && cachedSessionMode !== mode) {
+        console.log(`[Chat] mode changed ${cachedSessionMode} → ${mode} for ${sessionKey} — evicting cached session so fresh tool list applies`);
+        projectSessions.delete(sessionKey);
+        projectSessionModes.delete(sessionKey);
+      }
+
       let sessionId = projectSessions.get(sessionKey);
       if (!sessionId) {
         await stream.writeSSE({
@@ -1349,8 +1379,9 @@ ERROR RECOVERY — if you encounter errors:
               });
             });
             projectSessions.set(sessionKey, sessionId!);
+            projectSessionModes.set(sessionKey, mode);
             resumed = true;
-            console.log(`[Chat] Resumed SDK session ${dbRow.copilot_session_id.slice(0, 8)}… for ${projectId.slice(0, 8)}…`);
+            console.log(`[Chat] Resumed SDK session ${dbRow.copilot_session_id.slice(0, 8)}… for ${projectId.slice(0, 8)}… (mode=${mode}, tools=${sessionTools.length})`);
           }
         } catch (err) {
           // Resume failed (stale/deleted session) — fall through to create
@@ -1375,6 +1406,7 @@ ERROR RECOVERY — if you encounter errors:
             });
           });
           projectSessions.set(sessionKey, sessionId);
+          projectSessionModes.set(sessionKey, mode);
         }
       }
 
@@ -1561,17 +1593,24 @@ ERROR RECOVERY — if you encounter errors:
                 data: JSON.stringify({ type: "status", data: { phase: "reconnecting", message: "Reconnecting to AI..." } }),
               }).catch(() => {});
               projectSessions.delete(sessionKey);
+              projectSessionModes.delete(sessionKey);
               currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
               const freshTools = await createAllTools(projectId, workspaceId, userId);
+              // bug-24: the recreation path previously passed
+              // `freshTools` unfiltered in agent mode, leaving
+              // create_plan / ask_clarification / mark_step_complete
+              // available and re-introducing the same leak the main
+              // branch just fixed. Filter to match sessionTools.
               const recreationTools = mode === "plan"
                 ? freshTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED.has(t.name ?? ""))
-                : freshTools;
+                : freshTools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
               sessionId = await currentEngine.createSession({
                 projectId, userId, model: resolvedModel, provider: resolvedProvider,
                 workingDirectory: projectPath, systemPrompt, tools: recreationTools,
                 toolProgress,
               });
               projectSessions.set(sessionKey, sessionId);
+              projectSessionModes.set(sessionKey, mode);
               // Persist new SDK session ID to DB
               if (dbSessionId) {
                 sql`UPDATE ai_sessions SET copilot_session_id = ${sessionId}, updated_at = now()
