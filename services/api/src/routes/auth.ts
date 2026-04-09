@@ -12,6 +12,7 @@ import { getGitHubAuthUrl, exchangeGitHubCode, getGitHubCopilotAuthUrl, GITHUB_C
 import { githubQueries } from "@doable/db/queries/github.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { sendTemplatedEmail } from "../lib/email.js";
+import { rateLimiter } from "../middleware/rate-limit.js";
 
 const auth = authQueries(sql);
 const users = userQueries(sql);
@@ -58,6 +59,17 @@ function sanitizeUser(user: {
 }
 
 const ARGON2_OPTS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 } as const;
+
+/** Strip HTML tags from a string to prevent XSS via displayName fields. */
+function stripHtmlTags(input: string): string {
+  return input.replace(/<[^>]*>/g, "").trim();
+}
+
+// ─── Auth-specific rate limiters ──────────────────────────────
+const loginRateLimiter = rateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });   // 10 per 15 min
+const registerRateLimiter = rateLimiter({ windowMs: 60 * 60 * 1000, max: 5 }); // 5 per hour
+const forgotPasswordRateLimiter = rateLimiter({ windowMs: 60 * 60 * 1000, max: 3 }); // 3 per hour
+const resetPasswordRateLimiter = rateLimiter({ windowMs: 60 * 60 * 1000, max: 5 }); // 5 per hour
 
 async function issueTokens(userId: string, email: string) {
   const accessToken = await signAccessToken(userId, email);
@@ -111,18 +123,24 @@ async function ensureWorkspace(userId: string, displayName: string | null, email
 }
 
 // ─── POST /auth/register ───────────────────────────────────
-authRoutes.post("/register", async (c) => {
+authRoutes.post("/register", registerRateLimiter, async (c) => {
   const parsed = registerSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
   }
   const { email, password, displayName } = parsed.data;
 
+  // Sanitize displayName to prevent XSS
+  const sanitizedName = displayName ? stripHtmlTags(displayName) : undefined;
+  if (displayName && !sanitizedName) {
+    return c.json({ error: "Validation failed", details: { displayName: ["Display name must contain visible text"] } }, 400);
+  }
+
   const existing = await auth.findUserByEmail(email);
   if (existing) return c.json({ error: "An account with this email already exists" }, 409);
 
   const passwordHash = await argon2.hash(password, ARGON2_OPTS);
-  const user = await auth.createUser({ email, passwordHash, displayName });
+  const user = await auth.createUser({ email, passwordHash, displayName: sanitizedName });
 
   // Auto-create personal workspace so the user isn't blocked on first login
   await ensureWorkspace(user.id, user.display_name, user.email);
@@ -132,7 +150,7 @@ authRoutes.post("/register", async (c) => {
 });
 
 // ─── POST /auth/login ──────────────────────────────────────
-authRoutes.post("/login", async (c) => {
+authRoutes.post("/login", loginRateLimiter, async (c) => {
   const parsed = loginSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
@@ -226,7 +244,7 @@ authRoutes.get("/me", authMiddleware, async (c) => {
 });
 
 // ─── POST /auth/forgot-password ────────────────────────────
-authRoutes.post("/forgot-password", async (c) => {
+authRoutes.post("/forgot-password", forgotPasswordRateLimiter, async (c) => {
   const { email } = (await c.req.json()) as { email?: string };
   if (!email) return c.json({ error: "Email is required" }, 400);
 
@@ -268,7 +286,7 @@ authRoutes.post("/forgot-password", async (c) => {
 });
 
 // ─── POST /auth/reset-password ─────────────────────────────
-authRoutes.post("/reset-password", async (c) => {
+authRoutes.post("/reset-password", resetPasswordRateLimiter, async (c) => {
   const parsed = resetPasswordSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
@@ -314,7 +332,7 @@ authRoutes.get("/github/callback", async (c) => {
     if (!ghUser.email) return c.redirect(`${FRONTEND_URL}/login?error=no_email`);
 
     const user = await auth.createOrUpdateOAuthUser({
-      email: ghUser.email, displayName: ghUser.name ?? ghUser.login,
+      email: ghUser.email, displayName: stripHtmlTags(ghUser.name ?? ghUser.login),
       avatarUrl: ghUser.avatar_url, githubId: String(ghUser.id),
     });
 
@@ -347,7 +365,7 @@ authRoutes.get("/google/callback", async (c) => {
     let email: string;
     try {
       const user = await auth.createOrUpdateOAuthUser({
-        email: googleUser.email, displayName: googleUser.name,
+        email: googleUser.email, displayName: stripHtmlTags(googleUser.name),
         avatarUrl: googleUser.picture, googleId: googleUser.sub,
       });
       userId = user.id;
