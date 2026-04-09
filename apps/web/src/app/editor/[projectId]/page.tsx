@@ -2475,6 +2475,12 @@ export default function EditorPage() {
         const filePath = typeof (_args?.path ?? _args?.filePath ?? _args?.file) === "string"
             ? (_args?.path ?? _args?.filePath ?? _args?.file) as string
             : undefined;
+        // Dedup: skip if we already have a running tool action with the same name+path
+        // (multiple SSE channels can fire for the same tool call — BUG-118)
+        const existing = lastAssistant.toolActions ?? [];
+        if (existing.some((a) => a.status === "running" && a.toolName === toolName && a.filePath === filePath)) {
+          return prev;
+        }
         const action: ToolAction = {
           id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           toolName,
@@ -3649,7 +3655,7 @@ export default function EditorPage() {
                 <>
                   <span className="truncate">{liveStatus}</span>
                   <span className="font-mono tabular-nums text-[#9b9a77]/70 text-[10px] flex-shrink-0">{chatElapsedSec}s</span>
-                  {chatElapsedSec >= 20 && (
+                  {chatElapsedSec >= 60 && (
                     <span className="italic text-[#9b9a77]/60 text-[10px] flex-shrink-0">Taking longer than usual</span>
                   )}
                 </>

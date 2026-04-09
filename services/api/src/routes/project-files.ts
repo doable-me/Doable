@@ -38,6 +38,9 @@ import { emitActivity } from "../lib/activity.js";
 export const projectFileRoutes = new Hono<AuthEnv>();
 
 // Require authentication for all project file operations
+// UUID regex — skip middleware for non-UUID :id values (e.g. "recently-viewed", "starred")
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 projectFileRoutes.use("/projects/:id/*", authMiddleware);
 
 // In-flight scaffold locks — prevents two concurrent scaffold calls from
@@ -50,6 +53,7 @@ const scaffoldLocks = new Map<string, Promise<void>>();
 // ─── Auto-join: add user as collaborator ONLY if project link sharing is enabled ──
 projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   const projectId = c.req.param("id");
+  if (!UUID_RE.test(projectId)) { await next(); return; }
   const userId = c.get("userId");
   if (projectId && userId) {
     try {
@@ -90,6 +94,7 @@ projectFileRoutes.use("/projects/:id/*", async (c, next) => {
 // Returns 404 "Project not found" to avoid leaking project existence.
 projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   const projectId = c.req.param("id");
+  if (!UUID_RE.test(projectId)) { await next(); return; }
   const userId = c.get("userId");
 
   // Look up the project and verify access
