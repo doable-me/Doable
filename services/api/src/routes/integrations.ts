@@ -100,6 +100,32 @@ async function storeMgmtTokenSibling(
   });
 }
 
+/**
+ * Restart a project's Vite dev server so the vault-bridge re-resolves
+ * env vars from the newly-stored credential. Without this, the dev
+ * server keeps running with the OLD .env and `import.meta.env.VITE_*`
+ * vars are undefined — crashing any code that reads them at module
+ * load time (e.g. `createClient(import.meta.env.VITE_SUPABASE_URL)`
+ * → "supabaseUrl is required" → white screen).
+ *
+ * Called after every credentialVault.store() that's scoped to a
+ * project. Non-critical: if the restart fails (dev server not running,
+ * project doesn't exist, etc.), we log and move on — the user can
+ * always manually refresh the preview.
+ */
+async function restartDevServerForProject(projectId: string | null | undefined, userId?: string): Promise<void> {
+  if (!projectId) return;
+  try {
+    const { restartDevServer, isRunning } = await import("../projects/dev-server.js");
+    if (isRunning(projectId)) {
+      await restartDevServer(projectId, userId ? { userId } : undefined);
+      console.log(`[Integrations] Restarted dev server for ${projectId} to pick up new env vars`);
+    }
+  } catch (err) {
+    console.warn(`[Integrations] Dev server restart failed for ${projectId}:`, err instanceof Error ? err.message : err);
+  }
+}
+
 // ─── Catalog (public, no auth) ─────────────────────────────
 
 // GET /integrations/catalog
@@ -277,6 +303,9 @@ integrationRoutes.post(
         credentials: body.credentials,
         displayName: body.displayName,
       });
+
+      // Restart dev server so new env vars are available immediately
+      await restartDevServerForProject(body.projectId, userId);
 
       return c.json({
         data: {
