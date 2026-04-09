@@ -1179,7 +1179,19 @@ export default function EditorPage() {
 
   // ─── UI state ─────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
-  const [chatMode, setChatMode] = useState<ChatMode>("agent");
+  // chatMode is persisted to localStorage so a refresh doesn't silently
+  // snap you back to "agent" (build) mode in the middle of a plan-mode
+  // session. Also read on mount so the initial render matches the
+  // user's last-chosen mode instead of flicker-through a default.
+  const [chatMode, setChatMode] = useState<ChatMode>(() => {
+    if (typeof window === "undefined") return "agent";
+    const saved = localStorage.getItem("doable_chat_mode");
+    return saved === "plan" || saved === "agent" ? (saved as ChatMode) : "agent";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("doable_chat_mode", chatMode);
+  }, [chatMode]);
 
   // Plan Mode V2 state
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
@@ -2073,11 +2085,22 @@ export default function EditorPage() {
     };
     loadFromApi();
 
-    // Restore active plan state on mount (e.g., after refresh)
+    // Restore active plan state on mount (e.g., after refresh). Only
+    // restore DRAFT plans when the user's current chat mode is "plan"
+    // — otherwise a stale draft from a previous plan-mode session
+    // hijacks the chat UI into PlanCard review state and blocks the
+    // user who has since switched to build mode. `approved` /
+    // `in_progress` plans (the AI is actively executing them) always
+    // restore regardless of mode so a refresh doesn't drop the build
+    // in flight.
     (async () => {
       try {
         const planRes = await apiFetch<{ data: any }>(`/projects/${resolvedProjectId}/plan`);
-        if (planRes.data && planRes.data.status === "draft") {
+        if (
+          planRes.data &&
+          planRes.data.status === "draft" &&
+          chatMode === "plan"
+        ) {
           setActivePlan(planRes.data);
           setPlanPhase("reviewing");
         } else if (planRes.data && (planRes.data.status === "approved" || planRes.data.status === "in_progress")) {
