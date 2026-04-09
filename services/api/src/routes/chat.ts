@@ -1836,22 +1836,54 @@ ERROR RECOVERY — if you encounter errors:
             const evtType = event.type as string;
             const evtData = event.data as Record<string, unknown> | undefined;
 
+            // ── Skip metadata-only events for completion detection ──
+            // assistant.streaming_delta is a byte-count metadata event that fires
+            // continuously (every few ms) even after the AI has stopped producing
+            // actual text. It resolves the iterator.next() promise, preventing
+            // the timeout race from firing. We must process it (for the event
+            // stream) but NOT let it reset activity tracking or silence counters.
+            const METADATA_ONLY_EVENTS = new Set([
+              "assistant.streaming_delta",
+              "pending_messages.modified",
+              "session.tools_updated",
+              "session.background_tasks_changed",
+              "session.custom_agents_updated",
+            ]);
+            const isMetadataOnly = METADATA_ONLY_EVENTS.has(evtType);
+
             // Only reset silence counter for CONTENT-BEARING events.
-            // Non-content events (background_tasks_changed, tools_updated, etc.)
-            // should NOT prevent timeout from progressing.
             const CONTENT_EVENTS = new Set([
               "assistant.message_delta",
               "assistant.message", "assistant.reasoning_delta", "assistant.reasoning",
               "tool.execution_start", "tool.execution_complete", "tool.execution_partial_result",
               "tool.running", "tool_call",
               "session.idle", "session.error", "done",
-              // NOTE: assistant.streaming_delta is intentionally excluded — it's a
-              // byte-count metadata event that fires continuously even after the AI
-              // has stopped producing text. Including it prevents timeout detection.
             ]);
             if (CONTENT_EVENTS.has(evtType)) {
               silentIterations = 0;
               lastActivityAt = Date.now();
+            }
+
+            // ── Inline completion check for metadata events ──
+            // Metadata events (streaming_delta, etc.) resolve the iterator but
+            // carry no content. If the text silence threshold is already exceeded,
+            // exit NOW instead of looping back to start a fresh timeout.
+            if (isMetadataOnly && lastTextDeltaAt > 0 && toolsInFlight === 0 && (assistantContent.length > 0 || hadToolCalls)) {
+              const textSilence = Date.now() - lastTextDeltaAt;
+              if (textSilence >= TEXT_SILENCE_MS) {
+                console.log(`[Chat] text silence ${Math.round(textSilence / 1000)}s detected on metadata event — complete for ${projectId}`);
+                iterDone = true;
+                break;
+              }
+            }
+            // Same check for turn_end + metadata
+            if (isMetadataOnly && sawTurnEnd && toolsInFlight === 0) {
+              const turnEndElapsed = Date.now() - turnEndAt;
+              if (turnEndElapsed >= TURN_END_GRACE_MS) {
+                console.log(`[Chat] turn_end grace ${Math.round(turnEndElapsed / 1000)}s expired on metadata event — complete for ${projectId}`);
+                iterDone = true;
+                break;
+              }
             }
 
             // ── Track tools in flight ──
