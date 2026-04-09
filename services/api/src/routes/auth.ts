@@ -123,6 +123,10 @@ authRoutes.post("/register", async (c) => {
 
   const passwordHash = await argon2.hash(password, ARGON2_OPTS);
   const user = await auth.createUser({ email, passwordHash, displayName });
+
+  // Auto-create personal workspace so the user isn't blocked on first login
+  await ensureWorkspace(user.id, user.display_name, user.email);
+
   const tokens = await issueTokens(user.id, user.email);
   return c.json({ user: sanitizeUser(user), tokens }, 201);
 });
@@ -300,6 +304,10 @@ authRoutes.get("/github/callback", async (c) => {
       email: ghUser.email, displayName: ghUser.name ?? ghUser.login,
       avatarUrl: ghUser.avatar_url, githubId: String(ghUser.id),
     });
+
+    // Auto-create personal workspace for new OAuth users
+    await ensureWorkspace(user.id, user.display_name, user.email);
+
     const tokens = await issueTokens(user.id, user.email);
     const params = new URLSearchParams({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
     return c.redirect(`${FRONTEND_URL}/auth/callback?${params.toString()}`);
@@ -331,6 +339,9 @@ authRoutes.get("/google/callback", async (c) => {
       });
       userId = user.id;
       email = user.email;
+
+      // Auto-create personal workspace for new OAuth users
+      await ensureWorkspace(userId, user.display_name, user.email);
     } catch (dbErr) {
       console.warn("[OAuth] DB unavailable, issuing token from Google profile:", dbErr);
       userId = `google-${googleUser.sub}`;
