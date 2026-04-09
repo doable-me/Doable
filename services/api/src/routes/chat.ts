@@ -1889,44 +1889,43 @@ ERROR RECOVERY — if you encounter errors:
               }
 
               if (content) {
-                // Compare against deltas accumulated for THIS specific message
+                // BUG-119 fix: sanitize content BEFORE comparing with deltasSoFar.
+                // deltasSoFar is sanitized (via mapEventToSSE), so the comparison
+                // must be apples-to-apples. Previously raw content.length was
+                // compared with sanitized deltasSoFar.length, causing length drift
+                // that emitted duplicate text ("database.database.") or missed
+                // the final summary entirely.
+                const sanitizedContent = sanitizeText(content);
                 const deltasSoFar = assistantContent.slice(msgIdDeltaStart);
-                if (content.length > deltasSoFar.length) {
+                if (sanitizedContent.length > deltasSoFar.length) {
                   // Deltas missed part of this message — emit the missing suffix
-                  // Route through channel router so <|channel>thought blocks
-                  // are split into thinking vs text correctly
-                  const missing = content.slice(deltasSoFar.length);
+                  const missing = sanitizedContent.slice(deltasSoFar.length);
                   const routedChunks = channelRouter.process(missing);
                   for (const chunk of routedChunks) {
                     if (!chunk.content) continue;
                     if (chunk.type === "text") {
-                      const cleaned = sanitizeText(chunk.content);
-                      if (cleaned) {
-                        await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
-                      }
+                      // Already sanitized above — don't double-sanitize
+                      await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
                     } else {
                       assistantThinking += chunk.content;
                       await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
                     }
                   }
                   // Replace the per-message portion with the authoritative full text
-                  assistantContent = assistantContent.slice(0, msgIdDeltaStart) + sanitizeText(content);
+                  assistantContent = assistantContent.slice(0, msgIdDeltaStart) + sanitizedContent;
                 } else if (!deltasSoFar && !assistantContent) {
                   // No deltas at all — use full content via channel router
-                  const routedChunks = channelRouter.process(content);
+                  const routedChunks = channelRouter.process(sanitizedContent);
                   for (const chunk of routedChunks) {
                     if (!chunk.content) continue;
                     if (chunk.type === "text") {
-                      const cleaned = sanitizeText(chunk.content);
-                      if (cleaned) {
-                        await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
-                      }
+                      await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
                     } else {
                       assistantThinking += chunk.content;
                       await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
                     }
                   }
-                  assistantContent = sanitizeText(content);
+                  assistantContent = sanitizedContent;
                 }
               }
             }
@@ -1982,7 +1981,11 @@ ERROR RECOVERY — if you encounter errors:
                 for (const chunk of routed) {
                   if (!chunk.content) continue;
                   if (chunk.type === "text") {
-                    const cleaned = sanitizeText(chunk.content);
+                    // mapEventToSSE already sanitized — don't double-sanitize
+                    // (double-sanitization caused assistantContent length drift,
+                    // breaking the assistant.message catch-up comparison and
+                    // producing duplicate or missing text — BUG-119)
+                    const cleaned = chunk.content;
                     if (!cleaned) continue;
                     // Accumulate for DB
                     assistantContent += cleaned;
@@ -2093,14 +2096,12 @@ ERROR RECOVERY — if you encounter errors:
           // See bugs/bug-27 for the trail.
 
           // Flush any buffered channel-router content at stream end
+          // (channelRouter input was already sanitized by mapEventToSSE)
           for (const chunk of channelRouter.flush()) {
             if (!chunk.content) continue;
             if (chunk.type === "text") {
-              const cleaned = sanitizeText(chunk.content);
-              if (cleaned) {
-                assistantContent += cleaned;
-                await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
-              }
+              assistantContent += chunk.content;
+              await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
             } else {
               assistantThinking += chunk.content;
               await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
@@ -2157,8 +2158,8 @@ ERROR RECOVERY — if you encounter errors:
                 const sseData = mapEventToSSE(evt);
                 if (!sseData) continue;
                 if (sseData.type === "text_delta") {
-                  const raw = typeof sseData.data === "string" ? sseData.data : "";
-                  const cleaned = sanitizeText(raw);
+                  // mapEventToSSE already sanitized — don't double-sanitize (BUG-119)
+                  const cleaned = typeof sseData.data === "string" ? sseData.data : "";
                   if (cleaned) {
                     assistantContent += cleaned;
                     await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
@@ -2229,15 +2230,13 @@ ERROR RECOVERY — if you encounter errors:
                 if (usageCollector) usageCollector.onUsageEvent(retryEvent);
                 const retrySseData = mapEventToSSE(retryEvent);
                 if (retrySseData?.type === "text_delta") {
+                  // mapEventToSSE already sanitized — don't double-sanitize (BUG-119)
                   const rawDelta = typeof retrySseData.data === "string" ? retrySseData.data : "";
                   for (const chunk of retryRouter.process(rawDelta)) {
                     if (!chunk.content) continue;
                     if (chunk.type === "text") {
-                      const cleaned = sanitizeText(chunk.content);
-                      if (cleaned) {
-                        assistantContent += cleaned;
-                        await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
-                      }
+                      assistantContent += chunk.content;
+                      await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
                     } else {
                       assistantThinking += chunk.content;
                       await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
@@ -2257,8 +2256,8 @@ ERROR RECOVERY — if you encounter errors:
               for (const chunk of retryRouter.flush()) {
                 if (!chunk.content) continue;
                 if (chunk.type === "text") {
-                  const cleaned = sanitizeText(chunk.content);
-                  if (cleaned) { assistantContent += cleaned; await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) }); }
+                  assistantContent += chunk.content;
+                  await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
                 } else {
                   assistantThinking += chunk.content;
                   await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });

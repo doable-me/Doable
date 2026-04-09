@@ -258,10 +258,12 @@ export function useChat(
         let buffer = ""; // SSE line buffer across chunks
         let rafHandle: number | null = null;
         let pendingFlush = false;
+        let lastFlushedLen = 0;
 
         const flushToState = () => {
           rafHandle = null;
           pendingFlush = false;
+          lastFlushedLen = accumulated.length;
           updateMessage(assistantId, accumulated);
         };
 
@@ -271,6 +273,19 @@ export function useChat(
             rafHandle = requestAnimationFrame(flushToState);
           }
         };
+
+        // BUG-119 fix: fallback timer ensures text flushes even when
+        // requestAnimationFrame is throttled (background tabs) or skipped.
+        // Fires every 120ms — a safety net, not the primary flush path.
+        const fallbackFlushId = setInterval(() => {
+          if (accumulated.length > lastFlushedLen) {
+            if (rafHandle) cancelAnimationFrame(rafHandle);
+            rafHandle = null;
+            pendingFlush = false;
+            lastFlushedLen = accumulated.length;
+            updateMessage(assistantId, accumulated);
+          }
+        }, 120);
 
         try {
           let streamDone = false;
@@ -294,6 +309,7 @@ export function useChat(
               const data = trimmed.slice(6);
               if (data === "[DONE]") {
                 // Final flush and exit both loops
+                clearInterval(fallbackFlushId);
                 if (rafHandle) cancelAnimationFrame(rafHandle);
                 updateMessage(assistantId, accumulated);
                 streamDone = true;
@@ -438,6 +454,7 @@ export function useChat(
             // Safety: if only keep_alive pings with no real content for 30s, exit
             if (!streamDone && Date.now() - lastMeaningfulEvent > STALE_STREAM_MS) {
               console.warn("[Chat] Stream stale — no meaningful events for 30s, closing");
+              clearInterval(fallbackFlushId);
               if (rafHandle) cancelAnimationFrame(rafHandle);
               if (accumulated) updateMessage(assistantId, accumulated);
               break;
@@ -445,6 +462,7 @@ export function useChat(
           }
         } finally {
           // Ensure final content is flushed
+          clearInterval(fallbackFlushId);
           if (rafHandle) cancelAnimationFrame(rafHandle);
           if (accumulated) updateMessage(assistantId, accumulated);
         }
