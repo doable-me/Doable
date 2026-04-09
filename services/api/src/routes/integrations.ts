@@ -772,7 +772,26 @@ integrationRoutes.get("/integrations/enhanced-auth/callback", async (c) => {
       deleteEnhancedAuthSession(sessionKey);
       return c.html(`<!DOCTYPE html><html><head><title>Connected</title></head><body>
         <p>Connected successfully! This window will close automatically.</p>
-        <script>window.close();</script>
+        <script>
+          try {
+            if (window.opener) {
+              window.opener.postMessage({
+                type: "doable:enhanced-auth-complete",
+                integrationId: ${JSON.stringify(integrationId)},
+                displayName: ${JSON.stringify(result.displayName.replace(/["<>\\]/g, ""))},
+                status: "success"
+              }, "*");
+            }
+          } catch (e) {}
+          try {
+            localStorage.setItem("doable_enhanced_auth_complete", JSON.stringify({
+              integrationId: ${JSON.stringify(integrationId)},
+              status: "success",
+              at: Date.now(),
+            }));
+          } catch (e) {}
+          setTimeout(function() { window.close(); }, 500);
+        </script>
       </body></html>`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -924,7 +943,28 @@ integrationRoutes.post("/integrations/enhanced-auth/:id/complete", async (c) => 
             }, "*");
           }
         } catch (e) { /* opener may be gone */ }
-        window.close();
+        // Fallback channel: write a one-time success marker to localStorage
+        // and drop a cookie so the opener can detect completion even when
+        // COOP has severed the window.opener reference (e.g. after
+        // cross-origin navigation through Supabase's auth domain). The
+        // opener listens for "storage" events OR re-runs fetchOrgs() on
+        // popup close.
+        try {
+          localStorage.setItem("doable_enhanced_auth_complete", JSON.stringify({
+            integrationId: ${JSON.stringify(integrationId)},
+            displayName: ${JSON.stringify(safeDisplayName)},
+            status: "success",
+            at: Date.now(),
+          }));
+        } catch (e) { /* ignore — storage may be blocked */ }
+        // Delay the close so the postMessage + storage write have a
+        // chance to reach the opener's event loop BEFORE the popup tears
+        // down. Without this, the opener's popup.closed poll flips true
+        // before the opener processes the postMessage task, and the
+        // opener rejects the whole flow as "window was closed" even
+        // though the OAuth completed successfully. Empirically ~300ms is
+        // plenty on Chromium — bumped to 500ms for safety.
+        setTimeout(function() { window.close(); }, 500);
       </script>
     </body></html>`);
   } catch (err) {

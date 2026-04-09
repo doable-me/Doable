@@ -195,48 +195,98 @@ export function SupabaseProvisionDialog({
         throw new Error("Popup blocked — please allow popups for this site and try again.");
       }
 
-      // Wait for either postMessage or popup closure
+      // Clear any stale completion marker from a previous flow before we
+      // start listening for a fresh one. The marker is written by the
+      // /complete callback HTML as a cross-origin-safe fallback channel
+      // when COOP strips window.opener and postMessage can't deliver.
+      try {
+        localStorage.removeItem("doable_enhanced_auth_complete");
+      } catch { /* storage may be blocked */ }
+
+      // Wait for success via any of three signals:
+      //   1. postMessage from the popup (primary; fast path)
+      //   2. storage event from localStorage write in the /complete
+      //      callback HTML (COOP-safe fallback)
+      //   3. popup closes → re-run fetchOrgs() to detect success by DB
+      //      state, regardless of whether postMessage/storage reached us
+      //      (defense-in-depth; also catches browser extensions that
+      //      swallow postMessage)
+      // A cancellation only fires if (3) reports oauth still required
+      // AFTER the popup closes — i.e. no sibling row was created.
       await new Promise<void>((resolve, reject) => {
         let settled = false;
         const cleanup = () => {
           window.removeEventListener("message", onMessage);
+          window.removeEventListener("storage", onStorage);
           clearInterval(poll);
         };
+        const markSuccess = () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve();
+        };
+        const markCancel = (msg: string) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new Error(msg));
+        };
+        // Signal 1 — postMessage from the popup's opener reference
         const onMessage = (ev: MessageEvent) => {
           const data = ev.data as { type?: string; integrationId?: string; status?: string } | null;
           if (!data || data.type !== "doable:enhanced-auth-complete") return;
           if (data.integrationId !== "supabase") return;
-          settled = true;
-          cleanup();
-          if (data.status === "success") resolve();
-          else reject(new Error("Supabase sign-in was cancelled or failed."));
+          if (data.status === "success") markSuccess();
+          else markCancel("Supabase sign-in was cancelled or failed.");
         };
         window.addEventListener("message", onMessage);
-        // Fallback: detect popup close as a cancel. COOP can strip the
-        // opener reference so `popup.closed` isn't always reliable — treat
-        // a true `closed` read as cancel, otherwise stop polling after 2
-        // minutes so we don't hang forever.
+        // Signal 2 — storage event from localStorage write in another
+        // window (same-origin, fires even when COOP severs window.opener)
+        const onStorage = (ev: StorageEvent) => {
+          if (ev.key !== "doable_enhanced_auth_complete" || !ev.newValue) return;
+          try {
+            const parsed = JSON.parse(ev.newValue) as { integrationId?: string; status?: string };
+            if (parsed.integrationId !== "supabase") return;
+            if (parsed.status === "success") markSuccess();
+            else markCancel("Supabase sign-in was cancelled or failed.");
+          } catch { /* ignore malformed */ }
+        };
+        window.addEventListener("storage", onStorage);
+        // Signal 3 — popup closed. Do NOT reject immediately; give any
+        // in-flight postMessage/storage events a 600ms grace to drain,
+        // then re-fetch orgs. If orgs load successfully, the sibling row
+        // was created — treat as success regardless of whether we
+        // received a postMessage. Only if the fetch still reports
+        // oauth_required do we treat it as a genuine cancel.
         const startedAt = Date.now();
         const poll = setInterval(() => {
           try {
-            if (popup.closed) {
-              if (!settled) {
-                settled = true;
-                cleanup();
-                reject(new Error("Supabase sign-in window was closed."));
-              }
+            if (popup.closed && !settled) {
+              // Stop polling immediately so we don't double-fire, but
+              // delay the final decision so any pending postMessage can
+              // still mark success synchronously before we hit the DB.
+              clearInterval(poll);
+              setTimeout(async () => {
+                if (settled) return;
+                const ok = await fetchOrgs();
+                if (settled) return;
+                if (ok) markSuccess();
+                else markCancel("Supabase sign-in window was closed.");
+              }, 600);
             }
           } catch { /* cross-origin while on provider's domain — ignore */ }
           if (Date.now() - startedAt > 120_000) {
-            cleanup();
-            if (!settled) reject(new Error("Supabase sign-in timed out after 2 minutes."));
+            markCancel("Supabase sign-in timed out after 2 minutes.");
           }
         }, 500);
       });
 
-      // Popup succeeded — refetch orgs. `fetchOrgs` sets `oauthRequired =
-      // false` on success, which hides the sign-in branch and renders the
-      // real form with the newly-populated org list.
+      // If we reach here via postMessage or the storage fallback (not
+      // the popup-close fetchOrgs recovery path), orgs haven't been
+      // fetched yet. fetchOrgs() is idempotent and setting oauthRequired
+      // = false a second time is harmless, so just call it
+      // unconditionally.
       await fetchOrgs();
     } catch (err) {
       setSignInError(err instanceof Error ? err.message : String(err));
