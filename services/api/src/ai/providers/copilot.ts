@@ -690,7 +690,7 @@ function emitToolEvent(projectId: string, toolName: string, status: "start" | "e
   if (handler) handler(toolName, status, args);
 }
 
-export function createDoableTools(projectId: string): Tool[] {
+export function createDoableTools(projectId: string, userId?: string): Tool[] {
   return ([
     defineTool("create_file", {
       description:
@@ -872,7 +872,7 @@ export function createDoableTools(projectId: string): Tool[] {
             let restarted = false;
             if (code === 0 && isRunning(projectId)) {
               try {
-                await restartDevServer(projectId);
+                await restartDevServer(projectId, userId ? { userId } : undefined);
                 restarted = true;
                 console.log(`[install_package] Restarted Vite dev server for ${projectId}`);
               } catch (err) {
@@ -1169,7 +1169,7 @@ export async function createAllTools(
   workspaceId?: string,
   userId?: string,
 ): Promise<Tool[]> {
-  const builtinTools = createDoableTools(projectId);
+  const builtinTools = createDoableTools(projectId, userId);
 
   if (!workspaceId) return builtinTools;
 
@@ -1234,24 +1234,28 @@ async function loadMcpTools(
   connectorFilter?: string[],
 ): Promise<Tool[]> {
   try {
-    // If environment explicitly has no connectors, skip loading
-    if (connectorFilter && connectorFilter.length === 0) return [];
-
     const { sql } = await import("../../db/index.js");
     const connectors = connectorQueries(sql);
     const manager = getConnectorManager();
 
     // ── 1. DB-backed MCP connectors (user-created rows) ─────
-    const allConnectorRows = await connectors.getEffectiveConnectors(
-      workspaceId,
-      projectId,
-      userId,
-    );
+    // When the environment explicitly has no connectors, skip DB-backed
+    // connectors but still allow virtual connectors (Phase 2B presets like
+    // Supabase) to load — those come from integration_connections, not from
+    // the mcp_connectors table, so the environment filter doesn't apply.
+    let connectorRows: Array<Record<string, any>> = [];
+    if (!(connectorFilter && connectorFilter.length === 0)) {
+      const allConnectorRows = await connectors.getEffectiveConnectors(
+        workspaceId,
+        projectId,
+        userId,
+      );
 
-    // Filter by environment connector refs if provided
-    const connectorRows = connectorFilter
-      ? allConnectorRows.filter((r) => connectorFilter.includes(r.id))
-      : allConnectorRows;
+      // Filter by environment connector refs if provided
+      connectorRows = connectorFilter
+        ? allConnectorRows.filter((r) => connectorFilter.includes(r.id))
+        : allConnectorRows;
+    }
 
     // Convert DB rows to runtime configs
     const configs = new Map<string, McpConnectorConfig>();
