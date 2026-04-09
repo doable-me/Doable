@@ -1894,9 +1894,20 @@ ERROR RECOVERY — if you encounter errors:
             // hardcoded timer guesswork.
             if (evtType === "tool.execution_start" || evtType === "tool.running") {
               toolsInFlight++;
+              // Promote SDK tool events to first-class trace events so
+              // tool_call_count is accurate even when toolProgress RPC hooks
+              // don't fire (which happens for SDK built-in tools).
+              const sdkToolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
+              if (sdkToolName && traceCollector) {
+                traceCollector.onToolStart(sdkToolName, evtData);
+              }
             }
             if (evtType === "tool.execution_complete" || evtType === "external_tool.completed") {
               toolsInFlight = Math.max(0, toolsInFlight - 1);
+              const sdkToolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
+              if (sdkToolName && traceCollector) {
+                traceCollector.onToolEnd(sdkToolName, evtData, evtData?.result);
+              }
             }
 
             // Only genuine assistant MESSAGE events should cancel the turn_end
@@ -2047,6 +2058,17 @@ ERROR RECOVERY — if you encounter errors:
                 recordAssistantToolCall(tcName, evtData as Record<string, unknown>);
                 lastToolName = tcName;
                 friendlyLastTool = friendlyToolMessage(tcName, evtData as Record<string, unknown>) ?? tcName;
+                // Layer 3: Promote SDK tool start to structured trace event.
+                // The RPC toolProgress hooks don't always fire for SDK built-in
+                // tools, so this ensures every tool gets a structured trace entry.
+                traceCollector?.onToolStart(tcName, evtData);
+              }
+            }
+            // Layer 3: Promote SDK tool completion to structured trace event
+            if (evtType === "tool.execution_complete" || evtType === "tool.completed") {
+              const tcName = (evtData?.toolName ?? evtData?.name) as string | undefined;
+              if (tcName) {
+                traceCollector?.onToolEnd(tcName, evtData, evtData?.result ?? evtData?.output ?? null);
               }
             }
 
@@ -2326,6 +2348,12 @@ ERROR RECOVERY — if you encounter errors:
                 if (evtType === "tool.execution_start" || evtType === "tool.running") {
                   const toolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
                   recordAssistantToolCall(toolName, evtData as Record<string, unknown>);
+                  // Layer 3: Promote SDK tool start to structured trace event
+                  if (toolName) traceCollector?.onToolStart(toolName, evtData);
+                }
+                if (evtType === "tool.execution_complete" || evtType === "tool.completed") {
+                  const toolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
+                  if (toolName) traceCollector?.onToolEnd(toolName, evtData, evtData?.result ?? evtData?.output ?? null);
                 }
                 if (evtType === "tool.execution_start") {
                   hadToolCalls = true;

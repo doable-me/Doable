@@ -34,25 +34,44 @@ export function createMcpTools(
           return { success: false, error: `Connector ${connectorName} not found` };
         }
 
+        const mcpStartMs = Date.now();
         try {
           const client = await connectorManager.getClient(config);
           const result = await client.callTool(tool.name, args);
+          const mcpDurationMs = Date.now() - mcpStartMs;
+
+          const mcpTrace = {
+            connector: connectorName,
+            mcpTool: tool.name,
+            request: { method: "tools/call", params: { name: tool.name, arguments: args } },
+            response: { isError: !!result.isError, contentLength: result.content?.length ?? 0 },
+            durationMs: mcpDurationMs,
+          };
 
           if (result.isError) {
             return {
               success: false,
               error: formatMcpContent(result.content),
+              _mcpTrace: mcpTrace,
             };
           }
 
           return {
             success: true,
             result: formatMcpContent(result.content),
+            _mcpTrace: mcpTrace,
           };
         } catch (err) {
           return {
             success: false,
             error: `MCP tool call failed: ${err instanceof Error ? err.message : String(err)}`,
+            _mcpTrace: {
+              connector: connectorName,
+              mcpTool: tool.name,
+              request: { method: "tools/call", params: { name: tool.name, arguments: args } },
+              response: { isError: true, error: err instanceof Error ? err.message : String(err) },
+              durationMs: Date.now() - mcpStartMs,
+            },
           };
         }
       },

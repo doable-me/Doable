@@ -4,6 +4,80 @@ import { buildActionContext } from "./context-builder.js";
 import type { RunActionParams, RunActionResult, OAuth2TokenData } from "./types.js";
 import { sql } from "../db/index.js";
 
+// ─── HTTP Trace Types ───────────────────────────────────
+
+export interface HttpTraceEntry {
+  url: string;
+  method: string;
+  requestHeaders: Record<string, string>;
+  statusCode: number | null;
+  durationMs: number;
+  responseBody: string | null;
+  error?: string;
+}
+
+/** Headers whose values should be redacted in traces */
+const REDACTED_HEADERS = new Set([
+  "authorization", "x-api-key", "cookie", "set-cookie",
+  "x-access-token", "x-refresh-token", "proxy-authorization",
+]);
+
+function redactHeaders(headers: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    out[k] = REDACTED_HEADERS.has(k.toLowerCase()) ? "[REDACTED]" : v;
+  }
+  return out;
+}
+
+function headersToRecord(init?: any): Record<string, string> {
+  if (!init) return {};
+  if (typeof init === "object" && typeof init.forEach === "function") {
+    const r: Record<string, string> = {};
+    init.forEach((v: string, k: string) => { r[k] = v; });
+    return r;
+  }
+  if (Array.isArray(init)) return Object.fromEntries(init);
+  return { ...init } as Record<string, string>;
+}
+
+/**
+ * Create a fetch wrapper that records HTTP calls into the provided array.
+ * The wrapper delegates to the real global fetch.
+ */
+function createTracedFetch(traces: HttpTraceEntry[]): typeof globalThis.fetch {
+  const realFetch = globalThis.fetch;
+  return async function tracedFetch(input: any, init?: RequestInit): Promise<Response> {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+    const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+    const reqHeaders = redactHeaders(headersToRecord(init?.headers));
+    const start = Date.now();
+
+    try {
+      const res = await realFetch(input, init);
+      const durationMs = Date.now() - start;
+
+      // Clone to read body without consuming the original
+      let bodyText: string | null = null;
+      try {
+        const clone = res.clone();
+        const raw = await clone.text();
+        bodyText = raw.length > 2048 ? raw.slice(0, 2048) + `... [${raw.length - 2048} chars truncated]` : raw;
+      } catch { /* body read failed — ok */ }
+
+      traces.push({ url, method, requestHeaders: reqHeaders, statusCode: res.status, durationMs, responseBody: bodyText });
+      return res;
+    } catch (err) {
+      traces.push({
+        url, method, requestHeaders: reqHeaders, statusCode: null,
+        durationMs: Date.now() - start, responseBody: null,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+  };
+}
+
 // ─── Piece Cache ─────────────────────────────────────────
 
 /** Cache loaded pieces to avoid repeated dynamic imports */
@@ -221,8 +295,16 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
       projectId: params.projectId,
     });
 
-    // 5. Execute the action
-    const output = await action.run(context);
+    // 5. Execute the action with HTTP tracing
+    const httpTraces: HttpTraceEntry[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = createTracedFetch(httpTraces);
+    let output: unknown;
+    try {
+      output = await action.run(context);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
 
     const durationMs = Date.now() - startTime;
 
@@ -239,6 +321,7 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     return {
       success: true,
       output,
+      httpTraces: httpTraces.length > 0 ? httpTraces : undefined,
     };
   } catch (err) {
     const durationMs = Date.now() - startTime;

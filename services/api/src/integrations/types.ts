@@ -203,6 +203,16 @@ export interface RunActionResult {
   success: boolean;
   output: unknown;
   error?: string;
+  /** HTTP calls made during piece execution (when tracing is active) */
+  httpTraces?: Array<{
+    url: string;
+    method: string;
+    requestHeaders: Record<string, string>;
+    statusCode: number | null;
+    durationMs: number;
+    responseBody: string | null;
+    error?: string;
+  }>;
 }
 
 // ─── Store Types ─────────────────────────────────────────
