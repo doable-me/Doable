@@ -31,6 +31,75 @@ async function requireAdmin(workspaceId: string, userId: string): Promise<string
   return null;
 }
 
+// ─── Enhanced-auth helpers ─────────────────────────────────
+
+/**
+ * Compute an expires_at timestamp from an OAuth token response. Some
+ * providers return `expires_in` (seconds from now), others return absolute
+ * `expires_at` (seconds since epoch), and some return neither. Returns
+ * undefined when the provider didn't give us a duration — callers should
+ * treat the token as valid until it fails a 401 refresh.
+ */
+function computeExpiresAt(tokenData: Record<string, unknown>): string | undefined {
+  if (typeof tokenData.expires_in === "number") {
+    return new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
+  }
+  if (typeof tokenData.expires_at === "number") {
+    return new Date(tokenData.expires_at * 1000).toISOString();
+  }
+  return undefined;
+}
+
+/**
+ * Dual-store the raw OAuth access_token from an enhanced-auth flow as a
+ * sibling row under the declared `oauthIntegrationKey` (e.g.
+ * "supabase-mgmt"). This is needed because `extractCredentials` typically
+ * consumes the access token to pull resource-specific credentials (like
+ * the Supabase anon key for a picked project) and throws the raw token
+ * away, but Management-API operations (provision_supabase, etc.) need the
+ * raw token preserved. The sibling row uses `auth_type = "oauth2"` and
+ * `credentials = { access_token, refresh_token?, expires_at? }`.
+ *
+ * De-dupes by deleting any existing sibling row for the same
+ * (user, integration, workspace) first, so repeat OAuth flows don't
+ * accumulate stale tokens. See bugs/bug-23 for the trail.
+ */
+async function storeMgmtTokenSibling(
+  mgmtIntegrationKey: string,
+  params: {
+    workspaceId: string;
+    userId: string;
+    scope: "workspace" | "project" | "user";
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt?: string;
+    displayName: string;
+  },
+): Promise<void> {
+  // Clean up any prior sibling row so repeated Sign-in-with-X flows don't
+  // leave stale tokens in the DB.
+  await sql`
+    DELETE FROM integration_connections
+    WHERE user_id = ${params.userId}
+      AND integration_id = ${mgmtIntegrationKey}
+      AND workspace_id = ${params.workspaceId}
+  `;
+  await credentialVault.store({
+    workspaceId: params.workspaceId,
+    userId: params.userId,
+    integrationId: mgmtIntegrationKey,
+    scope: params.scope,
+    authType: "oauth2",
+    credentials: {
+      access_token: params.accessToken,
+      ...(params.refreshToken ? { refresh_token: params.refreshToken } : {}),
+      ...(params.expiresAt ? { expires_at: params.expiresAt } : {}),
+    },
+    displayName: params.displayName,
+    metadata: { via: "enhanced_auth_sibling" },
+  });
+}
+
 // ─── Catalog (public, no auth) ─────────────────────────────
 
 // GET /integrations/catalog
@@ -686,6 +755,20 @@ integrationRoutes.get("/integrations/enhanced-auth/callback", async (c) => {
         metadata: result.metadata,
       });
 
+      // Phase 2A bug-23 — the provisioner (and any future Management-API
+      // operation) needs the raw OAuth access_token, but the step above
+      // only stores whatever `extractCredentials` returned (for Supabase
+      // that's project-specific url + keys, and the mgmt token is thrown
+      // away). Dual-store the raw token under the declared
+      // `oauthIntegrationKey` so provision.ts's `getMgmtAccessToken()`
+      // can find it. See bugs/bug-23 for the full trail.
+      await storeMgmtTokenSibling(ea.oauthIntegrationKey, {
+        workspaceId, userId, scope: scope as "workspace" | "project" | "user",
+        accessToken, refreshToken: tokenData.refresh_token as string | undefined,
+        expiresAt: computeExpiresAt(tokenData),
+        displayName: `${def.displayName} Management API`,
+      });
+
       deleteEnhancedAuthSession(sessionKey);
       return c.html(`<!DOCTYPE html><html><head><title>Connected</title></head><body>
         <p>Connected successfully! This window will close automatically.</p>
@@ -801,6 +884,20 @@ integrationRoutes.post("/integrations/enhanced-auth/:id/complete", async (c) => 
       credentials: result.credentials,
       displayName: result.displayName,
       metadata: result.metadata,
+    });
+
+    // Phase 2A bug-23 — also store the raw OAuth access_token under the
+    // declared `oauthIntegrationKey` (e.g. "supabase-mgmt"). See the
+    // twin write in the no-resource-selection branch above for the full
+    // reasoning — Management-API operations like provision_supabase need
+    // the raw token and can't recover it from the project-specific creds
+    // that extractCredentials returned.
+    await storeMgmtTokenSibling(def.enhancedAuth.oauthIntegrationKey, {
+      workspaceId: session.workspaceId,
+      userId: session.userId,
+      scope: (session.scope as "workspace" | "project" | "user") ?? "user",
+      accessToken: session.accessToken,
+      displayName: `${def.displayName} Management API`,
     });
 
     deleteEnhancedAuthSession(sessionKey);

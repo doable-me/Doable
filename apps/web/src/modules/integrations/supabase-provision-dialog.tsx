@@ -84,6 +84,8 @@ export function SupabaseProvisionDialog({
   const [progress, setProgress] = useState<ProvisionPhase[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
 
   // Reset state whenever the dialog is opened
   useEffect(() => {
@@ -97,54 +99,151 @@ export function SupabaseProvisionDialog({
     setProgress([]);
     setSubmitting(false);
     setError(null);
+    setSigningIn(false);
+    setSignInError(null);
   }, [open, defaultName]);
+
+  /**
+   * Fetch the user's Supabase orgs. Extracted from the mount-time effect
+   * so the inline "Sign in with Supabase" button can re-fetch orgs after
+   * the popup completes without forcing a dialog remount. Returns true on
+   * success, false if OAuth is still required.
+   */
+  const fetchOrgs = useCallback(async (): Promise<boolean> => {
+    setOrgsLoading(true);
+    setOrgsError(null);
+    try {
+      const accessToken = await getAccessToken();
+      const res = await fetch(
+        `${API_BASE}/api/integrations/supabase/orgs?workspaceId=${encodeURIComponent(workspaceId)}`,
+        {
+          headers: accessToken
+            ? { Authorization: `Bearer ${accessToken}` }
+            : {},
+        },
+      );
+      if (res.status === 412) {
+        setOauthRequired(true);
+        return false;
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(body.error ?? `Failed to load orgs (${res.status})`);
+      }
+      const data = (await res.json()) as { data: SupabaseOrganization[] };
+      setOauthRequired(false);
+      setOrgs(data.data);
+      const first = data.data[0];
+      if (first) setOrgId(first.id);
+      return true;
+    } catch (err) {
+      setOrgsError(err instanceof Error ? err.message : String(err));
+      return false;
+    } finally {
+      setOrgsLoading(false);
+    }
+  }, [workspaceId]);
 
   // Fetch the user's Supabase orgs when the dialog opens
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-
     (async () => {
-      setOrgsLoading(true);
-      setOrgsError(null);
-      try {
-        const accessToken = await getAccessToken();
-        const res = await fetch(
-          `${API_BASE}/api/integrations/supabase/orgs?workspaceId=${encodeURIComponent(workspaceId)}`,
-          {
-            headers: accessToken
-              ? { Authorization: `Bearer ${accessToken}` }
-              : {},
-          },
-        );
-        if (cancelled) return;
-        if (res.status === 412) {
-          setOauthRequired(true);
-          return;
-        }
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          throw new Error(body.error ?? `Failed to load orgs (${res.status})`);
-        }
-        const data = (await res.json()) as { data: SupabaseOrganization[] };
-        if (cancelled) return;
-        setOrgs(data.data);
-        const first = data.data[0];
-        if (first) setOrgId(first.id);
-      } catch (err) {
-        if (cancelled) return;
-        setOrgsError(err instanceof Error ? err.message : String(err));
-      } finally {
-        if (!cancelled) setOrgsLoading(false);
-      }
+      await fetchOrgs();
+      if (cancelled) return;
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [open, workspaceId]);
+  }, [open, fetchOrgs]);
+
+  /**
+   * Kick off the enhanced-auth OAuth flow for Supabase Management API in
+   * a popup window, then re-fetch orgs once the popup posts back
+   * `doable:enhanced-auth-complete`. Keeps the user inside the provision
+   * dialog instead of making them hunt the integrations panel.
+   */
+  const handleSignInWithSupabase = useCallback(async () => {
+    if (signingIn) return;
+    setSigningIn(true);
+    setSignInError(null);
+    try {
+      const accessToken = await getAccessToken();
+      const res = await fetch(
+        `${API_BASE}/integrations/enhanced-auth/supabase/authorize?workspaceId=${encodeURIComponent(workspaceId)}&scope=user`,
+        {
+          headers: accessToken
+            ? { Authorization: `Bearer ${accessToken}` }
+            : {},
+        },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Failed to start Supabase sign-in (${res.status})`);
+      }
+      const { authorizationUrl } = (await res.json()) as { authorizationUrl: string };
+
+      // Open the OAuth popup. Fixed size so it doesn't eat the whole screen.
+      const popup = window.open(
+        authorizationUrl,
+        "supabase-oauth",
+        "width=540,height=720,scrollbars=yes,resizable=yes",
+      );
+      if (!popup) {
+        throw new Error("Popup blocked — please allow popups for this site and try again.");
+      }
+
+      // Wait for either postMessage or popup closure
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => {
+          window.removeEventListener("message", onMessage);
+          clearInterval(poll);
+        };
+        const onMessage = (ev: MessageEvent) => {
+          const data = ev.data as { type?: string; integrationId?: string; status?: string } | null;
+          if (!data || data.type !== "doable:enhanced-auth-complete") return;
+          if (data.integrationId !== "supabase") return;
+          settled = true;
+          cleanup();
+          if (data.status === "success") resolve();
+          else reject(new Error("Supabase sign-in was cancelled or failed."));
+        };
+        window.addEventListener("message", onMessage);
+        // Fallback: detect popup close as a cancel. COOP can strip the
+        // opener reference so `popup.closed` isn't always reliable — treat
+        // a true `closed` read as cancel, otherwise stop polling after 2
+        // minutes so we don't hang forever.
+        const startedAt = Date.now();
+        const poll = setInterval(() => {
+          try {
+            if (popup.closed) {
+              if (!settled) {
+                settled = true;
+                cleanup();
+                reject(new Error("Supabase sign-in window was closed."));
+              }
+            }
+          } catch { /* cross-origin while on provider's domain — ignore */ }
+          if (Date.now() - startedAt > 120_000) {
+            cleanup();
+            if (!settled) reject(new Error("Supabase sign-in timed out after 2 minutes."));
+          }
+        }, 500);
+      });
+
+      // Popup succeeded — refetch orgs. `fetchOrgs` sets `oauthRequired =
+      // false` on success, which hides the sign-in branch and renders the
+      // real form with the newly-populated org list.
+      await fetchOrgs();
+    } catch (err) {
+      setSignInError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSigningIn(false);
+    }
+  }, [signingIn, workspaceId, fetchOrgs]);
 
   const handleSubmit = useCallback(async () => {
     if (!orgId || !region || submitting) return;
@@ -251,12 +350,34 @@ export function SupabaseProvisionDialog({
 
         {oauthRequired ? (
           <div className="flex flex-col items-start gap-3 py-4">
-            <AlertCircle className="h-5 w-5 text-amber-500" />
-            <p className="text-sm">
-              You need to sign in with Supabase first so Doable can create
-              projects on your behalf. Open the integrations panel, find
-              <strong> Supabase</strong>, and pick &quot;Sign in with Supabase&quot;.
-            </p>
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+              <p className="text-sm">
+                Sign in with Supabase so Doable can create projects on your
+                behalf. You&apos;ll be redirected briefly to Supabase to
+                authorize, then come right back here.
+              </p>
+            </div>
+            <Button
+              onClick={handleSignInWithSupabase}
+              disabled={signingIn}
+              className="w-full"
+            >
+              {signingIn ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Waiting for Supabase…
+                </>
+              ) : (
+                "Sign in with Supabase"
+              )}
+            </Button>
+            {signInError ? (
+              <div className="flex items-start gap-2 text-xs text-red-600">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5" />
+                <span>{signInError}</span>
+              </div>
+            ) : null}
           </div>
         ) : orgsLoading ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
