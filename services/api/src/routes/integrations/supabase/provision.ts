@@ -251,6 +251,22 @@ supabaseProvisionRoutes.post(
       },
     });
 
+    // Restart the project's dev server so the vault-bridge re-resolves
+    // env vars and writes VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
+    // into the project's .env BEFORE the AI writes code that reads them.
+    // Without this, the dev server keeps running with the OLD .env (from
+    // before the connection existed) and import.meta.env.VITE_SUPABASE_URL
+    // is undefined → createClient throws → white screen.
+    try {
+      const { restartDevServer, isRunning } = await import("../../../projects/dev-server.js");
+      if (isRunning(body.projectId)) {
+        await restartDevServer(body.projectId, { userId });
+        console.log(`[use-existing] Restarted dev server for ${body.projectId} to pick up new Supabase env vars`);
+      }
+    } catch (err) {
+      console.warn(`[use-existing] Failed to restart dev server:`, err instanceof Error ? err.message : err);
+    }
+
     return c.json({
       data: {
         connectionId: stored.id,
@@ -444,6 +460,17 @@ supabaseProvisionRoutes.post(
             provisionedAt: new Date().toISOString(),
           },
         });
+
+        // Restart the dev server so the vault-bridge picks up the new
+        // VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY credentials.
+        // Same pattern as /use-existing — without this, the .env file
+        // the running Vite instance reads doesn't have the new vars.
+        try {
+          const { restartDevServer, isRunning } = await import("../../../projects/dev-server.js");
+          if (isRunning(body.projectId)) {
+            await restartDevServer(body.projectId, { userId });
+          }
+        } catch { /* non-critical */ }
 
         await send("done", `Supabase project "${finalName}" is ready.`);
       } catch (err) {

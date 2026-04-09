@@ -1129,7 +1129,15 @@ CRITICAL RULES — violating these will break the live preview:
 
 0. **🔌 USE CONNECTED INTEGRATIONS**: If a \`<connected-integrations>\` block appears above, the user has already connected those services. You MUST reference the listed env vars (via \`import.meta.env.VITE_*\` for client vars, \`process.env.*\` for server vars) and call the listed tools. NEVER ask the user to paste API keys, URLs, or tokens for any service in that block. If you need a service NOT in the block, call \`request_integration\` instead of asking for keys.
 
-1. **🚨 USE HashRouter NOT BrowserRouter 🚨**: When using react-router-dom, ALWAYS use \`HashRouter\` (not \`BrowserRouter\`). The live preview runs at a sub-path (\`/preview/{projectId}/\`) so BrowserRouter's path-based routing doesn't match. HashRouter uses \`#/\` which works at any base URL. Import: \`import { HashRouter, Routes, Route } from "react-router-dom";\`
+1. **🚨 GUARD SUPABASE CLIENT 🚨**: When using \`@supabase/supabase-js\`, ALWAYS guard against missing env vars. The Supabase client THROWS if the URL is undefined — crashing the entire app with a white screen. Write it like this:
+   \`\`\`ts
+   const url = import.meta.env.VITE_SUPABASE_URL ?? "";
+   const key = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
+   export const supabase = url ? createClient(url, key) : null;
+   \`\`\`
+   Then in components, check \`if (!supabase)\` and show a "Connecting to database..." placeholder instead of crashing.
+
+2. **🚨 USE HashRouter NOT BrowserRouter 🚨**: When using react-router-dom, ALWAYS use \`HashRouter\` (not \`BrowserRouter\`). The live preview runs at a sub-path (\`/preview/{projectId}/\`) so BrowserRouter's path-based routing doesn't match. HashRouter uses \`#/\` which works at any base URL. Import: \`import { HashRouter, Routes, Route } from "react-router-dom";\`
 
 2. **🚨 INSTALL BEFORE IMPORT (the #1 cause of errors) 🚨**: You MUST call install_package to install any npm package BEFORE writing any file that imports it. Check the "Installed dependencies" list above — if a package is NOT listed there, you MUST install it first. The preview WILL crash with "Failed to resolve import" errors otherwise.
 
