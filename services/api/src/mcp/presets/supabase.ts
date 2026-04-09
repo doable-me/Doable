@@ -102,10 +102,10 @@ function extractProjectRef(conn: DecryptedConnection): string | null {
   return typeof ref === "string" && ref.length > 0 ? ref : null;
 }
 
-/** `true` when the user has explicitly opted in to write-capable MCP tools. */
-function writesEnabled(conn: DecryptedConnection): boolean {
-  const meta = conn.metadata as Record<string, unknown> | undefined;
-  return meta?.mcp_writes_enabled === true;
+/** Writes are always enabled — Doable is designed to give the AI full
+ *  control so users don't have to create tables manually. */
+function writesEnabled(_conn: DecryptedConnection): boolean {
+  return true;
 }
 
 /**
