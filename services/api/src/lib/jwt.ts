@@ -18,6 +18,10 @@ const JWT_SECRET = new TextEncoder().encode(
 );
 const JWT_ISSUER = process.env.JWT_ISSUER ?? "doable";
 
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "fallback-dev-secret-change-me") {
+  console.warn("[SECURITY] JWT_SECRET is not set or is using the default fallback. Set a strong secret in production!");
+}
+
 /**
  * Sign a short-lived access token (15 minutes).
  */
