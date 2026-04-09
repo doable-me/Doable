@@ -41,7 +41,7 @@ const resetPasswordSchema = z.object({
 
 // ─── Helpers ────────────────────────────────────────────────
 function hashToken(token: string): string {
-  return Buffer.from(token).toString("base64url").slice(0, 64);
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function sanitizeUser(user: {
@@ -153,16 +153,29 @@ authRoutes.post("/refresh", async (c) => {
   const { refreshToken } = parsed.data;
   try {
     const payload = await verifyRefreshToken(refreshToken);
-    const tokenHash = hashToken(refreshToken);
-    const stored = await auth.findRefreshToken(tokenHash);
+    const oldTokenHash = hashToken(refreshToken);
+    const stored = await auth.findRefreshToken(oldTokenHash);
     if (!stored) return c.json({ error: "Refresh token has been revoked" }, 401);
 
-    await auth.deleteRefreshToken(tokenHash);
     const user = await users.findById(payload.sub);
     if (!user) return c.json({ error: "User not found" }, 401);
 
-    const tokens = await issueTokens(user.id, user.email);
-    return c.json({ user: sanitizeUser(user), tokens });
+    // Generate new token pair
+    const accessToken = await signAccessToken(user.id, user.email);
+    const newRefreshToken = await signRefreshToken(user.id);
+    const newTokenHash = hashToken(newRefreshToken);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // Atomically delete old token and insert new one in a transaction
+    await sql.begin(async (tx) => {
+      await tx`DELETE FROM refresh_tokens WHERE token_hash = ${oldTokenHash}`;
+      await tx`INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (${user.id}, ${newTokenHash}, ${expiresAt})`;
+    });
+
+    return c.json({
+      user: sanitizeUser(user),
+      tokens: { accessToken, refreshToken: newRefreshToken, expiresIn: 900 },
+    });
   } catch {
     return c.json({ error: "Invalid or expired refresh token" }, 401);
   }

@@ -1,4 +1,5 @@
 import { createMiddleware } from "hono/factory";
+import { verifyAccessToken } from "../lib/jwt.js";
 import * as jose from "jose";
 
 export interface JwtPayload {
@@ -16,11 +17,6 @@ export interface AuthEnv {
   };
 }
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? "fallback-dev-secret-change-me"
-);
-const JWT_ISSUER = process.env.JWT_ISSUER ?? "doable";
-
 /**
  * Middleware that verifies a JWT Bearer token and injects user info into context.
  */
@@ -34,19 +30,15 @@ export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
   const token = authHeader.slice(7);
 
   try {
-    const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
-      issuer: JWT_ISSUER,
-    });
+    const payload = await verifyAccessToken(token);
 
-    const jwtPayload = payload as unknown as JwtPayload;
-
-    if (!jwtPayload.sub || !jwtPayload.email) {
+    if (!payload.sub || !payload.email) {
       return c.json({ error: "Invalid token payload" }, 401);
     }
 
-    c.set("userId", jwtPayload.sub);
-    c.set("userEmail", jwtPayload.email);
-    c.set("jwtPayload", jwtPayload);
+    c.set("userId", payload.sub);
+    c.set("userEmail", payload.email);
+    c.set("jwtPayload", payload as unknown as JwtPayload);
 
     await next();
   } catch (err) {
@@ -68,16 +60,12 @@ export const optionalAuthMiddleware = createMiddleware<AuthEnv>(async (c, next) 
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
     try {
-      const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
-        issuer: JWT_ISSUER,
-      });
+      const payload = await verifyAccessToken(token);
 
-      const jwtPayload = payload as unknown as JwtPayload;
-
-      if (jwtPayload.sub && jwtPayload.email) {
-        c.set("userId", jwtPayload.sub);
-        c.set("userEmail", jwtPayload.email);
-        c.set("jwtPayload", jwtPayload);
+      if (payload.sub && payload.email) {
+        c.set("userId", payload.sub);
+        c.set("userEmail", payload.email);
+        c.set("jwtPayload", payload as unknown as JwtPayload);
         await next();
         return;
       }
@@ -92,46 +80,3 @@ export const optionalAuthMiddleware = createMiddleware<AuthEnv>(async (c, next) 
   c.set("jwtPayload", { sub: "anonymous", email: "", iat: 0, exp: 0 } as JwtPayload);
   await next();
 });
-
-/**
- * Sign a new JWT access token for a user.
- */
-export async function signAccessToken(
-  userId: string,
-  email: string
-): Promise<string> {
-  const expiresIn = process.env.JWT_ACCESS_TOKEN_EXPIRES_IN ?? "15m";
-
-  return new jose.SignJWT({ email })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject(userId)
-    .setIssuer(JWT_ISSUER)
-    .setIssuedAt()
-    .setExpirationTime(expiresIn)
-    .sign(JWT_SECRET);
-}
-
-/**
- * Sign a new JWT refresh token for a user.
- */
-export async function signRefreshToken(userId: string): Promise<string> {
-  const expiresIn = process.env.JWT_REFRESH_TOKEN_EXPIRES_IN ?? "7d";
-
-  return new jose.SignJWT({})
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject(userId)
-    .setIssuer(JWT_ISSUER)
-    .setIssuedAt()
-    .setExpirationTime(expiresIn)
-    .sign(JWT_SECRET);
-}
-
-/**
- * Verify and decode a token without middleware context.
- */
-export async function verifyToken(token: string): Promise<JwtPayload> {
-  const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
-    issuer: JWT_ISSUER,
-  });
-  return payload as unknown as JwtPayload;
-}
