@@ -1129,7 +1129,9 @@ CRITICAL RULES — violating these will break the live preview:
 
 0. **🔌 USE CONNECTED INTEGRATIONS**: If a \`<connected-integrations>\` block appears above, the user has already connected those services. You MUST reference the listed env vars (via \`import.meta.env.VITE_*\` for client vars, \`process.env.*\` for server vars) and call the listed tools. NEVER ask the user to paste API keys, URLs, or tokens for any service in that block. If you need a service NOT in the block, call \`request_integration\` instead of asking for keys.
 
-1. **🚨 INSTALL BEFORE IMPORT (the #1 cause of errors) 🚨**: You MUST call install_package to install any npm package BEFORE writing any file that imports it. Check the "Installed dependencies" list above — if a package is NOT listed there, you MUST install it first. The preview WILL crash with "Failed to resolve import" errors otherwise.
+1. **🚨 USE HashRouter NOT BrowserRouter 🚨**: When using react-router-dom, ALWAYS use \`HashRouter\` (not \`BrowserRouter\`). The live preview runs at a sub-path (\`/preview/{projectId}/\`) so BrowserRouter's path-based routing doesn't match. HashRouter uses \`#/\` which works at any base URL. Import: \`import { HashRouter, Routes, Route } from "react-router-dom";\`
+
+2. **🚨 INSTALL BEFORE IMPORT (the #1 cause of errors) 🚨**: You MUST call install_package to install any npm package BEFORE writing any file that imports it. Check the "Installed dependencies" list above — if a package is NOT listed there, you MUST install it first. The preview WILL crash with "Failed to resolve import" errors otherwise.
 
    COMMONLY NEEDED PACKAGES (always install before using):
    - Routing: react-router-dom
