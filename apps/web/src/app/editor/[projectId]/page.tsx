@@ -5670,16 +5670,23 @@ export default function EditorPage() {
         reason={supabaseProvisionRequest.reason}
         onClose={(done) => {
           setSupabaseProvisionRequest(null);
-          // If the provision flow completed successfully, nudge the AI to
-          // continue with the follow-up work using the newly-injected env
-          // vars. Mirrors the pattern use-chat.ts's dismissSupabaseProvision
-          // used to follow before the page-level rewrite.
-          if (done) {
+          if (done && resolvedProjectId) {
+            // Restart the dev server so the vault-bridge re-resolves
+            // env vars (VITE_SUPABASE_URL etc.) from the newly-stored
+            // credential. Without this, the running Vite instance has
+            // the OLD .env and import.meta.env vars are undefined.
+            const token = getStoredTokens().accessToken;
+            fetch(`${API_URL}/projects/${resolvedProjectId}/dev-server/restart`, {
+              method: "POST",
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            }).catch(() => { /* non-critical */ });
+
+            // Nudge the AI to continue building with the new env vars
             setTimeout(() => {
               sendMessage(
                 "Supabase provisioning complete. The VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY env vars are now available — please continue with the feature you were building, using import.meta.env to read them.",
               );
-            }, 100);
+            }, 2000); // 2s delay so dev server has time to restart
           }
         }}
       />
