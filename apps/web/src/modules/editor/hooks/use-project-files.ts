@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { useEditorStore, type FileNode, type OpenTab } from "./use-editor-store";
+import { getStoredTokens } from "@/lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -39,12 +40,19 @@ export function useProjectFiles(projectId: string | null) {
     markTabDirty,
   } = useEditorStore();
 
+  /** Build Authorization header from stored tokens */
+  const authHeaders = useCallback((): Record<string, string> => {
+    const { accessToken } = getStoredTokens();
+    return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+  }, []);
+
   const fetchFileTree = useCallback(async () => {
     if (!projectId) return;
 
     try {
       const response = await fetch(
-        `${API_BASE}/projects/${projectId}/files`
+        `${API_BASE}/projects/${projectId}/files`,
+        { headers: authHeaders() }
       );
       if (!response.ok) throw new Error("Failed to fetch file tree");
 
@@ -53,7 +61,7 @@ export function useProjectFiles(projectId: string | null) {
     } catch (err) {
       console.error("Failed to fetch file tree:", err);
     }
-  }, [projectId, setFileTree]);
+  }, [projectId, setFileTree, authHeaders]);
 
   const readFile = useCallback(
     async (path: string) => {
@@ -61,7 +69,8 @@ export function useProjectFiles(projectId: string | null) {
 
       try {
         const response = await fetch(
-          `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(path)}`
+          `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(path)}`,
+          { headers: authHeaders() }
         );
         if (!response.ok) throw new Error("Failed to read file");
 
@@ -81,7 +90,7 @@ export function useProjectFiles(projectId: string | null) {
         console.error("Failed to read file:", err);
       }
     },
-    [projectId, setActiveFile, openTab]
+    [projectId, setActiveFile, openTab, authHeaders]
   );
 
   const saveFile = useCallback(
@@ -93,7 +102,7 @@ export function useProjectFiles(projectId: string | null) {
           `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(path)}`,
           {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...authHeaders() },
             body: JSON.stringify({ content }),
           }
         );
@@ -103,7 +112,7 @@ export function useProjectFiles(projectId: string | null) {
         console.error("Failed to save file:", err);
       }
     },
-    [projectId, markTabDirty]
+    [projectId, markTabDirty, authHeaders]
   );
 
   const createFile = useCallback(
@@ -115,7 +124,7 @@ export function useProjectFiles(projectId: string | null) {
           `${API_BASE}/projects/${projectId}/files`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...authHeaders() },
             body: JSON.stringify({ path, content }),
           }
         );
@@ -125,7 +134,7 @@ export function useProjectFiles(projectId: string | null) {
         console.error("Failed to create file:", err);
       }
     },
-    [projectId, fetchFileTree]
+    [projectId, fetchFileTree, authHeaders]
   );
 
   const deleteFile = useCallback(
@@ -135,7 +144,7 @@ export function useProjectFiles(projectId: string | null) {
       try {
         const response = await fetch(
           `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(path)}`,
-          { method: "DELETE" }
+          { method: "DELETE", headers: authHeaders() }
         );
         if (!response.ok) throw new Error("Failed to delete file");
         await fetchFileTree();
@@ -143,7 +152,7 @@ export function useProjectFiles(projectId: string | null) {
         console.error("Failed to delete file:", err);
       }
     },
-    [projectId, fetchFileTree]
+    [projectId, fetchFileTree, authHeaders]
   );
 
   // Load file tree on mount

@@ -24,6 +24,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getStoredTokens } from "@/lib/api";
 
 // ─── File icon mapping ──────────────────────────────────────
 
@@ -412,6 +413,12 @@ export function FileTree() {
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+  /** Build Authorization header from stored tokens */
+  const authHeaders = useCallback((): Record<string, string> => {
+    const { accessToken } = getStoredTokens();
+    return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+  }, []);
+
   // Create a file using PUT (the API uses PUT for create/write)
   const createFileViaApi = useCallback(
     async (path: string, content: string = "") => {
@@ -421,7 +428,7 @@ export function FileTree() {
           `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(path)}`,
           {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...authHeaders() },
             body: JSON.stringify({ content }),
           }
         );
@@ -430,7 +437,7 @@ export function FileTree() {
         console.error("Failed to create file:", err);
       }
     },
-    [projectId, fetchFileTree, API_BASE]
+    [projectId, fetchFileTree, API_BASE, authHeaders]
   );
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -480,9 +487,12 @@ export function FileTree() {
       const newPath = parentDir ? `${parentDir}/${newName}` : newName;
 
       try {
+        const headers = authHeaders();
+
         // Read old file content
         const readRes = await fetch(
-          `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(oldPath)}`
+          `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(oldPath)}`,
+          { headers }
         );
         const readData = await readRes.json();
         const content = readData.data?.content ?? "";
@@ -492,7 +502,7 @@ export function FileTree() {
           `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(newPath)}`,
           {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...headers },
             body: JSON.stringify({ content }),
           }
         );
@@ -500,7 +510,7 @@ export function FileTree() {
         // Delete old file
         await fetch(
           `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(oldPath)}`,
-          { method: "DELETE" }
+          { method: "DELETE", headers }
         );
 
         await fetchFileTree();
@@ -508,7 +518,7 @@ export function FileTree() {
         console.error("Failed to rename file:", err);
       }
     },
-    [projectId, fetchFileTree, API_BASE]
+    [projectId, fetchFileTree, API_BASE, authHeaders]
   );
 
   // Copy path to clipboard
