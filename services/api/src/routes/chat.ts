@@ -1530,16 +1530,9 @@ ERROR RECOVERY — if you encounter errors:
         // from tool handlers in real-time as they execute, independently of SDK
         // event delivery. This is the reliable channel for structured plan data.
         const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
-          if (status === "start") {
-            recordAssistantToolCall(toolName, args);
-            const friendly = friendlyToolMessage(toolName, args);
-            stream.writeSSE({
-              data: JSON.stringify({
-                type: "tool_call",
-                data: { name: toolName, friendlyMessage: friendly, arguments: args },
-              }),
-            }).catch(() => {});
-          }
+          // NOTE: status === "start" intentionally omitted — Channel 1
+          // (toolProgress.onToolStart) is the canonical source for tool_call
+          // SSE events. Emitting here too caused duplicate events (BUG-118).
 
           if (status === "end") {
             // Emit plan/clarification SSE events from tool handler output
@@ -1938,27 +1931,23 @@ ERROR RECOVERY — if you encounter errors:
               }
             }
 
+            // Track tool calls from raw event types — mapEventToSSE no longer
+            // emits tool_call (Channel 1 handles SSE), but we still need the
+            // bookkeeping for tool result pairing and heartbeat.
+            if (evtType === "tool.execution_start" || evtType === "tool.running") {
+              const tcId = evtData?.toolCallId as string | undefined;
+              const tcName = (evtData?.toolName ?? evtData?.name) as string | undefined;
+              if (tcId && tcName) toolCallIdMap.set(tcId, tcName);
+              if (tcName) {
+                pendingToolNames.push(tcName);
+                recordAssistantToolCall(tcName, evtData as Record<string, unknown>);
+                lastToolName = tcName;
+                friendlyLastTool = friendlyToolMessage(tcName, evtData as Record<string, unknown>) ?? tcName;
+              }
+            }
+
             const sseData = mapEventToSSE(event);
             if (sseData) {
-              // Track toolCallId → toolName for proper pairing
-              if (evtType === "tool.execution_start" || evtType === "tool.running") {
-                const tcId = evtData?.toolCallId as string | undefined;
-                const tcName = evtData?.toolName as string | undefined;
-                if (tcId && tcName) toolCallIdMap.set(tcId, tcName);
-              }
-
-              // When a tool_call is emitted, record the name for pairing
-              if (sseData.type === "tool_call") {
-                const toolData = sseData.data as Record<string, unknown>;
-                if (toolData?.name) {
-                  pendingToolNames.push(toolData.name as string);
-                  recordAssistantToolCall(toolData.name as string, toolData?.arguments);
-                  // Heartbeat: remember the in-flight tool so soft heartbeat
-                  // can tell the user what's still running.
-                  lastToolName = toolData.name as string;
-                  friendlyLastTool = (toolData.friendlyMessage as string | undefined) ?? lastToolName;
-                }
-              }
               // When a tool_result is emitted, inject the name from the map or queue
               if (sseData.type === "tool_result") {
                 hadToolCalls = true;
@@ -2121,7 +2110,7 @@ ERROR RECOVERY — if you encounter errors:
           // ── Debug: stream summary ──
           console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${assistantContent.length} chars, thinking: ${assistantThinking.length} chars, toolCalls: ${hadToolCalls}, tools: ${assistantToolCalls.length}`);
 
-          // ── Incomplete-build detection + auto-continue ──
+          // ── Incomplete-build detection + auto-continue (BUG-120: capped) ──
           // The Copilot model sometimes treats exploration (list_files,
           // read_file, install_package, Supabase API calls) as a complete
           // "turn" and emits session.idle without writing any files. The
@@ -2130,32 +2119,34 @@ ERROR RECOVERY — if you encounter errors:
           // whether any create_file / edit_file tool calls were made. If
           // the AI did tool calls but NEVER wrote/edited a file, auto-
           // send a "continue building" nudge on the same session.
+          const MAX_AUTO_CONTINUE = 3;
           const FILE_WRITE_TOOLS = new Set(["create_file", "edit_file", "write_file", "create", "edit", "write"]);
-          const wroteFiles = assistantToolCalls.some(
-            (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
-          );
-          if (hadToolCalls && !wroteFiles && mode !== "plan") {
-            console.log(`[Chat][${projectId.slice(0, 8)}] AI explored but wrote 0 files (${assistantToolCalls.length} tool calls) — auto-continuing`);
+          let autoContinueCount = 0;
+
+          while (autoContinueCount < MAX_AUTO_CONTINUE && mode !== "plan") {
+            const wroteFiles = assistantToolCalls.some(
+              (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
+            );
+            if (!hadToolCalls || wroteFiles) break;
+
+            autoContinueCount++;
+            console.log(`[Chat][${projectId.slice(0, 8)}] AI explored but wrote 0 files (${assistantToolCalls.length} tool calls) — auto-continue attempt ${autoContinueCount}/${MAX_AUTO_CONTINUE}`);
             try {
               await stream.writeSSE({
                 data: JSON.stringify({
                   type: "status",
-                  data: { phase: "continuing", message: "Continuing to build\u2026" },
+                  data: { phase: "continuing", message: `Continuing to build\u2026 (attempt ${autoContinueCount}/${MAX_AUTO_CONTINUE})` },
                 }),
               });
-              // Send a nudge to the same session. The AI has full context
-              // from the exploration phase and should now proceed to write files.
               const continueStream = currentEngine.sendMessage(
                 sessionId!,
                 "You explored the project and installed packages but haven't created any files yet. Continue building NOW — create all the files the user asked for. Do NOT stop until the app is working in the preview.",
                 undefined,
               );
-              // Run the continue stream through the same iterator/SSE pipeline
               for await (const evt of continueStream) {
                 const evtType = (evt as Record<string, unknown>).type as string;
                 const evtData = (evt as Record<string, unknown>).data as Record<string, unknown> | undefined;
                 if (usageCollector) usageCollector.onUsageEvent(evt);
-                // Track tool calls from the continuation
                 if (evtType === "tool.execution_start" || evtType === "tool.running") {
                   const toolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
                   recordAssistantToolCall(toolName, evtData as Record<string, unknown>);
@@ -2182,9 +2173,26 @@ ERROR RECOVERY — if you encounter errors:
                 const SESSION_TERMINAL = new Set(["session.idle", "session.error", "done"]);
                 if (SESSION_TERMINAL.has(evtType)) break;
               }
-              console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue done — content now: ${assistantContent.length} chars, tools: ${assistantToolCalls.length}`);
+              console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue attempt ${autoContinueCount} done — content: ${assistantContent.length} chars, tools: ${assistantToolCalls.length}`);
             } catch (err) {
-              console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue failed:`, err instanceof Error ? err.message : err);
+              console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue attempt ${autoContinueCount} failed:`, err instanceof Error ? err.message : err);
+              break;
+            }
+          }
+
+          // If we exhausted all auto-continue attempts without writing files, notify the user
+          if (autoContinueCount >= MAX_AUTO_CONTINUE) {
+            const stillNoFiles = !assistantToolCalls.some(
+              (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
+            );
+            if (stillNoFiles) {
+              console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue exhausted ${MAX_AUTO_CONTINUE} attempts — stopping`);
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: "error",
+                  data: { message: "Auto-fix stopped after 3 attempts. Check the preview for build errors." },
+                }),
+              }).catch(() => {});
             }
           }
 
@@ -3679,36 +3687,12 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
       return { type: "thinking", data: stripServerPaths(String(data?.content ?? "")) };
 
     // ─── Tool calls (starting) ────────────────────────────
+    // tool.running / tool.execution_start / external_tool.requested are all
+    // suppressed here — Channel 1 (toolProgress.onToolStart) is the single
+    // canonical source for tool_call SSE events. Emitting from multiple
+    // channels caused 2-3x duplicate events in the chat UI (BUG-118).
     case "tool.running":
-    case "tool.execution_start": {
-      const toolName = (data?.toolName ?? data?.name) as string | undefined;
-      const toolArgs = data?.arguments as Record<string, unknown> | undefined;
-      // Strip file paths and content from arguments before sending to frontend
-      const safeArgs = toolArgs ? { ...toolArgs } : undefined;
-      if (safeArgs) {
-        delete safeArgs.content; // Never send full file content to chat
-        // Strip server paths from path-like args
-        for (const key of ["path", "filePath", "file", "directory", "cwd"] as const) {
-          if (typeof safeArgs[key] === "string") {
-            safeArgs[key] = stripServerPaths(safeArgs[key] as string);
-          }
-        }
-        // Strip server paths from command strings
-        if (typeof safeArgs.command === "string") {
-          safeArgs.command = sanitizeCommand(safeArgs.command as string);
-        }
-      }
-      return {
-        type: "tool_call",
-        data: {
-          name: toolName,
-          friendlyMessage: toolName ? friendlyToolMessage(toolName, toolArgs) : undefined,
-          arguments: safeArgs, // frontend can render command preview
-        },
-      };
-    }
-    // external_tool.requested is a duplicate of tool.execution_start — skip to
-    // avoid double tool_call SSE events that confuse frontend pairing.
+    case "tool.execution_start":
     case "external_tool.requested":
       return null;
 
