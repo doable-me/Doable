@@ -300,10 +300,11 @@ export class CopilotEngine {
       }
 
       // Soft signal: assistant.turn_end means text is done, but session.idle
-      // remains authoritative for terminal completion. Log for visibility only.
-      if ((event as { type?: string }).type === "assistant.turn_end") {
-        console.log(`[CopilotEngine] assistant.turn_end (soft signal) (${sessionId.slice(0, 8)}…)`);
-      }
+      // remains authoritative for terminal completion. chat.ts tracks these
+      // explicitly with its own `[Chat][pid] assistant.turn_end — grace period
+      // started` log, which is the useful line. The version here fired many
+      // times per tool-heavy turn and polluted the logs without adding any
+      // diagnostic value — removed. See bugs/bug-17 for the debugging trail.
 
       if (resolveWaiting) {
         resolveWaiting();
@@ -1053,7 +1054,7 @@ export function createDoableTools(projectId: string): Tool[] {
     // /api/integrations/supabase/provision and streams progress back.
     defineTool("provision_supabase", {
       description:
-        "Create a brand-new Supabase database for this project under the user's own Supabase organization. Use this when the user asks to add a database, signs up for Supabase, or wants persistent storage and you have not yet detected a connected Supabase integration. The Doable platform handles project creation, key fetching, and credential storage automatically — you do NOT need to ask the user for any credentials.",
+        "Create a brand-new Supabase database for this project. ALWAYS call this BEFORE writing any code that imports '@supabase/supabase-js' or references VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY. Even if the workspace already has other Supabase connections, each Doable project needs its OWN isolated Supabase project so credentials are scoped correctly and VITE_ env vars are injected into the per-project .env. The Doable platform handles org/region picking, project creation, key fetching, and credential storage automatically — you do NOT need to ask the user for credentials, URLs, or keys. After this tool returns, the chat UI opens a dialog for the user to pick an org + region, then injects VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY into the project's .env so your next turn can read them via import.meta.env.",
       parameters: {
         type: "object" as const,
         properties: {

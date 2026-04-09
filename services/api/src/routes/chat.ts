@@ -1435,6 +1435,7 @@ ERROR RECOVERY — if you encounter errors:
           let anyTurnEndSeen = false;
           let turnEndAt = 0;
           const TURN_END_GRACE_MS = 10_000; // 10s grace after turn_end
+          try {
           while (!iterDone) {
             // Use shorter timeout after turn_end: session should go idle quickly
             const effectiveTimeout = sawTurnEnd
@@ -1779,7 +1780,8 @@ ERROR RECOVERY — if you encounter errors:
             // Log unexpected event types for debugging
             if (!sseData && !SESSION_TERMINAL_EVENTS.has(evtType) && ![
               "pending_messages.modified", "session.tools_updated", "session.usage_info",
-              "session.background_tasks_changed",
+              "session.background_tasks_changed", "session.custom_agents_updated",
+              "tool.execution_partial_result",
               "assistant.usage", "hook.start", "hook.end", "user.message",
               "assistant.turn_start", "assistant.turn_end", "permission.requested",
               "permission.completed", "assistant.reasoning", "assistant.message",
@@ -1787,6 +1789,21 @@ ERROR RECOVERY — if you encounter errors:
               "external_tool.requested", "external_tool.completed",
             ].includes(evtType)) {
               console.log(`[Chat] Unmapped SDK event: "${evtType}" for ${projectId}`);
+            }
+          }
+          } finally {
+            // Always close the iterator so the CopilotEngine generator's
+            // `finally` block runs and unsubscribes its `session.on` listener.
+            // Without this, SDK v0.1.32 keeps firing background
+            // `assistant.turn_end` events for 30-90s after the turn is done,
+            // flooding logs with `[CopilotEngine] assistant.turn_end (soft
+            // signal)` lines and leaking eventQueue memory until the engine
+            // pool eventually GCs the session. See bugs/bug-17 for details.
+            try {
+              await iterator.return?.(undefined);
+            } catch {
+              // Generator may already be closed (terminal session.idle path);
+              // ignore.
             }
           }
 
@@ -3355,6 +3372,9 @@ function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     case "pending_messages.modified":
     case "session.tools_updated":
     case "session.usage_info":
+    case "session.background_tasks_changed":
+    case "session.custom_agents_updated":
+    case "tool.execution_partial_result":
     case "assistant.usage":
     case "hook.start":
     case "hook.end":

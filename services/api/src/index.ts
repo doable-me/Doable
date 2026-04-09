@@ -131,6 +131,39 @@ app.use(
   })
 );
 
+// Trailing-slash normalization — Hono's router is strict about trailing
+// slashes, so `GET /workspaces/` returns 404 while `GET /workspaces` returns
+// 200. That caused bugs 7 and 13 where clients that built URLs with a
+// base+path concatenation hit 404s inconsistently.
+//
+// Approach: issue a 308 Permanent Redirect with `Cache-Control: no-store`
+// so browsers don't cache the redirect (which would make subsequent
+// unrelated path changes behave inconsistently as seen during round-2
+// fix-verification). Redirect happens AFTER CORS so the redirect response
+// carries `Access-Control-Allow-Origin`. OPTIONS preflight is short-
+// circuited to a 204 before the redirect would apply, so there's no
+// "redirect on preflight" problem.
+//
+// EXCEPT: `/preview/:projectId/` is the canonical Vite dev server entry
+// point (Vite serves index.html at the trailing-slash path), and
+// `/thumbnails/` is a static asset prefix — leave both untouched.
+app.use("*", async (c, next) => {
+  const path = c.req.path;
+  if (
+    c.req.method !== "OPTIONS" &&
+    path.length > 1 &&
+    path.endsWith("/") &&
+    !path.startsWith("/preview/") &&
+    !path.startsWith("/thumbnails/")
+  ) {
+    const url = new URL(c.req.url);
+    url.pathname = path.replace(/\/+$/, "");
+    c.header("Cache-Control", "no-store");
+    return c.redirect(url.toString(), 308);
+  }
+  return next();
+});
+
 // Rate limiter for all routes EXCEPT /preview/* — a single Vite page load
 // triggers many subrequests (HTML + JS chunks + CSS + assets) which would
 // quickly exhaust the limit and cause preview loads to fail with 429.

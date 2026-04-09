@@ -6,10 +6,18 @@ import { useEditorStore } from "../hooks/use-editor-store";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { ClarificationFlow, PlanCard, PlanProgress } from "./plan";
+import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
 import { MessageSquare, Sparkles, Wrench, X } from "lucide-react";
 
 export function ChatPanel() {
   const projectId = useEditorStore((s) => s.projectId);
+  // Resolve the active workspace from localStorage — same pattern used by
+  // editor-sidebar.tsx and editor-toolbar.tsx. Needed so the Supabase
+  // provisioning dialog knows which workspace to scope the call to.
+  const workspaceId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("doable_active_workspace_id")
+      : null;
   const {
     messages,
     isStreaming,
@@ -21,6 +29,8 @@ export function ChatPanel() {
     abandonPlan,
     pendingIntegrationRequest,
     dismissIntegrationRequest,
+    supabaseProvisionRequest,
+    dismissSupabaseProvision,
   } = useChat(projectId);
 
   const activePlan = useEditorStore((s) => s.activePlan);
@@ -129,6 +139,21 @@ export function ChatPanel() {
           request={pendingIntegrationRequest}
           onDismiss={() => dismissIntegrationRequest(false)}
           onConnected={() => dismissIntegrationRequest(true)}
+        />
+      )}
+
+      {/* Phase 2A: Supabase provisioning dialog — rendered when the AI calls
+          the `provision_supabase` tool and the SSE `provision_supabase_required`
+          frame lands in the useChat hook. Walks the user through creating a
+          new Supabase project and streams progress directly in-dialog. */}
+      {supabaseProvisionRequest && projectId && workspaceId && (
+        <SupabaseProvisionDialog
+          open={!!supabaseProvisionRequest}
+          workspaceId={workspaceId}
+          projectId={projectId}
+          defaultName={supabaseProvisionRequest.name}
+          reason={supabaseProvisionRequest.reason}
+          onClose={(done) => dismissSupabaseProvision(done)}
         />
       )}
 

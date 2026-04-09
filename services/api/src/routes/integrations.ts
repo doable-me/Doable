@@ -127,6 +127,12 @@ integrationRoutes.get("/integrations/connections", authMiddleware, async (c) => 
   if (!workspaceId) {
     return c.json({ error: "workspaceId query parameter is required" }, 400);
   }
+  // Validate the shape BEFORE it hits the DB — otherwise Postgres raises
+  // `invalid input syntax for type uuid` and we leak a 500 with raw error
+  // text. See bugs/bug-14 for the trail.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)) {
+    return c.json({ error: "workspaceId must be a valid UUID" }, 400);
+  }
 
   const err = await requireMember(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
@@ -374,6 +380,10 @@ integrationRoutes.get("/integrations/oauth/:id/authorize", authMiddleware, async
 
   if (!workspaceId) {
     return c.json({ error: "workspaceId query parameter is required" }, 400);
+  }
+  // See bugs/bug-14 — validate UUID shape before hitting the DB.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)) {
+    return c.json({ error: "workspaceId must be a valid UUID" }, 400);
   }
 
   const err = await requireMember(workspaceId, userId);
