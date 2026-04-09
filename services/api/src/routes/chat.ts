@@ -390,6 +390,148 @@ async function buildProjectContextForMode(
 }
 
 /**
+ * Extract an `_sseHint`-tagged payload from a Copilot SDK tool result,
+ * transparently across SDK result shapes. The SDK has shipped at least
+ * three shapes for `toolResult` in the `onPostToolUse` hook across versions:
+ *
+ *  - **raw object**: `{ _sseHint: "...", name, reason, ... }` — what the
+ *    tool handler actually returned. Oldest SDK builds passed this through
+ *    unchanged.
+ *  - **wrapped with `output`**: `{ output: "<json-string>" }` — an older
+ *    wrapper where `output` is the JSON-stringified handler return.
+ *  - **wrapped with `textResultForLlm`**: `{ textResultForLlm: "<json>",
+ *    resultType: ..., toolTelemetry: ... }` — the shape used by the current
+ *    SDK in round-2 testing (discovered while debugging bug-16 verification).
+ *    `textResultForLlm` is a JSON-stringified snapshot of the handler return.
+ *
+ * This helper checks all three shapes and returns the inner payload if its
+ * `_sseHint` matches the expected hint. Returns `null` if there's no match.
+ * Callers are shape-agnostic — they don't need to know which SDK variant
+ * is running, which previously meant every SDK bump silently broke the
+ * dialog wiring. See bugs/bug-16 for the full trail.
+ */
+function extractSseHintPayload(
+  result: unknown,
+  expectedHint: string,
+): Record<string, unknown> | null {
+  if (!result) return null;
+
+  const tryObject = (obj: Record<string, unknown>): Record<string, unknown> | null => {
+    if (obj._sseHint === expectedHint) return obj;
+    // Older SDK wrapper shape
+    if (typeof obj.output === "string") {
+      try {
+        const parsed = JSON.parse(obj.output) as Record<string, unknown>;
+        if (parsed?._sseHint === expectedHint) return parsed;
+      } catch { /* fall through */ }
+    }
+    // Current SDK wrapper shape (round-2)
+    if (typeof obj.textResultForLlm === "string") {
+      try {
+        const parsed = JSON.parse(obj.textResultForLlm) as Record<string, unknown>;
+        if (parsed?._sseHint === expectedHint) return parsed;
+      } catch { /* fall through */ }
+    }
+    return null;
+  };
+
+  if (typeof result === "object") {
+    return tryObject(result as Record<string, unknown>);
+  }
+  if (typeof result === "string") {
+    try {
+      const parsed = JSON.parse(result);
+      if (parsed && typeof parsed === "object") {
+        return tryObject(parsed as Record<string, unknown>);
+      }
+    } catch { /* not JSON */ }
+  }
+  return null;
+}
+
+/**
+ * Transform the raw `tool_calls` array accumulated during a chat turn into
+ * the `tool_actions` shape the editor UI expects when it rehydrates chat
+ * history on reload. The frontend has an identical fallback that runs on
+ * read (apps/web/src/app/editor/[projectId]/page.tsx), but populating the
+ * column server-side means (a) rehydration is a simple column read instead
+ * of a per-row transform, (b) future additions like per-action status /
+ * error / output can be written in place without a frontend change, and
+ * (c) fixes bug-21 where the column was permanently NULL.
+ *
+ * The description logic intentionally mirrors the frontend helper's most
+ * common branches (read/write/edit/delete/list/install/shell). It is NOT
+ * the full frontend implementation — the frontend fallback still runs for
+ * tool names the server doesn't recognise, and richer per-action metadata
+ * (status="failed", output text, etc.) would be a follow-up.
+ */
+function buildToolActionsFromCalls(
+  toolCalls: Array<{ name?: string; arguments?: Record<string, unknown> | undefined }>,
+  assistantMessageId: string,
+): Array<Record<string, unknown>> {
+  return toolCalls.map((tc, i) => {
+    const toolName = tc.name ?? "unknown";
+    const args = tc.arguments ?? {};
+    const filePath =
+      (args.path as string | undefined) ??
+      (args.filePath as string | undefined) ??
+      (args.file as string | undefined);
+    const shortName = filePath ? filePath.split(/[\\/]/).pop() ?? "" : "";
+    const lower = toolName.toLowerCase();
+
+    let description = toolName;
+    if (
+      lower.includes("bash") || lower.includes("shell") || lower.includes("powershell") ||
+      lower.includes("cmd") || lower.includes("exec") || lower.includes("run_command") ||
+      lower.includes("terminal")
+    ) {
+      const rawCmd = args.command ?? args.cmd ?? args.input;
+      let cmd = typeof rawCmd === "string" ? rawCmd.trim() : "";
+      if (cmd) {
+        if (cmd.length > 80) cmd = cmd.slice(0, 77) + "\u2026";
+        description = `$ ${cmd}`;
+      } else {
+        description = "Running command";
+      }
+    } else if (lower.includes("create") || lower.includes("write")) {
+      description = shortName ? `Creating ${shortName}` : "Creating file";
+    } else if (lower.includes("edit") || lower.includes("update") || lower.includes("patch")) {
+      description = shortName ? `Updating ${shortName}` : "Updating file";
+    } else if (lower.includes("delete") || lower.includes("remove")) {
+      description = shortName ? `Removing ${shortName}` : "Removing file";
+    } else if (lower.includes("rename")) {
+      description = shortName ? `Renaming ${shortName}` : "Renaming file";
+    } else if (lower.includes("read")) {
+      description = shortName ? `Reading ${shortName}` : "Reading file";
+    } else if (lower.includes("list") || lower.includes("glob")) {
+      description = "Scanning project structure";
+    } else if (lower.includes("install") || lower.includes("package")) {
+      const pkgs = args.packages ?? args.name ?? "";
+      if (typeof pkgs === "string" && pkgs) {
+        const first = pkgs.split(/\s+/)[0] ?? pkgs;
+        description = `Installing ${first}`;
+      } else {
+        description = "Installing packages";
+      }
+    } else if (lower.includes("deploy")) {
+      description = "Deploying preview";
+    } else {
+      description = toolName.replace(/[_-]/g, " ").trim() || "Tool action";
+    }
+
+    return {
+      id: `hist-${assistantMessageId}-${i}`,
+      toolName,
+      description,
+      isExpanded: false,
+      isBookmarked: false,
+      filePath,
+      status: "completed" as const,
+    };
+  });
+}
+
+/**
  * Extract a plan from the AI's response text.
  * Looks for markdown plan structure and wraps it appropriately.
  */
@@ -1038,6 +1180,22 @@ ERROR RECOVERY — if you encounter errors:
           stream.writeSSE({ data: JSON.stringify({
             type: "tool_call", data: { name: toolName, friendlyMessage: friendly },
           }) }).catch(() => {});
+          // Phase 2A bug-16 — emit the provision_supabase_required event on
+          // tool START rather than waiting for onToolEnd. The tool handler's
+          // return value is a constant tagged payload (tool never really
+          // contacts Supabase from the backend), so there is nothing in the
+          // result we need to wait for. Emitting on start avoids a race
+          // where the SDK fires onPostToolUse hooks asynchronously and the
+          // iterator grace-period exits before the write reaches the client.
+          // See bugs/bug-16 for the full debugging trail.
+          if (toolName === "provision_supabase") {
+            const a = (args as Record<string, unknown>) ?? {};
+            const name = typeof a.name === "string" ? a.name : "";
+            stream.writeSSE({ data: JSON.stringify({
+              type: "provision_supabase_required",
+              data: { name, reason: "" },
+            }) }).catch(() => { /* stream may already be closed */ });
+          }
         },
         onToolEnd: (toolName: string, _args: unknown, result: unknown) => {
           hadToolCalls = true;
@@ -1064,32 +1222,48 @@ ERROR RECOVERY — if you encounter errors:
           // The tool handler returns `{ _sseHint: "provision_supabase_required", ... }`
           // — we emit a dedicated SSE event so the client can pop the
           // org/region picker dialog and POST to /api/integrations/supabase/provision.
-          if (toolName === "provision_supabase" && result) {
+          if (toolName === "provision_supabase") {
             try {
-              const r = result as Record<string, unknown>;
-              if (r._sseHint === "provision_supabase_required") {
+              // The Copilot SDK wraps tool results as
+              //   { textResultForLlm: "<json-string>", resultType: ..., toolTelemetry: ... }
+              // where textResultForLlm is the JSON-stringified value the tool
+              // handler returned. Older SDK versions used `output`. Handle all
+              // three shapes (raw object, .output, .textResultForLlm) so the
+              // `_sseHint` check fires reliably — without this, the dialog
+              // event never reaches the client even though the tool ran.
+              // See bugs/bug-16 for the trail.
+              const payload = extractSseHintPayload(result, "provision_supabase_required");
+              if (payload) {
+                // Note: the canonical emit path is now in onToolStart above —
+                // we emit there so the SSE frame lands on the client BEFORE
+                // the iterator's grace-period exit can close the stream. The
+                // onToolEnd path is kept as a belt-and-braces fallback for
+                // SDK versions that skip onToolStart (none known, but cheap).
                 stream.writeSSE({ data: JSON.stringify({
                   type: "provision_supabase_required",
-                  data: { name: r.name ?? "", reason: r.reason ?? "" },
-                }) }).catch(() => {});
+                  data: { name: payload.name ?? "", reason: payload.reason ?? "" },
+                }) }).catch(() => { /* stream may already be closed */ });
               }
-            } catch { /* non-critical */ }
+            } catch (e) {
+              console.warn("[Chat] provision_supabase SSE forward threw:", e);
+            }
           }
           // Phase 1H: surface integration_required as an inline Connect card.
           // Fires for ANY tool whose result is tagged with `_sseHint:
           // "integration_required"` — that's both the explicit
           // `request_integration` tool AND tool-bridge.ts tagging a
-          // credentials_missing Activepieces failure the same way.
-          if (result && typeof result === "object") {
-            const r = result as Record<string, unknown>;
-            if (r._sseHint === "integration_required" && r.integrationId) {
+          // credentials_missing Activepieces failure the same way. Uses the
+          // same SDK-shape-agnostic extractor as provision_supabase above.
+          {
+            const integrationPayload = extractSseHintPayload(result, "integration_required");
+            if (integrationPayload && integrationPayload.integrationId) {
               stream.writeSSE({ data: JSON.stringify({
                 type: "integration_required",
                 data: {
-                  integrationId: r.integrationId,
-                  displayName: r.displayName ?? r.integrationId,
-                  logoUrl: r.logoUrl,
-                  reason: r.reason ?? "",
+                  integrationId: integrationPayload.integrationId,
+                  displayName: integrationPayload.displayName ?? integrationPayload.integrationId,
+                  logoUrl: integrationPayload.logoUrl,
+                  reason: integrationPayload.reason ?? "",
                 },
               }) }).catch(() => {});
             }
@@ -2161,10 +2335,14 @@ ERROR RECOVERY — if you encounter errors:
         // in history depends on tool_calls being persisted.
         if (assistantMessageId && (assistantContent || hadToolCalls)) {
           try {
+            const toolActionsJson = assistantToolCalls.length > 0
+              ? sql.json(buildToolActionsFromCalls(assistantToolCalls, assistantMessageId))
+              : sql.json([]);
             await sql`
               UPDATE ai_messages
               SET content = ${assistantContent || null},
                   tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])},
+                  tool_actions = ${toolActionsJson},
                   version_sha = ${versionSha ?? null},
                   had_tool_calls = ${hadToolCalls},
                   thinking_content = ${assistantThinking || null}
@@ -2228,10 +2406,14 @@ ERROR RECOVERY — if you encounter errors:
       // Preserve rows with tool calls even if no text content.
       if (assistantMessageId && (assistantContent || hadToolCalls)) {
         try {
+          const toolActionsJson = assistantToolCalls.length > 0
+            ? sql.json(buildToolActionsFromCalls(assistantToolCalls, assistantMessageId))
+            : sql.json([]);
           await sql`
             UPDATE ai_messages
             SET content = ${assistantContent || null},
                 tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])},
+                tool_actions = ${toolActionsJson},
                 version_sha = ${versionSha ?? null},
                 had_tool_calls = ${hadToolCalls},
                 thinking_content = ${assistantThinking || null}

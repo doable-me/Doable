@@ -466,6 +466,48 @@ export function getDevServerInternalUrl(projectId: string): string | null {
 }
 
 /**
+ * Same as `getDevServerInternalUrl` but awaits a pending start/restart
+ * and the instance's `readyPromise` so the caller never receives a URL
+ * pointing at a Vite process that hasn't yet bound its port. This closes
+ * the window where preview-proxy would fetch a listening-but-not-ready
+ * Vite and get ECONNREFUSED → 502 (bug-20). Returns null only when the
+ * server is genuinely not running (no instance, no in-flight start).
+ */
+export async function getDevServerInternalUrlWhenReady(
+  projectId: string,
+): Promise<string | null> {
+  // If a start or restart is in flight (e.g. triggered by install_package),
+  // wait for it to settle before checking the servers map.
+  const inflight = startingServers.get(projectId);
+  if (inflight) {
+    try {
+      await inflight;
+    } catch {
+      // Start failed — fall through so we return null below.
+    }
+  }
+
+  const instance = servers.get(projectId);
+  if (!instance) return null;
+  if (instance.process.exitCode !== null) {
+    cleanup(projectId);
+    return null;
+  }
+
+  // Instance exists but may still be warming up (ready === false between
+  // spawn + Vite's "ready in" signal + health check). Await its ready
+  // promise so the proxy doesn't fire an HTTP request at a closed port.
+  if (!instance.ready) {
+    try {
+      await instance.readyPromise;
+    } catch {
+      return null;
+    }
+  }
+  return `http://localhost:${instance.port}`;
+}
+
+/**
  * Check if a dev server is running for the project.
  */
 export function isRunning(projectId: string): boolean {

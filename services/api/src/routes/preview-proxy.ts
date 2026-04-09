@@ -18,6 +18,7 @@
 import { Hono } from "hono";
 import {
   getDevServerInternalUrl,
+  getDevServerInternalUrlWhenReady,
   startDevServer,
   isRunning,
 } from "../projects/dev-server.js";
@@ -45,11 +46,18 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       await ensureDependencies(projectId);
       await startDevServer(projectId);
     } catch {
-      // Fall through — getDevServerInternalUrl will return null
+      // Fall through — getDevServerInternalUrlWhenReady will return null
     }
   }
 
-  const devUrl = getDevServerInternalUrl(projectId);
+  // Wait for any in-flight start/restart (e.g. triggered by install_package
+  // during AI chat) to finish before proxying. Without this, preview
+  // requests that land during the ~200ms window between
+  // `servers.set(instance)` and `instance.ready = true` hit a Vite process
+  // that hasn't bound its port yet, get ECONNREFUSED, and the catch block
+  // returns a 502 — the preview iframe flashes a red error overlay every
+  // time the AI installs a package. See bugs/bug-20 for details.
+  const devUrl = await getDevServerInternalUrlWhenReady(projectId);
   if (!devUrl) {
     // Return a styled HTML page that auto-retries instead of plain text.
     // This prevents the "blank page" experience — the user sees a loading

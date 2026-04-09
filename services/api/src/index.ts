@@ -56,6 +56,37 @@ import { getOAuthRedirectUri } from "./integrations/oauth2.js";
 import { VISUAL_EDIT_BRIDGE_INLINE } from "./visual-edit-bridge-inline.js";
 const VISUAL_EDIT_BRIDGE_JS = VISUAL_EDIT_BRIDGE_INLINE;
 
+// Swallow async socket errors from the preview reverse-proxy that escape
+// fetch()'s try/catch. When Vite is restarted by install_package, in-flight
+// outgoing sockets to the old Vite process emit `'error' → ECONNRESET` on
+// the Node stream layer *after* fetch() has already returned and the
+// ReadableStream of `resp.body` is being piped to the Hono response. The
+// error fires asynchronously on the raw TCP socket, so neither the proxy's
+// try/catch nor the Response stream's error handler catches it. Without
+// this guard, a single preview request racing a Vite restart crashes the
+// entire API process with `Unhandled 'error' event` — observed during bug-
+// 20 verification. ECONNRESET and ECONNREFUSED on the preview forwarder
+// are always harmless races, never a symptom of a real bug, so we log and
+// continue.
+process.on("uncaughtException", (err: NodeJS.ErrnoException) => {
+  if (err.code === "ECONNRESET" || err.code === "ECONNREFUSED" || err.code === "EPIPE") {
+    console.warn(`[api] swallowed async socket error: ${err.code} — ${err.message}`);
+    return;
+  }
+  // Any other uncaught exception is a real bug — rethrow so the process
+  // crashes fast and tsx watch spawns a fresh one.
+  console.error("[api] FATAL uncaught exception:", err);
+  throw err;
+});
+process.on("unhandledRejection", (reason) => {
+  const err = reason as NodeJS.ErrnoException | undefined;
+  if (err?.code === "ECONNRESET" || err?.code === "ECONNREFUSED" || err?.code === "EPIPE") {
+    console.warn(`[api] swallowed async rejection: ${err.code} — ${err.message}`);
+    return;
+  }
+  console.error("[api] unhandled rejection:", reason);
+});
+
 const app = new Hono();
 
 // Pre-create middleware instances (avoid re-instantiating on every request)

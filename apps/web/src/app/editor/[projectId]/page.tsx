@@ -112,6 +112,7 @@ import { useVisualEdit } from "@/modules/editor/visual-edit/use-visual-edit";
 import { VisualEditToolbar } from "@/modules/editor/visual-edit/visual-edit-toolbar";
 import type { ClarificationQuestion, Plan } from "@doable/shared/types/ai";
 import { ClarificationFlow, PlanCard, PlanProgress } from "@/modules/editor/chat/plan";
+import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
 
 // ─── Dynamically import Monaco (browser-only) ───────────────
 const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
@@ -391,6 +392,7 @@ async function streamChat(
   onClarification?: (questions: ClarificationQuestion[]) => void,
   onPlan?: (plan: Plan) => void,
   onPlanStepUpdate?: (stepId: string, status: string) => void,
+  onProvisionSupabase?: (req: { name: string; reason: string }) => void,
 ) {
   let currentToken = getStoredTokens().accessToken;
 
@@ -582,6 +584,16 @@ async function streamChat(
             }
           }
 
+          // Phase 2A: Supabase provisioning request — fired when the AI
+          // calls `provision_supabase`. Opens the org/region picker dialog
+          // via the page-level `supabaseProvisionRequest` state.
+          if (parsed.type === "provision_supabase_required" && onProvisionSupabase) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const name = (d?.name as string | undefined) ?? "";
+            const reason = (d?.reason as string | undefined) ?? "";
+            onProvisionSupabase({ name, reason });
+          }
+
           // Forward thinking events for live status display
           if (parsed.type === "thinking" && onThinking) {
             const thinkingContent = typeof parsed.data === "string" ? parsed.data : "";
@@ -685,6 +697,7 @@ interface BridgeCallbacks {
   onClarification?: (questions: ClarificationQuestion[]) => void;
   onPlan?: (plan: Plan) => void;
   onPlanStepUpdate?: (stepId: string, status: string) => void;
+  onProvisionSupabase?: (req: { name: string; reason: string }) => void;
 }
 
 function processOneSSEPayload(
@@ -758,6 +771,13 @@ function processOneSSEPayload(
       const stepId = d?.stepId as string | undefined;
       const status = d?.status as string | undefined;
       if (stepId && status) cb.onPlanStepUpdate(stepId, status);
+    }
+
+    if (parsed.type === "provision_supabase_required" && cb.onProvisionSupabase) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      const name = (d?.name as string | undefined) ?? "";
+      const reason = (d?.reason as string | undefined) ?? "";
+      cb.onProvisionSupabase({ name, reason });
     }
 
     if (parsed.type === "thinking" && cb.onThinking) {
@@ -1165,6 +1185,15 @@ export default function EditorPage() {
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   const [planPhase, setPlanPhase] = useState<"idle" | "clarifying" | "planning" | "reviewing" | "building">("idle");
   const [pendingQuestions, setPendingQuestions] = useState<ClarificationQuestion[] | null>(null);
+
+  // Phase 2A — Supabase provisioning request state. Set when the AI fires
+  // the `provision_supabase` tool and chat.ts forwards a
+  // `provision_supabase_required` SSE frame; reset when the dialog closes
+  // (either user cancelled or provisioning completed). The dialog itself
+  // is rendered at the bottom of the component tree. See bugs/bug-16.
+  const [supabaseProvisionRequest, setSupabaseProvisionRequest] = useState<
+    { name: string; reason: string } | null
+  >(null);
 
   // ── AI Model Selection ──
   const [selectedModelId, setSelectedModelId] = useState(() => {
@@ -2300,6 +2329,9 @@ export default function EditorPage() {
                 return { ...prev, steps: prev.steps.map((s) => s.id === stepId ? { ...s, status: status as any } : s) };
               });
             },
+            onProvisionSupabase: (req) => {
+              setSupabaseProvisionRequest(req);
+            },
           },
         );
         return; // bridge consumed — skip fallback path
@@ -2759,6 +2791,10 @@ export default function EditorPage() {
               steps: prev.steps.map(s => s.id === stepId ? { ...s, status: status as any } : s),
             };
           });
+        },
+        // onProvisionSupabase — Phase 2A: AI called provision_supabase tool
+        (req) => {
+          setSupabaseProvisionRequest(req);
         },
       );
     },
@@ -5602,6 +5638,29 @@ export default function EditorPage() {
     <ChatPopout currentUserId={authUser?.id ?? ""} />
     <ChatMessageToasts />
     <CollabPreviewSync iframeRef={iframeRef} />
+    {supabaseProvisionRequest && resolvedProjectId && workspaceId && (
+      <SupabaseProvisionDialog
+        open={!!supabaseProvisionRequest}
+        workspaceId={workspaceId}
+        projectId={resolvedProjectId}
+        defaultName={supabaseProvisionRequest.name}
+        reason={supabaseProvisionRequest.reason}
+        onClose={(done) => {
+          setSupabaseProvisionRequest(null);
+          // If the provision flow completed successfully, nudge the AI to
+          // continue with the follow-up work using the newly-injected env
+          // vars. Mirrors the pattern use-chat.ts's dismissSupabaseProvision
+          // used to follow before the page-level rewrite.
+          if (done) {
+            setTimeout(() => {
+              sendMessage(
+                "Supabase provisioning complete. The VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY env vars are now available — please continue with the feature you were building, using import.meta.env to read them.",
+              );
+            }, 100);
+          }
+        }}
+      />
+    )}
     </>
     </CollaborationProvider>
   );

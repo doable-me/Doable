@@ -1,9 +1,9 @@
 # Bug 16 — Supabase provisioning dialog never renders; chat hangs forever
 
 **Severity:** 🔴 P0 — Critical (blocks all Supabase-backed app building via AI chat)
-**Area:** `apps/web/src/modules/editor/chat/chat-panel.tsx` — consumer of `useChat()`; `apps/web/src/modules/integrations/supabase-provision-dialog.tsx` (the orphaned dialog component)
+**Area:** `apps/web/src/app/editor/[projectId]/page.tsx` — the inline chat in the editor page (NOT `chat-panel.tsx`, which is dead code); `apps/web/src/modules/integrations/supabase-provision-dialog.tsx` (the orphaned dialog component); `services/api/src/routes/chat.ts` — tool-result SSE emit path
 **Discovered:** 2026-04-09 round-2 E2E test, turn 1 of Supabase-backed feedback app
-**Status:** Open — fix below
+**Status:** ✅ Fixed 2026-04-09 — verified end-to-end (dialog mounts on `provision_supabase` tool call)
 
 ## Symptom
 
@@ -39,7 +39,42 @@ Verified in Chrome: `document.querySelector('[role=dialog]')` returns nothing; `
 - Even with bug-11's clean-completion bypass, the bug-16 hang still burns 120s per turn and leaves Monaco + preview stuck in a half-built state.
 - User sees "the dialog should appear" narrative but literally cannot do anything.
 
-## Fix
+## Fix shipped (2026-04-09)
+
+The actual fix involved **four** distinct changes, discovered sequentially while debugging the end-to-end trail:
+
+### 1. Dead-code trap: `chat-panel.tsx` is not rendered
+
+The first fix attempted to wire `SupabaseProvisionDialog` into `apps/web/src/modules/editor/chat/chat-panel.tsx`. That file is **never imported** by the editor route — `apps/web/src/app/editor/[projectId]/page.tsx` has its own inline chat surface. The `chat-panel.tsx` file is dead code. Every edit there had zero runtime effect.
+
+**Fix:** wire the dialog into `page.tsx` directly — add `supabaseProvisionRequest` state, add `onProvisionSupabase` callback to both `streamChat` (inline SSE loop) and `processOneSSEPayload` (bridge path), hoist `SupabaseProvisionDialog` render at the bottom of the component tree guarded by `supabaseProvisionRequest && resolvedProjectId && workspaceId`.
+
+### 2. SDK result-shape mismatch
+
+Even after (1), the `onToolEnd` handler's `_sseHint` check silently failed. Debug logging revealed the Copilot SDK wraps tool results as `{ textResultForLlm: "<json-string>", resultType, toolTelemetry }` — the `_sseHint` is inside the JSON-stringified `textResultForLlm`, not directly on the `result` object. Older SDK versions used `output` as the wrapper key; some versions return the raw object.
+
+**Fix:** extract a shared `extractSseHintPayload(result, expectedHint)` helper in `chat.ts` that tries all three shapes (raw object, `.output`, `.textResultForLlm`). Same fix applied to the `integration_required` emit path next door, which had the same bug.
+
+### 3. Iterator grace-period race (the really nasty one)
+
+With (1) and (2) in place, `[Chat] provision_supabase SSE write dispatched` fired on the server, but the client's SSE parser never saw a `provision_supabase_required` frame. Root cause: the SDK delivers `onPostToolUse` hooks asynchronously via RPC. For a fast turn (tool returns in <1s), the sequence is:
+
+1. iterator sees `assistant.turn_end` → grace period starts (10s)
+2. SDK fires `onPostToolUse` asynchronously → chat.ts onToolEnd runs → `stream.writeSSE(provision_supabase_required)` is queued
+3. 10s grace expires → iterator exits → `iterator.return()` closes the generator → the stream's underlying writable gets teared down
+4. The queued SSE write completes successfully from the server's point of view (bytes written to the Node stream buffer), but the HTTP response has already ended by the time those bytes would reach the client
+
+**Fix:** emit the `provision_supabase_required` frame from **`onToolStart`** rather than `onToolEnd`. Since the tool's return value is a constant (the handler never actually contacts Supabase — it just returns a tagged payload for the frontend), there's nothing in the result we need to wait for. Emitting on tool start guarantees the frame lands on the client during the active stream. The `onToolEnd` path is kept as a belt-and-braces fallback.
+
+### 4. Custom Dialog component has no `role="dialog"`
+
+Final red herring: verification scripts kept querying `document.querySelector('[role="dialog"]')` and finding nothing, even though the dialog was fully rendered. Doable uses a custom Dialog component (not Radix) that doesn't set `role="dialog"`. Verification switched to `.fixed.inset-0.z-50` and confirmed the dialog mounts with title "Create a Supabase database", `display: block`, `opacity: 1`, full-viewport size.
+
+**No product fix needed for (4)** — the dialog has always been rendering fine once the SSE event reached it. The verification methodology was the bug.
+
+---
+
+## Original fix plan (kept for historical context)
 
 Wire the dialog into `chat-panel.tsx`:
 
