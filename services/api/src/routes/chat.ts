@@ -1156,6 +1156,8 @@ CRITICAL RULES — violating these will break the live preview:
 
 0. **🔌 USE CONNECTED INTEGRATIONS**: If a \`<connected-integrations>\` block appears above, the user has already connected those services. You MUST reference the listed env vars (via \`import.meta.env.VITE_*\` for client vars, \`process.env.*\` for server vars) and call the listed tools. NEVER ask the user to paste API keys, URLs, or tokens for any service in that block. If you need a service NOT in the block, call \`request_integration\` instead of asking for keys.
 
+0b. **🔌 SUPABASE NOT CONNECTED? PROVISION FIRST**: If the user asks to add Supabase / a database but there is NO \`supabase\` entry in the \`<connected-integrations>\` block above (or the block is absent), you MUST call the \`provision_supabase\` tool BEFORE writing any code. Do NOT assume Supabase is connected — check the block. Do NOT ask the user for credentials. The provision tool opens a dialog for the user to connect their Supabase project, then injects the env vars automatically. Only after provisioning should you write Supabase client code.
+
 1. **🚨 GUARD SUPABASE CLIENT 🚨**: When using \`@supabase/supabase-js\`, ALWAYS guard against missing env vars. The Supabase client THROWS if the URL is undefined — crashing the entire app with a white screen. Write it like this:
    \`\`\`ts
    const url = import.meta.env.VITE_SUPABASE_URL ?? "";
@@ -1738,13 +1740,23 @@ ERROR RECOVERY — if you encounter errors:
               // turn_end seen + no tools = AI finished a sub-turn
               effectiveTimeout = TURN_END_GRACE_MS;
             } else if (lastTextDeltaAt > 0 && (assistantContent.length > 0 || hadToolCalls)) {
-              // We have content and text stopped flowing — tight timeout
+              // We have visible content and text stopped flowing — tight timeout
               effectiveTimeout = TEXT_SILENCE_MS;
-            } else if (assistantContent.length === 0 && !hadToolCalls && !anyTurnEndSeen) {
-              // No content at all yet — moderate timeout
+            } else if (lastTextDeltaAt > 0 && assistantThinking.length > 0) {
+              // AI was actively thinking (reasoning deltas received) but no
+              // visible text yet. This is normal for complex operations where
+              // the AI reasons first then calls tools. Give it time.
+              effectiveTimeout = HARD_FALLBACK_MS;
+            } else if (hadToolCalls && assistantContent.length === 0) {
+              // Tools ran but no text yet — AI may be processing results.
+              // Use the long timeout since tool results take time.
+              effectiveTimeout = HARD_FALLBACK_MS;
+            } else if (assistantContent.length === 0 && !hadToolCalls && !anyTurnEndSeen && assistantThinking.length === 0) {
+              // Truly nothing — no thinking, no text, no tools, no turn_end.
+              // SDK may have failed to start. Short timeout.
               effectiveTimeout = NO_CONTENT_TIMEOUT_MS;
             } else {
-              // Fallback
+              // Fallback — moderate
               effectiveTimeout = TEXT_SILENCE_MS;
             }
 
