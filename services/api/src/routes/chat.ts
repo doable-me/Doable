@@ -1639,20 +1639,66 @@ ERROR RECOVERY — if you encounter errors:
           let iterDone = false;
           let silentIterations = 0;
           let sawTurnEnd = false;
-          // Persistent "any turn_end ever seen" flag — unlike sawTurnEnd, this
-          // is NOT reset by subsequent message deltas, so we remember that the
-          // SDK has committed at least one sub-turn even mid-multi-turn. Used
-          // only by the clean-completion bypass in the silent-bail path — we
-          // do NOT shorten the mid-stream timeout based on it, because slow
-          // thinking between tool sub-turns can legitimately exceed 20–60s.
           let anyTurnEndSeen = false;
           let turnEndAt = 0;
-          const TURN_END_GRACE_MS = 10_000; // 10s grace after turn_end
+
+          // ── State-driven completion logic ─────────────────────────
+          //
+          // Instead of hardcoded timers with guessed durations, we track
+          // the AI's actual work state and only exit when the signals
+          // confirm the AI is genuinely done:
+          //
+          //   1. AUTHORITATIVE: session.idle / session.error → exit
+          //      immediately. The SDK is telling us the session is done.
+          //
+          //   2. TOOLS IN FLIGHT: if any tool.execution_start has fired
+          //      without a matching tool.execution_complete, the AI is
+          //      still working. NEVER exit while tools are in-flight,
+          //      regardless of turn_end or silence — the AI will resume
+          //      after the tool returns.
+          //
+          //   3. TURN_END + NO TOOLS: if we see assistant.turn_end AND
+          //      zero tools are in-flight, the AI has finished a sub-
+          //      turn's text and isn't waiting on any tool. Start a
+          //      grace timer. If new content/tool events arrive, cancel
+          //      the timer (multi-turn continuation).
+          //
+          //   4. TOTAL SILENCE: if the SDK emits nothing for a long
+          //      time (the fallback timer), check whether any content
+          //      or tools were produced. If yes, treat as degraded-
+          //      but-clean completion. If no, it's a true hang.
+          //
+          // The only hardcoded timers are the FALLBACK for when the SDK
+          // fails to emit terminal signals — not the primary mechanism.
+          let toolsInFlight = 0;
+          // Grace period: only fires when turn_end seen + zero tools
+          // in flight. 15s is generous but bounded — the AI has 15s to
+          // start a new sub-turn after finishing the last one. If it
+          // doesn't, we assume it's done. This is the FALLBACK, not
+          // the primary signal (session.idle is primary).
+          const IDLE_GRACE_MS = 15_000;
+          // Hard fallback for when the SDK never fires session.idle.
+          // 90s of total silence = definitely dead.
+          const HARD_FALLBACK_MS = 90_000;
+          let lastActivityAt = Date.now();
+
           while (!iterDone) {
-            // Use shorter timeout after turn_end: session should go idle quickly
-            const effectiveTimeout = sawTurnEnd
-              ? TURN_END_GRACE_MS
-              : SDK_IDLE_TIMEOUT_MS;
+            // Timeout depends on current state:
+            //   - Tools in flight → use the hard fallback (90s). The AI
+            //     is waiting on a tool; silence is expected.
+            //   - turn_end seen + no tools → use the grace period (15s).
+            //     The AI finished text and isn't running tools; if it
+            //     doesn't resume within 15s, it's done.
+            //   - Otherwise → use the standard 60s idle timeout.
+            let effectiveTimeout: number;
+            if (toolsInFlight > 0) {
+              effectiveTimeout = HARD_FALLBACK_MS;
+            } else if (sawTurnEnd) {
+              effectiveTimeout = IDLE_GRACE_MS;
+            } else {
+              effectiveTimeout = SDK_IDLE_TIMEOUT_MS;
+            }
+
             const raceResult = await Promise.race([
               iterator.next(),
               new Promise<{ done: true; value: typeof TIMEOUT_SENTINEL }>((resolve) =>
@@ -1661,27 +1707,24 @@ ERROR RECOVERY — if you encounter errors:
             ]);
             if (raceResult.done) {
               if (raceResult.value === TIMEOUT_SENTINEL) {
-                // After turn_end, bail immediately on first timeout (10s grace)
-                if (sawTurnEnd) {
-                  console.log(`[Chat] turn_end grace expired (${TURN_END_GRACE_MS / 1000}s) — treating as complete for ${projectId}`);
+                const elapsed = Date.now() - lastActivityAt;
+
+                // Case 3: turn_end seen + no tools in flight → grace expired.
+                // The AI had its chance to continue and didn't. Clean exit.
+                if (sawTurnEnd && toolsInFlight === 0) {
+                  console.log(`[Chat] turn_end + idle ${Math.round(elapsed / 1000)}s, 0 tools in-flight — treating as complete for ${projectId}`);
                   iterDone = true;
                   break;
                 }
+
+                // Case 4: total silence fallback.
                 silentIterations++;
                 if (silentIterations >= MAX_SILENT_ITERATIONS) {
-                  // If anything has already been produced (content, tool
-                  // calls, or at least one turn_end), treat the silence as a
-                  // clean-but-degraded completion — not a user-facing error.
-                  // SDK v0.1.32 sometimes stops firing events without a
-                  // terminal signal after multi-tool turns; the turn really
-                  // is done, we just never heard about it. Only "nothing came
-                  // back at all" is a true hang.
                   if (assistantContent.length > 0 || hadToolCalls || anyTurnEndSeen) {
-                    console.warn(`[Chat] SDK idle after turn produced content — treating as clean completion for ${projectId}`);
+                    console.warn(`[Chat] SDK idle ${Math.round(elapsed / 1000)}s after turn produced content (tools in-flight: ${toolsInFlight}) — treating as clean completion for ${projectId}`);
                     iterDone = true;
                     break;
                   }
-                  // True hang — bail with a clean error.
                   console.error(`[Chat] SDK silent for ${silentIterations}×${SDK_IDLE_TIMEOUT_MS / 1000}s — bailing for ${projectId}`);
                   try {
                     await stream.writeSSE({
@@ -1694,13 +1737,12 @@ ERROR RECOVERY — if you encounter errors:
                   iterDone = true;
                   break;
                 }
-                // Not a real hang yet — emit a calm reassuring status and keep waiting.
-                console.log(`[Chat] SDK idle ${SDK_IDLE_TIMEOUT_MS / 1000}s (iter ${silentIterations}/${MAX_SILENT_ITERATIONS}), continuing for ${projectId}`);
+                console.log(`[Chat] SDK idle ${SDK_IDLE_TIMEOUT_MS / 1000}s (iter ${silentIterations}/${MAX_SILENT_ITERATIONS}, tools: ${toolsInFlight}), continuing for ${projectId}`);
                 try {
                   await stream.writeSSE({
                     data: JSON.stringify({
                       type: "status",
-                      data: { phase: "thinking", message: "Working on a complex step \u2014 still here\u2026" },
+                      data: { phase: "thinking", message: toolsInFlight > 0 ? "Waiting for a tool to finish\u2026" : "Working on a complex step \u2014 still here\u2026" },
                     }),
                   });
                   lastSseEmitAt = Date.now();
@@ -1728,6 +1770,20 @@ ERROR RECOVERY — if you encounter errors:
             ]);
             if (CONTENT_EVENTS.has(evtType)) {
               silentIterations = 0;
+              lastActivityAt = Date.now();
+            }
+
+            // ── Track tools in flight ──
+            // Increment on start, decrement on complete. While > 0,
+            // the AI is actively waiting on a tool result — the grace
+            // timer must not fire because the AI WILL resume after the
+            // tool returns. This is the core state signal that replaces
+            // hardcoded timer guesswork.
+            if (evtType === "tool.execution_start" || evtType === "tool.running") {
+              toolsInFlight++;
+            }
+            if (evtType === "tool.execution_complete" || evtType === "external_tool.completed") {
+              toolsInFlight = Math.max(0, toolsInFlight - 1);
             }
 
             // Only genuine assistant MESSAGE events should cancel the turn_end
