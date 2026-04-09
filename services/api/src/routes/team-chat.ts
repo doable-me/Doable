@@ -30,11 +30,12 @@ teamChatRoutes.post("/:projectId/internal", async (c) => {
   if (secret !== INTERNAL_SECRET) return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json();
+  const rawName = body.displayName ?? null;
   const message = await teamChat.saveMessage({
     id: body.id ?? crypto.randomUUID(),
     projectId: c.req.param("projectId"),
     userId: body.userId,
-    displayName: body.displayName ?? null,
+    displayName: rawName ? rawName.replace(/<[^>]*>/g, "").trim() || null : null,
     content: body.content,
     messageType: body.messageType ?? "user",
     mentions: body.mentions ?? [],
@@ -68,11 +69,12 @@ teamChatRoutes.post("/:projectId", async (c) => {
   const project = await projects.findById(projectId);
   if (!project) return c.json({ error: "Project not found" }, 404);
 
+  const rawDisplayName = body.displayName ?? null;
   const message = await teamChat.saveMessage({
     id: crypto.randomUUID(),
     projectId,
     userId,
-    displayName: body.displayName ?? null,
+    displayName: rawDisplayName ? rawDisplayName.replace(/<[^>]*>/g, "").trim() || null : null,
     content: body.content,
     messageType: body.messageType ?? "user",
     mentions: body.mentions ?? [],
