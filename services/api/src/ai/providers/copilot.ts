@@ -280,16 +280,33 @@ export class CopilotEngine {
     let resolveWaiting: (() => void) | null = null;
     let done = false;
 
-    // Inactivity timeout: if no events at all for this long, assume dead
+    // Inactivity timeout: if no CONTENT events for this long, assume dead.
+    // Background events (session.background_tasks_changed, session.tools_updated,
+    // pending_messages.modified) fire periodically even when the model is idle
+    // and must NOT reset the timeout — otherwise the generator never terminates.
     const EVENT_TIMEOUT_MS = 45_000; // 45s — fail fast on silent SDK
     let lastEventTime = Date.now();
+    const BACKGROUND_NOISE_EVENTS = new Set([
+      "session.background_tasks_changed",
+      "session.tools_updated",
+      "session.custom_agents_updated",
+      "pending_messages.modified",
+      "session.usage_info",
+    ]);
 
     // Subscribe to ALL events from the SDK (streaming deltas, tools, idle, error).
     // Per the SDK source, session.on() receives every event the CLI emits via
     // JSON-RPC — including assistant.message_delta when streaming: true.
     // session.idle and session.error are terminal events that end the stream.
     const unsubscribe = session.on((event: SessionEvent) => {
-      lastEventTime = Date.now();
+      // Only reset inactivity timer on content-bearing events.
+      // Background noise events keep flowing even when the model is done —
+      // resetting on those prevents the timeout from ever firing (the exact
+      // bug that caused 600s+ hangs before this fix).
+      const isNoise = BACKGROUND_NOISE_EVENTS.has(event.type);
+      if (!isNoise) {
+        lastEventTime = Date.now();
+      }
       eventQueue.push(event);
 
       if (event.type === "session.idle" || event.type === "session.error") {
@@ -306,7 +323,10 @@ export class CopilotEngine {
       // times per tool-heavy turn and polluted the logs without adding any
       // diagnostic value — removed. See bugs/bug-17 for the debugging trail.
 
-      if (resolveWaiting) {
+      // Don't wake the generator for background noise events — they must not
+      // prevent the 45s inactivity timeout from firing. The events are still
+      // enqueued and will be drained on the next content event or timeout.
+      if (resolveWaiting && !isNoise) {
         resolveWaiting();
         resolveWaiting = null;
       }
@@ -387,14 +407,26 @@ export class CopilotEngine {
               }
             }, EVENT_TIMEOUT_MS);
           });
-          if (timedOut && !done && eventQueue.length === 0 && !this.abortedSessions.has(sessionId)) {
-            const elapsed = Date.now() - lastEventTime;
-            console.error(`[CopilotEngine] No events for ${Math.round(elapsed / 1000)}s — timeout (${sessionId.slice(0, 8)}…)`);
-            yield {
-              type: "session.error",
-              data: { message: `AI session timed out — no response for ${Math.round(elapsed / 1000)} seconds.` },
-            } as SessionEvent;
-            done = true;
+          if (timedOut && !done && !this.abortedSessions.has(sessionId)) {
+            // Drain any queued background noise events before checking if we're truly idle.
+            // Background events pile up without waking the generator, so the queue may
+            // contain only noise. If all queued events are noise, we're truly timed out.
+            const hasContentEvents = eventQueue.some(e => !BACKGROUND_NOISE_EVENTS.has(e.type));
+            if (!hasContentEvents) {
+              const elapsed = Date.now() - lastEventTime;
+              console.error(`[CopilotEngine] No content events for ${Math.round(elapsed / 1000)}s — timeout (${sessionId.slice(0, 8)}…, ${eventQueue.length} noise events drained)`);
+              // Drain noise events so they still get yielded for tracing
+              while (eventQueue.length > 0) {
+                const noiseEvt = eventQueue.shift()!;
+                eventCount++;
+                yield noiseEvt;
+              }
+              yield {
+                type: "session.error",
+                data: { message: `AI session timed out — no response for ${Math.round(elapsed / 1000)} seconds.` },
+              } as SessionEvent;
+              done = true;
+            }
           }
         }
       }
