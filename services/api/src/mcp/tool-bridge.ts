@@ -2,6 +2,7 @@ import { defineTool, type Tool } from "@github/copilot-sdk";
 import type { ResolvedMcpTool, McpContent } from "./types.js";
 import type { ConnectorManager } from "./connector-manager.js";
 import type { McpConnectorConfig } from "./types.js";
+import { getActiveTrace } from "../ai/trace-collector.js";
 
 /**
  * Convert MCP tools to Copilot SDK Tool[] definitions.
@@ -14,6 +15,7 @@ export function createMcpTools(
   resolvedTools: ResolvedMcpTool[],
   connectorManager: ConnectorManager,
   connectorConfigs: Map<string, McpConnectorConfig>,
+  projectId?: string,
 ): Tool[] {
   return resolvedTools.map((resolved) => {
     const { connectorId, connectorName, tool } = resolved;
@@ -34,11 +36,21 @@ export function createMcpTools(
           return { success: false, error: `Connector ${connectorName} not found` };
         }
 
+        const trace = projectId ? getActiveTrace(projectId) : null;
         const mcpStartMs = Date.now();
+        console.log(`[MCP:${connectorName}] CALL ${tool.name} args=${JSON.stringify(args).slice(0, 2000)}`);
+        trace?.pushRaw("mcp_call", {
+          connector: connectorName,
+          tool: tool.name,
+          args,
+        });
+
         try {
           const client = await connectorManager.getClient(config);
           const result = await client.callTool(tool.name, args);
           const mcpDurationMs = Date.now() - mcpStartMs;
+          const resultStr = JSON.stringify(result.content);
+          console.log(`[MCP:${connectorName}] RESULT ${tool.name} ${mcpDurationMs}ms isError=${!!result.isError} contentItems=${result.content?.length ?? 0} content=${resultStr.slice(0, 2000)}${resultStr.length > 2000 ? `... [${resultStr.length}c total]` : ""}`);
 
           const mcpTrace = {
             connector: connectorName,
@@ -48,8 +60,24 @@ export function createMcpTools(
             durationMs: mcpDurationMs,
           };
 
+          // Push full result to live trace (DB + WS)
+          trace?.pushRaw("mcp_result", {
+            ...mcpTrace,
+            response: {
+              ...mcpTrace.response,
+              content: result.content,
+            },
+          });
+
           if (result.isError) {
             const errorText = formatMcpContent(result.content);
+            trace?.pushRaw("mcp_error", {
+              connector: connectorName,
+              tool: tool.name,
+              durationMs: mcpDurationMs,
+              error: errorText,
+              rawContent: result.content,
+            });
             return {
               success: false,
               error: errorText,
@@ -72,6 +100,8 @@ export function createMcpTools(
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           const errStack = err instanceof Error ? err.stack : undefined;
+          const mcpDurationMs = Date.now() - mcpStartMs;
+          console.error(`[MCP:${connectorName}] ERROR ${tool.name} ${mcpDurationMs}ms: ${errMsg}`);
           // Try to parse structured MCP error details from the message
           let mcpErrorCode: number | undefined;
           let mcpErrorData: unknown;
@@ -81,6 +111,17 @@ export function createMcpTools(
           if (err && typeof err === "object" && "data" in err) {
             mcpErrorData = (err as { data?: unknown }).data;
           }
+
+          trace?.pushRaw("mcp_error", {
+            connector: connectorName,
+            tool: tool.name,
+            durationMs: mcpDurationMs,
+            error: errMsg,
+            errorStack: errStack,
+            errorCode: mcpErrorCode,
+            errorData: mcpErrorData,
+          });
+
           return {
             success: false,
             error: `MCP tool call failed: ${errMsg}`,
@@ -95,7 +136,7 @@ export function createMcpTools(
                 errorCode: mcpErrorCode,
                 errorData: mcpErrorData,
               },
-              durationMs: Date.now() - mcpStartMs,
+              durationMs: mcpDurationMs,
             },
           };
         }

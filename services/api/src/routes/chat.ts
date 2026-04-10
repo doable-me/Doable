@@ -1243,6 +1243,24 @@ ERROR RECOVERY — if you encounter errors:
         ? allTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED.has(t.name ?? ""))
         : allTools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
 
+      // ── Full tool manifest log ──
+      const toolManifest = sessionTools.map((t: any) => ({
+        name: t.name ?? "?",
+        description: (t.description ?? "").slice(0, 120),
+        params: t.parameters ? Object.keys(t.parameters?.properties ?? {}) : [],
+        required: t.parameters?.required ?? [],
+      }));
+      console.log(`[Chat:Tools] mode=${mode} project=${projectId.slice(0, 8)} total=${allTools.length} filtered=${sessionTools.length}`);
+      console.log(`[Chat:Tools] MANIFEST:\n${toolManifest.map((t: any) => `  ${t.name} (${t.params.join(", ")}) [req: ${t.required.join(", ")}] — ${t.description}`).join("\n")}`);
+
+      // Push tool manifest to trace (DB + WS broadcast)
+      traceCollector?.pushRaw("tool_manifest", {
+        mode,
+        totalTools: allTools.length,
+        filteredTools: sessionTools.length,
+        tools: toolManifest,
+      });
+
       // Shared tool-progress callbacks used by both create and resume paths
       const toolProgress = {
         onToolStart: (toolName: string, args: unknown) => {

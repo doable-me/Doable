@@ -64,25 +64,37 @@ export class StreamableHttpTransport implements McpTransport {
       headers["mcp-session-id"] = this.sessionId;
     }
 
+    const reqBody = JSON.stringify(request);
+    console.log(`[MCP:HTTP] ── REQUEST ──\n  POST ${this.serverUrl}\n  Headers: ${JSON.stringify(headers)}\n  Body: ${reqBody.slice(0, 2000)}${reqBody.length > 2000 ? `... [${reqBody.length}c]` : ""}`);
+    const startMs = Date.now();
+
     const response = await fetch(this.serverUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify(request),
+      body: reqBody,
     });
 
+    const durationMs = Date.now() - startMs;
+
     if (!response.ok) {
-      throw new Error(`MCP request failed: ${response.status}`);
+      const errBody = await response.text().catch(() => "");
+      console.error(`[MCP:HTTP] ── RESPONSE ${response.status} (${durationMs}ms) ──\n  Error: ${errBody.slice(0, 2000)}`);
+      throw new Error(`MCP request failed: ${response.status} — ${errBody.slice(0, 500)}`);
     }
 
     const contentType = response.headers.get("content-type") ?? "";
 
     // Handle SSE response (streaming)
     if (contentType.includes("text/event-stream")) {
+      console.log(`[MCP:HTTP] ── RESPONSE SSE (${durationMs}ms) ── streaming...`);
       return this.parseSSEResponse(response, request.id);
     }
 
     // Handle direct JSON response
-    return (await response.json()) as JsonRpcResponse;
+    const jsonResp = (await response.json()) as JsonRpcResponse;
+    const respStr = JSON.stringify(jsonResp);
+    console.log(`[MCP:HTTP] ── RESPONSE ${response.status} (${durationMs}ms) ──\n  Body: ${respStr.slice(0, 2000)}${respStr.length > 2000 ? `... [${respStr.length}c]` : ""}`);
+    return jsonResp;
   }
 
   async sendNotification(notification: JsonRpcNotification): Promise<void> {
@@ -172,17 +184,31 @@ export class LegacySseTransport implements McpTransport {
   async sendRequest(request: JsonRpcRequest): Promise<JsonRpcResponse> {
     if (!this.connected || !this.messageEndpoint) throw new Error("Transport not connected");
 
+    const reqBody = JSON.stringify(request);
+    console.log(`[MCP:SSE] ── REQUEST ──\n  POST ${this.messageEndpoint}\n  Body: ${reqBody.slice(0, 2000)}${reqBody.length > 2000 ? `... [${reqBody.length}c]` : ""}`);
+    const startMs = Date.now();
+
     const response = await fetch(this.messageEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...this.headers },
-      body: JSON.stringify(request),
+      body: reqBody,
     });
 
+    const durationMs = Date.now() - startMs;
+
     if (!response.ok) {
-      throw new Error(`Legacy SSE request failed: ${response.status}`);
+      const errBody = await response.text().catch(() => "");
+      console.error(`[MCP:SSE] ── RESPONSE ${response.status} (${durationMs}ms) ──\n  Error: ${errBody.slice(0, 2000)}`);
+      throw new Error(`Legacy SSE request failed: ${response.status} — ${errBody.slice(0, 500)}`);
     }
 
-    return (await response.json()) as JsonRpcResponse;
+    const jsonResp = (await response.json()) as JsonRpcResponse;
+    const respStr = JSON.stringify(jsonResp);
+    console.log(`[MCP:SSE] ── RESPONSE ${response.status} (${durationMs}ms) ──\n  Body: ${respStr.slice(0, 2000)}${respStr.length > 2000 ? `... [${respStr.length}c]` : ""}`);
+    if (jsonResp.error) {
+      console.error(`[MCP:SSE] ── ERROR ── code=${jsonResp.error.code} message=${jsonResp.error.message} data=${JSON.stringify(jsonResp.error.data ?? null).slice(0, 500)}`);
+    }
+    return jsonResp;
   }
 
   async sendNotification(notification: JsonRpcNotification): Promise<void> {
@@ -272,9 +298,22 @@ export class StdioTransport implements McpTransport {
         reject(new Error(`MCP request timed out after 30s: ${request.method}`));
       }, 30_000);
 
-      this.pendingRequests.set(request.id, { resolve, reject, timer });
+      this.pendingRequests.set(request.id, {
+        resolve: (resp: JsonRpcResponse) => {
+          const respStr = JSON.stringify(resp);
+          console.log(`[MCP:stdio:${this.command}] ── RESPONSE (${Date.now() - sendTime}ms) ──\n  ${respStr.slice(0, 2000)}${respStr.length > 2000 ? `... [${respStr.length}c]` : ""}`);
+          if (resp.error) {
+            console.error(`[MCP:stdio:${this.command}] ── ERROR ── code=${resp.error.code} message=${resp.error.message} data=${JSON.stringify(resp.error.data ?? null).slice(0, 500)}`);
+          }
+          resolve(resp);
+        },
+        reject,
+        timer,
+      });
 
       const message = JSON.stringify(request) + "\n";
+      const sendTime = Date.now();
+      console.log(`[MCP:stdio:${this.command}] ── REQUEST ──\n  ${message.slice(0, 2000)}${message.length > 2000 ? `... [${message.length}c]` : ""}`);
       this.process!.stdin!.write(message);
     });
   }

@@ -287,5 +287,11 @@ export async function createIntegrationTools(
     }
   }
 
+  if (tools.length > 0) {
+    console.log(`[IntegrationToolBridge] Created ${tools.length} integration tools:\n${tools.map((t: any) =>
+      `  ${t.name} — ${(t.description ?? "").slice(0, 100)} params=${JSON.stringify(Object.keys(t.parameters?.properties ?? {}))}`
+    ).join("\n")}`);
+  }
+
   return tools;
 }

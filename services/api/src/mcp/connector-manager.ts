@@ -106,7 +106,16 @@ export class ConnectorManager {
     for (const result of results) {
       if (result.status === "fulfilled") {
         resolved.push(...result.value);
+      } else {
+        console.warn(`[ConnectorManager] Connector tool resolution rejected:`, result.reason);
       }
+    }
+
+    // Log full tool manifest from MCP connectors
+    if (resolved.length > 0) {
+      console.log(`[ConnectorManager] Resolved ${resolved.length} MCP tools:\n${resolved.map(t =>
+        `  [${t.connectorName}] ${t.tool.name} — ${(t.tool.description ?? "").slice(0, 100)} params=${JSON.stringify(Object.keys(t.tool.inputSchema?.properties ?? {}))}`
+      ).join("\n")}`);
     }
 
     return resolved;

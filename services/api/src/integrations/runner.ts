@@ -3,6 +3,7 @@ import { credentialVault } from "./credential-vault.js";
 import { buildActionContext } from "./context-builder.js";
 import type { RunActionParams, RunActionResult, OAuth2TokenData } from "./types.js";
 import { sql } from "../db/index.js";
+import { getActiveTrace } from "../ai/trace-collector.js";
 
 // ─── HTTP Trace Types ───────────────────────────────────
 
@@ -10,7 +11,9 @@ export interface HttpTraceEntry {
   url: string;
   method: string;
   requestHeaders: Record<string, string>;
+  requestBody: string | null;
   statusCode: number | null;
+  responseHeaders: Record<string, string>;
   durationMs: number;
   responseBody: string | null;
   error?: string;
@@ -45,7 +48,7 @@ function headersToRecord(init?: any): Record<string, string> {
  * Create a fetch wrapper that records HTTP calls into the provided array.
  * The wrapper delegates to the real global fetch.
  */
-function createTracedFetch(traces: HttpTraceEntry[]): typeof globalThis.fetch {
+function createTracedFetch(traces: HttpTraceEntry[], projectId?: string): typeof globalThis.fetch {
   const realFetch = globalThis.fetch;
   return async function tracedFetch(input: any, init?: RequestInit): Promise<Response> {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
@@ -53,26 +56,62 @@ function createTracedFetch(traces: HttpTraceEntry[]): typeof globalThis.fetch {
     const reqHeaders = redactHeaders(headersToRecord(init?.headers));
     const start = Date.now();
 
+    // Capture request body
+    let requestBody: string | null = null;
+    try {
+      if (init?.body) {
+        if (typeof init.body === "string") {
+          requestBody = init.body.length > 4096 ? init.body.slice(0, 4096) + `... [${init.body.length - 4096} chars truncated]` : init.body;
+        } else if (init.body instanceof URLSearchParams) {
+          requestBody = init.body.toString();
+        } else {
+          requestBody = "[non-string body]";
+        }
+      }
+    } catch { /* body capture failed — ok */ }
+
     try {
       const res = await realFetch(input, init);
       const durationMs = Date.now() - start;
+
+      // Capture response headers (redacted)
+      const resHeaders = redactHeaders(headersToRecord(res.headers));
 
       // Clone to read body without consuming the original
       let bodyText: string | null = null;
       try {
         const clone = res.clone();
         const raw = await clone.text();
-        bodyText = raw.length > 2048 ? raw.slice(0, 2048) + `... [${raw.length - 2048} chars truncated]` : raw;
+        bodyText = raw.length > 4096 ? raw.slice(0, 4096) + `... [${raw.length - 4096} chars truncated]` : raw;
       } catch { /* body read failed — ok */ }
 
-      traces.push({ url, method, requestHeaders: reqHeaders, statusCode: res.status, durationMs, responseBody: bodyText });
+      const entry: HttpTraceEntry = { url, method, requestHeaders: reqHeaders, requestBody, statusCode: res.status, responseHeaders: resHeaders, durationMs, responseBody: bodyText };
+      traces.push(entry);
+
+      // Full raw dump to backend console
+      console.log(`[Integration:HTTP] ── REQUEST ──\n  ${method} ${url}\n  Headers: ${JSON.stringify(reqHeaders)}\n  Body: ${requestBody ?? "(none)"}`);
+      console.log(`[Integration:HTTP] ── RESPONSE ${res.status} (${durationMs}ms) ──\n  Headers: ${JSON.stringify(resHeaders)}\n  Body: ${bodyText ?? "(empty)"}`);
+
+      // Push to live trace (DB + WebSocket broadcast)
+      const trace = projectId ? getActiveTrace(projectId) : null;
+      trace?.pushRaw("integration_http", entry);
+
       return res;
     } catch (err) {
-      traces.push({
-        url, method, requestHeaders: reqHeaders, statusCode: null,
-        durationMs: Date.now() - start, responseBody: null,
+      const durationMs = Date.now() - start;
+      const entry: HttpTraceEntry = {
+        url, method, requestHeaders: reqHeaders, requestBody, statusCode: null,
+        responseHeaders: {}, durationMs, responseBody: null,
         error: err instanceof Error ? err.message : String(err),
-      });
+      };
+      traces.push(entry);
+      console.error(`[Integration:HTTP] ── REQUEST ──\n  ${method} ${url}\n  Headers: ${JSON.stringify(reqHeaders)}\n  Body: ${requestBody ?? "(none)"}`);
+      console.error(`[Integration:HTTP] ── FAILED (${durationMs}ms) ──\n  Error: ${err instanceof Error ? err.message : String(err)}\n  Stack: ${err instanceof Error ? err.stack : "n/a"}`);
+
+      // Push failure to live trace
+      const trace = projectId ? getActiveTrace(projectId) : null;
+      trace?.pushRaw("integration_http_error", entry);
+
       throw err;
     }
   };
@@ -296,9 +335,16 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     });
 
     // 5. Execute the action with HTTP tracing
+    console.log(`[Integration] RUN ${params.integrationId}/${params.actionName} props=${JSON.stringify(params.props).slice(0, 300)}`);
+    const activeTrace = params.projectId ? getActiveTrace(params.projectId) : null;
+    activeTrace?.pushRaw("integration_start", {
+      integrationId: params.integrationId,
+      actionName: params.actionName,
+      props: params.props,
+    });
     const httpTraces: HttpTraceEntry[] = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = createTracedFetch(httpTraces);
+    globalThis.fetch = createTracedFetch(httpTraces, params.projectId);
     let output: unknown;
     try {
       output = await action.run(context);
@@ -318,6 +364,15 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
       durationMs,
     });
 
+    console.log(`[Integration] DONE ${params.integrationId}/${params.actionName} ${durationMs}ms httpCalls=${httpTraces.length} output=${JSON.stringify(output).slice(0, 300)}`);
+    activeTrace?.pushRaw("integration_end", {
+      integrationId: params.integrationId,
+      actionName: params.actionName,
+      durationMs,
+      httpCallCount: httpTraces.length,
+      output,
+    });
+
     return {
       success: true,
       output,
@@ -326,6 +381,14 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
   } catch (err) {
     const durationMs = Date.now() - startTime;
     const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[Integration] FAILED ${params.integrationId}/${params.actionName} ${durationMs}ms: ${errorMsg}`);
+    activeTrace?.pushRaw("integration_error", {
+      integrationId: params.integrationId,
+      actionName: params.actionName,
+      durationMs,
+      error: errorMsg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
 
     // Log failure
     logUsage({

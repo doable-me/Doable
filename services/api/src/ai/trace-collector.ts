@@ -234,6 +234,85 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     events.push(event);
     // Broadcast to live subscribers in real-time
     broadcastTraceEvent(ctx.projectId, event);
+
+    // ── Backend console logging for full observability ──
+    const pid = ctx.projectId.slice(0, 8);
+    const ms = event.elapsed_ms;
+    const d = data as Record<string, unknown> | null;
+    switch (type) {
+      case "user_message":
+        console.log(`[Trace:${pid}] +${ms}ms USER_MESSAGE length=${(d as any)?.length}`);
+        break;
+      case "tool_start": {
+        const args = JSON.stringify((d as any)?.args);
+        console.log(`[Trace:${pid}] +${ms}ms TOOL_START ${(d as any)?.name} args=${args.slice(0, 2000)}${args.length > 2000 ? `... [${args.length}c total]` : ""}`);
+        break;
+      }
+      case "tool_end": {
+        const result = JSON.stringify((d as any)?.result);
+        console.log(`[Trace:${pid}] +${ms}ms TOOL_END ${(d as any)?.name} duration=${(d as any)?.duration_ms}ms success=${(d as any)?.success} result=${result.slice(0, 2000)}${result.length > 2000 ? `... [${result.length}c total]` : ""}`);
+        break;
+      }
+      case "sdk_event": {
+        const sdkType = (d as any)?.sdk_type;
+        // Log all SDK events except high-frequency deltas
+        if (sdkType !== "assistant.message_delta" && sdkType !== "assistant.reasoning_delta" && sdkType !== "assistant.streaming_delta") {
+          const sdkData = JSON.stringify((d as any)?.data ?? {});
+          console.log(`[Trace:${pid}] +${ms}ms SDK_EVENT ${sdkType} ${sdkData.slice(0, 1000)}${sdkData.length > 1000 ? `... [${sdkData.length}c]` : ""}`);
+        }
+        break;
+      }
+      case "auto_continue":
+        console.log(`[Trace:${pid}] +${ms}ms AUTO_CONTINUE #${(d as any)?.count} reason=${(d as any)?.reason}`);
+        break;
+      case "error":
+        console.error(`[Trace:${pid}] +${ms}ms ERROR ${(d as any)?.message} context=${(d as any)?.context}`);
+        break;
+      case "sse_emit": {
+        const sseType = (d as any)?.sse_type;
+        // Log all SSE emissions except text deltas and keep_alive
+        if (sseType !== "text_delta" && sseType !== "keep_alive" && sseType !== "thinking") {
+          console.log(`[Trace:${pid}] +${ms}ms SSE_EMIT ${sseType} ${JSON.stringify((d as any)?.data ?? {}).slice(0, 300)}`);
+        }
+        break;
+      }
+      case "tool_manifest":
+        console.log(`[Trace:${pid}] +${ms}ms TOOL_MANIFEST ${(d as any)?.filteredTools} tools (mode=${(d as any)?.mode})`);
+        break;
+      case "mcp_call":
+        console.log(`[Trace:${pid}] +${ms}ms MCP_CALL [${(d as any)?.connector}] ${(d as any)?.tool} args=${JSON.stringify((d as any)?.args).slice(0, 1000)}`);
+        break;
+      case "mcp_result": {
+        const content = JSON.stringify((d as any)?.response?.content);
+        console.log(`[Trace:${pid}] +${ms}ms MCP_RESULT [${(d as any)?.connector}] ${(d as any)?.mcpTool} ${(d as any)?.durationMs}ms content=${content?.slice(0, 1000)}${(content?.length ?? 0) > 1000 ? `... [${content?.length}c]` : ""}`);
+        break;
+      }
+      case "mcp_error":
+        console.error(`[Trace:${pid}] +${ms}ms MCP_ERROR [${(d as any)?.connector}] ${(d as any)?.tool} ${(d as any)?.durationMs}ms error=${(d as any)?.error} code=${(d as any)?.errorCode}`);
+        break;
+      case "integration_start":
+        console.log(`[Trace:${pid}] +${ms}ms INTEGRATION_START ${(d as any)?.integrationId}/${(d as any)?.actionName}`);
+        break;
+      case "integration_end":
+        console.log(`[Trace:${pid}] +${ms}ms INTEGRATION_END ${(d as any)?.integrationId}/${(d as any)?.actionName} ${(d as any)?.durationMs}ms httpCalls=${(d as any)?.httpCallCount}`);
+        break;
+      case "integration_error":
+        console.error(`[Trace:${pid}] +${ms}ms INTEGRATION_ERROR ${(d as any)?.integrationId}/${(d as any)?.actionName} ${(d as any)?.durationMs}ms: ${(d as any)?.error}`);
+        break;
+      case "integration_http": {
+        const h = d as any;
+        console.log(`[Trace:${pid}] +${ms}ms INTEGRATION_HTTP ${h?.method} ${h?.url} → ${h?.statusCode} ${h?.durationMs}ms reqBody=${(h?.requestBody ?? "").slice(0, 500)} resBody=${(h?.responseBody ?? "").slice(0, 500)}`);
+        break;
+      }
+      case "integration_http_error": {
+        const h = d as any;
+        console.error(`[Trace:${pid}] +${ms}ms INTEGRATION_HTTP_ERROR ${h?.method} ${h?.url} ${h?.durationMs}ms: ${h?.error}`);
+        break;
+      }
+      // text_delta and thinking_delta are too noisy for console — skip
+      default:
+        break;
+    }
   }
 
   // ── Public API ───────────────────────────────────────────
@@ -492,6 +571,14 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     activeTraceRegistry.delete(ctx.projectId);
   }
 
+  /**
+   * Push an arbitrary trace event — for lower layers (MCP transport, integration runner)
+   * to inject raw HTTP/JSON-RPC details into the trace without needing a direct reference.
+   */
+  function pushRaw(type: string, data: unknown): void {
+    push(type, data);
+  }
+
   const collector = {
     recordUserMessage,
     onSdkEvent,
@@ -502,6 +589,7 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     onAutoContinue,
     onSseEmit,
     onError,
+    pushRaw,
     setSessionId,
     setMessageId,
     setModel,
