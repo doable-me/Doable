@@ -258,6 +258,48 @@ export class CopilotEngine {
   }
 
   /**
+   * Switch the SDK agent mode for a session (interactive / plan / autopilot).
+   * When set to "plan", the SDK restricts built-in tools to read-only and
+   * instructs the agent to produce a plan.md instead of editing files.
+   */
+  async setSessionMode(sessionId: string, mode: "interactive" | "plan" | "autopilot"): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    const result = await session.rpc.mode.set({ mode });
+    console.log(`[CopilotEngine] mode.set(${mode}) → ${result.mode} (${sessionId.slice(0, 8)}…)`);
+  }
+
+  /**
+   * Respond to an `exit_plan_mode.requested` event — the agent finished
+   * creating a plan and is asking for user approval.
+   */
+  async respondToExitPlanMode(
+    sessionId: string,
+    requestId: string,
+    action: string,
+    feedback?: string,
+  ): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    // The SDK dispatches the response via the session's event bus
+    await (session as any).respondToExitPlanMode({
+      requestId,
+      selectedAction: action,
+      feedback,
+    });
+    console.log(`[CopilotEngine] respondToExitPlanMode(${action}) for ${sessionId.slice(0, 8)}…`);
+  }
+
+  /**
+   * Read the plan.md file for a session.
+   */
+  async readPlan(sessionId: string): Promise<{ exists: boolean; content: string | null; path: string | null }> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    return session.rpc.plan.read();
+  }
+
+  /**
    * Send a message to a session and deliver events via callback.
    *
    * Uses the SDK's typed event system directly — no queues, no generators,

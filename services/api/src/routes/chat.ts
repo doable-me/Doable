@@ -397,24 +397,58 @@ async function buildProjectContextForMode(
 
 /**
  * Extract an `_sseHint`-tagged payload from a Copilot SDK tool result,
- * transparently across SDK result shapes. The SDK has shipped at least
- * three shapes for `toolResult` in the `onPostToolUse` hook across versions:
- *
- *  - **raw object**: `{ _sseHint: "...", name, reason, ... }` — what the
- *    tool handler actually returned. Oldest SDK builds passed this through
- *    unchanged.
- *  - **wrapped with `output`**: `{ output: "<json-string>" }` — an older
- *    wrapper where `output` is the JSON-stringified handler return.
- *  - **wrapped with `textResultForLlm`**: `{ textResultForLlm: "<json>",
- *    resultType: ..., toolTelemetry: ... }` — the shape used by the current
- *    SDK in round-2 testing (discovered while debugging bug-16 verification).
- *    `textResultForLlm` is a JSON-stringified snapshot of the handler return.
- *
- * This helper checks all three shapes and returns the inner payload if its
- * `_sseHint` matches the expected hint. Returns `null` if there's no match.
- * Callers are shape-agnostic — they don't need to know which SDK variant
- * is running, which previously meant every SDK bump silently broke the
- * dialog wiring. See bugs/bug-16 for the full trail.
+/**
+ * Parse plan.md content into structured steps.
+ * The SDK plan mode writes markdown with `## Step N: Title` headings.
+ */
+function parsePlanSteps(planContent: string | null | undefined): Array<{
+  id: string;
+  order: number;
+  title: string;
+  description: string;
+  status: "pending";
+}> {
+  if (!planContent) return [];
+  const steps: Array<{ id: string; order: number; title: string; description: string; status: "pending" }> = [];
+  const lines = planContent.split("\n");
+  let currentStep: { title: string; lines: string[] } | null = null;
+  let order = 0;
+
+  for (const line of lines) {
+    // Match "## 1. Title", "## Step 1: Title", or "- [ ] Title"
+    const headingMatch = line.match(/^##\s+(?:(?:Step\s+)?\d+[\.:]\s*)?(.+)/i);
+    const checkboxMatch = line.match(/^-\s+\[[ x]\]\s+(.+)/i);
+    const match = headingMatch || checkboxMatch;
+    if (match) {
+      if (currentStep) {
+        steps.push({
+          id: `plan-step-${order}`,
+          order,
+          title: currentStep.title,
+          description: currentStep.lines.join("\n").trim(),
+          status: "pending",
+        });
+      }
+      order++;
+      currentStep = { title: match[1]!.trim(), lines: [] };
+    } else if (currentStep && line.trim()) {
+      currentStep.lines.push(line.trim());
+    }
+  }
+  if (currentStep) {
+    steps.push({
+      id: `plan-step-${order}`,
+      order,
+      title: currentStep.title,
+      description: currentStep.lines.join("\n").trim(),
+      status: "pending",
+    });
+  }
+  return steps;
+}
+
+/**
+ * Extract the `_sseHint` payload from the SDK's tool result envelope.
  */
 function extractSseHintPayload(
   result: unknown,
@@ -1651,6 +1685,21 @@ ERROR RECOVERY — if you encounter errors:
           const manager = getCopilotManager();
           let currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
 
+          // ── SDK native plan mode ──
+          // The SDK has built-in agent modes (interactive / plan / autopilot).
+          // In plan mode, the SDK restricts its built-in tools (bash, edit,
+          // create_file, grep, glob) to read-only and instructs the agent to
+          // produce a plan.md file. Our custom tool filtering only filters
+          // Doable's custom tools — the SDK's built-in tools bypass it.
+          if (mode === "plan" && sessionId) {
+            try {
+              await currentEngine.setSessionMode(sessionId, "plan");
+            } catch (err) {
+              console.warn(`[Chat] Failed to set SDK plan mode for ${sessionId?.slice(0, 8)}:`, err instanceof Error ? err.message : err);
+              // Non-fatal — the custom tool filter + system prompt still apply
+            }
+          }
+
           // Send status, set up event callback, send message via callback-based API.
           const channelRouter = new ChannelTokenRouter();
           let firstEventReceived = false;
@@ -1665,7 +1714,7 @@ ERROR RECOVERY — if you encounter errors:
             if (!firstEventReceived) {
               firstEventReceived = true;
               stream.writeSSE({
-                data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "AI is writing code..." } }),
+                data: JSON.stringify({ type: "status", data: { phase: "thinking", message: mode === "plan" ? "AI is analyzing the project..." : "AI is writing code..." } }),
               }).catch(() => {});
             }
 
@@ -1858,6 +1907,47 @@ ERROR RECOVERY — if you encounter errors:
               }
             }
 
+            // ── SDK native plan mode: exit_plan_mode.requested ──
+            // The SDK's plan mode agent emits this event when it has created
+            // a plan.md and wants user approval. We forward the plan content
+            // to the frontend as a "plan" SSE event and auto-approve so the
+            // session resolves (the user can later approve/reject from the UI).
+            if (evtType === "exit_plan_mode.requested" && evtData) {
+              const requestId = evtData.requestId as string;
+              const planContent = evtData.planContent as string;
+              const summary = evtData.summary as string;
+              const actions = evtData.actions as string[] | undefined;
+              const recommendedAction = evtData.recommendedAction as string | undefined;
+              console.log(`[Chat] exit_plan_mode.requested: summary="${summary?.slice(0, 100)}", actions=${JSON.stringify(actions)}, recommended=${recommendedAction}`);
+
+              // Forward to frontend as a plan event
+              stream.writeSSE({ data: JSON.stringify({
+                type: "plan",
+                data: {
+                  plan: {
+                    id: requestId, // use requestId as plan ID
+                    projectId,
+                    summary: summary ?? "",
+                    complexity: "moderate",
+                    planContent: planContent ?? "",
+                    status: "draft",
+                    createdAt: new Date().toISOString(),
+                    // Parse plan.md steps if possible
+                    steps: parsePlanSteps(planContent),
+                  },
+                },
+              }) }).catch(() => {});
+
+              // Auto-approve so the session resolves — the user can edit/reject later
+              currentEngine.respondToExitPlanMode(
+                sessionId!,
+                requestId,
+                recommendedAction ?? "approve",
+              ).catch((err: unknown) => {
+                console.warn(`[Chat] respondToExitPlanMode failed:`, err instanceof Error ? err.message : err);
+              });
+            }
+
             // Terminal events — clear tool display state.
             if (evtType === "session.idle" || evtType === "session.error" || evtType === "done") {
               lastToolName = undefined;
@@ -1891,6 +1981,11 @@ ERROR RECOVERY — if you encounter errors:
               });
               projectSessions.set(sessionKey, sessionId);
               projectSessionModes.set(sessionKey, mode);
+              // Set SDK native plan mode on recreation too
+              if (mode === "plan" && sessionId) {
+                try { await currentEngine.setSessionMode(sessionId, "plan"); }
+                catch (e) { console.warn(`[Chat] setSessionMode(plan) on recreation failed:`, e instanceof Error ? e.message : e); }
+              }
               if (dbSessionId) {
                 sql`UPDATE ai_sessions SET copilot_session_id = ${sessionId}, updated_at = now()
                     WHERE id = ${dbSessionId}`.catch(() => {});
