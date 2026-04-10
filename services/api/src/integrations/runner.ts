@@ -187,7 +187,11 @@ function resolveAuth(authType: string, credentials: unknown): unknown {
         ? credentials
         : (credentials as any)?.secret_text ?? credentials;
     case "custom_auth":
-      return { props: credentials };
+      // Activepieces pieces use BOTH patterns for custom auth:
+      //   - validate(): `const { url, apiKey } = auth` (destructures directly)
+      //   - baseUrl/authMapping(): `auth.props.url`, `auth.props.apiKey`
+      // Spread credentials at top level AND nest under props so both work.
+      return { ...(credentials as Record<string, unknown>), props: credentials };
     case "basic_auth":
       return credentials;
     case "none":
