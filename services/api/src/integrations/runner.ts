@@ -336,12 +336,13 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
 
     // 5. Execute the action with HTTP tracing
     console.log(`[Integration] RUN ${params.integrationId}/${params.actionName} props=${JSON.stringify(params.props).slice(0, 300)}`);
-    const activeTrace = params.projectId ? getActiveTrace(params.projectId) : null;
-    activeTrace?.pushRaw("integration_start", {
+    let activeTrace: ReturnType<typeof getActiveTrace> = null;
+    try { activeTrace = params.projectId ? getActiveTrace(params.projectId) : null; } catch { /* tracing must not break tools */ }
+    try { activeTrace?.pushRaw("integration_start", {
       integrationId: params.integrationId,
       actionName: params.actionName,
       props: params.props,
-    });
+    }); } catch { /* tracing must not break tools */ }
     const httpTraces: HttpTraceEntry[] = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = createTracedFetch(httpTraces, params.projectId);
@@ -365,13 +366,13 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     });
 
     console.log(`[Integration] DONE ${params.integrationId}/${params.actionName} ${durationMs}ms httpCalls=${httpTraces.length} output=${JSON.stringify(output).slice(0, 300)}`);
-    activeTrace?.pushRaw("integration_end", {
+    try { activeTrace?.pushRaw("integration_end", {
       integrationId: params.integrationId,
       actionName: params.actionName,
       durationMs,
       httpCallCount: httpTraces.length,
       output,
-    });
+    }); } catch { /* tracing must not break tools */ }
 
     return {
       success: true,
@@ -382,13 +383,13 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     const durationMs = Date.now() - startTime;
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`[Integration] FAILED ${params.integrationId}/${params.actionName} ${durationMs}ms: ${errorMsg}`);
-    activeTrace?.pushRaw("integration_error", {
+    try { activeTrace?.pushRaw("integration_error", {
       integrationId: params.integrationId,
       actionName: params.actionName,
       durationMs,
       error: errorMsg,
       stack: err instanceof Error ? err.stack : undefined,
-    });
+    }); } catch { /* tracing must not break tools */ }
 
     // Log failure
     logUsage({
