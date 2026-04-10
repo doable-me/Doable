@@ -22,7 +22,7 @@ import {
   type AssistantMessageEvent,
 } from "@github/copilot-sdk";
 
-// ─── Types ──────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────
 
 export interface CopilotEngineConfig {
   /** Path to copilot CLI binary (optional, auto-detected if on PATH) */
@@ -285,7 +285,10 @@ export class CopilotEngine {
     // pending_messages.modified) fire periodically even when the model is idle
     // and must NOT reset the timeout — otherwise the generator never terminates.
     const EVENT_TIMEOUT_MS = 45_000; // 45s — fail fast on silent SDK
+    const MAX_STREAM_DURATION_MS = 180_000; // 180s absolute ceiling (safety net)
+    const streamStartedAt = Date.now();
     let lastEventTime = Date.now();
+    console.log(`[CopilotEngine] sendMessage START (${sessionId.slice(0, 8)}…) timeout=${EVENT_TIMEOUT_MS}ms, maxDuration=${MAX_STREAM_DURATION_MS}ms`);
 
     // ALLOW-list of events that indicate real AI progress. ONLY these reset
     // the inactivity timeout and wake the generator. Everything else (hook.*,
@@ -317,11 +320,9 @@ export class CopilotEngine {
     // JSON-RPC — including assistant.message_delta when streaming: true.
     // session.idle and session.error are terminal events that end the stream.
     const unsubscribe = session.on((event: SessionEvent) => {
-      // Only reset inactivity timer on progress events (content, tools, terminal).
-      // Background events (hook.*, model_call.*, permission.*, session.background_*,
-      // assistant.usage, etc.) fire indefinitely and must NOT reset the timer
-      // or wake the generator — otherwise the 45s timeout never fires.
       const isProgress = PROGRESS_EVENTS.has(event.type);
+      // Verbose per-event logging — enable via COPILOT_DEBUG=1 env var
+      if (process.env.COPILOT_DEBUG) console.debug(`[CopilotEngine] EVENT ${event.type} progress=${isProgress} qLen=${eventQueue.length} elapsed=${Math.round((Date.now()-streamStartedAt)/1000)}s (${sessionId.slice(0, 8)}…)`);
       if (isProgress) {
         lastEventTime = Date.now();
       }
@@ -395,15 +396,97 @@ export class CopilotEngine {
     };
     this.sessionWakeups.set(sessionId, wake);
 
+    // ── Watchdog timer — runs OUTSIDE the generator loop ──
+    // The generator's yield suspends it while the consumer (chat.ts) does
+    // async processing (writeSSE, broadcastToRoom). During suspension, no
+    // in-loop timeout checks run. A setInterval runs independently on the
+    // event loop and can terminate the stream even when yield is blocked.
+    //
+    // CRITICAL: Do NOT bail early when done=true. session.idle sets done=true
+    // but the queue may hold 4000+ events that the generator is draining via
+    // yield. If the consumer can't keep up (or the SSE connection is dead),
+    // the queue never empties and the stream hangs forever. The watchdog must
+    // keep running until the queue is empty or a hard timeout fires.
+    let doneAt = 0; // timestamp when done was first set
+    const DRAIN_TIMEOUT_MS = 30_000; // max 30s to drain after session.idle
+    const watchdogInterval = setInterval(() => {
+      const totalElapsed = Date.now() - streamStartedAt;
+
+      // Track when terminal event was received
+      if (done && !doneAt) doneAt = Date.now();
+
+      // 1. Wall-clock ceiling — ALWAYS checked, even during drain
+      if (totalElapsed > MAX_STREAM_DURATION_MS) {
+        console.error(`[CopilotEngine] Watchdog: wall-clock timeout at ${Math.round(totalElapsed/1000)}s (${sessionId.slice(0, 8)}…)`);
+        eventQueue.length = 0;
+        done = true;
+        if (resolveWaiting) { resolveWaiting(); resolveWaiting = null; }
+        clearInterval(watchdogInterval);
+        return;
+      }
+
+      // 2. Done and queue is empty — generator will exit naturally
+      if (done && eventQueue.length === 0) {
+        clearInterval(watchdogInterval);
+        return;
+      }
+
+      // 3. Drain-stuck: done=true (session.idle received) but queue is
+      //    still non-empty after DRAIN_TIMEOUT_MS. The generator is frozen
+      //    at yield (consumer can't keep up or SSE connection is dead).
+      //    Clear the queue so the while loop can exit.
+      if (done && doneAt && eventQueue.length > 0) {
+        const drainDuration = Date.now() - doneAt;
+        if (drainDuration > DRAIN_TIMEOUT_MS) {
+          console.error(`[CopilotEngine] Watchdog: drain stuck for ${Math.round(drainDuration/1000)}s with ${eventQueue.length} items (${sessionId.slice(0, 8)}…)`);
+          eventQueue.length = 0;
+          // Don't push error — session.idle was already received, this is a clean end
+          clearInterval(watchdogInterval);
+          return;
+        }
+      }
+
+      // 4. Inactivity timeout — no progress events for >45s (only when not done)
+      if (!done) {
+        const sinceProgress = Date.now() - lastEventTime;
+        if (sinceProgress > EVENT_TIMEOUT_MS) {
+          const hasProgressInQueue = eventQueue.some(e => PROGRESS_EVENTS.has(e.type));
+          if (!hasProgressInQueue) {
+            console.error(`[CopilotEngine] Watchdog: inactivity timeout at ${Math.round(sinceProgress/1000)}s (${sessionId.slice(0, 8)}…)`);
+            eventQueue.length = 0;
+            eventQueue.push({
+              type: "session.error",
+              data: { message: `AI session timed out — no response for ${Math.round(sinceProgress / 1000)} seconds.` },
+            } as SessionEvent);
+            done = true;
+            if (resolveWaiting) { resolveWaiting(); resolveWaiting = null; }
+            clearInterval(watchdogInterval);
+          }
+        }
+      }
+    }, 5_000); // Check every 5 seconds
+
+    // Events worth yielding after a terminal event (session.idle/error). Streaming
+    // deltas are redundant once the complete assistant.message is in the queue.
+    // Skipping them shrinks the post-done drain from ~5k yield→writeSSE→resume
+    // round-trips to a handful, preventing the generator from hanging.
+    const ESSENTIAL_POST_DONE = new Set([
+      "session.idle",
+      "session.error",
+      "assistant.message",
+      "tool.execution_start",
+      "tool.execution_complete",
+      "assistant.turn_start",
+      "assistant.turn_end",
+    ]);
+
     // Yield events as they arrive until a terminal event (session.idle / session.error)
     try {
       let eventCount = 0;
+      let yieldCount = 0;
       while (!done || eventQueue.length > 0) {
-        // Check the abort flag on every loop iteration so a client-initiated
-        // cancellation (via abortSession()) terminates the stream promptly
-        // even if the SDK's own session.abort() didn't fire session.idle.
+        // Check the abort flag on every loop iteration
         if (this.abortedSessions.has(sessionId)) {
-          console.log(`[CopilotEngine] ABORT loop break for ${sessionId.slice(0, 8)}… (${eventCount} events emitted, ${eventQueue.length} queued)`);
           yield {
             type: "session.idle",
             data: { reason: "aborted" },
@@ -411,51 +494,41 @@ export class CopilotEngine {
           done = true;
           break;
         }
+
         if (eventQueue.length > 0) {
           const evt = eventQueue.shift()!;
           eventCount++;
+
+          // After terminal event, skip non-essential events (streaming deltas etc.)
+          // to drain the queue fast. The full text is in assistant.message.
+          if (done && !ESSENTIAL_POST_DONE.has(evt.type)) {
+            continue; // skip — go to next event immediately without yielding
+          }
+
+          yieldCount++;
           yield evt;
         } else if (!done) {
-          const timedOut = await new Promise<boolean>((resolve) => {
-            resolveWaiting = () => resolve(false);
+          // Queue is empty — wait for the next event or watchdog timeout.
+          await new Promise<void>((resolve) => {
+            resolveWaiting = () => resolve();
             setTimeout(() => {
               if (resolveWaiting) {
                 resolveWaiting = null;
-                resolve(true);
+                resolve();
               }
             }, EVENT_TIMEOUT_MS);
           });
-          if (timedOut && !done && !this.abortedSessions.has(sessionId)) {
-            // Drain any queued noise events before checking if we're truly idle.
-            // Noise events pile up without waking the generator, so the queue may
-            // contain only non-progress events. If no progress events queued, timeout.
-            const hasProgressEvents = eventQueue.some(e => PROGRESS_EVENTS.has(e.type));
-            if (!hasProgressEvents) {
-              const elapsed = Date.now() - lastEventTime;
-              console.error(`[CopilotEngine] No content events for ${Math.round(elapsed / 1000)}s — timeout (${sessionId.slice(0, 8)}…, ${eventQueue.length} noise events drained)`);
-              // Drain noise events so they still get yielded for tracing
-              while (eventQueue.length > 0) {
-                const noiseEvt = eventQueue.shift()!;
-                eventCount++;
-                yield noiseEvt;
-              }
-              yield {
-                type: "session.error",
-                data: { message: `AI session timed out — no response for ${Math.round(elapsed / 1000)} seconds.` },
-              } as SessionEvent;
-              done = true;
-            }
-          }
+          // Watchdog or session.on() may have set done=true while we waited
         }
       }
+      const finalElapsed = Math.round((Date.now() - streamStartedAt) / 1000);
       if (eventCount > 0) {
-        console.log(`[CopilotEngine] Stream complete: ${eventCount} events (${sessionId.slice(0, 8)}…)`);
+        console.log(`[CopilotEngine] Stream complete: ${yieldCount}/${eventCount} events yielded, ${finalElapsed}s (${sessionId.slice(0, 8)}…)`);
       }
     } finally {
+      clearInterval(watchdogInterval);
       unsubscribe();
       this.sessionWakeups.delete(sessionId);
-      // Whether we exited naturally, via abort, or via error, clear the
-      // abort flag so the next sendMessage() on this session starts clean.
       this.abortedSessions.delete(sessionId);
     }
   }
