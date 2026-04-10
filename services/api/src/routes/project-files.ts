@@ -177,10 +177,14 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
 
     const result = await createProject(projectId, templateFiles);
 
+    // Resolve userId early so vault-backed integration credentials get injected
+    // into the Vite dev server (Phase 1C of integration↔AI chat bridge).
+    const userId = c.get("userId");
+
     // Start the dev server after scaffolding
     let devServer: { url: string; port: number } | null = null;
     try {
-      devServer = await startDevServer(projectId);
+      devServer = await startDevServer(projectId, userId ? { userId } : undefined);
     } catch (err) {
       console.error(
         `[Scaffold] Dev server failed to start for ${projectId}:`,
@@ -189,7 +193,6 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
     }
 
     // Ensure a project record exists in the database so the dashboard can list it
-    const userId = c.get("userId");
     await ensureProjectDbRecord(projectId, userId);
 
     // Auto-capture thumbnail for template-based projects (they have real content from the start)
@@ -229,10 +232,11 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
   } catch (err) {
     if (err instanceof ProjectExistsError) {
       // Project already exists — ensure deps installed, then start dev server
+      const existingUserId = c.get("userId");
       let devServer: { url: string; port: number } | null = null;
       try {
         await ensureDependencies(projectId);
-        devServer = await startDevServer(projectId);
+        devServer = await startDevServer(projectId, existingUserId ? { userId: existingUserId } : undefined);
       } catch (devErr) {
         console.error(
           `[Scaffold] Dev server failed for existing project ${projectId}:`,
@@ -241,7 +245,7 @@ projectFileRoutes.post("/projects/:id/scaffold", async (c) => {
       }
 
       // Also ensure DB record exists for previously-scaffolded projects
-      await ensureProjectDbRecord(projectId, c.get("userId"));
+      await ensureProjectDbRecord(projectId, existingUserId);
 
       // Catch-up thumbnail: if project has no thumbnail but dev server is running, try to capture one
       if (devServer) {
@@ -433,8 +437,9 @@ projectFileRoutes.get("/projects/:id/preview-url", async (c) => {
   // If project is scaffolded, ensure deps installed and auto-start the dev server
   if (isProjectScaffolded(projectId)) {
     try {
+      const uid = c.get("userId");
       await ensureDependencies(projectId);
-      const { url } = await startDevServer(projectId);
+      const { url } = await startDevServer(projectId, uid ? { userId: uid } : undefined);
       return c.json({ data: { url, running: true } });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -468,7 +473,8 @@ projectFileRoutes.post("/projects/:id/dev-server/restart", async (c) => {
   // Start fresh
   if (isProjectScaffolded(projectId)) {
     try {
-      const { url, port } = await startDevServer(projectId);
+      const uid = c.get("userId");
+      const { url, port } = await startDevServer(projectId, uid ? { userId: uid } : undefined);
       return c.json({ data: { url, port, running: true } });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

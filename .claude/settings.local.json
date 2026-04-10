@@ -1,7 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "Bash(tmux list-panes:*)"
+      "Bash(tmux list-panes:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(unset TMUX PSMUX_SESSION)",
+      "Bash(tmux capture-pane:*)",
+      "Bash(curl -sS -o /dev/null -w '%{http_code}\\\\n' http://127.0.0.1:4000/admin/status -m 3)",
+      "Bash(node:*)",
+      "Bash(curl -sS -o /dev/null -w '%{http_code}\\\\n' \"http://localhost:4000/preview/92d6782f-64de-4c38-98b7-08dac8de5e66/\" -m 3)",
+      "Bash(curl -sS \"http://localhost:4000/preview/92d6782f-64de-4c38-98b7-08dac8de5e66/\")",
+      "Bash(curl -sS -X POST http://localhost:4000/projects/92d6782f-64de-4c38-98b7-08dac8de5e66/chat/fix-error -H 'Content-Type: application/json' -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl:*)",
+      "Bash(grep -n \"supabaseProvisionRequest\\\\|onClose.*done\\\\|Supabase provisioning complete\\\\|enhanced-auth-complete\\\\|doable:enhanced-auth\" apps/web/src/app/editor/[projectId]/page.tsx)",
+      "Bash(grep -n \"restart.*preview\\\\|refresh.*preview\\\\|POST.*restart\" services/api/src/routes/*.ts)",
+      "Bash(grep -n \"dismissIntegrationRequest\" apps/web/src/app/editor/[projectId]/page.tsx)",
+      "Bash(grep -rn \"dismissIntegrationRequest\\\\|onConnected\\\\|integration_required.*continue\\\\|connected.*continue\" apps/web/src/app/editor/[projectId]/page.tsx)",
+      "Bash(git push:*)"
     ]
   }
 }

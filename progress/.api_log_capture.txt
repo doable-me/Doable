@@ -1,0 +1,37 @@
+@doable/api:dev: <-- GET /projects/db9a5d1c-7164-47df-8402-17910ffabe75/files
+@doable/api:dev: --> GET /projects/db9a5d1c-7164-47df-8402-17910ffabe75/files 200 5ms
+@doable/api:dev: <-- OPTIONS /projects/db9a5d1c-7164-47df-8402-17910ffabe75/chat/suggestions
+@doable/api:dev: --> OPTIONS /projects/db9a5d1c-7164-47df-8402-17910ffabe75/chat/suggestions 204 0ms
+@doable/api:dev: <-- POST /projects/db9a5d1c-7164-47df-8402-17910ffabe75/chat/suggestions
+@doable/api:dev: [CLI subprocess] (node:14532) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+@doable/api:dev: [CLI subprocess] (Use `node --trace-warnings ...` to show where the warning was created)
+@doable/api:dev: [CopilotEngine] Client started
+@doable/api:dev: [CopilotManager] Engine started (suggesti…) — pool: 3/20
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/?t=1775670939323
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/?t=1775670939323 200 7ms
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/@vite/client
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/@vite/client 200 7ms
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/src/main.tsx
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/src/main.tsx 200 0ms
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/@react-refresh
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/vite/dist/client/env.mjs
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/@react-refresh 200 5ms
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/vite/dist/client/env.mjs 200 4ms
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=95189085
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=95189085 20
+0 1ms
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/.vite/deps/react.js?v=95189085
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/.vite/deps/react.js?v=95189085 200 2ms
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/.vite/deps/react-dom_client.js?v=fa2a284d
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/.vite/deps/react-dom_client.js?v=fa2a284d 200 6ms
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/src/App.tsx?t=1775670928151
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/src/App.tsx?t=1775670928151 200 1ms
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/src/index.css?t=1775670928151
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/src/index.css?t=1775670928151 200 1ms
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/.vite/deps/chunk-7GCC5JQS.js?v=4c492eda
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/.vite/deps/chunk-7GCC5JQS.js?v=4c492eda 200 1ms
+@doable/api:dev: <-- GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/.vite/deps/chunk-7B4CXO3W.js?v=4c492eda
+@doable/api:dev: --> GET /preview/db9a5d1c-7164-47df-8402-17910ffabe75/node_modules/.vite/deps/chunk-7B4CXO3W.js?v=4c492eda 200 1ms
+@doable/api:dev: [Thumbnail] Captured screenshot for db9a5d1c-7164-47df-8402-17910ffabe75
+@doable/api:dev: --> POST /projects/db9a5d1c-7164-47df-8402-17910ffabe75/chat/suggestions 200 9s
+

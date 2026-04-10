@@ -1,0 +1,37 @@
+@doable/api:dev: [Chat][ac6264be] assistant.turn_end — grace period started
+@doable/api:dev: [Chat][ac6264be] terminal event: session.idle {}
+@doable/api:dev: [Chat] Session terminal event "session.idle" — exiting stream loop for ac6264be-64de-4fad-af8b-6589387af136
+@doable/api:dev: [Chat][ac6264be] stream done — content: 1122 chars, thinking: 137 chars, toolCalls: true, tools: 8
+@doable/api:dev: [Chat] AI streaming complete for ac6264be-64de-4fad-af8b-6589387af136, starting post-processing...
+@doable/api:dev: [Chat] Sending [DONE] for ac6264be-64de-4fad-af8b-6589387af136
+@doable/api:dev: <-- GET /projects/ac6264be-64de-4fad-af8b-6589387af136/files
+@doable/api:dev: <-- OPTIONS /projects/ac6264be-64de-4fad-af8b-6589387af136/chat/suggestions
+@doable/api:dev: --> OPTIONS /projects/ac6264be-64de-4fad-af8b-6589387af136/chat/suggestions 204 0ms
+@doable/api:dev: --> GET /projects/ac6264be-64de-4fad-af8b-6589387af136/files 200 3ms
+@doable/api:dev: <-- POST /projects/ac6264be-64de-4fad-af8b-6589387af136/chat/suggestions
+@doable/api:dev: [CLI subprocess] (node:4880) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+@doable/api:dev: [CLI subprocess] (Use `node --trace-warnings ...` to show where the warning was created)
+@doable/api:dev: [CopilotEngine] Client started
+@doable/api:dev: [CopilotManager] Engine started (suggesti…) — pool: 3/20
+@doable/api:dev: [Thumbnail] Captured screenshot for ac6264be-64de-4fad-af8b-6589387af136
+@doable/api:dev: --> POST /projects/ac6264be-64de-4fad-af8b-6589387af136/chat/suggestions 200 10s
+@doable/api:dev: <-- POST /projects/ac6264be-64de-4fad-af8b-6589387af136/chat
+@doable/api:dev: --> POST /projects/ac6264be-64de-4fad-af8b-6589387af136/chat 200 207ms
+@doable/api:dev: [CopilotEngine] Loaded 30 native integration tools
+@doable/api:dev: [CopilotEngine] session.send() → msgId 6a868953-a368-4e36-86ea-d0c4cbc7dd41 (718a8b15…)
+@doable/api:dev: [Chat][ac6264be] first delta for msg c5813b2b
+@doable/api:dev: [Chat][ac6264be] tool.execution_start: report_intent
+@doable/api:dev: [Chat][ac6264be] tool.execution_start: read_file
+@doable/api:dev: [Chat][ac6264be] tool.execution_complete:
+@doable/api:dev: [Chat][ac6264be] tool.execution_complete:
+@doable/api:dev: [CopilotEngine] assistant.turn_end (soft signal) (718a8b15…)
+@doable/api:dev: [CopilotEngine] assistant.turn_end (soft signal) (718a8b15…)
+@doable/api:dev: [Chat][ac6264be] assistant.turn_end — grace period started
+@doable/api:dev: [Chat][ac6264be] tool.execution_start: edit
+@doable/api:dev: [Chat][ac6264be] tool.execution_complete:
+@doable/api:dev: [CopilotEngine] assistant.turn_end (soft signal) (718a8b15…)
+@doable/api:dev: [CopilotEngine] assistant.turn_end (soft signal) (718a8b15…)
+@doable/api:dev: [Chat][ac6264be] assistant.turn_end — grace period started
+@doable/api:dev: <-- GET /projects/ac6264be-64de-4fad-af8b-6589387af136/files
+@doable/api:dev: --> GET /projects/ac6264be-64de-4fad-af8b-6589387af136/files 200 6ms
+

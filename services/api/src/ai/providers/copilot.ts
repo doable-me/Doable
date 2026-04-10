@@ -1298,6 +1298,7 @@ async function loadMcpTools(
         projectId,
         userId,
       );
+      console.log(`[CopilotEngine] MCP synthesis: ${effectiveConns.length} effective connections (ws=${workspaceId?.slice(0,8)}, proj=${projectId?.slice(0,8)}, user=${userId?.slice(0,8)}), integrations: ${effectiveConns.map((c: any) => c.integration_id).join(', ')}`);
 
       // Dedupe by integration_id, preferring higher-priority scopes first
       // (getEffective returns rows ordered by `scope DESC`, same pattern as
@@ -1329,9 +1330,9 @@ async function loadMcpTools(
         }),
       );
 
-      const virtualConfigs = buildVirtualMcpConnectors(
-        decrypted.filter((c): c is DecryptedConnection => c !== null),
-      );
+      const validDecrypted = decrypted.filter((c): c is DecryptedConnection => c !== null);
+      console.log(`[CopilotEngine] MCP synthesis: ${deduped.length} deduped, ${validDecrypted.length} decrypted, integrations: ${validDecrypted.map(c => c.integration_id).join(', ')}`);
+      const virtualConfigs = buildVirtualMcpConnectors(validDecrypted);
       for (const cfg of virtualConfigs) {
         // DB rows always win — don't let a preset shadow a user-configured
         // connector that happens to share the same name.

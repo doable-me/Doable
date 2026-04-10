@@ -99,7 +99,7 @@ export const installPackageTool: Tool = {
     let restarted = false;
     if (isRunning(ctx.projectId)) {
       try {
-        await restartDevServer(ctx.projectId);
+        await restartDevServer(ctx.projectId, { userId: ctx.userId });
         restarted = true;
       } catch (err) {
         console.error(`[install_package] Failed to restart dev server:`, err);

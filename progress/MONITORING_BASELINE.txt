@@ -1,0 +1,21 @@
+=== DOABLE E2E TEST MONITORING BASELINE ===
+Start Time: 2026-04-10T (see cron job scheduling)
+
+Baseline Metrics:
+- API uptime at start: ~30 min
+- Database status: UP
+- Dev servers active: 3
+- Error count in logs: 0
+- HTTP 500 count: 0
+- SDK timeout count: 0
+- Unhandled exception count: 0
+
+Tracking during test:
+- Each TURN_COMPLETE message from ui-driver
+- API restarts (uptime resets)
+- New errors
+- Response time anomalies (>30s)
+- HMR activity
+- Tool call patterns
+
+Will be updated throughout test.
