@@ -1745,6 +1745,7 @@ ERROR RECOVERY — if you encounter errors:
           const TURN_END_GRACE_MS = 10_000;     // 10s after turn_end + no tools
           const TEXT_SILENCE_MS = 15_000;        // 15s after last text delta + content + no tools
           const HARD_FALLBACK_MS = 180_000;      // 3min — AI can think for 100s+ on complex tasks
+          const THINKING_ONLY_SILENCE_MS = 90_000; // 90s — if AI thought but produced nothing, it's stuck
           const NO_CONTENT_TIMEOUT_MS = 60_000;  // 60s with truly zero activity = SDK failed
 
           while (!iterDone) {
@@ -1763,8 +1764,8 @@ ERROR RECOVERY — if you encounter errors:
             } else if (lastTextDeltaAt > 0 && assistantThinking.length > 0) {
               // AI was actively thinking (reasoning deltas received) but no
               // visible text yet. This is normal for complex operations where
-              // the AI reasons first then calls tools. Give it time.
-              effectiveTimeout = HARD_FALLBACK_MS;
+              // the AI reasons first then calls tools. Give it time, but not forever.
+              effectiveTimeout = THINKING_ONLY_SILENCE_MS;
             } else if (hadToolCalls && assistantContent.length === 0) {
               // Tools ran but no text yet — AI may be processing results.
               // Use the long timeout since tool results take time.
@@ -1913,10 +1914,10 @@ ERROR RECOVERY — if you encounter errors:
               }
 
               // Thinking-only silence: AI produced reasoning but no text/tools
-              // for HARD_FALLBACK_MS. The model is stuck.
+              // for THINKING_ONLY_SILENCE_MS. The model is stuck.
               if (lastTextDeltaAt > 0 && assistantThinking.length > 0 && assistantContent.length === 0 && !hadToolCalls) {
                 const thinkingSilence = now - lastTextDeltaAt;
-                if (thinkingSilence >= HARD_FALLBACK_MS) {
+                if (thinkingSilence >= THINKING_ONLY_SILENCE_MS) {
                   console.log(`[Chat] thinking-only silence ${Math.round(thinkingSilence / 1000)}s, no text/tools — complete for ${projectId}`);
                   iterDone = true;
                   break;
@@ -1975,7 +1976,7 @@ ERROR RECOVERY — if you encounter errors:
             // grace period (= new turn started). Tool lifecycle events (tool.*) can
             // fire alongside or after turn_end and must NOT reset the flag.
             const MESSAGE_CONTENT_EVENTS = new Set([
-              "assistant.message_delta", "assistant.streaming_delta",
+              "assistant.message_delta",
               "assistant.message", "assistant.reasoning_delta", "assistant.reasoning",
             ]);
             if (MESSAGE_CONTENT_EVENTS.has(evtType)) {
