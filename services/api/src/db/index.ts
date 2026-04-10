@@ -24,7 +24,7 @@ export const sql: postgres.Sql = DATABASE_URL
       },
       onnotice: () => {},
     })
-  : (new Proxy({} as postgres.Sql, {
+  : (new Proxy((() => {}) as unknown as postgres.Sql, {
       get: (_target, prop) => {
         if (prop === "end") return async () => {};
         return () => {
