@@ -56,8 +56,11 @@ export class McpClient {
     const response = await this.request("tools/call", { name, arguments: args });
 
     if (response.error) {
+      const errorDetail = response.error.data
+        ? ` (data: ${JSON.stringify(response.error.data)})`
+        : "";
       return {
-        content: [{ type: "text", text: `Error: ${response.error.message}` }],
+        content: [{ type: "text", text: `Error [${response.error.code ?? "unknown"}]: ${response.error.message}${errorDetail}` }],
         isError: true,
       };
     }

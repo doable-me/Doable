@@ -49,10 +49,18 @@ export function createMcpTools(
           };
 
           if (result.isError) {
+            const errorText = formatMcpContent(result.content);
             return {
               success: false,
-              error: formatMcpContent(result.content),
-              _mcpTrace: mcpTrace,
+              error: errorText,
+              _mcpTrace: {
+                ...mcpTrace,
+                response: {
+                  ...mcpTrace.response,
+                  error: errorText,
+                  rawContent: result.content,
+                },
+              },
             };
           }
 
@@ -62,14 +70,31 @@ export function createMcpTools(
             _mcpTrace: mcpTrace,
           };
         } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const errStack = err instanceof Error ? err.stack : undefined;
+          // Try to parse structured MCP error details from the message
+          let mcpErrorCode: number | undefined;
+          let mcpErrorData: unknown;
+          if (err && typeof err === "object" && "code" in err) {
+            mcpErrorCode = (err as { code?: number }).code;
+          }
+          if (err && typeof err === "object" && "data" in err) {
+            mcpErrorData = (err as { data?: unknown }).data;
+          }
           return {
             success: false,
-            error: `MCP tool call failed: ${err instanceof Error ? err.message : String(err)}`,
+            error: `MCP tool call failed: ${errMsg}`,
             _mcpTrace: {
               connector: connectorName,
               mcpTool: tool.name,
               request: { method: "tools/call", params: { name: tool.name, arguments: args } },
-              response: { isError: true, error: err instanceof Error ? err.message : String(err) },
+              response: {
+                isError: true,
+                error: errMsg,
+                errorStack: errStack,
+                errorCode: mcpErrorCode,
+                errorData: mcpErrorData,
+              },
               durationMs: Date.now() - mcpStartMs,
             },
           };

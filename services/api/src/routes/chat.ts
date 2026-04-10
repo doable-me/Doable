@@ -13,7 +13,7 @@ import {
 } from "../ai/providers/copilot.js";
 import { getCopilotManager } from "../ai/providers/copilot-manager.js";
 import { createUsageCollector } from "../ai/usage-collector.js";
-import { createTraceCollector, type TraceCollector } from "../ai/trace-collector.js";
+import { createTraceCollector, getActiveTrace, type TraceCollector } from "../ai/trace-collector.js";
 import { aiSettingsQueries, shareTrackingQueries } from "@doable/db";
 import {
   createProject,
@@ -2939,6 +2939,35 @@ chatRoutes.get("/projects/:id/ai-status", async (c) => {
     });
   }
   return c.json({ active: false });
+});
+
+// ─── GET /projects/:id/traces/live ─ live in-memory trace for active turn ──
+chatRoutes.use("/projects/:id/traces/live", authMiddleware);
+chatRoutes.get("/projects/:id/traces/live", async (c) => {
+  const projectId = c.req.param("id");
+  const active = getActiveTrace(projectId);
+  if (active) {
+    return c.json({
+      active: true,
+      events: active.getEvents(),
+      summary: active.getSummary(),
+    });
+  }
+  // No active trace — return most recent from DB
+  try {
+    const [row] = await sql`
+      SELECT id, events, status, duration_ms, tool_call_count, auto_continue_count,
+             thinking_chars, response_chars, turn_started_at, turn_ended_at, error_message
+      FROM chat_traces
+      WHERE project_id = ${projectId}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    if (row) {
+      return c.json({ active: false, trace: row });
+    }
+  } catch { /* non-critical */ }
+  return c.json({ active: false, trace: null });
 });
 
 // ─── GET /projects/:id/chat/status ─ DB-backed active stream check ──

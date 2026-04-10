@@ -114,6 +114,20 @@ function truncateForDb(s: string, maxLen = 10000): string {
   return s.slice(0, maxLen) + `... [${s.length - maxLen} chars truncated]`;
 }
 
+// ─── Active trace registry (module-level, for live endpoint) ──
+
+const activeTraceRegistry = new Map<string, ReturnType<typeof createTraceCollector>>();
+
+/** Get the active in-flight trace collector for a project, if any */
+export function getActiveTrace(projectId: string) {
+  return activeTraceRegistry.get(projectId) ?? null;
+}
+
+/** Remove a project from the active trace registry */
+export function removeActiveTrace(projectId: string) {
+  activeTraceRegistry.delete(projectId);
+}
+
 // ─── Factory ───────────────────────────────────────────────
 
 export function createTraceCollector(ctx: TraceCollectorContext) {
@@ -126,10 +140,85 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
   let responseChars = 0;
   let traceId: string | null = null;
   let sdkEventCount = 0;
+  let flushInterval: ReturnType<typeof setInterval> | null = null;
+  let lastFlushedEventCount = 0;
 
   // Active tool calls for duration tracking
   const activeTools = new Map<string, { name: string; startedAt: number }>();
   let toolSeq = 0;
+
+  // ── Periodic flush — upsert trace every 15s so data survives crashes ──
+
+  async function periodicFlush(): Promise<void> {
+    // Skip if no new events since last flush
+    if (events.length === lastFlushedEventCount) return;
+    lastFlushedEventCount = events.length;
+
+    // Truncate large tool results for DB, same as complete()
+    const dbEvents = events.map((e) => {
+      if (e.type === "tool_end" || e.type === "tool_start") {
+        const d = e.data as Record<string, unknown>;
+        return {
+          ...e,
+          data: {
+            ...d,
+            result: d.result != null ? truncateForDb(String(typeof d.result === "string" ? d.result : safeStringify(d.result))) : null,
+            args: d.args != null ? truncateForDb(String(typeof d.args === "string" ? d.args : safeStringify(d.args))) : null,
+          },
+        };
+      }
+      return e;
+    });
+
+    try {
+      if (!traceId) {
+        // First flush — INSERT
+        const [row] = await sql`
+          INSERT INTO chat_traces (
+            project_id, session_id, message_id, user_id, workspace_id,
+            turn_started_at,
+            tool_call_count, auto_continue_count,
+            thinking_chars, response_chars,
+            model, events, status,
+            provider, provider_label
+          ) VALUES (
+            ${ctx.projectId}, ${ctx.sessionId ?? null}, ${ctx.messageId ?? null},
+            ${ctx.userId}, ${ctx.workspaceId},
+            ${new Date(turnStartedAt).toISOString()},
+            ${toolCallCount}, ${autoContinueCount},
+            ${thinkingChars}, ${responseChars},
+            ${ctx.model ?? null},
+            ${safeStringify(dbEvents)}, ${"streaming"},
+            ${ctx.provider ?? null}, ${ctx.providerLabel ?? null}
+          ) RETURNING id
+        `;
+        traceId = row?.id ?? null;
+        console.log(`[TraceCollector] Periodic flush — inserted trace ${traceId?.slice(0, 8)} (${events.length} events)`);
+      } else {
+        // Subsequent flush — UPDATE
+        await sql`
+          UPDATE chat_traces
+          SET events = ${safeStringify(dbEvents)}::jsonb,
+              tool_call_count = ${toolCallCount},
+              auto_continue_count = ${autoContinueCount},
+              thinking_chars = ${thinkingChars},
+              response_chars = ${responseChars},
+              duration_ms = ${Date.now() - turnStartedAt}
+          WHERE id = ${traceId}::uuid
+        `;
+        console.log(`[TraceCollector] Periodic flush — updated trace ${traceId?.slice(0, 8)} (${events.length} events)`);
+      }
+    } catch (err) {
+      // Tracing must NEVER break chat
+      console.warn("[TraceCollector] Periodic flush failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // Start periodic flush interval
+  flushInterval = setInterval(() => { periodicFlush().catch(() => {}); }, 15_000);
+
+  // Register in active trace registry
+  // (we'll set the reference after creating the collector object)
 
   function elapsed(): number {
     return Date.now() - turnStartedAt;
@@ -305,36 +394,68 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
       return e;
     });
 
+    // Clear periodic flush interval
+    if (flushInterval) { clearInterval(flushInterval); flushInterval = null; }
+    // Remove from active registry
+    activeTraceRegistry.delete(ctx.projectId);
+
     try {
       const errorMessages = status === "error"
         ? events.filter(e => e.type === "error").map(e => (e.data as { message?: string })?.message).filter(Boolean).join("; ") || null
         : null;
 
-      const [row] = await sql`
-        INSERT INTO chat_traces (
-          project_id, session_id, message_id, user_id, workspace_id,
-          turn_started_at, turn_ended_at, duration_ms, ttft_ms,
-          tool_call_count, auto_continue_count,
-          thinking_chars, response_chars,
-          prompt_tokens, completion_tokens, thinking_tokens, total_tokens,
-          estimated_cost_usd, model,
-          events, status, error_message,
-          provider, provider_label
-        ) VALUES (
-          ${ctx.projectId}, ${ctx.sessionId ?? null}, ${ctx.messageId ?? null},
-          ${ctx.userId}, ${ctx.workspaceId},
-          ${new Date(turnStartedAt).toISOString()}, ${new Date(turnEndedAt).toISOString()},
-          ${durationMs}, ${ttftMs},
-          ${toolCallCount}, ${autoContinueCount},
-          ${thinkingChars}, ${responseChars},
-          ${usage?.promptTokens ?? null}, ${usage?.completionTokens ?? null},
-          ${usage?.thinkingTokens ?? null}, ${usage?.totalTokens ?? null},
-          ${usage?.estimatedCostUsd ?? null}, ${usage?.model ?? ctx.model ?? null},
-          ${safeStringify(dbEvents)}, ${status}, ${errorMessages},
-          ${ctx.provider ?? null}, ${ctx.providerLabel ?? null}
-        ) RETURNING id
-      `;
-      traceId = row?.id ?? null;
+      if (traceId) {
+        // Trace already exists from periodic flush — UPDATE with final data
+        await sql`
+          UPDATE chat_traces SET
+            session_id = ${ctx.sessionId ?? null},
+            message_id = ${ctx.messageId ?? null},
+            turn_ended_at = ${new Date(turnEndedAt).toISOString()},
+            duration_ms = ${durationMs},
+            ttft_ms = ${ttftMs},
+            tool_call_count = ${toolCallCount},
+            auto_continue_count = ${autoContinueCount},
+            thinking_chars = ${thinkingChars},
+            response_chars = ${responseChars},
+            prompt_tokens = ${usage?.promptTokens ?? null},
+            completion_tokens = ${usage?.completionTokens ?? null},
+            thinking_tokens = ${usage?.thinkingTokens ?? null},
+            total_tokens = ${usage?.totalTokens ?? null},
+            estimated_cost_usd = ${usage?.estimatedCostUsd ?? null},
+            model = ${usage?.model ?? ctx.model ?? null},
+            events = ${safeStringify(dbEvents)}::jsonb,
+            status = ${status},
+            error_message = ${errorMessages}
+          WHERE id = ${traceId}::uuid
+        `;
+      } else {
+        // No periodic flush happened yet — INSERT
+        const [row] = await sql`
+          INSERT INTO chat_traces (
+            project_id, session_id, message_id, user_id, workspace_id,
+            turn_started_at, turn_ended_at, duration_ms, ttft_ms,
+            tool_call_count, auto_continue_count,
+            thinking_chars, response_chars,
+            prompt_tokens, completion_tokens, thinking_tokens, total_tokens,
+            estimated_cost_usd, model,
+            events, status, error_message,
+            provider, provider_label
+          ) VALUES (
+            ${ctx.projectId}, ${ctx.sessionId ?? null}, ${ctx.messageId ?? null},
+            ${ctx.userId}, ${ctx.workspaceId},
+            ${new Date(turnStartedAt).toISOString()}, ${new Date(turnEndedAt).toISOString()},
+            ${durationMs}, ${ttftMs},
+            ${toolCallCount}, ${autoContinueCount},
+            ${thinkingChars}, ${responseChars},
+            ${usage?.promptTokens ?? null}, ${usage?.completionTokens ?? null},
+            ${usage?.thinkingTokens ?? null}, ${usage?.totalTokens ?? null},
+            ${usage?.estimatedCostUsd ?? null}, ${usage?.model ?? ctx.model ?? null},
+            ${safeStringify(dbEvents)}, ${status}, ${errorMessages},
+            ${ctx.provider ?? null}, ${ctx.providerLabel ?? null}
+          ) RETURNING id
+        `;
+        traceId = row?.id ?? null;
+      }
       console.log(`[TraceCollector] Trace ${traceId?.slice(0, 8)} saved — ${events.length} events, ${durationMs}ms, ${toolCallCount} tools, status=${status}`);
       return traceId;
     } catch (err) {
@@ -365,7 +486,13 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     };
   }
 
-  return {
+  /** Destroy the collector without persisting — clears interval, removes from registry */
+  function destroy(): void {
+    if (flushInterval) { clearInterval(flushInterval); flushInterval = null; }
+    activeTraceRegistry.delete(ctx.projectId);
+  }
+
+  const collector = {
     recordUserMessage,
     onSdkEvent,
     onToolStart,
@@ -382,7 +509,13 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     getEvents,
     getTraceId,
     getSummary,
+    destroy,
   };
+
+  // Register in active trace registry
+  activeTraceRegistry.set(ctx.projectId, collector);
+
+  return collector;
 }
 
 export type TraceCollector = ReturnType<typeof createTraceCollector>;

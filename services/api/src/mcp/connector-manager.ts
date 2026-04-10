@@ -252,10 +252,21 @@ export class ConnectorManager {
       const entry = this.connections.get(config.id);
       const retries = (entry?.connectRetries ?? 0) + 1;
 
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const errStack = err instanceof Error ? err.stack : undefined;
       console.error(
         `[ConnectorManager] Failed to connect to ${config.name} (attempt ${retries}):`,
-        err instanceof Error ? err.message : err,
+        errMsg,
       );
+      if (errStack) {
+        console.error(`[ConnectorManager] Stack trace:`, errStack);
+      }
+      // For stdio transports, the error may contain stderr from the server process
+      if (config.transportType === "stdio") {
+        console.error(
+          `[ConnectorManager] Stdio transport failed for ${config.name} — command: ${config.serverCommand} ${(config.serverArgs ?? []).join(" ")}`,
+        );
+      }
 
       throw err;
     }
