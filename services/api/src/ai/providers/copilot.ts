@@ -286,12 +286,30 @@ export class CopilotEngine {
     // and must NOT reset the timeout — otherwise the generator never terminates.
     const EVENT_TIMEOUT_MS = 45_000; // 45s — fail fast on silent SDK
     let lastEventTime = Date.now();
-    const BACKGROUND_NOISE_EVENTS = new Set([
-      "session.background_tasks_changed",
-      "session.tools_updated",
-      "session.custom_agents_updated",
-      "pending_messages.modified",
-      "session.usage_info",
+
+    // ALLOW-list of events that indicate real AI progress. ONLY these reset
+    // the inactivity timeout and wake the generator. Everything else (hook.*,
+    // model_call.*, assistant.usage, permission.*, session.background_tasks_*,
+    // etc.) is background noise that flows even when the model is done.
+    // Using an allow-list (not deny-list) because unknown events from future
+    // SDK versions should default to noise — not extend the timeout.
+    const PROGRESS_EVENTS = new Set([
+      // Content generation
+      "assistant.message_delta",
+      "assistant.streaming_delta",
+      "assistant.message",
+      "assistant.reasoning_delta",
+      // Turn boundaries (model actively doing things)
+      "assistant.turn_start",
+      // Tool activity
+      "tool.execution_start",
+      "tool.execution_complete",
+      "tool.completed",
+      "tool.running",
+      // Terminal events (session ending)
+      "session.idle",
+      "session.error",
+      "done",
     ]);
 
     // Subscribe to ALL events from the SDK (streaming deltas, tools, idle, error).
@@ -299,12 +317,12 @@ export class CopilotEngine {
     // JSON-RPC — including assistant.message_delta when streaming: true.
     // session.idle and session.error are terminal events that end the stream.
     const unsubscribe = session.on((event: SessionEvent) => {
-      // Only reset inactivity timer on content-bearing events.
-      // Background noise events keep flowing even when the model is done —
-      // resetting on those prevents the timeout from ever firing (the exact
-      // bug that caused 600s+ hangs before this fix).
-      const isNoise = BACKGROUND_NOISE_EVENTS.has(event.type);
-      if (!isNoise) {
+      // Only reset inactivity timer on progress events (content, tools, terminal).
+      // Background events (hook.*, model_call.*, permission.*, session.background_*,
+      // assistant.usage, etc.) fire indefinitely and must NOT reset the timer
+      // or wake the generator — otherwise the 45s timeout never fires.
+      const isProgress = PROGRESS_EVENTS.has(event.type);
+      if (isProgress) {
         lastEventTime = Date.now();
       }
       eventQueue.push(event);
@@ -323,10 +341,10 @@ export class CopilotEngine {
       // times per tool-heavy turn and polluted the logs without adding any
       // diagnostic value — removed. See bugs/bug-17 for the debugging trail.
 
-      // Don't wake the generator for background noise events — they must not
-      // prevent the 45s inactivity timeout from firing. The events are still
-      // enqueued and will be drained on the next content event or timeout.
-      if (resolveWaiting && !isNoise) {
+      // Only wake the generator for progress events. Noise events are enqueued
+      // but don't interrupt the 45s timeout. They'll be drained on the next
+      // progress event or when the timeout fires.
+      if (resolveWaiting && isProgress) {
         resolveWaiting();
         resolveWaiting = null;
       }
@@ -408,11 +426,11 @@ export class CopilotEngine {
             }, EVENT_TIMEOUT_MS);
           });
           if (timedOut && !done && !this.abortedSessions.has(sessionId)) {
-            // Drain any queued background noise events before checking if we're truly idle.
-            // Background events pile up without waking the generator, so the queue may
-            // contain only noise. If all queued events are noise, we're truly timed out.
-            const hasContentEvents = eventQueue.some(e => !BACKGROUND_NOISE_EVENTS.has(e.type));
-            if (!hasContentEvents) {
+            // Drain any queued noise events before checking if we're truly idle.
+            // Noise events pile up without waking the generator, so the queue may
+            // contain only non-progress events. If no progress events queued, timeout.
+            const hasProgressEvents = eventQueue.some(e => PROGRESS_EVENTS.has(e.type));
+            if (!hasProgressEvents) {
               const elapsed = Date.now() - lastEventTime;
               console.error(`[CopilotEngine] No content events for ${Math.round(elapsed / 1000)}s — timeout (${sessionId.slice(0, 8)}…, ${eventQueue.length} noise events drained)`);
               // Drain noise events so they still get yielded for tracing
