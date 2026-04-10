@@ -1080,22 +1080,31 @@ chatRoutes.post(
       const systemPrompt =
           mode === "plan"
             ? `You are Doable's Plan Mode AI. You have two tools for planning: ask_clarification and create_plan.
+${isProjectScaffolded(projectId) ? `
+CONTEXT: This project already has files and code. The user switched to Plan Mode mid-build to plan NEXT STEPS — not to start over. Use the read_file, list_files, and search_files tools to understand what's already built before planning.
+` : ""}
+STEP 1 — UNDERSTAND THE CURRENT STATE:
+- Use list_files to see what exists in the project
+- Use read_file on key files (App.tsx, package.json, etc.) to understand what's already built
+- Identify what's working and what's missing or incomplete
 
-STEP 1 — CLARIFY (if needed):
-- If the request is vague or ambiguous, call ask_clarification with 2-4 focused questions
+STEP 2 — CLARIFY (if needed):
+- If the user's request is vague or ambiguous, call ask_clarification with 2-4 focused questions
 - Each question should have smart default options when possible
 - Use plain language, no technical jargon
-- If the request is very specific, you may skip straight to STEP 2
+- Reference what already exists: "I see you have X, would you like me to add Y or Z?"
+- If the request is very specific, you may skip straight to STEP 3
 
-STEP 2 — PLAN:
-- After understanding the request, call create_plan
+STEP 3 — PLAN:
+- After understanding the request AND the current project state, call create_plan
 - Write a 1-2 sentence summary in plain language
 - Create 3-8 concrete steps with action-oriented titles
+- Steps should describe what will CHANGE or be ADDED — don't restate what already exists
 - Step descriptions should explain WHAT will be built, not HOW
 - Put technical details (file paths, implementation notes) in the optional details field
 - Estimate complexity as simple/moderate/complex
 
-IMPORTANT: Do NOT write code. Do NOT create or edit files. Only analyze and plan. You MUST use the ask_clarification and create_plan tools — do not output plans as plain text.`
+IMPORTANT: Do NOT write code. Do NOT create or edit files. Only analyze and plan. You MUST use the ask_clarification and create_plan tools — do not output plans as plain text.${projectContext}`
             : mode === "visual-edit"
             ? `You are Doable's Visual Edit AI. You make precise, surgical edits to individual UI elements. The user has selected a specific element in the visual preview and wants you to modify it.
 
@@ -1427,8 +1436,9 @@ ERROR RECOVERY — if you encounter errors:
       // preserved because resumeSession() re-reads it from the SDK's
       // on-disk store.
       const cachedSessionMode = projectSessionModes.get(sessionKey);
-      if (cachedSessionMode && cachedSessionMode !== mode) {
-        console.log(`[Chat] mode changed ${cachedSessionMode} → ${mode} for ${sessionKey} — evicting cached session so fresh tool list applies`);
+      const modeChanged = cachedSessionMode && cachedSessionMode !== mode;
+      if (modeChanged) {
+        console.log(`[Chat] mode changed ${cachedSessionMode} → ${mode} for ${sessionKey} — evicting cached session so fresh tool list + system prompt apply`);
         projectSessions.delete(sessionKey);
         projectSessionModes.delete(sessionKey);
       }
@@ -1444,29 +1454,36 @@ ERROR RECOVERY — if you encounter errors:
         // Try to resume a previous SDK session from the database.
         // The SDK persists conversation state to disk, so resumeSession()
         // restores full context (all prior messages + tool call history).
+        // EXCEPTION: when mode changed (e.g. build → plan), we MUST create
+        // a fresh session because resumeSession() doesn't update the system
+        // prompt — it reuses the one from the original createSession(). A
+        // plan-mode session needs a completely different system prompt that
+        // tells the AI to analyze and plan, not build.
         let resumed = false;
-        try {
-          const [dbRow] = await sql`
-            SELECT id, copilot_session_id FROM ai_sessions
-            WHERE project_id = ${projectId} AND copilot_session_id IS NOT NULL
-            ORDER BY updated_at DESC LIMIT 1
-          `;
-          if (dbRow?.copilot_session_id) {
-            sessionId = await manager.withAutoRetry(projectId, resolvedGithubToken, async (eng) => {
-              return eng.resumeSession(dbRow.copilot_session_id, {
-                tools: sessionTools,
-                toolProgress,
+        if (!modeChanged) {
+          try {
+            const [dbRow] = await sql`
+              SELECT id, copilot_session_id FROM ai_sessions
+              WHERE project_id = ${projectId} AND copilot_session_id IS NOT NULL
+              ORDER BY updated_at DESC LIMIT 1
+            `;
+            if (dbRow?.copilot_session_id) {
+              sessionId = await manager.withAutoRetry(projectId, resolvedGithubToken, async (eng) => {
+                return eng.resumeSession(dbRow.copilot_session_id, {
+                  tools: sessionTools,
+                  toolProgress,
+                });
               });
-            });
-            projectSessions.set(sessionKey, sessionId!);
-            projectSessionModes.set(sessionKey, mode);
-            resumed = true;
-            console.log(`[Chat] Resumed SDK session ${dbRow.copilot_session_id.slice(0, 8)}… for ${projectId.slice(0, 8)}… (mode=${mode}, tools=${sessionTools.length})`);
+              projectSessions.set(sessionKey, sessionId!);
+              projectSessionModes.set(sessionKey, mode);
+              resumed = true;
+              console.log(`[Chat] Resumed SDK session ${dbRow.copilot_session_id.slice(0, 8)}… for ${projectId.slice(0, 8)}… (mode=${mode}, tools=${sessionTools.length})`);
+            }
+          } catch (err) {
+            // Resume failed (stale/deleted session) — fall through to create
+            console.log(`[Chat] Session resume failed for ${projectId.slice(0, 8)}…, creating new:`, err instanceof Error ? err.message : err);
+            sessionId = undefined;
           }
-        } catch (err) {
-          // Resume failed (stale/deleted session) — fall through to create
-          console.log(`[Chat] Session resume failed for ${projectId.slice(0, 8)}…, creating new:`, err instanceof Error ? err.message : err);
-          sessionId = undefined;
         }
 
         if (!resumed) {
@@ -1955,7 +1972,7 @@ ERROR RECOVERY — if you encounter errors:
               await stream.writeSSE({
                 data: JSON.stringify({
                   type: "error",
-                  data: { message: "The AI appears to be stuck reading the same files without making progress. Try rephrasing your request or check the preview for errors." },
+                  data: "The AI appears to be stuck reading the same files without making progress. Try rephrasing your request or check the preview for errors.",
                 }),
               }).catch(() => {});
               break;
@@ -1973,7 +1990,7 @@ ERROR RECOVERY — if you encounter errors:
               await stream.writeSSE({
                 data: JSON.stringify({
                   type: "error",
-                  data: { message: "The AI has been investigating without making changes. Please provide more specific guidance, or check the preview console for errors." },
+                  data: "The AI has been investigating without making changes. Please provide more specific guidance, or check the preview console for errors.",
                 }),
               }).catch(() => {});
               break;
@@ -2045,7 +2062,7 @@ ERROR RECOVERY — if you encounter errors:
               await stream.writeSSE({
                 data: JSON.stringify({
                   type: "error",
-                  data: { message: "The AI needed more steps than expected. It may be blocked by a configuration issue. Check the preview for errors or try a simpler request." },
+                  data: "The AI needed more steps than expected. It may be blocked by a configuration issue. Check the preview for errors or try a simpler request.",
                 }),
               }).catch(() => {});
             }

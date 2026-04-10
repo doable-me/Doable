@@ -275,17 +275,19 @@ export class CopilotEngine {
       return Promise.reject(new Error(`Session ${sessionId} not found`));
     }
 
-    const EVENT_TIMEOUT_MS = 45_000;
-    const MAX_STREAM_DURATION_MS = 180_000;
+    const INITIAL_TIMEOUT_MS = 90_000;  // generous: model may queue/warm up
+    const EVENT_TIMEOUT_MS = 45_000;    // after first event, tighter check
     const streamStartedAt = Date.now();
     let lastProgressTime = Date.now();
+    let gotFirstEvent = false;
     const sid = sessionId.slice(0, 8);
-    console.log(`[CopilotEngine] sendMessage START (${sid}…) timeout=${EVENT_TIMEOUT_MS}ms, maxDuration=${MAX_STREAM_DURATION_MS}ms`);
+    console.log(`[CopilotEngine] sendMessage START (${sid}…) initialTimeout=${INITIAL_TIMEOUT_MS}ms, eventTimeout=${EVENT_TIMEOUT_MS}ms`);
 
     const PROGRESS_EVENTS = new Set([
       "assistant.message_delta", "assistant.streaming_delta", "assistant.message",
-      "assistant.reasoning_delta", "assistant.turn_start",
+      "assistant.reasoning_delta", "assistant.turn_start", "assistant.turn_end",
       "tool.execution_start", "tool.execution_complete", "tool.completed", "tool.running",
+      "model_call.start", "model_call.end",
       "session.idle", "session.error", "done",
     ]);
 
@@ -295,7 +297,6 @@ export class CopilotEngine {
       const finish = (err?: Error) => {
         if (settled) return;
         settled = true;
-        clearTimeout(wallClock);
         clearInterval(checker);
         unsubscribe();
         this.sessionWakeups.delete(sessionId);
@@ -310,13 +311,6 @@ export class CopilotEngine {
         }
       };
 
-      // ── Wall-clock ceiling ──
-      const wallClock = setTimeout(() => {
-        console.error(`[CopilotEngine] Wall-clock timeout at 180s (${sid}…)`);
-        try { onEvent?.({ type: "session.error", data: { message: "Stream timed out (180s ceiling)" } } as SessionEvent); } catch {}
-        finish();
-      }, MAX_STREAM_DURATION_MS);
-
       // ── Periodic checker: inactivity + abort ──
       const checker = setInterval(() => {
         if (this.abortedSessions.has(sessionId)) {
@@ -325,8 +319,10 @@ export class CopilotEngine {
           return;
         }
         const since = Date.now() - lastProgressTime;
-        if (since > EVENT_TIMEOUT_MS) {
-          console.error(`[CopilotEngine] Inactivity timeout at ${Math.round(since / 1000)}s (${sid}…)`);
+        const timeout = gotFirstEvent ? EVENT_TIMEOUT_MS : INITIAL_TIMEOUT_MS;
+        if (since > timeout) {
+          const label = gotFirstEvent ? "Inactivity" : "Initial";
+          console.error(`[CopilotEngine] ${label} timeout at ${Math.round(since / 1000)}s (${sid}…)`);
           try { onEvent?.({ type: "session.error", data: { message: `AI session timed out — no response for ${Math.round(since / 1000)} seconds.` } } as SessionEvent); } catch {}
           finish();
         }
@@ -339,7 +335,10 @@ export class CopilotEngine {
         if (process.env.COPILOT_DEBUG) {
           console.debug(`[CopilotEngine] EVENT ${event.type} progress=${isProgress} elapsed=${Math.round((Date.now() - streamStartedAt) / 1000)}s (${sid}…)`);
         }
-        if (isProgress) lastProgressTime = Date.now();
+        if (isProgress) {
+          lastProgressTime = Date.now();
+          gotFirstEvent = true;
+        }
 
         try { onEvent?.(event); } catch (err) {
           console.error(`[CopilotEngine] onEvent threw:`, err);
