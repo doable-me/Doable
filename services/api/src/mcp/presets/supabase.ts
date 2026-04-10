@@ -83,17 +83,27 @@ const CONNECTOR_NAME = "Supabase";
  * Returns `null` if no usable token is present — the caller MUST then skip
  * building the connector (running unauthenticated would fail on every call).
  */
-function extractAccessToken(conn: DecryptedConnection): string | null {
+/** Extract the OAuth Management API token — this enables DDL (CREATE TABLE, migrations). */
+function extractOAuthToken(conn: DecryptedConnection): string | null {
   const creds = conn.credentials as Record<string, unknown> | null;
   if (!creds) return null;
-  // Try management API token first (OAuth flow), then fall back to
-  // serviceRoleKey (use-existing flow) which works for all Supabase API calls.
   const token =
     (creds.access_token as string | undefined) ??
-    (creds.accessToken as string | undefined) ??
+    (creds.accessToken as string | undefined);
+  return token && token.length > 0 ? token : null;
+}
+
+/** Extract any usable token — OAuth first, then serviceRoleKey as fallback.
+ *  serviceRoleKey works for PostgREST CRUD but NOT for DDL/Management API. */
+function extractAccessToken(conn: DecryptedConnection): string | null {
+  const oauth = extractOAuthToken(conn);
+  if (oauth) return oauth;
+  const creds = conn.credentials as Record<string, unknown> | null;
+  if (!creds) return null;
+  const srk =
     (creds.serviceRoleKey as string | undefined) ??
     (creds.service_role_key as string | undefined);
-  return token && token.length > 0 ? token : null;
+  return srk && srk.length > 0 ? srk : null;
 }
 
 /**
@@ -144,14 +154,33 @@ export function buildSupabaseConnectorConfig(
   if (!projectRef) return null;
 
   // ── Resolve access_token ──
-  let accessToken = extractAccessToken(connection);
+  // PREFER the OAuth management token (from supabase-mgmt sibling) because
+  // it enables DDL (CREATE TABLE, migrations) via the Management API.
+  // The serviceRoleKey only works for PostgREST CRUD — the MCP server
+  // can't run execute_sql or apply_migration with it.
+  let accessToken: string | null = null;
+
+  // 1. Check if this connection has an OAuth token directly
+  accessToken = extractOAuthToken(connection);
+
+  // 2. Look for a sibling supabase-mgmt OAuth row (the common case:
+  //    supabase data row has projectRef, supabase-mgmt has access_token)
   if (!accessToken && context?.allConnections) {
-    // The supabase data row typically lacks the mgmt token — look for a
-    // sibling `supabase-mgmt` OAuth row that does have it.
     const mgmtSibling = context.allConnections.find(
-      (c) => c.integration_id === "supabase-mgmt" && extractAccessToken(c),
+      (c) => c.integration_id === "supabase-mgmt" && extractOAuthToken(c),
     );
-    if (mgmtSibling) accessToken = extractAccessToken(mgmtSibling);
+    if (mgmtSibling) accessToken = extractOAuthToken(mgmtSibling);
+  }
+
+  // 3. Last resort: serviceRoleKey (enables PostgREST CRUD but NOT DDL)
+  if (!accessToken) {
+    accessToken = extractAccessToken(connection);
+    if (!accessToken && context?.allConnections) {
+      const dataSibling = context.allConnections.find(
+        (c) => c.integration_id === "supabase" && extractAccessToken(c),
+      );
+      if (dataSibling) accessToken = extractAccessToken(dataSibling);
+    }
   }
   if (!accessToken) return null;
 
