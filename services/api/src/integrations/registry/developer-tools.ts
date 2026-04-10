@@ -371,7 +371,7 @@ export const DEVELOPER_TOOLS_INTEGRATIONS: Record<string, IntegrationDefinition>
       oauth2Config: {
         authUrl: "https://api.supabase.com/v1/oauth/authorize",
         tokenUrl: "https://api.supabase.com/v1/oauth/token",
-        scopes: ["all"],
+        scopes: ["all", "database.read", "database.write"],
         pkce: true,
         pkceMethod: "S256",
       },
