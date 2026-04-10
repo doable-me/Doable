@@ -1160,3 +1160,65 @@ integrationRoutes.delete("/integrations/admin/oauth-apps/:id", authMiddleware, a
   await oauthApps.delete(appId);
   return c.json({ data: { id: appId, deleted: true } });
 });
+
+// ─── X-Ray: Integration Observability Endpoints ──────────
+
+import { xray } from "../integrations/xray.js";
+
+/**
+ * GET /integrations/xray/active
+ * All in-flight integration & MCP calls right now.
+ * Shows exactly what's running, which phase it's in, and how long.
+ */
+integrationRoutes.get("/xray/active", authMiddleware, async (c) => {
+  return c.json({ data: xray.getActive() });
+});
+
+/**
+ * GET /integrations/xray/stuck?threshold=30000
+ * Calls that have been running longer than threshold (default 30s).
+ */
+integrationRoutes.get("/xray/stuck", authMiddleware, async (c) => {
+  const threshold = Number(c.req.query("threshold") || 30000);
+  return c.json({ data: xray.getStuck(threshold) });
+});
+
+/**
+ * GET /integrations/xray/stats
+ * Latency stats for ALL integrations: p50/p95/p99, error rates,
+ * slowest HTTP calls, slowest phases.
+ */
+integrationRoutes.get("/xray/stats", authMiddleware, async (c) => {
+  return c.json({ data: xray.getAllStats() });
+});
+
+/**
+ * GET /integrations/xray/stats/:integrationId
+ * Per-integration deep stats including slowest HTTP calls and phases.
+ */
+integrationRoutes.get("/xray/stats/:integrationId", authMiddleware, async (c) => {
+  const id = c.req.param("integrationId");
+  const stats = xray.getStats(id);
+  if (!stats) return c.json({ data: null });
+  return c.json({ data: stats });
+});
+
+/**
+ * GET /integrations/xray/history/:integrationId?limit=20
+ * Recent completed call history for an integration with full phase + HTTP breakdown.
+ */
+integrationRoutes.get("/xray/history/:integrationId", authMiddleware, async (c) => {
+  const id = c.req.param("integrationId");
+  const limit = Math.min(Number(c.req.query("limit") || 20), 100);
+  return c.json({ data: xray.getHistory(id, limit) });
+});
+
+/**
+ * GET /integrations/xray/call/:callId
+ * Single call forensics — full phase timeline + every HTTP request.
+ */
+integrationRoutes.get("/xray/call/:callId", authMiddleware, async (c) => {
+  const call = xray.getCall(c.req.param("callId"));
+  if (!call) return c.json({ error: "Call not found" }, 404);
+  return c.json({ data: call });
+});

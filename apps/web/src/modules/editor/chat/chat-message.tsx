@@ -186,6 +186,58 @@ function StreamingStatus({ status }: { status?: string }) {
   );
 }
 
+// ─── Waiting Indicator (shown before any content arrives) ───
+function WaitingIndicator({ status }: { status?: string }) {
+  // Parse prefixed status like "tool_call:Reading package.json"
+  const colonIdx = status ? status.indexOf(":") : -1;
+  const KNOWN_PREFIXES = new Set(["plan", "tool_call", "tool_result", "status"]);
+  const maybeType = colonIdx > 0 ? status!.slice(0, colonIdx) : "";
+  const isPrefixed = KNOWN_PREFIXES.has(maybeType);
+  const statusType = isPrefixed ? maybeType : "";
+  const friendlyMsg = isPrefixed ? status!.slice(colonIdx + 1) : "";
+
+  const isToolCall = statusType === "tool_call";
+  const isToolResult = statusType === "tool_result";
+  const isPlan = statusType === "plan";
+
+  // Pick icon and label based on what the AI is doing
+  let icon: React.ReactNode;
+  let label: string;
+  let sublabel: string | null = null;
+
+  if (isToolCall) {
+    icon = <Wrench className="h-4 w-4 text-blue-400 animate-spin" />;
+    label = friendlyMsg || "Working on it\u2026";
+  } else if (isToolResult) {
+    icon = <Check className="h-4 w-4 text-green-500" />;
+    label = friendlyMsg || "Done";
+  } else if (isPlan) {
+    icon = <ListChecks className="h-4 w-4 text-brand-400 animate-pulse" />;
+    label = friendlyMsg || "Planning\u2026";
+  } else {
+    icon = <Brain className="h-4 w-4 text-brand-400 animate-pulse" />;
+    label = "Thinking\u2026";
+    sublabel = "Analyzing your request";
+  }
+
+  return (
+    <div className="flex items-center gap-2.5 text-sm text-muted-foreground py-1">
+      {icon}
+      <div className="flex flex-col gap-0.5">
+        <span className="font-medium">{label}</span>
+        {sublabel && (
+          <span className="text-xs text-muted-foreground/60">{sublabel}</span>
+        )}
+      </div>
+      <span className="inline-flex items-center gap-[3px] ml-1">
+        <span className="status-dot-1 inline-block h-1 w-1 rounded-full bg-brand-400" />
+        <span className="status-dot-2 inline-block h-1 w-1 rounded-full bg-brand-400" />
+        <span className="status-dot-3 inline-block h-1 w-1 rounded-full bg-brand-400" />
+      </span>
+    </div>
+  );
+}
+
 // ─── Thinking Section (live-streaming, auto-scroll) ─────────
 function ThinkingSection({ content, isStreaming }: { content: string; isStreaming: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -339,8 +391,8 @@ export const ChatMessage = memo(function ChatMessage({
           <ThinkingSection content={message.thinkingContent} isStreaming={!!message.isStreaming} />
         )}
 
-        {/* Live status indicator */}
-        {message.isStreaming && <StreamingStatus status={message.liveStatus} />}
+        {/* Live status indicator — hidden during waiting state since WaitingIndicator handles it */}
+        {message.isStreaming && !isWaiting && <StreamingStatus status={message.liveStatus} />}
 
         {/* Undone badge */}
         {message.undone && (
@@ -351,10 +403,7 @@ export const ChatMessage = memo(function ChatMessage({
         )}
 
         {isWaiting ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span>Thinking...</span>
-          </div>
+          <WaitingIndicator status={message.liveStatus} />
         ) : message.content ? (
           <div className={`prose-editor text-sm leading-relaxed ${message.undone ? "text-muted-foreground opacity-60" : "text-foreground"}`}>
             <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />

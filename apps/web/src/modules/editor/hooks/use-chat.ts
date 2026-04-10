@@ -211,6 +211,7 @@ export function useChat(
         content: "",
         timestamp: new Date().toISOString(),
         isStreaming: true,
+        liveStatus: "thinking",
       };
       addMessage(assistantMessage);
       setStreaming(true);

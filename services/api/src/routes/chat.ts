@@ -1740,6 +1740,7 @@ ERROR RECOVERY — if you encounter errors:
           let lastTextDeltaAt = 0;        // timestamp of most recent text/thinking delta
           let sawUsageAfterContent = false; // assistant.usage after we have content = strong done signal
           let lastActivityAt = Date.now();
+          let exitedViaSessionIdle = false; // true = session.idle/error/done, false = heuristic exit
 
           // Timeouts based on state — much tighter than before
           const TURN_END_GRACE_MS = 10_000;     // 10s after turn_end + no tools
@@ -1886,6 +1887,7 @@ ERROR RECOVERY — if you encounter errors:
             const CONTENT_EVENTS = new Set([
               "assistant.message_delta",
               "assistant.message", "assistant.reasoning_delta", "assistant.reasoning",
+              "assistant.turn_start", "assistant.turn_end",
               "tool.execution_start", "tool.execution_complete", "tool.execution_partial_result",
               "tool.running", "tool_call",
               "session.idle", "session.error", "done",
@@ -1900,49 +1902,66 @@ ERROR RECOVERY — if you encounter errors:
             // carry no content. They fire every few ms indefinitely, preventing
             // any timeout from triggering. We MUST check completion conditions
             // inline whenever we receive a metadata event.
-            if (isMetadataOnly && toolsInFlight === 0) {
+            if (isMetadataOnly) {
               const now = Date.now();
 
-              // Text/content silence after producing visible output
-              if (lastTextDeltaAt > 0 && (assistantContent.length > 0 || hadToolCalls)) {
-                const textSilence = now - lastTextDeltaAt;
-                if (textSilence >= TEXT_SILENCE_MS) {
-                  console.log(`[Chat] text silence ${Math.round(textSilence / 1000)}s on metadata — complete for ${projectId}`);
+              if (toolsInFlight === 0) {
+                // Text/content silence after producing visible output
+                if (lastTextDeltaAt > 0 && (assistantContent.length > 0 || hadToolCalls)) {
+                  const textSilence = now - lastTextDeltaAt;
+                  if (textSilence >= TEXT_SILENCE_MS) {
+                    console.log(`[Chat] text silence ${Math.round(textSilence / 1000)}s on metadata — complete for ${projectId}`);
+                    iterDone = true;
+                    break;
+                  }
+                }
+
+                // Thinking-only silence: AI produced reasoning but no text/tools
+                // for THINKING_ONLY_SILENCE_MS. The model is stuck.
+                if (lastTextDeltaAt > 0 && assistantThinking.length > 0 && assistantContent.length === 0 && !hadToolCalls) {
+                  const thinkingSilence = now - lastTextDeltaAt;
+                  if (thinkingSilence >= THINKING_ONLY_SILENCE_MS) {
+                    console.log(`[Chat] thinking-only silence ${Math.round(thinkingSilence / 1000)}s, no text/tools — complete for ${projectId}`);
+                    iterDone = true;
+                    break;
+                  }
+                }
+
+                // Turn_end grace expired
+                if (sawTurnEnd) {
+                  const turnEndElapsed = now - turnEndAt;
+                  if (turnEndElapsed >= TURN_END_GRACE_MS) {
+                    console.log(`[Chat] turn_end grace ${Math.round(turnEndElapsed / 1000)}s expired on metadata — complete for ${projectId}`);
+                    iterDone = true;
+                    break;
+                  }
+                }
+
+                // Absolute hard limit: nothing useful for 90s
+                const totalElapsed = now - lastActivityAt;
+                if (totalElapsed >= HARD_FALLBACK_MS && !hadToolCalls && assistantContent.length === 0) {
+                  console.log(`[Chat] hard fallback ${Math.round(totalElapsed / 1000)}s, no content — bailing for ${projectId}`);
+                  try {
+                    await stream.writeSSE({
+                      data: JSON.stringify({ type: "error", data: "AI didn't respond in time \u2014 please try again." }),
+                    });
+                  } catch { /* stream closed */ }
                   iterDone = true;
                   break;
                 }
               }
 
-              // Thinking-only silence: AI produced reasoning but no text/tools
-              // for THINKING_ONLY_SILENCE_MS. The model is stuck.
-              if (lastTextDeltaAt > 0 && assistantThinking.length > 0 && assistantContent.length === 0 && !hadToolCalls) {
-                const thinkingSilence = now - lastTextDeltaAt;
-                if (thinkingSilence >= THINKING_ONLY_SILENCE_MS) {
-                  console.log(`[Chat] thinking-only silence ${Math.round(thinkingSilence / 1000)}s, no text/tools — complete for ${projectId}`);
-                  iterDone = true;
-                  break;
-                }
-              }
-
-              // Turn_end grace expired
-              if (sawTurnEnd) {
-                const turnEndElapsed = now - turnEndAt;
-                if (turnEndElapsed >= TURN_END_GRACE_MS) {
-                  console.log(`[Chat] turn_end grace ${Math.round(turnEndElapsed / 1000)}s expired on metadata — complete for ${projectId}`);
-                  iterDone = true;
-                  break;
-                }
-              }
-
-              // Absolute hard limit: nothing useful for 90s
-              const totalElapsed = now - lastActivityAt;
-              if (totalElapsed >= HARD_FALLBACK_MS && !hadToolCalls && assistantContent.length === 0) {
-                console.log(`[Chat] hard fallback ${Math.round(totalElapsed / 1000)}s, no content — bailing for ${projectId}`);
-                try {
-                  await stream.writeSSE({
-                    data: JSON.stringify({ type: "error", data: "AI didn't respond in time \u2014 please try again." }),
-                  });
-                } catch { /* stream closed */ }
+              // ── Hard escape when toolsInFlight is stuck positive ──
+              // If the toolsInFlight counter got stuck (SDK didn't emit matching
+              // tool.execution_complete for some starts), metadata events keep
+              // resolving the iterator but the toolsInFlight===0 checks above
+              // never fire. Without this escape, the stream hangs forever.
+              // After HARD_FALLBACK_MS of no REAL content events, force-complete
+              // regardless of toolsInFlight count.
+              const stuckElapsed = now - lastActivityAt;
+              if (toolsInFlight > 0 && stuckElapsed >= HARD_FALLBACK_MS) {
+                console.warn(`[Chat] toolsInFlight=${toolsInFlight} stuck for ${Math.round(stuckElapsed / 1000)}s — force-completing for ${projectId}`);
+                toolsInFlight = 0;
                 iterDone = true;
                 break;
               }
@@ -1954,7 +1973,11 @@ ERROR RECOVERY — if you encounter errors:
             // timer must not fire because the AI WILL resume after the
             // tool returns. This is the core state signal that replaces
             // hardcoded timer guesswork.
-            if (evtType === "tool.execution_start" || evtType === "tool.running") {
+            // NOTE: only tool.execution_start increments. tool.running is
+            // a PROGRESS event (fires repeatedly for already-running tools)
+            // and must NOT increment — it caused toolsInFlight to grow
+            // unbounded (66 starts vs 41 ends), blocking completion forever.
+            if (evtType === "tool.execution_start") {
               toolsInFlight++;
               // Promote SDK tool events to first-class trace events so
               // tool_call_count is accurate even when toolProgress RPC hooks
@@ -1970,6 +1993,22 @@ ERROR RECOVERY — if you encounter errors:
               if (sdkToolName && traceCollector) {
                 traceCollector.onToolEnd(sdkToolName, evtData, evtData?.result);
               }
+            }
+
+            // ── Reset completion signals on new turn ──
+            // assistant.turn_start means the AI started a NEW turn. This is the
+            // strongest signal that the model isn't done yet. Reset ALL heuristic
+            // completion state so we don't exit prematurely based on stale data
+            // from the previous turn.
+            if (evtType === "assistant.turn_start") {
+              sawTurnEnd = false;
+              sawUsageAfterContent = false;
+              turnEndAt = 0;
+              // Reset lastTextDeltaAt to NOW so the text-silence timer restarts
+              // for this new turn. Without this, silence is measured from the
+              // PREVIOUS turn's last text delta — causing premature exit.
+              lastTextDeltaAt = Date.now();
+              console.log(`[Chat][${projectId.slice(0, 8)}] assistant.turn_start — reset completion signals`);
             }
 
             // Only genuine assistant MESSAGE events should cancel the turn_end
@@ -2256,6 +2295,7 @@ ERROR RECOVERY — if you encounter errors:
             ]);
             if (SESSION_TERMINAL_EVENTS.has(evtType)) {
               console.log(`[Chat] Session terminal event "${evtType}" — exiting stream loop for ${projectId}`);
+              exitedViaSessionIdle = true;
               // Heartbeat: clear the in-flight tool marker
               lastToolName = undefined;
               friendlyLastTool = undefined;
@@ -2331,7 +2371,19 @@ ERROR RECOVERY — if you encounter errors:
           let prevReadFingerprint = "";
           let consecutiveReadOnlyCycles = 0;
 
-          while (autoContinueCount < MAX_AUTO_CONTINUE && mode !== "plan") {
+          // ── GUARD: only auto-continue when session exited cleanly ──
+          // If the main loop exited via heuristic (text silence, turn_end
+          // grace, hard fallback) rather than session.idle/error/done, the
+          // session is still actively processing. Sending a new message to
+          // a busy session corrupts the event stream — the CLI gets confused,
+          // events stop flowing through session.on(), and the for-await
+          // blocks forever. Only auto-continue when we KNOW the session is
+          // idle and ready for a new prompt.
+          if (!exitedViaSessionIdle) {
+            console.log(`[Chat][${projectId.slice(0, 8)}] main loop exited via heuristic (not session.idle) — skipping auto-continue`);
+          }
+
+          while (exitedViaSessionIdle && autoContinueCount < MAX_AUTO_CONTINUE && mode !== "plan") {
             const wroteFiles = assistantToolCalls.some(
               (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
             );
@@ -2402,25 +2454,58 @@ ERROR RECOVERY — if you encounter errors:
                 "You explored the project and installed packages but haven't created any files yet. Continue building NOW — create all the files the user asked for. Do NOT stop until the app is working in the preview.",
                 undefined,
               );
-              for await (const evt of continueStream) {
-                const evtType = (evt as Record<string, unknown>).type as string;
-                const evtData = (evt as Record<string, unknown>).data as Record<string, unknown> | undefined;
+              // ── Manual iteration with timeout (same pattern as main loop) ──
+              // The previous `for await` had NO timeout — if the SDK stream
+              // hung (stopped emitting events), it would block forever.
+              // This caused 500s+ hangs when auto-continue triggered.
+              const AC_TIMEOUT_MS = 120_000; // 2min max silence per event
+              const acIter = (continueStream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+              let acLastActivity = Date.now();
+              let acDone = false;
+              while (!acDone) {
+                const acRace = await Promise.race([
+                  acIter.next(),
+                  new Promise<{ done: true; value: "AC_TIMEOUT" }>((resolve) =>
+                    setTimeout(() => resolve({ done: true, value: "AC_TIMEOUT" as const }), AC_TIMEOUT_MS),
+                  ),
+                ]);
+                if (acRace.done) {
+                  if ((acRace.value as unknown) === "AC_TIMEOUT") {
+                    const acSilence = Math.round((Date.now() - acLastActivity) / 1000);
+                    console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue timeout: ${acSilence}s silence — breaking out`);
+                  }
+                  acDone = true;
+                  break;
+                }
+                const evt = acRace.value as Record<string, unknown>;
+                const evtType = evt.type as string;
+                const evtData = evt.data as Record<string, unknown> | undefined;
                 if (usageCollector) usageCollector.onUsageEvent(evt);
                 traceCollector?.onSdkEvent(evt as Record<string, unknown>);
-                if (evtType === "tool.execution_start" || evtType === "tool.running") {
+                // NOTE: only tool.execution_start increments — tool.running is
+                // a progress/status event and must NOT be treated as a start.
+                if (evtType === "tool.execution_start") {
                   const toolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
                   recordAssistantToolCall(toolName, evtData as Record<string, unknown>);
-                  // Layer 3: Promote SDK tool start to structured trace event
                   if (toolName) traceCollector?.onToolStart(toolName, evtData);
+                  hadToolCalls = true;
+                  acLastActivity = Date.now();
                 }
                 if (evtType === "tool.execution_complete" || evtType === "tool.completed") {
                   const toolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
                   if (toolName) traceCollector?.onToolEnd(toolName, evtData, evtData?.result ?? evtData?.output ?? null);
+                  acLastActivity = Date.now();
                 }
-                if (evtType === "tool.execution_start") {
-                  hadToolCalls = true;
+                // Reset activity timer for content-bearing events
+                const AC_CONTENT = new Set([
+                  "assistant.message_delta", "assistant.reasoning_delta",
+                  "tool.execution_start", "tool.execution_complete",
+                  "tool.execution_partial_result", "tool.running",
+                ]);
+                if (AC_CONTENT.has(evtType)) {
+                  acLastActivity = Date.now();
                 }
-                const sseData = mapEventToSSE(evt);
+                const sseData = mapEventToSSE(evt as Record<string, unknown>);
                 if (!sseData) continue;
                 if (sseData.type === "text_delta") {
                   // mapEventToSSE already sanitized — don't double-sanitize (BUG-119)
@@ -3201,9 +3286,26 @@ chatRoutes.post(
           }),
         });
 
-        // Stream the AI response
+        // Stream the AI response with timeout protection
         const pendingToolNames: string[] = [];
-        for await (const event of engine.sendMessage(sessionId, fixMessage)) {
+        const FIX_TIMEOUT_MS = 120_000; // 2min max silence
+        const fixIter = (engine.sendMessage(sessionId, fixMessage) as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+        let fixDone = false;
+        while (!fixDone) {
+          const fixRace = await Promise.race([
+            fixIter.next(),
+            new Promise<{ done: true; value: "FIX_TIMEOUT" }>((resolve) =>
+              setTimeout(() => resolve({ done: true, value: "FIX_TIMEOUT" as const }), FIX_TIMEOUT_MS),
+            ),
+          ]);
+          if (fixRace.done) {
+            if ((fixRace.value as unknown) === "FIX_TIMEOUT") {
+              console.warn(`[Chat][${projectId.slice(0, 8)}] auto-fix timeout: ${FIX_TIMEOUT_MS / 1000}s silence — breaking out`);
+            }
+            fixDone = true;
+            break;
+          }
+          const event = fixRace.value as Record<string, unknown>;
           const sseData = mapEventToSSE(event);
           if (sseData) {
             if (sseData.type === "tool_call") {

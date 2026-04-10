@@ -360,7 +360,7 @@ export const DEVELOPER_TOOLS_INTEGRATIONS: Record<string, IntegrationDefinition>
       { name: "url", displayName: "Project URL", description: "Your Supabase project URL (e.g., https://your-project-ref.supabase.co)", type: "text", required: true },
       { name: "apiKey", displayName: "API Key", description: "Service Role Key (for full access) or Anonymous Key (for read-only)", type: "secret", required: true },
     ],
-    actions: ["upload-file", "create_row", "update_row", "upsert_row", "delete_rows", "search_rows", "custom_api_call"],
+    actions: ["execute_sql", "upload-file", "create_row", "update_row", "upsert_row", "delete_rows", "search_rows", "custom_api_call"],
     tier: "built_in",
     requiresOAuthApp: false,
     supportsUserProvidedCredentials: true,

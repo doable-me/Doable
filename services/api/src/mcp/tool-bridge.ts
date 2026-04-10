@@ -3,6 +3,8 @@ import type { ResolvedMcpTool, McpContent } from "./types.js";
 import type { ConnectorManager } from "./connector-manager.js";
 import type { McpConnectorConfig } from "./types.js";
 import { getActiveTrace } from "../ai/trace-collector.js";
+import { xray } from "../integrations/xray.js";
+import { fetchCtx, createTracedFetch, type HttpTraceEntry } from "../integrations/runner.js";
 
 /**
  * Convert MCP tools to Copilot SDK Tool[] definitions.
@@ -36,8 +38,16 @@ export function createMcpTools(
           return { success: false, error: `Connector ${connectorName} not found` };
         }
 
+        // Start X-Ray tracking for this MCP call
+        const xr = xray.start({
+          kind: "mcp",
+          integrationId: `mcp:${connectorName}`,
+          actionName: tool.name,
+          projectId,
+          args,
+        });
+
         const trace = projectId ? getActiveTrace(projectId) : null;
-        const mcpStartMs = Date.now();
         console.log(`[MCP:${connectorName}] CALL ${tool.name} args=${JSON.stringify(args).slice(0, 2000)}`);
         trace?.pushRaw("mcp_call", {
           connector: connectorName,
@@ -46,9 +56,22 @@ export function createMcpTools(
         });
 
         try {
-          const client = await connectorManager.getClient(config);
-          const result = await client.callTool(tool.name, args);
-          const mcpDurationMs = Date.now() - mcpStartMs;
+          // Run MCP calls inside fetchCtx so transport HTTP calls are captured by xray
+          const mcpHttpTraces: HttpTraceEntry[] = [];
+          const tracedFetch = createTracedFetch(mcpHttpTraces, projectId ?? undefined, xr);
+
+          const { client, result } = await fetchCtx.run(
+            { tracedFetch, xrayHandle: xr, supabaseApiKey: null },
+            async () => {
+              xr.phase("get_client");
+              const client = await connectorManager.getClient(config);
+
+              xr.phase("call_tool");
+              const result = await client.callTool(tool.name, args);
+              return { client, result };
+            },
+          );
+          const mcpDurationMs = xr.call.durationMs ?? (Date.now() - xr.call.startedAt);
           const resultStr = JSON.stringify(result.content);
           console.log(`[MCP:${connectorName}] RESULT ${tool.name} ${mcpDurationMs}ms isError=${!!result.isError} contentItems=${result.content?.length ?? 0} content=${resultStr.slice(0, 2000)}${resultStr.length > 2000 ? `... [${resultStr.length}c total]` : ""}`);
 
@@ -78,6 +101,7 @@ export function createMcpTools(
               error: errorText,
               rawContent: result.content,
             });
+            xr.end("error", errorText);
             return {
               success: false,
               error: errorText,
@@ -92,6 +116,7 @@ export function createMcpTools(
             };
           }
 
+          xr.end("success");
           return {
             success: true,
             result: formatMcpContent(result.content),
@@ -100,7 +125,7 @@ export function createMcpTools(
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           const errStack = err instanceof Error ? err.stack : undefined;
-          const mcpDurationMs = Date.now() - mcpStartMs;
+          const mcpDurationMs = Date.now() - xr.call.startedAt;
           console.error(`[MCP:${connectorName}] ERROR ${tool.name} ${mcpDurationMs}ms: ${errMsg}`);
           // Try to parse structured MCP error details from the message
           let mcpErrorCode: number | undefined;
@@ -121,6 +146,8 @@ export function createMcpTools(
             errorCode: mcpErrorCode,
             errorData: mcpErrorData,
           });
+
+          xr.end("error", errMsg);
 
           return {
             success: false,

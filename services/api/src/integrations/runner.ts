@@ -1,9 +1,44 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { REGISTRY, getIntegration } from "./registry/index.js";
 import { credentialVault } from "./credential-vault.js";
 import { buildActionContext } from "./context-builder.js";
 import type { RunActionParams, RunActionResult, OAuth2TokenData } from "./types.js";
 import { sql } from "../db/index.js";
 import { getActiveTrace } from "../ai/trace-collector.js";
+import { xray, type XrayCallHandle } from "./xray.js";
+
+// ─── Per-call fetch isolation via AsyncLocalStorage ─────
+// NEVER mutate globalThis.fetch. Instead, every runAction call runs inside
+// an AsyncLocalStorage context that carries its own traced fetch + xray handle.
+// The patched global fetch delegates to the context-local one.
+
+export interface FetchContext {
+  tracedFetch: typeof globalThis.fetch;
+  xrayHandle: XrayCallHandle | null;
+  supabaseApiKey: string | null;
+}
+
+export const fetchCtx = new AsyncLocalStorage<FetchContext>();
+
+// One-time global fetch patch: delegates to context-local fetch if available,
+// otherwise falls through to the original. Safe for concurrency.
+const _originalFetch = globalThis.fetch;
+
+globalThis.fetch = function patchedFetch(input: any, init?: RequestInit): Promise<Response> {
+  const ctx = fetchCtx.getStore();
+  if (ctx) {
+    // Inject Supabase apikey header if needed
+    if (ctx.supabaseApiKey) {
+      const headers = new Headers(init?.headers);
+      if (!headers.has("apikey")) {
+        headers.set("apikey", ctx.supabaseApiKey);
+      }
+      return ctx.tracedFetch(input, { ...init, headers });
+    }
+    return ctx.tracedFetch(input, init);
+  }
+  return _originalFetch(input, init);
+} as typeof globalThis.fetch;
 
 // ─── HTTP Trace Types ───────────────────────────────────
 
@@ -45,13 +80,26 @@ function headersToRecord(init?: any): Record<string, string> {
 }
 
 /**
- * Create a fetch wrapper that records HTTP calls into the provided array.
- * The wrapper delegates to the real global fetch.
+ * Create a fetch wrapper that records HTTP calls into the provided array
+ * AND feeds the xray handle with per-request phase data.
+ *
+ * IMPORTANT: This captures `_originalFetch` (the real fetch) at module load,
+ * so it never calls another traced wrapper — no nesting, no race.
  */
-function createTracedFetch(traces: HttpTraceEntry[], projectId?: string): typeof globalThis.fetch {
-  const realFetch = globalThis.fetch;
+export function createTracedFetch(
+  traces: HttpTraceEntry[],
+  projectId?: string,
+  xrayHandle?: XrayCallHandle | null,
+): typeof globalThis.fetch {
   return async function tracedFetch(input: any, init?: RequestInit): Promise<Response> {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+
+    // Skip tracing for internal broadcast/WS calls to avoid infinite recursion:
+    // traced fetch → pushRaw → broadcast → fetch → traced fetch → pushRaw → ...
+    if (url.includes('/internal/broadcast') || url.includes('/internal/collab') || url.includes('/internal/yjs')) {
+      return _originalFetch(input, init);
+    }
+
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const reqHeaders = redactHeaders(headersToRecord(init?.headers));
     const start = Date.now();
@@ -70,8 +118,11 @@ function createTracedFetch(traces: HttpTraceEntry[], projectId?: string): typeof
       }
     } catch { /* body capture failed — ok */ }
 
+    // X-Ray: track this HTTP call
+    const xrayHttp = xrayHandle?.httpStart(method, url, requestBody) ?? null;
+
     try {
-      const res = await realFetch(input, init);
+      const res = await _originalFetch(input, init);
       const durationMs = Date.now() - start;
 
       // Capture response headers (redacted)
@@ -96,26 +147,138 @@ function createTracedFetch(traces: HttpTraceEntry[], projectId?: string): typeof
       const trace = projectId ? getActiveTrace(projectId) : null;
       trace?.pushRaw("integration_http", entry);
 
+      // X-Ray: finish HTTP call tracking
+      if (xrayHttp) xrayHandle?.httpEnd(xrayHttp, res.status, durationMs, bodyText);
+
       return res;
     } catch (err) {
       const durationMs = Date.now() - start;
+      const errMsg = err instanceof Error ? err.message : String(err);
       const entry: HttpTraceEntry = {
         url, method, requestHeaders: reqHeaders, requestBody, statusCode: null,
         responseHeaders: {}, durationMs, responseBody: null,
-        error: err instanceof Error ? err.message : String(err),
+        error: errMsg,
       };
       traces.push(entry);
       console.error(`[Integration:HTTP] ── REQUEST ──\n  ${method} ${url}\n  Headers: ${JSON.stringify(reqHeaders)}\n  Body: ${requestBody ?? "(none)"}`);
-      console.error(`[Integration:HTTP] ── FAILED (${durationMs}ms) ──\n  Error: ${err instanceof Error ? err.message : String(err)}\n  Stack: ${err instanceof Error ? err.stack : "n/a"}`);
+      console.error(`[Integration:HTTP] ── FAILED (${durationMs}ms) ──\n  Error: ${errMsg}\n  Stack: ${err instanceof Error ? err.stack : "n/a"}`);
 
       // Push failure to live trace
       const trace = projectId ? getActiveTrace(projectId) : null;
       trace?.pushRaw("integration_http_error", entry);
 
+      // X-Ray: finish HTTP call tracking with error
+      if (xrayHttp) xrayHandle?.httpEnd(xrayHttp, null, durationMs, null, errMsg);
+
       throw err;
     }
   };
 }
+
+// ─── Custom Actions ──────────────────────────────────────
+// Actions implemented directly (not via npm pieces) for capabilities
+// that no Activepieces piece provides (e.g. raw SQL execution).
+
+interface CustomAction {
+  displayName: string;
+  description: string;
+  props: Record<string, unknown>;
+  run: (params: RunActionParams, auth: unknown) => Promise<unknown>;
+}
+
+const customActions: Record<string, Record<string, CustomAction>> = {
+  supabase: {
+    execute_sql: {
+      displayName: "Execute SQL",
+      description:
+        "Execute raw SQL against the Supabase database (CREATE TABLE, ALTER, INSERT, SELECT, etc.). Uses the Supabase Management API via OAuth when available, or falls back to the PostgREST rpc endpoint.",
+      props: {
+        sql: {
+          type: "STRING",
+          displayName: "SQL Query",
+          description: "The SQL statement to execute",
+          required: true,
+        },
+      },
+      async run(params, auth) {
+        const sqlQuery = params.props.sql as string;
+        if (!sqlQuery?.trim()) throw new Error("sql parameter is required");
+
+        const creds = auth as Record<string, unknown> | undefined;
+        const projectUrl = creds?.url as string | undefined;
+
+        // Strategy 1: Use Management API if we have an OAuth token
+        const mgmtConn = await credentialVault.get(
+          params.userId,
+          "supabase-mgmt",
+          params.workspaceId,
+        );
+        const mgmtToken =
+          (mgmtConn?.credentials as Record<string, unknown>)?.access_token as string | undefined ??
+          (mgmtConn?.credentials as Record<string, unknown>)?.accessToken as string | undefined;
+
+        if (mgmtToken && projectUrl) {
+          // Extract project ref from URL: https://{ref}.supabase.co
+          const refMatch = projectUrl.match(/https:\/\/([^.]+)\.supabase\.co/);
+          if (!refMatch) throw new Error(`Cannot extract project ref from URL: ${projectUrl}`);
+          const projectRef = refMatch[1];
+
+          const res = await fetch(
+            `https://api.supabase.com/v1/projects/${projectRef}/database/query`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${mgmtToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ query: sqlQuery }),
+            },
+          );
+
+          if (!res.ok) {
+            const errText = await res.text().catch(() => "");
+            throw new Error(`Supabase SQL execution failed (${res.status}): ${errText.slice(0, 500)}`);
+          }
+
+          return await res.json();
+        }
+
+        // Strategy 2: No OAuth token — try the service role key with PostgREST rpc
+        // This only works if the user has created an `exec_sql` function in their DB.
+        // If not, give a clear error explaining the options.
+        const apiKey = creds?.apiKey as string | undefined;
+        if (!projectUrl || !apiKey) {
+          throw new Error(
+            "Supabase credentials missing. Please connect your Supabase account first.",
+          );
+        }
+
+        // Try calling an `exec_sql` rpc function (user may have created one)
+        const rpcRes = await fetch(`${projectUrl}/rest/v1/rpc/exec_sql`, {
+          method: "POST",
+          headers: {
+            apikey: apiKey,
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            Prefer: "return=representation",
+          },
+          body: JSON.stringify({ query: sqlQuery }),
+        });
+
+        if (rpcRes.ok) {
+          return await rpcRes.json();
+        }
+
+        // rpc function doesn't exist — tell the user to connect via OAuth
+        throw new Error(
+          "Raw SQL execution requires Supabase OAuth (Sign in with Supabase) so we can use the Management API. " +
+          "Alternatively, create a Postgres function named `exec_sql(query text)` in your Supabase project to enable SQL via the service role key. " +
+          `PostgREST rpc/exec_sql returned: ${rpcRes.status} ${(await rpcRes.text().catch(() => "")).slice(0, 300)}`,
+        );
+      },
+    },
+  },
+};
 
 // ─── Piece Cache ─────────────────────────────────────────
 
@@ -257,15 +420,12 @@ async function logUsage(params: {
 /**
  * Run an integration action.
  *
- * Algorithm:
- * 1. Look up integration in registry
- * 2. Dynamic import the piece package
- * 3. Get the action from the piece
- * 4. Load credentials from vault
- * 5. Resolve auth value to correct shape
- * 6. Build ActionContext with real auth/props + stubs
- * 7. Call action.run(context)
- * 8. Log usage and return result
+ * Every step is phase-instrumented via X-Ray so you can see EXACTLY
+ * which sub-step (credential lookup, token refresh, piece load,
+ * action execution, individual HTTP calls) is taking how long.
+ *
+ * HTTP calls are isolated per-call via AsyncLocalStorage — no global
+ * mutation, safe for concurrent calls.
  */
 export async function runAction(params: RunActionParams): Promise<RunActionResult> {
   const startTime = Date.now();
@@ -279,16 +439,68 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     };
   }
 
+  // Start X-Ray tracking
+  const xr = xray.start({
+    kind: "integration",
+    integrationId: params.integrationId,
+    actionName: params.actionName,
+    projectId: params.projectId,
+    userId: params.userId,
+    args: params.props,
+  });
+
   try {
+    // 0. Check for custom (non-piece) action first
+    const customAction = customActions[params.integrationId]?.[params.actionName];
+    if (customAction) {
+      xr.phase("credential_lookup");
+      const connection = await credentialVault.get(
+        params.userId,
+        params.integrationId,
+        params.workspaceId,
+      );
+      const auth = connection ? resolveAuth(def.authType, connection.credentials) : undefined;
+
+      console.log(`[Integration] RUN custom ${params.integrationId}/${params.actionName} props=${JSON.stringify(params.props).slice(0, 300)}`);
+      const httpTraces: HttpTraceEntry[] = [];
+
+      xr.phase("action_run");
+      // Run inside AsyncLocalStorage context — no global fetch mutation
+      const output = await fetchCtx.run(
+        { tracedFetch: createTracedFetch(httpTraces, params.projectId, xr), xrayHandle: xr, supabaseApiKey: null },
+        () => customAction.run(params, auth),
+      );
+
+      const durationMs = Date.now() - startTime;
+      xr.end("success");
+      logUsage({
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+        integrationId: params.integrationId,
+        actionName: params.actionName,
+        success: true,
+        durationMs,
+      });
+
+      return {
+        success: true,
+        output,
+        httpTraces: httpTraces.length > 0 ? httpTraces : undefined,
+      };
+    }
+
     // 1. Load the piece
+    xr.phase("piece_load");
     const piece = await loadPiece(params.integrationId);
 
     // 2. Get the action
+    xr.phase("action_lookup");
     const action = typeof piece.getAction === "function"
       ? piece.getAction(params.actionName)
       : piece.actions?.[params.actionName];
 
     if (!action) {
+      xr.end("error", `Action '${params.actionName}' not found`);
       return {
         success: false,
         output: null,
@@ -299,6 +511,7 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     }
 
     // 3. Load credentials
+    xr.phase("credential_lookup");
     const connection = await credentialVault.get(
       params.userId,
       params.integrationId,
@@ -309,6 +522,7 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     let auth: unknown = undefined;
     if (def.authType !== "none") {
       if (!connection) {
+        xr.end("error", "Not connected");
         return {
           success: false,
           output: null,
@@ -317,9 +531,11 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
       }
 
       // Check and refresh token if needed
+      xr.phase("token_refresh_check");
       await ensureTokenFresh(connection.id, connection.auth_type);
 
       // Re-fetch after potential refresh
+      xr.phase("credential_refetch");
       const freshConnection = await credentialVault.get(
         params.userId,
         params.integrationId,
@@ -330,6 +546,7 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     }
 
     // 4. Build ActionContext
+    xr.phase("context_build");
     const context = buildActionContext({
       auth,
       props: params.props,
@@ -338,7 +555,7 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
       projectId: params.projectId,
     });
 
-    // 5. Execute the action with HTTP tracing
+    // 5. Execute the action with per-call isolated HTTP tracing
     console.log(`[Integration] RUN ${params.integrationId}/${params.actionName} props=${JSON.stringify(params.props).slice(0, 300)}`);
     let activeTrace: ReturnType<typeof getActiveTrace> = null;
     try { activeTrace = params.projectId ? getActiveTrace(params.projectId) : null; } catch { /* tracing must not break tools */ }
@@ -347,19 +564,29 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
       actionName: params.actionName,
       props: params.props,
     }); } catch { /* tracing must not break tools */ }
+
     const httpTraces: HttpTraceEntry[] = [];
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = createTracedFetch(httpTraces, params.projectId);
-    let output: unknown;
-    try {
-      output = await action.run(context);
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+
+    // Supabase REST API requires an `apikey` header alongside Authorization.
+    const supabaseApiKey = (params.integrationId === "supabase" && auth && typeof auth === "object" && "apiKey" in auth)
+      ? (auth as Record<string, unknown>).apiKey as string
+      : null;
+
+    xr.phase("action_run");
+    // Run inside AsyncLocalStorage context — traced fetch + xray are per-call isolated
+    const output = await fetchCtx.run(
+      {
+        tracedFetch: createTracedFetch(httpTraces, params.projectId, xr),
+        xrayHandle: xr,
+        supabaseApiKey,
+      },
+      () => action.run(context),
+    );
 
     const durationMs = Date.now() - startTime;
 
     // 6. Log success
+    xr.end("success");
     logUsage({
       workspaceId: params.workspaceId,
       userId: params.userId,
@@ -387,13 +614,17 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     const durationMs = Date.now() - startTime;
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`[Integration] FAILED ${params.integrationId}/${params.actionName} ${durationMs}ms: ${errorMsg}`);
-    try { activeTrace?.pushRaw("integration_error", {
-      integrationId: params.integrationId,
-      actionName: params.actionName,
-      durationMs,
-      error: errorMsg,
-      stack: err instanceof Error ? err.stack : undefined,
-    }); } catch { /* tracing must not break tools */ }
+    xr.end("error", errorMsg);
+    try {
+      const activeTrace = params.projectId ? getActiveTrace(params.projectId) : null;
+      activeTrace?.pushRaw("integration_error", {
+        integrationId: params.integrationId,
+        actionName: params.actionName,
+        durationMs,
+        error: errorMsg,
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    } catch { /* tracing must not break tools */ }
 
     // Log failure
     logUsage({
@@ -467,6 +698,22 @@ export async function getIntegrationActions(integrationId: string): Promise<Arra
         description: a.description ?? "",
         props: a.props ?? {},
       });
+    }
+  }
+
+  // Append custom actions (not from npm piece)
+  const customs = customActions[integrationId];
+  if (customs) {
+    for (const [actionName, ca] of Object.entries(customs)) {
+      // Avoid duplicates if somehow listed in both
+      if (!actions.some((a) => a.name === actionName)) {
+        actions.push({
+          name: actionName,
+          displayName: ca.displayName,
+          description: ca.description,
+          props: ca.props,
+        });
+      }
     }
   }
 

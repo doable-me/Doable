@@ -1,5 +1,15 @@
 import type { JsonRpcRequest, JsonRpcResponse, JsonRpcNotification } from "./types.js";
 
+/** Default timeout for HTTP-based MCP requests (ms) */
+const MCP_HTTP_TIMEOUT_MS = 60_000;
+
+/** Wrap fetch with an AbortController timeout */
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 /** Abstract transport interface for MCP communication */
 export interface McpTransport {
   connect(): Promise<void>;
@@ -21,7 +31,7 @@ export class StreamableHttpTransport implements McpTransport {
 
   async connect(): Promise<void> {
     // Validate server is reachable
-    const response = await fetch(this.serverUrl, {
+    const response = await fetchWithTimeout(this.serverUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -37,7 +47,7 @@ export class StreamableHttpTransport implements McpTransport {
           clientInfo: { name: "doable", version: "1.0.0" },
         },
       }),
-    });
+    }, MCP_HTTP_TIMEOUT_MS);
 
     if (!response.ok) {
       throw new Error(`MCP server returned ${response.status}: ${response.statusText}`);
@@ -68,11 +78,21 @@ export class StreamableHttpTransport implements McpTransport {
     console.log(`[MCP:HTTP] ── REQUEST ──\n  POST ${this.serverUrl}\n  Headers: ${JSON.stringify(headers)}\n  Body: ${reqBody.slice(0, 2000)}${reqBody.length > 2000 ? `... [${reqBody.length}c]` : ""}`);
     const startMs = Date.now();
 
-    const response = await fetch(this.serverUrl, {
-      method: "POST",
-      headers,
-      body: reqBody,
-    });
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(this.serverUrl, {
+        method: "POST",
+        headers,
+        body: reqBody,
+      }, MCP_HTTP_TIMEOUT_MS);
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        const durationMs = Date.now() - startMs;
+        console.error(`[MCP:HTTP] ── TIMEOUT (${durationMs}ms) ── request aborted after ${MCP_HTTP_TIMEOUT_MS}ms`);
+        return { jsonrpc: "2.0", id: request.id, error: { code: -32000, message: `MCP request timed out after ${MCP_HTTP_TIMEOUT_MS / 1000}s` } };
+      }
+      throw err;
+    }
 
     const durationMs = Date.now() - startMs;
 
@@ -108,11 +128,11 @@ export class StreamableHttpTransport implements McpTransport {
       headers["mcp-session-id"] = this.sessionId;
     }
 
-    await fetch(this.serverUrl, {
+    await fetchWithTimeout(this.serverUrl, {
       method: "POST",
       headers,
       body: JSON.stringify(notification),
-    });
+    }, MCP_HTTP_TIMEOUT_MS);
   }
 
   isConnected(): boolean {
@@ -152,9 +172,9 @@ export class LegacySseTransport implements McpTransport {
 
   async connect(): Promise<void> {
     // For legacy SSE, we do a GET to the SSE endpoint to discover the message endpoint
-    const response = await fetch(this.sseUrl, {
+    const response = await fetchWithTimeout(this.sseUrl, {
       headers: { ...this.headers, Accept: "text/event-stream" },
-    });
+    }, MCP_HTTP_TIMEOUT_MS);
 
     if (!response.ok) {
       throw new Error(`SSE endpoint returned ${response.status}`);
@@ -188,11 +208,21 @@ export class LegacySseTransport implements McpTransport {
     console.log(`[MCP:SSE] ── REQUEST ──\n  POST ${this.messageEndpoint}\n  Body: ${reqBody.slice(0, 2000)}${reqBody.length > 2000 ? `... [${reqBody.length}c]` : ""}`);
     const startMs = Date.now();
 
-    const response = await fetch(this.messageEndpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...this.headers },
-      body: reqBody,
-    });
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(this.messageEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...this.headers },
+        body: reqBody,
+      }, MCP_HTTP_TIMEOUT_MS);
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        const durationMs = Date.now() - startMs;
+        console.error(`[MCP:SSE] ── TIMEOUT (${durationMs}ms) ── request aborted after ${MCP_HTTP_TIMEOUT_MS}ms`);
+        return { jsonrpc: "2.0", id: request.id, error: { code: -32000, message: `MCP request timed out after ${MCP_HTTP_TIMEOUT_MS / 1000}s` } };
+      }
+      throw err;
+    }
 
     const durationMs = Date.now() - startMs;
 
@@ -214,11 +244,11 @@ export class LegacySseTransport implements McpTransport {
   async sendNotification(notification: JsonRpcNotification): Promise<void> {
     if (!this.connected || !this.messageEndpoint) return;
 
-    await fetch(this.messageEndpoint, {
+    await fetchWithTimeout(this.messageEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...this.headers },
       body: JSON.stringify(notification),
-    });
+    }, MCP_HTTP_TIMEOUT_MS);
   }
 
   isConnected(): boolean {
@@ -252,16 +282,23 @@ export class StdioTransport implements McpTransport {
       shell: process.platform === "win32",
     });
 
+    // Track early exit so we can fail fast instead of waiting for 30s timeout
+    let earlyExitCode: number | null | undefined = undefined;
+    let stderrChunks: string[] = [];
+
     this.process.stdout!.on("data", (data: Buffer) => {
       this.buffer += data.toString();
       this.processBuffer();
     });
 
     this.process.stderr!.on("data", (data: Buffer) => {
-      console.error(`[MCP:stdio:${this.command}]`, data.toString());
+      const text = data.toString();
+      stderrChunks.push(text);
+      console.error(`[MCP:stdio:${this.command}]`, text);
     });
 
     this.process.on("exit", (code) => {
+      earlyExitCode = code;
       this.connected = false;
       // Reject all pending requests
       for (const [, pending] of this.pendingRequests) {
@@ -270,6 +307,18 @@ export class StdioTransport implements McpTransport {
       }
       this.pendingRequests.clear();
     });
+
+    // Wait briefly for early crash detection — if the process exits
+    // immediately (bad command, missing module), we fail fast instead of
+    // letting the subsequent initialize() hang for 30s.
+    await new Promise<void>((resolve) => setTimeout(resolve, 150));
+
+    if (earlyExitCode !== undefined) {
+      const stderr = stderrChunks.join("").slice(0, 500);
+      throw new Error(
+        `MCP stdio process exited immediately with code ${earlyExitCode}${stderr ? `: ${stderr}` : ""}`,
+      );
+    }
 
     this.connected = true;
   }

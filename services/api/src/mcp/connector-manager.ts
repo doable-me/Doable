@@ -53,6 +53,8 @@ export class ConnectorManager {
   /**
    * Get the tools discovered from a connector.
    * Connects if needed, caches the tool list.
+   * Returns cached tools even if the connection has since dropped — the tool
+   * handler in tool-bridge.ts will reconnect on demand when a tool is called.
    */
   async getTools(config: McpConnectorConfig): Promise<McpToolDefinition[]> {
     const entry = this.connections.get(config.id);
@@ -73,6 +75,25 @@ export class ConnectorManager {
   }
 
   /**
+   * Like getTools but retries once on failure after a short delay.
+   * Used by getEffectiveTools to handle transient subprocess startup failures.
+   */
+  private async getToolsWithRetry(config: McpConnectorConfig): Promise<McpToolDefinition[]> {
+    try {
+      return await this.getTools(config);
+    } catch (firstErr) {
+      console.warn(
+        `[ConnectorManager] First attempt failed for ${config.name}, retrying in 1s:`,
+        firstErr instanceof Error ? firstErr.message : firstErr,
+      );
+      // Clean up any partial state from the failed attempt
+      await this.disconnect(config.id).catch(() => {});
+      await new Promise((r) => setTimeout(r, 1000));
+      return this.getTools(config);
+    }
+  }
+
+  /**
    * Resolve all effective MCP tools for a given scope.
    * Merges tools from workspace + project + user connectors.
    */
@@ -87,7 +108,7 @@ export class ConnectorManager {
         .filter((c) => c.status === "active")
         .map(async (connector) => {
           try {
-            const tools = await this.getTools(connector);
+            const tools = await this.getToolsWithRetry(connector);
             return tools.map((tool) => ({
               connectorId: connector.id,
               connectorName: connector.name,
