@@ -1634,77 +1634,24 @@ ERROR RECOVERY — if you encounter errors:
           const manager = getCopilotManager();
           let currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
 
-          // Try to send. If the session was lost (engine recycled), recreate it.
-          let messageStream: AsyncGenerator<import("@github/copilot-sdk").SessionEvent>;
-          try {
-            const originalStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
-            // Send an immediate status so the frontend exits "Connecting to AI..."
-            // before the model responds (BYOK providers can take 30s+ to first token).
-            await stream.writeSSE({
-              data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "Waiting for AI model to respond..." } }),
-            });
-            // Force the generator to yield once — "Session not found" throws here
-            // because async generators are lazy (the body doesn't run until iterated).
-            const first = await originalStream.next();
-            // Once we get the first event, update status to show the model is actively generating.
-            await stream.writeSSE({
-              data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "AI is writing code..." } }),
-            });
-            // Wrap in a helper that re-yields the first value then continues.
-            // IMPORTANT: use `originalStream` — not `messageStream` — to avoid
-            // self-delegation after the reassignment below.
-            messageStream = (async function* () {
-              if (!first.done) yield first.value;
-              yield* originalStream;
-            })();
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes("not found") || msg.includes("not started") || msg.includes("stopped")) {
-              // Session or engine was lost (engine recycled/stopped) — recreate
-              console.log(`[Chat] Session or engine lost for ${projectId}: ${msg.slice(0, 80)}`);
-              stream.writeSSE({
-                data: JSON.stringify({ type: "status", data: { phase: "reconnecting", message: "Reconnecting to AI..." } }),
-              }).catch(() => {});
-              projectSessions.delete(sessionKey);
-              projectSessionModes.delete(sessionKey);
-              currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
-              const freshTools = await createAllTools(projectId, workspaceId, userId);
-              // bug-24: the recreation path previously passed
-              // `freshTools` unfiltered in agent mode, leaving
-              // create_plan / ask_clarification / mark_step_complete
-              // available and re-introducing the same leak the main
-              // branch just fixed. Filter to match sessionTools.
-              const recreationTools = mode === "plan"
-                ? freshTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED.has(t.name ?? ""))
-                : freshTools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
-              sessionId = await currentEngine.createSession({
-                projectId, userId, model: resolvedModel, provider: resolvedProvider,
-                workingDirectory: projectPath, systemPrompt, tools: recreationTools,
-                toolProgress,
-              });
-              projectSessions.set(sessionKey, sessionId);
-              projectSessionModes.set(sessionKey, mode);
-              // Persist new SDK session ID to DB
-              if (dbSessionId) {
-                sql`UPDATE ai_sessions SET copilot_session_id = ${sessionId}, updated_at = now()
-                    WHERE id = ${dbSessionId}`.catch(() => {});
-              }
-              messageStream = currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
-            } else {
-              throw err;
-            }
-          }
-
-          // ── Stream SDK events via simple for-await ──
-          // The SDK's sendMessage() generator already handles termination:
-          //   - Terminates on session.idle / session.error (authoritative)
-          //   - Has 45s inactivity timeout → yields session.error → terminates
-          //   - Handles abort via abortedSessions flag
-          // No manual iterator, no Promise.race, no heuristic state machine.
-          // Just trust the SDK and process events as they arrive.
+          // Send status, set up event callback, send message via callback-based API.
           const channelRouter = new ChannelTokenRouter();
+          let firstEventReceived = false;
 
-          for await (const event of messageStream!) {
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "Waiting for AI model to respond..." } }),
+          });
+
+          // Event processing callback — called synchronously by SDK for each event.
+          // writeSSE calls are fire-and-forget since Node.js response.write() buffers in order.
+          const processEvent = (event: import("@github/copilot-sdk").SessionEvent) => {
+            if (!firstEventReceived) {
+              firstEventReceived = true;
+              stream.writeSSE({
+                data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "AI is writing code..." } }),
+              }).catch(() => {});
+            }
+
             const evtType = (event as Record<string, unknown>).type as string;
             const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
 
@@ -1786,10 +1733,10 @@ ERROR RECOVERY — if you encounter errors:
                   for (const chunk of routedChunks) {
                     if (!chunk.content) continue;
                     if (chunk.type === "text") {
-                      await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
+                      stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }).catch(() => {});
                     } else {
                       assistantThinking += chunk.content;
-                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
+                      stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
                     }
                   }
                   assistantContent = assistantContent.slice(0, msgIdDeltaStart) + sanitizedContent;
@@ -1798,10 +1745,10 @@ ERROR RECOVERY — if you encounter errors:
                   for (const chunk of routedChunks) {
                     if (!chunk.content) continue;
                     if (chunk.type === "text") {
-                      await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
+                      stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }).catch(() => {});
                     } else {
                       assistantThinking += chunk.content;
-                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
+                      stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
                     }
                   }
                   assistantContent = sanitizedContent;
@@ -1849,7 +1796,7 @@ ERROR RECOVERY — if you encounter errors:
                       type: "ai:stream-chunk", chunk: cleaned, messageId, isThinking: false,
                     }, userId).catch(() => {});
                     traceCollector?.onTextDelta(cleaned);
-                    await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
+                    stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) }).catch(() => {});
                     lastSseEmitAt = Date.now();
                   } else {
                     assistantThinking += chunk.content;
@@ -1857,7 +1804,7 @@ ERROR RECOVERY — if you encounter errors:
                     broadcastToRoom(projectId, {
                       type: "ai:stream-chunk", chunk: stripServerPaths(chunk.content), messageId, isThinking: true,
                     }, userId).catch(() => {});
-                    await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
+                    stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
                     lastSseEmitAt = Date.now();
                   }
                 }
@@ -1868,7 +1815,7 @@ ERROR RECOVERY — if you encounter errors:
                 broadcastToRoom(projectId, {
                   type: "ai:stream-chunk", chunk: thinkingDelta, messageId, isThinking: true,
                 }, userId).catch(() => {});
-                await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(thinkingDelta) }) });
+                stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(thinkingDelta) }) }).catch(() => {});
                 lastSseEmitAt = Date.now();
               } else {
                 traceCollector?.onSseEmit(sseData.type, sseData.data);
@@ -1889,16 +1836,52 @@ ERROR RECOVERY — if you encounter errors:
                     type: "ai:error", messageId, error: sseData.data,
                   }, userId).catch(() => {});
                 }
-                await stream.writeSSE({ data: JSON.stringify(sseData) });
+                stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
                 lastSseEmitAt = Date.now();
               }
             }
 
-            // The generator terminates on session.idle / session.error / done,
-            // so for-await exits naturally. Log terminal events for debugging.
+            // Terminal events — clear tool display state.
             if (evtType === "session.idle" || evtType === "session.error" || evtType === "done") {
               lastToolName = undefined;
               friendlyLastTool = undefined;
+            }
+          }; // end processEvent
+
+          // Send message via callback-based API — no generator, no queue, no watchdog.
+          // sendMessage() resolves on session.idle, rejects on session.send() failure.
+          try {
+            await currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined, processEvent);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes("not found") || msg.includes("not started") || msg.includes("stopped")) {
+              // Session or engine was lost (engine recycled/stopped) — recreate
+              console.log(`[Chat] Session or engine lost for ${projectId}: ${msg.slice(0, 80)}`);
+              stream.writeSSE({
+                data: JSON.stringify({ type: "status", data: { phase: "reconnecting", message: "Reconnecting to AI..." } }),
+              }).catch(() => {});
+              projectSessions.delete(sessionKey);
+              projectSessionModes.delete(sessionKey);
+              currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
+              const freshTools = await createAllTools(projectId, workspaceId, userId);
+              const recreationTools = mode === "plan"
+                ? freshTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED.has(t.name ?? ""))
+                : freshTools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
+              sessionId = await currentEngine.createSession({
+                projectId, userId, model: resolvedModel, provider: resolvedProvider,
+                workingDirectory: projectPath, systemPrompt, tools: recreationTools,
+                toolProgress,
+              });
+              projectSessions.set(sessionKey, sessionId);
+              projectSessionModes.set(sessionKey, mode);
+              if (dbSessionId) {
+                sql`UPDATE ai_sessions SET copilot_session_id = ${sessionId}, updated_at = now()
+                    WHERE id = ${dbSessionId}`.catch(() => {});
+              }
+              firstEventReceived = false;
+              await currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined, processEvent);
+            } else {
+              throw err;
             }
           }
 
@@ -2010,12 +1993,11 @@ ERROR RECOVERY — if you encounter errors:
                   data: { phase: "continuing", message: `Continuing to build\u2026 (step ${autoContinueCount})` },
                 }),
               });
-              const continueStream = currentEngine.sendMessage(
+              await currentEngine.sendMessage(
                 sessionId!,
                 "You explored the project and installed packages but haven't created any files yet. Continue building NOW — create all the files the user asked for. Do NOT stop until the app is working in the preview.",
                 undefined,
-              );
-              for await (const evt of continueStream) {
+                (evt: import("@github/copilot-sdk").SessionEvent) => {
                 const evtType = (evt as Record<string, unknown>).type as string;
                 const evtData = (evt as Record<string, unknown>).data as Record<string, unknown> | undefined;
                 if (usageCollector) usageCollector.onUsageEvent(evt);
@@ -2031,21 +2013,21 @@ ERROR RECOVERY — if you encounter errors:
                   if (toolName) traceCollector?.onToolEnd(toolName, evtData, evtData?.result ?? evtData?.output ?? null);
                 }
                 const sseData = mapEventToSSE(evt as Record<string, unknown>);
-                if (!sseData) continue;
+                if (!sseData) return;
                 if (sseData.type === "text_delta") {
                   const cleaned = typeof sseData.data === "string" ? sseData.data : "";
                   if (cleaned) {
                     assistantContent += cleaned;
-                    await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) });
+                    stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) }).catch(() => {});
                   }
                 } else if (sseData.type === "thinking") {
                   const t = typeof sseData.data === "string" ? sseData.data : "";
                   if (t) assistantThinking += t;
-                  await stream.writeSSE({ data: JSON.stringify(sseData) });
+                  stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
                 } else {
-                  await stream.writeSSE({ data: JSON.stringify(sseData) });
+                  stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
                 }
-              }
+              });
               console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue attempt ${autoContinueCount} done — content: ${assistantContent.length} chars, tools: ${assistantToolCalls.length}`);
             } catch (err) {
               console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue attempt ${autoContinueCount} failed:`, err instanceof Error ? err.message : err);
@@ -2079,9 +2061,8 @@ ERROR RECOVERY — if you encounter errors:
               data: JSON.stringify({ type: "status", data: { phase: "retrying", message: "Model returned empty — retrying..." } }),
             });
             try {
-              const retryStream = currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined);
               const retryRouter = new ChannelTokenRouter();
-              for await (const retryEvent of retryStream) {
+              await currentEngine.sendMessage(sessionId!, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined, (retryEvent: import("@github/copilot-sdk").SessionEvent) => {
                 const rType = (retryEvent as Record<string, unknown>).type as string;
                 if (usageCollector) usageCollector.onUsageEvent(retryEvent);
                 const retrySseData = mapEventToSSE(retryEvent);
@@ -2091,21 +2072,21 @@ ERROR RECOVERY — if you encounter errors:
                     if (!chunk.content) continue;
                     if (chunk.type === "text") {
                       assistantContent += chunk.content;
-                      await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
+                      stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }).catch(() => {});
                     } else {
                       assistantThinking += chunk.content;
-                      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
+                      stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
                     }
                   }
                 } else if (retrySseData?.type === "thinking") {
                   const td = typeof retrySseData.data === "string" ? retrySseData.data : "";
                   assistantThinking += td;
-                  await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(td) }) });
+                  stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(td) }) }).catch(() => {});
                 } else if (retrySseData && retrySseData.type !== "done") {
                   if (retrySseData.type === "tool_call" || retrySseData.type === "tool_result") hadToolCalls = true;
-                  await stream.writeSSE({ data: JSON.stringify(retrySseData) });
+                  stream.writeSSE({ data: JSON.stringify(retrySseData) }).catch(() => {});
                 }
-              }
+              });
               for (const chunk of retryRouter.flush()) {
                 if (!chunk.content) continue;
                 if (chunk.type === "text") {
@@ -2230,16 +2211,17 @@ ERROR RECOVERY — if you encounter errors:
 
             try {
               const fixEngine = await getCopilotManager().getEngine(projectId, resolvedGithubToken);
-              const fixStream = fixEngine.sendMessage(
+              await fixEngine.sendMessage(
                 sessionId!,
                 buildAutoFixPrompt(previewError.message),
+                undefined,
+                (event: import("@github/copilot-sdk").SessionEvent) => {
+                  const sseData = mapEventToSSE(event);
+                  if (sseData) {
+                    stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
+                  }
+                },
               );
-              for await (const event of fixStream) {
-                const sseData = mapEventToSSE(event);
-                if (sseData) {
-                  await stream.writeSSE({ data: JSON.stringify(sseData) });
-                }
-              }
             } catch (fixErr) {
               console.warn(
                 `[Chat] Auto-fix attempt ${attempt + 1} failed:`,
@@ -2753,8 +2735,7 @@ chatRoutes.post(
 
         // Stream the AI response
         const pendingToolNames: string[] = [];
-        const fixStream = engine.sendMessage(sessionId, fixMessage);
-        for await (const event of fixStream) {
+        await engine.sendMessage(sessionId, fixMessage, undefined, (event: import("@github/copilot-sdk").SessionEvent) => {
           const sseData = mapEventToSSE(event);
           if (sseData) {
             if (sseData.type === "tool_call") {
@@ -2768,9 +2749,9 @@ chatRoutes.post(
                 resultData.name = pendingToolNames.shift();
               }
             }
-            await stream.writeSSE({ data: JSON.stringify(sseData) });
+            stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
           }
-        }
+        });
 
         // After AI finishes, check if the fix actually worked
         await stream.writeSSE({
