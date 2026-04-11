@@ -74,6 +74,13 @@ export interface CopilotSessionConfig {
   onEvent?: (event: SessionEvent) => void;
   /** Tool progress callbacks — separate RPC channel from event stream */
   toolProgress?: ToolProgressCallback;
+  /** Trace collector for lifecycle events */
+  traceCollector?: {
+    onSessionCreate: (sessionId: string, model: string | null, provider: string | null, hasProvider: boolean, toolCount: number) => void;
+    onSessionResume: (sessionId: string, fromDb: boolean) => void;
+    onSessionResumeFailed: (sessionId: string, error: string) => void;
+    onSessionDisconnect: (sessionId: string, reason: string) => void;
+  };
 }
 
 // ─── Copilot Engine ────────────────────────────────────
@@ -214,6 +221,13 @@ export class CopilotEngine {
     }
 
     this.sessions.set(session.sessionId, session);
+    config.traceCollector?.onSessionCreate(
+      session.sessionId,
+      config.model ?? this.config.model ?? null,
+      config.provider?.type ?? null,
+      !!config.provider,
+      config.tools?.length ?? 0,
+    );
     return session.sessionId;
   }
 
@@ -254,6 +268,7 @@ export class CopilotEngine {
     }
 
     this.sessions.set(session.sessionId, session);
+    config?.traceCollector?.onSessionResume(session.sessionId, true);
     return session.sessionId;
   }
 

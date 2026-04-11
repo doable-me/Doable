@@ -4,7 +4,7 @@ import { credentialVault } from "./credential-vault.js";
 import { buildActionContext } from "./context-builder.js";
 import type { RunActionParams, RunActionResult, OAuth2TokenData } from "./types.js";
 import { sql } from "../db/index.js";
-import { getActiveTrace } from "../ai/trace-collector.js";
+import { getActiveTrace, categorizeError } from "../ai/trace-collector.js";
 import { xray, type XrayCallHandle } from "./xray.js";
 
 // ─── Per-call fetch isolation via AsyncLocalStorage ─────
@@ -109,7 +109,7 @@ export function createTracedFetch(
     try {
       if (init?.body) {
         if (typeof init.body === "string") {
-          requestBody = init.body.length > 4096 ? init.body.slice(0, 4096) + `... [${init.body.length - 4096} chars truncated]` : init.body;
+          requestBody = init.body.length > 16384 ? init.body.slice(0, 16384) + `... [${init.body.length - 16384} chars truncated]` : init.body;
         } else if (init.body instanceof URLSearchParams) {
           requestBody = init.body.toString();
         } else {
@@ -133,7 +133,7 @@ export function createTracedFetch(
       try {
         const clone = res.clone();
         const raw = await clone.text();
-        bodyText = raw.length > 4096 ? raw.slice(0, 4096) + `... [${raw.length - 4096} chars truncated]` : raw;
+        bodyText = raw.length > 16384 ? raw.slice(0, 16384) + `... [${raw.length - 16384} chars truncated]` : raw;
       } catch { /* body read failed — ok */ }
 
       const entry: HttpTraceEntry = { url, method, requestHeaders: reqHeaders, requestBody, statusCode: res.status, responseHeaders: resHeaders, durationMs, responseBody: bodyText };
@@ -165,7 +165,7 @@ export function createTracedFetch(
 
       // Push failure to live trace
       const trace = projectId ? getActiveTrace(projectId) : null;
-      trace?.pushRaw("integration_http_error", entry);
+      trace?.pushRaw("integration_http_error", { ...entry, category: categorizeError(errMsg) });
 
       // X-Ray: finish HTTP call tracking with error
       if (xrayHttp) xrayHandle?.httpEnd(xrayHttp, null, durationMs, null, errMsg);

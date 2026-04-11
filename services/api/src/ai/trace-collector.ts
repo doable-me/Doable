@@ -108,8 +108,8 @@ function safeStringify(data: unknown): string {
   });
 }
 
-/** Truncate only for DB storage of very large fields (>10KB) */
-function truncateForDb(s: string, maxLen = 10000): string {
+/** Truncate only for DB storage of very large fields */
+function truncateForDb(s: string, maxLen = 32000): string {
   if (s.length <= maxLen) return s;
   return s.slice(0, maxLen) + `... [${s.length - maxLen} chars truncated]`;
 }
@@ -126,6 +126,21 @@ export function getActiveTrace(projectId: string) {
 /** Remove a project from the active trace registry */
 export function removeActiveTrace(projectId: string) {
   activeTraceRegistry.delete(projectId);
+}
+
+export function categorizeError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("auth") || m.includes("unauthorized") || m.includes("forbidden") || m.includes("401") || m.includes("403")) return "AUTH";
+  if (m.includes("timeout") || m.includes("timed out") || m.includes("deadline")) return "TIMEOUT";
+  if (m.includes("rate limit") || m.includes("429") || m.includes("too many")) return "RATE_LIMIT";
+  if (m.includes("network") || m.includes("econnrefused") || m.includes("econnreset") || m.includes("enotfound") || m.includes("dns") || m.includes("socket")) return "NETWORK";
+  if (m.includes("not found") || m.includes("404")) return "NOT_FOUND";
+  if (m.includes("parse") || m.includes("json") || m.includes("syntax") || m.includes("unexpected token")) return "PARSE";
+  if (m.includes("permission") || m.includes("denied") || m.includes("access")) return "PERMISSION";
+  if (m.includes("quota") || m.includes("limit") || m.includes("exceeded")) return "QUOTA";
+  if (m.includes("500") || m.includes("502") || m.includes("503") || m.includes("504") || m.includes("internal server error") || m.includes("bad gateway") || m.includes("service unavailable")) return "SERVER";
+  if (m.includes("session") || m.includes("not started") || m.includes("stopped") || m.includes("disconnected")) return "SESSION";
+  return "UNKNOWN";
 }
 
 // ─── Factory ───────────────────────────────────────────────
@@ -266,7 +281,7 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
         console.log(`[Trace:${pid}] +${ms}ms AUTO_CONTINUE #${(d as any)?.count} reason=${(d as any)?.reason}`);
         break;
       case "error":
-        console.error(`[Trace:${pid}] +${ms}ms ERROR ${(d as any)?.message} context=${(d as any)?.context}`);
+        console.error(`[Trace:${pid}] +${ms}ms ERROR [${(d as any)?.category}] ${(d as any)?.message} context=${(d as any)?.context}`);
         break;
       case "sse_emit": {
         const sseType = (d as any)?.sse_type;
@@ -277,7 +292,13 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
         break;
       }
       case "tool_manifest":
-        console.log(`[Trace:${pid}] +${ms}ms TOOL_MANIFEST ${(d as any)?.filteredTools} tools (mode=${(d as any)?.mode})`);
+        console.log(`[Trace:${pid}] +${ms}ms TOOL_MANIFEST ${(d as any)?.filteredToolCount ?? (d as any)?.filteredTools} tools (mode=${(d as any)?.mode}) names=[${((d as any)?.toolNames ?? []).join(", ")}] mcp=${(d as any)?.mcpToolCount ?? 0} integration=${(d as any)?.integrationToolCount ?? 0} builtin=${(d as any)?.builtinToolCount ?? 0}`);
+        break;
+      case "config_resolved":
+        console.log(`[Trace:${pid}] +${ms}ms CONFIG_RESOLVED model=${(d as any)?.model} source=${(d as any)?.modelSource} provider=${(d as any)?.provider} providerSource=${(d as any)?.providerSource} githubToken=${(d as any)?.githubTokenPresent}`);
+        break;
+      case "provider_resolved":
+        console.log(`[Trace:${pid}] +${ms}ms PROVIDER_RESOLVED type=${(d as any)?.type} baseUrl=${(d as any)?.baseUrl} hasKey=${(d as any)?.hasApiKey} source=${(d as any)?.source}`);
         break;
       case "mcp_call":
         console.log(`[Trace:${pid}] +${ms}ms MCP_CALL [${(d as any)?.connector}] ${(d as any)?.tool} args=${JSON.stringify((d as any)?.args).slice(0, 1000)}`);
@@ -309,6 +330,36 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
         console.error(`[Trace:${pid}] +${ms}ms INTEGRATION_HTTP_ERROR ${h?.method} ${h?.url} ${h?.durationMs}ms: ${h?.error}`);
         break;
       }
+      case "session_create":
+        console.log(`[Trace:${pid}] +${ms}ms SESSION_CREATE sid=${(d as any)?.sessionId?.slice(0, 8)} model=${(d as any)?.model} provider=${(d as any)?.provider} tools=${(d as any)?.toolCount}`);
+        break;
+      case "session_resume":
+        console.log(`[Trace:${pid}] +${ms}ms SESSION_RESUME sid=${(d as any)?.sessionId?.slice(0, 8)} fromDb=${(d as any)?.fromDb}`);
+        break;
+      case "session_resume_failed":
+        console.error(`[Trace:${pid}] +${ms}ms SESSION_RESUME_FAILED sid=${(d as any)?.sessionId?.slice(0, 8)} error=${(d as any)?.error}`);
+        break;
+      case "session_evict":
+        console.warn(`[Trace:${pid}] +${ms}ms SESSION_EVICT old=${(d as any)?.oldSessionId?.slice(0, 8)} reason=${(d as any)?.reason}`);
+        break;
+      case "session_mode_switch":
+        console.log(`[Trace:${pid}] +${ms}ms SESSION_MODE_SWITCH sid=${(d as any)?.sessionId?.slice(0, 8)} ${(d as any)?.from} → ${(d as any)?.to}`);
+        break;
+      case "session_disconnect":
+        console.log(`[Trace:${pid}] +${ms}ms SESSION_DISCONNECT sid=${(d as any)?.sessionId?.slice(0, 8)} reason=${(d as any)?.reason}`);
+        break;
+      case "request_start":
+        console.log(`[Trace:${pid}] +${ms}ms REQUEST_START contentLength=${(d as any)?.contentLength} mode=${(d as any)?.mode} attachments=${(d as any)?.hasAttachments}`);
+        break;
+      case "stream_start":
+        console.log(`[Trace:${pid}] +${ms}ms STREAM_START`);
+        break;
+      case "stream_end":
+        console.log(`[Trace:${pid}] +${ms}ms STREAM_END reason=${(d as any)?.reason} frames=${(d as any)?.totalSseFrames} duration=${(d as any)?.stream_duration_ms}ms`);
+        break;
+      case "client_disconnect":
+        console.warn(`[Trace:${pid}] +${ms}ms CLIENT_DISCONNECT elapsed=${(d as any)?.elapsed_ms}ms`);
+        break;
       // text_delta and thinking_delta are too noisy for console — skip
       default:
         break;
@@ -416,8 +467,68 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     push("sse_emit", { sse_type: type, data });
   }
 
-  function onError(message: string, context?: string): void {
-    push("error", { message, context });
+  function onError(message: string, context?: string, category?: string): void {
+    const cat = category ?? categorizeError(message);
+    push("error", { message, context, category: cat });
+  }
+
+  /** HTTP request received — marks the start of the chat turn */
+  function onRequestStart(contentLength: number | null, mode: string, hasAttachments: boolean): void {
+    push("request_start", { contentLength, mode, hasAttachments });
+  }
+
+  /** SSE stream opened — first byte sent to client */
+  function onStreamStart(): void {
+    push("stream_start", { elapsed_since_request_ms: elapsed() });
+  }
+
+  /** SSE stream ended — [DONE] sent or stream closed */
+  function onStreamEnd(reason: "done" | "error" | "abort" | "client_disconnect", totalSseFrames: number): void {
+    push("stream_end", { reason, totalSseFrames, stream_duration_ms: elapsed() });
+  }
+
+  /** Client disconnected before stream completed */
+  function onClientDisconnect(bytesSent: number | null): void {
+    push("client_disconnect", { bytesSent, elapsed_ms: elapsed() });
+  }
+
+  /** Configuration resolution — shows the decision chain */
+  function onConfigResolved(config: {
+    model: string | null;
+    modelSource: string;
+    provider: string | null;
+    providerSource: string;
+    systemPromptLength: number;
+    hasCustomSystemPrompt: boolean;
+    githubTokenPresent: boolean;
+  }): void {
+    push("config_resolved", config);
+  }
+
+  /** Tool manifest — what tools were made available and why */
+  function onToolManifest(manifest: {
+    mode: string;
+    totalToolsCreated: number;
+    filteredToolCount: number;
+    toolNames: string[];
+    mcpToolCount: number;
+    integrationToolCount: number;
+    builtinToolCount: number;
+    filterReason?: string;
+  }): void {
+    push("tool_manifest", manifest);
+  }
+
+  /** Provider discovery — BYOK provider details */
+  function onProviderResolved(provider: {
+    type: string | null;
+    baseUrl: string | null;
+    hasApiKey: boolean;
+    hasBearerToken: boolean;
+    wireApi?: string;
+    source: string;
+  }): void {
+    push("provider_resolved", provider);
   }
 
   function setSessionId(id: string): void {
@@ -480,7 +591,10 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
 
     try {
       const errorMessages = status === "error"
-        ? events.filter(e => e.type === "error").map(e => (e.data as { message?: string })?.message).filter(Boolean).join("; ") || null
+        ? events.filter(e => e.type === "error").map(e => {
+            const data = e.data as { message?: string; category?: string };
+            return data.category ? `[${data.category}] ${data.message}` : data.message;
+          }).filter(Boolean).join("; ") || null
         : null;
 
       if (traceId) {
@@ -579,6 +693,30 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     push(type, data);
   }
 
+  function onSessionCreate(sessionId: string, model: string | null, provider: string | null, hasProvider: boolean, toolCount: number): void {
+    push("session_create", { sessionId, model, provider, hasProvider, toolCount });
+  }
+
+  function onSessionResume(sessionId: string, fromDb: boolean): void {
+    push("session_resume", { sessionId, fromDb });
+  }
+
+  function onSessionResumeFailed(sessionId: string, error: string): void {
+    push("session_resume_failed", { sessionId, error });
+  }
+
+  function onSessionEvict(oldSessionId: string, reason: string): void {
+    push("session_evict", { oldSessionId, reason });
+  }
+
+  function onSessionModeSwitch(sessionId: string, from: string, to: string): void {
+    push("session_mode_switch", { sessionId, from, to });
+  }
+
+  function onSessionDisconnect(sessionId: string, reason: string): void {
+    push("session_disconnect", { sessionId, reason });
+  }
+
   const collector = {
     recordUserMessage,
     onSdkEvent,
@@ -589,6 +727,13 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     onAutoContinue,
     onSseEmit,
     onError,
+    onConfigResolved,
+    onToolManifest,
+    onProviderResolved,
+    onRequestStart,
+    onStreamStart,
+    onStreamEnd,
+    onClientDisconnect,
     pushRaw,
     setSessionId,
     setMessageId,
@@ -598,6 +743,12 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     getTraceId,
     getSummary,
     destroy,
+    onSessionCreate,
+    onSessionResume,
+    onSessionResumeFailed,
+    onSessionEvict,
+    onSessionModeSwitch,
+    onSessionDisconnect,
   };
 
   // Register in active trace registry

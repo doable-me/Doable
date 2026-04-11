@@ -1168,6 +1168,17 @@ integrationRoutes.delete("/integrations/admin/oauth-apps/:id", authMiddleware, a
 // ─── X-Ray: Integration Observability Endpoints ──────────
 
 import { xray } from "../integrations/xray.js";
+import { getQueryStats, resetQueryStats } from "../db/query-tracer.js";
+
+/**
+ * GET /xray/db-stats
+ */
+integrationRoutes.get("/xray/db-stats", authMiddleware, async (c) => {
+  const reset = c.req.query("reset") === "1";
+  const stats = getQueryStats();
+  if (reset) resetQueryStats();
+  return c.json({ data: stats });
+});
 
 /**
  * GET /integrations/xray/active

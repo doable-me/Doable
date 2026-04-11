@@ -2,7 +2,7 @@ import { defineTool, type Tool } from "@github/copilot-sdk";
 import type { ResolvedMcpTool, McpContent } from "./types.js";
 import type { ConnectorManager } from "./connector-manager.js";
 import type { McpConnectorConfig } from "./types.js";
-import { getActiveTrace } from "../ai/trace-collector.js";
+import { getActiveTrace, categorizeError } from "../ai/trace-collector.js";
 import { xray } from "../integrations/xray.js";
 import { fetchCtx, createTracedFetch, type HttpTraceEntry } from "../integrations/runner.js";
 
@@ -100,6 +100,7 @@ export function createMcpTools(
               durationMs: mcpDurationMs,
               error: errorText,
               rawContent: result.content,
+              category: categorizeError(errorText),
             });
             xr.end("error", errorText);
             return {
@@ -145,6 +146,7 @@ export function createMcpTools(
             errorStack: errStack,
             errorCode: mcpErrorCode,
             errorData: mcpErrorData,
+            category: categorizeError(errMsg),
           });
 
           xr.end("error", errMsg);

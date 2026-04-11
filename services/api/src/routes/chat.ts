@@ -110,14 +110,23 @@ async function resolveAiEngine(
   model?: string;
   provider?: ByokProviderConfig;
   githubToken?: string;
+  modelSource: string;
+  providerSource: string;
 }> {
   let resolvedProvider: ByokProviderConfig | undefined = overrides.provider;
   let resolvedModel: string | undefined = overrides.model;
   let githubToken: string | undefined;
 
+  // Source tracking for trace observability
+  let modelSource: string = overrides.model ? "user_preference" : "system_default";
+  let providerSource: string = overrides.provider ? "user_byok" : "fallback";
+
   // Track whether we picked a copilot account / provider through any tier
   let selectedCopilotAccountId: string | undefined = overrides.copilotAccountId;
   let selectedProviderId: string | undefined = overrides.providerId;
+
+  if (overrides.copilotAccountId) providerSource = "github_copilot";
+  if (overrides.providerId) providerSource = "user_byok";
 
   try {
     // Look up the project's workspace
@@ -131,6 +140,8 @@ async function resolveAiEngine(
           selectedCopilotAccountId = config.enforced_copilot_account_id ?? undefined;
           selectedProviderId = config.enforced_provider_id ?? undefined;
           resolvedModel = config.enforced_model ?? resolvedModel;
+          modelSource = "admin_override";
+          providerSource = config.enforced_provider_id ? "workspace_byok" : "github_copilot";
           // Enforcement overrides any request-level provider/copilot values
           resolvedProvider = undefined;
         } else if (!selectedCopilotAccountId && !selectedProviderId && !resolvedProvider) {
@@ -152,13 +163,17 @@ async function resolveAiEngine(
           if (hasUserOverride) {
             if (config.user_source === "custom") {
               selectedProviderId = config.user_provider_id ?? undefined;
+              providerSource = "user_byok";
               if (!resolvedModel && config.user_provider_model) {
                 resolvedModel = config.user_provider_model;
+                modelSource = "user_preference";
               }
             } else {
               selectedCopilotAccountId = config.user_copilot_account_id ?? undefined;
+              providerSource = "github_copilot";
               if (!resolvedModel && config.user_copilot_model) {
                 resolvedModel = config.user_copilot_model;
+                modelSource = "user_preference";
               }
             }
           }
@@ -166,13 +181,17 @@ async function resolveAiEngine(
           else {
             if (config.default_source === "custom") {
               selectedProviderId = config.default_provider_id ?? undefined;
+              providerSource = "workspace_byok";
               if (!resolvedModel && config.default_provider_model) {
                 resolvedModel = config.default_provider_model;
+                modelSource = "workspace_default";
               }
             } else {
               selectedCopilotAccountId = config.default_copilot_account_id ?? undefined;
+              providerSource = "github_copilot";
               if (!resolvedModel && config.default_copilot_model) {
                 resolvedModel = config.default_copilot_model;
+                modelSource = "workspace_default";
               }
             }
           }
@@ -213,7 +232,7 @@ async function resolveAiEngine(
     }
   }
 
-  return { model: resolvedModel, provider: resolvedProvider, githubToken };
+  return { model: resolvedModel, provider: resolvedProvider, githubToken, modelSource, providerSource };
 }
 
 // ─── Helpers: project context & error detection ─────────
@@ -929,7 +948,7 @@ chatRoutes.post(
         // @ts-ignore — traceCollector may not be in scope if abort fires before streamSSE runs
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        if (typeof traceCollector !== "undefined" && traceCollector) { traceCollector.onError("Client disconnected / Stop Doable clicked", "abort_signal"); traceCollector.complete("aborted").catch(() => {}); }
+        if (typeof traceCollector !== "undefined" && traceCollector) { traceCollector.onClientDisconnect(null); traceCollector.onStreamEnd("client_disconnect", typeof sseFrameCount !== "undefined" ? sseFrameCount : 0); traceCollector.onError("Client disconnected / Stop Doable clicked", "abort_signal"); traceCollector.complete("aborted").catch(() => {}); }
       } catch { /* traceCollector not yet in scope — ignore */ }
       console.log(`[Chat] client disconnected — aborting session ${sid.slice(0, 8)}… on pool engine`);
     });
@@ -975,6 +994,7 @@ chatRoutes.post(
           }),
         });
         lastSseEmitAt = Date.now();
+        sseFrameCount++;
       } catch { /* stream already closed */ }
     }, 3_000);
 
@@ -995,6 +1015,7 @@ chatRoutes.post(
     // Hoisted outside the try so the catch path can flush usage on errors.
     let usageCollector: ReturnType<typeof createUsageCollector> | null = null;
     let traceCollector: TraceCollector | null = null;
+    let sseFrameCount = 0;
 
     const recordAssistantToolCall = (name?: string, args?: unknown) => {
       if (!name) return;
@@ -1079,7 +1100,7 @@ chatRoutes.post(
         }),
         sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`.catch(() => []),
       ]);
-      const { model: resolvedModel, provider: resolvedProvider, githubToken: resolvedGithubToken } = aiConfig;
+      const { model: resolvedModel, provider: resolvedProvider, githubToken: resolvedGithubToken, modelSource, providerSource } = aiConfig;
       const workspaceId: string | undefined = workspaceRow[0]?.workspace_id;
 
       // ── Usage collector (non-blocking, fire-and-forget) ──
@@ -1102,6 +1123,12 @@ chatRoutes.post(
         providerLabel: resolvedProvider?.type ?? "GitHub Copilot",
         model: resolvedModel,
       }) : null;
+      traceCollector?.onRequestStart(
+        augmentedContent?.length ?? null,
+        mode ?? "agent",
+        !!(attachments?.length),
+      );
+      traceCollector?.onStreamStart();
       traceCollector?.recordUserMessage(augmentedContent);
 
       // Build context + tools in parallel (both need workspaceId but not each other)
@@ -1271,6 +1298,29 @@ ERROR RECOVERY — if you encounter errors:
 
       const projectPath = getProjectPath(projectId);
 
+      // ── Emit config resolution trace ──
+      traceCollector?.onConfigResolved({
+        model: resolvedModel ?? null,
+        modelSource,
+        provider: resolvedProvider?.type ?? null,
+        providerSource,
+        systemPromptLength: systemPrompt?.length ?? 0,
+        hasCustomSystemPrompt: projectContext.length > 0,
+        githubTokenPresent: !!resolvedGithubToken,
+      });
+
+      // ── Emit provider resolution trace ──
+      if (resolvedProvider) {
+        traceCollector?.onProviderResolved({
+          type: resolvedProvider.type ?? null,
+          baseUrl: resolvedProvider.baseUrl ?? null,
+          hasApiKey: !!resolvedProvider.apiKey,
+          hasBearerToken: !!resolvedProvider.bearerToken,
+          wireApi: resolvedProvider.wireApi,
+          source: providerSource,
+        });
+      }
+
       // In plan mode, restrict tools to read-only + plan-specific tools.
       // This prevents the AI from building instead of planning.
       const PLAN_MODE_ALLOWED = new Set([
@@ -1297,11 +1347,15 @@ ERROR RECOVERY — if you encounter errors:
       console.log(`[Chat:Tools] MANIFEST:\n${toolManifest.map((t: any) => `  ${t.name} (${t.params.join(", ")}) [req: ${t.required.join(", ")}] — ${t.description}`).join("\n")}`);
 
       // Push tool manifest to trace (DB + WS broadcast)
-      traceCollector?.pushRaw("tool_manifest", {
-        mode,
-        totalTools: allTools.length,
-        filteredTools: sessionTools.length,
-        tools: toolManifest,
+      traceCollector?.onToolManifest({
+        mode: mode ?? "agent",
+        totalToolsCreated: allTools.length,
+        filteredToolCount: sessionTools.length,
+        toolNames: sessionTools.map((t: any) => t.name ?? "unknown"),
+        mcpToolCount: sessionTools.filter((t: any) => (t.name ?? "").startsWith("mcp_")).length,
+        integrationToolCount: sessionTools.filter((t: any) => (t.name ?? "").startsWith("integration_")).length,
+        builtinToolCount: sessionTools.filter((t: any) => !(t.name ?? "").startsWith("mcp_") && !(t.name ?? "").startsWith("integration_")).length,
+        filterReason: mode === "plan" ? "plan_mode_filter" : undefined,
       });
 
       // Shared tool-progress callbacks used by both create and resume paths
@@ -1472,9 +1526,13 @@ ERROR RECOVERY — if you encounter errors:
       const cachedSessionMode = projectSessionModes.get(sessionKey);
       const modeChanged = cachedSessionMode && cachedSessionMode !== mode;
       if (modeChanged) {
+        const evictedSid = projectSessions.get(sessionKey);
         console.log(`[Chat] mode changed ${cachedSessionMode} → ${mode} for ${sessionKey} — evicting cached session so fresh tool list + system prompt apply`);
         projectSessions.delete(sessionKey);
         projectSessionModes.delete(sessionKey);
+        if (evictedSid) {
+          traceCollector?.onSessionEvict(evictedSid, `mode_change:${cachedSessionMode}->${mode}`);
+        }
       }
 
       let sessionId = projectSessions.get(sessionKey);
@@ -1495,6 +1553,7 @@ ERROR RECOVERY — if you encounter errors:
         // tells the AI to analyze and plan, not build.
         let resumed = false;
         if (!modeChanged) {
+          let resumeCopilotSessionId: string | undefined;
           try {
             const [dbRow] = await sql`
               SELECT id, copilot_session_id FROM ai_sessions
@@ -1502,10 +1561,12 @@ ERROR RECOVERY — if you encounter errors:
               ORDER BY updated_at DESC LIMIT 1
             `;
             if (dbRow?.copilot_session_id) {
+              resumeCopilotSessionId = dbRow.copilot_session_id;
               sessionId = await manager.withAutoRetry(projectId, resolvedGithubToken, async (eng) => {
                 return eng.resumeSession(dbRow.copilot_session_id, {
                   tools: sessionTools,
                   toolProgress,
+                  traceCollector: traceCollector ?? undefined,
                 });
               });
               projectSessions.set(sessionKey, sessionId!);
@@ -1516,6 +1577,7 @@ ERROR RECOVERY — if you encounter errors:
           } catch (err) {
             // Resume failed (stale/deleted session) — fall through to create
             console.log(`[Chat] Session resume failed for ${projectId.slice(0, 8)}…, creating new:`, err instanceof Error ? err.message : err);
+            traceCollector?.onSessionResumeFailed(resumeCopilotSessionId ?? "unknown", err instanceof Error ? err.message : String(err));
             sessionId = undefined;
           }
         }
@@ -1534,6 +1596,7 @@ ERROR RECOVERY — if you encounter errors:
               systemPrompt,
               tools: sessionTools,
               toolProgress,
+              traceCollector: traceCollector ?? undefined,
             });
           });
           projectSessions.set(sessionKey, sessionId);
@@ -1694,6 +1757,7 @@ ERROR RECOVERY — if you encounter errors:
           if (mode === "plan" && sessionId) {
             try {
               await currentEngine.setSessionMode(sessionId, "plan");
+              traceCollector?.onSessionModeSwitch(sessionId, "interactive", "plan");
             } catch (err) {
               console.warn(`[Chat] Failed to set SDK plan mode for ${sessionId?.slice(0, 8)}:`, err instanceof Error ? err.message : err);
               // Non-fatal — the custom tool filter + system prompt still apply
@@ -1864,6 +1928,7 @@ ERROR RECOVERY — if you encounter errors:
                     traceCollector?.onTextDelta(cleaned);
                     stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) }).catch(() => {});
                     lastSseEmitAt = Date.now();
+                    sseFrameCount++;
                   } else {
                     assistantThinking += chunk.content;
                     traceCollector?.onThinkingDelta(chunk.content);
@@ -1872,6 +1937,7 @@ ERROR RECOVERY — if you encounter errors:
                     }, userId).catch(() => {});
                     stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
                     lastSseEmitAt = Date.now();
+                    sseFrameCount++;
                   }
                 }
               } else if (sseData.type === "thinking") {
@@ -1883,6 +1949,7 @@ ERROR RECOVERY — if you encounter errors:
                 }, userId).catch(() => {});
                 stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(thinkingDelta) }) }).catch(() => {});
                 lastSseEmitAt = Date.now();
+                sseFrameCount++;
               } else {
                 traceCollector?.onSseEmit(sseData.type, sseData.data);
                 if (sseData.type === "tool_call" || sseData.type === "tool_result") {
@@ -1904,6 +1971,7 @@ ERROR RECOVERY — if you encounter errors:
                 }
                 stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
                 lastSseEmitAt = Date.now();
+                sseFrameCount++;
               }
             }
 
@@ -1964,6 +2032,7 @@ ERROR RECOVERY — if you encounter errors:
             if (msg.includes("not found") || msg.includes("not started") || msg.includes("stopped")) {
               // Session or engine was lost (engine recycled/stopped) — recreate
               console.log(`[Chat] Session or engine lost for ${projectId}: ${msg.slice(0, 80)}`);
+              traceCollector?.onSessionEvict(sessionId!, `session_lost:${msg.slice(0, 80)}`);
               stream.writeSSE({
                 data: JSON.stringify({ type: "status", data: { phase: "reconnecting", message: "Reconnecting to AI..." } }),
               }).catch(() => {});
@@ -1978,12 +2047,16 @@ ERROR RECOVERY — if you encounter errors:
                 projectId, userId, model: resolvedModel, provider: resolvedProvider,
                 workingDirectory: projectPath, systemPrompt, tools: recreationTools,
                 toolProgress,
+                traceCollector: traceCollector ?? undefined,
               });
               projectSessions.set(sessionKey, sessionId);
               projectSessionModes.set(sessionKey, mode);
               // Set SDK native plan mode on recreation too
               if (mode === "plan" && sessionId) {
-                try { await currentEngine.setSessionMode(sessionId, "plan"); }
+                try {
+                  await currentEngine.setSessionMode(sessionId, "plan");
+                  traceCollector?.onSessionModeSwitch(sessionId, "interactive", "plan");
+                }
                 catch (e) { console.warn(`[Chat] setSessionMode(plan) on recreation failed:`, e instanceof Error ? e.message : e); }
               }
               if (dbSessionId) {
@@ -2248,6 +2321,7 @@ ERROR RECOVERY — if you encounter errors:
           if (msg.includes("not authorized") || msg.includes("policy") || msg.includes("unauthorized")) {
             const manager = getCopilotManager();
             await manager.evictEngine(projectId);
+            traceCollector?.onSessionEvict(sessionId ?? "unknown", `auth_error:${msg.slice(0, 80)}`);
             projectSessions.delete(sessionKey);
             console.log("[Chat] Evicted stale engine after streaming auth error");
           }
@@ -2456,12 +2530,12 @@ ERROR RECOVERY — if you encounter errors:
         if (assistantMessageId && (assistantContent || hadToolCalls)) {
           try {
             const toolActionsJson = assistantToolCalls.length > 0
-              ? sql.json(buildToolActionsFromCalls(assistantToolCalls, assistantMessageId))
+              ? sql.json(buildToolActionsFromCalls(assistantToolCalls, assistantMessageId) as any)
               : sql.json([]);
             await sql`
               UPDATE ai_messages
               SET content = ${assistantContent || null},
-                  tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])},
+                  tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls as any) : sql.json([])},
                   tool_actions = ${toolActionsJson},
                   version_sha = ${versionSha ?? null},
                   had_tool_calls = ${hadToolCalls},
@@ -2527,6 +2601,7 @@ ERROR RECOVERY — if you encounter errors:
           });
         } catch { /* stream already closed */ }
         console.log(`[Chat] Sending [DONE] for ${projectId}`);
+        traceCollector?.onStreamEnd("done", sseFrameCount);
         await stream.writeSSE({ data: "[DONE]" });
 
         // for-await handles generator cleanup automatically (bug-17/bug-27 no longer applies).
@@ -2542,6 +2617,7 @@ ERROR RECOVERY — if you encounter errors:
       // Complete trace with error status
       if (traceCollector) {
         traceCollector.onError(errMsg, "catch_block");
+        traceCollector.onStreamEnd("error", sseFrameCount);
         traceCollector.complete("error", usageCollector ? {
           promptTokens: usageCollector.getAccumulatedUsage().promptTokens,
           completionTokens: usageCollector.getAccumulatedUsage().completionTokens,
@@ -2555,12 +2631,12 @@ ERROR RECOVERY — if you encounter errors:
       if (assistantMessageId && (assistantContent || hadToolCalls)) {
         try {
           const toolActionsJson = assistantToolCalls.length > 0
-            ? sql.json(buildToolActionsFromCalls(assistantToolCalls, assistantMessageId))
+            ? sql.json(buildToolActionsFromCalls(assistantToolCalls, assistantMessageId) as any)
             : sql.json([]);
           await sql`
             UPDATE ai_messages
             SET content = ${assistantContent || null},
-                tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls) : sql.json([])},
+                tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls as any) : sql.json([])},
                 tool_actions = ${toolActionsJson},
                 version_sha = ${versionSha ?? null},
                 had_tool_calls = ${hadToolCalls},
