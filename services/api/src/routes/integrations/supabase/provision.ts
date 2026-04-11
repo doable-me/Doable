@@ -32,7 +32,8 @@ import { zValidator } from "@hono/zod-validator";
 import { sql } from "../../../db/index.js";
 import { workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../../../middleware/auth.js";
-import { credentialVault } from "../../../integrations/credential-vault.js";
+import { credentialVault, oauthApps } from "../../../integrations/credential-vault.js";
+import { getIntegration } from "../../../integrations/registry/index.js";
 import {
   createProject,
   waitForActive,
@@ -69,6 +70,9 @@ async function requireMember(workspaceId: string, userId: string): Promise<strin
  * Get the user's stored `supabase-mgmt` OAuth access token (from the
  * enhanced auth flow). Returns null when the user has not yet signed in
  * with Supabase — the caller must surface `supabase_oauth_required`.
+ *
+ * If the token is expired or expiring within 2 minutes and a
+ * refresh_token is available, attempts a token refresh before returning.
  */
 async function getMgmtAccessToken(
   userId: string,
@@ -77,10 +81,98 @@ async function getMgmtAccessToken(
   const conn = await credentialVault.get(userId, "supabase-mgmt", workspaceId);
   if (!conn) return null;
   const creds = conn.credentials as Record<string, unknown> | null;
+  if (!creds) return null;
+
   const token =
-    (creds?.access_token as string | undefined) ??
-    (creds?.accessToken as string | undefined);
-  return token ?? null;
+    (creds.access_token as string | undefined) ??
+    (creds.accessToken as string | undefined);
+  if (!token) return null;
+
+  // Check if the token is expired or expiring within 2 minutes
+  const expiresAt = creds.expires_at as string | undefined;
+  if (expiresAt && new Date(expiresAt).getTime() < Date.now() + 2 * 60 * 1000) {
+    const refreshToken = creds.refresh_token as string | undefined;
+    if (refreshToken) {
+      const refreshed = await tryRefreshToken(conn.id, refreshToken, userId, workspaceId);
+      if (refreshed) return refreshed;
+    }
+    // Token expired with no refresh token — caller will get 412
+    return null;
+  }
+
+  return token;
+}
+
+/**
+ * Attempt to refresh the Supabase management OAuth token using the
+ * stored refresh_token. Returns the new access_token on success, null
+ * on failure (caller falls back to re-auth).
+ */
+async function tryRefreshToken(
+  connectionId: string,
+  refreshToken: string,
+  userId: string,
+  workspaceId: string,
+): Promise<string | null> {
+  try {
+    const def = getIntegration("supabase");
+    const oauth2 = def?.enhancedAuth?.oauth2Config;
+    if (!oauth2) return null;
+
+    // Get client credentials from oauth_apps table
+    const app = await oauthApps.get("supabase-mgmt", workspaceId);
+    if (!app) return null;
+
+    const clientId = app.client_id;
+    const clientSecret = app.clientSecret ?? (app as any).client_secret;
+
+    const body: Record<string, string> = {
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: clientId,
+    };
+    if (clientSecret) body.client_secret = clientSecret;
+
+    const res = await fetch(oauth2.tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams(body),
+    });
+
+    if (!res.ok) {
+      console.warn(`[Supabase] Token refresh failed: ${res.status}`);
+      return null;
+    }
+
+    const data = (await res.json()) as Record<string, unknown>;
+    if (data.error) {
+      console.warn(`[Supabase] Token refresh error: ${data.error}`);
+      return null;
+    }
+
+    const newAccessToken = data.access_token as string;
+    const newRefreshToken = (data.refresh_token as string | undefined) ?? refreshToken;
+    const expiresIn = data.expires_in as number | undefined;
+    const newExpiresAt = expiresIn
+      ? new Date(Date.now() + expiresIn * 1000).toISOString()
+      : undefined;
+
+    // Update the stored credentials
+    await credentialVault.update(connectionId, {
+      access_token: newAccessToken,
+      refresh_token: newRefreshToken,
+      ...(newExpiresAt ? { expires_at: newExpiresAt } : {}),
+    });
+
+    console.log(`[Supabase] Token refreshed successfully`);
+    return newAccessToken;
+  } catch (err) {
+    console.warn(`[Supabase] Token refresh failed:`, err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 // ─── GET /api/integrations/supabase/orgs ──────────────────
@@ -106,10 +198,12 @@ supabaseProvisionRoutes.get(
       const orgs = await listOrganizations(token);
       return c.json({ data: orgs });
     } catch (err) {
-      return c.json(
-        { error: err instanceof Error ? err.message : String(err) },
-        500,
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      // 401 from Supabase = token expired/revoked → re-auth needed
+      if (msg.includes("401")) {
+        return c.json({ error: "supabase_oauth_required" }, 412);
+      }
+      return c.json({ error: msg }, 500);
     }
   },
 );
@@ -145,10 +239,11 @@ supabaseProvisionRoutes.get(
       const projects = await supabaseEnhancedAuthModule.listResources(token);
       return c.json({ data: projects });
     } catch (err) {
-      return c.json(
-        { error: err instanceof Error ? err.message : String(err) },
-        500,
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("401")) {
+        return c.json({ error: "supabase_oauth_required" }, 412);
+      }
+      return c.json({ error: msg }, 500);
     }
   },
 );

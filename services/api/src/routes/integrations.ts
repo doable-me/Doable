@@ -757,6 +757,8 @@ integrationRoutes.get("/integrations/enhanced-auth/callback", async (c) => {
   const sessionKey = crypto.randomBytes(16).toString("hex");
   storeEnhancedAuthSession(sessionKey, {
     accessToken,
+    refreshToken: tokenData.refresh_token as string | undefined,
+    tokenExpiresAt: computeExpiresAt(tokenData),
     integrationId,
     userId,
     workspaceId,
@@ -945,6 +947,8 @@ integrationRoutes.post("/integrations/enhanced-auth/:id/complete", async (c) => 
       userId: session.userId,
       scope: (session.scope as "workspace" | "project" | "user") ?? "user",
       accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      expiresAt: session.tokenExpiresAt,
       displayName: `${def.displayName} Management API`,
     });
 

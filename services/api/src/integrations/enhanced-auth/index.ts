@@ -27,12 +27,14 @@ export async function getEnhancedAuthModule(providerKey: string): Promise<Enhanc
 
 interface EnhancedAuthSession {
   accessToken: string;
+  refreshToken?: string;
+  expiresAt: number;
+  tokenExpiresAt?: string;
   integrationId: string;
   userId: string;
   workspaceId: string;
   scope: string;
   projectId?: string;
-  expiresAt: number;
 }
 
 const sessions = new Map<string, EnhancedAuthSession>();
