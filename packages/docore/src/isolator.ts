@@ -37,6 +37,7 @@ import * as path from "node:path";
 
 import type { IsolationBackend, SpawnContext, ResourceLimits, BackendConfig } from "./backends/types.js";
 import { NsjailBackend } from "./backends/nsjail.js";
+import { UnshareBackend } from "./backends/unshare.js";
 import { SystemdBackend } from "./backends/systemd.js";
 import { JobObjectBackend } from "./backends/jobobject.js";
 import { DirectBackend } from "./backends/direct.js";
@@ -172,6 +173,7 @@ export class ProcessIsolator {
 
     // Register built-in backends
     this.register(new NsjailBackend());
+    this.register(new UnshareBackend());
     this.register(new SystemdBackend());
     this.register(new JobObjectBackend());
     this.register(new DirectBackend());

@@ -1,6 +1,8 @@
 import type postgres from "postgres";
 import type { GitHubConnectionRow, GitHubCommitRow, GitHubUserTokenRow } from "../types.js";
 
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
+
 export function githubQueries(sql: postgres.Sql) {
   return {
     // ─── Connections ──────────────────────────────────────────
@@ -9,7 +11,13 @@ export function githubQueries(sql: postgres.Sql) {
       projectId: string
     ): Promise<GitHubConnectionRow | undefined> {
       const [conn] = await sql<GitHubConnectionRow[]>`
-        SELECT * FROM github_connections WHERE project_id = ${projectId}
+        SELECT *,
+          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token,
+          CASE WHEN webhook_secret_encrypted IS NOT NULL
+            THEN pgp_sym_decrypt(webhook_secret_encrypted, ${ENCRYPTION_KEY})
+            ELSE NULL
+          END AS webhook_secret
+        FROM github_connections WHERE project_id = ${projectId}
       `;
       return conn;
     },
@@ -19,7 +27,13 @@ export function githubQueries(sql: postgres.Sql) {
       repoName: string
     ): Promise<GitHubConnectionRow | undefined> {
       const [conn] = await sql<GitHubConnectionRow[]>`
-        SELECT * FROM github_connections
+        SELECT *,
+          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token,
+          CASE WHEN webhook_secret_encrypted IS NOT NULL
+            THEN pgp_sym_decrypt(webhook_secret_encrypted, ${ENCRYPTION_KEY})
+            ELSE NULL
+          END AS webhook_secret
+        FROM github_connections
         WHERE repo_owner = ${repoOwner} AND repo_name = ${repoName}
       `;
       return conn;
@@ -37,25 +51,30 @@ export function githubQueries(sql: postgres.Sql) {
       const [conn] = await sql<GitHubConnectionRow[]>`
         INSERT INTO github_connections (
           project_id, repo_owner, repo_name, default_branch,
-          access_token, webhook_secret, created_by
+          access_token_encrypted, webhook_secret_encrypted, created_by
         )
         VALUES (
           ${data.projectId},
           ${data.repoOwner},
           ${data.repoName},
           ${data.defaultBranch ?? "main"},
-          ${data.accessToken},
-          ${data.webhookSecret ?? null},
+          pgp_sym_encrypt(${data.accessToken}, ${ENCRYPTION_KEY}),
+          ${data.webhookSecret ? sql`pgp_sym_encrypt(${data.webhookSecret}, ${ENCRYPTION_KEY})` : null},
           ${data.createdBy}
         )
         ON CONFLICT (project_id) DO UPDATE SET
           repo_owner = EXCLUDED.repo_owner,
           repo_name = EXCLUDED.repo_name,
           default_branch = EXCLUDED.default_branch,
-          access_token = EXCLUDED.access_token,
-          webhook_secret = EXCLUDED.webhook_secret,
+          access_token_encrypted = EXCLUDED.access_token_encrypted,
+          webhook_secret_encrypted = EXCLUDED.webhook_secret_encrypted,
           updated_at = now()
-        RETURNING *
+        RETURNING *,
+          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token,
+          CASE WHEN webhook_secret_encrypted IS NOT NULL
+            THEN pgp_sym_decrypt(webhook_secret_encrypted, ${ENCRYPTION_KEY})
+            ELSE NULL
+          END AS webhook_secret
       `;
       return conn!;
     },
@@ -72,27 +91,59 @@ export function githubQueries(sql: postgres.Sql) {
         lastSyncedAt: Date;
       }>
     ): Promise<GitHubConnectionRow | undefined> {
-      const values: Record<string, unknown> = {};
+      // For encrypted fields, we need to use raw SQL with pgp_sym_encrypt
+      // For other fields, we can use the regular update pattern
+      const setClauses: string[] = [];
+      const nonEncryptedValues: Record<string, unknown> = {};
 
-      if (data.repoOwner !== undefined) values.repo_owner = data.repoOwner;
-      if (data.repoName !== undefined) values.repo_name = data.repoName;
-      if (data.defaultBranch !== undefined) values.default_branch = data.defaultBranch;
-      if (data.accessToken !== undefined) values.access_token = data.accessToken;
-      if (data.webhookSecret !== undefined) values.webhook_secret = data.webhookSecret;
-      if (data.syncStatus !== undefined) values.sync_status = data.syncStatus;
-      if (data.lastSyncedAt !== undefined) values.last_synced_at = data.lastSyncedAt;
+      if (data.repoOwner !== undefined) nonEncryptedValues.repo_owner = data.repoOwner;
+      if (data.repoName !== undefined) nonEncryptedValues.repo_name = data.repoName;
+      if (data.defaultBranch !== undefined) nonEncryptedValues.default_branch = data.defaultBranch;
+      if (data.syncStatus !== undefined) nonEncryptedValues.sync_status = data.syncStatus;
+      if (data.lastSyncedAt !== undefined) nonEncryptedValues.last_synced_at = data.lastSyncedAt;
 
-      values.updated_at = new Date();
+      nonEncryptedValues.updated_at = new Date();
 
-      if (Object.keys(values).length <= 1) {
+      // Handle encrypted fields separately
+      const hasEncryptedUpdate = data.accessToken !== undefined || data.webhookSecret !== undefined;
+      const hasNonEncryptedUpdate = Object.keys(nonEncryptedValues).length > 1; // > 1 because updated_at is always there
+
+      if (!hasEncryptedUpdate && !hasNonEncryptedUpdate) {
         return this.findConnectionByProject(projectId);
+      }
+
+      if (hasEncryptedUpdate) {
+        // Use a single UPDATE with both encrypted and non-encrypted fields
+        const [conn] = await sql<GitHubConnectionRow[]>`
+          UPDATE github_connections
+          SET ${sql(nonEncryptedValues as Record<string, postgres.SerializableParameter>)}
+            ${data.accessToken !== undefined ? sql`, access_token_encrypted = pgp_sym_encrypt(${data.accessToken}, ${ENCRYPTION_KEY})` : sql``}
+            ${data.webhookSecret !== undefined
+              ? (data.webhookSecret === null
+                ? sql`, webhook_secret_encrypted = NULL`
+                : sql`, webhook_secret_encrypted = pgp_sym_encrypt(${data.webhookSecret}, ${ENCRYPTION_KEY})`)
+              : sql``}
+          WHERE project_id = ${projectId}
+          RETURNING *,
+            pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token,
+            CASE WHEN webhook_secret_encrypted IS NOT NULL
+              THEN pgp_sym_decrypt(webhook_secret_encrypted, ${ENCRYPTION_KEY})
+              ELSE NULL
+            END AS webhook_secret
+        `;
+        return conn;
       }
 
       const [conn] = await sql<GitHubConnectionRow[]>`
         UPDATE github_connections
-        SET ${sql(values as Record<string, postgres.SerializableParameter>)}
+        SET ${sql(nonEncryptedValues as Record<string, postgres.SerializableParameter>)}
         WHERE project_id = ${projectId}
-        RETURNING *
+        RETURNING *,
+          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token,
+          CASE WHEN webhook_secret_encrypted IS NOT NULL
+            THEN pgp_sym_decrypt(webhook_secret_encrypted, ${ENCRYPTION_KEY})
+            ELSE NULL
+          END AS webhook_secret
       `;
       return conn;
     },
@@ -169,7 +220,9 @@ export function githubQueries(sql: postgres.Sql) {
       userId: string
     ): Promise<GitHubUserTokenRow | undefined> {
       const [row] = await sql<GitHubUserTokenRow[]>`
-        SELECT * FROM github_user_tokens WHERE user_id = ${userId}
+        SELECT *,
+          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token
+        FROM github_user_tokens WHERE user_id = ${userId}
       `;
       return row;
     },
@@ -183,22 +236,23 @@ export function githubQueries(sql: postgres.Sql) {
     }): Promise<GitHubUserTokenRow> {
       const [row] = await sql<GitHubUserTokenRow[]>`
         INSERT INTO github_user_tokens (
-          user_id, github_username, github_id, access_token, scopes
+          user_id, github_username, github_id, access_token_encrypted, scopes
         )
         VALUES (
           ${data.userId},
           ${data.githubUsername},
           ${data.githubId ?? null},
-          ${data.accessToken},
+          pgp_sym_encrypt(${data.accessToken}, ${ENCRYPTION_KEY}),
           ${data.scopes ?? "repo"}
         )
         ON CONFLICT (user_id) DO UPDATE SET
           github_username = EXCLUDED.github_username,
           github_id = EXCLUDED.github_id,
-          access_token = EXCLUDED.access_token,
+          access_token_encrypted = EXCLUDED.access_token_encrypted,
           scopes = EXCLUDED.scopes,
           updated_at = now()
-        RETURNING *
+        RETURNING *,
+          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token
       `;
       return row!;
     },
