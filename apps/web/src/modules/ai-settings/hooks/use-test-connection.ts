@@ -17,7 +17,7 @@ export interface DiscoveredModel {
   capabilities?: { vision?: boolean; tools?: boolean };
 }
 
-interface TestConnectionParams {
+export interface TestConnectionParams {
   type: "openai" | "azure" | "anthropic";
   baseUrl: string;
   apiKey?: string;

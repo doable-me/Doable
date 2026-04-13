@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { initDocore, shutdownDocore } from "./ai/docore-bridge.js";
 import { request as httpRequest } from "node:http";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -7,46 +8,12 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { sql } from "./db/index.js";
-import { healthRoutes } from "./routes/health.js";
-import { authRoutes } from "./routes/auth.js";
-import { projectRoutes } from "./routes/projects.js";
-import { workspaceRoutes } from "./routes/workspaces.js";
-import { folderRoutes } from "./routes/folders.js";
-import { editorRoutes } from "./routes/editor.js";
-import { chatRoutes } from "./routes/chat.js";
-import { billingRoutes } from "./routes/billing.js";
-import { deployRoutes } from "./routes/deploy.js";
-import { customDomainRoutes } from "./routes/custom-domains.js";
-import { contextRoutes, workspaceContextRoutes } from "./routes/context.js";
-import { templateRoutes } from "./routes/templates.js";
-import { versionRoutes } from "./routes/versions.js";
-import { githubRoutes } from "./routes/github.js";
-import { projectFileRoutes } from "./routes/project-files.js";
-import { previewRoutes } from "./routes/preview-proxy.js";
 import { getDevServerInternalUrl } from "./projects/dev-server.js";
-import { thumbnailRoutes } from "./routes/thumbnails.js";
-import { analyticsRoutes } from "./routes/analytics.js";
-import { aiSettingsRoutes } from "./routes/ai-settings.js";
-import { providerCatalogRoutes } from "./routes/provider-catalog.js";
-import { providerBridgeRoutes } from "./routes/provider-bridge.js";
-import { usageRoutes } from "./routes/usage.js";
-import { adminRoutes } from "./routes/admin.js";
-import { securityRoutes } from "./routes/security.js";
-import { communityRoutes } from "./routes/community.js";
-import { connectorRoutes } from "./routes/connectors.js";
-import { integrationRoutes } from "./routes/integrations.js";
-import { supabaseProvisionRoutes } from "./routes/integrations/supabase/provision.js";
-import { skillsRoutes } from "./routes/skills.js";
-import { environmentRoutes } from "./routes/environments.js";
-import { wsEnvVarRoutes, projEnvVarRoutes, envVarUtilRoutes } from "./routes/env-vars.js";
-import { marketplaceRoutes } from "./routes/marketplace.js";
-import { teamChatRoutes } from "./routes/team-chat.js";
-import { planRoutes } from "./routes/plan.js";
-import { directSaveRoutes } from "./direct-save/index.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 import { getConnectorManager } from "./mcp/connector-manager.js";
 import { getCopilotManager } from "./ai/providers/copilot-manager.js";
 import { getOAuthRedirectUri } from "./integrations/oauth2.js";
+import { mountRoutes } from "./routes.js";
 
 // ─── Visual Edit Bridge Script ───────────────────────────────
 // This script is loaded by preview iframes at /visual-edit-bridge.js
@@ -215,50 +182,7 @@ app.get("/visual-edit-bridge.js", (c) => {
 });
 
 // ─── Routes ─────────────────────────────────────────────────
-app.route("/health", healthRoutes);
-app.route("/auth", authRoutes);
-// Preview reverse proxy — forwards /preview/:projectId/* to the Vite dev server.
-// Must be before other catch-all routes.
-app.route("/", previewRoutes);
-// Project file routes (no auth — filesystem-backed, powers live preview)
-app.route("/", projectFileRoutes);
-// Direct save — AST-based visual edit saves (no AI, no auth — filesystem-backed)
-app.route("/", directSaveRoutes);
-// Chat & editor routes BEFORE project routes (projectRoutes has wildcard auth middleware)
-app.route("/", chatRoutes);
-app.route("/", planRoutes);
-app.route("/", editorRoutes);
-app.route("/projects", projectRoutes);
-app.route("/workspaces", workspaceRoutes);
-app.route("/workspaces", aiSettingsRoutes);
-app.route("/ai", providerCatalogRoutes);
-app.route("/workspaces", providerBridgeRoutes);
-app.route("/workspaces", usageRoutes);
-app.route("/folders", folderRoutes);
-app.route("/billing", billingRoutes);
-app.route("/deploy", deployRoutes);
-app.route("/domains", customDomainRoutes);
-app.route("/projects/:id/context", contextRoutes);
-app.route("/templates", templateRoutes);
-app.route("/projects", versionRoutes);
-app.route("/", githubRoutes);
-app.route("/thumbnails", thumbnailRoutes);
-app.route("/analytics", analyticsRoutes);
-app.route("/admin", adminRoutes);
-app.route("/projects", securityRoutes);
-app.route("/community", communityRoutes);
-app.route("/workspaces", connectorRoutes);
-app.route("/", integrationRoutes);
-app.route("/", supabaseProvisionRoutes);
-app.route("/workspaces", skillsRoutes);
-app.route("/workspaces", environmentRoutes);
-app.route("/workspaces", wsEnvVarRoutes);
-app.route("/projects", projEnvVarRoutes);
-app.route("/env-vars", envVarUtilRoutes);
-app.route("/", marketplaceRoutes);
-app.route("/workspaces", marketplaceRoutes);
-app.route("/workspaces/:wid/context", workspaceContextRoutes);
-app.route("/team-chat", teamChatRoutes);
+mountRoutes(app);
 
 // ─── 404 Fallback ───────────────────────────────────────────
 app.notFound((c) => {
@@ -295,6 +219,13 @@ const host = process.env.API_HOST ?? "127.0.0.1";
 
 console.log(`Doable API starting on ${host}:${port}`);
 console.log(`[Integrations] OAuth callback URI: ${getOAuthRedirectUri()} — add this to your OAuth providers' allowed redirect URIs`);
+
+// Initialize docore (AI sandbox + policy engine). Safe to await
+// synchronously here — docore engines are created lazily on first
+// user acquire, so this only logs configuration.
+await initDocore().catch((err) => {
+  console.error("[docore] init failed:", err);
+});
 
 const server = serve({
   fetch: app.fetch,
@@ -382,18 +313,22 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 // ─── Graceful Shutdown ──────────────────────────────────────
-process.on("SIGTERM", async () => {
-  console.log("[Server] SIGTERM received, shutting down...");
+async function gracefulShutdown(signal: string): Promise<void> {
+  console.log(`[Server] ${signal} received, shutting down...`);
   try {
     await Promise.all([
       getConnectorManager().shutdown(),
       getCopilotManager().stopAll(),
+      shutdownDocore(),
     ]);
   } catch (err) {
     console.error("[Server] Error during shutdown:", err);
   }
   process.exit(0);
-});
+}
+
+process.on("SIGTERM", () => { void gracefulShutdown("SIGTERM"); });
+process.on("SIGINT", () => { void gracefulShutdown("SIGINT"); });
 
 export default app;
 export type AppType = typeof app;

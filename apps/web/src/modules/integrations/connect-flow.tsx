@@ -15,6 +15,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AUTH_LABELS, type CatalogItem } from "./use-integration-catalog";
 
+import { OAuthForm, SecretTextForm, BasicAuthForm, CustomAuthForm } from "./connect-flow-forms";
+import { runOAuthPopup, runEnhancedAuthPopup } from "./connect-flow-oauth";
+
 // ─── Connect Flow Dialog ───────────────────────────────────
 
 interface ConnectFlowProps {
@@ -100,136 +103,26 @@ export function ConnectFlow({
     if (!item) return;
     setLoading(true);
     setError(null);
-    try {
-      // Open popup immediately (in the user-gesture context) to avoid popup blockers,
-      // then navigate it to the OAuth URL once the API responds.
-      const width = 600;
-      const height = 700;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
-      const popup = window.open(
-        "about:blank",
-        "doable-oauth",
-        `width=${width},height=${height},left=${left},top=${top},popup=1`
-      );
-
-      if (!popup) {
-        setError(
-          "Popup was blocked. Please allow popups for this site and try again."
-        );
-        setLoading(false);
-        return;
-      }
-
-      // Fetch the authorization URL and redirect the popup
-      const url = await onGetAuthorizationUrl(item.id);
-      popup.location.href = url;
-
-      // Poll for popup closure
-      const pollTimer = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(pollTimer);
-          setLoading(false);
-          onOpenChange(false);
-        }
-      }, 500);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to start OAuth flow";
-      // Detect "not configured" errors and show a friendly message
-      if (
-        msg.includes("not configured") ||
-        msg.includes("CLIENT_ID") ||
-        msg.includes("CLIENT_SECRET") ||
-        msg.includes("OAuth app")
-      ) {
-        setError(
-          `OAuth is not set up for ${item.displayName} yet. Ask your workspace admin to configure the OAuth credentials in Settings.`
-        );
-      } else {
-        setError(msg);
-      }
-      setLoading(false);
-    }
+    await runOAuthPopup({
+      getUrl: () => onGetAuthorizationUrl(item.id),
+      windowName: "doable-oauth",
+      itemName: item.displayName,
+      onDone: () => { setLoading(false); onOpenChange(false); },
+      onError: (msg) => { setError(msg); setLoading(false); },
+    });
   }, [item, onGetAuthorizationUrl, onOpenChange]);
 
   const handleEnhancedAuth = useCallback(async () => {
     if (!item || !onGetEnhancedAuthUrl) return;
     setLoading(true);
     setError(null);
-    // Opened synchronously below so the popup blocker treats it as a user
-    // gesture; tracked here so the catch path can close it if the async
-    // fetch for the authorization URL fails (otherwise the user is stranded
-    // with a blank about:blank popup and no visible error).
-    let popup: Window | null = null;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
-    let messageHandler: ((ev: MessageEvent) => void) | null = null;
-    const cleanup = () => {
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-      if (messageHandler) { window.removeEventListener("message", messageHandler); messageHandler = null; }
-    };
-    try {
-      const width = 600;
-      const height = 700;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
-      popup = window.open(
-        "about:blank",
-        "doable-enhanced-auth",
-        `width=${width},height=${height},left=${left},top=${top},popup=1`
-      );
-
-      if (!popup) {
-        setError("Popup was blocked. Please allow popups for this site and try again.");
-        setLoading(false);
-        return;
-      }
-
-      const url = await onGetEnhancedAuthUrl(item.id);
-      popup.location.href = url;
-
-      // Primary success signal: postMessage from the callback HTML. This
-      // works across the cross-origin round-trip that can break the
-      // popup.closed poll when COOP isolates the opener after the popup
-      // navigates away. The callback route emits a
-      // `doable:enhanced-auth-complete` message before calling window.close.
-      messageHandler = (ev: MessageEvent) => {
-        const data = ev.data;
-        if (!data || typeof data !== "object") return;
-        if (data.type !== "doable:enhanced-auth-complete") return;
-        if (data.integrationId && data.integrationId !== item.id) return;
-        if (data.status === "error" && typeof data.error === "string") {
-          setError(`Connection failed: ${data.error}`);
-        }
-        cleanup();
-        setLoading(false);
-        try { popup?.close(); } catch { /* may already be closed */ }
-        onOpenChange(false);
-      };
-      window.addEventListener("message", messageHandler);
-
-      // Fallback: still poll popup.closed in case the postMessage never
-      // arrives (e.g. the user closes the popup manually before the HTML
-      // with the script loads).
-      pollTimer = setInterval(() => {
-        if (popup!.closed) {
-          cleanup();
-          setLoading(false);
-          onOpenChange(false);
-        }
-      }, 500);
-    } catch (err) {
-      cleanup();
-      // Close the blank popup so the user isn't stranded staring at
-      // about:blank while the error sits hidden behind it in the modal.
-      try { popup?.close(); } catch { /* popup may already be closed */ }
-      const msg = err instanceof Error ? err.message : "Failed to start enhanced auth";
-      if (msg.includes("not configured") || msg.includes("CLIENT_ID") || msg.includes("OAuth")) {
-        setError(`Enhanced auth is not set up for ${item.displayName} yet. You can still connect manually below.`);
-      } else {
-        setError(msg);
-      }
-      setLoading(false);
-    }
+    await runEnhancedAuthPopup({
+      getUrl: () => onGetEnhancedAuthUrl(item.id),
+      integrationId: item.id,
+      itemName: item.displayName,
+      onDone: () => { setLoading(false); onOpenChange(false); },
+      onError: (msg) => { setError(msg); setLoading(false); },
+    });
   }, [item, onGetEnhancedAuthUrl, onOpenChange]);
 
   const handleSecretTextConnect = useCallback(async () => {
@@ -324,6 +217,7 @@ export function ConnectFlow({
   // "none" auth type shows a simple connecting state
   if (item.authType === "none") {
     return (
+
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent>
           <div className="flex flex-col items-center justify-center py-8 gap-3">
@@ -399,359 +293,75 @@ export function ConnectFlow({
           <div className="space-y-3 py-1">
             <Button
               className="w-full"
-              onClick={() => void handleEnhancedAuth()}
               disabled={loading}
+              onClick={() => void handleOAuth()}
             >
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Connecting...
-                </>
-              ) : (
-                <>
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  {item.enhancedAuth.connectLabel}
-                </>
-              )}
+              {loading ? "Connecting…" : `Connect ${item.displayName}`}
             </Button>
-            <p className="text-[11px] text-center text-muted-foreground/70">
-              Auto-fetch your project credentials — no manual setup needed
-            </p>
-            <div className="relative my-2">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">
-                  or enter credentials manually
-                </span>
-              </div>
-            </div>
           </div>
         )}
 
         {/* OAuth2 */}
         {item.authType === "oauth2" && (
-          <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">
-              You&apos;ll be redirected to {item.displayName} to authorize
-              access. A popup window will open for you to sign in.
-            </p>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={loading}
-              >
-                Cancel
-              </Button>
-              <Button onClick={() => void handleOAuth()} disabled={loading}>
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Connecting...
-                  </>
-                ) : (
-                  <>
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Sign in with {item.displayName}
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
-          </div>
+          <OAuthForm
+            itemName={item.displayName}
+            loading={loading}
+            onOAuth={() => void handleOAuth()}
+            onCancel={() => onOpenChange(false)}
+          />
         )}
 
         {/* Secret Text (API Key) */}
         {item.authType === "secret_text" && (
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">API Key</label>
-              <div className="relative">
-                <Input
-                  type={showSecret ? "text" : "password"}
-                  placeholder="Enter your API key"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="pr-10"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret(!showSecret)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showSecret ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Label{" "}
-                <span className="text-muted-foreground font-normal">
-                  (optional)
-                </span>
-              </label>
-              <Input
-                type="text"
-                placeholder={`My ${item.displayName} connection`}
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={loading}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => void handleSecretTextConnect()}
-                disabled={loading || !apiKey.trim()}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Connecting...
-                  </>
-                ) : (
-                  "Connect"
-                )}
-              </Button>
-            </DialogFooter>
-          </div>
+          <SecretTextForm
+            itemName={item.displayName}
+            apiKey={apiKey}
+            setApiKey={setApiKey}
+            displayName={displayName}
+            setDisplayName={setDisplayName}
+            showSecret={showSecret}
+            setShowSecret={setShowSecret}
+            loading={loading}
+            onConnect={() => void handleSecretTextConnect()}
+            onCancel={() => onOpenChange(false)}
+          />
         )}
 
         {/* Basic Auth */}
         {item.authType === "basic_auth" && (
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Username</label>
-              <Input
-                type="text"
-                placeholder="Enter username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Password</label>
-              <div className="relative">
-                <Input
-                  type={showSecret ? "text" : "password"}
-                  placeholder="Enter password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret(!showSecret)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showSecret ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Label{" "}
-                <span className="text-muted-foreground font-normal">
-                  (optional)
-                </span>
-              </label>
-              <Input
-                type="text"
-                placeholder={`My ${item.displayName} connection`}
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={loading}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => void handleBasicAuthConnect()}
-                disabled={
-                  loading || !username.trim() || !password.trim()
-                }
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Connecting...
-                  </>
-                ) : (
-                  "Connect"
-                )}
-              </Button>
-            </DialogFooter>
-          </div>
+          <BasicAuthForm
+            itemName={item.displayName}
+            username={username}
+            setUsername={setUsername}
+            password={password}
+            setPassword={setPassword}
+            displayName={displayName}
+            setDisplayName={setDisplayName}
+            showSecret={showSecret}
+            setShowSecret={setShowSecret}
+            loading={loading}
+            onConnect={() => void handleBasicAuthConnect()}
+            onCancel={() => onOpenChange(false)}
+          />
         )}
 
-        {/* Custom Auth — dynamic fields from customAuthFields */}
+        {/* Custom Auth */}
         {item.authType === "custom_auth" && (
-          <div className="space-y-4 py-2">
-            {/* Render defined custom fields */}
-            {(item.customAuthFields ?? []).length > 0 ? (
-              (item.customAuthFields ?? []).map((field) => (
-                <div key={field.name} className="space-y-2">
-                  <label className="text-sm font-medium">
-                    {field.displayName}
-                    {!field.required && (
-                      <span className="text-muted-foreground font-normal ml-1">
-                        (optional)
-                      </span>
-                    )}
-                  </label>
-                  {field.description && (
-                    <p className="text-xs text-muted-foreground -mt-1">
-                      {field.description}
-                    </p>
-                  )}
-                  {field.type === "dropdown" && field.options ? (
-                    <select
-                      value={customFields[field.name] ?? ""}
-                      onChange={(e) => setCustomField(field.name, e.target.value)}
-                      className={cn(
-                        "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm",
-                        "shadow-xs transition-colors",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-                      )}
-                    >
-                      <option value="">Select...</option>
-                      {field.options.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : field.type === "secret" ? (
-                    <div className="relative">
-                      <Input
-                        type={showSecret ? "text" : "password"}
-                        placeholder={`Enter ${field.displayName.toLowerCase()}`}
-                        value={customFields[field.name] ?? ""}
-                        onChange={(e) =>
-                          setCustomField(field.name, e.target.value)
-                        }
-                        className="pr-10"
-                        autoFocus={
-                          field ===
-                          (item.customAuthFields ?? []).find((f) => f.required)
-                        }
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowSecret(!showSecret)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {showSecret ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                  ) : (
-                    <Input
-                      type="text"
-                      placeholder={`Enter ${field.displayName.toLowerCase()}`}
-                      value={customFields[field.name] ?? ""}
-                      onChange={(e) =>
-                        setCustomField(field.name, e.target.value)
-                      }
-                      autoFocus={
-                        field ===
-                        (item.customAuthFields ?? []).find((f) => f.required)
-                      }
-                    />
-                  )}
-                </div>
-              ))
-            ) : (
-              /* Fallback: single token field when no customAuthFields defined */
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Authentication Token
-                </label>
-                <div className="relative">
-                  <Input
-                    type={showSecret ? "text" : "password"}
-                    placeholder="Enter your authentication token"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="pr-10"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSecret(!showSecret)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showSecret ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Label{" "}
-                <span className="text-muted-foreground font-normal">
-                  (optional)
-                </span>
-              </label>
-              <Input
-                type="text"
-                placeholder={`My ${item.displayName} connection`}
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={loading}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => void handleCustomAuthConnect()}
-                disabled={loading || !isCustomAuthValid()}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Connecting...
-                  </>
-                ) : (
-                  "Connect"
-                )}
-              </Button>
-            </DialogFooter>
-          </div>
+          <CustomAuthForm
+            item={item}
+            apiKey={apiKey}
+            setApiKey={setApiKey}
+            customFields={customFields}
+            setCustomField={setCustomField}
+            displayName={displayName}
+            setDisplayName={setDisplayName}
+            showSecret={showSecret}
+            setShowSecret={setShowSecret}
+            loading={loading}
+            isValid={isCustomAuthValid()}
+            onConnect={() => void handleCustomAuthConnect()}
+            onCancel={() => onOpenChange(false)}
+          />
         )}
       </DialogContent>
     </Dialog>

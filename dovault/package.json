@@ -1,0 +1,31 @@
+{
+  "name": "dovault",
+  "version": "0.1.0",
+  "description": "Zero-overhead runtime jail for Node.js processes — config lockdown, permission model, OS resource limits. Cross-platform (Linux + Windows).",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./backends": {
+      "import": {
+        "types": "./dist/backends/types.d.ts",
+        "default": "./dist/backends/types.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

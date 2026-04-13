@@ -23,44 +23,7 @@ interface Props {
 
 type Source = "copilot" | "custom";
 
-/**
- * A row "has an allocation" iff the active side (per `source`) actually
- * has a value. Both copilot and custom configs may be persisted at once;
- * `source` selects which is active.
- */
-function rowHasAllocation(row: ApiUserAiAllocation): boolean {
-  if (row.source === "custom") return !!row.provider_id;
-  if (row.source === "copilot") return !!row.copilot_account_id;
-  // Legacy rows (no source set yet) — fall back to "any side populated".
-  return !!(row.copilot_account_id || row.provider_id);
-}
-
-function rowActiveModel(row: ApiUserAiAllocation): string | null {
-  if (row.source === "custom") return row.provider_model;
-  if (row.source === "copilot") return row.copilot_model;
-  return row.copilot_model ?? row.provider_model;
-}
-
-function AllocationStatus({ row }: { row: ApiUserAiAllocation }) {
-  if (!rowHasAllocation(row)) {
-    return <span className="text-xs text-zinc-500">Using workspace defaults</span>;
-  }
-  if (row.source === "custom" && row.provider_id) {
-    return (
-      <span className="text-xs text-blue-400">
-        {row.provider_type ? row.provider_type.charAt(0).toUpperCase() + row.provider_type.slice(1) : "Provider"}: {row.provider_label ?? "Unknown"}
-      </span>
-    );
-  }
-  if (row.copilot_account_id) {
-    return (
-      <span className="text-xs text-emerald-400">
-        Copilot: {row.copilot_account_label ?? "Unknown"}
-      </span>
-    );
-  }
-  return <span className="text-xs text-zinc-400">--</span>;
-}
+import { rowHasAllocation, rowActiveModel, AllocationStatus } from "./user-allocation-edit-modal";
 
 export function UserAllocationsTab({ allocations, loading, accounts, providers, enforcement, onUpdate, onCopyMySettings, onReset }: Props) {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);

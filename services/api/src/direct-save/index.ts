@@ -12,10 +12,16 @@ import { Hono } from "hono";
 import { getProjectPath } from "../projects/file-manager.js";
 import { applyDirectSave } from "./ast-transformer.js";
 import type { DirectSaveRequest, DirectSaveResponse } from "./types.js";
+import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { requireProjectAccess } from "../middleware/project-access.js";
 
-export const directSaveRoutes = new Hono();
+export const directSaveRoutes = new Hono<AuthEnv>();
 
-directSaveRoutes.post("/projects/:id/direct-save", async (c) => {
+directSaveRoutes.post(
+  "/projects/:id/direct-save",
+  authMiddleware,
+  requireProjectAccess({ allowPublic: false }),
+  async (c) => {
   const projectId = c.req.param("id");
 
   // ── Parse and validate request body ──
@@ -119,4 +125,5 @@ directSaveRoutes.post("/projects/:id/direct-save", async (c) => {
       500,
     );
   }
-});
+  },
+);

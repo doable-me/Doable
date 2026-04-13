@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import type { ApiGitHubCopilotAccount, ApiAiProvider, ApiWorkspaceAiDefaults } from "@/lib/api";
 import { Shield, Loader2, Check, Eye } from "lucide-react";
-import { useCopilotModels } from "./model-config-tab";
+import { useCopilotModels } from "./model-config-hooks";
 
 interface AccessControlTabProps {
   defaults: ApiWorkspaceAiDefaults | null;

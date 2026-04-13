@@ -1637,6 +1637,12 @@ importers:
       argon2:
         specifier: ^0.41.1
         version: 0.41.1
+      docore:
+        specifier: link:../../../docore
+        version: link:../../../docore
+      dovault:
+        specifier: link:../../dovault
+        version: link:../../dovault
       hono:
         specifier: ^4.6.14
         version: 4.12.8
