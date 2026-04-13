@@ -1,19 +1,17 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useChat } from "../hooks/use-chat";
 import { useEditorStore } from "../hooks/use-editor-store";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { ClarificationFlow, PlanCard, PlanProgress } from "./plan";
 import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
-import { MessageSquare, Sparkles, Wrench, X } from "lucide-react";
+import { MessageSquare, Sparkles, Wrench, X, Loader2 } from "lucide-react";
 
 export function ChatPanel() {
   const projectId = useEditorStore((s) => s.projectId);
-  // Resolve the active workspace from localStorage — same pattern used by
-  // editor-sidebar.tsx and editor-toolbar.tsx. Needed so the Supabase
-  // provisioning dialog knows which workspace to scope the call to.
   const workspaceId =
     typeof window !== "undefined"
       ? localStorage.getItem("doable_active_workspace_id")
@@ -24,6 +22,9 @@ export function ChatPanel() {
     sendMessage,
     stopStreaming,
     loadHistory,
+    loadMore,
+    hasMore,
+    loadingMore,
     answerClarification,
     approvePlan,
     abandonPlan,
@@ -45,11 +46,51 @@ export function ChatPanel() {
   } = useEditorStore();
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const prevMessageCountRef = useRef(0);
+  const isUserNearBottomRef = useRef(true);
+  const isLoadingOlderRef = useRef(false);
 
-  // Auto-scroll on new messages
+  // Virtualizer — dynamic row heights via measureElement
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 120, // Estimated height per message
+    overscan: 5,
+  });
+
+  // Track if user is near bottom (for auto-scroll decisions)
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isUserNearBottomRef.current = distFromBottom < 100;
+
+    // Load older messages when scrolled near the top
+    if (el.scrollTop < 200 && hasMore && !loadingMore && !isLoadingOlderRef.current) {
+      isLoadingOlderRef.current = true;
+      loadMore().finally(() => {
+        isLoadingOlderRef.current = false;
+      });
+    }
+  }, [hasMore, loadingMore, loadMore]);
+
+  // Auto-scroll to bottom when new messages arrive (only if user was near bottom)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const count = messages.length;
+    if (count > prevMessageCountRef.current && isUserNearBottomRef.current) {
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        virtualizer.scrollToIndex(count - 1, { align: "end", behavior: "smooth" });
+      });
+    }
+    prevMessageCountRef.current = count;
+  }, [messages.length, virtualizer]);
+
+  // When prepending older messages, maintain scroll position
+  useEffect(() => {
+    if (isLoadingOlderRef.current && scrollRef.current) {
+      // The virtualizer handles this naturally via the key-based identity
+    }
   }, [messages]);
 
   // Load chat history on mount
@@ -57,6 +98,17 @@ export function ChatPanel() {
     loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  // Scroll to bottom on initial load
+  useEffect(() => {
+    if (messages.length > 0 && prevMessageCountRef.current === 0) {
+      requestAnimationFrame(() => {
+        virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
+      });
+    }
+  }, [messages.length, virtualizer]);
+
+  const virtualItems = virtualizer.getVirtualItems();
 
   return (
     <div className="flex h-full flex-col">
@@ -73,7 +125,11 @@ export function ChatPanel() {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto"
+        onScroll={handleScroll}
+      >
         {/* Plan progress tracker (during build) */}
         {planPhase === "building" && activePlan && (
           <PlanProgress plan={activePlan} />
@@ -83,9 +139,53 @@ export function ChatPanel() {
           <EmptyState />
         ) : (
           <>
-            {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} />
-            ))}
+            {/* Load more indicator */}
+            {hasMore && (
+              <div className="flex items-center justify-center py-3">
+                {loadingMore ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>Loading older messages...</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => loadMore()}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Load older messages
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Virtualized message list */}
+            <div
+              style={{
+                height: `${virtualizer.getTotalSize()}px`,
+                width: "100%",
+                position: "relative",
+              }}
+            >
+              {virtualItems.map((virtualRow) => {
+                const msg = messages[virtualRow.index];
+                return (
+                  <div
+                    key={msg.id}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <ChatMessage message={msg} />
+                  </div>
+                );
+              })}
+            </div>
 
             {/* Clarification questions */}
             {planPhase === "clarifying" && pendingQuestions && (
@@ -125,8 +225,6 @@ export function ChatPanel() {
                 />
               </div>
             )}
-
-            <div ref={bottomRef} />
           </>
         )}
       </div>

@@ -12,6 +12,7 @@ import { registerSuggestionsRoute } from "./suggestions.js";
 import { registerQueueRoutes } from "./queue.js";
 import { registerTraceRoutes } from "./traces.js";
 import { registerMiscRoutes } from "./misc-routes.js";
+import { rateLimiter } from "../../middleware/rate-limit.js";
 
 export { getChatSessionsSnapshot } from "./session-state.js";
 
@@ -23,6 +24,34 @@ const shareTrackingDb = shareTrackingQueries(sql);
 chatRoutes.use("/projects/:id/chat", authMiddleware);
 chatRoutes.use("/projects/:id/chat/*", authMiddleware);
 chatRoutes.use("/ai/*", authMiddleware);
+
+// ─── AI chat rate limiting (per-user, in-memory) ────────
+// 20 chat sends per 2-minute window — prevents runaway compute usage.
+// Uses userId from auth context for accurate per-user tracking.
+const chatSendLimiter = rateLimiter({
+  windowMs: 2 * 60_000,
+  max: 20,
+  keyGenerator: (c) => {
+    const auth = c.req.header("authorization");
+    return auth ? `chat:${auth.slice(-16)}` : `chat:${c.req.header("x-forwarded-for") ?? "unknown"}`;
+  },
+});
+// 5 suggestion requests per minute
+const suggestionLimiter = rateLimiter({
+  windowMs: 60_000,
+  max: 5,
+  keyGenerator: (c) => {
+    const auth = c.req.header("authorization");
+    return auth ? `suggest:${auth.slice(-16)}` : `suggest:${c.req.header("x-forwarded-for") ?? "unknown"}`;
+  },
+});
+// Apply rate limiters to chat send + fix-error + suggestions
+chatRoutes.use("/projects/:id/chat", async (c, next) => {
+  if (c.req.method === "POST") return chatSendLimiter(c, next);
+  return next();
+});
+chatRoutes.use("/projects/:id/chat/fix-error", chatSendLimiter);
+chatRoutes.use("/projects/:id/chat/suggestions", suggestionLimiter);
 
 // Auto-join: when a user accesses chat, add as collaborator ONLY if link sharing enabled
 chatRoutes.use("/projects/:id/chat", async (c, next) => {

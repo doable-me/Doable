@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useEditorStore, type ChatMessage } from "./use-editor-store";
 import { API_BASE } from "./use-chat-types";
 
@@ -12,6 +12,7 @@ export function useChatLifecycle(opts: {
   projectId: string | null;
   collabSubscribe?: (handler: (msg: any) => void) => () => void;
   addMessage: (msg: ChatMessage) => void;
+  prependMessages: (msgs: ChatMessage[]) => void;
   updateMessage: (id: string, content: string) => void;
   updateMessageFields: (id: string, fields: Partial<ChatMessage>) => void;
   clearMessages: () => void;
@@ -22,10 +23,14 @@ export function useChatLifecycle(opts: {
   sendMessage: (content: string) => void;
 }) {
   const {
-    projectId, collabSubscribe, addMessage, updateMessage,
+    projectId, collabSubscribe, addMessage, prependMessages, updateMessage,
     updateMessageFields, clearMessages, ownMessageIds, remoteStreamMap,
     setSupabaseProvisionRequest, setPendingIntegrationRequest, sendMessage,
   } = opts;
+
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const hasMoreRef = useRef(false);
 
   // ─── Listen for WS collaboration events ─────────────────
   useEffect(() => {
@@ -173,7 +178,7 @@ export function useChatLifecycle(opts: {
         : {};
 
       const [historyRes, statusRes] = await Promise.all([
-        fetch(`${API_BASE}/projects/${projectId}/chat/history`, { headers }),
+        fetch(`${API_BASE}/projects/${projectId}/chat/history?limit=50`, { headers }),
         fetch(`${API_BASE}/projects/${projectId}/chat/status`, { headers }).catch(() => null),
       ]);
       if (!historyRes.ok) return;
@@ -181,6 +186,10 @@ export function useChatLifecycle(opts: {
       const data = await historyRes.json();
       const statusData = statusRes?.ok ? await statusRes.json() : null;
       const isActivelyStreaming = statusData?.streaming === true;
+
+      const pageHasMore = data.hasMore === true;
+      setHasMore(pageHasMore);
+      hasMoreRef.current = pageHasMore;
 
       if (Array.isArray(data.data)) {
         clearMessages();
@@ -221,6 +230,60 @@ export function useChatLifecycle(opts: {
       // Silently fail on history load
     }
   }, [projectId, clearMessages, addMessage, updateMessageFields, pollStreamStatus]);
+
+  // Load older messages when user scrolls to top
+  const loadMore = useCallback(async () => {
+    if (!projectId || !hasMoreRef.current || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const { getStoredTokens } = await import("@/lib/api");
+      const { accessToken } = getStoredTokens();
+      const headers: Record<string, string> = accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
+        : {};
+
+      const messages = useEditorStore.getState().messages;
+      const oldestId = messages[0]?.id;
+      if (!oldestId) { setLoadingMore(false); return; }
+
+      const res = await fetch(
+        `${API_BASE}/projects/${projectId}/chat/history?limit=50&before=${encodeURIComponent(oldestId)}`,
+        { headers },
+      );
+      if (!res.ok) { setLoadingMore(false); return; }
+
+      const data = await res.json();
+      const pageHasMore = data.hasMore === true;
+      setHasMore(pageHasMore);
+      hasMoreRef.current = pageHasMore;
+
+      if (Array.isArray(data.data) && data.data.length > 0) {
+        const mapped: ChatMessage[] = data.data.map((msg: any) => {
+          const toolCalls = msg.tool_calls ?? msg.toolCalls;
+          const hadTools =
+            msg.had_tool_calls ??
+            msg.hadToolCalls ??
+            (Array.isArray(toolCalls) && toolCalls.length > 0);
+          return {
+            id: msg.id,
+            role: msg.role,
+            content: msg.content ?? "",
+            timestamp: msg.created_at ?? msg.timestamp ?? new Date().toISOString(),
+            senderName: msg.display_name ?? msg.senderName,
+            senderId: msg.sent_by_user_id ?? msg.senderId,
+            versionSha: msg.version_sha ?? msg.versionSha,
+            hadToolCalls: hadTools || undefined,
+            toolCallDetails: hadTools && Array.isArray(toolCalls) ? toolCalls : undefined,
+          };
+        });
+        prependMessages(mapped);
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [projectId, loadingMore, prependMessages]);
 
   const clearChat = useCallback(async () => {
     if (!projectId) return;
@@ -263,5 +326,5 @@ export function useChatLifecycle(opts: {
     [sendMessage, setPendingIntegrationRequest],
   );
 
-  return { loadHistory, clearChat, dismissSupabaseProvision, dismissIntegrationRequest };
+  return { loadHistory, loadMore, hasMore, loadingMore, clearChat, dismissSupabaseProvision, dismissIntegrationRequest };
 }

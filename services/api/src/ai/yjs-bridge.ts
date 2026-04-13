@@ -8,7 +8,7 @@
  */
 
 const WS_INTERNAL_URL = process.env.WS_INTERNAL_URL ?? "http://localhost:4001";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "internal-dev-secret";
+import { INTERNAL_SECRET } from "../lib/secrets.js";
 // Timeout for all internal WS server calls — prevents tool hangs when WS is slow/down
 const BRIDGE_TIMEOUT_MS = 5_000;
 

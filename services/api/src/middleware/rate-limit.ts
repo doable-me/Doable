@@ -1,4 +1,5 @@
 import { createMiddleware } from "hono/factory";
+import { recordSpan } from "../integrations/xray.js";
 
 interface RateLimitOptions {
   /** Time window in milliseconds */
@@ -65,6 +66,17 @@ export function rateLimiter(options: RateLimitOptions) {
 
     if (entry.count > max) {
       c.header("Retry-After", String(resetSeconds));
+      recordSpan({
+        source: "docore",
+        id: crypto.randomUUID(),
+        name: "rate_limit.blocked",
+        startedAt: now,
+        endedAt: now,
+        durationMs: 0,
+        status: "error",
+        error: "rate_limited",
+        attributes: { key, path: c.req.path, method: c.req.method, count: entry.count, max },
+      });
       return c.json(
         { error: "Too many requests, please try again later." },
         429

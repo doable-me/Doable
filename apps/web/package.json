@@ -17,6 +17,7 @@
     "@doable/shared": "workspace:*",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-slot": "^1.1.1",
+    "@tanstack/react-virtual": "^3.13.23",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "jszip": "^3.10.1",

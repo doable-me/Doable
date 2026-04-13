@@ -1,4 +1,5 @@
 import * as jose from "jose";
+import { JWT_SECRET as JWT_SECRET_RAW, JWT_ISSUER } from "./secrets.js";
 
 export interface AccessTokenPayload {
   sub: string;
@@ -13,14 +14,7 @@ export interface RefreshTokenPayload {
   exp: number;
 }
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? "fallback-dev-secret-change-me"
-);
-const JWT_ISSUER = process.env.JWT_ISSUER ?? "doable";
-
-if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "fallback-dev-secret-change-me") {
-  console.warn("[SECURITY] JWT_SECRET is not set or is using the default fallback. Set a strong secret in production!");
-}
+const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_RAW);
 
 /**
  * Sign a short-lived access token (15 minutes).

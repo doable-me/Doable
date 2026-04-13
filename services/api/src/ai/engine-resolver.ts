@@ -8,8 +8,9 @@
 import { sql } from "../db/index.js";
 import { aiSettingsQueries } from "@doable/db";
 import type { ByokProviderConfig } from "./providers/copilot.js";
+import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
-const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key");
+const aiSettingsDb = aiSettingsQueries(sql, ENCRYPTION_KEY);
 
 /**
  * Resolve which AI engine, model, and provider to use for a request.

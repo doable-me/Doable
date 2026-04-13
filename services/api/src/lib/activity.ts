@@ -1,7 +1,7 @@
 import type postgres from "postgres";
+import { INTERNAL_SECRET } from "./secrets.js";
 
 const WS_URL = process.env.WS_INTERNAL_URL ?? "http://localhost:4001";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "internal-dev-secret";
 
 /**
  * Emit an activity event — persists to DB and broadcasts to WS room.

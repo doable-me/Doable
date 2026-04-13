@@ -4,10 +4,10 @@ import { sql } from "../db/index.js";
 import { aiSettingsQueries, workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
+import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
-const aiSettings = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key");
+const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
 const workspaces = workspaceQueries(sql);
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
 
 export const adminAiRoutes = new Hono<AuthEnv>();
 

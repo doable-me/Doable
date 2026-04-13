@@ -121,6 +121,7 @@ interface EditorState {
 
   // Actions - Chat
   addMessage: (message: ChatMessage) => void;
+  prependMessages: (messages: ChatMessage[]) => void;
   updateMessage: (id: string, content: string) => void;
   updateMessageFields: (id: string, fields: Partial<ChatMessage>) => void;
   setStreaming: (streaming: boolean) => void;
@@ -215,6 +216,8 @@ export const useEditorStore = create<EditorState>()(
       // Chat
       addMessage: (message) =>
         set((state) => ({ messages: [...state.messages, message] })),
+      prependMessages: (msgs) =>
+        set((state) => ({ messages: [...msgs, ...state.messages] })),
       updateMessage: (id, content) =>
         set((state) => ({
           messages: state.messages.map((m) =>

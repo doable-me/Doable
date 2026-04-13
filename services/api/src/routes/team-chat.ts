@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { sql } from "../db/index.js";
 import { teamChatQueries } from "@doable/db/queries/team-chat";
 import { projectQueries } from "@doable/db/queries/projects";
+import { INTERNAL_SECRET } from "../lib/secrets.js";
 
 const teamChat = teamChatQueries(sql);
 const projects = projectQueries(sql);
@@ -14,7 +15,6 @@ export const teamChatRoutes = new Hono<AuthEnv>();
 // GET /team-chat/:projectId/internal — load history (for WS server)
 teamChatRoutes.get("/:projectId/internal", async (c) => {
   const secret = c.req.header("x-internal-secret");
-  const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "internal-dev-secret";
   if (secret !== INTERNAL_SECRET) return c.json({ error: "Forbidden" }, 403);
 
   const projectId = c.req.param("projectId");
@@ -26,7 +26,6 @@ teamChatRoutes.get("/:projectId/internal", async (c) => {
 // POST /team-chat/:projectId/internal — internal persist endpoint (for WS server)
 teamChatRoutes.post("/:projectId/internal", async (c) => {
   const secret = c.req.header("x-internal-secret");
-  const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "internal-dev-secret";
   if (secret !== INTERNAL_SECRET) return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json();
@@ -83,7 +82,6 @@ teamChatRoutes.post("/:projectId", async (c) => {
 
   // Broadcast to WS room
   const WS_URL = process.env.WS_INTERNAL_URL ?? "http://localhost:4001";
-  const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "internal-dev-secret";
   fetch(`${WS_URL}/internal/broadcast`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Internal-Secret": INTERNAL_SECRET },

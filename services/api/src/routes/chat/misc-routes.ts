@@ -10,8 +10,9 @@ import { getActiveTrace } from "../../ai/trace-collector.js";
 import { aiSettingsQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../../middleware/auth.js";
 import { projectSessions, activeRequests } from "./session-state.js";
+import { ENCRYPTION_KEY } from "../../lib/secrets.js";
 
-const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key");
+const aiSettingsDb = aiSettingsQueries(sql, ENCRYPTION_KEY);
 
 export function registerMiscRoutes(app: Hono<AuthEnv>) {
   // ─── GET /projects/:id/ai-status ──
@@ -65,29 +66,84 @@ export function registerMiscRoutes(app: Hono<AuthEnv>) {
   });
 
   // ─── GET /projects/:id/chat/history ──
+  // Supports cursor-based pagination:
+  //   ?limit=50       — number of messages to return (default 50, max 200)
+  //   ?before=<id>    — return messages older than this message id
+  //   ?all=true       — return all messages (legacy compat, no pagination)
   app.get("/projects/:id/chat/history", async (c) => {
     const projectId = c.req.param("id");
+    const beforeCursor = c.req.query("before") ?? null;
+    const returnAll = c.req.query("all") === "true";
+    const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "50", 10) || 50, 1), 200);
+
     try {
       const [dbSession] = await sql`SELECT id FROM ai_sessions WHERE project_id = ${projectId} ORDER BY created_at DESC LIMIT 1`;
-      if (!dbSession) return c.json({ data: [] });
-      const messages = await sql`
-        SELECT id, role, content, tool_calls, suggestions, tool_actions,
-               sent_by_user_id, display_name, user_color, created_at,
-               version_sha, had_tool_calls, thinking_content
-        FROM ai_messages WHERE session_id = ${dbSession.id}
-        ORDER BY created_at ASC
-      `;
-      return c.json({ data: messages });
+      if (!dbSession) return c.json({ data: [], hasMore: false });
+
+      if (returnAll) {
+        const messages = await sql`
+          SELECT id, role, content, tool_calls, suggestions, tool_actions,
+                 sent_by_user_id, display_name, user_color, created_at,
+                 version_sha, had_tool_calls, thinking_content
+          FROM ai_messages WHERE session_id = ${dbSession.id}
+          ORDER BY created_at ASC
+        `;
+        return c.json({ data: messages, hasMore: false });
+      }
+
+      // Cursor-based: get newest N messages (or N before cursor)
+      let messages;
+      if (beforeCursor) {
+        messages = await sql`
+          SELECT id, role, content, tool_calls, suggestions, tool_actions,
+                 sent_by_user_id, display_name, user_color, created_at,
+                 version_sha, had_tool_calls, thinking_content
+          FROM ai_messages
+          WHERE session_id = ${dbSession.id}
+            AND created_at < (SELECT created_at FROM ai_messages WHERE id = ${beforeCursor} AND session_id = ${dbSession.id})
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+        `;
+        // Reverse so oldest-first within the page
+        messages = messages.reverse();
+      } else {
+        // Get the latest N messages
+        messages = await sql`
+          SELECT id, role, content, tool_calls, suggestions, tool_actions,
+                 sent_by_user_id, display_name, user_color, created_at,
+                 version_sha, had_tool_calls, thinking_content
+          FROM ai_messages
+          WHERE session_id = ${dbSession.id}
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+        `;
+        messages = messages.reverse();
+      }
+
+      // Check if there are older messages
+      const oldestInPage = messages[0];
+      let hasMore = false;
+      if (oldestInPage) {
+        const [older] = await sql`
+          SELECT 1 FROM ai_messages
+          WHERE session_id = ${dbSession.id}
+            AND created_at < ${oldestInPage.created_at}
+          LIMIT 1
+        `;
+        hasMore = !!older;
+      }
+
+      return c.json({ data: messages, hasMore });
     } catch (err) {
       console.warn("[Chat] Failed to load history from DB:", err);
       const sessionId = projectSessions.get(projectId);
-      if (!sessionId) return c.json({ data: [] });
+      if (!sessionId) return c.json({ data: [], hasMore: false });
       try {
         const engine = await getCopilotEngine();
         const messages = await engine.getSessionMessages(sessionId);
-        return c.json({ data: messages });
+        return c.json({ data: messages, hasMore: false });
       } catch {
-        return c.json({ data: [] });
+        return c.json({ data: [], hasMore: false });
       }
     }
   });

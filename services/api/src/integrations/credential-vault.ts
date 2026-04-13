@@ -1,7 +1,6 @@
 import { sql } from "../db/index.js";
 import type { IntegrationConnection, DecryptedConnection, OAuthApp, DecryptedOAuthApp, AuthType } from "./types.js";
-
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
+import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
 export const credentialVault = {
   /**

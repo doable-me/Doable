@@ -38,6 +38,7 @@ export function useChat(
     mode,
     isStreaming,
     addMessage,
+    prependMessages,
     updateMessage,
     updateMessageFields,
     setStreaming,
@@ -303,11 +304,12 @@ export function useChat(
     [projectId],
   );
 
-  const { loadHistory, clearChat, dismissSupabaseProvision, dismissIntegrationRequest } =
+  const { loadHistory, loadMore, hasMore, loadingMore, clearChat, dismissSupabaseProvision, dismissIntegrationRequest } =
     useChatLifecycle({
       projectId,
       collabSubscribe,
       addMessage,
+      prependMessages,
       updateMessage,
       updateMessageFields,
       clearMessages,
@@ -324,6 +326,9 @@ export function useChat(
     sendMessage,
     stopStreaming,
     loadHistory,
+    loadMore,
+    hasMore,
+    loadingMore,
     clearChat,
     answerClarification,
     approvePlan,

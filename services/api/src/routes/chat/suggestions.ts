@@ -9,8 +9,9 @@ import { aiSettingsQueries } from "@doable/db";
 import { type ByokProviderConfig } from "../../ai/providers/copilot.js";
 import { getCopilotManager } from "../../ai/providers/copilot-manager.js";
 import type { AuthEnv } from "../../middleware/auth.js";
+import { ENCRYPTION_KEY } from "../../lib/secrets.js";
 
-const aiSettingsDb = aiSettingsQueries(sql, process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key");
+const aiSettingsDb = aiSettingsQueries(sql, ENCRYPTION_KEY);
 
 const suggestionsSchema = z.object({
   lastAssistantMessage: z.string().min(1).max(4000),
