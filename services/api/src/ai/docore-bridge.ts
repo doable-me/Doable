@@ -14,6 +14,7 @@ import {
   PolicyStore,
   MemoryPersistence,
   createPolicySandbox,
+  Tracer as DoCoreTracer,
   type DoCoreEngine,
   type SandboxAuditEntry,
 } from "docore";
@@ -21,10 +22,32 @@ import {
 import { xray } from "../integrations/xray.js";
 import { broadcastToRoom } from "./yjs-bridge.js";
 
+// ─── Tracer wired to xray span recording ──────────────────
+
+const docoreTracer = new DoCoreTracer((span) => {
+  xray.recordSpan({
+    source: "docore",
+    id: span.id,
+    name: span.name,
+    parentId: span.parentId,
+    startedAt: span.startedAt,
+    endedAt: span.endedAt,
+    durationMs: span.durationMs,
+    status: span.status,
+    error: span.error,
+    attributes: span.attributes,
+  });
+});
+
 // ─── Policy store (runtime-configurable sandbox rules) ────
 
 const policyPersistence = new MemoryPersistence();
 export const policyStore = new PolicyStore({ persistence: policyPersistence });
+
+// Enable custom tools globally — Doable's custom SDK tools (read_file,
+// list_files, create_plan, ask_clarification, etc.) must not be blocked
+// by the sandbox's default deny-all policy for custom tools.
+policyStore.setGlobal("sandbox.customTools.enabled", true);
 
 // ─── User manager ─────────────────────────────────────────
 
@@ -44,6 +67,7 @@ export const userManager = new DoCoreUserManager({
   idleTimeoutMs: IDLE_TIMEOUT_MS,
   sandbox: true,
   policyStore,
+  tracer: docoreTracer,
   onSandboxAudit: (entry: SandboxAuditEntry) => {
     xray.recordSandboxDecision({
       timestamp: Date.now(),
@@ -105,7 +129,7 @@ export function createPermissionHandler(
       reason: entry.reason,
       details: entry,
     });
-  });
+  }, docoreTracer);
 }
 
 // ─── Lifecycle ────────────────────────────────────────────

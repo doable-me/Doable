@@ -165,3 +165,16 @@ integrationAdminRoutes.get("/xray/call/:callId", authMiddleware, async (c) => {
   if (!call) return c.json({ error: "Call not found" }, 404);
   return c.json({ data: call });
 });
+
+// ─── X-Ray: Span Tracing (docore + dovault) ──────────────
+
+integrationAdminRoutes.get("/xray/spans", authMiddleware, async (c) => {
+  const source = c.req.query("source") as "docore" | "dovault" | undefined;
+  const name = c.req.query("name");
+  const limit = Math.min(Number(c.req.query("limit") || 50), 200);
+  return c.json({ data: xray.getSpans({ source, name: name || undefined, limit }) });
+});
+
+integrationAdminRoutes.get("/xray/spans/stats", authMiddleware, async (c) => {
+  return c.json({ data: xray.getSpanStats() });
+});

@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import type { Tracer } from "./tracer.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Vault (top-level)
@@ -37,6 +38,9 @@ export interface VaultOptions {
 
   /** Audit callback — receives every security-relevant event */
   onAudit?: (entry: AuditEntry) => void;
+
+  /** Tracer for span-level observability (vault.spawn, vault.config_lock, etc.) */
+  tracer?: Tracer;
 }
 
 export interface SpawnOptions {
@@ -133,6 +137,8 @@ export interface ConfigGuardOptions {
   extraLockedFiles?: string[];
   /** Audit callback */
   onAudit?: (entry: AuditEntry) => void;
+  /** Optional tracer for span-level observability of lock/check operations */
+  tracer?: import("./tracer.js").Tracer;
 }
 
 export interface ConfigTemplate {

@@ -8,6 +8,7 @@ export type {
   XrayCallHandle,
   SandboxAuditRecord,
   VaultAuditRecord,
+  XraySpan,
 } from "./xray-types.js";
 
 export {
@@ -15,6 +16,9 @@ export {
   recordVaultEvent,
   getSandboxHistory,
   getVaultHistory,
+  recordSpan,
+  getSpans,
+  getSpanStats,
 } from "./xray-audit.js";
 
 export { xray } from "./xray-engine.js";

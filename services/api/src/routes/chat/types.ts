@@ -15,6 +15,7 @@ export interface ChatStreamState {
   pendingToolNames: string[];
   toolCallIdMap: Map<string, string>;
   lastCapturedMsgId: string | undefined;
+  lastMsgIdSepEmitted: boolean;
   msgIdDeltaStart: number;
   assistantMessageId: string | undefined;
   lastFlushLen: number;
@@ -70,6 +71,7 @@ export function createInitialState(): ChatStreamState {
     pendingToolNames: [],
     toolCallIdMap: new Map(),
     lastCapturedMsgId: undefined,
+    lastMsgIdSepEmitted: false,
     msgIdDeltaStart: 0,
     assistantMessageId: undefined,
     lastFlushLen: 0,

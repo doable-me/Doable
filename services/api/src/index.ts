@@ -251,6 +251,24 @@ sql`DELETE FROM ai_active_streams WHERE started_at < now() - interval '10 minute
     console.warn("[startup] ai_active_streams sweep failed:", err)
   );
 
+// ─── Startup sweep: mark stale chat_traces as aborted ───
+// Traces stuck in "streaming" from a prior crash will never finalize.
+sql`UPDATE chat_traces
+    SET status = 'aborted', turn_ended_at = now(),
+        error_message = 'Interrupted by API restart'
+    WHERE status = 'streaming'
+      AND turn_started_at < now() - interval '5 minutes'`
+  .then((result) => {
+    if (result.count > 0) {
+      console.log(
+        `[startup] marked ${result.count} stale chat_traces as aborted from prior run`
+      );
+    }
+  })
+  .catch((err: unknown) =>
+    console.warn("[startup] chat_traces sweep failed:", err)
+  );
+
 // ─── WebSocket Proxy for Vite HMR ─────────────────────────────
 // Proxies WebSocket upgrade requests on /preview/:projectId/...
 // to the project's Vite dev server so HMR works through any

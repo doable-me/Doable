@@ -14,6 +14,9 @@ export { ConfigGuard } from "./config-guard.js";
 export { ProcessJail } from "./process-jail.js";
 export { ResourceLimiter } from "./resource-limiter.js";
 
+// Tracer
+export { Tracer, noopTracer, type Span, type TracerSink, type SpanHandle } from "./tracer.js";
+
 export type {
   VaultOptions,
   SpawnOptions,

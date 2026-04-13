@@ -83,6 +83,7 @@ export function createProcessEvent(
         }
         state.lastCapturedMsgId = deltaMessageId;
         state.msgIdDeltaStart = state.assistantContent.length;
+        state.lastMsgIdSepEmitted = true;
       }
     }
 
@@ -118,7 +119,8 @@ function handleAssistantMessageCatchUp(
   const msgId = evtData?.messageId as string | undefined;
   const content = (evtData?.content ?? "") as string;
   if (msgId && msgId !== state.lastCapturedMsgId) {
-    if (state.assistantContent && state.lastCapturedMsgId) {
+    // Only emit separator if the delta handler didn't already emit one for this transition
+    if (state.assistantContent && state.lastCapturedMsgId && !state.lastMsgIdSepEmitted) {
       const sep = "\n\n";
       state.assistantContent += sep;
       stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: sep }) }).catch(() => {});
@@ -127,6 +129,8 @@ function handleAssistantMessageCatchUp(
     state.lastCapturedMsgId = msgId;
     state.msgIdDeltaStart = state.assistantContent.length;
   }
+  // Reset the flag after catch-up so the next transition works fresh
+  state.lastMsgIdSepEmitted = false;
   if (!content) return;
   const sanitizedContent = sanitizeText(content);
   const deltasSoFar = state.assistantContent.slice(state.msgIdDeltaStart);

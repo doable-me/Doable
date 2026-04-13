@@ -55,6 +55,9 @@ export function renderMarkdown(text: string): string {
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr class="chat-hr" />');
 
+  // Collapse excessive newlines (3+ → max 2) before converting to <br>
+  html = html.replace(/\n{3,}/g, "\n\n");
+
   // Line breaks (skip inside <pre> blocks — handled by CSS white-space)
   html = html.replace(/\n/g, "<br />");
 

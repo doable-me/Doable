@@ -7,6 +7,7 @@ import type {
 import { ConfigGuard } from "./config-guard.js";
 import { ProcessJail } from "./process-jail.js";
 import { ResourceLimiter } from "./resource-limiter.js";
+import { Tracer, noopTracer } from "./tracer.js";
 
 /**
  * dovault — Zero-overhead runtime jail for Node.js processes.
@@ -59,9 +60,11 @@ export class Vault {
   private processJail: ProcessJail;
   private resourceLimiter: ResourceLimiter;
   private options: VaultOptions;
+  private tracer: Tracer;
 
   constructor(options: VaultOptions = {}) {
     this.options = options;
+    this.tracer = options.tracer ?? noopTracer;
 
     this.configGuard = new ConfigGuard({
       templates: options.templates,
@@ -105,6 +108,13 @@ export class Vault {
     args: string[],
     options: SpawnOptions,
   ): Promise<JailedProcess> {
+    const span = this.tracer.start("vault.spawn", {
+      command,
+      cwd: options.cwd,
+      jail: options.jail ?? null,
+      backend: this.backend,
+    });
+
     const {
       cwd,
       jail,
@@ -117,22 +127,26 @@ export class Vault {
       stdio,
     } = options;
 
-    // ── Layer 1: Config lockdown ──
-    if (lockConfigs) {
-      const locked = await this.configGuard.lock(cwd);
-      if (locked.length > 0) {
-        this.audit("config_lock", {
-          files: locked,
-          projectPath: cwd,
-        });
+    try {
+      // ── Layer 1: Config lockdown ──
+      if (lockConfigs) {
+        const lockSpan = span.child("vault.config_lock", { cwd });
+        const locked = await this.configGuard.lock(cwd);
+        lockSpan.end({ filesLocked: locked.length, files: locked });
+        if (locked.length > 0) {
+          this.audit("config_lock", {
+            files: locked,
+            projectPath: cwd,
+          });
+        }
       }
-    }
 
     // ── Layer 2: Node.js Permission Model ──
     let spawnCommand = command;
     let spawnArgs = [...args];
 
     if (this.options.permissionModel !== false && jail) {
+      const jailSpan = span.child("vault.permission_jail", { jail, blockChildProcess });
       const allReadOnlyPaths = [
         ...(this.options.readOnlyPaths ?? []),
         ...(readOnlyPaths ?? []),
@@ -153,6 +167,7 @@ export class Vault {
       if (jailed) {
         spawnCommand = jailed.command;
         spawnArgs = jailed.args;
+        jailSpan.end({ applied: true, resolvedScript: spawnArgs[spawnArgs.length - args.length - 1] });
         this.audit("permission_jail", {
           jail,
           blockChildProcess,
@@ -161,6 +176,7 @@ export class Vault {
         });
       } else {
         // Could not resolve — spawn without Permission Model
+        jailSpan.end({ applied: false, warning: "script not resolved" });
         this.audit("permission_jail", {
           warning: `Could not resolve "${command}" as Node.js script — Permission Model skipped`,
           command,
@@ -171,6 +187,11 @@ export class Vault {
 
     // ── Layer 3: OS resource limits ──
     const limits = resourceLimits ?? this.options.resourceLimits;
+    const resourceSpan = span.child("vault.resource_limits", {
+      backend: this.backend,
+      limits: limits ?? null,
+      blockNetwork: blockOutboundNet,
+    });
     const child = this.resourceLimiter.spawn(spawnCommand, spawnArgs, {
       cwd,
       env,
@@ -178,6 +199,7 @@ export class Vault {
       stdio,
       blockNetwork: blockOutboundNet,
     });
+    resourceSpan.end({ pid: child.pid });
 
     this.audit("spawn", {
       command,
@@ -187,11 +209,17 @@ export class Vault {
       jail: jail ?? null,
     });
 
+    span.end({ pid: child.pid, backend: this.backend });
+
     return {
       process: child,
       pid: child.pid,
       kill: () => child.kill(),
     };
+    } catch (err) {
+      span.fail(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
   }
 
   /**
@@ -199,7 +227,15 @@ export class Vault {
    * Useful for pre-locking before AI operations.
    */
   async lockConfigs(projectPath: string): Promise<string[]> {
-    return this.configGuard.lock(projectPath);
+    const span = this.tracer.start("vault.lockConfigs", { projectPath });
+    try {
+      const locked = await this.configGuard.lock(projectPath);
+      span.end({ filesLocked: locked.length, files: locked });
+      return locked;
+    } catch (err) {
+      span.fail(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
   }
 
   /**

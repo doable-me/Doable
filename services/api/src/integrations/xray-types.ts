@@ -109,3 +109,28 @@ export interface VaultAuditRecord {
   type: string;
   data?: unknown;
 }
+
+// ─── Span types (docore + dovault operation traces) ─────
+
+export interface XraySpan {
+  /** Source package: "docore" or "dovault" */
+  source: "docore" | "dovault";
+  /** Span ID from the tracer */
+  id: string;
+  /** Operation name (e.g. "engine.connect", "vault.spawn") */
+  name: string;
+  /** Parent span ID, if nested */
+  parentId?: string;
+  /** Epoch ms when the span started */
+  startedAt: number;
+  /** Epoch ms when the span ended */
+  endedAt: number | null;
+  /** Duration in ms */
+  durationMs: number | null;
+  /** "ok" or "error" */
+  status: "ok" | "error";
+  /** Error message if status is "error" */
+  error?: string;
+  /** Extra metadata */
+  attributes: Record<string, unknown>;
+}

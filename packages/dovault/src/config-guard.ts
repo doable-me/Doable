@@ -1,6 +1,7 @@
 import { writeFile, unlink, access } from "node:fs/promises";
 import { join, resolve, basename } from "node:path";
 import type { AuditEntry, ConfigGuardOptions, ConfigTemplate } from "./types.js";
+import type { Tracer } from "./tracer.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Safe config templates
@@ -69,6 +70,7 @@ export default {
 export class ConfigGuard {
   private templates: ConfigTemplate[];
   private onAudit?: (entry: AuditEntry) => void;
+  private tracer?: Tracer;
 
   constructor(options?: ConfigGuardOptions) {
     this.templates = DEFAULT_TEMPLATES.map((t) => ({ ...t }));
@@ -95,6 +97,7 @@ export class ConfigGuard {
     }
 
     this.onAudit = options?.onAudit;
+    this.tracer = options?.tracer;
   }
 
   /**
@@ -109,12 +112,10 @@ export class ConfigGuard {
    * Call this BEFORE spawning any process that loads these configs.
    */
   async lock(projectPath: string): Promise<string[]> {
+    const span = this.tracer?.start("vault.config_lock", { projectPath });
     const modified: string[] = [];
 
     for (const template of this.templates) {
-      // Delete variants that could shadow our canonical file.
-      // Vite loads configs by priority: .js > .mjs > .ts > .cjs
-      // If we lock vite.config.ts but vite.config.js exists, Vite loads .js instead.
       for (const variant of template.variants) {
         const variantPath = join(projectPath, variant);
         try {
@@ -144,6 +145,7 @@ export class ConfigGuard {
       }
     }
 
+    span?.end({ filesModified: modified.length, files: modified });
     return modified;
   }
 
@@ -158,9 +160,14 @@ export class ConfigGuard {
    */
   isLocked(filePath: string): boolean {
     const base = basename(filePath);
-    return this.templates.some(
+    const locked = this.templates.some(
       (t) => t.canonical === base || t.variants.includes(base),
     );
+    if (locked && this.tracer) {
+      const span = this.tracer.start("vault.config_check", { filePath, file: base, locked: true });
+      span.end();
+    }
+    return locked;
   }
 
   /** Get all file names that are considered locked */

@@ -88,6 +88,7 @@ export async function resolveSession(
           return eng.resumeSession(dbRow.copilot_session_id, {
             tools: sessionTools,
             toolProgress,
+            workingDirectory: projectPath,
             onPermissionRequest: createPermissionHandler(userId, projectPath),
           });
         });
@@ -139,8 +140,8 @@ export async function persistSessionToDb(
     `;
     if (dbSession) {
       if (sessionId) {
-        sql`UPDATE ai_sessions SET copilot_session_id = ${sessionId}, updated_at = now()
-            WHERE id = ${dbSession.id}`.catch(() => {});
+        await sql`UPDATE ai_sessions SET copilot_session_id = ${sessionId}, updated_at = now()
+            WHERE id = ${dbSession.id}`;
       }
       return dbSession.id;
     }

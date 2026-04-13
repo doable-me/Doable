@@ -18,12 +18,23 @@ import type {
 
 export { type CopilotEngineConfig, type CopilotSessionConfig } from "../engine-types.js";
 
+// Tools allowed in plan mode — everything else is denied via onPreToolUse
+const PLAN_ALLOWED_TOOLS = new Set([
+  // SDK built-in read-only tools
+  "view", "grep", "glob", "ask_user", "report_intent",
+  // Custom read-only tools
+  "read_file", "list_files", "search_files",
+  // Custom plan-specific tools
+  "ask_clarification", "create_plan", "mark_step_complete",
+]);
+
 export class CopilotEngine {
   private pool: DoCorePool | null = null;
   private config: CopilotEngineConfig;
   private engines = new Map<string, DoCoreEngine>();
   private abortedSessions = new Set<string>();
   private sessionWakeups = new Map<string, () => void>();
+  private sessionModes = new Map<string, string>();
 
   constructor(config: CopilotEngineConfig = {}) {
     this.config = config;
@@ -57,6 +68,7 @@ export class CopilotEngine {
       }
     }
     this.engines.clear();
+    this.sessionModes.clear();
     await this.pool.stop();
     this.pool = null;
     console.log("[CopilotEngine] Pool stopped");
@@ -78,6 +90,9 @@ export class CopilotEngine {
       console.log(`[CopilotEngine] BYOK provider: type=${config.provider.type}, model=${config.model ?? this.config.model}`);
     }
 
+    // Mutable ref captured by hook closure — set after connect()
+    let currentSessionId: string | undefined;
+
     const engine = await this.pool!.createEngine({
       model: config.model ?? this.config.model,
       workingDirectory: config.workingDirectory,
@@ -98,6 +113,16 @@ export class CopilotEngine {
         hooks: {
           onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
             config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs);
+            // Enforce plan mode: deny write/shell tools via SDK hook
+            if (currentSessionId && this.sessionModes.get(currentSessionId) === "plan") {
+              if (!PLAN_ALLOWED_TOOLS.has(input.toolName)) {
+                console.log(`[CopilotEngine] Plan mode: denied tool '${input.toolName}'`);
+                return {
+                  permissionDecision: "deny" as const,
+                  permissionDecisionReason: `Tool '${input.toolName}' is not available in plan mode. Use ask_clarification or create_plan instead.`,
+                };
+              }
+            }
           },
           onPostToolUse: async (input: { toolName: string; toolArgs: unknown; toolResult: unknown }) => {
             config.toolProgress?.onToolEnd?.(input.toolName, input.toolArgs, input.toolResult);
@@ -117,20 +142,37 @@ export class CopilotEngine {
       (engine.copilotSession as any).on(config.onEvent);
     }
     const sessionId = engine.sessionId!;
+    currentSessionId = sessionId;
     this.engines.set(sessionId, engine);
     return sessionId;
   }
 
   async resumeSession(sessionId: string, config?: Partial<CopilotSessionConfig>): Promise<string> {
     this.ensurePool();
+
+    // Mutable ref captured by hook closure — set after resume()
+    let currentSessionId: string | undefined = sessionId;
+
     const engine = await this.pool!.createEngine({
       streaming: true,
+      workingDirectory: config?.workingDirectory,
       onPermissionRequest: config?.onPermissionRequest,
       sessionConfig: {
         ...(config?.tools ? { tools: config.tools } : {}),
         ...(config?.toolProgress ? {
           hooks: {
-            onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => { config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs); },
+            onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
+              config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs);
+              if (currentSessionId && this.sessionModes.get(currentSessionId) === "plan") {
+                if (!PLAN_ALLOWED_TOOLS.has(input.toolName)) {
+                  console.log(`[CopilotEngine] Plan mode: denied tool '${input.toolName}'`);
+                  return {
+                    permissionDecision: "deny" as const,
+                    permissionDecisionReason: `Tool '${input.toolName}' is not available in plan mode. Use ask_clarification or create_plan instead.`,
+                  };
+                }
+              }
+            },
             onPostToolUse: async (input: { toolName: string; toolArgs: unknown; toolResult: unknown }) => { config.toolProgress?.onToolEnd?.(input.toolName, input.toolArgs, input.toolResult); },
             onSessionEnd: async (input: { reason: string; error?: string }) => { config.toolProgress?.onSessionEnd?.(input.reason, input.error); },
             onErrorOccurred: async (input: { error: string; errorContext: string }) => { config.toolProgress?.onError?.(input.error, input.errorContext); },
@@ -141,12 +183,14 @@ export class CopilotEngine {
     await engine.resume(sessionId, {
       onPermissionRequest: config?.onPermissionRequest,
       streaming: true,
+      workingDirectory: config?.workingDirectory,
       ...(config?.tools ? { tools: config.tools } : {}),
     });
     if (config?.onEvent && engine.copilotSession) {
       (engine.copilotSession as any).on(config.onEvent);
     }
     const newSessionId = engine.sessionId!;
+    currentSessionId = newSessionId;
     this.engines.set(newSessionId, engine);
     return newSessionId;
   }
@@ -154,6 +198,7 @@ export class CopilotEngine {
   async setSessionMode(sessionId: string, mode: "interactive" | "plan" | "autopilot"): Promise<void> {
     const engine = this.engines.get(sessionId);
     if (!engine) throw new Error(`Session ${sessionId} not found`);
+    this.sessionModes.set(sessionId, mode);
     await engine.setMode(mode);
   }
 
@@ -315,11 +360,12 @@ export class CopilotEngine {
     if (!engine) return;
     await engine.disconnectSession();
     this.engines.delete(sessionId);
+    this.sessionModes.delete(sessionId);
   }
 
   async deleteSession(sessionId: string): Promise<void> {
     const engine = this.engines.get(sessionId);
-    if (engine) { await engine.deleteSession(sessionId); await engine.disconnectSession(); this.engines.delete(sessionId); }
+    if (engine) { await engine.deleteSession(sessionId); await engine.disconnectSession(); this.engines.delete(sessionId); this.sessionModes.delete(sessionId); }
   }
 
   async getSessionMessages(sessionId: string): Promise<SessionEvent[]> {

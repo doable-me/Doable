@@ -7,7 +7,7 @@
  */
 
 import type { ChildProcess } from "node:child_process";
-import { createVault } from "dovault";
+import { createVault, Tracer as VaultTracer } from "dovault";
 import type { Vault, JailedProcess } from "dovault";
 import { xray } from "../integrations/xray.js";
 
@@ -19,6 +19,23 @@ const VITE_LIMITS = {
   tasksMax: parseInt(process.env.VITE_TASKS_MAX ?? "128", 10),
 } as const;
 
+// ─── Tracer wired to xray span recording ─────────────────
+
+const vaultTracer = new VaultTracer((span) => {
+  xray.recordSpan({
+    source: "dovault",
+    id: span.id,
+    name: span.name,
+    parentId: span.parentId,
+    startedAt: span.startedAt,
+    endedAt: span.endedAt,
+    durationMs: span.durationMs,
+    status: span.status,
+    error: span.error,
+    attributes: span.attributes,
+  });
+});
+
 // ─── Singleton vault wired to xray audit sink ────────────
 
 let vaultSingleton: Vault | null = null;
@@ -27,6 +44,7 @@ function getVault(): Vault {
   if (!vaultSingleton) {
     vaultSingleton = createVault({
       resourceLimits: VITE_LIMITS,
+      tracer: vaultTracer,
       onAudit: (entry) => {
         xray.recordVaultEvent({
           timestamp: typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Date.now(),

@@ -13,6 +13,9 @@ import {
   recordVaultEvent,
   getSandboxHistory,
   getVaultHistory,
+  recordSpan,
+  getSpans,
+  getSpanStats,
 } from "./xray-audit.js";
 
 // ─── Call handle ────────────────────────────────────────
@@ -281,4 +284,5 @@ function getCall(callId: string): XrayCall | null {
 export const xray = {
   start, getActive, getStuck, getStats, getAllStats, getHistory, getCall,
   recordSandboxDecision, recordVaultEvent, getSandboxHistory, getVaultHistory,
+  recordSpan, getSpans, getSpanStats,
 };
