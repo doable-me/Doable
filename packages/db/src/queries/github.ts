@@ -12,9 +12,9 @@ export function githubQueries(sql: postgres.Sql) {
     ): Promise<GitHubConnectionRow | undefined> {
       const [conn] = await sql<GitHubConnectionRow[]>`
         SELECT *,
-          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token,
+          pgp_sym_decrypt(access_token_encrypted::bytea, ${ENCRYPTION_KEY}) AS access_token,
           CASE WHEN webhook_secret_encrypted IS NOT NULL
-            THEN pgp_sym_decrypt(webhook_secret_encrypted, ${ENCRYPTION_KEY})
+            THEN pgp_sym_decrypt(webhook_secret_encrypted::bytea, ${ENCRYPTION_KEY})
             ELSE NULL
           END AS webhook_secret
         FROM github_connections WHERE project_id = ${projectId}
@@ -28,9 +28,9 @@ export function githubQueries(sql: postgres.Sql) {
     ): Promise<GitHubConnectionRow | undefined> {
       const [conn] = await sql<GitHubConnectionRow[]>`
         SELECT *,
-          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token,
+          pgp_sym_decrypt(access_token_encrypted::bytea, ${ENCRYPTION_KEY}) AS access_token,
           CASE WHEN webhook_secret_encrypted IS NOT NULL
-            THEN pgp_sym_decrypt(webhook_secret_encrypted, ${ENCRYPTION_KEY})
+            THEN pgp_sym_decrypt(webhook_secret_encrypted::bytea, ${ENCRYPTION_KEY})
             ELSE NULL
           END AS webhook_secret
         FROM github_connections
@@ -70,9 +70,9 @@ export function githubQueries(sql: postgres.Sql) {
           webhook_secret_encrypted = EXCLUDED.webhook_secret_encrypted,
           updated_at = now()
         RETURNING *,
-          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token,
+          pgp_sym_decrypt(access_token_encrypted::bytea, ${ENCRYPTION_KEY}) AS access_token,
           CASE WHEN webhook_secret_encrypted IS NOT NULL
-            THEN pgp_sym_decrypt(webhook_secret_encrypted, ${ENCRYPTION_KEY})
+            THEN pgp_sym_decrypt(webhook_secret_encrypted::bytea, ${ENCRYPTION_KEY})
             ELSE NULL
           END AS webhook_secret
       `;
@@ -125,9 +125,9 @@ export function githubQueries(sql: postgres.Sql) {
               : sql``}
           WHERE project_id = ${projectId}
           RETURNING *,
-            pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token,
+            pgp_sym_decrypt(access_token_encrypted::bytea, ${ENCRYPTION_KEY}) AS access_token,
             CASE WHEN webhook_secret_encrypted IS NOT NULL
-              THEN pgp_sym_decrypt(webhook_secret_encrypted, ${ENCRYPTION_KEY})
+              THEN pgp_sym_decrypt(webhook_secret_encrypted::bytea, ${ENCRYPTION_KEY})
               ELSE NULL
             END AS webhook_secret
         `;
@@ -139,9 +139,9 @@ export function githubQueries(sql: postgres.Sql) {
         SET ${sql(nonEncryptedValues as Record<string, postgres.SerializableParameter>)}
         WHERE project_id = ${projectId}
         RETURNING *,
-          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token,
+          pgp_sym_decrypt(access_token_encrypted::bytea, ${ENCRYPTION_KEY}) AS access_token,
           CASE WHEN webhook_secret_encrypted IS NOT NULL
-            THEN pgp_sym_decrypt(webhook_secret_encrypted, ${ENCRYPTION_KEY})
+            THEN pgp_sym_decrypt(webhook_secret_encrypted::bytea, ${ENCRYPTION_KEY})
             ELSE NULL
           END AS webhook_secret
       `;
@@ -221,7 +221,7 @@ export function githubQueries(sql: postgres.Sql) {
     ): Promise<GitHubUserTokenRow | undefined> {
       const [row] = await sql<GitHubUserTokenRow[]>`
         SELECT *,
-          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token
+          pgp_sym_decrypt(access_token_encrypted::bytea, ${ENCRYPTION_KEY}) AS access_token
         FROM github_user_tokens WHERE user_id = ${userId}
       `;
       return row;
@@ -252,7 +252,7 @@ export function githubQueries(sql: postgres.Sql) {
           scopes = EXCLUDED.scopes,
           updated_at = now()
         RETURNING *,
-          pgp_sym_decrypt(access_token_encrypted, ${ENCRYPTION_KEY}) AS access_token
+          pgp_sym_decrypt(access_token_encrypted::bytea, ${ENCRYPTION_KEY}) AS access_token
       `;
       return row!;
     },
