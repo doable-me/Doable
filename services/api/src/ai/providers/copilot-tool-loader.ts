@@ -31,9 +31,9 @@ export async function createAllTools(
     if (environment && environment.connectorRefs.length > 0) {
       connectorFilter = environment.connectorRefs;
     }
-    if (environment && environment.connectorRefs.length === 0) {
-      connectorFilter = [];
-    }
+    // When environment exists but has no explicit connector refs,
+    // leave connectorFilter undefined so all workspace connectors
+    // are available.  Empty refs means "not configured", not "block all".
   } catch (err) {
     console.warn("[CopilotEngine] Failed to resolve effective environment:", err);
   }
