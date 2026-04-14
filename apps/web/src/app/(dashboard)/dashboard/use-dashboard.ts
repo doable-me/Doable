@@ -123,7 +123,8 @@ export function useDashboard() {
     try {
       if (!append) setError(null);
       if (page > 1) setIsLoadingMore(true);
-      const res = await apiListProjects({ page, pageSize: PAGE_SIZE, status: statusFilter !== "all" ? statusFilter : undefined, search: debouncedSearch.trim() || undefined, folderId: activeFolderId ?? undefined });
+      const activeWsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") : null;
+      const res = await apiListProjects({ page, pageSize: PAGE_SIZE, status: statusFilter !== "all" ? statusFilter : undefined, search: debouncedSearch.trim() || undefined, folderId: activeFolderId ?? undefined, workspaceId: activeWsId ?? undefined });
       setProjects((prev) => (append ? [...prev, ...res.data] : res.data));
       setCurrentPage(page);
       setTotalProjects(res.pagination.total);
@@ -134,7 +135,8 @@ export function useDashboard() {
   const fetchRecentlyViewed = useCallback(async (page = 1, append = false) => {
     try {
       if (page > 1) setIsLoadingMore(true);
-      const res = await apiListRecentlyViewed({ page, pageSize: PAGE_SIZE });
+      const activeWsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") : null;
+      const res = await apiListRecentlyViewed({ page, pageSize: PAGE_SIZE, workspaceId: activeWsId ?? undefined });
       setRecentProjects((prev) => (append ? [...prev, ...res.data] : res.data));
       setRecentPage(page); setTotalRecent(res.pagination.total);
     } catch { if (!append) setRecentProjects([]); }

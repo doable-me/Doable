@@ -72,11 +72,11 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
     let cancelled = false;
     async function loadData() {
       try {
-        const [wsRes, projRes] = await Promise.all([apiListWorkspaces(), apiListProjects({ pageSize: 50 })]);
+        const persisted = localStorage.getItem("doable_active_workspace_id");
+        const [wsRes, projRes] = await Promise.all([apiListWorkspaces(), apiListProjects({ pageSize: 50, workspaceId: persisted ?? undefined })]);
         if (cancelled) return;
         setWorkspaces(wsRes.data);
         if (wsRes.data.length > 0) {
-          const persisted = localStorage.getItem("doable_active_workspace_id");
           const found = wsRes.data.find((w) => w.id === persisted);
           setActiveWorkspaceId(found ? found.id : wsRes.data[0]!.id);
         }
@@ -96,7 +96,8 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
 
   useEffect(() => {
     const handleProjectsChanged = () => {
-      apiListProjects({ pageSize: 50 }).then((res) => {
+      const wsId = localStorage.getItem("doable_active_workspace_id") ?? undefined;
+      apiListProjects({ pageSize: 50, workspaceId: wsId }).then((res) => {
         setRecentProjects([...res.data].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5));
         setTotalProjects(res.pagination.total);
       }).catch(() => {});

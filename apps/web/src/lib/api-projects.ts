@@ -126,10 +126,12 @@ export async function apiListStarredProjects(): Promise<{ data: ApiProject[] }> 
 }
 
 export async function apiListRecentlyViewed(opts?: {
+  workspaceId?: string;
   page?: number;
   pageSize?: number;
 }): Promise<{ data: ApiProject[]; pagination: { total: number; page: number; pageSize: number; totalPages: number } }> {
   const params = new URLSearchParams();
+  if (opts?.workspaceId) params.set("workspaceId", opts.workspaceId);
   if (opts?.page) params.set("page", String(opts.page));
   if (opts?.pageSize) params.set("pageSize", String(opts.pageSize));
   const qs = params.toString();
