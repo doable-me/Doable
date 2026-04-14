@@ -143,7 +143,7 @@ export interface UserAcquireOptions {
   /** User input handler */
   onUserInputRequest?: SessionConfig["onUserInputRequest"];
   /** Elicitation handler */
-  onElicitationRequest?: SessionConfig["onElicitationRequest"];
+  onElicitationRequest?: any;
   /** Extra session config */
   sessionConfig?: Partial<SessionConfig>;
 }

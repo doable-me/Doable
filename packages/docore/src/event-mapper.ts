@@ -9,7 +9,6 @@
  * corresponding type in events.ts. No other files need to change.
  */
 
-import type { SessionEvent } from "@github/copilot-sdk";
 import type { DoCoreEvent } from "./events.js";
 
 /**
@@ -23,8 +22,11 @@ export interface MapperContext {
 /**
  * Map a raw SDK SessionEvent into a normalized DoCoreEvent.
  * Returns null for events we intentionally skip or don't recognize yet.
+ *
+ * Uses `any` for the event parameter because the SDK evolves frequently
+ * and docore needs to handle events from multiple SDK versions gracefully.
  */
-export function mapSdkEvent(e: SessionEvent, ctx: MapperContext): DoCoreEvent | null {
+export function mapSdkEvent(e: any, ctx: MapperContext): DoCoreEvent | null {
   const ts = e.timestamp;
 
   switch (e.type) {

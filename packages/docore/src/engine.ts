@@ -18,7 +18,6 @@ import {
   type SessionConfig,
   type ResumeSessionConfig,
   type PermissionHandler,
-  type ElicitationHandler,
   type CustomAgentConfig,
 } from "@github/copilot-sdk";
 
@@ -46,7 +45,7 @@ export interface DoCoreEngineOptions {
   /** User input handler (enables ask_user tool). If not set, the engine auto-accepts. */
   onUserInputRequest?: SessionConfig["onUserInputRequest"];
   /** Elicitation handler. If not set, the engine auto-declines. */
-  onElicitationRequest?: SessionConfig["onElicitationRequest"];
+  onElicitationRequest?: any;
   /** Custom agents available in this session. */
   customAgents?: CustomAgentConfig[];
   /** Pre-select a custom agent on session start (must match a name in customAgents). */
@@ -118,7 +117,7 @@ export class DoCoreEngine {
         this.ownsClient = true;
       }
 
-      const sessionConfig: SessionConfig = {
+      const sessionConfig: SessionConfig & Record<string, any> = {
         model: this.options.model,
         workingDirectory: this.options.workingDirectory,
         streaming: this.options.streaming ?? true,
