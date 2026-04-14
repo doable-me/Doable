@@ -12,7 +12,7 @@ import {
   SLUG_MIN_LENGTH,
   SLUG_MAX_LENGTH,
 } from "@doable/shared";
-import { projects, workspacesQ, getUserWorkspaceId } from "./helpers.js";
+import { projects, workspacesQ, getUserWorkspaceId, getUserWorkspaceIdWithMinRole } from "./helpers.js";
 
 const stars = starQueries(sql);
 const projectViews = projectViewQueries(sql);
@@ -180,11 +180,11 @@ projectListRoutes.post("/", async (c) => {
 
   const { prompt, ...data } = parsed.data;
 
-  // Resolve workspace — use provided or user's default (with membership check)
-  const workspaceId = await getUserWorkspaceId(userId, data.workspaceId);
+  // Resolve workspace — use provided or user's default (require member+ role)
+  const workspaceId = await getUserWorkspaceIdWithMinRole(userId, "member", data.workspaceId);
   if (!workspaceId) {
     if (data.workspaceId) {
-      return c.json({ error: "Access denied to this workspace" }, 403);
+      return c.json({ error: "Access denied — requires member role or higher" }, 403);
     }
     return c.json({ error: "No workspace found. Please create a workspace first." }, 400);
   }

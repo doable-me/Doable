@@ -10,7 +10,7 @@ import type { AuthEnv } from "../../middleware/auth.js";
 import { getProjectPath } from "../../ai/project-files.js";
 import { getThumbnailPath } from "../../thumbnails/capture.js";
 import { stopDevServer } from "../../projects/dev-server.js";
-import { projects, workspacesQ, requireProjectAccess } from "./helpers.js";
+import { projects, workspacesQ, requireProjectAccess, isRoleAtLeast } from "./helpers.js";
 
 const stars = starQueries(sql);
 const shareTracking = shareTrackingQueries(sql);
@@ -93,6 +93,9 @@ projectItemRoutes.patch("/:id", async (c) => {
   if (!access) {
     return c.json({ error: "Project not found" }, 404);
   }
+  if (!isRoleAtLeast(access.role, "member")) {
+    return c.json({ error: "Viewers cannot edit projects" }, 403);
+  }
 
   const body = await c.req.json();
   const parsed = updateSchema.safeParse(body);
@@ -121,6 +124,9 @@ projectItemRoutes.put("/:id", async (c) => {
   const access = await requireProjectAccess(userId, id);
   if (!access) {
     return c.json({ error: "Project not found" }, 404);
+  }
+  if (!isRoleAtLeast(access.role, "member")) {
+    return c.json({ error: "Viewers cannot edit projects" }, 403);
   }
 
   const body = await c.req.json();
@@ -206,6 +212,9 @@ projectItemRoutes.post("/:id/duplicate", async (c) => {
   const access = await requireProjectAccess(userId, id);
   if (!access) {
     return c.json({ error: "Project not found" }, 404);
+  }
+  if (!isRoleAtLeast(access.role, "member")) {
+    return c.json({ error: "Viewers cannot duplicate projects" }, 403);
   }
   const original = access.project;
 

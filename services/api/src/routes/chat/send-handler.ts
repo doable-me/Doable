@@ -9,6 +9,7 @@ import { zValidator } from "@hono/zod-validator";
 import { streamSSE } from "hono/streaming";
 import { bodyLimit } from "hono/body-limit";
 import { sql } from "../../db/index.js";
+import { projectQueries, workspaceQueries } from "@doable/db";
 import {
   createAllTools,
   onToolEvent,
@@ -63,6 +64,23 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
       const projectId = c.req.param("id");
       const { content, mode, model, provider, providerId, copilotAccountId, attachments } = c.req.valid("json");
       const userId = c.get("userId")!;
+
+      // Verify project access — must be at least a member (viewers are read-only)
+      const chatProject = await projectQueries(sql).findById(projectId);
+      if (!chatProject) return c.json({ error: "Project not found" }, 404);
+      const chatRole = await workspaceQueries(sql).getMemberRole(chatProject.workspace_id, userId);
+      if (!chatRole) {
+        // Check project_collaborators as fallback
+        const [collab] = await sql<{ role: string }[]>`
+          SELECT role FROM project_collaborators
+          WHERE project_id = ${projectId} AND user_id = ${userId}
+        `;
+        if (!collab) return c.json({ error: "Access denied" }, 403);
+      }
+      const effectiveRole = chatRole ?? "member"; // collaborators treated as members
+      if (effectiveRole === "viewer") {
+        return c.json({ error: "Viewers cannot use AI chat" }, 403);
+      }
 
       let augmentedContent = content;
       let fileAttachments: Array<{ type: "file"; path: string; displayName?: string }> = [];

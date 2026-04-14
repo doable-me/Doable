@@ -1,11 +1,18 @@
 import { sql } from "../../db/index.js";
 import { projectQueries } from "@doable/db";
 import { workspaceQueries } from "@doable/db";
+import { WORKSPACE_ROLES, type WorkspaceRole } from "@doable/shared";
 
 const projects = projectQueries(sql);
 const workspacesQ = workspaceQueries(sql);
 
 export { projects, workspacesQ };
+
+// ─── Role hierarchy helper ──────────────────────────────────
+const ROLES = WORKSPACE_ROLES as readonly string[];
+export function isRoleAtLeast(role: string, minRole: WorkspaceRole): boolean {
+  return ROLES.indexOf(role) >= ROLES.indexOf(minRole);
+}
 
 // ─── Helper: get user's workspace (with membership check) ───
 export async function getUserWorkspaceId(userId: string, explicit?: string): Promise<string | null> {
@@ -13,6 +20,21 @@ export async function getUserWorkspaceId(userId: string, explicit?: string): Pro
     // Verify the user is actually a member of the requested workspace
     const role = await workspacesQ.getMemberRole(explicit, userId);
     if (!role) return null;
+    return explicit;
+  }
+  const userWorkspaces = await workspacesQ.listByUser(userId);
+  return userWorkspaces.length > 0 ? userWorkspaces[0]!.id : null;
+}
+
+// ─── Helper: get workspace ID with minimum role requirement ──
+export async function getUserWorkspaceIdWithMinRole(
+  userId: string,
+  minRole: WorkspaceRole,
+  explicit?: string
+): Promise<string | null> {
+  if (explicit) {
+    const role = await workspacesQ.getMemberRole(explicit, userId);
+    if (!role || !isRoleAtLeast(role, minRole)) return null;
     return explicit;
   }
   const userWorkspaces = await workspacesQ.listByUser(userId);
