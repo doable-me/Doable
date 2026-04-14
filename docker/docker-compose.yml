@@ -141,13 +141,6 @@ services:
       PORT: 3000
       NODE_ENV: production
 
-volumes:
-  postgres_data:
-  api_projects:
-  api_thumbnails:
-  ws_projects:
-  redis_data:
-
   # --- Redis (optional, enabled with --profile redis) ---
   redis:
     image: redis:7-alpine
@@ -163,3 +156,10 @@ volumes:
       interval: 5s
       timeout: 3s
       retries: 5
+
+volumes:
+  postgres_data:
+  api_projects:
+  api_thumbnails:
+  ws_projects:
+  redis_data:
