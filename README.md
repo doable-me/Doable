@@ -7,16 +7,16 @@ Build apps and websites by chatting with AI.
 The fastest way to try Doable — no Node.js or PostgreSQL install needed:
 
 ```bash
-git clone https://github.com/nicekid1/doable.git
+git clone https://github.com/doable-me/doable.git
 cd doable
-docker compose up --build
+docker compose -f docker/docker-compose.yml up --build
 ```
 
 Open [http://localhost:3000](http://localhost:3000) once everything is up.
 
-> **Note:** AI features require an API key. Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the `api` service environment inside `docker-compose.yml`, or configure the GitHub Copilot SDK (see [AI Configuration](#ai-configuration)).
+> **Note:** AI features require an API key. Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the `api` service environment inside `docker/docker-compose.yml`, or configure the GitHub Copilot SDK (see [AI Configuration](#ai-configuration)).
 
-To stop everything: `docker compose down` (add `-v` to also remove database data).
+To stop everything: `docker compose -f docker/docker-compose.yml down` (add `-v` to also remove database data).
 
 ## Architecture
 

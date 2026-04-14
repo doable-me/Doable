@@ -1,9 +1,9 @@
 # ==============================================================================
 # Doable — Docker Compose
 # ==============================================================================
-# Quick start:  docker compose up
-# DB only:      docker compose up postgres
-# Rebuild:      docker compose up --build
+# Quick start:  docker compose -f docker/docker-compose.yml up
+# DB only:      docker compose -f docker/docker-compose.yml up postgres
+# Rebuild:      docker compose -f docker/docker-compose.yml up --build
 # ==============================================================================
 
 services:
@@ -20,7 +20,7 @@ services:
       POSTGRES_DB: doable
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U doable"]
       interval: 5s
@@ -30,7 +30,8 @@ services:
   # --- Run database migrations ---
   migrate:
     build:
-      context: .
+      context: ..
+      dockerfile: docker/Dockerfile
       target: migrate
     container_name: doable-migrate
     depends_on:
@@ -43,7 +44,8 @@ services:
   # --- API server (Hono) ---
   api:
     build:
-      context: .
+      context: ..
+      dockerfile: docker/Dockerfile
       target: api
     container_name: doable-api
     restart: unless-stopped
@@ -79,7 +81,8 @@ services:
   # --- WebSocket server (Yjs CRDT) ---
   ws:
     build:
-      context: .
+      context: ..
+      dockerfile: docker/Dockerfile
       target: ws
     container_name: doable-ws
     restart: unless-stopped
@@ -102,7 +105,8 @@ services:
   # --- Web frontend (Next.js) ---
   web:
     build:
-      context: .
+      context: ..
+      dockerfile: docker/Dockerfile
       target: web
     container_name: doable-web
     restart: unless-stopped

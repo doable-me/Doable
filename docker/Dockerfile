@@ -2,8 +2,8 @@
 # Doable — Multi-stage Dockerfile
 # ==============================================================================
 # Targets: api, ws, web, migrate
-# Usage:   docker compose up        (starts everything)
-#          docker compose up postgres  (DB only, for local dev)
+# Usage:   docker compose -f docker/docker-compose.yml up
+#          docker compose -f docker/docker-compose.yml up postgres  (DB only)
 # ==============================================================================
 
 # --- Base ---
@@ -59,7 +59,6 @@ FROM base AS web
 WORKDIR /app
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=build /app/apps/web/public ./apps/web/public
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
 
