@@ -61,6 +61,7 @@ services:
       JWT_ISSUER: doable
       JWT_ACCESS_TOKEN_EXPIRES_IN: 15m
       JWT_REFRESH_TOKEN_EXPIRES_IN: 7d
+      ENCRYPTION_KEY: change-me-to-a-random-encryption-key
       API_PORT: 4000
       API_HOST: 0.0.0.0
       CORS_ORIGINS: http://localhost:3000
