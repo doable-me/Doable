@@ -62,10 +62,12 @@ export function UseTemplateDialog({
     setError(null);
 
     try {
+      const activeWsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? undefined : undefined;
       const res = await apiCreateProject({
         name: projectName.trim(),
         description: template.description,
         templateId: template.id,
+        workspaceId: activeWsId,
       });
       onCreated(res.data.id);
     } catch (err) {

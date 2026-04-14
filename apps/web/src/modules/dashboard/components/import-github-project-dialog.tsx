@@ -147,9 +147,11 @@ export function ImportGitHubProjectDialog({
     try {
       // Step 1: Create the project
       setImportingStatus("Creating project...");
+      const activeWsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? undefined : undefined;
       const projectRes = await apiCreateProject({
         name: repo.name,
         description: repo.description ?? `Imported from GitHub: ${repo.fullName}`,
+        workspaceId: activeWsId,
       });
       const projectId = projectRes.data.id;
 

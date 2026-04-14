@@ -215,7 +215,8 @@ export function useDashboard() {
     setIsCreating(true); setCreatingStatus("Creating project…");
     try {
       const text = inputText.trim() || "See attached image(s)";
-      const res = await apiCreateProject({ name: text.slice(0, 100), description: text, prompt: text });
+      const activeWsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? undefined : undefined;
+      const res = await apiCreateProject({ name: text.slice(0, 100), description: text, prompt: text, workspaceId: activeWsId });
       const projectId = res.data.id;
       sessionStorage.setItem(`doable_initial_prompt_${projectId}`, JSON.stringify({ prompt: text, attachments: imageAttachments.attachments }));
       setCreatingStatus("Connecting to AI…");
