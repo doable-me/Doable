@@ -149,11 +149,49 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       });
     }
 
+    // Intercept 502 or 504 on .vite/deps ("Outdated Optimize Dep") — Vite
+    // returns 504 when a pre-bundled dep hash is stale after a server restart,
+    // and the proxy returns 502 when the dev server is unreachable during restart.
+    // Instead of forwarding the error (which breaks the app), return a small
+    // JS module that forces a full page reload so the browser fetches
+    // fresh module URLs from the rebuilt index.html.
+    if ((resp.status === 504 || resp.status === 502) && originalPath.includes(".vite/deps")) {
+      const reloadScript = `
+        // Stale Vite dep detected — reload the page to pick up fresh deps
+        if (typeof window !== "undefined") {
+          window.location.reload();
+        }
+      `;
+      responseHeaders.set("content-type", "application/javascript; charset=utf-8");
+      responseHeaders.delete("content-length");
+      return new Response(reloadScript, {
+        status: 200,
+        headers: responseHeaders,
+      });
+    }
+
     return new Response(resp.body, {
       status: resp.status,
       headers: responseHeaders,
     });
   } catch (err) {
+    // If the fetch failed for a .vite/deps or source file request (dev server
+    // restarting), return a reload script instead of a hard 502.
+    if (originalPath.includes(".vite/deps") || originalPath.match(/\/src\/.*\.(tsx?|jsx?)$/)) {
+      const reloadScript = `
+        if (typeof window !== "undefined") {
+          window.location.reload();
+        }
+      `;
+      return new Response(reloadScript, {
+        status: 200,
+        headers: {
+          "content-type": "application/javascript; charset=utf-8",
+          "cache-control": "no-store",
+          "access-control-allow-origin": "*",
+        },
+      });
+    }
     return c.text(
       `Preview proxy error: ${err instanceof Error ? err.message : "Unknown error"}`,
       502,

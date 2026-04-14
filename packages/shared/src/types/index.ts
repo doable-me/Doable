@@ -17,7 +17,7 @@ export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 export const PLATFORM_ADMIN_ROLES: readonly WorkspaceRole[] = ["admin", "owner"] as const;
 
 export type ProjectStatus = "creating" | "draft" | "published" | "error";
-export type ProjectVisibility = "public" | "restricted";
+export type ProjectVisibility = "public" | "private";
 export type AiSessionMode = "agent" | "plan" | "chat";
 export type AiMessageRole = "user" | "assistant" | "system" | "tool";
 export type ApiKeyEnvironment = "test" | "live";

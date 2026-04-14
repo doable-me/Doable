@@ -119,7 +119,7 @@ export function shareTrackingQueries(sql: postgres.Sql) {
           slv.first_visited_at,
           slv.last_visited_at
         FROM share_link_visits slv
-        INNER JOIN users u ON u.id = slv.visitor_user_id
+        LEFT JOIN users u ON u.id = slv.visitor_user_id
         WHERE slv.project_id = ${projectId}
         ORDER BY slv.last_visited_at DESC
       `;

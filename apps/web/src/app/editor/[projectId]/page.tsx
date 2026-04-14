@@ -1460,7 +1460,13 @@ export default function EditorPage() {
   useEffect(() => {
     if (!resolvedProjectId) return;
     apiGetProject(resolvedProjectId)
-      .then((res) => setWorkspaceId(res.data.workspace_id))
+      .then((res) => {
+        setWorkspaceId(res.data.workspace_id);
+        if (res.data.name) {
+          setProjectName(res.data.name);
+          setNameInput(res.data.name);
+        }
+      })
       .catch(console.error);
     // Record view for recently-viewed tracking (fire-and-forget)
     apiRecordProjectView(resolvedProjectId).catch(() => {});

@@ -81,7 +81,7 @@ const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
   status: z.enum(["creating", "draft", "published", "error"]).optional(),
-  visibility: z.enum(["public", "restricted"]).optional(),
+  visibility: z.enum(["public", "private"]).optional(),
   folderId: z.string().uuid().nullable().optional(),
 });
 
