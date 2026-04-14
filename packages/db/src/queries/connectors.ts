@@ -160,7 +160,7 @@ export function connectorQueries(sql: postgres.Sql) {
           ${params.workspaceId}, ${params.createdBy}, ${params.scope},
           ${params.name}, ${params.description ?? null},
           ${params.transportType}, ${params.serverUrl ?? null},
-          ${params.serverCommand ?? null}, ${JSON.stringify(params.serverArgs ?? [])},
+          ${params.serverCommand ?? null}, ${sql.json(params.serverArgs ?? [])},
           ${params.authType ?? "none"}, ${params.projectId ?? null},
           ${credJson !== null ? sql`pgp_sym_encrypt(${credJson}, ${ENCRYPTION_KEY})` : null},
           ${envJson !== null ? sql`pgp_sym_encrypt(${envJson}, ${ENCRYPTION_KEY})` : null}
@@ -198,12 +198,12 @@ export function connectorQueries(sql: postgres.Sql) {
       if (updates.description !== undefined) { sets.push("description"); vals.push(updates.description); }
       if (updates.serverUrl !== undefined) { sets.push("server_url"); vals.push(updates.serverUrl); }
       if (updates.serverCommand !== undefined) { sets.push("server_command"); vals.push(updates.serverCommand); }
-      if (updates.serverArgs !== undefined) { sets.push("server_args"); vals.push(JSON.stringify(updates.serverArgs)); }
+      if (updates.serverArgs !== undefined) { sets.push("server_args"); vals.push(updates.serverArgs); }
       if (updates.authType !== undefined) { sets.push("auth_type"); vals.push(updates.authType); }
       if (updates.status !== undefined) { sets.push("status"); vals.push(updates.status); }
       if (updates.errorMessage !== undefined) { sets.push("error_message"); vals.push(updates.errorMessage); }
       if (updates.lastConnectedAt !== undefined) { sets.push("last_connected_at"); vals.push(updates.lastConnectedAt); }
-      if (updates.capabilitiesCache !== undefined) { sets.push("capabilities_cache"); vals.push(JSON.stringify(updates.capabilitiesCache)); }
+      if (updates.capabilitiesCache !== undefined) { sets.push("capabilities_cache"); vals.push(updates.capabilitiesCache); }
 
       if (sets.length === 0
         && updates.credentials === undefined
@@ -278,7 +278,7 @@ export function connectorQueries(sql: postgres.Sql) {
         UPDATE mcp_connectors SET
           status = ${status},
           error_message = ${opts?.errorMessage ?? null},
-          capabilities_cache = ${opts?.capabilities ? JSON.stringify(opts.capabilities) : null},
+          capabilities_cache = ${opts?.capabilities ? sql.json(opts.capabilities) : null},
           last_connected_at = CASE WHEN ${status} = 'active' THEN now() ELSE last_connected_at END,
           updated_at = now()
         WHERE id = ${id}

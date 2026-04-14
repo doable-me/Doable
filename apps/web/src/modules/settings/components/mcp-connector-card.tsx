@@ -181,7 +181,7 @@ export function ConnectorCard({
                   <span className="font-mono truncate">{connector.server_command}</span>
                 </>
               )}
-              {connector.server_args && connector.server_args.length > 0 && (
+              {Array.isArray(connector.server_args) && connector.server_args.length > 0 && (
                 <>
                   <span className="text-muted-foreground font-medium">Args</span>
                   <span className="font-mono truncate">{connector.server_args.join(", ")}</span>
