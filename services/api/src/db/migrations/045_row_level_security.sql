@@ -50,29 +50,54 @@ CREATE POLICY users_self ON users
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE projects FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY projects_workspace_member ON projects
-  USING (
-    doable_current_user_id() IS NULL
-    OR visibility = 'public'
-    OR EXISTS (
-      SELECT 1 FROM workspace_members wm
-      WHERE wm.workspace_id = projects.workspace_id
-        AND wm.user_id = doable_current_user_id()
-    )
-    OR EXISTS (
-      SELECT 1 FROM project_collaborators pc
-      WHERE pc.project_id = projects.id
-        AND pc.user_id = doable_current_user_id()
-    )
-  )
-  WITH CHECK (
-    doable_current_user_id() IS NULL
-    OR EXISTS (
-      SELECT 1 FROM workspace_members wm
-      WHERE wm.workspace_id = projects.workspace_id
-        AND wm.user_id = doable_current_user_id()
-    )
-  );
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'project_collaborators') THEN
+    EXECUTE '
+      CREATE POLICY projects_workspace_member ON projects
+        USING (
+          doable_current_user_id() IS NULL
+          OR visibility = ''public''
+          OR EXISTS (
+            SELECT 1 FROM workspace_members wm
+            WHERE wm.workspace_id = projects.workspace_id
+              AND wm.user_id = doable_current_user_id()
+          )
+          OR EXISTS (
+            SELECT 1 FROM project_collaborators pc
+            WHERE pc.project_id = projects.id
+              AND pc.user_id = doable_current_user_id()
+          )
+        )
+        WITH CHECK (
+          doable_current_user_id() IS NULL
+          OR EXISTS (
+            SELECT 1 FROM workspace_members wm
+            WHERE wm.workspace_id = projects.workspace_id
+              AND wm.user_id = doable_current_user_id()
+          )
+        )';
+  ELSE
+    EXECUTE '
+      CREATE POLICY projects_workspace_member ON projects
+        USING (
+          doable_current_user_id() IS NULL
+          OR visibility = ''public''
+          OR EXISTS (
+            SELECT 1 FROM workspace_members wm
+            WHERE wm.workspace_id = projects.workspace_id
+              AND wm.user_id = doable_current_user_id()
+          )
+        )
+        WITH CHECK (
+          doable_current_user_id() IS NULL
+          OR EXISTS (
+            SELECT 1 FROM workspace_members wm
+            WHERE wm.workspace_id = projects.workspace_id
+              AND wm.user_id = doable_current_user_id()
+          )
+        )';
+  END IF;
+END $$;
 
 -- ════════════════════════════════════════════════════════════
 -- 3. ai_sessions — user can only see their own AI sessions

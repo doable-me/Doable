@@ -61,18 +61,23 @@ BEGIN
     AND webhook_secret_encrypted IS NULL;
 
   -- ─── github_user_tokens: encrypt access_token ─────────────
-
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'github_user_tokens' AND column_name = 'access_token_encrypted'
+  -- Only if the table exists (it may not be present in all migration paths)
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_name = 'github_user_tokens'
   ) THEN
-    ALTER TABLE github_user_tokens ADD COLUMN access_token_encrypted TEXT;
-  END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'github_user_tokens' AND column_name = 'access_token_encrypted'
+    ) THEN
+      ALTER TABLE github_user_tokens ADD COLUMN access_token_encrypted TEXT;
+    END IF;
 
-  UPDATE github_user_tokens
-  SET access_token_encrypted = pgp_sym_encrypt(access_token, enc_key)
-  WHERE access_token IS NOT NULL
-    AND access_token_encrypted IS NULL;
+    UPDATE github_user_tokens
+    SET access_token_encrypted = pgp_sym_encrypt(access_token, enc_key)
+    WHERE access_token IS NOT NULL
+      AND access_token_encrypted IS NULL;
+  END IF;
 
 END $$;
 
@@ -84,5 +89,9 @@ END $$;
 ALTER TABLE github_connections DROP COLUMN IF EXISTS access_token;
 ALTER TABLE github_connections DROP COLUMN IF EXISTS webhook_secret;
 
--- github_user_tokens: drop plaintext access_token
-ALTER TABLE github_user_tokens DROP COLUMN IF EXISTS access_token;
+-- github_user_tokens: drop plaintext access_token (if table exists)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'github_user_tokens') THEN
+    ALTER TABLE github_user_tokens DROP COLUMN IF EXISTS access_token;
+  END IF;
+END $$;
