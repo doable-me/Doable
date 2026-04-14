@@ -58,6 +58,11 @@ CREATE TABLE IF NOT EXISTS mcp_tool_overrides (
   workspace_id    uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   project_id      uuid REFERENCES projects(id) ON DELETE CASCADE,
   user_id         uuid REFERENCES users(id) ON DELETE CASCADE,
-  created_at      timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (connector_id, tool_name, workspace_id, COALESCE(project_id, '00000000-0000-0000-0000-000000000000'), COALESCE(user_id, '00000000-0000-0000-0000-000000000000'))
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_mcp_tool_overrides_unique ON mcp_tool_overrides (
+  connector_id, tool_name, workspace_id,
+  COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid),
+  COALESCE(user_id, '00000000-0000-0000-0000-000000000000'::uuid)
 );
