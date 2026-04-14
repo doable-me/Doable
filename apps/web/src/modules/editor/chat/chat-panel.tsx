@@ -168,6 +168,7 @@ export function ChatPanel() {
             >
               {virtualItems.map((virtualRow) => {
                 const msg = messages[virtualRow.index];
+                if (!msg) return null;
                 return (
                   <div
                     key={msg.id}
