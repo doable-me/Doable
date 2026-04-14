@@ -37,8 +37,9 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 FROM deps AS build
 COPY . .
 
-# Build packages that compile cleanly (shared, docore, dovault, web)
+# Build packages that compile cleanly (docore, dovault, web)
 RUN pnpm --filter=docore run build || true
+RUN pnpm --filter=dovault run build || true
 RUN pnpm --filter=@doable/web run build
 
 # --- API service ---
