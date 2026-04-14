@@ -73,13 +73,18 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
     async function loadData() {
       try {
         const persisted = localStorage.getItem("doable_active_workspace_id");
-        const [wsRes, projRes] = await Promise.all([apiListWorkspaces(), apiListProjects({ pageSize: 50, workspaceId: persisted ?? undefined })]);
+        // Fetch workspaces first to validate the persisted ID belongs to this user
+        const wsRes = await apiListWorkspaces();
         if (cancelled) return;
         setWorkspaces(wsRes.data);
+        const found = wsRes.data.find((w) => w.id === persisted);
+        const validWsId = found ? found.id : wsRes.data[0]?.id ?? undefined;
         if (wsRes.data.length > 0) {
-          const found = wsRes.data.find((w) => w.id === persisted);
-          setActiveWorkspaceId(found ? found.id : wsRes.data[0]!.id);
+          setActiveWorkspaceId(validWsId!);
+          if (!found && validWsId) localStorage.setItem("doable_active_workspace_id", validWsId);
         }
+        const projRes = await apiListProjects({ pageSize: 50, workspaceId: validWsId });
+        if (cancelled) return;
         setRecentProjects([...projRes.data].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5));
         setTotalProjects(projRes.pagination.total);
         try { const starRes = await apiListStarredProjects(); if (!cancelled) setStarredProjects(starRes.data); } catch {}
