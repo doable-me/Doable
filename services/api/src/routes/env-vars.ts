@@ -231,6 +231,17 @@ envVarUtilRoutes.use("*", authMiddleware);
 // GET /env-vars/:varId/value
 envVarUtilRoutes.get("/:varId/value", async (c) => {
   const varId = c.req.param("varId");
+  const userId = c.get("userId");
+
+  // Verify user is a member of the workspace that owns this env var
+  const [envVar] = await sql<{ workspace_id: string }[]>`
+    SELECT workspace_id FROM env_vars WHERE id = ${varId}
+  `;
+  if (!envVar) return c.json({ error: "Not found" }, 404);
+
+  const err = await requireMember(envVar.workspace_id, userId);
+  if (err) return c.json({ error: err }, 403);
+
   const val = await vars.getDecryptedValue(varId);
   if (val === null) return c.json({ error: "Not found" }, 404);
   return c.json({ data: val });

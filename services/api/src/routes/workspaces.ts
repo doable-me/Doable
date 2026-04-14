@@ -120,7 +120,7 @@ workspaceRoutes.post("/invite/accept", async (c) => {
 });
 
 // ─── Get Workspace ──────────────────────────────────────────
-workspaceRoutes.get("/:id", async (c) => {
+workspaceRoutes.get("/:id", requireRole("viewer"), async (c) => {
   const id = c.req.param("id");
   const workspace = await workspaces.findById(id);
 
@@ -211,7 +211,7 @@ workspaceRoutes.post("/:id/transfer", requireRole("owner"), async (c) => {
 });
 
 // ─── List Members (with user details) ──────────────────────
-workspaceRoutes.get("/:id/members", async (c) => {
+workspaceRoutes.get("/:id/members", requireRole("viewer"), async (c) => {
   const id = c.req.param("id");
   const workspace = await workspaces.findById(id);
 
