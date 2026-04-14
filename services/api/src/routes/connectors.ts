@@ -226,7 +226,14 @@ connectorRoutes.post("/:workspaceId/connectors/:id/test", async (c) => {
   // Update connector status in DB
   if (result.success) {
     await connectors.updateConnectorStatus(connectorId, "active", {
-      capabilities: result.tools ? { tools: { count: result.tools.length } } : undefined,
+      capabilities: result.tools
+        ? {
+            tools: {
+              count: result.tools.length,
+              list: result.tools.map((t) => ({ name: t.name, description: t.description })),
+            },
+          }
+        : undefined,
     });
   } else {
     await connectors.updateConnectorStatus(connectorId, "error", {

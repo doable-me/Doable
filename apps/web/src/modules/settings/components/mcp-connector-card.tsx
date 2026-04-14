@@ -76,9 +76,11 @@ export function ConnectorCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [toggling, setToggling] = useState(false);
 
-  const toolCount = connector.capabilities_cache
-    ? (connector.capabilities_cache as { tools?: { count?: number } }).tools?.count ?? 0
-    : 0;
+  const capTools = connector.capabilities_cache
+    ? (connector.capabilities_cache as { tools?: { count?: number; list?: McpTool[] } }).tools
+    : undefined;
+  const toolCount = capTools?.count ?? 0;
+  const toolList = capTools?.list ?? [];
 
   const handleTest = useCallback(async () => {
     setTesting(true);
@@ -193,6 +195,29 @@ export function ConnectorCard({
               <span className="capitalize">{connector.scope}</span>
             </div>
           </div>
+
+          {toolList.length > 0 && (
+            <div className="px-4 py-3 border-b">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground">
+                  Tools ({toolCount})
+                </span>
+              </div>
+              <div className="grid gap-1">
+                {toolList.map((tool) => (
+                  <div key={tool.name} className="flex items-start gap-2 text-xs">
+                    <code className="shrink-0 rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
+                      {tool.name}
+                    </code>
+                    {tool.description && (
+                      <span className="text-muted-foreground truncate">{tool.description}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {connector.error_message && (
             <div
