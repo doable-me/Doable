@@ -1,4 +1,13 @@
+# ==============================================================================
+# Doable — Docker Compose
+# ==============================================================================
+# Quick start:  docker compose up
+# DB only:      docker compose up postgres
+# Rebuild:      docker compose up --build
+# ==============================================================================
+
 services:
+  # --- PostgreSQL with pgvector ---
   postgres:
     image: pgvector/pgvector:pg16
     container_name: doable-postgres
@@ -11,11 +20,107 @@ services:
       POSTGRES_DB: doable
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U doable"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  # --- Run database migrations ---
+  migrate:
+    build:
+      context: .
+      target: migrate
+    container_name: doable-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://doable:doable_secret@postgres:5432/doable
+    restart: "no"
+
+  # --- API server (Hono) ---
+  api:
+    build:
+      context: .
+      target: api
+    container_name: doable-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://doable:doable_secret@postgres:5432/doable
+      DATABASE_POOL_SIZE: 20
+      JWT_SECRET: change-me-to-a-64-char-random-string
+      JWT_ISSUER: doable
+      JWT_ACCESS_TOKEN_EXPIRES_IN: 15m
+      JWT_REFRESH_TOKEN_EXPIRES_IN: 7d
+      API_PORT: 4000
+      API_HOST: 0.0.0.0
+      CORS_ORIGINS: http://localhost:3000
+      WS_PORT: 4001
+      WS_HOST: 0.0.0.0
+      INTERNAL_SECRET: change-me-to-a-random-string
+      WS_INTERNAL_URL: http://ws:4001
+      API_URL: http://api:4000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_WS_URL: ws://localhost:4001
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NODE_ENV: production
+      PROJECTS_ROOT: ./projects
+    volumes:
+      - api_projects:/app/services/api/projects
+      - api_thumbnails:/app/services/api/thumbnails
+
+  # --- WebSocket server (Yjs CRDT) ---
+  ws:
+    build:
+      context: .
+      target: ws
+    container_name: doable-ws
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4001:4001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://doable:doable_secret@postgres:5432/doable
+      JWT_SECRET: change-me-to-a-64-char-random-string
+      WS_PORT: 4001
+      WS_HOST: 0.0.0.0
+      INTERNAL_SECRET: change-me-to-a-random-string
+      API_URL: http://api:4000
+      NODE_ENV: production
+    volumes:
+      - ws_projects:/app/services/ws/projects
+
+  # --- Web frontend (Next.js) ---
+  web:
+    build:
+      context: .
+      target: web
+    container_name: doable-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+      - ws
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_WS_URL: ws://localhost:4001
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      NODE_ENV: production
+
 volumes:
   postgres_data:
+  api_projects:
+  api_thumbnails:
+  ws_projects:

@@ -26,7 +26,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@github/copilot-sdk": "file:../../../copilot-sdk/nodejs"
+    "@github/copilot-sdk": "^0.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

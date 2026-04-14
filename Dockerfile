@@ -1,0 +1,67 @@
+# ==============================================================================
+# Doable — Multi-stage Dockerfile
+# ==============================================================================
+# Targets: api, ws, web, migrate
+# Usage:   docker compose up        (starts everything)
+#          docker compose up postgres  (DB only, for local dev)
+# ==============================================================================
+
+# --- Base ---
+FROM node:22-slim AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable pnpm
+WORKDIR /app
+
+# --- Dependencies ---
+FROM base AS deps
+
+# Copy workspace config + every package.json (for pnpm install)
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json apps/web/
+COPY services/api/package.json services/api/
+COPY services/ws/package.json services/ws/
+COPY packages/db/package.json packages/db/
+COPY packages/shared/package.json packages/shared/
+COPY packages/docore/package.json packages/docore/
+COPY packages/dovault/package.json packages/dovault/
+
+# Skip Puppeteer's bundled Chromium — thumbnails are optional in Docker
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+
+# --- Build ---
+FROM deps AS build
+COPY . .
+RUN pnpm run build
+
+# --- API service ---
+FROM base AS api
+WORKDIR /app
+COPY --from=build /app .
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+EXPOSE 4000
+CMD ["node", "services/api/dist/index.js"]
+
+# --- WebSocket service ---
+FROM base AS ws
+WORKDIR /app
+COPY --from=build /app .
+EXPOSE 4001
+CMD ["node", "services/ws/dist/index.js"]
+
+# --- Web (Next.js standalone) ---
+FROM base AS web
+WORKDIR /app
+COPY --from=build /app/apps/web/.next/standalone ./
+COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build /app/apps/web/public ./apps/web/public
+EXPOSE 3000
+CMD ["node", "apps/web/server.js"]
+
+# --- Migration runner ---
+FROM base AS migrate
+WORKDIR /app
+COPY --from=build /app .
+CMD ["node", "--import", "tsx", "services/api/src/db/migrate.ts"]

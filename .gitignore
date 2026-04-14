@@ -19,6 +19,7 @@ venv/
 .env
 .env.local
 .env.*.local
+.env.docker
 
 # IDE
 .idea/
@@ -31,14 +32,12 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Claude Code worktrees
-.claude/worktrees/
+# Claude Code
+.claude/
 
-# Data
+# Data (user-created projects, published sites, thumbnails)
 /data/
 /sites/
-
-# Generated project data (user projects, thumbnails)
 services/api/projects/
 services/api/thumbnails/
 services/api/services/
@@ -54,3 +53,16 @@ npm-debug.log*
 # Testing
 coverage/
 tools/integration-test-report.json
+
+# Internal docs (not for public distribution)
+internaldocs/
+
+# Debug / scratch files
+test-sendandwait.*
+collab-issue-research.md
+copilot-concurrency-plan.md
+scripts/test-*
+scripts/check-env-refs*
+
+# Reports
+report.*.json
