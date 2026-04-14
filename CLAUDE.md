@@ -52,4 +52,6 @@ Run `./setup-server.sh` on a fresh Ubuntu 22.04/24.04 server. It handles:
 - Design for creators, designers, producers, CEOs — not developers
 - Progressive disclosure, no jargon
 - Use neutral terms like "platform admin" — never "god mode"
-- No Redis — use lightweight in-memory or DB-backed solutions (~100 user scale)
+- No Redis required — in-memory KV store works out of the box (~100 user scale)
+- Optional Redis: set `REDIS_URL` for shared rate limiting & sessions across instances
+- KV store abstraction: `@doable/shared/kv-store.js` — auto-selects memory or Redis

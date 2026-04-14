@@ -206,7 +206,7 @@ integrationOAuthRoutes.get("/integrations/enhanced-auth/:id/resources", authMidd
 
   if (!sessionKey) return c.json({ error: "session is required" }, 400);
 
-  const session = getEnhancedAuthSession(sessionKey);
+  const session = await getEnhancedAuthSession(sessionKey);
   if (!session) return c.json({ error: "Session expired" }, 400);
 
   const def = getIntegration(integrationId);

@@ -1,7 +1,14 @@
 # ==============================================================================
 # Doable — Docker Compose
 # ==============================================================================
-# Quick start:  docker compose -f docker/docker-compose.yml up
+# Quick start:
+#   cp docker/.env.example docker/.env   # then edit secrets
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# With Redis (optional, for multi-instance scaling):
+#   Set REDIS_URL=redis://redis:6379 in docker/.env
+#   docker compose -f docker/docker-compose.yml --profile redis up --build
+#
 # DB only:      docker compose -f docker/docker-compose.yml up postgres
 # Rebuild:      docker compose -f docker/docker-compose.yml up --build
 # ==============================================================================
@@ -15,14 +22,14 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_USER: doable
-      POSTGRES_PASSWORD: doable_secret
-      POSTGRES_DB: doable
+      POSTGRES_USER: ${POSTGRES_USER:-doable}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-doable_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-doable}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U doable"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-doable}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -38,7 +45,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://doable:doable_secret@postgres:5432/doable
+      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:-doable_secret}@postgres:5432/${POSTGRES_DB:-doable}
     restart: "no"
 
   # --- API server (Hono) ---
@@ -55,26 +62,35 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://doable:doable_secret@postgres:5432/doable
+      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:-doable_secret}@postgres:5432/${POSTGRES_DB:-doable}
       DATABASE_POOL_SIZE: 20
-      JWT_SECRET: change-me-to-a-64-char-random-string
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in docker/.env}
       JWT_ISSUER: doable
       JWT_ACCESS_TOKEN_EXPIRES_IN: 15m
       JWT_REFRESH_TOKEN_EXPIRES_IN: 7d
-      ENCRYPTION_KEY: change-me-to-a-random-encryption-key
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in docker/.env}
       API_PORT: 4000
       API_HOST: 0.0.0.0
-      CORS_ORIGINS: http://localhost:3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       WS_PORT: 4001
       WS_HOST: 0.0.0.0
-      INTERNAL_SECRET: change-me-to-a-random-string
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?Set INTERNAL_SECRET in docker/.env}
       WS_INTERNAL_URL: http://ws:4001
       API_URL: http://api:4000
-      NEXT_PUBLIC_API_URL: http://localhost:4000
-      NEXT_PUBLIC_WS_URL: ws://localhost:4001
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:4001}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       NODE_ENV: production
       PROJECTS_ROOT: ./projects
+      REDIS_URL: ${REDIS_URL:-}
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails
@@ -93,13 +109,14 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://doable:doable_secret@postgres:5432/doable
-      JWT_SECRET: change-me-to-a-64-char-random-string
+      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:-doable_secret}@postgres:5432/${POSTGRES_DB:-doable}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in docker/.env}
       WS_PORT: 4001
       WS_HOST: 0.0.0.0
-      INTERNAL_SECRET: change-me-to-a-random-string
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?Set INTERNAL_SECRET in docker/.env}
       API_URL: http://api:4000
       NODE_ENV: production
+      REDIS_URL: ${REDIS_URL:-}
     volumes:
       - ws_projects:/app/services/ws/projects
 
@@ -117,9 +134,9 @@ services:
       - api
       - ws
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:4000
-      NEXT_PUBLIC_WS_URL: ws://localhost:4001
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:4001}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       HOSTNAME: 0.0.0.0
       PORT: 3000
       NODE_ENV: production
@@ -129,3 +146,20 @@ volumes:
   api_projects:
   api_thumbnails:
   ws_projects:
+  redis_data:
+
+  # --- Redis (optional, enabled with --profile redis) ---
+  redis:
+    image: redis:7-alpine
+    container_name: doable-redis
+    profiles: ["redis"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

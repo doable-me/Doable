@@ -52,27 +52,20 @@ function decryptState(state: string): Record<string, unknown> {
 }
 
 // ─── PKCE Code Verifier Store ────────────────────────────
-// In-memory store with 5-minute TTL (no Redis needed for ~100 users)
+// PKCE code verifiers — backed by shared KV store (in-memory or Redis)
+import { getKVStore } from "@doable/shared/kv-store.js";
 
-const codeVerifiers = new Map<string, { verifier: string; expiresAt: number }>();
-
-// Cleanup expired verifiers periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of codeVerifiers) {
-    if (now > entry.expiresAt) codeVerifiers.delete(key);
-  }
-}, 60_000);
+const CODE_VERIFIER_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 function storeCodeVerifier(state: string, verifier: string): void {
-  codeVerifiers.set(state, { verifier, expiresAt: Date.now() + 5 * 60 * 1000 });
+  getKVStore().set(`oauth:cv:${state}`, verifier, CODE_VERIFIER_TTL_MS);
 }
 
-function getCodeVerifier(state: string): string | undefined {
-  const entry = codeVerifiers.get(state);
-  if (!entry) return undefined;
-  codeVerifiers.delete(state);
-  return entry.verifier;
+async function getCodeVerifier(state: string): Promise<string | undefined> {
+  const kv = getKVStore();
+  const verifier = await kv.get<string>(`oauth:cv:${state}`);
+  if (verifier) await kv.delete(`oauth:cv:${state}`);
+  return verifier;
 }
 
 // ─── Authorization URL ──────────────────────────────────
@@ -231,7 +224,7 @@ export async function handleOAuthCallback(code: string, state: string): Promise<
   };
 
   // PKCE
-  const verifier = getCodeVerifier(state);
+  const verifier = await getCodeVerifier(state);
   if (verifier) body.code_verifier = verifier;
 
   const headers: Record<string, string> = {

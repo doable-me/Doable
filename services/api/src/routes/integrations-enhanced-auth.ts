@@ -122,10 +122,10 @@ integrationEnhancedAuthRoutes.get("/integrations/enhanced-auth/callback", async 
   };
 
   // PKCE verifier
-  const pkceSession = getEnhancedAuthSession(`pkce:${stateParam}`);
+  const pkceSession = await getEnhancedAuthSession(`pkce:${stateParam}`);
   if (pkceSession) {
     body.code_verifier = pkceSession.accessToken; // stored verifier
-    deleteEnhancedAuthSession(`pkce:${stateParam}`);
+    await deleteEnhancedAuthSession(`pkce:${stateParam}`);
   }
 
   const tokenRes = await fetch(ea.oauth2Config.tokenUrl, {
@@ -182,7 +182,7 @@ integrationEnhancedAuthRoutes.get("/integrations/enhanced-auth/callback", async 
         displayName: `${def.displayName} Management API`,
       });
 
-      deleteEnhancedAuthSession(sessionKey);
+      await deleteEnhancedAuthSession(sessionKey);
       return c.html(`<!DOCTYPE html><html><head><title>Connected</title></head><body>
         <p>Connected successfully! This window will close automatically.</p>
         <script>
@@ -277,7 +277,7 @@ integrationEnhancedAuthRoutes.post("/integrations/enhanced-auth/:id/complete", a
     resourceId = body.resourceId ?? null;
   }
 
-  const session = getEnhancedAuthSession(sessionKey);
+  const session = await getEnhancedAuthSession(sessionKey);
   if (!session) {
     return c.html(`<p>Session expired. Please try connecting again.</p>
       <p><a href="javascript:window.close()">Close</a></p>`, 400);
@@ -325,7 +325,7 @@ integrationEnhancedAuthRoutes.post("/integrations/enhanced-auth/:id/complete", a
       displayName: `${def.displayName} Management API`,
     });
 
-    deleteEnhancedAuthSession(sessionKey);
+    await deleteEnhancedAuthSession(sessionKey);
 
     const safeDisplayName = result.displayName.replace(/["<>\\]/g, "");
     return c.html(`<!DOCTYPE html><html><head><title>Connected</title></head><body>

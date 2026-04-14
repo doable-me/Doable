@@ -45,8 +45,9 @@ RUN pnpm --filter=@doable/web run build
 # --- API service ---
 FROM base AS api
 WORKDIR /app
-COPY --from=build /app .
+COPY --from=build --chown=node:node /app .
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+USER node
 EXPOSE 4000
 ENTRYPOINT ["tmux-entrypoint"]
 CMD ["api", "npx", "tsx", "services/api/src/index.ts"]
@@ -54,7 +55,8 @@ CMD ["api", "npx", "tsx", "services/api/src/index.ts"]
 # --- WebSocket service ---
 FROM base AS ws
 WORKDIR /app
-COPY --from=build /app .
+COPY --from=build --chown=node:node /app .
+USER node
 EXPOSE 4001
 ENTRYPOINT ["tmux-entrypoint"]
 CMD ["ws", "npx", "tsx", "services/ws/src/index.ts"]
@@ -62,8 +64,9 @@ CMD ["ws", "npx", "tsx", "services/ws/src/index.ts"]
 # --- Web (Next.js standalone) ---
 FROM base AS web
 WORKDIR /app
-COPY --from=build /app/apps/web/.next/standalone ./
-COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
+COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+USER node
 EXPOSE 3000
 ENTRYPOINT ["tmux-entrypoint"]
 CMD ["web", "node", "apps/web/server.js"]
@@ -71,5 +74,6 @@ CMD ["web", "node", "apps/web/server.js"]
 # --- Migration runner ---
 FROM base AS migrate
 WORKDIR /app
-COPY --from=build /app .
+COPY --from=build --chown=node:node /app .
+USER node
 CMD ["npx", "tsx", "services/api/src/db/migrate.ts"]

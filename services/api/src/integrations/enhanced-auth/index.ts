@@ -21,14 +21,14 @@ export async function getEnhancedAuthModule(providerKey: string): Promise<Enhanc
   }
 }
 
-// ─── In-Memory Session Store ────────────────────────────
+// ─── KV-Backed Session Store ────────────────────────────
 // Holds management OAuth access tokens between callback and credential extraction.
-// 5-minute TTL, no Redis needed for ~100 users.
+// In-memory by default; Redis when REDIS_URL is set.
+import { getKVStore } from "@doable/shared/kv-store.js";
 
 interface EnhancedAuthSession {
   accessToken: string;
   refreshToken?: string;
-  expiresAt: number;
   tokenExpiresAt?: string;
   integrationId: string;
   userId: string;
@@ -37,30 +37,16 @@ interface EnhancedAuthSession {
   projectId?: string;
 }
 
-const sessions = new Map<string, EnhancedAuthSession>();
+const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-// Cleanup expired sessions every 60s
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, session] of sessions) {
-    if (now > session.expiresAt) sessions.delete(key);
-  }
-}, 60_000);
-
-export function storeEnhancedAuthSession(sessionKey: string, session: Omit<EnhancedAuthSession, "expiresAt">): void {
-  sessions.set(sessionKey, { ...session, expiresAt: Date.now() + 5 * 60 * 1000 });
+export function storeEnhancedAuthSession(sessionKey: string, session: EnhancedAuthSession): void {
+  getKVStore().set(`eauth:${sessionKey}`, session, SESSION_TTL_MS);
 }
 
-export function getEnhancedAuthSession(sessionKey: string): EnhancedAuthSession | undefined {
-  const session = sessions.get(sessionKey);
-  if (!session) return undefined;
-  if (Date.now() > session.expiresAt) {
-    sessions.delete(sessionKey);
-    return undefined;
-  }
-  return session;
+export async function getEnhancedAuthSession(sessionKey: string): Promise<EnhancedAuthSession | undefined> {
+  return getKVStore().get<EnhancedAuthSession>(`eauth:${sessionKey}`);
 }
 
-export function deleteEnhancedAuthSession(sessionKey: string): void {
-  sessions.delete(sessionKey);
+export async function deleteEnhancedAuthSession(sessionKey: string): Promise<void> {
+  return getKVStore().delete(`eauth:${sessionKey}`);
 }
