@@ -164,7 +164,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
     finally { setFolderSubmitting(false); }
   };
 
-  const handleSwitchWorkspace = (id: string) => { setActiveWorkspaceId(id); localStorage.setItem("doable_active_workspace_id", id); };
+  const handleSwitchWorkspace = (id: string) => { setActiveWorkspaceId(id); localStorage.setItem("doable_active_workspace_id", id); emitDashboardEvent(DASHBOARD_EVENTS.WORKSPACE_CHANGED, id); };
 
   const handleCreateWorkspace = async () => {
     if (!newWsName.trim() || wsSubmitting) return;

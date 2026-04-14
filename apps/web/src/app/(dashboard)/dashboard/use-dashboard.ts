@@ -183,11 +183,13 @@ export function useDashboard() {
     const handleFolder = (e: Event) => { setActiveFolderId((e as CustomEvent<string>).detail); setSidebarFilter("all"); setActiveTab("projects"); setStarredFilter(false); };
     const handleSearchFocus = () => { searchRef.current?.focus(); };
     const handleImportGitHub = () => { setShowImportGitHub(true); };
+    const handleWorkspaceChanged = () => { fetchProjects(); fetchRecentlyViewed(); fetchFolders(); };
     window.addEventListener(DASHBOARD_EVENTS.NAVIGATE_FILTER, handleFilter);
     window.addEventListener(DASHBOARD_EVENTS.NAVIGATE_FOLDER, handleFolder);
     window.addEventListener(DASHBOARD_EVENTS.SEARCH_FOCUS, handleSearchFocus);
     window.addEventListener(DASHBOARD_EVENTS.IMPORT_GITHUB, handleImportGitHub);
-    return () => { window.removeEventListener(DASHBOARD_EVENTS.NAVIGATE_FILTER, handleFilter); window.removeEventListener(DASHBOARD_EVENTS.NAVIGATE_FOLDER, handleFolder); window.removeEventListener(DASHBOARD_EVENTS.SEARCH_FOCUS, handleSearchFocus); window.removeEventListener(DASHBOARD_EVENTS.IMPORT_GITHUB, handleImportGitHub); };
+    window.addEventListener(DASHBOARD_EVENTS.WORKSPACE_CHANGED, handleWorkspaceChanged);
+    return () => { window.removeEventListener(DASHBOARD_EVENTS.NAVIGATE_FILTER, handleFilter); window.removeEventListener(DASHBOARD_EVENTS.NAVIGATE_FOLDER, handleFolder); window.removeEventListener(DASHBOARD_EVENTS.SEARCH_FOCUS, handleSearchFocus); window.removeEventListener(DASHBOARD_EVENTS.IMPORT_GITHUB, handleImportGitHub); window.removeEventListener(DASHBOARD_EVENTS.WORKSPACE_CHANGED, handleWorkspaceChanged); };
   }, []);
 
   useEffect(() => {

@@ -7,6 +7,7 @@ export const DASHBOARD_EVENTS = {
   PROJECTS_CHANGED: "dashboard:projects-changed",
   MOVE_PROJECT_TO_FOLDER: "dashboard:move-project-to-folder",
   IMPORT_GITHUB: "dashboard:import-github",
+  WORKSPACE_CHANGED: "dashboard:workspace-changed",
 } as const;
 
 export const PROJECT_DRAG_TYPE = "application/x-doable-project";
