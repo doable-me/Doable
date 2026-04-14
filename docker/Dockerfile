@@ -10,7 +10,9 @@
 FROM node:22-slim AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable pnpm
+RUN corepack enable pnpm && apt-get update && apt-get install -y --no-install-recommends tmux && rm -rf /var/lib/apt/lists/*
+COPY docker/tmux-entrypoint.sh /usr/local/bin/tmux-entrypoint
+RUN chmod +x /usr/local/bin/tmux-entrypoint
 WORKDIR /app
 
 # --- Dependencies ---
@@ -45,14 +47,16 @@ WORKDIR /app
 COPY --from=build /app .
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 EXPOSE 4000
-CMD ["npx", "tsx", "services/api/src/index.ts"]
+ENTRYPOINT ["tmux-entrypoint"]
+CMD ["api", "npx", "tsx", "services/api/src/index.ts"]
 
 # --- WebSocket service ---
 FROM base AS ws
 WORKDIR /app
 COPY --from=build /app .
 EXPOSE 4001
-CMD ["npx", "tsx", "services/ws/src/index.ts"]
+ENTRYPOINT ["tmux-entrypoint"]
+CMD ["ws", "npx", "tsx", "services/ws/src/index.ts"]
 
 # --- Web (Next.js standalone) ---
 FROM base AS web
@@ -60,7 +64,8 @@ WORKDIR /app
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 EXPOSE 3000
-CMD ["node", "apps/web/server.js"]
+ENTRYPOINT ["tmux-entrypoint"]
+CMD ["web", "node", "apps/web/server.js"]
 
 # --- Migration runner ---
 FROM base AS migrate
