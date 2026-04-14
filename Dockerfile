@@ -35,10 +35,6 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 FROM deps AS build
 COPY . .
 
-# Install tsx for running TypeScript directly (API/WS use tsx in dev,
-# and tsc build has pre-existing strict errors that don't affect runtime)
-RUN pnpm add -w tsx
-
 # Build packages that compile cleanly (shared, docore, dovault, web)
 RUN pnpm --filter=docore run build || true
 RUN pnpm --filter=@doable/web run build
