@@ -23,6 +23,35 @@ Open [http://localhost:3000](http://localhost:3000) once everything is up.
 
 To stop everything: `docker compose -f docker/docker-compose.yml down` (add `-v` to also remove database data).
 
+### Deploy with a Domain (one-liner)
+
+To deploy on a server with a custom domain, nginx reverse proxy, and automatic SSL:
+
+```bash
+# One-liner: generates secrets, configures nginx, obtains Let's Encrypt SSL, builds & starts
+DOMAIN=app.example.com ./docker/setup.sh
+
+# Or with email for SSL cert notifications:
+DOMAIN=app.example.com EMAIL=you@example.com ./docker/setup.sh
+```
+
+This script:
+1. Generates `docker/.env` with random secrets and domain-aware URLs
+2. Installs and configures **nginx** as a reverse proxy (ports 80/443 → internal services)
+3. Obtains a free **Let's Encrypt** SSL certificate via certbot
+4. Builds and starts all Docker containers
+5. Configures UFW firewall (only ports 22, 80, 443 open)
+
+**Behind Cloudflare or another proxy?** Use `--skip-ssl` to configure nginx without Let's Encrypt:
+```bash
+DOMAIN=app.example.com ./docker/setup.sh --skip-ssl
+```
+
+**Localhost only (no nginx)?** Use `--local`:
+```bash
+./docker/setup.sh --local
+```
+
 ## Architecture
 
 Monorepo managed with [pnpm](https://pnpm.io) workspaces and [Turborepo](https://turbo.build).
@@ -143,7 +172,20 @@ See `.env.example` for all available options and `.env.integrations.example` for
 
 ## Production Deployment
 
-For production on a fresh Ubuntu server, use the automated setup script:
+### Docker + nginx (recommended)
+
+```bash
+# On a fresh Ubuntu 22.04+ server with Docker installed:
+git clone https://github.com/doable-me/doable.git
+cd doable
+DOMAIN=app.example.com EMAIL=admin@example.com ./docker/setup.sh
+```
+
+This runs the automated setup: secret generation, nginx reverse proxy, Let's Encrypt SSL, Docker build, and starts all services. Your app will be live at `https://app.example.com`.
+
+### Bare-metal (setup-server.sh)
+
+For a non-Docker deployment on a fresh Ubuntu server:
 
 ```bash
 ./setup-server.sh
