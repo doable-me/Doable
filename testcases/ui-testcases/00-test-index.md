@@ -18,6 +18,13 @@
 | [12-marketplace.md](12-marketplace.md) | Marketplace, Discover, Import/Export | 20+ | P2-P3 |
 | [13-edge-cases-stress.md](13-edge-cases-stress.md) | Edge Cases, Error Handling, Stress, Security | 40+ | P0-P3 |
 | [14-user-journey-flows.md](14-user-journey-flows.md) | End-to-End User Journeys (Personas) | 15+ | P0-P1 |
+| [15-environments-deep.md](15-environments-deep.md) | Environments: CRUD, Templates, Import/Export, Assignment, Env Vars, Resolution Priority | 65+ | P0-P2 |
+| [16-mcp-servers-deep.md](16-mcp-servers-deep.md) | MCP Servers: Add/Test/Delete, Transports, Auth, AI Tool Invocation, Pooling, Errors | 70+ | P0-P2 |
+| [17-knowledge-deep.md](17-knowledge-deep.md) | Knowledge Files: identity/soul/instructions/knowledge/user/plan/memory, Multi-scope Merge, Token Budget, Behavioral Verification | 85+ | P0-P2 |
+| [18-ai-chat-integration-deep.md](18-ai-chat-integration-deep.md) | AI Chat + Settings Integration: Environment→Chat, MCP→Chat, Knowledge→Chat, Combined, Cross-Feature | 55+ | P0-P2 |
+| [19-project-settings-deep.md](19-project-settings-deep.md) | Project Settings: All 8 Tabs — General, Integrations, MCP, Skills & Rules, Knowledge, Custom Domain, Environments, Danger Zone | 130+ | P0-P2 |
+| [20-inheritance-scope-resolution.md](20-inheritance-scope-resolution.md) | Workspace↔Project Inheritance: Environment Chain, Knowledge Merge (replace/append), Skills/Rules Resolution, MCP Merge, Env Var Override, Integration Dedup, Full AI Verification | 95+ | P0-P2 |
+| [21-users-roles-plans-permissions.md](21-users-roles-plans-permissions.md) | Users, Roles, Plans, Permissions & Admin: Test User Creation Guide, Registration (email/OAuth), 4 Workspace Roles (owner/admin/member/viewer), 4 Plans (free/pro/business/enterprise), Credits, Billing, Platform Admin Panel, Feature Flags, Invitation Flow, RBAC Matrix, Security | 145+ | P0-P2 |
 
 ## Priority Legend
 - **P0** — Critical path. Must work for basic product viability. Test first.

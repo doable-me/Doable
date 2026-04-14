@@ -4,6 +4,7 @@
  */
 import { Hono } from "hono";
 import { authMiddleware, type AuthEnv } from "../../middleware/auth.js";
+import { requireCredits } from "../../middleware/credits.js";
 import { shareTrackingQueries } from "@doable/db";
 import { sql } from "../../db/index.js";
 import { registerSendHandler } from "./send-handler.js";
@@ -52,6 +53,13 @@ chatRoutes.use("/projects/:id/chat", async (c, next) => {
 });
 chatRoutes.use("/projects/:id/chat/fix-error", chatSendLimiter);
 chatRoutes.use("/projects/:id/chat/suggestions", suggestionLimiter);
+
+// Credit check: require at least 1 credit before allowing AI chat
+chatRoutes.use("/projects/:id/chat", async (c, next) => {
+  if (c.req.method === "POST") return requireCredits(1)(c, next);
+  return next();
+});
+chatRoutes.use("/projects/:id/chat/fix-error", requireCredits(1));
 
 // Auto-join: when a user accesses chat, add as collaborator ONLY if link sharing enabled
 chatRoutes.use("/projects/:id/chat", async (c, next) => {

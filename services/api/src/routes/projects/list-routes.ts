@@ -11,6 +11,8 @@ import {
   SLUG_REGEX,
   SLUG_MIN_LENGTH,
   SLUG_MAX_LENGTH,
+  PLAN_LIMITS,
+  type WorkspacePlan,
 } from "@doable/shared";
 import { projects, workspacesQ, getUserWorkspaceId, getUserWorkspaceIdWithMinRole } from "./helpers.js";
 
@@ -187,6 +189,18 @@ projectListRoutes.post("/", async (c) => {
       return c.json({ error: "Access denied — requires member role or higher" }, 403);
     }
     return c.json({ error: "No workspace found. Please create a workspace first." }, 400);
+  }
+
+  // Enforce plan project limit
+  const workspace = await workspacesQ.findById(workspaceId);
+  if (workspace) {
+    const limits = PLAN_LIMITS[workspace.plan as WorkspacePlan] ?? PLAN_LIMITS.free;
+    const { total } = await projects.listByWorkspace(workspaceId, { page: 1, pageSize: 1 });
+    if (total >= limits.maxProjects) {
+      return c.json({
+        error: `Project limit reached (${limits.maxProjects} for ${workspace.plan} plan). Upgrade to create more.`,
+      }, 403);
+    }
   }
 
   // Auto-generate slug from name if not provided

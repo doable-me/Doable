@@ -10,14 +10,14 @@ import { streamSSE } from "hono/streaming";
 import { bodyLimit } from "hono/body-limit";
 import { sql } from "../../db/index.js";
 import { projectQueries, workspaceQueries } from "@doable/db";
-import {
-  createAllTools,
+import { createAllTools,
   onToolEvent,
   type ByokProviderConfig,
 } from "../../ai/providers/copilot.js";
 import { getCopilotManager } from "../../ai/providers/copilot-manager.js";
 import { createUsageCollector } from "../../ai/usage-collector.js";
 import { createTraceCollector, type TraceCollector } from "../../ai/trace-collector.js";
+import { creditQueries } from "@doable/db/queries/credits";
 import { getProjectPath } from "../../projects/file-manager.js";
 import { resolveAiEngine } from "../../ai/engine-resolver.js";
 import { buildProjectContextForMode } from "../../ai/context-builder.js";
@@ -240,6 +240,19 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           await handleAutoFixPreview(stream, state, projectId, resolvedGithubToken, sessionId!);
           await handleVersionAndMemory(stream, state, projectId, userId, content, messageId);
           await handleFinalCleanup(stream, state, projectId, mode, keepAlive, softHeartbeat);
+
+          // Consume 1 credit after successful chat completion
+          if (workspaceId && state.assistantContent) {
+            try {
+              const credits = creditQueries(sql);
+              await credits.consumeCredits(userId, workspaceId, 1, {
+                actionType: "chat_message",
+                projectId,
+              });
+            } catch (err) {
+              console.warn("[Chat] Failed to consume credit:", err instanceof Error ? err.message : err);
+            }
+          }
         } catch (err) {
           await handleStreamError(stream, state, err, projectId, keepAlive, softHeartbeat);
         }

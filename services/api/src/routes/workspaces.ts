@@ -4,7 +4,7 @@ import { sql } from "../db/index.js";
 import { workspaceQueries, userQueries, environmentQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { requireRole } from "../middleware/workspace-role.js";
-import { SLUG_REGEX, SLUG_MIN_LENGTH, SLUG_MAX_LENGTH } from "@doable/shared";
+import { SLUG_REGEX, SLUG_MIN_LENGTH, SLUG_MAX_LENGTH, PLAN_LIMITS, type WorkspacePlan } from "@doable/shared";
 
 const workspaces = workspaceQueries(sql);
 const users = userQueries(sql);
@@ -249,6 +249,18 @@ workspaceRoutes.post("/:id/members/invite", requireRole("admin"), async (c) => {
     const existingRole = await workspaces.getMemberRole(workspaceId, existingUser.id);
     if (existingRole) {
       return c.json({ error: "User is already a member of this workspace" }, 409);
+    }
+  }
+
+  // Enforce plan member limit
+  const workspace = await workspaces.findById(workspaceId);
+  if (workspace) {
+    const limits = PLAN_LIMITS[workspace.plan as WorkspacePlan] ?? PLAN_LIMITS.free;
+    const members = await workspaces.listMembers(workspaceId);
+    if (members.length >= limits.maxMembers) {
+      return c.json({
+        error: `Member limit reached (${limits.maxMembers} for ${workspace.plan} plan). Upgrade to invite more.`,
+      }, 403);
     }
   }
 
