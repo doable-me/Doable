@@ -166,7 +166,7 @@ See `.env.example` for all available options and `.env.integrations.example` for
 
 - **Secrets**: Never commit real secrets. Use `docker/.env` (gitignored) for Docker deployments and `.env` for local dev. Generate secrets with `openssl rand -hex 32`.
 - **Required secrets** (Docker will refuse to start without these): `JWT_SECRET`, `ENCRYPTION_KEY`, `INTERNAL_SECRET`.
-- **Network binding**: All Docker services bind to `127.0.0.1` only — no ports are exposed to the public internet. External access should go through a reverse proxy (e.g., Cloudflare Tunnel, Caddy, nginx).
+- **Network binding**: All Docker services bind to `127.0.0.1` only — no ports are exposed to the public internet. External access goes through the nginx reverse proxy configured by `setup.sh`.
 - **Non-root containers**: API, WS, Web, and Migrate containers run as the unprivileged `node` user.
 - **Database**: PostgreSQL is only accessible within the Docker network and via `127.0.0.1:5432` on the host.
 
@@ -196,7 +196,7 @@ This handles: Node.js 22, pnpm, PostgreSQL 16, Caddy, Cloudflare Tunnel, firewal
 **Key production requirements:**
 - Set unique, strong values for `JWT_SECRET`, `ENCRYPTION_KEY`, and `INTERNAL_SECRET`
 - Configure `CORS_ORIGINS`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_APP_URL` to match your domain
-- Use Cloudflare Tunnel or a reverse proxy — never expose application ports directly
+- Use a reverse proxy (nginx via `setup.sh`, or Caddy, Traefik, etc.) — never expose application ports directly
 - Verify with `ss -tlnp` that no service binds to `0.0.0.0` (except SSH)
 
 ### Environment Variables Reference
