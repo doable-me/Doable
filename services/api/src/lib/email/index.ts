@@ -137,7 +137,7 @@ async function loadProviderFromDb(sql: postgres.Sql): Promise<EmailProvider | nu
           },
           async verify() {
             try {
-              const res = await fetch("https://api.resend.com/domains", {
+              const res = await fetch("https://api.resend.com/api-keys", {
                 headers: { Authorization: `Bearer ${apiKey}` },
               });
               return res.ok;
@@ -273,16 +273,15 @@ export async function initEmailService(sql: postgres.Sql): Promise<void> {
   dbSql = sql;
 
   activeProvider = await resolveProvider(sql);
+  console.log(`[Email] Provider ready: ${activeProvider.name}`);
 
-  // Verify provider connectivity
+  // Log verification status (non-blocking — admin can verify via UI)
   if (activeProvider.verify && activeProvider.name !== "console") {
     const ok = await activeProvider.verify();
     if (!ok) {
-      console.warn(`[Email] Provider "${activeProvider.name}" failed verification — falling back to console`);
-      activeProvider = consoleProvider;
+      console.warn(`[Email] Provider "${activeProvider.name}" loaded but verify check failed — use admin UI to verify`);
     }
   }
-  console.log(`[Email] Provider ready: ${activeProvider.name}`);
 
   queue = new EmailQueue(sql, activeProvider);
   await queue.recoverStuck();
