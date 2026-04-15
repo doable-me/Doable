@@ -24,9 +24,27 @@ function CallbackHandler() {
     if (processed.current) return;
     processed.current = true;
 
-    const accessToken = searchParams.get("accessToken");
-    const refreshToken = searchParams.get("refreshToken");
-    const errorParam = searchParams.get("error");
+    // Read tokens from URL fragment (preferred, secure — not sent to servers)
+    // or fall back to query params for backward compatibility.
+    let accessToken: string | null = null;
+    let refreshToken: string | null = null;
+    let errorParam: string | null = null;
+
+    const hash = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
+    if (hash) {
+      const fragmentParams = new URLSearchParams(hash);
+      accessToken = fragmentParams.get("accessToken");
+      refreshToken = fragmentParams.get("refreshToken");
+      // Clear fragment immediately so tokens don't linger in the URL bar
+      if (accessToken) window.history.replaceState(null, "", window.location.pathname);
+    }
+
+    // Fallback: query params (legacy, less secure)
+    if (!accessToken) {
+      accessToken = searchParams.get("accessToken");
+      refreshToken = searchParams.get("refreshToken");
+    }
+    errorParam = searchParams.get("error");
 
     if (errorParam) {
       setError(

@@ -48,6 +48,7 @@ const sendMessageSchema = z.object({
   }).optional(),
   providerId: z.string().uuid().optional(),
   copilotAccountId: z.string().uuid().optional(),
+  broadcastMsgId: z.string().max(100).optional(),
   attachments: z.array(z.object({
     type: z.string(),
     data: z.string(),
@@ -62,7 +63,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
     zValidator("json", sendMessageSchema),
     async (c) => {
       const projectId = c.req.param("id");
-      const { content, mode, model, provider, providerId, copilotAccountId, attachments } = c.req.valid("json");
+      const { content, mode, model, provider, providerId, copilotAccountId, broadcastMsgId, attachments } = c.req.valid("json");
       const userId = c.get("userId")!;
 
       // Verify project access — must be at least a member (viewers are read-only)
@@ -162,7 +163,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
           const { displayName, color } = await resolveUserDisplay(userId);
           if (dbSessionId) await saveUserMessage(dbSessionId, content, userId, displayName, color);
-          const messageId = crypto.randomUUID();
+          const messageId = broadcastMsgId || crypto.randomUUID();
           broadcastToRoom(projectId, { type: "ai:message-sent", userId, displayName, content: content.slice(0, 200), messageId }, userId).catch(() => {});
 
           activeRequests.set(projectId, { mode, startedAt: Date.now() });

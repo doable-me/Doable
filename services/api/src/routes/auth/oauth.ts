@@ -17,13 +17,25 @@ export const oauthRoutes = new Hono();
 
 // ─── GET /auth/github ──────────────────────────────────────
 oauthRoutes.get("/github", (c) => {
-  return c.redirect(getGitHubAuthUrl(crypto.randomUUID()));
+  const state = JSON.stringify({ type: "github", nonce: crypto.randomUUID() });
+  const encodedState = Buffer.from(state).toString("base64url");
+  return c.redirect(getGitHubAuthUrl(encodedState));
 });
 
 // ─── GET /auth/github/callback ─────────────────────────────
 oauthRoutes.get("/github/callback", async (c) => {
   const code = c.req.query("code");
+  const stateParam = c.req.query("state");
   if (!code) return c.redirect(`${FRONTEND_URL}/login?error=missing_code`);
+
+  // Validate state parameter to prevent CSRF (Bug-114)
+  try {
+    const decoded = JSON.parse(Buffer.from(stateParam ?? "", "base64url").toString());
+    if (decoded.type !== "github" || !decoded.nonce) throw new Error("bad state");
+  } catch {
+    return c.redirect(`${FRONTEND_URL}/login?error=invalid_state`);
+  }
+
   try {
     const { user: ghUser } = await exchangeGitHubCode(code);
     if (!ghUser.email) return c.redirect(`${FRONTEND_URL}/login?error=no_email`);
@@ -37,8 +49,10 @@ oauthRoutes.get("/github/callback", async (c) => {
     await ensureWorkspace(user.id, user.display_name, user.email);
 
     const tokens = await issueTokens(user.id, user.email);
+    // Pass tokens via URL fragment (not query params) so they don't appear in
+    // server logs, Referer headers, or browser history entries (Bug-105).
     const params = new URLSearchParams({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
-    return c.redirect(`${FRONTEND_URL}/auth/callback?${params.toString()}`);
+    return c.redirect(`${FRONTEND_URL}/auth/callback#${params.toString()}`);
   } catch (err) {
     console.error("[OAuth] GitHub callback error:", err);
     return c.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
@@ -47,13 +61,25 @@ oauthRoutes.get("/github/callback", async (c) => {
 
 // ─── GET /auth/google ──────────────────────────────────────
 oauthRoutes.get("/google", (c) => {
-  return c.redirect(getGoogleAuthUrl(crypto.randomUUID()));
+  const state = JSON.stringify({ type: "google", nonce: crypto.randomUUID() });
+  const encodedState = Buffer.from(state).toString("base64url");
+  return c.redirect(getGoogleAuthUrl(encodedState));
 });
 
 // ─── GET /auth/google/callback ─────────────────────────────
 oauthRoutes.get("/google/callback", async (c) => {
   const code = c.req.query("code");
+  const stateParam = c.req.query("state");
   if (!code) return c.redirect(`${FRONTEND_URL}/login?error=missing_code`);
+
+  // Validate state parameter to prevent CSRF (Bug-114)
+  try {
+    const decoded = JSON.parse(Buffer.from(stateParam ?? "", "base64url").toString());
+    if (decoded.type !== "google" || !decoded.nonce) throw new Error("bad state");
+  } catch {
+    return c.redirect(`${FRONTEND_URL}/login?error=invalid_state`);
+  }
+
   try {
     const { user: googleUser } = await exchangeGoogleCode(code);
 
@@ -77,8 +103,9 @@ oauthRoutes.get("/google/callback", async (c) => {
     }
 
     const tokens = await issueTokens(userId, email);
+    // Pass tokens via URL fragment (not query params) — Bug-105
     const params = new URLSearchParams({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
-    return c.redirect(`${FRONTEND_URL}/auth/callback?${params.toString()}`);
+    return c.redirect(`${FRONTEND_URL}/auth/callback#${params.toString()}`);
   } catch (err) {
     console.error("[OAuth] Google callback error:", err);
     return c.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);

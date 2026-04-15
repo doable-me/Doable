@@ -141,6 +141,15 @@ deployQueryRoutes.post("/:projectId/rollback/:deploymentId", async (c) => {
     await deployments.rollback(currentLive.id, userId);
   }
 
+  // Bug-112: Prevent concurrent deploys
+  const existing = await deployments.findInProgress(projectId);
+  if (existing) {
+    return c.json(
+      { error: "A deployment is already in progress for this project", deploymentId: existing.id },
+      409,
+    );
+  }
+
   // Re-deploy by running a fresh pipeline
   const result = await runPipeline({
     projectId,

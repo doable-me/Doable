@@ -30,7 +30,8 @@ export async function isCollaborationActive(projectId: string): Promise<boolean>
     if (!res.ok) return false;
     const data = await res.json() as { active: boolean };
     return data.active;
-  } catch {
+  } catch (err) {
+    console.warn(`[yjs-bridge] isCollaborationActive(${projectId}) failed:`, err instanceof Error ? err.message : err);
     return false;
   }
 }
@@ -63,7 +64,8 @@ export async function writeFileThroughYjs(
 
     if (!res.ok) return { handled: false };
     return await res.json() as YjsBridgeResult;
-  } catch {
+  } catch (err) {
+    console.warn(`[yjs-bridge] writeFileThroughYjs(${projectId}, ${filePath}) failed:`, err instanceof Error ? err.message : err);
     return { handled: false };
   }
 }
@@ -98,7 +100,8 @@ export async function editFileThroughYjs(
 
     if (!res.ok) return { handled: false };
     return await res.json() as YjsBridgeResult;
-  } catch {
+  } catch (err) {
+    console.warn(`[yjs-bridge] editFileThroughYjs(${projectId}, ${filePath}) failed:`, err instanceof Error ? err.message : err);
     return { handled: false };
   }
 }
@@ -121,7 +124,8 @@ export async function broadcastToRoom(
       body: JSON.stringify({ projectId, message, excludeUserId }),
       signal: AbortSignal.timeout(BRIDGE_TIMEOUT_MS),
     });
-  } catch {
+  } catch (err) {
     // Non-critical — broadcast failures shouldn't break the AI flow
+    console.warn(`[yjs-bridge] broadcastToRoom(${projectId}) failed:`, err instanceof Error ? err.message : err);
   }
 }

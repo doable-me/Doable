@@ -99,6 +99,7 @@ export function useChat(
             body: JSON.stringify({
               content: content.trim(),
               mode,
+              broadcastMsgId,
               attachments: attachments?.map((a) => ({
                 type: a.mimeType,
                 data: a.data,

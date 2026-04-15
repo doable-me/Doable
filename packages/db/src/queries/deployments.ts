@@ -103,6 +103,19 @@ export function deploymentQueries(sql: postgres.Sql) {
       return row;
     },
 
+    /** Check if there's already a build/deploy in progress for this project. */
+    async findInProgress(projectId: string): Promise<DeploymentRow | undefined> {
+      const [row] = await sql<DeploymentRow[]>`
+        SELECT * FROM deployments
+        WHERE project_id = ${projectId}
+          AND status IN ('pending', 'building', 'deploying')
+          AND created_at > now() - interval '30 minutes'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      return row;
+    },
+
     async rollback(
       deploymentId: string,
       _rolledBackBy: string

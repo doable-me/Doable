@@ -7,6 +7,8 @@
  */
 
 import { defineTool, type Tool } from "@github/copilot-sdk";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import {
   readFile,
   writeFile,
@@ -44,14 +46,22 @@ export function createDoableTools(projectId: string, userId?: string): Tool[] {
         required: ["path", "content"] as const,
       },
       handler: async (args: { path: string; content: string }) => {
-        const { path, content } = args;
-        if (configGuard.isLocked(path)) {
-          return { success: false, error: `Cannot create ${path} — server-side config files are locked by dovault for security.` };
+        const { path: filePath, content } = args;
+        if (configGuard.isLocked(filePath)) {
+          return { success: false, error: `Cannot create ${filePath} — server-side config files are locked by dovault for security.` };
         }
-        emitToolEvent(projectId, "create_file", "start", { path });
-        await writeFile(projectId, path, content);
-        emitToolEvent(projectId, "create_file", "end", { path });
-        return { success: true, path, size: Buffer.byteLength(content, "utf-8"), message: `Created ${path}` };
+        const fullPath = path.join(getProjectPath(projectId), filePath);
+        const alreadyExists = existsSync(fullPath);
+        emitToolEvent(projectId, "create_file", "start", { path: filePath });
+        await writeFile(projectId, filePath, content);
+        emitToolEvent(projectId, "create_file", "end", { path: filePath });
+        return {
+          success: true,
+          path: filePath,
+          size: Buffer.byteLength(content, "utf-8"),
+          message: alreadyExists ? `Overwrote existing file ${filePath} (use edit_file to modify existing files)` : `Created ${filePath}`,
+          overwritten: alreadyExists,
+        };
       },
     }),
 

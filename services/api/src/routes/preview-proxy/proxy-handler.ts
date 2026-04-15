@@ -21,11 +21,18 @@ const publicApiUrl =
 
 export const previewRoutes = new Hono();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Proxy ALL requests under /preview/:projectId/* to the Vite dev server.
  */
 previewRoutes.all("/preview/:projectId/*", async (c) => {
   const projectId = c.req.param("projectId");
+
+  // Validate UUID to prevent enumeration/probing (Bug-108)
+  if (!UUID_RE.test(projectId)) {
+    return c.text("Not found", 404);
+  }
 
   // Ensure the dev server is running (auto-start if scaffolded)
   if (!isRunning(projectId) && isProjectScaffolded(projectId)) {

@@ -5,10 +5,12 @@ import type { AuthEnv } from "../../middleware/auth.js";
 import { authMiddleware } from "../../middleware/auth.js";
 import { sql } from "../../db/index.js";
 import { projectQueries } from "@doable/db/queries/projects";
+import { deploymentQueries } from "@doable/db/queries/deployments";
 import { runPipeline } from "../../deploy/pipeline.js";
 import { emitActivity } from "../../lib/activity.js";
 
 const projects = projectQueries(sql);
+const deployments = deploymentQueries(sql);
 
 export const deployTriggerRoutes = new Hono<AuthEnv>();
 
@@ -35,6 +37,15 @@ deployTriggerRoutes.post("/:projectId", async (c) => {
   const parsed = deploySchema.safeParse(body);
   const adapter = parsed.success ? parsed.data.adapter : "doable-cloud";
   const environment = parsed.success ? parsed.data.environment : "production";
+
+  // Bug-112: Prevent concurrent deploys to the same project
+  const existing = await deployments.findInProgress(projectId);
+  if (existing) {
+    return c.json(
+      { error: "A deployment is already in progress for this project", deploymentId: existing.id },
+      409,
+    );
+  }
 
   const result = await runPipeline({
     projectId,
