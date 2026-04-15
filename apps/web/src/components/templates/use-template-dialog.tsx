@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiCreateProject } from "@/lib/api";
+import { apiUseTemplate } from "@/lib/api-templates";
 
 interface UseTemplateDialogProps {
   template: {
@@ -62,14 +62,8 @@ export function UseTemplateDialog({
     setError(null);
 
     try {
-      const activeWsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? undefined : undefined;
-      const res = await apiCreateProject({
-        name: projectName.trim(),
-        description: template.description,
-        templateId: template.id,
-        workspaceId: activeWsId,
-      });
-      onCreated(res.data.id);
+      const res = await apiUseTemplate(template.id, projectName.trim());
+      onCreated(res.data.projectId);
     } catch (err) {
       console.error("Failed to remix project:", err);
       setError(

@@ -163,10 +163,10 @@ templateRoutes.post(
       wsId = ws.workspace_id;
     }
 
-    // Create the project
+    // Create the project (template_id is UUID column; template slugs are stored in description metadata)
     const [project] = await sql<{ id: string }[]>`
-      INSERT INTO projects (name, description, workspace_id, template_id)
-      VALUES (${projectName}, ${template.description}, ${wsId}, ${templateId})
+      INSERT INTO projects (name, description, workspace_id)
+      VALUES (${projectName}, ${template.description}, ${wsId})
       RETURNING id
     `;
 
