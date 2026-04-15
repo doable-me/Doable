@@ -10,7 +10,13 @@ import {
   RotateCcw,
   Shield,
   AlertTriangle,
-  ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  Trash2,
+  Eye,
+  RefreshCw,
+  Clock,
+  Inbox,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
@@ -38,6 +44,30 @@ interface QueueStats {
   sent: number;
   failed: number;
   dead: number;
+}
+
+interface QueueItem {
+  id: string;
+  to_address: string;
+  subject: string;
+  status: string;
+  attempts: number;
+  max_attempts: number;
+  last_error: string | null;
+  from_address: string | null;
+  template: string | null;
+  created_at: string;
+  sent_at: string | null;
+  next_retry_at: string | null;
+  updated_at: string;
+  html?: string;
+  text_body?: string | null;
+}
+
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
 }
 
 type ProviderType = "smtp" | "resend" | "google";
@@ -472,30 +502,9 @@ export function EmailPanel() {
         </div>
       )}
 
-      {/* Queue Stats */}
+      {/* Queue Stats & Management */}
       {stats && (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Email Queue</h4>
-            <Button onClick={loadStats} variant="ghost" className="h-7 px-2 text-zinc-500 hover:text-zinc-300">
-              <RotateCcw className="h-3 w-3" />
-            </Button>
-          </div>
-          <div className="grid grid-cols-5 gap-3">
-            {([
-              { label: "Pending", value: stats.pending, color: "text-amber-400" },
-              { label: "Processing", value: stats.processing, color: "text-blue-400" },
-              { label: "Sent", value: stats.sent, color: "text-emerald-400" },
-              { label: "Failed", value: stats.failed, color: "text-red-400" },
-              { label: "Dead Letter", value: stats.dead, color: "text-zinc-500" },
-            ] as const).map((s) => (
-              <div key={s.label} className="text-center">
-                <p className={`text-lg font-semibold ${s.color}`}>{s.value}</p>
-                <p className="text-[10px] text-zinc-500">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+        <EmailQueueManager stats={stats} onStatsChange={loadStats} />
       )}
 
       {/* Info */}
@@ -503,6 +512,389 @@ export function EmailPanel() {
         All credentials are encrypted at rest using AES-256. The email queue retries failed sends with exponential backoff (up to 5 attempts).
         After exhausting retries, emails move to the dead-letter queue for manual review.
       </p>
+    </div>
+  );
+}
+
+// ─── Status Helpers ──────────────────────────────────────────
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  processing: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  sent: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  failed: "bg-red-500/10 text-red-400 border-red-500/20",
+  dead: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${STATUS_COLORS[status] ?? "bg-zinc-800 text-zinc-400 border-zinc-700"}`}>
+      {status === "dead" ? "dead letter" : status}
+    </span>
+  );
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+// ─── Email Queue Manager ─────────────────────────────────────
+
+function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStatsChange: () => void }) {
+  const [items, setItems] = useState<QueueItem[]>([]);
+  const [pagination, setPagination] = useState<Pagination>({ page: 1, limit: 25, total: 0 });
+  const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<QueueItem | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const hasItems = stats.pending + stats.processing + stats.sent + stats.failed + stats.dead > 0;
+
+  const loadQueue = useCallback(async (page = 1, status: string | null = filterStatus) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: "25" });
+      if (status) params.set("status", status);
+      const res = await apiFetch<{ data: QueueItem[]; pagination: Pagination }>(`/admin/email/queue?${params}`);
+      setItems(res.data);
+      setPagination(res.pagination);
+    } catch (e) {
+      console.error("Failed to load queue:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterStatus]);
+
+  useEffect(() => {
+    if (expanded) loadQueue(1, filterStatus);
+  }, [expanded, filterStatus, loadQueue]);
+
+  async function handleRetry(id: string) {
+    setActionLoading(id);
+    try {
+      await apiFetch(`/admin/email/queue/${id}/retry`, { method: "POST" });
+      await loadQueue(pagination.page);
+      onStatsChange();
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleRetryAll(status: string) {
+    if (!confirm(`Retry all ${status} emails? They will be reset to pending.`)) return;
+    setActionLoading(`retry-all-${status}`);
+    try {
+      const res = await apiFetch<{ count: number }>(`/admin/email/queue/retry-all?status=${status}`, { method: "POST" });
+      await loadQueue(1);
+      onStatsChange();
+      alert(`${res.count} email(s) queued for retry.`);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this email permanently?")) return;
+    setActionLoading(id);
+    try {
+      await apiFetch(`/admin/email/queue/${id}`, { method: "DELETE" });
+      await loadQueue(pagination.page);
+      onStatsChange();
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handlePurge(status: string) {
+    const label = status === "dead" ? "dead letter" : status;
+    if (!confirm(`Permanently delete ALL ${label} emails? This cannot be undone.`)) return;
+    setActionLoading(`purge-${status}`);
+    try {
+      const res = await apiFetch<{ count: number }>(`/admin/email/queue?status=${status}`, { method: "DELETE" });
+      await loadQueue(1);
+      onStatsChange();
+      alert(`${res.count} email(s) deleted.`);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleViewDetail(id: string) {
+    try {
+      const res = await apiFetch<{ data: QueueItem }>(`/admin/email/queue/${id}`);
+      setSelectedItem(res.data);
+    } catch (e) {
+      console.error("Failed to load email detail:", e);
+    }
+  }
+
+  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50">
+      {/* Stats Bar */}
+      <div className="p-4 border-b border-zinc-800">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+            <Inbox className="h-3.5 w-3.5" /> Email Queue
+          </h4>
+          <div className="flex items-center gap-2">
+            <Button onClick={onStatsChange} variant="ghost" className="h-7 px-2 text-zinc-500 hover:text-zinc-300">
+              <RotateCcw className="h-3 w-3" />
+            </Button>
+            {hasItems && (
+              <Button
+                onClick={() => { setExpanded(!expanded); setSelectedItem(null); }}
+                variant="ghost"
+                className="h-7 px-2.5 text-xs text-zinc-400 hover:text-zinc-200"
+              >
+                {expanded ? "Collapse" : "Manage"}
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="grid grid-cols-5 gap-3">
+          {([
+            { label: "Pending", value: stats.pending, color: "text-amber-400", key: "pending" },
+            { label: "Processing", value: stats.processing, color: "text-blue-400", key: "processing" },
+            { label: "Sent", value: stats.sent, color: "text-emerald-400", key: "sent" },
+            { label: "Failed", value: stats.failed, color: "text-red-400", key: "failed" },
+            { label: "Dead Letter", value: stats.dead, color: "text-zinc-500", key: "dead" },
+          ] as const).map((s) => (
+            <button
+              key={s.label}
+              onClick={() => {
+                if (!expanded) setExpanded(true);
+                setFilterStatus(filterStatus === s.key ? null : s.key);
+                setSelectedItem(null);
+              }}
+              className={`text-center rounded-md py-1 transition-colors ${
+                filterStatus === s.key
+                  ? "bg-zinc-800 ring-1 ring-zinc-600"
+                  : "hover:bg-zinc-800/50"
+              }`}
+            >
+              <p className={`text-lg font-semibold ${s.color}`}>{s.value}</p>
+              <p className="text-[10px] text-zinc-500">{s.label}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Expanded Queue Browser */}
+      {expanded && (
+        <div>
+          {/* Detail View */}
+          {selectedItem ? (
+            <div className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setSelectedItem(null)}
+                  className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" /> Back to list
+                </button>
+                <div className="flex items-center gap-2">
+                  {["failed", "dead"].includes(selectedItem.status) && (
+                    <Button onClick={() => handleRetry(selectedItem.id)} disabled={actionLoading === selectedItem.id} variant="outline" className="h-7 text-xs gap-1 border-zinc-700 text-zinc-300">
+                      {actionLoading === selectedItem.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                      Retry
+                    </Button>
+                  )}
+                  <Button onClick={() => handleDelete(selectedItem.id)} disabled={actionLoading === selectedItem.id} variant="outline" className="h-7 text-xs gap-1 border-red-800/50 text-red-400 hover:bg-red-900/20">
+                    <Trash2 className="h-3 w-3" /> Delete
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={selectedItem.status} />
+                  <span className="text-xs text-zinc-500">Attempt {selectedItem.attempts}/{selectedItem.max_attempts}</span>
+                </div>
+                <h3 className="text-sm font-medium text-white">{selectedItem.subject}</h3>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                  <div><span className="text-zinc-500">To:</span> <span className="text-zinc-300">{selectedItem.to_address}</span></div>
+                  <div><span className="text-zinc-500">From:</span> <span className="text-zinc-300">{selectedItem.from_address ?? "—"}</span></div>
+                  <div><span className="text-zinc-500">Created:</span> <span className="text-zinc-300">{new Date(selectedItem.created_at).toLocaleString()}</span></div>
+                  {selectedItem.sent_at && <div><span className="text-zinc-500">Sent:</span> <span className="text-zinc-300">{new Date(selectedItem.sent_at).toLocaleString()}</span></div>}
+                  {selectedItem.next_retry_at && selectedItem.status === "failed" && (
+                    <div><span className="text-zinc-500">Next retry:</span> <span className="text-zinc-300">{new Date(selectedItem.next_retry_at).toLocaleString()}</span></div>
+                  )}
+                  {selectedItem.template && <div><span className="text-zinc-500">Template:</span> <span className="text-zinc-300">{selectedItem.template}</span></div>}
+                </div>
+                {selectedItem.last_error && (
+                  <div className="rounded-md bg-red-950/30 border border-red-900/30 p-2.5 text-xs text-red-300 font-mono break-all">
+                    {selectedItem.last_error}
+                  </div>
+                )}
+              </div>
+
+              {/* HTML Preview */}
+              {selectedItem.html && (
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500">Preview</span>
+                  <div className="rounded-md border border-zinc-700 bg-white p-4 text-sm max-h-72 overflow-auto">
+                    <iframe
+                      srcDoc={selectedItem.html}
+                      sandbox=""
+                      className="w-full min-h-[120px] border-0"
+                      title="Email preview"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* List View */
+            <div>
+              {/* Toolbar */}
+              <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800/50">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500">
+                    {filterStatus ? `Showing ${filterStatus}` : "All emails"} · {pagination.total} total
+                  </span>
+                  {filterStatus && (
+                    <button onClick={() => setFilterStatus(null)} className="text-[10px] text-zinc-500 hover:text-zinc-300 underline">
+                      clear filter
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  {(stats.failed > 0 && (filterStatus === "failed" || !filterStatus)) && (
+                    <Button
+                      onClick={() => handleRetryAll("failed")}
+                      disabled={actionLoading === "retry-all-failed"}
+                      variant="outline"
+                      className="h-6 text-[10px] gap-1 border-zinc-700 text-zinc-400 px-2"
+                    >
+                      {actionLoading === "retry-all-failed" ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <RefreshCw className="h-2.5 w-2.5" />}
+                      Retry all failed
+                    </Button>
+                  )}
+                  {(stats.dead > 0 && (filterStatus === "dead" || !filterStatus)) && (
+                    <Button
+                      onClick={() => handleRetryAll("dead")}
+                      disabled={actionLoading === "retry-all-dead"}
+                      variant="outline"
+                      className="h-6 text-[10px] gap-1 border-zinc-700 text-zinc-400 px-2"
+                    >
+                      {actionLoading === "retry-all-dead" ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <RefreshCw className="h-2.5 w-2.5" />}
+                      Retry all dead
+                    </Button>
+                  )}
+                  {filterStatus && ["sent", "dead", "failed"].includes(filterStatus) && (
+                    <Button
+                      onClick={() => handlePurge(filterStatus)}
+                      disabled={actionLoading === `purge-${filterStatus}`}
+                      variant="outline"
+                      className="h-6 text-[10px] gap-1 border-red-800/50 text-red-400 px-2 hover:bg-red-900/20"
+                    >
+                      {actionLoading === `purge-${filterStatus}` ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Trash2 className="h-2.5 w-2.5" />}
+                      Purge all
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Items */}
+              {loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+                </div>
+              ) : items.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
+                  <Inbox className="h-6 w-6 mb-2" />
+                  <span className="text-xs">No emails {filterStatus ? `with status "${filterStatus}"` : "in queue"}</span>
+                </div>
+              ) : (
+                <div className="divide-y divide-zinc-800/50">
+                  {items.map((item) => (
+                    <div key={item.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-zinc-800/30 transition-colors group">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <StatusBadge status={item.status} />
+                          <span className="text-xs text-zinc-300 font-medium truncate">{item.subject}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-[11px] text-zinc-500">
+                          <span>→ {item.to_address}</span>
+                          <span className="flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" /> {timeAgo(item.created_at)}</span>
+                          {item.attempts > 0 && <span>{item.attempts}/{item.max_attempts} attempts</span>}
+                        </div>
+                        {item.last_error && (
+                          <p className="text-[10px] text-red-400/80 mt-0.5 truncate">{item.last_error}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <button
+                          onClick={() => handleViewDetail(item.id)}
+                          className="rounded p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50"
+                          title="View details"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        {["failed", "dead"].includes(item.status) && (
+                          <button
+                            onClick={() => handleRetry(item.id)}
+                            disabled={actionLoading === item.id}
+                            className="rounded p-1 text-zinc-500 hover:text-amber-400 hover:bg-zinc-700/50"
+                            title="Retry"
+                          >
+                            {actionLoading === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          disabled={actionLoading === item.id}
+                          className="rounded p-1 text-zinc-500 hover:text-red-400 hover:bg-zinc-700/50"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-4 py-2 border-t border-zinc-800/50">
+                  <span className="text-[10px] text-zinc-500">
+                    Page {pagination.page} of {totalPages}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      onClick={() => loadQueue(pagination.page - 1)}
+                      disabled={pagination.page <= 1 || loading}
+                      variant="ghost"
+                      className="h-6 px-1.5 text-zinc-500"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      onClick={() => loadQueue(pagination.page + 1)}
+                      disabled={pagination.page >= totalPages || loading}
+                      variant="ghost"
+                      className="h-6 px-1.5 text-zinc-500"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

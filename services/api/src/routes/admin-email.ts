@@ -212,6 +212,109 @@ adminEmailRoutes.get("/queue-stats", async (c) => {
   return c.json({ data: stats });
 });
 
+// ─── GET /admin/email/queue ────────────────────────────────
+// List queue items with pagination and status filter
+adminEmailRoutes.get("/queue", async (c) => {
+  const status = c.req.query("status"); // pending, processing, sent, failed, dead
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10));
+  const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") ?? "25", 10)));
+  const offset = (page - 1) * limit;
+
+  const validStatuses = ["pending", "processing", "sent", "failed", "dead"];
+  const statusFilter = status && validStatuses.includes(status) ? status : null;
+
+  const items = statusFilter
+    ? await sql`
+        SELECT id, to_address, subject, status, attempts, max_attempts,
+               last_error, from_address, template, created_at, sent_at,
+               next_retry_at, updated_at
+        FROM email_queue
+        WHERE status = ${statusFilter}
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `
+    : await sql`
+        SELECT id, to_address, subject, status, attempts, max_attempts,
+               last_error, from_address, template, created_at, sent_at,
+               next_retry_at, updated_at
+        FROM email_queue
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+
+  const [countRow] = statusFilter
+    ? await sql`SELECT COUNT(*)::int as total FROM email_queue WHERE status = ${statusFilter}`
+    : await sql`SELECT COUNT(*)::int as total FROM email_queue`;
+
+  return c.json({
+    data: items,
+    pagination: { page, limit, total: countRow?.total ?? 0 },
+  });
+});
+
+// ─── GET /admin/email/queue/:id ────────────────────────────
+// Get a single queue item with full HTML content
+adminEmailRoutes.get("/queue/:id", async (c) => {
+  const id = c.req.param("id");
+  const [item] = await sql`
+    SELECT id, to_address, subject, html, text_body, status, attempts, max_attempts,
+           last_error, from_address, template, template_data, created_at, sent_at,
+           next_retry_at, updated_at
+    FROM email_queue WHERE id = ${id}
+  `;
+  if (!item) return c.json({ error: "Not found" }, 404);
+  return c.json({ data: item });
+});
+
+// ─── POST /admin/email/queue/:id/retry ─────────────────────
+// Reset a failed/dead email to pending for immediate retry
+adminEmailRoutes.post("/queue/:id/retry", async (c) => {
+  const id = c.req.param("id");
+  const result = await sql`
+    UPDATE email_queue
+    SET status = 'pending', next_retry_at = now(), updated_at = now()
+    WHERE id = ${id} AND status IN ('failed', 'dead')
+    RETURNING id
+  `;
+  if (result.length === 0) return c.json({ error: "Not found or not retryable" }, 404);
+  return c.json({ success: true });
+});
+
+// ─── POST /admin/email/queue/retry-all ─────────────────────
+// Retry all failed/dead emails
+adminEmailRoutes.post("/queue/retry-all", async (c) => {
+  const status = c.req.query("status") ?? "failed";
+  if (!["failed", "dead"].includes(status)) {
+    return c.json({ error: "Can only retry 'failed' or 'dead' emails" }, 400);
+  }
+  const result = await sql`
+    UPDATE email_queue
+    SET status = 'pending', next_retry_at = now(), attempts = 0, updated_at = now()
+    WHERE status = ${status}
+  `;
+  return c.json({ success: true, count: result.count });
+});
+
+// ─── DELETE /admin/email/queue/:id ─────────────────────────
+// Delete a single queue item
+adminEmailRoutes.delete("/queue/:id", async (c) => {
+  const id = c.req.param("id");
+  const result = await sql`DELETE FROM email_queue WHERE id = ${id} RETURNING id`;
+  if (result.length === 0) return c.json({ error: "Not found" }, 404);
+  return c.json({ success: true });
+});
+
+// ─── DELETE /admin/email/queue ──────────────────────────────
+// Purge queue items by status (e.g., clear all sent or dead letters)
+adminEmailRoutes.delete("/queue", async (c) => {
+  const status = c.req.query("status");
+  if (!status || !["sent", "dead", "failed"].includes(status)) {
+    return c.json({ error: "Specify ?status=sent|dead|failed" }, 400);
+  }
+  const result = await sql`DELETE FROM email_queue WHERE status = ${status}`;
+  return c.json({ success: true, count: result.count });
+});
+
 // ─── Gmail OAuth Connect Flow ──────────────────────────────
 // Step 1: Generate Google OAuth URL
 adminEmailRoutes.get("/google/auth-url", async (c) => {
