@@ -163,10 +163,18 @@ templateRoutes.post(
       wsId = ws.workspace_id;
     }
 
+    // Generate slug from project name
+    const baseSlug = projectName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 50) || "project";
+    const slug = `${baseSlug}-${Date.now().toString(36)}`;
+
     // Create the project (template_id is UUID column; template slugs are stored in description metadata)
     const [project] = await sql<{ id: string }[]>`
-      INSERT INTO projects (name, description, workspace_id)
-      VALUES (${projectName}, ${template.description}, ${wsId})
+      INSERT INTO projects (name, slug, description, workspace_id)
+      VALUES (${projectName}, ${slug}, ${template.description}, ${wsId})
       RETURNING id
     `;
 
