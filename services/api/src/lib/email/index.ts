@@ -293,17 +293,10 @@ export async function initEmailService(sql: postgres.Sql): Promise<void> {
 /**
  * Reload the email provider (called after admin changes config in DB).
  * Swaps the active provider without restarting the queue.
+ * Does NOT verify — admins should use the "Verify Connection" button explicitly.
  */
 export async function reloadEmailProvider(sql: postgres.Sql): Promise<void> {
   const newProvider = await resolveProvider(sql);
-
-  if (newProvider.verify && newProvider.name !== "console") {
-    const ok = await newProvider.verify();
-    if (!ok) {
-      console.warn(`[Email] New provider "${newProvider.name}" failed verification — keeping previous`);
-      return;
-    }
-  }
 
   activeProvider = newProvider;
   if (queue) {
