@@ -25,19 +25,43 @@ import {
 
 // ─── Effective Model Badge ───────────────────────────────
 
+function getSourceDetail(row: UserAiAllocation, source: "enforced" | "user" | "workspace" | "none"): { label: string; via: string } {
+  if (source === "enforced") return { label: "Enforced", via: "workspace enforcement" };
+  if (source === "user") {
+    const side = rowActiveSide(row);
+    if (side === "copilot") return { label: "User · Copilot", via: row.copilot_account_label ?? "Copilot" };
+    if (side === "custom") return { label: "User · Custom", via: row.provider_label ?? row.provider_type ?? "Custom provider" };
+    return { label: "User override", via: "user preference" };
+  }
+  if (source === "workspace") {
+    const wsSrc = row.default_source;
+    if (wsSrc === "copilot") return { label: "WS default · Copilot", via: "workspace Copilot setting" };
+    if (wsSrc === "custom") return { label: "WS default · Custom", via: "workspace custom provider" };
+    return { label: "Workspace default", via: "workspace setting" };
+  }
+  return { label: "Auto", via: "no model configured" };
+}
+
 function EffectiveModelBadge({ row }: { row: UserAiAllocation }) {
   const { model, source } = getEffectiveModel(row);
-  if (!model) return <span className="text-[11px] text-zinc-600">No model</span>;
+  const { label } = getSourceDetail(row, source);
+  if (!model) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border bg-zinc-800 text-zinc-500 border-zinc-700">
+        <span className="font-medium">Auto-select</span>
+        <span className="opacity-50">· no override</span>
+      </span>
+    );
+  }
   const colors = {
     enforced: "bg-red-600/15 text-red-400 border-red-600/30",
     user: "bg-emerald-600/15 text-emerald-400 border-emerald-600/30",
     workspace: "bg-blue-600/15 text-blue-400 border-blue-600/30",
     none: "bg-zinc-800 text-zinc-500 border-zinc-700",
   };
-  const labels = { enforced: "Enforced", user: "Override", workspace: "Default", none: "" };
   return (
     <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${colors[source]}`}>
-      <span className="font-medium">{labels[source]}</span>
+      <span className="font-medium">{label}</span>
       <span className="opacity-70">·</span>
       <span className="truncate max-w-[140px]">{model}</span>
     </span>
@@ -70,18 +94,25 @@ function CreditMiniBar({ row }: { row: UserAiAllocation }) {
 function SourceBadge({ row }: { row: UserAiAllocation }) {
   const side = rowActiveSide(row);
   if (!rowHasAllocation(row)) {
-    return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500">Workspace default</span>;
+    // Show what workspace default is, if any
+    if (row.default_source === "copilot") {
+      return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">WS default · Copilot</span>;
+    }
+    if (row.default_source === "custom") {
+      return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">WS default · Custom</span>;
+    }
+    return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500">No source set</span>;
   }
   if (side === "copilot") {
     return (
       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600/15 text-emerald-400">
-        {row.copilot_account_label ?? "Copilot"}
+        Copilot · {row.copilot_account_label ?? "default account"}
       </span>
     );
   }
   return (
     <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-600/15 text-blue-400">
-      {row.provider_label ?? row.provider_type ?? "Custom"}
+      Custom · {row.provider_label ?? row.provider_type ?? "provider"}
     </span>
   );
 }
@@ -205,7 +236,7 @@ function UserDetailModal({
           <div className="flex-1" />
           {/* Effective model display */}
           <div className="text-right">
-            <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">Effective Model</div>
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">Active Model</div>
             <EffectiveModelBadge row={user} />
           </div>
         </div>
@@ -224,26 +255,41 @@ function UserDetailModal({
         <div className="px-6 py-5">
           {tab === "model" && (
             <div className="space-y-4">
-              {/* Inheritance explanation */}
-              <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-4 py-3">
-                <p className="text-[11px] text-zinc-500 leading-relaxed">
-                  <strong className="text-zinc-400">How model resolution works:</strong>{" "}
-                  {user.enforce_ai
-                    ? <span className="text-red-400">Enforcement is ON — all users use the enforced model regardless of personal settings.</span>
-                    : "User override → Workspace default → Auto-select. Set a personal override below to use a specific model for this user."
-                  }
-                </p>
-                {eff.model && (
-                  <p className="text-[11px] text-zinc-400 mt-1">
-                    Currently using: <strong className="text-white">{eff.model}</strong>
-                    <span className="text-zinc-600"> ({eff.source})</span>
+              {/* Current active state */}
+              <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-4 py-3 space-y-2">
+                <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Currently Active</div>
+                <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+                  <span className="text-zinc-500">Model:</span>
+                  <span className="text-white font-medium">{eff.model ?? "Auto-select (no model set)"}</span>
+                  <span className="text-zinc-500">Source:</span>
+                  <span className={`${
+                    eff.source === "enforced" ? "text-red-400" :
+                    eff.source === "user" ? "text-emerald-400" :
+                    eff.source === "workspace" ? "text-blue-400" : "text-zinc-500"
+                  }`}>{getSourceDetail(user, eff.source).via}</span>
+                  <span className="text-zinc-500">Subscription:</span>
+                  <span className="text-zinc-300">{(() => {
+                    const side = rowActiveSide(user);
+                    if (side === "copilot") return `GitHub Copilot${user.copilot_account_label ? ` (${user.copilot_account_label})` : ""}`;
+                    if (side === "custom") return `Custom provider${user.provider_label ? ` (${user.provider_label})` : ""}`;
+                    if (user.default_source === "copilot") return "GitHub Copilot (workspace default)";
+                    if (user.default_source === "custom") return "Custom provider (workspace default)";
+                    return "None configured";
+                  })()}</span>
+                </div>
+                {user.enforce_ai && (
+                  <p className="text-[11px] text-red-400 mt-1">
+                    Workspace enforcement is ON — this user cannot choose their own model.
                   </p>
                 )}
+                <p className="text-[10px] text-zinc-600 leading-relaxed">
+                  Resolution: Enforcement → User override → Workspace default → Auto-select
+                </p>
               </div>
 
               {/* Source toggle */}
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">Subscription / Provider</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">Set Override Source</label>
                 <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
                   <button onClick={() => setSource("copilot")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "copilot" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}>
                     GitHub Copilot
@@ -262,7 +308,7 @@ function UserDetailModal({
                       <label className="block text-xs font-medium text-zinc-400 mb-1.5">Copilot Account</label>
                       <select value={copilotAccountId} onChange={e => setCopilotAccountId(e.target.value)}
                         className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
-                        <option value="">Default (gh CLI)</option>
+                        <option value="">No specific account (auto)</option>
                         {validAccounts.map(a => <option key={a.id} value={a.id}>{a.label} (@{a.github_login})</option>)}
                       </select>
                     </div>
@@ -452,8 +498,8 @@ export function UserManagementPanel({
             <tr className="border-b border-zinc-800 bg-zinc-900/50">
               <th className="px-4 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">User</th>
               <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Role / Plan</th>
-              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Source</th>
-              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Effective Model</th>
+              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Subscription</th>
+              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Active Model</th>
               <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Credits (Daily)</th>
               <th className="w-16 px-3 py-2.5"></th>
             </tr>
@@ -525,10 +571,11 @@ export function UserManagementPanel({
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 text-[10px] text-zinc-600">
-        <span className="flex items-center gap-1"><Shield className="h-3 w-3 text-red-400" /> Enforced = workspace enforcement active</span>
-        <span className="flex items-center gap-1"><Bot className="h-3 w-3 text-emerald-400" /> Override = user-specific setting</span>
-        <span className="flex items-center gap-1"><Sparkles className="h-3 w-3 text-blue-400" /> Default = using workspace setting</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-zinc-600">
+        <span className="flex items-center gap-1"><Shield className="h-3 w-3 text-red-400" /> Enforced = admin-locked model</span>
+        <span className="flex items-center gap-1"><Bot className="h-3 w-3 text-emerald-400" /> User · Copilot/Custom = personal override</span>
+        <span className="flex items-center gap-1"><Sparkles className="h-3 w-3 text-blue-400" /> WS default = inheriting workspace setting</span>
+        <span>Auto-select = no model configured anywhere</span>
       </div>
 
       {/* Detail Modal */}
