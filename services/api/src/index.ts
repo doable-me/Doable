@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { initDocore, shutdownDocore } from "./ai/docore-bridge.js";
+import { initEmailService, stopEmailService } from "./lib/email/index.js";
 import { request as httpRequest } from "node:http";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -227,6 +228,11 @@ await initDocore().catch((err) => {
   console.error("[docore] init failed:", err);
 });
 
+// Initialize email service (provider + queue worker)
+await initEmailService(sql).catch((err) => {
+  console.error("[Email] init failed:", err);
+});
+
 const server = serve({
   fetch: app.fetch,
   port,
@@ -338,6 +344,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
       getConnectorManager().shutdown(),
       getCopilotManager().stopAll(),
       shutdownDocore(),
+      stopEmailService(),
     ]);
   } catch (err) {
     console.error("[Server] Error during shutdown:", err);

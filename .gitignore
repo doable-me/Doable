@@ -57,3 +57,6 @@ coverage/
 
 # Reports / diagnostics
 report.*.json
+
+# Private sync script (Gitea mirror)
+sync-codehub.ps1

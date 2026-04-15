@@ -6,6 +6,7 @@ import { adminFeatureRoutes } from "./admin-features.js";
 import { adminUserRoutes } from "./admin-users.js";
 import { adminAiRoutes } from "./admin-ai.js";
 import { adminOpsRoutes } from "./admin-ops.js";
+import { adminEmailRoutes } from "./admin-email.js";
 
 const featureFlags = featureFlagQueries(sql);
 
@@ -44,3 +45,4 @@ adminRoutes.route("/", adminFeatureRoutes);
 adminRoutes.route("/", adminUserRoutes);
 adminRoutes.route("/", adminAiRoutes);
 adminRoutes.route("/", adminOpsRoutes);
+adminRoutes.route("/email", adminEmailRoutes);

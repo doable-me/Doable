@@ -44,6 +44,11 @@ coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {
   // Auto-create personal workspace so the user isn't blocked on first login
   await ensureWorkspace(user.id, user.display_name, user.email);
 
+  // Send welcome email (queued, non-blocking)
+  sendTemplatedEmail(user.email, "welcome", {
+    userName: sanitizedName ?? email.split("@")[0] ?? "there",
+  }).catch(() => {}); // fire-and-forget: don't fail signup on email error
+
   const tokens = await issueTokens(user.id, user.email);
   return c.json({ user: sanitizeUser(user), tokens }, 201);
 });

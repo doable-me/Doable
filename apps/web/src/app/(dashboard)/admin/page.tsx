@@ -17,6 +17,7 @@ import {
   Check,
   ImageIcon,
   Activity,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToastContainer } from "@/components/ui/toast-container";
@@ -30,6 +31,7 @@ import {
 import type { UserAiAllocation } from "./admin-shared";
 import { FeatureRow, UserRow } from "./admin-components";
 import { ThumbnailsPanel, CopilotSessionsPanel } from "./admin-panels";
+import { EmailPanel } from "./email-panel";
 
 // ─── Admin Page ─────────────────────────────────────────────
 
@@ -52,7 +54,14 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users" | "thumbnails" | "copilot">("features");
+  const [activeTab, setActiveTab] = useState<"features" | "users" | "thumbnails" | "copilot" | "email">(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab");
+      if (tab === "email" || tab === "features" || tab === "users" || tab === "thumbnails" || tab === "copilot") return tab;
+    }
+    return "features";
+  });
 
   // AI allocations state
   const [allocations, setAllocations] = useState<UserAiAllocation[]>([]);
@@ -239,6 +248,7 @@ export default function AdminPage() {
           { key: "users" as const, label: "Users", icon: Users },
           { key: "thumbnails" as const, label: "Thumbnails", icon: ImageIcon },
           { key: "copilot" as const, label: "Copilot Sessions", icon: Activity },
+          { key: "email" as const, label: "Email", icon: Mail },
         ]).map((tab) => (
           <button
             key={tab.key}
@@ -347,6 +357,7 @@ export default function AdminPage() {
 
       {activeTab === "thumbnails" && <ThumbnailsPanel />}
       {activeTab === "copilot" && <CopilotSessionsPanel />}
+      {activeTab === "email" && <EmailPanel />}
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>

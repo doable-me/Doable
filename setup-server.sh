@@ -396,12 +396,27 @@ DOABLE_DOMAIN=${DOMAIN}
 # ─── Environment ───────────────────────────────────────────
 NODE_ENV=development
 
-# ─── Email (SMTP) ───
+# ─── Email ───
+# Provider: smtp, resend, or google (auto-detects if not set)
+EMAIL_PROVIDER=
+EMAIL_FROM=Doable <noreply@${DOMAIN}>
+
+# SMTP provider — Well-known service (easiest: gmail, sendgrid, mailgun, outlook365, yahoo, etc.)
+EMAIL_SERVICE=
+# Or manual SMTP (used when EMAIL_SERVICE is empty)
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
-EMAIL_FROM=Doable <noreply@${DOMAIN}>
+
+# Resend provider (https://resend.com)
+RESEND_API_KEY=
+
+# Google Mail API provider (OAuth2)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REFRESH_TOKEN=
+GOOGLE_EMAIL_USER=
 ENVEOF
 
 # Next.js needs NEXT_PUBLIC_* in its own directory
