@@ -151,7 +151,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           const projectPath = getProjectPath(projectId);
           emitConfigTraces(state.traceCollector, resolvedModel, modelSource, resolvedProvider, providerSource, resolvedGithubToken, systemPrompt, projectContext);
 
-          const sessionTools = filterToolsForMode(allTools, mode);
+          const sessionTools = await filterToolsForMode(allTools, mode);
           logToolManifest(allTools, sessionTools, mode, projectId, state.traceCollector);
 
           const toolProgress = createToolProgressCallbacks(stream, state, state.traceCollector, recordAssistantToolCall);

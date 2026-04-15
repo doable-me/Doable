@@ -47,6 +47,20 @@ export interface UserAiAllocation {
   /** @deprecated use copilot_model / provider_model */
   model: string | null;
   preference_updated_at: string | null;
+  // Credit fields
+  daily_credits: number | null;
+  daily_credits_used: number | null;
+  monthly_credits: number | null;
+  monthly_credits_used: number | null;
+  rollover_credits: number | null;
+  // Workspace AI settings (for effective model calculation)
+  enforce_ai: boolean | null;
+  enforced_model: string | null;
+  default_source: "copilot" | "custom" | null;
+  default_copilot_model: string | null;
+  default_provider_model: string | null;
+  ws_default_copilot_account_id: string | null;
+  ws_default_provider_id: string | null;
 }
 
 // Helpers shared by AiStatusBadge and UserRow
@@ -69,6 +83,46 @@ export function rowHasAllocation(row: UserAiAllocation): boolean {
   if (side === "custom") return !!row.provider_id;
   if (side === "copilot") return !!row.copilot_account_id;
   return false;
+}
+
+/** Compute the effective model considering inheritance: enforcement → user override → workspace defaults */
+export function getEffectiveModel(row: UserAiAllocation): { model: string | null; source: "enforced" | "user" | "workspace" | "none" } {
+  // 1. Enforcement overrides everything
+  if (row.enforce_ai && row.enforced_model) {
+    return { model: row.enforced_model, source: "enforced" };
+  }
+  // 2. User override
+  const userModel = rowActiveModel(row);
+  if (userModel) {
+    return { model: userModel, source: "user" };
+  }
+  // 3. Workspace defaults
+  const wsSrc = row.default_source;
+  const wsModel = wsSrc === "custom" ? row.default_provider_model : row.default_copilot_model;
+  if (wsModel) {
+    return { model: wsModel, source: "workspace" };
+  }
+  return { model: null, source: "none" };
+}
+
+/** Get credit summary for display */
+export function getCreditSummary(row: UserAiAllocation): {
+  dailyUsed: number; dailyTotal: number; dailyRemaining: number;
+  monthlyUsed: number; monthlyTotal: number; monthlyRemaining: number;
+  rollover: number; totalAvailable: number;
+} {
+  const dailyTotal = row.daily_credits ?? 0;
+  const dailyUsed = row.daily_credits_used ?? 0;
+  const monthlyTotal = row.monthly_credits ?? 0;
+  const monthlyUsed = row.monthly_credits_used ?? 0;
+  const rollover = row.rollover_credits ?? 0;
+  const dailyRemaining = Math.max(0, dailyTotal - dailyUsed);
+  const monthlyRemaining = Math.max(0, monthlyTotal - monthlyUsed);
+  return {
+    dailyUsed, dailyTotal, dailyRemaining,
+    monthlyUsed, monthlyTotal, monthlyRemaining,
+    rollover, totalAvailable: dailyRemaining + monthlyRemaining + rollover,
+  };
 }
 
 // ─── Role / Plan color helpers ──────────────────────────────

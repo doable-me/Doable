@@ -8,8 +8,12 @@ import { createAllTools, type ByokProviderConfig } from "../../ai/providers/copi
 import type { TraceCollector } from "../../ai/trace-collector.js";
 import { createPermissionHandler } from "../../ai/docore-bridge.js";
 import { projectSessions, projectSessionModes } from "./session-state.js";
+import { modeToolQueries } from "@doable/db";
 
-const PLAN_MODE_ALLOWED = new Set([
+const modeTools = modeToolQueries(sql);
+
+// Hardcoded fallbacks (used when no DB config exists)
+const PLAN_MODE_ALLOWED_DEFAULT = new Set([
   "read_file", "list_files", "search_files",
   "ask_clarification", "create_plan", "mark_step_complete",
 ]);
@@ -17,11 +21,39 @@ const PLAN_ONLY_TOOLS = new Set([
   "ask_clarification", "create_plan", "mark_step_complete",
 ]);
 
-/** Filter tools based on chat mode. */
+// In-memory cache for DB tool configs (refreshed every 60s)
+let _toolConfigCache: Map<string, Set<string>> | null = null;
+let _toolConfigCacheAt = 0;
+const TOOL_CONFIG_CACHE_TTL = 60_000;
+
+async function getToolConfigForMode(mode: string): Promise<Set<string> | null> {
+  const now = Date.now();
+  if (!_toolConfigCache || now - _toolConfigCacheAt > TOOL_CONFIG_CACHE_TTL) {
+    try {
+      const configs = await modeTools.list();
+      _toolConfigCache = new Map();
+      for (const c of configs) {
+        _toolConfigCache.set(c.mode, new Set(c.allowed_tools));
+      }
+      _toolConfigCacheAt = now;
+    } catch {
+      // DB not ready or table doesn't exist yet — use fallbacks
+      return null;
+    }
+  }
+  return _toolConfigCache?.get(mode) ?? null;
+}
+
+/** Filter tools based on chat mode. Uses DB config with hardcoded fallback. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function filterToolsForMode(allTools: any[], mode: string) {
+export async function filterToolsForMode(allTools: any[], mode: string) {
+  const dbAllowed = await getToolConfigForMode(mode);
+  if (dbAllowed) {
+    return allTools.filter((t: { name?: string }) => dbAllowed.has(t.name ?? ""));
+  }
+  // Fallback to hardcoded defaults
   return mode === "plan"
-    ? allTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED.has(t.name ?? ""))
+    ? allTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED_DEFAULT.has(t.name ?? ""))
     : allTools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
 }
 
@@ -177,7 +209,7 @@ export async function recreateSession(
   const manager = getCopilotManager();
   const currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
   const freshTools = await createAllTools(projectId, workspaceId, userId);
-  const recreationTools = filterToolsForMode(freshTools, mode);
+  const recreationTools = await filterToolsForMode(freshTools, mode);
   const sessionId = await currentEngine.createSession({
     projectId, userId, model: resolvedModel, provider: resolvedProvider,
     workingDirectory: projectPath, systemPrompt, tools: recreationTools,

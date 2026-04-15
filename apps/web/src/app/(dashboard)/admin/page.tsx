@@ -12,26 +12,24 @@ import {
   Settings2,
   Loader2,
   ArrowLeft,
-  Bot,
-  Copy,
-  Check,
   ImageIcon,
   Activity,
   Mail,
+  Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToastContainer } from "@/components/ui/toast-container";
 import { useToasts } from "@/hooks/use-toasts";
 import {
-  WORKSPACE_PLANS,
-  WORKSPACE_ROLES,
   PLAN_LABELS,
   ROLE_LABELS,
 } from "@doable/shared";
 import type { UserAiAllocation } from "./admin-shared";
-import { FeatureRow, UserRow } from "./admin-components";
+import { FeatureRow } from "./admin-components";
 import { ThumbnailsPanel, CopilotSessionsPanel } from "./admin-panels";
 import { EmailPanel } from "./email-panel";
+import { UserManagementPanel } from "./user-management-panel";
+import { ToolsConfigPanel } from "./tools-config-panel";
 
 // ─── Admin Page ─────────────────────────────────────────────
 
@@ -48,17 +46,15 @@ export default function AdminPage() {
     updateFeature,
     setUserRole,
     setUserPlan,
-    getUserCredits,
     setUserCredits,
-    bulkUpdateUsers,
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users" | "thumbnails" | "copilot" | "email">(() => {
+  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "thumbnails" | "copilot" | "email">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get("tab");
-      if (tab === "email" || tab === "features" || tab === "users" || tab === "thumbnails" || tab === "copilot") return tab;
+      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "thumbnails" || tab === "copilot") return tab;
     }
     return "features";
   });
@@ -68,12 +64,6 @@ export default function AdminPage() {
   const [accounts, setAccounts] = useState<ApiGitHubCopilotAccount[]>([]);
   const [providers, setProviders] = useState<ApiAiProvider[]>([]);
   const [allocLoading, setAllocLoading] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkCopying, setBulkCopying] = useState(false);
-  const bulkResult: string | null = null;
-  const [bulkRole, setBulkRole] = useState("");
-  const [bulkPlan, setBulkPlan] = useState("");
-  const [bulkUpdating, setBulkUpdating] = useState(false);
 
   const loadAllocations = useCallback(async () => {
     if (!isPlatformAdmin) return;
@@ -123,40 +113,6 @@ export default function AdminPage() {
     } catch { addToast("error", "Failed to reset AI settings"); }
   }
 
-  async function handleBulkCopy() {
-    if (selectedIds.size === 0) return;
-    setBulkCopying(true);
-    try {
-      const res = await apiFetch<{ data: { updated: number } }>("/admin/users/ai-allocations/copy-my-settings", {
-        method: "POST", body: JSON.stringify({ targetUserIds: Array.from(selectedIds) }),
-      });
-      addToast("success", `AI settings copied to ${res.data.updated} user${res.data.updated !== 1 ? "s" : ""}`);
-      setSelectedIds(new Set());
-      await loadAllocations();
-    } catch { addToast("error", "Failed to copy AI settings"); }
-    finally { setBulkCopying(false); }
-  }
-
-  async function handleBulkRolePlan() {
-    if (selectedIds.size === 0 || (!bulkRole && !bulkPlan)) return;
-    setBulkUpdating(true);
-    try {
-      await bulkUpdateUsers(
-        Array.from(selectedIds),
-        { ...(bulkRole ? { role: bulkRole } : {}), ...(bulkPlan ? { plan: bulkPlan } : {}) }
-      );
-      const parts: string[] = [];
-      if (bulkRole) parts.push(`role → ${ROLE_LABELS[bulkRole]}`);
-      if (bulkPlan) parts.push(`plan → ${PLAN_LABELS[bulkPlan]}`);
-      addToast("success", `Updated ${selectedIds.size} user${selectedIds.size !== 1 ? "s" : ""}: ${parts.join(", ")}`);
-      setSelectedIds(new Set());
-      setBulkRole("");
-      setBulkPlan("");
-      await loadAllocations();
-    } catch { addToast("error", "Bulk update failed"); }
-    finally { setBulkUpdating(false); }
-  }
-
   async function handleChangeRole(userId: string, role: string) {
     const prev = allocations;
     setAllocations((a) => a.map((u) =>
@@ -179,15 +135,6 @@ export default function AdminPage() {
       const name = prev.find((u) => u.user_id === userId)?.display_name ?? "User";
       addToast("success", `${name} → ${PLAN_LABELS[plan]} plan`);
     } catch { setAllocations(prev); addToast("error", "Failed to update plan"); }
-  }
-
-  function toggleSelect(userId: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
-      return next;
-    });
   }
 
   // Redirect non-admins
@@ -218,13 +165,14 @@ export default function AdminPage() {
         role: null, workspace_plan: null, source: null, copilot_account_id: null,
         copilot_account_label: null, copilot_model: null, provider_id: null, provider_label: null,
         provider_type: null, provider_model: null, model: null, preference_updated_at: null,
+        daily_credits: null, daily_credits_used: null, monthly_credits: null,
+        monthly_credits_used: null, rollover_credits: null, enforce_ai: null,
+        enforced_model: null, default_source: null, default_copilot_model: null,
+        default_provider_model: null, ws_default_copilot_account_id: null, ws_default_provider_id: null,
       }));
 
-  const allSelectableIds = displayUsers.filter((u) => u.user_id !== user?.id).map((u) => u.user_id);
-  const allSelected = allSelectableIds.length > 0 && allSelectableIds.every((id) => selectedIds.has(id));
-
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-6 py-8">
       {/* Header */}
       <div className="mb-8">
         <button onClick={() => router.push("/dashboard")} className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-300 transition-colors mb-4">
@@ -236,24 +184,25 @@ export default function AdminPage() {
           </div>
           <div>
             <h1 className="text-xl font-semibold text-white">System Administration</h1>
-            <p className="text-sm text-zinc-500">Manage platform features, users, and access controls</p>
+            <p className="text-sm text-zinc-500">Manage platform features, users, AI tools, and access controls</p>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-6 border-b border-zinc-800 pb-px">
+      <div className="flex items-center gap-1 mb-6 border-b border-zinc-800 pb-px overflow-x-auto">
         {([
           { key: "features" as const, label: "Feature Flags", icon: Settings2 },
-          { key: "users" as const, label: "Users", icon: Users },
+          { key: "users" as const, label: "Users & AI", icon: Users },
+          { key: "tools" as const, label: "AI Tools", icon: Wrench },
           { key: "thumbnails" as const, label: "Thumbnails", icon: ImageIcon },
-          { key: "copilot" as const, label: "Copilot Sessions", icon: Activity },
+          { key: "copilot" as const, label: "Sessions", icon: Activity },
           { key: "email" as const, label: "Email", icon: Mail },
         ]).map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
               activeTab === tab.key ? "text-white border-b-2 border-brand-500" : "text-zinc-500 hover:text-zinc-300"
             }`}
           >
@@ -269,91 +218,39 @@ export default function AdminPage() {
       {/* Feature Flags Tab */}
       {activeTab === "features" && (
         <div className="space-y-2">
-          <p className="text-xs text-zinc-500 mb-4">Toggle features on/off globally. Set minimum plan or workspace role requirements. Per-user overrides coming soon.</p>
+          <p className="text-xs text-zinc-500 mb-4">Toggle features on/off globally. Set minimum plan or workspace role requirements.</p>
           {features.map((f) => (
             <FeatureRow key={f.feature_key} feature={f} onToggle={toggleFeature} onUpdate={updateFeature} />
           ))}
           {features.length === 0 && (
-            <p className="text-sm text-zinc-500 text-center py-8">No feature flags configured. Run the migration to seed defaults.</p>
+            <p className="text-sm text-zinc-500 text-center py-8">No feature flags configured.</p>
           )}
         </div>
       )}
 
-      {/* Users Tab */}
+      {/* Users & AI Tab — New comprehensive panel */}
       {activeTab === "users" && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-zinc-500">
-              Manage users, roles, plans, and AI model allocations. Click the <Bot className="inline h-3 w-3 text-zinc-400" /> icon to configure AI for any user.
-            </p>
-          </div>
-
-          {selectedIds.size > 0 && (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-brand-600/30 bg-brand-600/5 px-4 py-2.5">
-              <span className="text-xs font-medium text-zinc-300">{selectedIds.size} selected</span>
-              <select value={bulkRole} onChange={(e) => setBulkRole(e.target.value)} className="rounded-md bg-zinc-800 border border-zinc-700 text-xs text-zinc-300 px-2 py-1 outline-none focus:border-brand-500">
-                <option value="">Set role...</option>
-                {WORKSPACE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-              </select>
-              <select value={bulkPlan} onChange={(e) => setBulkPlan(e.target.value)} className="rounded-md bg-zinc-800 border border-zinc-700 text-xs text-zinc-300 px-2 py-1 outline-none focus:border-brand-500">
-                <option value="">Set plan...</option>
-                {WORKSPACE_PLANS.map((p) => <option key={p} value={p}>{PLAN_LABELS[p]}</option>)}
-              </select>
-              {(bulkRole || bulkPlan) && (
-                <button onClick={handleBulkRolePlan} disabled={bulkUpdating} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors">
-                  {bulkUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Apply
-                </button>
-              )}
-              <div className="h-4 w-px bg-zinc-700" />
-              <button onClick={handleBulkCopy} disabled={bulkCopying} className="flex items-center gap-1.5 rounded-lg bg-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-600 disabled:opacity-50 transition-colors">
-                {bulkCopying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />} Copy My AI Settings
-              </button>
-              <button onClick={() => { setSelectedIds(new Set()); setBulkRole(""); setBulkPlan(""); }} className="text-xs text-zinc-400 hover:text-zinc-200">Clear</button>
-            </div>
-          )}
-
-          {bulkResult && (
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-600/30 bg-emerald-600/5 px-4 py-2">
-              <Check className="h-3.5 w-3.5 text-emerald-400" />
-              <span className="text-xs text-emerald-300">{bulkResult}</span>
-            </div>
-          )}
-
-          {allocLoading ? (
-            <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-zinc-500" /></div>
-          ) : (
-            <div className="space-y-1">
-              {displayUsers.length > 1 && (
-                <div className="flex items-center gap-2 px-1 py-1.5">
-                  <input type="checkbox" checked={allSelected} onChange={() => { if (allSelected) setSelectedIds(new Set()); else setSelectedIds(new Set(allSelectableIds)); }} className="rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-0" />
-                  <span className="text-[11px] text-zinc-500">{allSelected ? "Deselect all" : "Select all"}</span>
-                  <div className="flex-1" />
-                  <span className="text-[10px] text-zinc-600">{displayUsers.length} users</span>
-                </div>
-              )}
-              {displayUsers.map((u) => (
-                <div key={u.user_id} className="flex items-start gap-2">
-                  <div className="pt-3.5">
-                    <input type="checkbox" checked={selectedIds.has(u.user_id)} onChange={() => toggleSelect(u.user_id)} className="rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-0" />
-                  </div>
-                  <div className="flex-1">
-                    <UserRow
-                      u={u} currentUserId={user?.id ?? ""} accounts={accounts} providers={providers}
-                      onChangeRole={handleChangeRole} onChangePlan={handleChangePlan}
-                      onAllocate={handleAllocate} onReset={handleReset} onGetCredits={getUserCredits}
-                      onSetCredits={async (userId, data) => {
-                        await setUserCredits(userId, data);
-                        const name = allocations.find((a) => a.user_id === userId)?.display_name ?? "User";
-                        addToast("success", `Credits updated for ${name}`);
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <UserManagementPanel
+          users={displayUsers}
+          accounts={accounts}
+          providers={providers}
+          loading={allocLoading}
+          currentUserId={user?.id ?? ""}
+          onAllocate={handleAllocate}
+          onReset={handleReset}
+          onSetCredits={async (userId, data) => {
+            await setUserCredits(userId, data);
+            const name = allocations.find((a) => a.user_id === userId)?.display_name ?? "User";
+            addToast("success", `Credits updated for ${name}`);
+            await loadAllocations();
+          }}
+          onChangeRole={handleChangeRole}
+          onChangePlan={handleChangePlan}
+        />
       )}
+
+      {/* AI Tools Tab */}
+      {activeTab === "tools" && <ToolsConfigPanel />}
 
       {activeTab === "thumbnails" && <ThumbnailsPanel />}
       {activeTab === "copilot" && <CopilotSessionsPanel />}

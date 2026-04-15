@@ -199,13 +199,28 @@ adminAiRoutes.get("/users/ai-allocations", async (c) => {
       u.platform_role,
       own_wm.role,
       own_wm.workspace_plan,
+      uap.source,
       uap.copilot_account_id,
       gca.label AS copilot_account_label,
+      uap.copilot_model,
       uap.provider_id,
       ap.label AS provider_label,
       ap.provider_type,
+      uap.provider_model,
       uap.model,
-      uap.updated_at AS preference_updated_at
+      uap.updated_at AS preference_updated_at,
+      cb.daily_credits,
+      cb.daily_credits_used,
+      cb.monthly_credits,
+      cb.monthly_credits_used,
+      cb.rollover_credits,
+      was.enforce_ai,
+      was.enforced_model,
+      was.default_source,
+      was.default_copilot_model,
+      was.default_provider_model,
+      was.default_copilot_account_id AS ws_default_copilot_account_id,
+      was.default_provider_id AS ws_default_provider_id
     FROM users u
     LEFT JOIN LATERAL (
       SELECT wm.workspace_id, wm.role, w.plan AS workspace_plan
@@ -220,6 +235,10 @@ adminAiRoutes.get("/users/ai-allocations", async (c) => {
       ON gca.id = uap.copilot_account_id
     LEFT JOIN ai_providers ap
       ON ap.id = uap.provider_id
+    LEFT JOIN credit_balances cb
+      ON cb.user_id = u.id AND cb.workspace_id = own_wm.workspace_id
+    LEFT JOIN workspace_ai_settings was
+      ON was.workspace_id = own_wm.workspace_id
     ORDER BY u.created_at ASC
   `;
 
