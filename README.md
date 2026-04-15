@@ -1,6 +1,6 @@
 # Doable
 
-Build apps and websites by chatting with AI.
+Dream it. Do it. Done. Tell AI what you want to do and Doable gets it done.
 
 ## Quick Start (Docker)
 

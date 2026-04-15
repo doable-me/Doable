@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+package-lock.json
 
 # Build
 dist/
@@ -35,9 +36,10 @@ Thumbs.db
 # Claude Code
 .claude/
 
-# Data (user-created projects, published sites, thumbnails)
+# Data (user-created projects, published sites, thumbnails, AI session state)
 /data/
 /sites/
+.doable-data/
 services/api/projects/
 services/api/thumbnails/
 services/api/services/
@@ -52,17 +54,6 @@ npm-debug.log*
 
 # Testing
 coverage/
-tools/integration-test-report.json
 
-# Internal docs (not for public distribution)
-internaldocs/
-
-# Debug / scratch files
-test-sendandwait.*
-collab-issue-research.md
-copilot-concurrency-plan.md
-scripts/test-*
-scripts/check-env-refs*
-
-# Reports
+# Reports / diagnostics
 report.*.json

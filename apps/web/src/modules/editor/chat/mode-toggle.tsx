@@ -1,11 +1,11 @@
 "use client";
 
 import { useEditorStore, type EditorMode } from "../hooks/use-editor-store";
-import { Bot, ListChecks } from "lucide-react";
+import { Hammer, Target } from "lucide-react";
 
-const modes: { id: EditorMode; label: string; icon: typeof Bot; desc: string }[] = [
-  { id: "agent", label: "Build", icon: Bot, desc: "AI writes code directly" },
-  { id: "plan", label: "Plan first", icon: ListChecks, desc: "AI helps you plan, then builds" },
+const modes: { id: EditorMode; label: string; icon: typeof Hammer; desc: string }[] = [
+  { id: "plan", label: "Strategize", icon: Target, desc: "AI helps you plan, then does the work" },
+  { id: "agent", label: "Work", icon: Hammer, desc: "AI writes code directly" },
 ];
 
 export function ModeToggle() {

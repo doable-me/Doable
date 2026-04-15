@@ -17,8 +17,8 @@ export function HomeFooter() {
               </span>
             </Link>
             <p className="mt-3 max-w-xs text-sm leading-relaxed text-gray-500">
-              Build apps and websites by chatting with AI. From idea to
-              deployed app in minutes.
+              Tell AI what you want to do and Doable gets it done.
+              From idea to deployed app in minutes.
             </p>
             <div className="mt-4 flex gap-4">
               {[

@@ -8,9 +8,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Doable - Build apps by chatting with AI",
+  title: "Doable | Dream it. Do it. Done.",
   description:
-    "Create apps and websites by chatting with AI. Go from idea to deployed app in minutes, not months.",
+    "Tell AI what you want to do and Doable gets it done. From idea to deployed app in minutes.",
   keywords: ["AI", "app builder", "code generation", "full-stack", "no-code"],
 };
 

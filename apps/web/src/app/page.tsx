@@ -8,12 +8,13 @@ import {
   Plus,
   Mic,
   MonitorSmartphone,
-  Zap,
-  Shield,
-  Globe,
-  Code2,
-  MessageSquare,
-  Rocket,
+  Gauge,
+  Lock,
+  Earth,
+  Braces,
+  Lightbulb,
+  Wand2,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HomeFooter } from "./home-footer";
@@ -124,10 +125,10 @@ export default function HomePage() {
         {/* Content */}
         <div className="relative z-10 mx-auto w-full max-w-3xl text-center">
           <h1 className="mb-4 text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
-            Build something Doable
+            Dream it. Do it. Done.
           </h1>
           <p className="mb-12 text-base text-gray-400 sm:text-lg">
-            Create apps and websites by chatting with AI
+            Say it. Doable does it.
           </p>
 
           {/* Prompt Input Box */}
@@ -136,7 +137,7 @@ export default function HomePage() {
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Ask Doable to create"
+                placeholder="What do you want Doable to do?"
                 rows={3}
                 className="w-full resize-none bg-transparent px-2 pt-1 text-sm text-white placeholder:text-gray-500 focus:outline-none sm:text-base"
                 onKeyDown={(e) => {
@@ -189,7 +190,7 @@ export default function HomePage() {
       {/* ─── Social Proof Bar ────────────────────────────────── */}
       <section className="relative z-10 border-t border-gray-800/50 bg-[#0a0a0a] py-16">
         <p className="mb-8 text-center text-sm text-gray-500">
-          Teams from top companies build with Doable
+          Teams who do more, do it with Doable
         </p>
         <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-x-12 gap-y-6 px-4 opacity-40">
           {["Zendesk", "Uber", "Microsoft", "ElevenLabs", "HubSpot"].map(
@@ -209,27 +210,27 @@ export default function HomePage() {
       <section id="how-it-works" className="relative z-10 py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="mb-4 text-center text-3xl font-bold sm:text-4xl">
-            Meet Doable
+            How you Do it with Doable
           </h2>
           <div className="mt-16 grid gap-12 md:grid-cols-3">
             {[
               {
-                icon: MessageSquare,
-                title: "Start with an idea",
+                icon: Lightbulb,
+                title: "Say what you want to do",
                 description:
-                  "Describe the app or website you want to create or drop in screenshots and docs",
+                  "Describe your app, drop in screenshots, or share docs. Doable gets it.",
               },
               {
-                icon: Code2,
-                title: "Watch it come to life",
+                icon: Wand2,
+                title: "Watch Doable doing it",
                 description:
-                  "AI writes the code, builds the UI, and sets up the backend in real time",
+                  "AI writes the code, builds the UI, and sets up the backend while you watch.",
               },
               {
-                icon: Rocket,
-                title: "Ship it to the world",
+                icon: Send,
+                title: "Done. Ship it.",
                 description:
-                  "Deploy with one click. Custom domains, SSL, and global CDN included",
+                  "One click deploy. Custom domains, SSL, and global CDN all done for you.",
               },
             ].map((step) => (
               <div key={step.title} className="text-center">
@@ -250,32 +251,31 @@ export default function HomePage() {
       <section id="features" className="relative z-10 border-t border-gray-800/50 py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="mb-4 text-center text-3xl font-bold sm:text-4xl">
-            Everything you need to ship fast
+            Everything you need to get it done
           </h2>
           <p className="mx-auto mb-16 max-w-xl text-center text-gray-400">
-            Built-in tools and integrations so you can focus on building, not
-            configuring.
+            All the tools built in so you keep doing, not configuring. Doable handles the rest.
           </p>
 
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {[
               {
-                icon: Zap,
+                icon: Gauge,
                 title: "Lightning fast",
                 desc: "Optimized builds and edge deployment for sub-second load times.",
               },
               {
-                icon: Shield,
+                icon: Lock,
                 title: "Secure by default",
                 desc: "Enterprise-grade security with automatic SSL and DDoS protection.",
               },
               {
-                icon: Globe,
+                icon: Earth,
                 title: "Global CDN",
                 desc: "Your app served from 200+ edge locations worldwide.",
               },
               {
-                icon: Code2,
+                icon: Braces,
                 title: "Full code access",
                 desc: "Export your code anytime. No lock-in, ever.",
               },
@@ -307,18 +307,18 @@ export default function HomePage() {
 
           <div className="relative">
             <h2 className="mb-4 text-3xl font-bold sm:text-4xl lg:text-5xl">
-              Ready to build?
+              Ready to do this? Doable is.
             </h2>
             <p className="mx-auto mb-8 max-w-xl text-gray-400">
-              Join thousands of developers building their next project with
-              Doable. Start for free, no credit card required.
+              Thousands of makers are already doing it with Doable.
+              Start for free. No credit card required.
             </p>
             <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Button
                 asChild
                 className="h-12 rounded-full bg-white px-8 text-sm font-semibold text-black hover:bg-gray-200"
               >
-                <Link href="/signup">Start building for free</Link>
+                <Link href="/signup">Start doing for free</Link>
               </Button>
               <Button
                 asChild
@@ -329,7 +329,7 @@ export default function HomePage() {
               </Button>
             </div>
             <p className="mt-4 text-xs text-gray-600">
-              Free forever for personal projects. No credit card required.
+              Free forever for personal projects. Just do it with Doable.
             </p>
           </div>
         </div>

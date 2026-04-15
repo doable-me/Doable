@@ -5,8 +5,8 @@ import {
   Plus,
   Mic,
   ArrowUp,
-  Bot,
-  ListChecks,
+  Hammer,
+  Target,
   Loader2,
   X,
 } from "lucide-react";
@@ -98,21 +98,8 @@ export function ChatInput({
             >
               <Plus className="h-4 w-4" />
             </button>
-            {/* Build / Plan first mode toggle */}
+            {/* Strategize / Work mode toggle */}
             <div className="flex items-center rounded-full border border-zinc-700/50 overflow-hidden ml-1">
-              <button
-                onClick={startMode === "agent" ? undefined : onToggleMode}
-                className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
-                  startMode === "agent"
-                    ? "bg-brand-600/20 text-brand-400"
-                    : "text-zinc-500 hover:text-zinc-300"
-                }`}
-                title="Build immediately"
-              >
-                <Bot className="h-3 w-3" />
-                Build
-              </button>
-              <div className="w-px h-4 bg-zinc-700/50" />
               <button
                 onClick={startMode === "plan" ? undefined : onToggleMode}
                 className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
@@ -120,10 +107,23 @@ export function ChatInput({
                     ? "bg-blue-600/20 text-blue-400"
                     : "text-zinc-500 hover:text-zinc-300"
                 }`}
-                title="Plan first, then build"
+                title="Strategize first, then do the work"
               >
-                <ListChecks className="h-3 w-3" />
-                Plan first
+                <Target className="h-3 w-3" />
+                Strategize
+              </button>
+              <div className="w-px h-4 bg-zinc-700/50" />
+              <button
+                onClick={startMode === "agent" ? undefined : onToggleMode}
+                className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
+                  startMode === "agent"
+                    ? "bg-brand-600/20 text-brand-400"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+                title="Start working immediately"
+              >
+                <Hammer className="h-3 w-3" />
+                Work
               </button>
             </div>
           </div>

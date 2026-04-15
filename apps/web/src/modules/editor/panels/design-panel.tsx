@@ -198,7 +198,7 @@ export function DesignPanel({
         <div className="flex items-center gap-2 text-sm">
           <span className="text-zinc-500">Design</span>
           <span className="text-zinc-600">/</span>
-          <span className="font-semibold text-zinc-200">Visual edits</span>
+          <span className="font-semibold text-zinc-200">Design View</span>
         </div>
         {selectedElement && (
           <button
@@ -223,7 +223,7 @@ export function DesignPanel({
                 <Sparkles className="h-6 w-6 text-zinc-500" />
               )}
             </div>
-            <h3 className="mb-1 text-base font-semibold text-zinc-200">Visual edits</h3>
+            <h3 className="mb-1 text-base font-semibold text-zinc-200">Design View</h3>
             <p className="mb-2 text-center text-sm text-zinc-500">
               Select an element to edit it
             </p>
