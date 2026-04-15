@@ -13,7 +13,26 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
     try {
       await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: "Creating project files..." } }) });
       console.log(`[Chat] Auto-scaffolding project ${projectId}`);
-      await createProject(projectId);
+
+      // Check if project has pre-scaffolded files in the DB (from template remix)
+      let templateFiles: Record<string, string> | undefined;
+      try {
+        const dbFiles = await sql<{ file_path: string; content: string }[]>`
+          SELECT file_path, content FROM project_files
+          WHERE project_id = ${projectId}
+            AND file_path NOT LIKE '.doable/%'
+        `;
+        if (dbFiles.length > 0) {
+          templateFiles = {};
+          for (const f of dbFiles) {
+            templateFiles[f.file_path] = f.content;
+          }
+        }
+      } catch {
+        // DB query failed — fall back to blank
+      }
+
+      await createProject(projectId, templateFiles);
     } catch (err: unknown) {
       const isAlreadyExists = err instanceof Error && err.message.includes("already scaffolded");
       if (!isAlreadyExists) console.error(`[Chat] Scaffold failed for project ${projectId}:`, err);

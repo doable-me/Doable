@@ -45,7 +45,9 @@ scaffoldRoutes.post("/projects/:id/scaffold", async (c) => {
   scaffoldLocks.set(projectId, lockPromise);
 
   try {
-    // Check if this project has a template_id — if so, use template files
+    // Check if this project has a template_id — if so, use template files.
+    // Also check the project_files table for pre-scaffolded files (written by
+    // POST /templates/:id/use before the filesystem scaffold runs).
     let templateFiles: Record<string, string> | undefined;
     try {
       const [project] = await sql<{ template_id: string | null }[]>`
@@ -56,6 +58,23 @@ scaffoldRoutes.post("/projects/:id/scaffold", async (c) => {
         if (template) {
           templateFiles = template.codeFiles;
           console.log(`[Scaffold] Using template "${template.id}" for project ${projectId}`);
+        }
+      }
+
+      // If no template_id match, check project_files table for pre-scaffolded
+      // files (e.g. from POST /templates/:id/use which writes to DB first)
+      if (!templateFiles) {
+        const dbFiles = await sql<{ file_path: string; content: string }[]>`
+          SELECT file_path, content FROM project_files
+          WHERE project_id = ${projectId}
+            AND file_path NOT LIKE '.doable/%'
+        `;
+        if (dbFiles.length > 0) {
+          templateFiles = {};
+          for (const f of dbFiles) {
+            templateFiles[f.file_path] = f.content;
+          }
+          console.log(`[Scaffold] Using ${dbFiles.length} pre-scaffolded files from project_files for ${projectId}`);
         }
       }
     } catch {
