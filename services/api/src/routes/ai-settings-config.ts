@@ -240,14 +240,19 @@ aiSettingsConfigRoutes.put(
     const targetErr = await requireMember(workspaceId, targetUserId);
     if (targetErr) return c.json({ error: "Target user is not a workspace member" }, 400);
 
+    // When switching source, explicitly null out the other provider's fields
+    // to prevent stale settings from being retained
+    const isCopilot = body.source === "copilot";
+    const isCustom = body.source === "custom";
+
     const result = await aiSettings.upsertUserPreferences({
       workspaceId,
       userId: targetUserId,
       source: body.source,
-      copilotAccountId: body.copilotAccountId,
-      copilotModel: body.copilotModel,
-      providerId: body.providerId,
-      providerModel: body.providerModel,
+      copilotAccountId: isCustom ? (body.copilotAccountId ?? null) : body.copilotAccountId,
+      copilotModel: isCustom ? (body.copilotModel ?? null) : body.copilotModel,
+      providerId: isCopilot ? (body.providerId ?? null) : body.providerId,
+      providerModel: isCopilot ? (body.providerModel ?? null) : body.providerModel,
       suggestionSource: body.suggestionSource,
       suggestionCopilotAccountId: body.suggestionCopilotAccountId,
       suggestionCopilotModel: body.suggestionCopilotModel,

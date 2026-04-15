@@ -65,9 +65,10 @@ export async function resolveAiEngine(
           providerSource = config.enforced_provider_id ? "workspace_byok" : "github_copilot";
           resolvedProvider = undefined;
         } else if (!selectedCopilotAccountId && !selectedProviderId && !resolvedProvider) {
-          const hasUserOverride =
-            (config.user_source === "copilot" && config.user_copilot_account_id) ||
-            (config.user_source === "custom" && config.user_provider_id);
+          // user_source in the DB means admin explicitly set this user's source.
+          // Treat it as an override even if copilot_account_id or provider_id is null
+          // (null means "use default copilot" / "use default provider").
+          const hasUserOverride = config.user_source !== null;
 
           if (hasUserOverride) {
             if (config.user_source === "custom") {
