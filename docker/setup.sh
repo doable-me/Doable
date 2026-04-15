@@ -3,16 +3,20 @@
 # Doable — Self-hosting setup script
 # ==============================================================================
 # Sets up everything needed to run Doable with Docker Compose + nginx + SSL.
+# nginx ALWAYS sits in front of services. Services NEVER bind to 0.0.0.0.
 #
 # Usage:
-#   # Interactive:
-#   ./docker/setup.sh
-#
-#   # One-liner with domain:
+#   # Public domain (Let's Encrypt SSL):
 #   DOMAIN=app.example.com ./docker/setup.sh
 #
-#   # Localhost only (no nginx/SSL):
-#   ./docker/setup.sh --local
+#   # Private network / LAN (self-signed SSL for an IP address):
+#   HOST=192.168.1.50 ./docker/setup.sh
+#
+#   # Localhost only (self-signed SSL on 127.0.0.1):
+#   ./docker/setup.sh
+#
+#   # Skip Let's Encrypt (e.g. behind Cloudflare proxy):
+#   DOMAIN=app.example.com ./docker/setup.sh --skip-ssl
 # ==============================================================================
 set -euo pipefail
 
@@ -20,6 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="$SCRIPT_DIR/.env"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+SELF_SIGNED_DIR="/etc/ssl/doable"
 
 # Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -29,22 +34,22 @@ warn()  { echo -e "${YELLOW}[warn]${NC}  $*"; }
 error() { echo -e "${RED}[error]${NC} $*" >&2; }
 
 # ─── Parse args ───────────────────────────────────────────────────────────────
-LOCAL_ONLY=false
 SKIP_SSL=false
 for arg in "$@"; do
   case "$arg" in
-    --local)     LOCAL_ONLY=true ;;
     --skip-ssl)  SKIP_SSL=true ;;
     --help|-h)
-      echo "Usage: [DOMAIN=app.example.com] $0 [--local] [--skip-ssl]"
+      echo "Usage: [DOMAIN=app.example.com | HOST=192.168.1.50] $0 [--skip-ssl]"
       echo ""
       echo "Options:"
-      echo "  --local      Skip nginx/SSL, run on localhost only"
-      echo "  --skip-ssl   Set up nginx but skip Let's Encrypt (e.g. behind CloudFlare)"
+      echo "  --skip-ssl   Set up nginx but skip Let's Encrypt (e.g. behind Cloudflare)"
       echo ""
       echo "Environment variables:"
-      echo "  DOMAIN       Your domain name (e.g. app.example.com)"
-      echo "  EMAIL        Email for Let's Encrypt notifications"
+      echo "  DOMAIN       Your domain name — uses Let's Encrypt for SSL"
+      echo "  HOST         IP or hostname for private network — uses self-signed SSL"
+      echo "  EMAIL        Email for Let's Encrypt notifications (optional)"
+      echo ""
+      echo "If neither DOMAIN nor HOST is set, defaults to localhost with self-signed SSL."
       exit 0
       ;;
   esac
@@ -65,14 +70,53 @@ fi
 
 ok "Docker and Docker Compose found"
 
-# ─── Determine domain ────────────────────────────────────────────────────────
-if [ "$LOCAL_ONLY" = true ]; then
-  DOMAIN=""
-  info "Local mode — skipping domain/nginx/SSL setup"
-elif [ -z "${DOMAIN:-}" ]; then
+# ─── Determine mode ───────────────────────────────────────────────────────────
+# Three modes:
+#   1. DOMAIN= set        → public domain, Let's Encrypt SSL
+#   2. HOST= set           → private network IP/hostname, self-signed SSL
+#   3. Neither             → localhost, self-signed SSL
+#
+# In ALL modes, nginx sits in front. Services ALWAYS bind to 127.0.0.1.
+
+MODE=""
+LISTEN_HOST=""  # What nginx's server_name will be
+
+if [ -n "${DOMAIN:-}" ]; then
+  MODE="domain"
+  LISTEN_HOST="$DOMAIN"
+  info "Domain mode — Let's Encrypt SSL for ${DOMAIN}"
+elif [ -n "${HOST:-}" ]; then
+  MODE="host"
+  LISTEN_HOST="$HOST"
+  info "Private network mode — self-signed SSL for ${HOST}"
+else
   echo ""
-  read -rp "Enter your domain name (e.g. app.example.com), or press Enter for localhost: " DOMAIN
+  echo "No DOMAIN or HOST specified."
+  echo "  DOMAIN=app.example.com  → public domain with Let's Encrypt"
+  echo "  HOST=192.168.1.50       → private network with self-signed SSL"
+  echo ""
+  read -rp "Enter domain, IP, or press Enter for localhost: " USER_INPUT
+  if [ -z "$USER_INPUT" ]; then
+    MODE="localhost"
+    LISTEN_HOST="localhost"
+    info "Localhost mode — self-signed SSL on localhost"
+  elif echo "$USER_INPUT" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    MODE="host"
+    LISTEN_HOST="$USER_INPUT"
+    info "Private network mode — self-signed SSL for ${LISTEN_HOST}"
+  else
+    MODE="domain"
+    LISTEN_HOST="$USER_INPUT"
+    DOMAIN="$USER_INPUT"
+    info "Domain mode — Let's Encrypt SSL for ${LISTEN_HOST}"
+  fi
 fi
+
+# ─── URL variables (used for .env and final output) ─────────────────────────
+API_URL="https://${LISTEN_HOST}/api"
+WS_URL="wss://${LISTEN_HOST}/ws"
+APP_URL="https://${LISTEN_HOST}"
+CORS="https://${LISTEN_HOST}"
 
 # ─── Generate .env ────────────────────────────────────────────────────────────
 if [ -f "$ENV_FILE" ]; then
@@ -93,21 +137,9 @@ if [ ! -f "$ENV_FILE" ]; then
   INTERNAL_SECRET=$(openssl rand -hex 32)
   PG_PASSWORD=$(openssl rand -hex 16)
 
-  if [ -n "$DOMAIN" ]; then
-    API_URL="https://${DOMAIN}/api"
-    WS_URL="wss://${DOMAIN}/ws"
-    APP_URL="https://${DOMAIN}"
-    CORS="https://${DOMAIN}"
-  else
-    API_URL="http://localhost:4000"
-    WS_URL="ws://localhost:4001"
-    APP_URL="http://localhost:3000"
-    CORS="http://localhost:3000"
-  fi
-
   cat > "$ENV_FILE" <<EOF
 # Generated by setup.sh on $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-# Domain: ${DOMAIN:-localhost}
+# Host: ${LISTEN_HOST}
 
 # ─── Secrets ───────────────────────────────────────
 JWT_SECRET=${JWT_SECRET}
@@ -147,66 +179,112 @@ EOF
 fi
 
 # ─── Set up nginx + SSL ──────────────────────────────────────────────────────
-if [ -n "$DOMAIN" ] && [ "$LOCAL_ONLY" = false ]; then
-  info "Setting up nginx reverse proxy for ${DOMAIN}..."
+# nginx is ALWAYS set up. Services never face the network directly.
 
-  # Install nginx + certbot if not present
-  if ! command -v nginx &>/dev/null; then
-    info "Installing nginx and certbot..."
-    apt-get update -qq
-    apt-get install -y -qq nginx certbot python3-certbot-nginx
-    ok "Installed nginx and certbot"
+info "Setting up nginx reverse proxy for ${LISTEN_HOST}..."
+
+# Install nginx if not present
+if ! command -v nginx &>/dev/null; then
+  info "Installing nginx..."
+  apt-get update -qq
+  apt-get install -y -qq nginx
+  ok "Installed nginx"
+fi
+
+# ─── SSL certificates ────────────────────────────────────────────────────────
+SSL_CERT=""
+SSL_KEY=""
+
+if [ "$MODE" = "domain" ] && [ "$SKIP_SSL" = false ]; then
+  # Let's Encrypt for public domains
+  if ! command -v certbot &>/dev/null; then
+    info "Installing certbot..."
+    apt-get install -y -qq certbot python3-certbot-nginx
+    ok "Installed certbot"
   fi
 
-  # Generate nginx config from template
-  NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
-  sed "s/__DOMAIN__/${DOMAIN}/g" "$SCRIPT_DIR/nginx.conf.template" > "$NGINX_CONF"
-
-  # Enable site
-  ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${DOMAIN}"
-  rm -f /etc/nginx/sites-enabled/default
-
-  if [ "$SKIP_SSL" = false ]; then
-    # Start with HTTP-only config for cert issuance
-    cat > "$NGINX_CONF" <<HTTPEOF
+  # Temporary HTTP-only config for cert issuance
+  NGINX_CONF="/etc/nginx/sites-available/${LISTEN_HOST}"
+  cat > "$NGINX_CONF" <<HTTPEOF
 server {
     listen 80;
-    server_name ${DOMAIN};
+    server_name ${LISTEN_HOST};
     location /.well-known/acme-challenge/ { root /var/www/html; }
     location / { return 301 https://\$host\$request_uri; }
 }
 HTTPEOF
-    nginx -t && systemctl reload nginx
+  ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${LISTEN_HOST}"
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t && systemctl reload nginx
 
-    # Get SSL certificate
-    EMAIL_FLAG=""
-    if [ -n "${EMAIL:-}" ]; then
-      EMAIL_FLAG="-m $EMAIL"
+  EMAIL_FLAG=""
+  if [ -n "${EMAIL:-}" ]; then
+    EMAIL_FLAG="-m $EMAIL"
+  else
+    EMAIL_FLAG="--register-unsafely-without-email"
+  fi
+
+  info "Requesting Let's Encrypt certificate for ${LISTEN_HOST}..."
+  certbot certonly --webroot -w /var/www/html -d "$LISTEN_HOST" $EMAIL_FLAG --agree-tos --non-interactive
+
+  SSL_CERT="/etc/letsencrypt/live/${LISTEN_HOST}/fullchain.pem"
+  SSL_KEY="/etc/letsencrypt/live/${LISTEN_HOST}/privkey.pem"
+  ok "SSL certificate obtained via Let's Encrypt"
+
+else
+  # Self-signed for private network / localhost / --skip-ssl
+  if [ "$MODE" = "domain" ] && [ "$SKIP_SSL" = true ]; then
+    info "Skipping Let's Encrypt (--skip-ssl). Generating self-signed certificate..."
+  else
+    info "Generating self-signed SSL certificate for ${LISTEN_HOST}..."
+  fi
+
+  mkdir -p "$SELF_SIGNED_DIR"
+  SSL_CERT="${SELF_SIGNED_DIR}/cert.pem"
+  SSL_KEY="${SELF_SIGNED_DIR}/key.pem"
+
+  if [ -f "$SSL_CERT" ] && [ -f "$SSL_KEY" ]; then
+    warn "Self-signed certificate already exists at ${SELF_SIGNED_DIR}. Keeping it."
+  else
+    # Build SAN extension based on whether it's an IP or hostname
+    SAN_EXT=""
+    if echo "$LISTEN_HOST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+      SAN_EXT="subjectAltName=IP:${LISTEN_HOST}"
     else
-      EMAIL_FLAG="--register-unsafely-without-email"
+      SAN_EXT="subjectAltName=DNS:${LISTEN_HOST}"
     fi
 
-    info "Requesting Let's Encrypt certificate for ${DOMAIN}..."
-    certbot certonly --webroot -w /var/www/html -d "$DOMAIN" $EMAIL_FLAG --agree-tos --non-interactive
+    openssl req -x509 -newkey rsa:2048 -nodes \
+      -keyout "$SSL_KEY" -out "$SSL_CERT" \
+      -days 365 -subj "/CN=${LISTEN_HOST}" \
+      -addext "$SAN_EXT"
 
-    # Now write the full config with SSL
-    sed "s/__DOMAIN__/${DOMAIN}/g" "$SCRIPT_DIR/nginx.conf.template" > "$NGINX_CONF"
-    ok "SSL certificate obtained"
-  else
-    info "Skipping SSL (--skip-ssl). Configure certificates manually."
+    chmod 600 "$SSL_KEY"
+    chmod 644 "$SSL_CERT"
+    ok "Self-signed certificate created at ${SELF_SIGNED_DIR}/"
   fi
+fi
 
-  nginx -t && systemctl reload nginx
-  ok "nginx configured and running for ${DOMAIN}"
+# ─── Generate nginx config ───────────────────────────────────────────────────
+NGINX_CONF="/etc/nginx/sites-available/${LISTEN_HOST}"
+sed -e "s|__HOST__|${LISTEN_HOST}|g" \
+    -e "s|__SSL_CERT__|${SSL_CERT}|g" \
+    -e "s|__SSL_KEY__|${SSL_KEY}|g" \
+    "$SCRIPT_DIR/nginx.conf.template" > "$NGINX_CONF"
 
-  # Open firewall ports
-  if command -v ufw &>/dev/null; then
-    ufw allow 22/tcp >/dev/null 2>&1 || true
-    ufw allow 80/tcp >/dev/null 2>&1 || true
-    ufw allow 443/tcp >/dev/null 2>&1 || true
-    ufw --force enable >/dev/null 2>&1 || true
-    ok "Firewall: ports 22, 80, 443 open"
-  fi
+ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${LISTEN_HOST}"
+rm -f /etc/nginx/sites-enabled/default
+
+nginx -t && systemctl reload nginx
+ok "nginx configured and running for ${LISTEN_HOST}"
+
+# ─── Firewall ────────────────────────────────────────────────────────────────
+if command -v ufw &>/dev/null; then
+  ufw allow 22/tcp >/dev/null 2>&1 || true
+  ufw allow 80/tcp >/dev/null 2>&1 || true
+  ufw allow 443/tcp >/dev/null 2>&1 || true
+  ufw --force enable >/dev/null 2>&1 || true
+  ok "Firewall: ports 22, 80, 443 open"
 fi
 
 # ─── Build and start ─────────────────────────────────────────────────────────
@@ -218,15 +296,16 @@ docker compose -f "$COMPOSE_FILE" up -d
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-if [ -n "$DOMAIN" ]; then
-  echo -e "${GREEN}Doable is running at https://${DOMAIN}${NC}"
-else
-  echo -e "${GREEN}Doable is running at http://localhost:3000${NC}"
+echo -e "${GREEN}Doable is running at https://${LISTEN_HOST}${NC}"
+echo ""
+echo "  Dashboard:  ${APP_URL}"
+echo "  API:        ${API_URL}/health"
+echo ""
+if [ "$MODE" != "domain" ]; then
+  echo -e "  ${YELLOW}Note: Self-signed SSL — browsers will show a certificate warning.${NC}"
+  echo "  Accept the warning or import ${SSL_CERT} into your trust store."
+  echo ""
 fi
-echo ""
-echo "  Dashboard:  ${APP_URL:-http://localhost:3000}"
-echo "  API:        ${API_URL:-http://localhost:4000}/health"
-echo ""
 echo "  Edit config: docker/.env"
 echo "  View logs:   docker compose -f docker/docker-compose.yml logs -f"
 echo "  Stop:        docker compose -f docker/docker-compose.yml down"

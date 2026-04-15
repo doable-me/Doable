@@ -42,15 +42,26 @@ This script:
 4. Builds and starts all Docker containers
 5. Configures UFW firewall (only ports 22, 80, 443 open)
 
-**Behind Cloudflare or another proxy?** Use `--skip-ssl` to configure nginx without Let's Encrypt:
+**Behind Cloudflare or another proxy?** Use `--skip-ssl` to configure nginx with a self-signed certificate instead of Let's Encrypt:
 ```bash
 DOMAIN=app.example.com ./docker/setup.sh --skip-ssl
 ```
 
-**Localhost only (no nginx)?** Use `--local`:
+### Deploy on a Private Network (no domain)
+
+For LAN / air-gapped / private network deployments without a domain name — uses self-signed SSL:
+
 ```bash
-./docker/setup.sh --local
+# Private network — use your server's LAN IP:
+HOST=192.168.1.50 ./docker/setup.sh
+
+# Localhost only — self-signed SSL on 127.0.0.1:
+./docker/setup.sh
 ```
+
+Browsers will show a certificate warning for the self-signed cert. Accept it, or import `/etc/ssl/doable/cert.pem` into your OS/browser trust store.
+
+> **Security:** In all modes, application services bind to `127.0.0.1` only. Only nginx accepts external connections.
 
 ## Architecture
 
@@ -166,7 +177,7 @@ See `.env.example` for all available options and `.env.integrations.example` for
 
 - **Secrets**: Never commit real secrets. Use `docker/.env` (gitignored) for Docker deployments and `.env` for local dev. Generate secrets with `openssl rand -hex 32`.
 - **Required secrets** (Docker will refuse to start without these): `JWT_SECRET`, `ENCRYPTION_KEY`, `INTERNAL_SECRET`.
-- **Network binding**: All Docker services bind to `127.0.0.1` only — no ports are exposed to the public internet. External access goes through the nginx reverse proxy configured by `setup.sh`.
+- **Network binding**: All Docker services bind to `127.0.0.1` only — no ports are exposed to the public internet. Only nginx accepts external connections. This applies in ALL deployment modes (domain, private network, localhost).
 - **Non-root containers**: API, WS, Web, and Migrate containers run as the unprivileged `node` user.
 - **Database**: PostgreSQL is only accessible within the Docker network and via `127.0.0.1:5432` on the host.
 
@@ -178,10 +189,15 @@ See `.env.example` for all available options and `.env.integrations.example` for
 # On a fresh Ubuntu 22.04+ server with Docker installed:
 git clone https://github.com/doable-me/doable.git
 cd doable
+
+# Public domain with Let's Encrypt:
 DOMAIN=app.example.com EMAIL=admin@example.com ./docker/setup.sh
+
+# Or private network with self-signed SSL:
+HOST=192.168.1.50 ./docker/setup.sh
 ```
 
-This runs the automated setup: secret generation, nginx reverse proxy, Let's Encrypt SSL, Docker build, and starts all services. Your app will be live at `https://app.example.com`.
+This runs the automated setup: secret generation, nginx reverse proxy, SSL (Let's Encrypt or self-signed), Docker build, and starts all services.
 
 ### Bare-metal (setup-server.sh)
 
