@@ -9,15 +9,12 @@ The fastest way to try Doable — no Node.js or PostgreSQL install needed:
 ```bash
 git clone https://github.com/doable-me/doable.git
 cd doable
-
-# Create environment file with secrets
-cp docker/.env.example docker/.env
-# Edit docker/.env — generate secrets with: openssl rand -hex 32
-
-docker compose -f docker/docker-compose.yml up --build
+./docker/setup.sh
 ```
 
-Open [http://localhost:3000](http://localhost:3000) once everything is up.
+When prompted, press Enter for localhost. Open <https://localhost> (accept the self-signed cert warning).
+
+> See [`docker/README.md`](docker/README.md) for full Docker documentation: one-liner deploys, configuration, operations, and troubleshooting.
 
 > **Note:** AI features require an API key. Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in `docker/.env`, or configure the GitHub Copilot SDK (see [AI Configuration](#ai-configuration)).
 
