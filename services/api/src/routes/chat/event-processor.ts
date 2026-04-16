@@ -93,9 +93,20 @@ export function createProcessEvent(
     }
 
     // Map SDK event → SSE and route to client
+    // For session.error, defer the error instead of sending it immediately.
+    // Auto-continue may recover from timeouts — the deferred error is emitted
+    // later only if recovery fails (see send-handler.ts).
     const sseData = mapEventToSSE(event);
     if (sseData) {
-      routeSseEvent(stream, state, channelRouter, sseData, evtData, projectId, userId, messageId);
+      if (evtType === "session.error" && sseData.type === "error") {
+        state.deferredError = typeof sseData.data === "string" ? sseData.data : "Unknown error";
+        // Send a status event so the frontend knows something happened
+        stream.writeSSE({
+          data: JSON.stringify({ type: "status", data: { phase: "retrying", message: "AI paused — checking if more work is needed\u2026" } }),
+        }).catch(() => {});
+      } else {
+        routeSseEvent(stream, state, channelRouter, sseData, evtData, projectId, userId, messageId);
+      }
     }
 
     // SDK native plan mode: exit_plan_mode.requested

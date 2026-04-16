@@ -28,6 +28,8 @@ export interface ChatStreamState {
   lastRealEventAt: number;
   lastToolName: string | undefined;
   friendlyLastTool: string | undefined;
+  /** Buffered session.error message — emitted only if auto-continue doesn't recover. */
+  deferredError: string | undefined;
 }
 
 /** Resolved AI configuration passed to stream phases. */
@@ -83,5 +85,6 @@ export function createInitialState(): ChatStreamState {
     lastRealEventAt: Date.now(),
     lastToolName: undefined,
     friendlyLastTool: undefined,
+    deferredError: undefined,
   };
 }

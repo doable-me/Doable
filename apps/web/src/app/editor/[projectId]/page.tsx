@@ -635,7 +635,7 @@ async function streamChat(
               ? parsed.data
               : "An unknown error occurred.";
             onError(errMsg);
-            return;
+            // Don't return — keep reading so auto-continue events get processed
           }
 
           // Extract text content from various SSE event shapes
@@ -806,7 +806,9 @@ function processOneSSEPayload(
     if (parsed.type === "error") {
       const errMsg = typeof parsed.data === "string" ? parsed.data : "An unknown error occurred.";
       cb.onError(errMsg);
-      return true;
+      // Don't return true — keep reading the stream so auto-continue
+      // events that follow the error can still be processed.
+      return false;
     }
 
     // Extract text content
@@ -2264,9 +2266,14 @@ export default function EditorPage() {
                   rafIdRef.current = null;
                   if (buffered) {
                     setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantId ? { ...m, content: m.content + buffered } : m
-                      )
+                      prev.map((m) => {
+                        if (m.id !== assistantId) return m;
+                        if (m.isError) {
+                          setIsStreaming(true);
+                          return { ...m, content: buffered, isStreaming: true, isError: false };
+                        }
+                        return { ...m, content: m.content + buffered };
+                      })
                     );
                   }
                 });
@@ -2675,11 +2682,15 @@ export default function EditorPage() {
               rafIdRef.current = null;
               if (buffered) {
                 setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId
-                      ? { ...m, content: m.content + buffered }
-                      : m
-                  )
+                  prev.map((m) => {
+                    if (m.id !== assistantId) return m;
+                    // If recovering from a deferred error, clear error state and start fresh
+                    if (m.isError) {
+                      setIsStreaming(true);
+                      return { ...m, content: buffered, isStreaming: true, isError: false };
+                    }
+                    return { ...m, content: m.content + buffered };
+                  })
                 );
               }
             });

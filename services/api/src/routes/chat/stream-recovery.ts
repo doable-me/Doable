@@ -105,6 +105,8 @@ export async function handleAutoContinue(
           }
           const sseData = mapEventToSSE(evt as Record<string, unknown>);
           if (!sseData) return;
+          // Suppress session.error during auto-continue — the loop handles recovery
+          if (sseData.type === "error") return;
           if (sseData.type === "text_delta") {
             const cleaned = typeof sseData.data === "string" ? sseData.data : "";
             if (cleaned) {
