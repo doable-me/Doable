@@ -214,19 +214,8 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
             }
             console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${state.assistantContent.length}, thinking: ${state.assistantThinking.length}, tools: ${state.hadToolCalls}`);
 
-            // Save pre-recovery content length to detect if auto-continue added anything
-            const contentBeforeRecovery = state.assistantContent.length;
             await handleAutoContinue(stream, state, currentEngine, sessionId!, projectId, mode, recordAssistantToolCall);
             await handleEmptyResponseRetry(stream, state, currentEngine, sessionId!, projectId, augmentedContent, fileAttachments);
-
-            // Emit deferred session.error only if auto-continue didn't produce new content
-            if (state.deferredError && state.assistantContent.length <= contentBeforeRecovery) {
-              console.log(`[Chat][${projectId.slice(0, 8)}] emitting deferred error (no recovery): ${state.deferredError.slice(0, 80)}`);
-              await stream.writeSSE({ data: JSON.stringify({ type: "error", data: state.deferredError }) });
-            } else if (state.deferredError) {
-              console.log(`[Chat][${projectId.slice(0, 8)}] swallowed deferred error — auto-continue recovered (${state.assistantContent.length - contentBeforeRecovery} chars added)`);
-            }
-            state.deferredError = undefined;
 
             // Flush pending tool names
             for (const pendingName of state.pendingToolNames) {

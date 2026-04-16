@@ -62,6 +62,31 @@ process.on("unhandledRejection", (reason) => {
 
 const app = new Hono();
 
+async function ensureProjectFilesTableExists(): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS project_files (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      file_path TEXT NOT NULL,
+      content TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(project_id, file_path)
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_project_files_project_id
+    ON project_files(project_id)
+  `;
+
+  try {
+    await sql`GRANT ALL PRIVILEGES ON TABLE project_files TO doable`;
+  } catch {
+    // In local/dev setups, the `doable` role may not exist.
+  }
+}
+
 // Pre-create middleware instances (avoid re-instantiating on every request)
 const secureHeadersMw = secureHeaders();
 const apiRateLimiter = rateLimiter({
@@ -225,6 +250,10 @@ const host = process.env.API_HOST ?? "127.0.0.1";
 
 console.log(`Doable API starting on ${host}:${port}`);
 console.log(`[Integrations] OAuth callback URI: ${getOAuthRedirectUri()} — add this to your OAuth providers' allowed redirect URIs`);
+
+await ensureProjectFilesTableExists().catch((err) => {
+  console.warn("[startup] ensure project_files table failed:", err);
+});
 
 // Initialize docore (AI sandbox + policy engine). Safe to await
 // synchronously here — docore engines are created lazily on first

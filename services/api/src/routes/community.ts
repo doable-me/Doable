@@ -10,6 +10,16 @@ export const communityRoutes = new Hono<AuthEnv>();
 
 const community = communityQueries(sql);
 
+function generateProjectSlug(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 50) || "project"
+  );
+}
+
 // ─── Public Routes ──────────────────────────────────────────
 
 /**
@@ -157,37 +167,52 @@ communityRoutes.post(
 
     const name = projectName ?? `Remix of ${publicProject.title}`;
 
-    // Create new project
-    const [newProject] = await sql<{ id: string }[]>`
-      INSERT INTO projects (name, description, workspace_id)
-      VALUES (${name}, ${publicProject.description}, ${ws.workspace_id})
-      RETURNING id
+    // Generate a workspace-unique slug for the remixed project.
+    let slug = generateProjectSlug(name);
+    const [existing] = await sql<{ id: string }[]>`
+      SELECT id FROM projects
+      WHERE workspace_id = ${ws.workspace_id}
+        AND slug = ${slug}
+      LIMIT 1
     `;
-
-    if (!newProject) {
-      return c.json({ error: "Failed to create project" }, 500);
+    if (existing) {
+      slug = `${slug.slice(0, 38)}-${Date.now().toString(36)}`;
     }
 
-    // Copy all files to the new project
-    for (const file of sourceFiles) {
-      await sql`
-        INSERT INTO project_files (project_id, file_path, content)
-        VALUES (${newProject.id}, ${file.file_path}, ${file.content})
-        ON CONFLICT (project_id, file_path)
-        DO UPDATE SET content = ${file.content}, updated_at = now()
+    const newProjectId = await sql.begin(async (tx) => {
+      const [newProject] = await tx<{ id: string }[]>`
+        INSERT INTO projects (name, slug, description, workspace_id)
+        VALUES (${name}, ${slug}, ${publicProject.description}, ${ws.workspace_id})
+        RETURNING id
       `;
-    }
 
-    // Record the remix
-    await community.createRemix({
-      sourceProjectId: sourceProjectId!,
-      forkedProjectId: newProject.id,
-      forkedBy: userId,
+      if (!newProject) {
+        throw new Error("Failed to create remixed project");
+      }
+
+      // Copy all files to the new project.
+      for (const file of sourceFiles) {
+        await tx`
+          INSERT INTO project_files (project_id, file_path, content)
+          VALUES (${newProject.id}, ${file.file_path}, ${file.content})
+          ON CONFLICT (project_id, file_path)
+          DO UPDATE SET content = ${file.content}, updated_at = now()
+        `;
+      }
+
+      // Record the remix and increment counts in the same transaction.
+      await communityQueries(tx).createRemix({
+        sourceProjectId: sourceProjectId!,
+        forkedProjectId: newProject.id,
+        forkedBy: userId,
+      });
+
+      return newProject.id;
     });
 
     return c.json({
       data: {
-        projectId: newProject.id,
+        projectId: newProjectId,
         sourceProjectId: sourceProjectId,
         name,
         filesCopied: sourceFiles.length,
