@@ -9,7 +9,12 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { sql } from "./db/index.js";
-import { getDevServerInternalUrl } from "./projects/dev-server.js";
+import {
+  getDevServerInternalUrlWhenReady,
+  isRunning,
+  startDevServer,
+} from "./projects/dev-server.js";
+import { ensureDependencies, isProjectScaffolded } from "./projects/file-manager.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 import { getConnectorManager } from "./mcp/connector-manager.js";
 import { getCopilotManager } from "./ai/providers/copilot-manager.js";
@@ -280,6 +285,7 @@ sql`UPDATE chat_traces
 // to the project's Vite dev server so HMR works through any
 // reverse proxy (Cloudflare, nginx, etc.) without special config.
 server.on("upgrade", (req, socket, head) => {
+  void (async () => {
   const url = req.url ?? "";
   const match = url.match(/^\/preview\/([^/]+)\//);
   if (!match) {
@@ -289,7 +295,18 @@ server.on("upgrade", (req, socket, head) => {
   }
 
   const projectId = match[1];
-  const devUrl = getDevServerInternalUrl(projectId);
+  // Match the HTTP preview proxy behavior: if a project is scaffolded, ensure
+  // deps/server are available before returning a WS upgrade failure.
+  if (!isRunning(projectId) && isProjectScaffolded(projectId)) {
+    try {
+      await ensureDependencies(projectId);
+      await startDevServer(projectId);
+    } catch {
+      // Fall through; we'll return 502 below if the server isn't ready.
+    }
+  }
+
+  const devUrl = await getDevServerInternalUrlWhenReady(projectId);
   if (!devUrl) {
     socket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
     socket.destroy();
@@ -334,6 +351,14 @@ server.on("upgrade", (req, socket, head) => {
 
   proxyReq.on("error", () => socket.destroy());
   proxyReq.end();
+  })().catch(() => {
+    try {
+      socket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
+    } catch {
+      // Ignore write errors during shutdown/race conditions.
+    }
+    socket.destroy();
+  });
 });
 
 // ─── Graceful Shutdown ──────────────────────────────────────
