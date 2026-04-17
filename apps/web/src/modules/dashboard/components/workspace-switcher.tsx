@@ -163,7 +163,7 @@ export function WorkspaceSwitcher({
                 onChange={(e) => setName(e.target.value)}
                 autoFocus
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+                className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 focus-visible:ring-zinc-600"
               />
             </div>
 

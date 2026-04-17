@@ -347,7 +347,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
         <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800">
           <DialogHeader><DialogTitle className="text-zinc-200">Create workspace</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><label className="mb-1 block text-sm font-medium text-zinc-300">Name</label><Input placeholder="My Team" value={newWsName} onChange={(e) => setNewWsName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateWorkspace()} autoFocus className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500" /></div>
+            <div><label className="mb-1 block text-sm font-medium text-zinc-300">Name</label><Input placeholder="My Team" value={newWsName} onChange={(e) => setNewWsName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateWorkspace()} autoFocus className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 focus-visible:ring-zinc-600" /></div>
             {wsError && <p className="text-xs text-red-400">{wsError}</p>}
           </div>
           <DialogFooter>
@@ -361,7 +361,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
         <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800">
           <DialogHeader><DialogTitle className="text-zinc-200">Create folder</DialogTitle></DialogHeader>
-          <div><Input placeholder="Folder name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()} autoFocus className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500" /></div>
+          <div><Input placeholder="Folder name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()} autoFocus className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 focus-visible:ring-zinc-600" /></div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateFolderOpen(false)} className="border-zinc-700 text-zinc-300 hover:bg-zinc-800">Cancel</Button>
             <Button onClick={handleCreateFolder} disabled={folderSubmitting || !newFolderName.trim()} className="bg-brand-600 text-white hover:bg-brand-500">{folderSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create</Button>
@@ -373,7 +373,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
       <Dialog open={!!renamingFolder} onOpenChange={(open) => !open && setRenamingFolder(null)}>
         <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800">
           <DialogHeader><DialogTitle className="text-zinc-200">Rename folder</DialogTitle></DialogHeader>
-          <div><Input placeholder="Folder name" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleRenameFolder()} autoFocus className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500" /></div>
+          <div><Input placeholder="Folder name" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleRenameFolder()} autoFocus className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 focus-visible:ring-zinc-600" /></div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenamingFolder(null)} className="border-zinc-700 text-zinc-300 hover:bg-zinc-800">Cancel</Button>
             <Button onClick={handleRenameFolder} disabled={folderSubmitting || !renameValue.trim()} className="bg-brand-600 text-white hover:bg-brand-500">{folderSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Rename</Button>

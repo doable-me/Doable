@@ -33,7 +33,7 @@ function DialogContent({
   return (
     <div
       className={cn(
-        "relative z-50 w-full max-w-lg rounded-lg border bg-background p-6 shadow-lg animate-in fade-in-0 zoom-in-95",
+        "relative z-50 w-full max-w-lg rounded-lg border bg-background p-6 shadow-lg space-y-4 animate-in fade-in-0 zoom-in-95",
         className
       )}
       onClick={(e) => e.stopPropagation()}
