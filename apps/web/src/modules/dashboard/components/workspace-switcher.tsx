@@ -150,63 +150,64 @@ export function WorkspaceSwitcher({
 
       {/* Create Workspace Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md bg-zinc-900 border-zinc-800">
           <DialogHeader>
-            <DialogTitle>Create workspace</DialogTitle>
+            <DialogTitle className="text-zinc-200">Create workspace</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="mb-1 block text-sm font-medium">Name</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-300">Name</label>
               <Input
                 placeholder="My Team"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
               />
             </div>
 
             {/* Environment Selector */}
             <div>
-              <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium">
-                <Boxes className="h-4 w-4 text-muted-foreground" />
+              <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-zinc-300">
+                <Boxes className="h-4 w-4 text-zinc-500" />
                 Start from environment
-                <span className="text-xs text-muted-foreground">(optional)</span>
+                <span className="text-xs text-zinc-500">(optional)</span>
               </label>
               {loadingEnvs ? (
-                <div className="flex items-center gap-2 rounded-md border p-3">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Loading environments...</span>
+                <div className="flex items-center gap-2 rounded-md border border-zinc-700 p-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+                  <span className="text-xs text-zinc-500">Loading environments...</span>
                 </div>
               ) : environments.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic">
+                <p className="text-xs text-zinc-500 italic">
                   No environments available. Create one from the editor.
                 </p>
               ) : (
-                <div className="space-y-1.5 max-h-48 overflow-y-auto rounded-md border p-2">
+                <div className="space-y-1.5 max-h-48 overflow-y-auto rounded-md border border-zinc-700 bg-zinc-800/50 p-2">
                   <button
                     onClick={() => setSelectedEnvId(null)}
                     className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors ${
-                      selectedEnvId === null ? "bg-primary/10 text-primary" : "hover:bg-muted"
+                      selectedEnvId === null ? "bg-primary/10 text-primary" : "text-zinc-400 hover:bg-zinc-800"
                     }`}
                   >
-                    <span className="text-muted-foreground">None — start fresh</span>
+                    <span className="text-zinc-400">None — start fresh</span>
                   </button>
                   {environments.map((env) => (
                     <button
                       key={env.id}
                       onClick={() => setSelectedEnvId(env.id)}
                       className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
-                        selectedEnvId === env.id ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted"
+                        selectedEnvId === env.id ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-zinc-800"
                       }`}
                     >
                       <div className={`flex h-7 w-7 items-center justify-center rounded text-sm text-white ${COLOR_MAP[env.color] ?? "bg-blue-500"}`}>
                         {env.icon}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{env.name}</p>
+                        <p className="text-sm font-medium text-zinc-200 truncate">{env.name}</p>
                         {env.description && (
-                          <p className="text-[11px] text-muted-foreground truncate">{env.description}</p>
+                          <p className="text-[11px] text-zinc-500 truncate">{env.description}</p>
                         )}
                       </div>
                       {selectedEnvId === env.id && <Check className="h-4 w-4 text-primary shrink-0" />}
@@ -219,10 +220,10 @@ export function WorkspaceSwitcher({
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} className="border-zinc-700 text-zinc-300 hover:bg-zinc-800">
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={submitting || !name.trim()}>
+            <Button onClick={handleCreate} disabled={submitting || !name.trim()} className="bg-brand-600 text-white hover:bg-brand-500">
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create
             </Button>

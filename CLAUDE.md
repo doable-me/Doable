@@ -3,7 +3,7 @@
 ## CRITICAL: Network Security
 
 **ALL services MUST bind to 127.0.0.1 ONLY. NEVER bind to 0.0.0.0 or any public interface.**
-
+- Run following inside Tmux (in mac or Linux) and PSMUX (in Windows)
 - Next.js dev: `--hostname 127.0.0.1` (already in package.json dev script)
 - Next.js start: `-H 127.0.0.1` (already in package.json start script)
 - API server: `API_HOST=127.0.0.1` in .env

@@ -35,6 +35,7 @@ Thumbs.db
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # Data (user-created projects, published sites, thumbnails, AI session state)
 /data/

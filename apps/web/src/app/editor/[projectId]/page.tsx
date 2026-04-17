@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, memo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, apiGetShareStats, type ApiEffectiveAiConfig, type ApiAiProvider } from "@/lib/api";
+import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiUpdateUserAiPreferences, apiRecordProjectView, apiListAiProviders, apiGetShareStats, type ApiEffectiveAiConfig, type ApiAiProvider } from "@/lib/api";
 import { consumeBridge, hasBridge, type BridgeSSEEvent } from "@/lib/prompt-bridge";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
@@ -1168,6 +1168,8 @@ export default function EditorPage() {
   // ─── Workspace / AI enforcement state ────────────────────
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [effectiveAiConfig, setEffectiveAiConfig] = useState<ApiEffectiveAiConfig | null>(null);
+  const aiConfigAppliedRef = useRef(false);
+  const saveUserPrefTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── File tree state ──────────────────────────────────────
   const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
@@ -1310,7 +1312,22 @@ export default function EditorPage() {
     else localStorage.removeItem("doable_selected_provider_id");
     if (copilotAccountId) localStorage.setItem("doable_selected_copilot_account", copilotAccountId);
     else localStorage.removeItem("doable_selected_copilot_account");
-  }, [effectiveAiConfig?.enforce_ai]);
+
+    // Persist to DB (debounced) so the selection survives page refreshes
+    if (workspaceId) {
+      if (saveUserPrefTimerRef.current) clearTimeout(saveUserPrefTimerRef.current);
+      saveUserPrefTimerRef.current = setTimeout(() => {
+        const source = providerId ? "custom" as const : "copilot" as const;
+        apiUpdateUserAiPreferences(workspaceId, {
+          source,
+          copilotAccountId: copilotAccountId ?? null,
+          copilotModel: !providerId ? modelId : null,
+          providerId: providerId ?? null,
+          providerModel: providerId ? modelId : null,
+        }).catch(console.error);
+      }, 600);
+    }
+  }, [effectiveAiConfig?.enforce_ai, workspaceId]);
 
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
   const [messages, setMessages] = useState<ChatMsg[]>(() => {
@@ -1496,19 +1513,18 @@ export default function EditorPage() {
   }, [workspaceId]);
 
   // ─── Apply AI enforcement or server-side user preferences ──
+  // Enforcement always applies. For non-enforced configs, only apply on
+  // initial load so that in-session dropdown changes are not stomped.
   useEffect(() => {
     if (!effectiveAiConfig) return;
     if (effectiveAiConfig.enforce_ai) {
-      // Enforced — override all model selection state
+      // Enforced — always override all model selection state
       setSelectedModelId(effectiveAiConfig.enforced_model ?? "");
       setSelectedProviderId(effectiveAiConfig.enforced_provider_id ?? null);
       setSelectedCopilotAccountId(effectiveAiConfig.enforced_copilot_account_id ?? null);
-    } else {
-      // Not enforced — pick the active side based on `*_source`. With migration
-      // 042, both copilot and custom configs may be persisted at once; the
-      // active side is determined by the source flag, not by "which is set".
-      // Prefer the user override (if active and populated), else fall back to
-      // the workspace default.
+    } else if (!aiConfigAppliedRef.current) {
+      // First load only — seed from server-side user prefs / workspace defaults
+      aiConfigAppliedRef.current = true;
       const userActive =
         (effectiveAiConfig.user_source === "copilot" && !!effectiveAiConfig.user_copilot_account_id) ||
         (effectiveAiConfig.user_source === "custom" && !!effectiveAiConfig.user_provider_id);
