@@ -896,7 +896,8 @@ async function resumeBridgeStream(
 // ─── Markdown Rendering (static — outside component for memoization) ────
 
 function formatInlineStatic(text: string): React.ReactNode {
-  const segments = text.split(/(\*\*.*?\*\*|`[^`]+`)/g);
+  // Split on bold, inline code, italic (single *), and links [text](url)
+  const segments = text.split(/(\*\*.*?\*\*|`[^`]+`|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g);
   return segments.map((seg, j) => {
     if (seg.startsWith("**") && seg.endsWith("**")) {
       return (
@@ -913,6 +914,23 @@ function formatInlineStatic(text: string): React.ReactNode {
         >
           {seg.slice(1, -1)}
         </code>
+      );
+    }
+    // Italic: *text* (but not inside ** which is already handled)
+    if (seg.startsWith("*") && seg.endsWith("*") && !seg.startsWith("**")) {
+      return (
+        <em key={j} className="italic text-zinc-300">
+          {seg.slice(1, -1)}
+        </em>
+      );
+    }
+    // Links: [text](url)
+    const linkMatch = seg.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      return (
+        <a key={j} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 underline underline-offset-2">
+          {linkMatch[1]}
+        </a>
       );
     }
     return seg;
@@ -951,14 +969,14 @@ function formatContent(content: string) {
       if (!listBuffer) return;
       if (listBuffer.ordered) {
         elements.push(
-          <ol key={`ol-${elements.length}`} className="my-1.5 ml-4 list-decimal space-y-0.5 text-zinc-300">
-            {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
+          <ol key={`ol-${elements.length}`} className="my-2 ml-5 list-decimal space-y-1 text-zinc-300">
+            {listBuffer.items.map((item, idx) => (<li key={idx} className="pl-1">{item}</li>))}
           </ol>
         );
       } else {
         elements.push(
-          <ul key={`ul-${elements.length}`} className="my-1.5 ml-4 list-disc space-y-0.5 text-zinc-300">
-            {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
+          <ul key={`ul-${elements.length}`} className="my-2 ml-5 list-disc space-y-1 text-zinc-300">
+            {listBuffer.items.map((item, idx) => (<li key={idx} className="pl-1">{item}</li>))}
           </ul>
         );
       }
@@ -967,6 +985,59 @@ function formatContent(content: string) {
 
     for (let li = 0; li < textLines.length; li++) {
       const line = textLines[li]!;
+
+      // Horizontal rule: --- or *** or ___
+      if (/^[-]{3,}$/.test(line.trim()) || /^[*]{3,}$/.test(line.trim()) || /^[_]{3,}$/.test(line.trim())) {
+        flushList();
+        elements.push(
+          <hr key={`hr-${i}-${li}`} className="my-3 border-t border-zinc-700/60" />
+        );
+        continue;
+      }
+
+      // Headings: # to ####
+      const h4Match = line.match(/^####\s+(.*)/);
+      if (h4Match) {
+        flushList();
+        elements.push(
+          <h4 key={`h4-${i}-${li}`} className="mt-3 mb-1 text-[13px] font-semibold text-zinc-200">
+            {formatInlineStatic(h4Match[1] ?? "")}
+          </h4>
+        );
+        continue;
+      }
+      const h3Match = line.match(/^###\s+(.*)/);
+      if (h3Match) {
+        flushList();
+        elements.push(
+          <h3 key={`h3-${i}-${li}`} className="mt-3 mb-1 text-[14px] font-semibold text-zinc-100">
+            {formatInlineStatic(h3Match[1] ?? "")}
+          </h3>
+        );
+        continue;
+      }
+      const h2Match = line.match(/^##\s+(.*)/);
+      if (h2Match) {
+        flushList();
+        elements.push(
+          <h2 key={`h2-${i}-${li}`} className="mt-4 mb-1.5 text-[15px] font-bold text-white">
+            {formatInlineStatic(h2Match[1] ?? "")}
+          </h2>
+        );
+        continue;
+      }
+      const h1Match = line.match(/^#\s+(.*)/);
+      if (h1Match) {
+        flushList();
+        elements.push(
+          <h1 key={`h1-${i}-${li}`} className="mt-4 mb-2 text-[16px] font-bold text-white">
+            {formatInlineStatic(h1Match[1] ?? "")}
+          </h1>
+        );
+        continue;
+      }
+
+      // List items
       const ulMatch = line.match(/^\s*[-*]\s+(.*)/);
       const olMatch = line.match(/^\s*\d+\.\s+(.*)/);
 
@@ -978,12 +1049,20 @@ function formatContent(content: string) {
         listBuffer.items.push(formatInlineStatic(olMatch[1] ?? ""));
       } else {
         flushList();
-        elements.push(
-          <span key={`line-${i}-${li}`} className="whitespace-pre-wrap">
-            {formatInlineStatic(line)}
-            {li < textLines.length - 1 ? "\n" : ""}
-          </span>
-        );
+        // Blank line → paragraph break
+        if (line.trim() === "") {
+          // Only add spacing if there's content before this
+          if (elements.length > 0) {
+            elements.push(<div key={`br-${i}-${li}`} className="h-2" />);
+          }
+        } else {
+          elements.push(
+            <span key={`line-${i}-${li}`} className="whitespace-pre-wrap">
+              {formatInlineStatic(line)}
+              {li < textLines.length - 1 ? "\n" : ""}
+            </span>
+          );
+        }
       }
     }
     flushList();
@@ -1008,13 +1087,55 @@ function deriveProjectName(prompt: string): string {
   return name.replace(/[.!?,;:]+$/, "") || "New Project";
 }
 
+/** Summarize tool actions for the collapsible card header */
+function summarizeToolActions(actions: ToolAction[]): string {
+  if (actions.length === 1) return actions[0]!.description;
+
+  const fileChangeCount = actions.filter(a => {
+    const t = a.toolName.toLowerCase();
+    return t.includes("create") || t.includes("write") || t.includes("edit") || t.includes("update") || t.includes("patch") || t.includes("delete") || t.includes("remove") || t.includes("rename");
+  }).length;
+
+  if (fileChangeCount > 0) {
+    return `${fileChangeCount} file ${fileChangeCount === 1 ? "change" : "changes"}`;
+  }
+  return `${actions.length} ${actions.length === 1 ? "action" : "actions"}`;
+}
+
 /** Generate a human-readable description for a tool action */
 function describeToolAction(toolName: string, args?: Record<string, unknown>): string {
   const fileName = args?.path ?? args?.filePath ?? args?.file ?? "";
   const shortName = typeof fileName === "string" ? fileName.split("/").pop() ?? "" : "";
 
-  // Shell-ish tools: surface the actual command being run
+  // SDK-level tools — human-friendly names for internal Copilot tools
   const lower0 = toolName.toLowerCase();
+  if (lower0 === "report_intent" || lower0 === "report-intent") {
+    const intent = args?.intent ?? args?.description ?? "";
+    if (typeof intent === "string" && intent.trim()) {
+      const short = intent.trim().length > 60 ? intent.trim().slice(0, 57) + "\u2026" : intent.trim();
+      return `Planning: ${short}`;
+    }
+    return "Analyzing approach";
+  }
+  if (lower0 === "ask_clarification" || lower0 === "ask-clarification" || lower0 === "askclarification") {
+    return "Asking clarifying questions";
+  }
+  if (lower0 === "report_progress" || lower0 === "report-progress") {
+    return "Reporting progress";
+  }
+  if (lower0 === "search" || lower0 === "grep" || lower0 === "search_files" || lower0 === "grep_search") {
+    const query = args?.query ?? args?.pattern ?? "";
+    if (typeof query === "string" && query.trim()) {
+      const short = query.trim().length > 40 ? query.trim().slice(0, 37) + "\u2026" : query.trim();
+      return `Searching: ${short}`;
+    }
+    return "Searching project";
+  }
+  if (lower0 === "glob" || lower0 === "list_directory" || lower0 === "view") {
+    return "Exploring files";
+  }
+
+  // Shell-ish tools: surface the actual command being run
   if (lower0.includes("bash") || lower0.includes("shell") || lower0.includes("powershell")
       || lower0.includes("cmd") || lower0.includes("exec") || lower0.includes("run_command")
       || lower0.includes("terminal")) {
@@ -2098,7 +2219,13 @@ export default function EditorPage() {
                 }),
                 isStreaming: false,
                 thinkingContent,
-                toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
+                toolActions: (m.tool_actions
+                  ? m.tool_actions.map((ta: { id: string; toolName: string; description: string; isExpanded?: boolean; isBookmarked?: boolean; filePath?: string; status?: string }) => ({
+                      ...ta,
+                      // Re-generate description using latest describeToolAction for better formatting
+                      description: describeToolAction(ta.toolName || "", ta.filePath ? { path: ta.filePath } : undefined),
+                    }))
+                  : Array.isArray(m.tool_calls) && m.tool_calls.length > 0
                   ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => ({
                       id: `hist-${m.id}-${i}`,
                       toolName: tc.name || "unknown",
@@ -4250,9 +4377,7 @@ export default function EditorPage() {
                                   <Wrench className="h-3.5 w-3.5 text-brand-400" />
                                 </div>
                                 <span className="text-[13px] font-medium text-zinc-200 truncate">
-                                  {msg.toolActions.length === 1
-                                    ? msg.toolActions[0]!.description
-                                    : `${msg.toolActions.length} file changes`}
+                                  {summarizeToolActions(msg.toolActions)}
                                 </span>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0">
@@ -4298,37 +4423,46 @@ export default function EditorPage() {
 
                                 {/* Tab content */}
                                 {(taskCardTabs[msg.id] ?? "details") === "details" ? (
-                                  <div className="p-2 space-y-1">
-                                    {msg.toolActions.map((action) => (
+                                  <div className="p-2 space-y-0.5">
+                                    {msg.toolActions.map((action) => {
+                                      const tl = action.toolName.toLowerCase();
+                                      const isCreate = tl.includes("create") || tl.includes("write");
+                                      const isEdit = tl.includes("edit") || tl.includes("update") || tl.includes("patch");
+                                      const isDelete = tl.includes("delete") || tl.includes("remove");
+                                      const isRead = tl.includes("read");
+                                      const isInstall = tl.includes("install") || tl.includes("package");
+                                      const isCommand = tl.includes("bash") || tl.includes("shell") || tl.includes("terminal") || tl.includes("exec");
+                                      const isAnalysis = tl.includes("report") || tl.includes("clarif") || tl.includes("intent") || tl.includes("list") || tl.includes("glob") || tl.includes("search") || tl.includes("grep") || tl.includes("view");
+
+                                      const dotColor = action.status === "running" ? "bg-blue-400 animate-pulse"
+                                        : isCreate ? "bg-emerald-400"
+                                        : isEdit ? "bg-amber-400"
+                                        : isDelete ? "bg-red-400"
+                                        : isInstall ? "bg-purple-400"
+                                        : isCommand ? "bg-cyan-400"
+                                        : isAnalysis ? "bg-zinc-500"
+                                        : "bg-zinc-400";
+
+                                      return (
                                       <div
                                         key={action.id}
                                         className="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-zinc-700/30 transition-colors"
                                       >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          {action.status === "running" ? (
-                                            <div className="h-1.5 w-1.5 rounded-full flex-shrink-0 bg-blue-400 animate-pulse" />
-                                          ) : (
-                                            <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
-                                              action.toolName.toLowerCase().includes("create") || action.toolName.toLowerCase().includes("write")
-                                                ? "bg-emerald-400"
-                                                : action.toolName.toLowerCase().includes("edit") || action.toolName.toLowerCase().includes("update")
-                                                  ? "bg-amber-400"
-                                                  : action.toolName.toLowerCase().includes("delete")
-                                                    ? "bg-red-400"
-                                                    : "bg-zinc-400"
-                                            }`} />
-                                          )}
-                                          <span className="text-zinc-300 truncate">
-                                            {action.description}
-                                            {action.status === "running" && (
-                                              <span className="ml-1.5 text-[11px] text-brand-400/70 animate-pulse">in progress</span>
-                                            )}
-                                          </span>
-                                          {action.filePath && (
-                                            <span className="text-[11px] text-zinc-600 truncate hidden sm:inline">
-                                              {action.filePath}
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                          <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
+                                          <div className="min-w-0 flex-1">
+                                            <span className="text-zinc-300 truncate block">
+                                              {action.description}
+                                              {action.status === "running" && (
+                                                <span className="ml-1.5 text-[11px] text-brand-400/70 animate-pulse">in progress</span>
+                                              )}
                                             </span>
-                                          )}
+                                            {action.filePath && (
+                                              <span className="text-[11px] text-zinc-600 truncate block">
+                                                {action.filePath}
+                                              </span>
+                                            )}
+                                          </div>
                                         </div>
                                         <button
                                           onClick={(e) => {
@@ -4345,7 +4479,8 @@ export default function EditorPage() {
                                           )}
                                         </button>
                                       </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 ) : (
                                   /* Preview tab — shows a mini preview placeholder */

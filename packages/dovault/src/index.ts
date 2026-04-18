@@ -20,6 +20,8 @@ export { Tracer, noopTracer, type Span, type TracerSink, type SpanHandle } from 
 export type {
   VaultOptions,
   SpawnOptions,
+  ExecOptions,
+  ExecResult,
   JailedProcess,
   ResourceLimits,
   AuditEntry,

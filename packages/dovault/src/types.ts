@@ -174,3 +174,48 @@ export interface WrapResult {
   args: string[];
   env?: Record<string, string>;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Exec (jailed command execution)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface ExecOptions {
+  /** Working directory for the command */
+  cwd: string;
+
+  /**
+   * Restrict filesystem access to this directory.
+   * Linux: uses systemd ProtectSystem + ReadWritePaths (real OS-level jail).
+   * Windows: Job Objects for resources; filesystem is best-effort.
+   */
+  jail: string;
+
+  /** Environment variables for the command */
+  env?: Record<string, string>;
+
+  /** Kill the command after this many milliseconds. @default 30000 */
+  timeout?: number;
+
+  /** Override resource limits for this exec */
+  resourceLimits?: ResourceLimits;
+
+  /** Block outbound network access. @default true */
+  blockNetwork?: boolean;
+}
+
+export interface ExecResult {
+  /** Exit code (null if killed by signal) */
+  exitCode: number | null;
+
+  /** Captured stdout */
+  stdout: string;
+
+  /** Captured stderr */
+  stderr: string;
+
+  /** Whether the process was killed (timeout, OOM, signal) */
+  killed: boolean;
+
+  /** Kill signal if process was killed */
+  signal?: string;
+}

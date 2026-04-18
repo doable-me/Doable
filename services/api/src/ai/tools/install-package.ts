@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { Tool } from "./index.js";
 import { getProjectPath } from "../project-files.js";
 import { restartDevServer, isRunning } from "../../projects/dev-server.js";
+import { buildSafeEnv } from "../../projects/safe-env.js";
 
 // Packages that should never be installed
 const BLOCKED_PACKAGES = new Set([
@@ -151,7 +152,7 @@ function runInstall(
       cwd,
       shell: true,
       stdio: "pipe",
-      env: { ...process.env, FORCE_COLOR: "0" },
+      env: buildSafeEnv(undefined, { FORCE_COLOR: "0" }),
     });
 
     let stdout = "";

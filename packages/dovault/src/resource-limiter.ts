@@ -3,7 +3,7 @@ import {
   type ChildProcess,
   type SpawnOptions,
 } from "node:child_process";
-import type { ResourceLimits } from "./types.js";
+import type { ResourceLimits, ExecResult } from "./types.js";
 import type { ResourceBackend } from "./backends/types.js";
 import { SystemdBackend } from "./backends/systemd.js";
 import { WindowsBackend } from "./backends/windows.js";
@@ -63,8 +63,105 @@ export class ResourceLimiter {
 
     return nodeSpawn(wrapped.command, wrapped.args, {
       cwd: options.cwd,
-      env: { ...process.env, ...options.env, ...wrapped.env },
+      // SECURITY: Use only the caller-provided env + backend env.
+      // Never spread process.env — the caller is responsible for building
+      // a safe env (see services/api/src/projects/safe-env.ts).
+      env: { ...options.env, ...wrapped.env },
       stdio: options.stdio ?? "pipe",
+    });
+  }
+
+  /**
+   * Execute a command inside an OS-level jail and return its output.
+   *
+   * Uses the backend's wrapExec (filesystem isolation + resource limits)
+   * if available, otherwise falls back to wrapSpawn (resources only).
+   *
+   *   Linux:   systemd-run with ProtectSystem=strict, ReadWritePaths=<jail>
+   *   Windows: Job Object (resources) — no kernel FS jail
+   *   macOS:   direct (no isolation)
+   */
+  exec(
+    command: string,
+    args: string[],
+    options: {
+      cwd: string;
+      jail: string;
+      env?: Record<string, string>;
+      limits?: ResourceLimits;
+      blockNetwork?: boolean;
+      timeout?: number;
+    },
+  ): Promise<ExecResult> {
+    const defaults: ResourceLimits = {
+      memoryMax: "200M",
+      cpuQuota: "50%",
+      tasksMax: 64,
+    };
+
+    const limits = options.limits ?? defaults;
+    const blockNetwork = options.blockNetwork ?? true;
+    const timeout = options.timeout ?? 30_000;
+
+    // Use wrapExec if the backend supports it, otherwise fall back to wrapSpawn
+    const wrapped = this.backend.wrapExec
+      ? this.backend.wrapExec(command, args, { limits, blockNetwork, jail: options.jail })
+      : this.backend.wrapSpawn(command, args, { limits, blockNetwork });
+
+    return new Promise<ExecResult>((resolve) => {
+      let stdout = "";
+      let stderr = "";
+      let killed = false;
+
+      const child = nodeSpawn(wrapped.command, wrapped.args, {
+        cwd: options.cwd,
+        env: { ...options.env, ...wrapped.env },
+        stdio: "pipe",
+        shell: process.platform === "win32",
+      });
+
+      const timer = setTimeout(() => {
+        killed = true;
+        child.kill("SIGKILL");
+      }, timeout);
+
+      child.stdout?.on("data", (data: Buffer) => {
+        stdout += data.toString();
+        // Cap output at 1MB to prevent memory exhaustion
+        if (stdout.length > 1_048_576) {
+          killed = true;
+          child.kill("SIGKILL");
+        }
+      });
+
+      child.stderr?.on("data", (data: Buffer) => {
+        stderr += data.toString();
+        if (stderr.length > 1_048_576) {
+          killed = true;
+          child.kill("SIGKILL");
+        }
+      });
+
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        resolve({
+          exitCode: 1,
+          stdout,
+          stderr: stderr || err.message,
+          killed: false,
+        });
+      });
+
+      child.on("close", (code, signal) => {
+        clearTimeout(timer);
+        resolve({
+          exitCode: code,
+          stdout: stdout.slice(0, 50_000),
+          stderr: stderr.slice(0, 50_000),
+          killed,
+          signal: signal ?? undefined,
+        });
+      });
     });
   }
 }

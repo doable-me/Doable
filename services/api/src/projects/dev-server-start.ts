@@ -6,6 +6,7 @@ import path from "node:path";
 import { getProjectPath } from "../ai/project-files.js";
 import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
 import { spawnJailedVite } from "./vite-jail.js";
+import { buildSafeEnv } from "./safe-env.js";
 import {
   type DevServerInstance,
   type StartDevServerOptions,
@@ -123,12 +124,10 @@ async function doStartDevServer(
     execPath: process.execPath,
     args: [viteEntry, "--host", DEV_SERVER_HOST, "--port", String(port), "--strictPort", "--base", base],
     cwd: projectPath,
-    env: {
-      ...process.env,
-      ...userEnvVars,
+    env: buildSafeEnv(userEnvVars, {
       FORCE_COLOR: "0",
       BROWSER: "none",
-    },
+    }),
     projectId,
     stdio: "pipe",
   });

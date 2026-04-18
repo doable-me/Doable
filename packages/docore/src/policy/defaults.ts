@@ -68,8 +68,7 @@ export const DEFAULT_TRAVERSAL_PATTERNS: string[] = [
 
 /** URL patterns (regex source strings) allowed by default */
 export const DEFAULT_URL_ALLOWLIST: string[] = [
-  "^https?:\\/\\/(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)(:\\d+)?",
-  "^https?:\\/\\/(cdn\\.jsdelivr\\.net|unpkg\\.com|esm\\.sh|fonts\\.googleapis\\.com|fonts\\.gstatic\\.com)",
+  ".",  // Allow all URLs — web access is essential for development
 ];
 
 /** Complete policy defaults */

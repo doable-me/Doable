@@ -1,6 +1,8 @@
 import type {
   VaultOptions,
   SpawnOptions,
+  ExecOptions,
+  ExecResult,
   JailedProcess,
   AuditEntry,
 } from "./types.js";
@@ -216,6 +218,65 @@ export class Vault {
       pid: child.pid,
       kill: () => child.kill(),
     };
+    } catch (err) {
+      span.fail(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  }
+
+  /**
+   * Execute a command inside an OS-level jail.
+   *
+   * Unlike spawn(), this:
+   *   - Returns a promise with stdout/stderr/exitCode (not a ChildProcess)
+   *   - Applies filesystem isolation where the OS supports it
+   *   - Has a timeout (default 30s)
+   *   - Does NOT apply the Node.js Permission Model (works for any binary)
+   *
+   * Isolation per platform:
+   *   Linux:   systemd ProtectSystem=strict + ReadWritePaths=<jail> (real FS jail)
+   *   Windows: Job Objects (resource limits, kill-on-close, no FS jail)
+   *   macOS:   no isolation (direct spawn)
+   */
+  async exec(
+    command: string,
+    args: string[],
+    options: ExecOptions,
+  ): Promise<ExecResult> {
+    const span = this.tracer.start("vault.exec", {
+      command,
+      cwd: options.cwd,
+      jail: options.jail,
+      backend: this.backend,
+    });
+
+    try {
+      const result = await this.resourceLimiter.exec(command, args, {
+        cwd: options.cwd,
+        jail: options.jail,
+        env: options.env,
+        limits: options.resourceLimits ?? this.options.resourceLimits,
+        blockNetwork: options.blockNetwork ?? true,
+        timeout: options.timeout ?? 30_000,
+      });
+
+      this.audit("spawn", {
+        command,
+        kind: "exec",
+        exitCode: result.exitCode,
+        killed: result.killed,
+        backend: this.backend,
+        jail: options.jail,
+      });
+
+      span.end({
+        exitCode: result.exitCode,
+        killed: result.killed,
+        stdoutLen: result.stdout.length,
+        stderrLen: result.stderr.length,
+      });
+
+      return result;
     } catch (err) {
       span.fail(err instanceof Error ? err.message : String(err));
       throw err;

@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { writeFile as fsWriteFile, mkdir as fsMkdir } from "node:fs/promises";
 import path from "node:path";
+import { buildSafeEnv } from "./safe-env.js";
 import {
   readProjectFile,
   writeProjectFile,
@@ -203,11 +204,11 @@ function runPnpmInstall(cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     // Use npm instead of pnpm to avoid workspace interference
     // (pnpm in a monorepo would treat the project as a workspace member)
-    const child = spawn("npm", ["install", "--legacy-peer-deps"], {
+    const child = spawn("npm", ["install", "--legacy-peer-deps", "--ignore-scripts"], {
       cwd,
       shell: true,
       stdio: "pipe",
-      env: { ...process.env, FORCE_COLOR: "0" },
+      env: buildSafeEnv(undefined, { FORCE_COLOR: "0" }),
     });
 
     let stdout = "";

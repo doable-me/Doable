@@ -28,6 +28,19 @@ const PLAN_ALLOWED_TOOLS = new Set([
   "ask_clarification", "create_plan", "mark_step_complete",
 ]);
 
+// CLI built-in shell tools — redirected to our jailed run_command tool.
+// The CLI's bash tool runs on the host with no filesystem isolation.
+// Our run_command tool routes through vault.exec() which applies OS-level
+// sandboxing (systemd ProtectSystem on Linux, Job Objects on Windows).
+const REDIRECTED_SHELL_TOOLS = new Set([
+  "bash",
+  "shell",
+  "execute",
+  "run_command_cli",
+]);
+
+const SHELL_REDIRECT_MSG = "This tool is not available. Use the run_command tool to execute shell commands — it runs inside a sandboxed environment.";
+
 export class CopilotEngine {
   private pool: DoCorePool | null = null;
   private config: CopilotEngineConfig;
@@ -113,6 +126,13 @@ export class CopilotEngine {
         hooks: {
           onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
             config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs);
+            // Redirect CLI built-in shell tools to our jailed run_command
+            if (REDIRECTED_SHELL_TOOLS.has(input.toolName)) {
+              return {
+                permissionDecision: "deny" as const,
+                permissionDecisionReason: SHELL_REDIRECT_MSG,
+              };
+            }
             // Enforce plan mode: deny write/shell tools via SDK hook
             if (currentSessionId && this.sessionModes.get(currentSessionId) === "plan") {
               if (!PLAN_ALLOWED_TOOLS.has(input.toolName)) {
@@ -163,6 +183,13 @@ export class CopilotEngine {
           hooks: {
             onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
               config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs);
+              // Redirect CLI built-in shell tools to our jailed run_command
+              if (REDIRECTED_SHELL_TOOLS.has(input.toolName)) {
+                return {
+                  permissionDecision: "deny" as const,
+                  permissionDecisionReason: SHELL_REDIRECT_MSG,
+                };
+              }
               if (currentSessionId && this.sessionModes.get(currentSessionId) === "plan") {
                 if (!PLAN_ALLOWED_TOOLS.has(input.toolName)) {
                   console.log(`[CopilotEngine] Plan mode: denied tool '${input.toolName}'`);

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
+import { buildSafeEnv } from "../projects/safe-env.js";
 
 const BUILD_TIMEOUT_MS = 120_000;
 
@@ -79,11 +80,7 @@ export async function runBuild(
       cwd: projectDir,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        ...userEnvVars,
-        NODE_ENV: "production",
-      },
+      env: buildSafeEnv(userEnvVars, { NODE_ENV: "production" }),
     });
 
     const timeout = setTimeout(() => {

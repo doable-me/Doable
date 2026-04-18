@@ -114,6 +114,32 @@ export class WindowsBackend implements ResourceBackend {
   }
 
   /**
+   * Wrap a command for jailed execution.
+   *
+   * Windows doesn't have kernel-level filesystem isolation (no chroot/namespaces)
+   * without Hyper-V containers. This provides:
+   *   - Job Object: memory, CPU, task limits (OS-enforced)
+   *   - Kill-on-close: all children die when parent exits
+   *   - Network: proxy poisoning (HTTP-level block)
+   *   - V8 heap limit (Node.js processes)
+   *
+   * The jail path is passed to the caller for cwd enforcement but does NOT
+   * restrict filesystem access at the kernel level. The docore permission
+   * handler (command allowlist + path validation) remains the primary gate
+   * on Windows.
+   */
+  wrapExec(
+    command: string,
+    args: string[],
+    options: { limits: ResourceLimits; blockNetwork?: boolean; jail: string },
+  ): WrapResult {
+    // On Windows, wrapExec is identical to wrapSpawn — Job Objects handle
+    // resources, but true FS isolation requires containers (not available
+    // without Hyper-V). The jail parameter is used by the caller for cwd.
+    return this.wrapSpawn(command, args, options);
+  }
+
+  /**
    * Write the PowerShell wrapper script to temp (once, cached).
    */
   private ensureWrapperScript(): string {
