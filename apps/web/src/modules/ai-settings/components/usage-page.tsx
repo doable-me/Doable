@@ -5,9 +5,10 @@ import { apiListWorkspaces, type ApiWorkspace } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { MyUsageTab } from "./my-usage-tab";
 import { WorkspaceUsageTab } from "./workspace-usage-tab";
-import { BarChart3, Users } from "lucide-react";
+import { PlatformUsageTab } from "./platform-usage-tab";
+import { BarChart3, Users, Globe } from "lucide-react";
 
-type Tab = "my-usage" | "workspace-usage";
+type Tab = "my-usage" | "workspace-usage" | "platform-usage";
 
 export function UsagePage() {
   const { user } = useAuth();
@@ -35,6 +36,7 @@ export function UsagePage() {
   const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
     { key: "my-usage", label: "My Usage", icon: BarChart3 },
     { key: "workspace-usage", label: "Workspace Usage", icon: Users, adminOnly: true },
+    { key: "platform-usage", label: "Platform", icon: Globe, adminOnly: true },
   ];
   const tabs = allTabs.filter((t) => !t.adminOnly || isPlatformAdmin);
 
@@ -70,6 +72,7 @@ export function UsagePage() {
       {/* Tab content */}
       {activeTab === "my-usage" && <MyUsageTab workspaceId={activeWorkspaceId} />}
       {activeTab === "workspace-usage" && <WorkspaceUsageTab workspaceId={activeWorkspaceId} />}
+      {activeTab === "platform-usage" && <PlatformUsageTab />}
     </div>
   );
 }

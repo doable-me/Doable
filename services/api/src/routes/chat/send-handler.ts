@@ -135,10 +135,10 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
             resolveAiEngine(projectId, userId, { copilotAccountId, providerId, provider: provider as ByokProviderConfig | undefined, model }),
             sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`.catch(() => []),
           ]);
-          const { model: resolvedModel, provider: resolvedProvider, githubToken: resolvedGithubToken, modelSource, providerSource } = aiConfig;
+          const { model: resolvedModel, provider: resolvedProvider, githubToken: resolvedGithubToken, modelSource, providerSource, copilotAccountId: resolvedCopilotAccountId } = aiConfig;
           const workspaceId: string | undefined = workspaceRow[0]?.workspace_id;
 
-          state.usageCollector = workspaceId ? createUsageCollector({ userId, workspaceId, projectId, provider: resolvedProvider ? "byok" : "copilot", providerLabel: resolvedProvider?.type ?? "GitHub Copilot", byokProviderId: providerId, mode }) : null;
+          state.usageCollector = workspaceId ? createUsageCollector({ userId, workspaceId, projectId, provider: resolvedProvider ? "byok" : "copilot", providerLabel: resolvedProvider?.type ?? "GitHub Copilot", byokProviderId: providerId, copilotAccountId: resolvedCopilotAccountId, mode }) : null;
           state.traceCollector = workspaceId ? createTraceCollector({ projectId, userId, workspaceId, provider: resolvedProvider ? "byok" : "copilot", providerLabel: resolvedProvider?.type ?? "GitHub Copilot", model: resolvedModel }) : null;
           state.traceCollector?.onRequestStart(augmentedContent?.length ?? null, mode ?? "agent", !!(attachments?.length));
           state.traceCollector?.onStreamStart();

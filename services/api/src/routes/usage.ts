@@ -243,3 +243,150 @@ usageRoutes.get("/:workspaceId/usage/providers", async (c) => {
     return c.json({ error: "Failed to load provider usage" }, 500);
   }
 });
+
+// ─── GET /:workspaceId/usage/members/models ──────────────
+// Per-member model usage (admin only) - which models each user used
+usageRoutes.get("/:workspaceId/usage/members/models", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const userId = c.get("userId");
+
+  const err = await requireAdmin(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+
+    const breakdown = await usageService.getMemberModelBreakdown(workspaceId, from, to);
+    return c.json({ data: breakdown });
+  } catch (e) {
+    console.error("[Usage] GET /usage/members/models:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load member model breakdown" }, 500);
+  }
+});
+
+// ─── GET /:workspaceId/usage/copilot-accounts ────────────
+// Copilot account usage breakdown (admin only) - which accounts used by whom
+usageRoutes.get("/:workspaceId/usage/copilot-accounts", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const userId = c.get("userId");
+
+  const err = await requireAdmin(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+
+    const breakdown = await usageService.getCopilotAccountBreakdown(workspaceId, from, to);
+    return c.json({ data: breakdown });
+  } catch (e) {
+    console.error("[Usage] GET /usage/copilot-accounts:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load copilot account usage" }, 500);
+  }
+});
+
+// ─── GET /:workspaceId/usage/top-consumers ───────────────
+// Top token consumers (admin only) - users sorted by token usage
+usageRoutes.get("/:workspaceId/usage/top-consumers", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const userId = c.get("userId");
+
+  const err = await requireAdmin(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+    const limit = parseInt(c.req.query("limit") ?? "10", 10);
+
+    const consumers = await usageService.getTopTokenConsumers(workspaceId, from, to, limit);
+    return c.json({ data: consumers });
+  } catch (e) {
+    console.error("[Usage] GET /usage/top-consumers:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load top consumers" }, 500);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PLATFORM-WIDE ROUTES (for platform admins only - cross-workspace visibility)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function requirePlatformAdmin(userId: string): Promise<string | null> {
+  const [user] = await sql`SELECT is_platform_admin FROM users WHERE id = ${userId}`;
+  if (!user?.is_platform_admin) return "Requires platform admin access";
+  return null;
+}
+
+// ─── GET /platform/usage ─────────────────────────────────
+// Platform-wide usage summary (all workspaces)
+usageRoutes.get("/platform/usage", async (c) => {
+  const userId = c.get("userId");
+
+  const err = await requirePlatformAdmin(userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+
+    const summary = await usageService.getPlatformSummary(from, to);
+    return c.json({ data: summary });
+  } catch (e) {
+    console.error("[Usage] GET /platform/usage:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load platform usage" }, 500);
+  }
+});
+
+// ─── GET /platform/usage/users ───────────────────────────
+// All users across all workspaces with usage
+usageRoutes.get("/platform/usage/users", async (c) => {
+  const userId = c.get("userId");
+
+  const err = await requirePlatformAdmin(userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+    const limit = parseInt(c.req.query("limit") ?? "50", 10);
+
+    const users = await usageService.getPlatformUserBreakdown(from, to, limit);
+    return c.json({ data: users });
+  } catch (e) {
+    console.error("[Usage] GET /platform/usage/users:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load platform users" }, 500);
+  }
+});
+
+// ─── GET /platform/usage/copilot-accounts ────────────────
+// All copilot accounts with per-user usage breakdown
+usageRoutes.get("/platform/usage/copilot-accounts", async (c) => {
+  const userId = c.get("userId");
+
+  const err = await requirePlatformAdmin(userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+
+    const accounts = await usageService.getPlatformCopilotAccountUsage(from, to);
+    return c.json({ data: accounts });
+  } catch (e) {
+    console.error("[Usage] GET /platform/usage/copilot-accounts:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load copilot account usage" }, 500);
+  }
+});

@@ -20,6 +20,7 @@ export interface UsageCollectorContext {
   provider: "copilot" | "byok" | "local";
   providerLabel: string;
   byokProviderId?: string;
+  copilotAccountId?: string;
   isLocal?: boolean;
   mode?: string;
 }
@@ -308,7 +309,7 @@ export function createUsageCollector(ctx: UsageCollectorContext) {
             cached_tokens, total_tokens, tool_call_count,
             cache_creation_tokens, cache_read_tokens,
             estimated_cost_usd, duration_ms, ttft_ms,
-            tokens_available, byok_provider_id, is_local
+            tokens_available, byok_provider_id, copilot_account_id, is_local
           ) VALUES (
             ${ctx.userId}, ${ctx.workspaceId}, ${ctx.projectId},
             ${ctx.sessionId ?? null},
@@ -320,7 +321,7 @@ export function createUsageCollector(ctx: UsageCollectorContext) {
             ${cacheWriteTokens}, ${cacheReadTokens},
             ${costUsd}, ${duration || null}, ${ttft != null ? toNum(ttft) : null},
             ${inputTokens > 0 || outputTokens > 0},
-            ${ctx.byokProviderId ?? null}, ${ctx.isLocal ?? false}
+            ${ctx.byokProviderId ?? null}, ${ctx.copilotAccountId ?? null}, ${ctx.isLocal ?? false}
           )
         `;
 
