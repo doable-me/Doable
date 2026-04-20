@@ -457,7 +457,7 @@ export function usePlatformUsageSummary() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<{ data: PlatformUsageSummary }>("/platform/usage");
+      const res = await apiFetch<{ data: PlatformUsageSummary }>("/workspaces/platform/usage");
       setSummary(res.data);
     } catch (err) {
       console.error("Failed to load platform usage summary:", err);
@@ -477,7 +477,7 @@ export function usePlatformUsers(limit: number = 50) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<{ data: PlatformUser[] }>(`/platform/usage/users?limit=${limit}`);
+      const res = await apiFetch<{ data: PlatformUser[] }>(`/workspaces/platform/usage/users?limit=${limit}`);
       setUsers(res.data);
     } catch (err) {
       console.error("Failed to load platform users:", err);
@@ -497,7 +497,7 @@ export function usePlatformCopilotAccounts() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<{ data: PlatformCopilotAccount[] }>("/platform/usage/copilot-accounts");
+      const res = await apiFetch<{ data: PlatformCopilotAccount[] }>("/workspaces/platform/usage/copilot-accounts");
       setAccounts(res.data);
     } catch (err) {
       console.error("Failed to load platform copilot accounts:", err);
