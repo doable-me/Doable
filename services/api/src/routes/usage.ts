@@ -37,6 +37,89 @@ function parseDateParam(value: string | undefined, fallback: Date): Date {
   return isNaN(parsed.getTime()) ? fallback : parsed;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PLATFORM-WIDE ROUTES (for platform admins only - cross-workspace visibility)
+// These MUST be defined BEFORE /:workspaceId routes to avoid "platform" being
+// matched as a workspaceId.
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function requirePlatformAdmin(userId: string): Promise<string | null> {
+  const [user] = await sql`SELECT is_platform_admin FROM users WHERE id = ${userId}`;
+  if (!user?.is_platform_admin) return "Requires platform admin access";
+  return null;
+}
+
+// ─── GET /platform/usage ─────────────────────────────────
+// Platform-wide usage summary (all workspaces)
+usageRoutes.get("/platform/usage", async (c) => {
+  const userId = c.get("userId");
+
+  const err = await requirePlatformAdmin(userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+
+    const summary = await usageService.getPlatformSummary(from, to);
+    return c.json({ data: summary });
+  } catch (e) {
+    console.error("[Usage] GET /platform/usage:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load platform usage" }, 500);
+  }
+});
+
+// ─── GET /platform/usage/users ───────────────────────────
+// All users across all workspaces with usage
+usageRoutes.get("/platform/usage/users", async (c) => {
+  const userId = c.get("userId");
+
+  const err = await requirePlatformAdmin(userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+    const limit = parseInt(c.req.query("limit") ?? "50", 10);
+
+    const users = await usageService.getPlatformUserBreakdown(from, to, limit);
+    return c.json({ data: users });
+  } catch (e) {
+    console.error("[Usage] GET /platform/usage/users:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load platform users" }, 500);
+  }
+});
+
+// ─── GET /platform/usage/copilot-accounts ────────────────
+// All copilot accounts with per-user usage breakdown
+usageRoutes.get("/platform/usage/copilot-accounts", async (c) => {
+  const userId = c.get("userId");
+
+  const err = await requirePlatformAdmin(userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+
+    const accounts = await usageService.getPlatformCopilotAccountUsage(from, to);
+    return c.json({ data: accounts });
+  } catch (e) {
+    console.error("[Usage] GET /platform/usage/copilot-accounts:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load copilot account usage" }, 500);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKSPACE-SCOPED ROUTES
+// ═══════════════════════════════════════════════════════════════════════════
+
 // ─── GET /:workspaceId/usage/me ──────────────────────────
 // Current user's usage summary (today, this week, this month)
 usageRoutes.get("/:workspaceId/usage/me", async (c) => {
@@ -311,82 +394,5 @@ usageRoutes.get("/:workspaceId/usage/top-consumers", async (c) => {
   } catch (e) {
     console.error("[Usage] GET /usage/top-consumers:", e instanceof Error ? e.message : e);
     return c.json({ error: "Failed to load top consumers" }, 500);
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PLATFORM-WIDE ROUTES (for platform admins only - cross-workspace visibility)
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function requirePlatformAdmin(userId: string): Promise<string | null> {
-  const [user] = await sql`SELECT is_platform_admin FROM users WHERE id = ${userId}`;
-  if (!user?.is_platform_admin) return "Requires platform admin access";
-  return null;
-}
-
-// ─── GET /platform/usage ─────────────────────────────────
-// Platform-wide usage summary (all workspaces)
-usageRoutes.get("/platform/usage", async (c) => {
-  const userId = c.get("userId");
-
-  const err = await requirePlatformAdmin(userId);
-  if (err) return c.json({ error: err }, 403);
-
-  try {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const from = parseDateParam(c.req.query("from"), monthStart);
-    const to = parseDateParam(c.req.query("to"), now);
-
-    const summary = await usageService.getPlatformSummary(from, to);
-    return c.json({ data: summary });
-  } catch (e) {
-    console.error("[Usage] GET /platform/usage:", e instanceof Error ? e.message : e);
-    return c.json({ error: "Failed to load platform usage" }, 500);
-  }
-});
-
-// ─── GET /platform/usage/users ───────────────────────────
-// All users across all workspaces with usage
-usageRoutes.get("/platform/usage/users", async (c) => {
-  const userId = c.get("userId");
-
-  const err = await requirePlatformAdmin(userId);
-  if (err) return c.json({ error: err }, 403);
-
-  try {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const from = parseDateParam(c.req.query("from"), monthStart);
-    const to = parseDateParam(c.req.query("to"), now);
-    const limit = parseInt(c.req.query("limit") ?? "50", 10);
-
-    const users = await usageService.getPlatformUserBreakdown(from, to, limit);
-    return c.json({ data: users });
-  } catch (e) {
-    console.error("[Usage] GET /platform/usage/users:", e instanceof Error ? e.message : e);
-    return c.json({ error: "Failed to load platform users" }, 500);
-  }
-});
-
-// ─── GET /platform/usage/copilot-accounts ────────────────
-// All copilot accounts with per-user usage breakdown
-usageRoutes.get("/platform/usage/copilot-accounts", async (c) => {
-  const userId = c.get("userId");
-
-  const err = await requirePlatformAdmin(userId);
-  if (err) return c.json({ error: err }, 403);
-
-  try {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const from = parseDateParam(c.req.query("from"), monthStart);
-    const to = parseDateParam(c.req.query("to"), now);
-
-    const accounts = await usageService.getPlatformCopilotAccountUsage(from, to);
-    return c.json({ data: accounts });
-  } catch (e) {
-    console.error("[Usage] GET /platform/usage/copilot-accounts:", e instanceof Error ? e.message : e);
-    return c.json({ error: "Failed to load copilot account usage" }, 500);
   }
 });
