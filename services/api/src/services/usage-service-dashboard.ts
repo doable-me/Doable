@@ -620,6 +620,91 @@ export class UsageService extends UsageServiceBase {
       requestCount: Number(r.request_count),
     }));
   }
+
+  /**
+   * Get platform-wide model usage breakdown.
+   * Shows which models are used across the platform, with per-user breakdown.
+   */
+  async getPlatformModelBreakdown(
+    from: Date,
+    to: Date,
+  ): Promise<
+    Array<{
+      model: string;
+      provider: string | null;
+      totalTokens: number;
+      totalCostUsd: number;
+      requestCount: number;
+      userCount: number;
+      users: Array<{
+        userId: string;
+        email: string;
+        displayName: string | null;
+        workspaceName: string;
+        totalTokens: number;
+        requestCount: number;
+      }>;
+    }>
+  > {
+    // Aggregate per model
+    const modelRows = await sql`
+      SELECT
+        l.model, l.provider,
+        COUNT(*)::int AS request_count,
+        COUNT(DISTINCT l.user_id)::int AS user_count,
+        COALESCE(SUM(l.total_tokens), 0)::bigint AS total_tokens,
+        COALESCE(SUM(l.estimated_cost_usd), 0)::numeric AS total_cost_usd
+      FROM ai_usage_log l
+      WHERE l.created_at >= ${from}
+        AND l.created_at <= ${to}
+        AND l.model IS NOT NULL
+      GROUP BY l.model, l.provider
+      ORDER BY total_tokens DESC
+    `;
+
+    // Per-user per-model breakdown
+    const userRows = await sql`
+      SELECT
+        l.model, l.user_id, u.email, u.display_name, w.name AS workspace_name,
+        COALESCE(SUM(l.total_tokens), 0)::bigint AS total_tokens,
+        COUNT(*)::int AS request_count
+      FROM ai_usage_log l
+      INNER JOIN users u ON u.id = l.user_id
+      INNER JOIN workspaces w ON w.id = l.workspace_id
+      WHERE l.created_at >= ${from}
+        AND l.created_at <= ${to}
+        AND l.model IS NOT NULL
+      GROUP BY l.model, l.user_id, u.email, u.display_name, w.name
+      ORDER BY total_tokens DESC
+    `;
+
+    const usersByModel = new Map<
+      string,
+      Array<{ userId: string; email: string; displayName: string | null; workspaceName: string; totalTokens: number; requestCount: number }>
+    >();
+    for (const row of userRows) {
+      const model = String(row.model);
+      if (!usersByModel.has(model)) usersByModel.set(model, []);
+      usersByModel.get(model)!.push({
+        userId: String(row.user_id),
+        email: String(row.email),
+        displayName: row.display_name ? String(row.display_name) : null,
+        workspaceName: String(row.workspace_name),
+        totalTokens: Number(row.total_tokens),
+        requestCount: Number(row.request_count),
+      });
+    }
+
+    return modelRows.map((r) => ({
+      model: String(r.model),
+      provider: r.provider ? String(r.provider) : null,
+      totalTokens: Number(r.total_tokens),
+      totalCostUsd: Math.round(Number(r.total_cost_usd) * 1_000_000) / 1_000_000,
+      requestCount: Number(r.request_count),
+      userCount: Number(r.user_count),
+      users: usersByModel.get(String(r.model)) ?? [],
+    }));
+  }
 }
 
 // ─── Singleton ─────────────────────────────────────────────

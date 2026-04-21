@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Users, DollarSign, Zap, Hash, Globe, Building2, Github, ChevronDown, ChevronRight, Crown } from "lucide-react";
+import { Users, DollarSign, Zap, Hash, Globe, Building2, Github, ChevronDown, ChevronRight, Crown, Cpu } from "lucide-react";
 import {
   usePlatformUsageSummary,
   usePlatformUsers,
   usePlatformCopilotAccounts,
+  usePlatformModels,
   type PlatformUser,
   type PlatformCopilotAccount,
+  type PlatformModelUsage,
 } from "../hooks/use-usage";
 import { formatTokenCount, formatCost } from "../utils/format-usage";
 
@@ -61,6 +63,7 @@ export function PlatformUsageTab() {
   const { summary, loading: summaryLoading } = usePlatformUsageSummary();
   const { users, loading: usersLoading } = usePlatformUsers(100);
   const { accounts, loading: accountsLoading } = usePlatformCopilotAccounts();
+  const { models, loading: modelsLoading } = usePlatformModels();
 
   const loading = summaryLoading || usersLoading || accountsLoading;
   const empty = !loading && (!summary || summary.requestCount === 0);
@@ -129,6 +132,24 @@ export function PlatformUsageTab() {
           <p className="text-xs text-zinc-500">No users with usage data.</p>
         ) : (
           <PlatformUsersList users={users} />
+        )}
+      </div>
+
+      {/* ── Model Usage Breakdown ── */}
+      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
+        <h3 className="text-sm font-medium text-white mb-5 flex items-center gap-2">
+          <Cpu className="h-4 w-4 text-violet-400" /> Model Usage Breakdown
+        </h3>
+        {modelsLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full rounded-xl" />
+            ))}
+          </div>
+        ) : models.length === 0 ? (
+          <p className="text-xs text-zinc-500">No model usage data.</p>
+        ) : (
+          <PlatformModelsList models={models} />
         )}
       </div>
 
@@ -287,6 +308,96 @@ function PlatformCopilotAccountsList({ accounts }: { accounts: PlatformCopilotAc
                       <div className="flex items-center gap-3 shrink-0">
                         <span className="text-[10px] text-zinc-500 tabular-nums">{u.requestCount} reqs</span>
                         <span className="text-xs text-blue-400 tabular-nums">{formatTokenCount(u.totalTokens)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Platform Models List ──────────────────────────────────────────────
+function PlatformModelsList({ models }: { models: PlatformModelUsage[] }) {
+  const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
+  const maxTokens = Math.max(...models.map((m) => m.totalTokens), 1);
+
+  const toggle = (model: string) => {
+    setExpandedModels((prev) => {
+      const next = new Set(prev);
+      if (next.has(model)) next.delete(model);
+      else next.add(model);
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      {models.map((m) => {
+        const isExpanded = expandedModels.has(m.model);
+        const pct = (m.totalTokens / maxTokens) * 100;
+        const hasUsers = m.users && m.users.length > 0;
+
+        return (
+          <div key={m.model} className="rounded-xl bg-zinc-800/40 overflow-hidden">
+            <button
+              onClick={() => hasUsers && toggle(m.model)}
+              className={`w-full text-left p-3 ${hasUsers ? "hover:bg-zinc-800/60 cursor-pointer" : ""} transition-colors`}
+              disabled={!hasUsers}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {hasUsers && (
+                    <span className="text-zinc-500">
+                      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </span>
+                  )}
+                  <Cpu className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-sm text-zinc-200 font-medium truncate">{m.model}</div>
+                    <div className="text-[10px] text-zinc-500 flex items-center gap-2">
+                      {m.provider && <span className="px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-400">{m.provider}</span>}
+                      <span>{m.userCount} user{m.userCount !== 1 ? "s" : ""}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 shrink-0">
+                  <span className="text-xs text-zinc-400 tabular-nums">{m.requestCount} reqs</span>
+                  <span className="text-xs text-blue-400 font-medium tabular-nums">{formatTokenCount(m.totalTokens)}</span>
+                  <span className="text-xs text-zinc-300 font-medium tabular-nums">{formatCost(m.totalCostUsd)}</span>
+                </div>
+              </div>
+              <div className="h-1.5 rounded-full bg-zinc-700/50 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-violet-500 to-violet-400 rounded-full transition-all duration-500"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </button>
+
+            {isExpanded && hasUsers && (
+              <div className="px-4 pb-3 pt-1 border-t border-zinc-700/50">
+                <div className="text-[10px] uppercase text-zinc-500 mb-2 tracking-wider">Used by</div>
+                <div className="space-y-1.5">
+                  {m.users.map((u) => (
+                    <div
+                      key={`${u.userId}-${u.workspaceName}`}
+                      className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-zinc-800/30"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs text-zinc-300 truncate">{u.displayName || u.email}</div>
+                        <div className="text-[10px] text-zinc-500 truncate flex items-center gap-1.5">
+                          {u.displayName && <span>{u.email}</span>}
+                          <span className="px-1.5 py-0.5 rounded bg-zinc-700/40">{u.workspaceName}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-[10px] text-zinc-500 tabular-nums">{u.requestCount} reqs</span>
+                        <span className="text-xs text-violet-400 tabular-nums">{formatTokenCount(u.totalTokens)}</span>
                       </div>
                     </div>
                   ))}

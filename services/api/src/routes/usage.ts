@@ -116,6 +116,28 @@ usageRoutes.get("/platform/usage/copilot-accounts", async (c) => {
   }
 });
 
+// ─── GET /platform/usage/models ──────────────────────────
+// Platform-wide model usage breakdown with per-user details
+usageRoutes.get("/platform/usage/models", async (c) => {
+  const userId = c.get("userId");
+
+  const err = await requirePlatformAdmin(userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+
+    const models = await usageService.getPlatformModelBreakdown(from, to);
+    return c.json({ data: models });
+  } catch (e) {
+    console.error("[Usage] GET /platform/usage/models:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load platform model usage" }, 500);
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // WORKSPACE-SCOPED ROUTES
 // ═══════════════════════════════════════════════════════════════════════════

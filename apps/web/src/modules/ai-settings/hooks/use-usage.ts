@@ -509,3 +509,40 @@ export function usePlatformCopilotAccounts() {
   useEffect(() => { refresh(); }, [refresh]);
   return { accounts, loading, refresh };
 }
+
+export interface PlatformModelUsage {
+  model: string;
+  provider: string | null;
+  totalTokens: number;
+  totalCostUsd: number;
+  requestCount: number;
+  userCount: number;
+  users: Array<{
+    userId: string;
+    email: string;
+    displayName: string | null;
+    workspaceName: string;
+    totalTokens: number;
+    requestCount: number;
+  }>;
+}
+
+export function usePlatformModels() {
+  const [models, setModels] = useState<PlatformModelUsage[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ data: PlatformModelUsage[] }>("/workspaces/platform/usage/models");
+      setModels(res.data);
+    } catch (err) {
+      console.error("Failed to load platform models:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+  return { models, loading, refresh };
+}
