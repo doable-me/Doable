@@ -423,6 +423,18 @@ export interface PlatformUsageSummary extends UsageSummary {
   userCount: number;
 }
 
+export interface PlatformUserSource {
+  kind: "copilot" | "provider" | "direct";
+  label: string;
+  githubLogin: string | null;
+  providerType: string | null;
+  ownerEmail: string | null;
+  ownerDisplayName: string | null;
+  totalTokens: number;
+  requestCount: number;
+  models: PlatformUserModelUsage[];
+}
+
 export interface PlatformUser {
   userId: string;
   email: string;
@@ -435,6 +447,7 @@ export interface PlatformUser {
   totalCostUsd: number;
   requestCount: number;
   lastUsedAt: string;
+  sources: PlatformUserSource[];
 }
 
 export interface PlatformUserModelUsage {
@@ -452,12 +465,19 @@ export interface PlatformSubscriptionUser {
   models: PlatformUserModelUsage[];
 }
 
+export interface PlatformSubscriptionOwner {
+  email: string;
+  displayName: string | null;
+}
+
 export interface PlatformCopilotAccount {
   githubLogin: string;
   label: string;
   workspaceNames: string[];
   workspaceCount: number;
   userCount: number;
+  addedAt: string | null;
+  owners: PlatformSubscriptionOwner[];
   users: PlatformSubscriptionUser[];
   totalTokens: number;
   totalCostUsd: number;
@@ -470,6 +490,8 @@ export interface PlatformCustomProvider {
   workspaceNames: string[];
   workspaceCount: number;
   userCount: number;
+  addedAt: string | null;
+  owners: PlatformSubscriptionOwner[];
   users: PlatformSubscriptionUser[];
   totalTokens: number;
   totalCostUsd: number;

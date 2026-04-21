@@ -501,6 +501,17 @@ export class UsageService extends UsageServiceBase {
       totalCostUsd: number;
       requestCount: number;
       lastUsedAt: string;
+      sources: Array<{
+        kind: "copilot" | "provider" | "direct";
+        label: string;
+        githubLogin: string | null;
+        providerType: string | null;
+        ownerEmail: string | null;
+        ownerDisplayName: string | null;
+        totalTokens: number;
+        requestCount: number;
+        models: Array<{ model: string; totalTokens: number; requestCount: number }>;
+      }>;
     }>
   > {
     const rows = await sql`
@@ -523,19 +534,146 @@ export class UsageService extends UsageServiceBase {
       LIMIT ${limit}
     `;
 
-    return rows.map((r) => ({
-      userId: String(r.user_id),
-      email: String(r.email),
-      displayName: r.display_name ? String(r.display_name) : null,
-      workspaceId: String(r.workspace_id),
-      workspaceName: String(r.workspace_name),
-      totalTokens: Number(r.total_tokens),
-      promptTokens: Number(r.prompt_tokens),
-      completionTokens: Number(r.completion_tokens),
-      totalCostUsd: Math.round(Number(r.total_cost_usd) * 1_000_000) / 1_000_000,
-      requestCount: Number(r.request_count),
-      lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : "",
-    }));
+    // Per user → per source (copilot account / byok provider / direct) → per model.
+    // We dedupe copilot accounts by github_login and providers by (provider_type, label),
+    // matching the grouping used in the Copilot / Custom Provider tabs.
+    const sourceRows = await sql`
+      SELECT
+        l.user_id,
+        CASE
+          WHEN l.copilot_account_id IS NOT NULL THEN 'copilot'
+          WHEN l.byok_provider_id   IS NOT NULL THEN 'provider'
+          ELSE 'direct'
+        END AS kind,
+        gca.github_login,
+        ap.provider_type::text AS provider_type,
+        ap.label AS provider_label,
+        gca.label AS copilot_label,
+        owner.email AS owner_email,
+        owner.display_name AS owner_display_name,
+        l.model,
+        COALESCE(SUM(l.total_tokens), 0)::bigint AS total_tokens,
+        COUNT(*)::int AS request_count
+      FROM ai_usage_log l
+      LEFT JOIN github_copilot_accounts gca ON gca.id = l.copilot_account_id
+      LEFT JOIN ai_providers ap ON ap.id = l.byok_provider_id
+      LEFT JOIN users owner ON owner.id = COALESCE(gca.added_by, ap.added_by)
+      WHERE l.created_at >= ${from}
+        AND l.created_at <= ${to}
+      GROUP BY
+        l.user_id,
+        kind,
+        gca.github_login,
+        ap.provider_type,
+        ap.label,
+        gca.label,
+        owner.email,
+        owner.display_name,
+        l.model
+    `;
+
+    type SourceEntry = {
+      kind: "copilot" | "provider" | "direct";
+      label: string;
+      githubLogin: string | null;
+      providerType: string | null;
+      ownerEmail: string | null;
+      ownerDisplayName: string | null;
+      totalTokens: number;
+      requestCount: number;
+      modelsMap: Map<string, { model: string; totalTokens: number; requestCount: number }>;
+    };
+    const sourcesByUser = new Map<string, Map<string, SourceEntry>>();
+    for (const row of sourceRows) {
+      const userId = String(row.user_id);
+      const kind = String(row.kind) as "copilot" | "provider" | "direct";
+      const githubLogin = row.github_login ? String(row.github_login) : null;
+      const providerType = row.provider_type ? String(row.provider_type) : null;
+      const providerLabel = row.provider_label ? String(row.provider_label) : null;
+      const copilotLabel = row.copilot_label ? String(row.copilot_label) : null;
+      const model = row.model ? String(row.model) : "(unknown)";
+      const tokens = Number(row.total_tokens);
+      const reqs = Number(row.request_count);
+
+      const label =
+        kind === "copilot"
+          ? copilotLabel || githubLogin || "Copilot"
+          : kind === "provider"
+            ? providerLabel || providerType || "Provider"
+            : "Direct (no account)";
+      const sourceKey =
+        kind === "copilot"
+          ? `copilot|${githubLogin ?? ""}`
+          : kind === "provider"
+            ? `provider|${providerType ?? ""}|${providerLabel ?? ""}`
+            : "direct";
+
+      let bySource = sourcesByUser.get(userId);
+      if (!bySource) {
+        bySource = new Map();
+        sourcesByUser.set(userId, bySource);
+      }
+      let entry = bySource.get(sourceKey);
+      if (!entry) {
+        entry = {
+          kind,
+          label,
+          githubLogin,
+          providerType,
+          ownerEmail: row.owner_email ? String(row.owner_email) : null,
+          ownerDisplayName: row.owner_display_name ? String(row.owner_display_name) : null,
+          totalTokens: 0,
+          requestCount: 0,
+          modelsMap: new Map(),
+        };
+        bySource.set(sourceKey, entry);
+      }
+      entry.totalTokens += tokens;
+      entry.requestCount += reqs;
+
+      const mk = entry.modelsMap.get(model);
+      if (mk) {
+        mk.totalTokens += tokens;
+        mk.requestCount += reqs;
+      } else {
+        entry.modelsMap.set(model, { model, totalTokens: tokens, requestCount: reqs });
+      }
+    }
+
+    return rows.map((r) => {
+      const userId = String(r.user_id);
+      const srcMap = sourcesByUser.get(userId);
+      const sources = srcMap
+        ? Array.from(srcMap.values())
+            .map((s) => ({
+              kind: s.kind,
+              label: s.label,
+              githubLogin: s.githubLogin,
+              providerType: s.providerType,
+              ownerEmail: s.ownerEmail,
+              ownerDisplayName: s.ownerDisplayName,
+              totalTokens: s.totalTokens,
+              requestCount: s.requestCount,
+              models: Array.from(s.modelsMap.values()).sort((a, b) => b.totalTokens - a.totalTokens),
+            }))
+            .sort((a, b) => b.totalTokens - a.totalTokens)
+        : [];
+
+      return {
+        userId,
+        email: String(r.email),
+        displayName: r.display_name ? String(r.display_name) : null,
+        workspaceId: String(r.workspace_id),
+        workspaceName: String(r.workspace_name),
+        totalTokens: Number(r.total_tokens),
+        promptTokens: Number(r.prompt_tokens),
+        completionTokens: Number(r.completion_tokens),
+        totalCostUsd: Math.round(Number(r.total_cost_usd) * 1_000_000) / 1_000_000,
+        requestCount: Number(r.request_count),
+        lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : "",
+        sources,
+      };
+    });
   }
 
   /**
@@ -561,6 +699,8 @@ export class UsageService extends UsageServiceBase {
       workspaceNames: string[];
       workspaceCount: number;
       userCount: number;
+      addedAt: string | null;
+      owners: Array<{ email: string; displayName: string | null }>;
       users: Array<{
         userId: string;
         email: string;
@@ -579,6 +719,7 @@ export class UsageService extends UsageServiceBase {
       SELECT
         gca.github_login,
         MAX(gca.label) AS label,
+        MIN(gca.created_at) AS added_at,
         ARRAY_AGG(DISTINCT w.name ORDER BY w.name) AS workspace_names,
         COUNT(DISTINCT gca.id)::int AS workspace_count,
         COUNT(DISTINCT l.user_id)::int AS user_count,
@@ -593,6 +734,23 @@ export class UsageService extends UsageServiceBase {
       GROUP BY gca.github_login
       ORDER BY total_tokens DESC
     `;
+
+    // Collect owners (added_by) per github_login — a subscription linked to
+    // multiple workspaces may have been added by different users.
+    const ownerRows = await sql`
+      SELECT DISTINCT gca.github_login, owner.email, owner.display_name
+      FROM github_copilot_accounts gca
+      INNER JOIN users owner ON owner.id = gca.added_by
+    `;
+    const ownersByLogin = new Map<string, Array<{ email: string; displayName: string | null }>>();
+    for (const row of ownerRows) {
+      const login = String(row.github_login);
+      if (!ownersByLogin.has(login)) ownersByLogin.set(login, []);
+      ownersByLogin.get(login)!.push({
+        email: String(row.email),
+        displayName: row.display_name ? String(row.display_name) : null,
+      });
+    }
 
     // Per-user per-model breakdown, keyed by github_login.
     const userModelRows = await sql`
@@ -664,6 +822,8 @@ export class UsageService extends UsageServiceBase {
         workspaceNames: (r.workspace_names as string[]) ?? [],
         workspaceCount: Number(r.workspace_count),
         userCount: Number(r.user_count),
+        addedAt: r.added_at ? new Date(r.added_at).toISOString() : null,
+        owners: ownersByLogin.get(login) ?? [],
         users,
         totalTokens: Number(r.total_tokens),
         totalCostUsd: Math.round(Number(r.total_cost_usd) * 1_000_000) / 1_000_000,
@@ -688,6 +848,8 @@ export class UsageService extends UsageServiceBase {
       workspaceNames: string[];
       workspaceCount: number;
       userCount: number;
+      addedAt: string | null;
+      owners: Array<{ email: string; displayName: string | null }>;
       users: Array<{
         userId: string;
         email: string;
@@ -705,6 +867,7 @@ export class UsageService extends UsageServiceBase {
       SELECT
         ap.provider_type::text AS provider_type,
         ap.label,
+        MIN(ap.created_at) AS added_at,
         ARRAY_AGG(DISTINCT w.name ORDER BY w.name) AS workspace_names,
         COUNT(DISTINCT ap.id)::int AS workspace_count,
         COUNT(DISTINCT l.user_id)::int AS user_count,
@@ -719,6 +882,22 @@ export class UsageService extends UsageServiceBase {
       GROUP BY ap.provider_type, ap.label
       ORDER BY total_tokens DESC
     `;
+
+    const ownerRows = await sql`
+      SELECT DISTINCT ap.provider_type::text AS provider_type, ap.label,
+                      owner.email, owner.display_name
+      FROM ai_providers ap
+      INNER JOIN users owner ON owner.id = ap.added_by
+    `;
+    const ownersByKey = new Map<string, Array<{ email: string; displayName: string | null }>>();
+    for (const row of ownerRows) {
+      const key = `${String(row.provider_type)}|${String(row.label)}`;
+      if (!ownersByKey.has(key)) ownersByKey.set(key, []);
+      ownersByKey.get(key)!.push({
+        email: String(row.email),
+        displayName: row.display_name ? String(row.display_name) : null,
+      });
+    }
 
     const userModelRows = await sql`
       SELECT
@@ -789,6 +968,8 @@ export class UsageService extends UsageServiceBase {
         workspaceNames: (r.workspace_names as string[]) ?? [],
         workspaceCount: Number(r.workspace_count),
         userCount: Number(r.user_count),
+        addedAt: r.added_at ? new Date(r.added_at).toISOString() : null,
+        owners: ownersByKey.get(key) ?? [],
         users,
         totalTokens: Number(r.total_tokens),
         totalCostUsd: Math.round(Number(r.total_cost_usd) * 1_000_000) / 1_000_000,

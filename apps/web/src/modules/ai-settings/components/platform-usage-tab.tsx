@@ -12,6 +12,7 @@ import {
   type PlatformCopilotAccount,
   type PlatformCustomProvider,
   type PlatformSubscriptionUser,
+  type PlatformSubscriptionOwner,
   type PlatformModelUsage,
 } from "../hooks/use-usage";
 import { formatTokenCount, formatCost } from "../utils/format-usage";
@@ -197,6 +198,8 @@ export function PlatformUsageTab() {
                 workspaceNames: a.workspaceNames,
                 workspaceCount: a.workspaceCount,
                 userCount: a.userCount,
+                addedAt: a.addedAt,
+                owners: a.owners,
                 users: a.users,
                 totalTokens: a.totalTokens,
                 totalCostUsd: a.totalCostUsd,
@@ -233,6 +236,8 @@ export function PlatformUsageTab() {
                 workspaceNames: p.workspaceNames,
                 workspaceCount: p.workspaceCount,
                 userCount: p.userCount,
+                addedAt: p.addedAt,
+                owners: p.owners,
                 users: p.users,
                 totalTokens: p.totalTokens,
                 totalCostUsd: p.totalCostUsd,
@@ -270,7 +275,7 @@ function PlatformUsersList({ users }: { users: PlatformUser[] }) {
   const maxTokens = Math.max(...users.map((u) => u.totalTokens), 1);
 
   return (
-    <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+    <div className="space-y-2 pr-1">
       {users.map((u, i) => {
         const pct = (u.totalTokens / maxTokens) * 100;
         const rank = i + 1;
@@ -279,7 +284,7 @@ function PlatformUsersList({ users }: { users: PlatformUser[] }) {
         return (
           <div
             key={`${u.userId}-${u.workspaceId}`}
-            className="group rounded-xl bg-zinc-800/40 p-3 hover:bg-zinc-800/60 transition-all duration-200"
+            className="group relative rounded-xl bg-zinc-800/40 p-3 hover:bg-zinc-800/60 transition-all duration-200"
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -312,6 +317,68 @@ function PlatformUsersList({ users }: { users: PlatformUser[] }) {
                 style={{ width: `${pct}%` }}
               />
             </div>
+
+            {/* Hover popup: usage breakdown by source + models */}
+            {u.sources && u.sources.length > 0 && (
+              <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-[420px] max-w-[90vw] -translate-x-1/2 group-hover:block">
+                <div className="rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-3 max-h-[400px] overflow-y-auto pointer-events-auto">
+                  <div className="text-[10px] uppercase text-zinc-500 mb-2 tracking-wider">
+                    Usage breakdown — {u.displayName || u.email}
+                  </div>
+                  <div className="space-y-2">
+                    {u.sources.map((s, idx) => (
+                      <div key={`${s.kind}-${s.label}-${idx}`} className="rounded-lg bg-zinc-800/60 p-2">
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {s.kind === "copilot" ? (
+                              <Github className="h-3 w-3 text-blue-400 shrink-0" />
+                            ) : s.kind === "provider" ? (
+                              <Key className="h-3 w-3 text-emerald-400 shrink-0" />
+                            ) : (
+                              <Cpu className="h-3 w-3 text-zinc-400 shrink-0" />
+                            )}
+                            <span className="text-xs text-zinc-200 font-medium truncate">{s.label}</span>
+                            {s.githubLogin && (
+                              <span className="text-[10px] text-zinc-500 truncate">@{s.githubLogin}</span>
+                            )}
+                            {s.providerType && (
+                              <span className="text-[10px] text-zinc-500 uppercase">{s.providerType}</span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-blue-400 tabular-nums shrink-0">
+                            {formatTokenCount(s.totalTokens)}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-zinc-500 mb-1.5">
+                          {s.ownerEmail ? (
+                            <>
+                              Owned by <span className="text-zinc-400">{s.ownerDisplayName || s.ownerEmail}</span>
+                              {s.ownerDisplayName && <span className="text-zinc-600"> ({s.ownerEmail})</span>}
+                            </>
+                          ) : (
+                            <span className="text-zinc-600">No owner record</span>
+                          )}
+                        </div>
+                        <div className="space-y-0.5">
+                          {s.models.map((m) => (
+                            <div
+                              key={`${s.label}-${m.model}`}
+                              className="flex items-center justify-between text-[11px] py-0.5"
+                            >
+                              <span className="text-zinc-300 truncate">{m.model}</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-[10px] text-zinc-500 tabular-nums">{m.requestCount} reqs</span>
+                                <span className="text-violet-400 tabular-nums">{formatTokenCount(m.totalTokens)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       })}
@@ -328,11 +395,36 @@ type SubscriptionRow = {
   workspaceNames: string[];
   workspaceCount: number;
   userCount: number;
+  addedAt: string | null;
+  owners: PlatformSubscriptionOwner[];
   users: PlatformSubscriptionUser[];
   totalTokens: number;
   totalCostUsd: number;
   requestCount: number;
 };
+
+function formatAddedAt(iso: string | null): string {
+  if (!iso) return "unknown";
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function formatOwners(owners: PlatformSubscriptionOwner[]): string {
+  if (owners.length === 0) return "unknown owner";
+  const labels = owners.map((o) => o.displayName || o.email);
+  if (labels.length === 1) return labels[0];
+  if (labels.length <= 3) return labels.join(", ");
+  return `${labels.slice(0, 2).join(", ")} + ${labels.length - 2} more`;
+}
 
 function SubscriptionsList({ items }: { items: SubscriptionRow[] }) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -372,18 +464,24 @@ function SubscriptionsList({ items }: { items: SubscriptionRow[] }) {
                     {row.title}
                     <span className="text-[10px] text-zinc-500">{row.subtitle}</span>
                   </div>
-                  <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5">
-                    <Building2 className="h-3 w-3" />
-                    <span className="truncate max-w-[260px]" title={row.workspaceNames.join(", ")}>
-                      {row.workspaceCount === 0
-                        ? "no workspaces"
-                        : row.workspaceCount === 1
-                          ? row.workspaceNames[0]
-                          : `${row.workspaceCount} workspaces: ${row.workspaceNames.slice(0, 3).join(", ")}${row.workspaceCount > 3 ? ", …" : ""}`}
+                  <div className="text-[10px] text-zinc-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                    <span className="flex items-center gap-1">
+                      <Building2 className="h-3 w-3" />
+                      <span className="truncate max-w-[260px]" title={row.workspaceNames.join(", ")}>
+                        {row.workspaceCount === 0
+                          ? "no workspaces"
+                          : row.workspaceCount === 1
+                            ? row.workspaceNames[0]
+                            : `${row.workspaceCount} workspaces: ${row.workspaceNames.slice(0, 3).join(", ")}${row.workspaceCount > 3 ? ", …" : ""}`}
+                      </span>
                     </span>
                     <span>
-                      • {row.userCount} user{row.userCount !== 1 ? "s" : ""}
+                      {row.userCount} user{row.userCount !== 1 ? "s" : ""}
                     </span>
+                    <span title={row.owners.map((o) => o.email).join(", ")}>
+                      added by <span className="text-zinc-400">{formatOwners(row.owners)}</span>
+                    </span>
+                    <span>on {formatAddedAt(row.addedAt)}</span>
                   </div>
                 </div>
               </div>
