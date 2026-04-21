@@ -539,7 +539,16 @@ export class UsageService extends UsageServiceBase {
   }
 
   /**
-   * Get all copilot account usage across all workspaces.
+   * Get all copilot account usage across all workspaces, deduped by github_login.
+   *
+   * Each GitHub Copilot subscription (identified by `github_login`) may be
+   * linked to multiple workspaces — we aggregate those together so admins see
+   * one row per subscription instead of one row per (workspace, subscription).
+   *
+   * Per subscription we include:
+   *   - list of workspace names the subscription is linked to
+   *   - per-user breakdown, and within each user, which models they used
+   *
    * For platform admins only.
    */
   async getPlatformCopilotAccountUsage(
@@ -547,23 +556,31 @@ export class UsageService extends UsageServiceBase {
     to: Date,
   ): Promise<
     Array<{
-      copilotAccountId: string;
-      label: string;
       githubLogin: string;
-      workspaceId: string;
-      workspaceName: string;
+      label: string;
+      workspaceNames: string[];
+      workspaceCount: number;
       userCount: number;
-      users: Array<{ userId: string; email: string; displayName: string | null; totalTokens: number; requestCount: number }>;
+      users: Array<{
+        userId: string;
+        email: string;
+        displayName: string | null;
+        totalTokens: number;
+        requestCount: number;
+        models: Array<{ model: string; totalTokens: number; requestCount: number }>;
+      }>;
       totalTokens: number;
       totalCostUsd: number;
       requestCount: number;
     }>
   > {
-    // Get all copilot accounts with aggregates
+    // Aggregate per github_login (one row per actual Copilot subscription).
     const accountRows = await sql`
       SELECT
-        gca.id AS copilot_account_id, gca.label, gca.github_login,
-        gca.workspace_id, w.name AS workspace_name,
+        gca.github_login,
+        MAX(gca.label) AS label,
+        ARRAY_AGG(DISTINCT w.name ORDER BY w.name) AS workspace_names,
+        COUNT(DISTINCT gca.id)::int AS workspace_count,
         COUNT(DISTINCT l.user_id)::int AS user_count,
         COALESCE(SUM(l.total_tokens), 0)::bigint AS total_tokens,
         COALESCE(SUM(l.estimated_cost_usd), 0)::numeric AS total_cost_usd,
@@ -573,52 +590,211 @@ export class UsageService extends UsageServiceBase {
       LEFT JOIN ai_usage_log l ON l.copilot_account_id = gca.id
         AND l.created_at >= ${from}
         AND l.created_at <= ${to}
-      GROUP BY gca.id, gca.label, gca.github_login, gca.workspace_id, w.name
+      GROUP BY gca.github_login
       ORDER BY total_tokens DESC
     `;
 
-    // Get per-user breakdown for each copilot account
-    const userRows = await sql`
+    // Per-user per-model breakdown, keyed by github_login.
+    const userModelRows = await sql`
       SELECT
-        l.copilot_account_id,
+        gca.github_login,
         l.user_id, u.email, u.display_name,
+        l.model,
         COALESCE(SUM(l.total_tokens), 0)::bigint AS total_tokens,
         COUNT(*)::int AS request_count
       FROM ai_usage_log l
+      INNER JOIN github_copilot_accounts gca ON gca.id = l.copilot_account_id
       INNER JOIN users u ON u.id = l.user_id
       WHERE l.copilot_account_id IS NOT NULL
         AND l.created_at >= ${from}
         AND l.created_at <= ${to}
-      GROUP BY l.copilot_account_id, l.user_id, u.email, u.display_name
+      GROUP BY gca.github_login, l.user_id, u.email, u.display_name, l.model
       ORDER BY total_tokens DESC
     `;
 
-    // Group users by copilot account
-    const usersByAccount = new Map<string, Array<{ userId: string; email: string; displayName: string | null; totalTokens: number; requestCount: number }>>();
-    for (const row of userRows) {
-      const accountId = String(row.copilot_account_id);
-      if (!usersByAccount.has(accountId)) usersByAccount.set(accountId, []);
-      usersByAccount.get(accountId)!.push({
-        userId: String(row.user_id),
-        email: String(row.email),
-        displayName: row.display_name ? String(row.display_name) : null,
-        totalTokens: Number(row.total_tokens),
-        requestCount: Number(row.request_count),
-      });
+    // Group (login → user_id → { user summary, models[] })
+    type UserEntry = {
+      userId: string;
+      email: string;
+      displayName: string | null;
+      totalTokens: number;
+      requestCount: number;
+      models: Array<{ model: string; totalTokens: number; requestCount: number }>;
+    };
+    const usersByLogin = new Map<string, Map<string, UserEntry>>();
+    for (const row of userModelRows) {
+      const login = String(row.github_login);
+      const userId = String(row.user_id);
+      const tokens = Number(row.total_tokens);
+      const reqs = Number(row.request_count);
+      const model = row.model ? String(row.model) : "(unknown)";
+
+      let byUser = usersByLogin.get(login);
+      if (!byUser) {
+        byUser = new Map();
+        usersByLogin.set(login, byUser);
+      }
+      let entry = byUser.get(userId);
+      if (!entry) {
+        entry = {
+          userId,
+          email: String(row.email),
+          displayName: row.display_name ? String(row.display_name) : null,
+          totalTokens: 0,
+          requestCount: 0,
+          models: [],
+        };
+        byUser.set(userId, entry);
+      }
+      entry.totalTokens += tokens;
+      entry.requestCount += reqs;
+      entry.models.push({ model, totalTokens: tokens, requestCount: reqs });
     }
 
-    return accountRows.map((r) => ({
-      copilotAccountId: String(r.copilot_account_id),
-      label: String(r.label),
-      githubLogin: String(r.github_login),
-      workspaceId: String(r.workspace_id),
-      workspaceName: String(r.workspace_name),
-      userCount: Number(r.user_count),
-      users: usersByAccount.get(String(r.copilot_account_id)) ?? [],
-      totalTokens: Number(r.total_tokens),
-      totalCostUsd: Math.round(Number(r.total_cost_usd) * 1_000_000) / 1_000_000,
-      requestCount: Number(r.request_count),
-    }));
+    return accountRows.map((r) => {
+      const login = String(r.github_login);
+      const userMap = usersByLogin.get(login);
+      const users = userMap ? Array.from(userMap.values()) : [];
+      users.sort((a, b) => b.totalTokens - a.totalTokens);
+      for (const u of users) u.models.sort((a, b) => b.totalTokens - a.totalTokens);
+
+      return {
+        githubLogin: login,
+        label: String(r.label ?? login),
+        workspaceNames: (r.workspace_names as string[]) ?? [],
+        workspaceCount: Number(r.workspace_count),
+        userCount: Number(r.user_count),
+        users,
+        totalTokens: Number(r.total_tokens),
+        totalCostUsd: Math.round(Number(r.total_cost_usd) * 1_000_000) / 1_000_000,
+        requestCount: Number(r.request_count),
+      };
+    });
+  }
+
+  /**
+   * Get all custom (BYOK) provider usage across all workspaces, grouped
+   * by (provider_type, label). Mirror of Copilot-account breakdown.
+   *
+   * For platform admins only.
+   */
+  async getPlatformCustomProviderUsage(
+    from: Date,
+    to: Date,
+  ): Promise<
+    Array<{
+      providerType: string;
+      label: string;
+      workspaceNames: string[];
+      workspaceCount: number;
+      userCount: number;
+      users: Array<{
+        userId: string;
+        email: string;
+        displayName: string | null;
+        totalTokens: number;
+        requestCount: number;
+        models: Array<{ model: string; totalTokens: number; requestCount: number }>;
+      }>;
+      totalTokens: number;
+      totalCostUsd: number;
+      requestCount: number;
+    }>
+  > {
+    const providerRows = await sql`
+      SELECT
+        ap.provider_type::text AS provider_type,
+        ap.label,
+        ARRAY_AGG(DISTINCT w.name ORDER BY w.name) AS workspace_names,
+        COUNT(DISTINCT ap.id)::int AS workspace_count,
+        COUNT(DISTINCT l.user_id)::int AS user_count,
+        COALESCE(SUM(l.total_tokens), 0)::bigint AS total_tokens,
+        COALESCE(SUM(l.estimated_cost_usd), 0)::numeric AS total_cost_usd,
+        COUNT(l.id)::int AS request_count
+      FROM ai_providers ap
+      INNER JOIN workspaces w ON w.id = ap.workspace_id
+      LEFT JOIN ai_usage_log l ON l.byok_provider_id = ap.id
+        AND l.created_at >= ${from}
+        AND l.created_at <= ${to}
+      GROUP BY ap.provider_type, ap.label
+      ORDER BY total_tokens DESC
+    `;
+
+    const userModelRows = await sql`
+      SELECT
+        ap.provider_type::text AS provider_type,
+        ap.label,
+        l.user_id, u.email, u.display_name,
+        l.model,
+        COALESCE(SUM(l.total_tokens), 0)::bigint AS total_tokens,
+        COUNT(*)::int AS request_count
+      FROM ai_usage_log l
+      INNER JOIN ai_providers ap ON ap.id = l.byok_provider_id
+      INNER JOIN users u ON u.id = l.user_id
+      WHERE l.byok_provider_id IS NOT NULL
+        AND l.created_at >= ${from}
+        AND l.created_at <= ${to}
+      GROUP BY ap.provider_type, ap.label, l.user_id, u.email, u.display_name, l.model
+      ORDER BY total_tokens DESC
+    `;
+
+    type UserEntry = {
+      userId: string;
+      email: string;
+      displayName: string | null;
+      totalTokens: number;
+      requestCount: number;
+      models: Array<{ model: string; totalTokens: number; requestCount: number }>;
+    };
+    const usersByProvider = new Map<string, Map<string, UserEntry>>();
+    for (const row of userModelRows) {
+      const key = `${String(row.provider_type)}|${String(row.label)}`;
+      const userId = String(row.user_id);
+      const tokens = Number(row.total_tokens);
+      const reqs = Number(row.request_count);
+      const model = row.model ? String(row.model) : "(unknown)";
+
+      let byUser = usersByProvider.get(key);
+      if (!byUser) {
+        byUser = new Map();
+        usersByProvider.set(key, byUser);
+      }
+      let entry = byUser.get(userId);
+      if (!entry) {
+        entry = {
+          userId,
+          email: String(row.email),
+          displayName: row.display_name ? String(row.display_name) : null,
+          totalTokens: 0,
+          requestCount: 0,
+          models: [],
+        };
+        byUser.set(userId, entry);
+      }
+      entry.totalTokens += tokens;
+      entry.requestCount += reqs;
+      entry.models.push({ model, totalTokens: tokens, requestCount: reqs });
+    }
+
+    return providerRows.map((r) => {
+      const key = `${String(r.provider_type)}|${String(r.label)}`;
+      const userMap = usersByProvider.get(key);
+      const users = userMap ? Array.from(userMap.values()) : [];
+      users.sort((a, b) => b.totalTokens - a.totalTokens);
+      for (const u of users) u.models.sort((a, b) => b.totalTokens - a.totalTokens);
+
+      return {
+        providerType: String(r.provider_type),
+        label: String(r.label),
+        workspaceNames: (r.workspace_names as string[]) ?? [],
+        workspaceCount: Number(r.workspace_count),
+        userCount: Number(r.user_count),
+        users,
+        totalTokens: Number(r.total_tokens),
+        totalCostUsd: Math.round(Number(r.total_cost_usd) * 1_000_000) / 1_000_000,
+        requestCount: Number(r.request_count),
+      };
+    });
   }
 
   /**

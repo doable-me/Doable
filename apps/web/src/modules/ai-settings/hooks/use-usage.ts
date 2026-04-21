@@ -437,14 +437,40 @@ export interface PlatformUser {
   lastUsedAt: string;
 }
 
+export interface PlatformUserModelUsage {
+  model: string;
+  totalTokens: number;
+  requestCount: number;
+}
+
+export interface PlatformSubscriptionUser {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  totalTokens: number;
+  requestCount: number;
+  models: PlatformUserModelUsage[];
+}
+
 export interface PlatformCopilotAccount {
-  copilotAccountId: string;
-  label: string;
   githubLogin: string;
-  workspaceId: string;
-  workspaceName: string;
+  label: string;
+  workspaceNames: string[];
+  workspaceCount: number;
   userCount: number;
-  users: Array<{ userId: string; email: string; displayName: string | null; totalTokens: number; requestCount: number }>;
+  users: PlatformSubscriptionUser[];
+  totalTokens: number;
+  totalCostUsd: number;
+  requestCount: number;
+}
+
+export interface PlatformCustomProvider {
+  providerType: string;
+  label: string;
+  workspaceNames: string[];
+  workspaceCount: number;
+  userCount: number;
+  users: PlatformSubscriptionUser[];
   totalTokens: number;
   totalCostUsd: number;
   requestCount: number;
@@ -508,6 +534,26 @@ export function usePlatformCopilotAccounts() {
 
   useEffect(() => { refresh(); }, [refresh]);
   return { accounts, loading, refresh };
+}
+
+export function usePlatformCustomProviders() {
+  const [providers, setProviders] = useState<PlatformCustomProvider[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ data: PlatformCustomProvider[] }>("/workspaces/platform/usage/custom-providers");
+      setProviders(res.data);
+    } catch (err) {
+      console.error("Failed to load platform custom providers:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+  return { providers, loading, refresh };
 }
 
 export interface PlatformModelUsage {

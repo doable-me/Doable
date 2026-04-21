@@ -138,6 +138,28 @@ usageRoutes.get("/platform/usage/models", async (c) => {
   }
 });
 
+// ─── GET /platform/usage/custom-providers ────────────────
+// Custom (BYOK) providers with per-user per-model breakdown
+usageRoutes.get("/platform/usage/custom-providers", async (c) => {
+  const userId = c.get("userId");
+
+  const err = await requirePlatformAdmin(userId);
+  if (err) return c.json({ error: err }, 403);
+
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = parseDateParam(c.req.query("from"), monthStart);
+    const to = parseDateParam(c.req.query("to"), now);
+
+    const providers = await usageService.getPlatformCustomProviderUsage(from, to);
+    return c.json({ data: providers });
+  } catch (e) {
+    console.error("[Usage] GET /platform/usage/custom-providers:", e instanceof Error ? e.message : e);
+    return c.json({ error: "Failed to load custom provider usage" }, 500);
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // WORKSPACE-SCOPED ROUTES
 // ═══════════════════════════════════════════════════════════════════════════
