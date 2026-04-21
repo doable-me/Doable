@@ -220,7 +220,14 @@ export function useDashboard() {
     try {
       const text = inputText.trim() || "See attached image(s)";
       const activeWsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? undefined : undefined;
-      const res = await apiCreateProject({ name: text.slice(0, 100), description: text, prompt: text, workspaceId: activeWsId });
+      // API caps: name ≤100, description ≤500, prompt ≤5000. Slice each so
+      // long prompts don't trip validation on the server.
+      const res = await apiCreateProject({
+        name: text.slice(0, 100),
+        description: text.slice(0, 500),
+        prompt: text.slice(0, 5000),
+        workspaceId: activeWsId,
+      });
       const projectId = res.data.id;
       sessionStorage.setItem(`doable_initial_prompt_${projectId}`, JSON.stringify({ prompt: text, attachments: imageAttachments.attachments }));
       setCreatingStatus("Connecting to AI…");
