@@ -421,7 +421,7 @@ function formatAddedAt(iso: string | null): string {
 function formatOwners(owners: PlatformSubscriptionOwner[]): string {
   if (owners.length === 0) return "unknown owner";
   const labels = owners.map((o) => o.displayName || o.email);
-  if (labels.length === 1) return labels[0];
+  if (labels.length === 1) return labels[0] ?? "unknown owner";
   if (labels.length <= 3) return labels.join(", ");
   return `${labels.slice(0, 2).join(", ")} + ${labels.length - 2} more`;
 }
