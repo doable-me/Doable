@@ -13,6 +13,11 @@ import {
 } from "@doable/shared";
 import type { ApiGitHubCopilotAccount, ApiAiProvider } from "@/lib/api";
 import {
+  useCopilotModels,
+  useProviderModels,
+  FALLBACK_MODELS,
+} from "@/modules/ai-settings/components/model-config-hooks";
+import {
   type UserAiAllocation,
   rowActiveSide,
   rowActiveModel,
@@ -121,6 +126,7 @@ function SourceBadge({ row }: { row: UserAiAllocation }) {
 
 function UserDetailModal({
   user,
+  workspaceId,
   accounts,
   providers,
   onClose,
@@ -131,6 +137,7 @@ function UserDetailModal({
   onChangePlan,
 }: {
   user: UserAiAllocation;
+  workspaceId: string | null;
   accounts: ApiGitHubCopilotAccount[];
   providers: ApiAiProvider[];
   onClose: () => void;
@@ -163,6 +170,15 @@ function UserDetailModal({
   const eff = getEffectiveModel(user);
   const validAccounts = accounts.filter(a => a.is_valid);
   const validProviders = providers.filter(p => p.is_valid);
+
+  // Dynamic model lists — Copilot models depend on account; provider models
+  // require workspaceId + providerId. When data isn't available we fall back
+  // to the curated FALLBACK_MODELS list so admins are never stuck with a
+  // free-text field.
+  const { models: copilotModels, loadingModels: loadingCopilot } =
+    useCopilotModels(copilotAccountId || undefined);
+  const { models: providerModelList, loading: loadingProviderModels } =
+    useProviderModels(workspaceId, providerId);
 
   async function saveModel() {
     setSaving(true);
@@ -313,10 +329,21 @@ function UserDetailModal({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
-                      <input type="text" value={copilotModel} onChange={e => setCopilotModel(e.target.value)}
-                        placeholder="e.g. claude-sonnet-4 (blank = auto)"
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500" />
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                        Model {loadingCopilot && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
+                      </label>
+                      <select
+                        value={copilotModel}
+                        onChange={e => setCopilotModel(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                      >
+                        {copilotModels.map(m => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                        {copilotModel && !copilotModels.some(m => m.id === copilotModel) && (
+                          <option value={copilotModel}>{copilotModel} (custom)</option>
+                        )}
+                      </select>
                     </div>
                   </>
                 ) : (
@@ -330,10 +357,41 @@ function UserDetailModal({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
-                      <input type="text" value={providerModel} onChange={e => setProviderModel(e.target.value)}
-                        placeholder="e.g. gpt-4o, meta/llama-3.3-70b-instruct"
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500" />
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                        Model {loadingProviderModels && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
+                      </label>
+                      {providerId && providerModelList.length > 0 ? (
+                        <select
+                          value={providerModel}
+                          onChange={e => setProviderModel(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                        >
+                          <option value="">Auto (provider default)</option>
+                          {providerModelList.map(m => (
+                            <option key={m.id} value={m.id}>{m.name ?? m.id}</option>
+                          ))}
+                          {providerModel && !providerModelList.some(m => m.id === providerModel) && (
+                            <option value={providerModel}>{providerModel} (custom)</option>
+                          )}
+                        </select>
+                      ) : (
+                        <select
+                          value={providerModel}
+                          onChange={e => setProviderModel(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                          disabled={!providerId}
+                        >
+                          {FALLBACK_MODELS.map(m => (
+                            <option key={m.id} value={m.id}>{m.label}</option>
+                          ))}
+                          {providerModel && !FALLBACK_MODELS.some(m => m.id === providerModel) && (
+                            <option value={providerModel}>{providerModel} (custom)</option>
+                          )}
+                        </select>
+                      )}
+                      {!providerId && (
+                        <p className="text-[10px] text-zinc-500 mt-1">Select a provider to load its models.</p>
+                      )}
                     </div>
                   </>
                 )}
@@ -420,6 +478,7 @@ function UserDetailModal({
 
 interface UserManagementPanelProps {
   users: UserAiAllocation[];
+  workspaceId: string | null;
   accounts: ApiGitHubCopilotAccount[];
   providers: ApiAiProvider[];
   loading: boolean;
@@ -438,7 +497,7 @@ interface UserManagementPanelProps {
 }
 
 export function UserManagementPanel({
-  users, accounts, providers, loading, currentUserId,
+  users, workspaceId, accounts, providers, loading, currentUserId,
   onAllocate, onReset, onSetCredits, onChangeRole, onChangePlan,
 }: UserManagementPanelProps) {
   const [selectedUser, setSelectedUser] = useState<UserAiAllocation | null>(null);
@@ -582,6 +641,7 @@ export function UserManagementPanel({
       {selectedUser && (
         <UserDetailModal
           user={selectedUser}
+          workspaceId={workspaceId}
           accounts={accounts}
           providers={providers}
           onClose={() => setSelectedUser(null)}

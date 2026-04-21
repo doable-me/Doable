@@ -286,6 +286,10 @@ export function creditQueries(sql: postgres.Sql) {
       planType: WorkspacePlan
     ): Promise<CreditBalanceRow> {
       const limits = PLAN_LIMITS[planType];
+      // Postgres integer columns cap at int32; clamp Infinity (enterprise).
+      const MAX_INT = 2147483647;
+      const daily = Number.isFinite(limits.dailyCredits) ? limits.dailyCredits : MAX_INT;
+      const monthly = Number.isFinite(limits.monthlyCredits) ? limits.monthlyCredits : MAX_INT;
 
       const [row] = await sql<CreditBalanceRow[]>`
         INSERT INTO credit_balances (
@@ -294,15 +298,15 @@ export function creditQueries(sql: postgres.Sql) {
         ) VALUES (
           ${userId},
           ${workspaceId},
-          ${limits.dailyCredits},
-          ${limits.monthlyCredits},
+          ${daily},
+          ${monthly},
           ${planType},
           now() + interval '1 day',
           date_trunc('month', now()) + interval '1 month'
         )
         ON CONFLICT (user_id, workspace_id) DO UPDATE SET
-          daily_credits = ${limits.dailyCredits},
-          monthly_credits = ${limits.monthlyCredits},
+          daily_credits = ${daily},
+          monthly_credits = ${monthly},
           plan_type = ${planType}
         RETURNING *
       `;
@@ -318,11 +322,15 @@ export function creditQueries(sql: postgres.Sql) {
       planType: WorkspacePlan
     ): Promise<void> {
       const limits = PLAN_LIMITS[planType];
+      // Postgres integer columns cap at int32; clamp Infinity (enterprise).
+      const MAX_INT = 2147483647;
+      const daily = Number.isFinite(limits.dailyCredits) ? limits.dailyCredits : MAX_INT;
+      const monthly = Number.isFinite(limits.monthlyCredits) ? limits.monthlyCredits : MAX_INT;
 
       await sql`
         UPDATE credit_balances
-        SET daily_credits = ${limits.dailyCredits},
-            monthly_credits = ${limits.monthlyCredits},
+        SET daily_credits = ${daily},
+            monthly_credits = ${monthly},
             plan_type = ${planType}
         WHERE workspace_id = ${workspaceId}
       `;

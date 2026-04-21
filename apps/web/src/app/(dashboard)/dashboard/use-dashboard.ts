@@ -232,7 +232,15 @@ export function useDashboard() {
       imageAttachments.clearAll();
       router.push(`/editor/${projectId}?prompt=${encodeURIComponent(text)}${startMode === "plan" ? "&mode=plan" : ""}`);
       setTimeout(unsub, 5000);
-    } catch { setError("Failed to create project. Please try again."); setIsCreating(false); setCreatingStatus(""); }
+    } catch (err) {
+      console.error("[dashboard] handleSubmit failed", err);
+      const message = err instanceof Error
+        ? `Failed to create project: ${err.message}`
+        : "Failed to create project. Please try again.";
+      setError(message);
+      setIsCreating(false);
+      setCreatingStatus("");
+    }
   };
 
   const toggleStar = async (id: string) => {

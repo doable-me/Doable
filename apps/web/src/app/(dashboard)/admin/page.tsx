@@ -63,6 +63,7 @@ export default function AdminPage() {
   const [allocations, setAllocations] = useState<UserAiAllocation[]>([]);
   const [accounts, setAccounts] = useState<ApiGitHubCopilotAccount[]>([]);
   const [providers, setProviders] = useState<ApiAiProvider[]>([]);
+  const [adminWorkspaceId, setAdminWorkspaceId] = useState<string | null>(null);
   const [allocLoading, setAllocLoading] = useState(false);
 
   const loadAllocations = useCallback(async () => {
@@ -78,6 +79,7 @@ export default function AdminPage() {
       setAllocations(res.data);
       setAccounts(res.accounts ?? []);
       setProviders(res.providers ?? []);
+      setAdminWorkspaceId(res.workspaceId ?? null);
     } catch (err) {
       console.error("Failed to load AI allocations:", err);
     } finally {
@@ -232,6 +234,7 @@ export default function AdminPage() {
       {activeTab === "users" && (
         <UserManagementPanel
           users={displayUsers}
+          workspaceId={adminWorkspaceId}
           accounts={accounts}
           providers={providers}
           loading={allocLoading}
