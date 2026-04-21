@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Users, DollarSign, Zap, Globe, Building2, Github, ChevronDown, ChevronRight, Crown, Cpu, Key } from "lucide-react";
+import { Users, DollarSign, Zap, Globe, Building2, Github, ChevronDown, ChevronRight, Crown, Cpu, Key, AlertTriangle } from "lucide-react";
 import {
   usePlatformUsageSummary,
   usePlatformUsers,
@@ -442,6 +442,15 @@ function SubscriptionsList({ items }: { items: SubscriptionRow[] }) {
       {items.map((row) => {
         const isExpanded = expandedIds.has(row.id);
         const hasUsers = row.users && row.users.length > 0;
+        const isCopilot = row.id.startsWith("copilot:");
+        // Warn if a single Copilot subscription is being used by more than one
+        // person, or if the same GitHub login was added to the platform by
+        // more than one local account. GitHub's terms restrict Copilot
+        // Individual licenses to a single user — sharing can trigger
+        // abuse-detection, rate limiting, or subscription suspension.
+        const sharedActiveUsers = isCopilot && row.userCount > 1;
+        const sharedOwners = isCopilot && row.owners.length > 1;
+        const showCopilotShareWarning = sharedActiveUsers || sharedOwners;
 
         return (
           <div key={row.id} className="rounded-xl bg-zinc-800/40 overflow-hidden">
@@ -491,6 +500,28 @@ function SubscriptionsList({ items }: { items: SubscriptionRow[] }) {
                 <span className="text-xs text-zinc-300 font-medium tabular-nums">{formatCost(row.totalCostUsd)}</span>
               </div>
             </button>
+
+            {showCopilotShareWarning && (
+              <div className="mx-3 mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="text-[11px] text-amber-100/90 leading-relaxed space-y-1">
+                    <div className="font-medium text-amber-200">
+                      {sharedActiveUsers
+                        ? `This Copilot subscription is being used by ${row.userCount} different users.`
+                        : `This GitHub account (@${row.title.replace(/'s GitHub$/, "")}) was added by ${row.owners.length} different people.`}
+                      {" "}Risk: rate-limiting, abuse-detection flags, or subscription suspension.
+                    </div>
+                    <div className="text-amber-100/80">
+                      GitHub&apos;s terms restrict Copilot Individual licenses to a single person — licenses are tied to one GitHub account and are not shareable. Sharing can cause GitHub to throttle or revoke Copilot access for that account.
+                    </div>
+                    <div className="text-amber-100/70">
+                      <span className="font-medium">What to do:</span> use one Copilot subscription per user, or move everyone to a Copilot Business / Enterprise plan with per-seat assignments. Consider adding each user&apos;s own GitHub Copilot account to Doable instead of reusing one.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {isExpanded && hasUsers && (
               <div className="px-4 pb-3 pt-1 border-t border-zinc-700/50">
