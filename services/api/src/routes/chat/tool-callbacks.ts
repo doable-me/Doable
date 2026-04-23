@@ -49,8 +49,33 @@ export function createToolProgressCallbacks(
       recordAssistantToolCall(toolName, args as Record<string, unknown>);
       traceCollector?.onToolStart(toolName, args);
       const friendly = friendlyToolMessage(toolName, args as Record<string, unknown>);
+      // Surface common arg shapes (path/command/packages) as top-level fields so
+      // the UI can render richer tool-call cards without re-parsing args.
+      const a = (args && typeof args === "object" ? (args as Record<string, unknown>) : {});
+      const path =
+        (a.path as string | undefined) ??
+        (a.filePath as string | undefined) ??
+        (a.file as string | undefined) ??
+        (a.target as string | undefined);
+      const rawCmd = a.command ?? a.cmd ?? a.input;
+      const command = typeof rawCmd === "string" ? rawCmd : undefined;
+      const lowerName = toolName.toLowerCase();
+      const packages = Array.isArray(a.packages)
+        ? (a.packages as unknown[]).filter((p) => typeof p === "string").join(" ")
+        : typeof a.packages === "string"
+          ? (a.packages as string)
+          : typeof a.name === "string" && (lowerName.includes("install") || lowerName.includes("package"))
+            ? (a.name as string)
+            : undefined;
       stream.writeSSE({ data: JSON.stringify({
-        type: "tool_call", data: { name: toolName, friendlyMessage: friendly },
+        type: "tool_call",
+        data: {
+          name: toolName,
+          friendlyMessage: friendly,
+          ...(path ? { path } : {}),
+          ...(command ? { command } : {}),
+          ...(packages ? { packages } : {}),
+        },
       }) }).catch(() => {});
       if (toolName === "provision_supabase") {
         const a = (args as Record<string, unknown>) ?? {};
@@ -65,8 +90,20 @@ export function createToolProgressCallbacks(
       state.hadToolCalls = true;
       traceCollector?.onToolEnd(toolName, _args, result);
       const friendly = friendlyToolResult(toolName, result, true);
+      const ea = (_args && typeof _args === "object" ? (_args as Record<string, unknown>) : {});
+      const endPath =
+        (ea.path as string | undefined) ??
+        (ea.filePath as string | undefined) ??
+        (ea.file as string | undefined) ??
+        (ea.target as string | undefined);
       stream.writeSSE({ data: JSON.stringify({
-        type: "tool_result", data: { name: toolName, success: true, friendlyMessage: friendly },
+        type: "tool_result",
+        data: {
+          name: toolName,
+          success: true,
+          friendlyMessage: friendly,
+          ...(endPath ? { path: endPath } : {}),
+        },
       }) }).catch(() => {});
 
       if (toolName === "ask_clarification" && result) {

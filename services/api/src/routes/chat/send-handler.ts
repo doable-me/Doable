@@ -171,6 +171,27 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           if (dbSessionId) state.assistantMessageId = await preInsertAssistantMessage(dbSessionId);
 
           const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
+            // Emit a friendly per-tool status event on tool start so the UI can
+            // show "Creating index.ts..." / "Reading foo.ts..." while the tool
+            // runs (purely additive — frontend already handles `status` events).
+            if (status === "start") {
+              const a = (args && typeof args === "object" ? (args as Record<string, unknown>) : {});
+              const rawName = a.path ?? a.filePath ?? a.file ?? a.name ?? a.target;
+              const fileName = typeof rawName === "string" ? rawName : "";
+              const shortName = fileName ? (fileName.split(/[\\/]/).pop() ?? "") : "";
+              if (shortName) {
+                const lower = toolName.toLowerCase();
+                let statusMsg: string;
+                if (lower.includes("create") || lower.includes("write")) statusMsg = `Creating ${shortName}...`;
+                else if (lower.includes("edit") || lower.includes("update") || lower.includes("apply") || lower.includes("patch")) statusMsg = `Updating ${shortName}...`;
+                else if (lower.includes("read") || lower.includes("view") || lower.includes("get")) statusMsg = `Reading ${shortName}...`;
+                else if (lower.includes("delete") || lower.includes("remove")) statusMsg = `Deleting ${shortName}...`;
+                else statusMsg = `Working on ${shortName}...`;
+                stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "building", message: statusMsg } }) }).catch(() => {});
+                broadcastToRoom(projectId, { type: "ai:status", messageId, data: { phase: "building", message: statusMsg } }, userId).catch(() => {});
+              }
+              return;
+            }
             if (status !== "end") return;
             handleToolEndEvent(stream, toolName, args, projectId);
           });
