@@ -1199,7 +1199,11 @@ function extractFunctionSteps(text: string): NormalizedFunctionStep[] {
   while ((m = re.exec(text)) !== null) {
     const name = (m[1] ?? "").trim();
     if (!name) continue;
-    const args = tryParseFunctionParams(m[2]);
+    const rawArgs = tryParseFunctionParams(m[2]);
+    // Unwrap SDK envelope { toolName, arguments: {...real args...}, toolCallId }
+    const args = (rawArgs && typeof (rawArgs as Record<string, unknown>).arguments === "object")
+      ? (rawArgs as { arguments: Record<string, unknown> }).arguments
+      : rawArgs;
     const fileName = args?.path ?? args?.filePath ?? args?.file;
     steps.push({
       id: `${name}-${steps.length}`,

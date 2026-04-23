@@ -57,7 +57,6 @@ export function createToolProgressCallbacks(
       // path/command extraction below finds the user-facing fields.
       const argsObj = (rawArgs && typeof rawArgs === "object" ? rawArgs : {}) as Record<string, unknown>;
       const args = (argsObj as { arguments?: Record<string, unknown> }).arguments ?? argsObj;
-      console.log(`[tool-callbacks] onToolStart ${toolName} raw=${JSON.stringify(rawArgs).slice(0,200)} unwrapped=${JSON.stringify(args).slice(0,200)}`);
       recordAssistantToolCall(toolName, args);
       traceCollector?.onToolStart(toolName, args);
       const friendly = friendlyToolMessage(toolName, args);
