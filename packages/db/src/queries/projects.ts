@@ -2,13 +2,30 @@ import type postgres from "postgres";
 import type { ProjectRow, ProjectVersionRow } from "../types.js";
 import type { ProjectStatus, ProjectVisibility } from "@doable/shared";
 
+// The DB enum `project_visibility` only has values ('public', 'restricted'),
+// but the API/frontend uses ('public', 'private'). Translate transparently
+// at the query boundary so callers always see/send 'private'.
+function mapRowOut<T extends ProjectRow | undefined>(row: T): T {
+  if (!row) return row;
+  if ((row as ProjectRow).visibility === ("restricted" as unknown as ProjectVisibility)) {
+    return { ...(row as ProjectRow), visibility: "private" as ProjectVisibility } as T;
+  }
+  return row;
+}
+function mapRowsOut(rows: ProjectRow[]): ProjectRow[] {
+  return rows.map((r) => mapRowOut(r)!);
+}
+function visibilityForDb(v: ProjectVisibility): string {
+  return v === "private" ? "restricted" : v;
+}
+
 export function projectQueries(sql: postgres.Sql) {
   return {
     async findById(id: string): Promise<ProjectRow | undefined> {
       const [project] = await sql<ProjectRow[]>`
         SELECT * FROM projects WHERE id = ${id} AND deleted_at IS NULL
       `;
-      return project;
+      return mapRowOut(project);
     },
 
     async findByWorkspaceAndSlug(
@@ -21,7 +38,7 @@ export function projectQueries(sql: postgres.Sql) {
           AND slug = ${slug}
           AND deleted_at IS NULL
       `;
-      return project;
+      return mapRowOut(project);
     },
 
     async listByWorkspace(
@@ -58,7 +75,7 @@ export function projectQueries(sql: postgres.Sql) {
         LIMIT ${pageSize} OFFSET ${offset}
       `;
 
-      return { rows, total: parseInt(countResult!.count, 10) };
+      return { rows: mapRowsOut(rows), total: parseInt(countResult!.count, 10) };
     },
 
     async create(data: {
@@ -81,14 +98,14 @@ export function projectQueries(sql: postgres.Sql) {
         )
         RETURNING *
       `;
-      return project!;
+      return mapRowOut(project)!;
     },
 
     async findBySubdomain(subdomain: string): Promise<ProjectRow | undefined> {
       const [project] = await sql<ProjectRow[]>`
         SELECT * FROM projects WHERE subdomain = ${subdomain} AND deleted_at IS NULL
       `;
-      return project;
+      return mapRowOut(project);
     },
 
     async update(
@@ -110,7 +127,8 @@ export function projectQueries(sql: postgres.Sql) {
       if (data.name !== undefined) values.name = data.name;
       if (data.description !== undefined) values.description = data.description;
       if (data.status !== undefined) values.status = data.status;
-      if (data.visibility !== undefined) values.visibility = data.visibility;
+      // Translate API/UI "private" → DB enum "restricted" (DB only has public/restricted).
+      if (data.visibility !== undefined) values.visibility = visibilityForDb(data.visibility);
       if (data.githubRepoUrl !== undefined) values.github_repo_url = data.githubRepoUrl;
       if (data.publishedUrl !== undefined) values.published_url = data.publishedUrl;
       if (data.subdomain !== undefined) values.subdomain = data.subdomain;
@@ -125,7 +143,7 @@ export function projectQueries(sql: postgres.Sql) {
         WHERE id = ${id} AND deleted_at IS NULL
         RETURNING *
       `;
-      return project;
+      return mapRowOut(project);
     },
 
     async softDelete(id: string): Promise<boolean> {
