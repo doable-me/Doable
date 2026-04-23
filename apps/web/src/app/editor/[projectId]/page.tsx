@@ -1261,7 +1261,12 @@ function renderFunctionStepList(content: string, compact = false): React.ReactNo
             <div className="flex-1 min-w-0 flex flex-col">
               <span className="text-[13px] font-medium text-zinc-200 truncate">{step.description}</span>
               {step.filePath && (
-                <span className="text-[10px] text-zinc-500 font-mono truncate">{step.filePath}</span>
+                <span
+                  className="text-[10px] text-zinc-500 font-mono truncate"
+                  title={step.filePath}
+                >
+                  {step.filePath.split(/[\\/]/).pop() || step.filePath}
+                </span>
               )}
             </div>
           </div>
