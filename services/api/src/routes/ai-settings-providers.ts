@@ -150,7 +150,7 @@ aiSettingsProviderRoutes.post("/:workspaceId/ai-settings/providers/:id/validate"
   // If this provider is bound to a known preset, look it up so we can:
   //   1. fall back to chat.completions ping when /models is unavailable
   //   2. seed ai_provider_models from preset defaults when discovery is off
-  const preset = row.preset_id ? PROVIDER_BY_ID.get(row.preset_id) ?? null : null;
+  const preset = row.preset_id ? (PROVIDER_BY_ID as Record<string, typeof PROVIDER_BY_ID[keyof typeof PROVIDER_BY_ID]>)[row.preset_id] ?? null : null;
   const validationModel = preset && !preset.supportsModelDiscovery
     ? preset.defaultModels[0]?.id
     : undefined;
