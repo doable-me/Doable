@@ -12,6 +12,30 @@ const MAX_READ_ONLY_CYCLES = 3;
 const FILE_WRITE_TOOLS = new Set(["create_file", "edit_file", "write_file", "create", "edit", "write"]);
 const READ_TOOLS = new Set(["read_file", "list_files", "search_files", "read", "list", "search"]);
 
+/**
+ * Heuristically decide whether the user actually asked the AI to BUILD/MODIFY
+ * something. Auto-continue exists to nudge the model when it explored but
+ * forgot to write files for a build request — it must NOT fire when the user
+ * only asked a read-only / informational question ("read X", "what does Y do?",
+ * "show me Z"), because then the model is correctly done after one read.
+ */
+function userWantsBuild(userMessage: string | undefined): boolean {
+  if (!userMessage) return true; // unknown intent → preserve old behaviour
+  const m = userMessage.toLowerCase().trim();
+  if (m.length === 0) return true;
+  // Strong informational/read-only signals — short messages dominated by these
+  // verbs are almost never build requests.
+  const readOnly = /\b(read|show|tell me|what is|what does|what's|explain|describe|summari[sz]e|list|find|search|check|inspect|look at|view|open|display|print|how does|why does|count)\b/;
+  const buildIntent = /\b(build|create|make|add|implement|fix|update|modify|change|edit|write|generate|scaffold|refactor|deploy|publish|install|setup|set up|configure|design|develop|extend|enhance|improve|delete|remove|rename|move)\b/;
+  const hasBuild = buildIntent.test(m);
+  const hasRead = readOnly.test(m);
+  if (hasBuild) return true;
+  if (hasRead) return false;
+  // No clear signal — short questions/statements (< 12 words) are usually chat,
+  // long descriptions are usually build briefs.
+  return m.split(/\s+/).length >= 12;
+}
+
 /** Run auto-continue loops if AI explored but wrote 0 files. */
 export async function handleAutoContinue(
   stream: SSEStreamingApi,
@@ -21,8 +45,17 @@ export async function handleAutoContinue(
   projectId: string,
   mode: string,
   recordAssistantToolCall: (name?: string, args?: unknown) => void,
+  userMessage?: string,
 ): Promise<void> {
   if (mode === "plan") return;
+
+  // If the user's request was clearly informational ("read X", "what is Y?"),
+  // don't push the model to start writing files. This was the source of the
+  // "Stall: same files read in consecutive continues" error.
+  if (!userWantsBuild(userMessage)) {
+    console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue skipped — read-only user intent`);
+    return;
+  }
 
   // If an MCP interactive widget was shown (e.g. format picker), the session
   // is intentionally waiting for a user click — do NOT auto-continue, that

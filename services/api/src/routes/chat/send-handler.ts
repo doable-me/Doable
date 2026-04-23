@@ -283,7 +283,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
             // Save pre-recovery content length to detect if auto-continue added anything
             const contentBeforeRecovery = state.assistantContent.length;
-            await handleAutoContinue(stream, state, currentEngine, sessionId!, projectId, mode, recordAssistantToolCall);
+            await handleAutoContinue(stream, state, currentEngine, sessionId!, projectId, mode, recordAssistantToolCall, content);
             await handleEmptyResponseRetry(stream, state, currentEngine, sessionId!, projectId, augmentedContent, fileAttachments);
 
             if (!state.hadToolCalls && state.sawToolDelta) {
