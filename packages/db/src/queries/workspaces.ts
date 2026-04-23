@@ -309,16 +309,18 @@ export function workspaceQueries(sql: postgres.Sql) {
 
     // ─── Credits (reads from credit_balances — the single source of truth) ──
     async getCredits(workspaceId: string): Promise<CreditsRow | undefined> {
-      // Aggregate credit balances across all workspace members
-      // Returns a workspace-level summary compatible with the old interface
+      // Aggregate credit balances across all workspace members.
+      // SUM is computed in bigint to avoid int4 overflow when multiple members
+      // hold "unlimited" balances (INT_MAX). Result is clamped back to INT_MAX
+      // before casting to int so the API contract is preserved.
       const [row] = await sql<CreditsRow[]>`
         SELECT
           gen_random_uuid() as id,
           ${workspaceId}::uuid as workspace_id,
-          COALESCE(SUM(daily_credits - daily_credits_used), 0)::int as daily_remaining,
-          COALESCE(SUM(daily_credits), 0)::int as daily_total,
-          COALESCE(SUM(monthly_credits - monthly_credits_used), 0)::int as monthly_remaining,
-          COALESCE(SUM(rollover_credits), 0)::int as rollover_credits,
+          LEAST(COALESCE(SUM((daily_credits - daily_credits_used)::bigint), 0), 2147483647)::int as daily_remaining,
+          LEAST(COALESCE(SUM(daily_credits::bigint), 0), 2147483647)::int as daily_total,
+          LEAST(COALESCE(SUM((monthly_credits - monthly_credits_used)::bigint), 0), 2147483647)::int as monthly_remaining,
+          LEAST(COALESCE(SUM(rollover_credits::bigint), 0), 2147483647)::int as rollover_credits,
           MIN(daily_reset_at) as last_daily_reset,
           MIN(monthly_reset_at) as last_monthly_reset
         FROM credit_balances
