@@ -220,22 +220,53 @@ export function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     // ─── Tool calls (starting) ────────────────────────────
     case "tool.running":
     case "tool.execution_start":
-    case "external_tool.requested":
-      return null;
+    case "external_tool.requested": {
+      const startToolName = (data?.toolName ?? data?.name) as string | undefined;
+      if (!startToolName) return null;
+      // Unwrap SDK envelope { toolName, arguments: {...real args...}, toolCallId }
+      const rawStartArgs = (data?.arguments ?? data?.args ?? data?.input) as
+        | Record<string, unknown>
+        | undefined;
+      const startArgs = (rawStartArgs && typeof (rawStartArgs as { arguments?: unknown }).arguments === "object")
+        ? (rawStartArgs as { arguments: Record<string, unknown> }).arguments
+        : rawStartArgs;
+      const startPath = (startArgs?.path ?? startArgs?.filePath ?? startArgs?.file ?? startArgs?.target) as string | undefined;
+      return {
+        type: "tool_call",
+        data: {
+          name: startToolName,
+          ...(startArgs ? { arguments: startArgs } : {}),
+          ...(startPath ? { path: startPath } : {}),
+        },
+      };
+    }
 
     // ─── Tool results (completed) ─────────────────────────
     case "tool.completed":
     case "tool.execution_complete": {
       const resultToolName = (data?.toolName ?? data?.name) as string;
       const toolResult = data?.result as Record<string, unknown> | undefined;
+      // Some SDK channels wrap the request args under .arguments
+      // ({ toolName, arguments: {...real args...}, toolCallId }); unwrap so
+      // the client sees the user-facing path/command fields.
+      const rawReqArgs = (data?.arguments ?? data?.args ?? data?.input) as
+        | Record<string, unknown>
+        | undefined;
+      const reqArgs = (rawReqArgs && typeof (rawReqArgs as { arguments?: unknown }).arguments === "object")
+        ? (rawReqArgs as { arguments: Record<string, unknown> }).arguments
+        : rawReqArgs;
+      const reqPath = (reqArgs?.path ?? reqArgs?.filePath ?? reqArgs?.file ?? reqArgs?.target) as string | undefined;
       return {
         type: "tool_result",
         data: {
           name: resultToolName,
           success: data?.success,
           friendlyMessage: friendlyToolResult(resultToolName, data?.result, data?.success),
+          // Pass through request args so the client can label cards with the
+          // correct file name (BUG: "Reading file" instead of "Reading App.tsx").
+          ...(reqArgs ? { args: reqArgs } : {}),
           // Diff metadata for file-editing tools
-          path:         toolResult?.path         as string  | undefined,
+          path:         (toolResult?.path as string  | undefined) ?? reqPath,
           linesAdded:   toolResult?.linesAdded   as number  | undefined,
           linesRemoved: toolResult?.linesRemoved as number  | undefined,
         },
