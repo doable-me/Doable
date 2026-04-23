@@ -1120,7 +1120,7 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
   if (toolName.toLowerCase().includes("rename")) {
     return shortName ? `Renaming ${shortName}` : "Renaming file";
   }
-  if (toolName.toLowerCase().includes("read")) {
+  if (toolName.toLowerCase().includes("read") || toolName.toLowerCase() === "view" || toolName.toLowerCase() === "cat" || toolName.toLowerCase() === "open") {
     return shortName ? `Reading ${shortName}` : "Reading file";
   }
   if (toolName.toLowerCase().includes("search") || toolName.toLowerCase().includes("find") || toolName.toLowerCase().includes("grep")) {
