@@ -6,6 +6,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { sql } from "../db/index.js";
 import { contextManager } from "../context/manager.js";
 import { getContextStats } from "../context/injector.js";
+import { evictProjectSessions } from "./chat/session-state.js";
 
 export const contextRoutes = new Hono<AuthEnv>();
 contextRoutes.use("*", authMiddleware);
@@ -89,6 +90,10 @@ contextRoutes.put(
     }
 
     const file = await ctx.updateContextFile(projectId!, filename!, content);
+    const evicted = evictProjectSessions(projectId!);
+    if (evicted > 0) {
+      console.log(`[Context] ${filename} updated for ${projectId!.slice(0, 8)}… — evicted ${evicted} cached chat session(s) so changes take effect immediately`);
+    }
     return c.json({ data: file });
   }
 );
@@ -121,6 +126,7 @@ contextRoutes.post(
       filename!,
       content ?? ""
     );
+    evictProjectSessions(projectId!);
     return c.json({ data: file }, 201);
   }
 );
@@ -143,6 +149,7 @@ contextRoutes.delete("/:filename", async (c) => {
     return c.json({ error: "Context file not found" }, 404);
   }
 
+  evictProjectSessions(projectId!);
   return c.json({ data: { deleted: true } });
 });
 

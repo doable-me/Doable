@@ -19,6 +19,25 @@ export const projectSessionModes = new Map<string, string>();
 // whether the AI is still working (survives page refresh).
 export const activeRequests = new Map<string, { mode: string; startedAt: number }>();
 
+/**
+ * Evict all cached chat sessions for a project so the next chat message
+ * creates a fresh session that picks up updated context (identity.md,
+ * soul.md, instructions.md, knowledge.md etc.). Without this, edits to
+ * `.doable/*.md` only take effect after the user manually starts a new
+ * session — the AI keeps using the old system prompt.
+ */
+export function evictProjectSessions(projectId: string): number {
+  let count = 0;
+  for (const key of Array.from(projectSessions.keys())) {
+    if (key === projectId || key.startsWith(`${projectId}:`)) {
+      projectSessions.delete(key);
+      projectSessionModes.delete(key);
+      count++;
+    }
+  }
+  return count;
+}
+
 /** Snapshot of active chat sessions for admin monitoring */
 export function getChatSessionsSnapshot(): Array<{
   sessionKey: string;
