@@ -56,7 +56,7 @@ function SettingsSection({ title, description, children }: { title: string; desc
 export default function WorkspaceSettingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth();
 
   // Active tab
   const initialTab = (searchParams.get("tab") as TabId) || "general";
@@ -80,6 +80,7 @@ export default function WorkspaceSettingsPage() {
   const [members, setMembers] = useState<ApiWorkspaceMember[]>([]);
   const [invites, setInvites] = useState<ApiWorkspaceInvite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Workspace info editing
   const [editName, setEditName] = useState("");
@@ -110,30 +111,60 @@ export default function WorkspaceSettingsPage() {
   const isAdmin = isOwner || workspace?.userRole === "admin";
 
   const loadData = useCallback(async () => {
+    setLoadError(null);
     try {
       const wsRes = await apiListWorkspaces();
       const persisted = localStorage.getItem("doable_active_workspace_id");
       const ws = wsRes.data.find((w) => w.id === persisted) ?? wsRes.data[0] ?? null;
-      if (!ws) { setLoading(false); return; }
+      if (!ws) {
+        // Distinguish "empty list" from "failed call" so user gets a useful message.
+        setLoadError(
+          wsRes.data.length === 0
+            ? "You are not a member of any workspace yet. Create one from the dashboard to continue."
+            : null,
+        );
+        setLoading(false);
+        return;
+      }
 
       setWorkspace(ws);
       setEditName(ws.name);
       setEditDesc(ws.description ?? "");
 
       const [memRes, invRes] = await Promise.all([
-        apiListWorkspaceMembers(ws.id),
-        isAdmin ? apiListWorkspaceInvites(ws.id).catch(() => ({ data: [] })) : Promise.resolve({ data: [] as ApiWorkspaceInvite[] }),
+        apiListWorkspaceMembers(ws.id).catch((e) => {
+          console.warn("workspace-settings: members fetch failed", e);
+          return { data: [] as ApiWorkspaceMember[] };
+        }),
+        isAdmin
+          ? apiListWorkspaceInvites(ws.id).catch(() => ({ data: [] as ApiWorkspaceInvite[] }))
+          : Promise.resolve({ data: [] as ApiWorkspaceInvite[] }),
       ]);
       setMembers(memRes.data);
       setInvites(invRes.data);
     } catch (err) {
       console.error("Failed to load workspace settings:", err);
+      setLoadError(
+        err instanceof Error
+          ? `Couldn't load workspaces: ${err.message}`
+          : "Couldn't load workspaces. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
   }, [isAdmin]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    // Wait for auth to settle before hitting the API — otherwise an unauthenticated
+    // request races against token refresh and surfaces as a fake "No workspace found".
+    if (authLoading) return;
+    if (!isAuthenticated) {
+      setLoading(false);
+      setLoadError("You're signed out. Please sign in to view workspace settings.");
+      return;
+    }
+    loadData();
+  }, [loadData, authLoading, isAuthenticated]);
 
   const handleSave = async () => {
     if (!workspace || saving) return;
@@ -263,11 +294,18 @@ export default function WorkspaceSettingsPage() {
 
   if (!workspace) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4">
-        <p className="text-zinc-400">No workspace found.</p>
-        <Button variant="outline" onClick={() => router.push("/dashboard")}>
-          Go to dashboard
-        </Button>
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="text-zinc-400 max-w-md">
+          {loadError ?? "No workspace found."}
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => loadData()}>
+            Retry
+          </Button>
+          <Button variant="outline" onClick={() => router.push("/dashboard")}>
+            Go to dashboard
+          </Button>
+        </div>
       </div>
     );
   }
