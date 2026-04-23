@@ -18,6 +18,41 @@ const SITES_DIR =
 const DOMAIN = process.env.DOABLE_DOMAIN ?? "doable.me";
 
 /**
+ * When set (e.g. "/_sites/"), publish sites under this URL path on the
+ * primary DOMAIN instead of as subdomains. Required on dev where Cloudflare
+ * Universal SSL doesn't cover two-level wildcards like *.dev.doable.me.
+ * Caddy must be configured to map ${PUBLISH_PATH_PREFIX}{slug}/* to the
+ * site's live directory; see ops docs.
+ */
+const PUBLISH_PATH_PREFIX = process.env.PUBLISH_PATH_PREFIX;
+
+/** Compute the public URL and base path for a deployed site. */
+export function computeSitePublishLocation(
+  subdomain: string,
+  environment: "preview" | "production",
+): { url: string; basePath: string; siteSubdomain: string } {
+  const siteSubdomain =
+    environment === "preview" ? `p-${subdomain}` : subdomain;
+  if (PUBLISH_PATH_PREFIX) {
+    const prefix = PUBLISH_PATH_PREFIX.startsWith("/")
+      ? PUBLISH_PATH_PREFIX
+      : `/${PUBLISH_PATH_PREFIX}`;
+    const cleanPrefix = prefix.endsWith("/") ? prefix : `${prefix}/`;
+    const basePath = `${cleanPrefix}${siteSubdomain}/`;
+    return {
+      url: `https://${DOMAIN}${basePath}`,
+      basePath,
+      siteSubdomain,
+    };
+  }
+  return {
+    url: `https://${siteSubdomain}.${DOMAIN}`,
+    basePath: "/",
+    siteSubdomain,
+  };
+}
+
+/**
  * Default deploy adapter: copies build output to a local directory
  * and generates a *.doable.me URL.
  *
@@ -104,10 +139,11 @@ export class DoableCloudAdapter implements DeployAdapter {
       );
     }
 
-    // URL: preview gets p- prefix
-    const siteSubdomain =
-      environment === "preview" ? `p-${subdomain}` : subdomain;
-    const url = `https://${siteSubdomain}.${DOMAIN}`;
+    // URL: subdomain (default) OR path-prefixed (when PUBLISH_PATH_PREFIX set)
+    const { url, siteSubdomain } = computeSitePublishLocation(
+      subdomain,
+      environment,
+    );
 
     // Collect file info for artifact tracking
     const files = await collectFileInfo(targetDir, targetDir);

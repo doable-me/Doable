@@ -8,6 +8,7 @@ import type { DeployAdapter } from "./adapter.js";
 import {
   DoableCloudAdapter,
   generateSubdomain,
+  computeSitePublishLocation,
 } from "./adapters/doable-cloud.js";
 
 const deployments = deploymentQueries(sql);
@@ -122,6 +123,9 @@ export async function runPipeline(
 
     const buildStart = Date.now();
     const projectDir = path.join(PROJECTS_ROOT, projectId);
+    // Compute publish URL & base path BEFORE build so Vite emits assets
+    // with the correct base href when path-based hosting is enabled.
+    const publishLoc = computeSitePublishLocation(subdomain, environment);
     // Pass userId so the build env picks up vault-backed integration
     // credentials for the deploying user (Phase 1C/1D of the integration↔AI
     // chat bridge). User env_vars still override vault values on collision.
@@ -129,6 +133,7 @@ export async function runPipeline(
       projectId,
       target: environment as "development" | "preview" | "production",
       userId,
+      basePath: publishLoc.basePath,
     });
     const buildTimeMs = Date.now() - buildStart;
 
@@ -163,6 +168,7 @@ export async function runPipeline(
       subdomain,
       buildOutputDir: buildResult.outputDir,
       environment,
+      basePath: publishLoc.basePath,
     });
     const deployTimeMs = Date.now() - deployStart;
 

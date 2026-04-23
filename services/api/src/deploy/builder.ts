@@ -36,6 +36,12 @@ export async function runBuild(
      * integration↔AI chat bridge). User `env_vars` always override the vault.
      */
     userId?: string;
+    /**
+     * Public URL prefix the built site will be served from, e.g.
+     * "/" for subdomain hosting (default) or "/_sites/my-app/" for
+     * path-based hosting. Passed to Vite as `--base`.
+     */
+    basePath?: string;
   },
 ): Promise<BuildResult> {
   const start = Date.now();
@@ -75,7 +81,12 @@ export async function runBuild(
   return new Promise<BuildResult>((resolve) => {
     const chunks: string[] = [];
 
-    const proc = spawn("npx", ["vite", "build", "--outDir", "dist"], {
+    const viteArgs = ["vite", "build", "--outDir", "dist"];
+    if (opts?.basePath && opts.basePath !== "/") {
+      const base = opts.basePath.endsWith("/") ? opts.basePath : `${opts.basePath}/`;
+      viteArgs.push(`--base=${base}`);
+    }
+    const proc = spawn("npx", viteArgs, {
       cwd: projectDir,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],

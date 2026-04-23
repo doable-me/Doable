@@ -5,6 +5,14 @@ export interface DeployInput {
   subdomain: string;
   buildOutputDir: string;
   environment: "preview" | "production";
+  /**
+   * Public path prefix the site is served from. Defaults to "/" for
+   * subdomain hosting; set to e.g. "/_sites/my-app/" when using
+   * path-based hosting (PUBLISH_PATH_PREFIX env var). Used by the
+   * adapter to compute the final URL and ensure consistency with the
+   * builder's --base flag.
+   */
+  basePath?: string;
 }
 
 export interface DeployResult {
