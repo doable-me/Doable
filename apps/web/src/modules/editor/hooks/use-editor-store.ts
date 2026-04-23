@@ -3,8 +3,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Plan, PlanStep, ClarificationQuestion, PlanPhase } from "@doable/shared/types/ai";
+import type { AgentProgressState, AgentTimelineEvent } from "./use-agent-progress";
 
-// ─── MCP UI Widget Types ────────────────────────────
+// ─── MCP UI Widget Types ─────────────────────────────────────
 export type McpUiType = "table" | "form" | "confirm" | "select";
 
 export interface McpUiColumn {
@@ -50,7 +51,7 @@ export interface McpUiWidget {
     message?: string;
   };
   state: Record<string, unknown>;
-  /** Closed widgets stay in history but no longer render interactively */
+  /** closed widgets stay in history but no longer render interactively */
   closed?: boolean;
 }
 
@@ -76,7 +77,22 @@ export interface ChatMessage {
   timestamp: string;
   isStreaming?: boolean;
   thinkingContent?: string;
+  /** @deprecated Use agentProgress instead. Kept for backward compat during migration. */
   liveStatus?: string;
+  /** Typed structured progress state — replaces liveStatus */
+  agentProgress?: AgentProgressState;
+  /** Live tool call cards shown during streaming */
+  liveToolCalls?: Array<{
+    id: string;
+    toolName: string;
+    filePath?: string;
+    friendlyMessage?: string;
+    status: "running" | "completed" | "failed";
+    startedAt: number;
+    completedAt?: number;
+    linesAdded?: number;
+    linesRemoved?: number;
+  }>;
   senderName?: string;
   senderId?: string;
   attachments?: Array<{
@@ -91,10 +107,10 @@ export interface ChatMessage {
   undone?: boolean;
   /** Whether the AI made file changes in this response */
   hadToolCalls?: boolean;
+  /** Track live tool calls streaming from the AI in real time. Map of toolName to streamed content. */
+  liveTools?: Record<string, string>;
   /** Persisted tool call details from DB (for rendering summaries after refresh) */
   toolCallDetails?: Array<{ name: string; arguments?: unknown }>;
-  /** Interactive MCP widgets attached to this message, keyed by toolCallId. */
-  mcpWidgets?: Record<string, McpUiWidget>;
   /** Usage metrics from the AI response (token counts, cost, duration) */
   usage?: {
     promptTokens: number;
@@ -107,6 +123,17 @@ export interface ChatMessage {
     isLocal?: boolean;
     toolCallCount?: number;
   };
+  /** Inline clarification question injected by the agent — renders as a choice card */
+  clarificationQuestion?: {
+    id: string;
+    question: string;
+    options?: string[];
+    context?: string;
+    answered: boolean;
+    answer?: string;
+  };
+  /** Interactive MCP widgets attached to this assistant message, keyed by toolCallId. */
+  mcpWidgets?: Record<string, McpUiWidget>;
 }
 
 export type EditorMode = "agent" | "plan";
@@ -140,6 +167,10 @@ interface EditorState {
   messages: ChatMessage[];
   mode: EditorMode;
   isStreaming: boolean;
+
+  // Agent progress (global — drives header badge and activity feed)
+  activeAgentProgress: AgentProgressState | null;
+  agentTimeline: AgentTimelineEvent[];
 
   // Plan Mode V2
   activePlan: Plan | null;
@@ -176,11 +207,15 @@ interface EditorState {
   prependMessages: (messages: ChatMessage[]) => void;
   updateMessage: (id: string, content: string) => void;
   updateMessageFields: (id: string, fields: Partial<ChatMessage>) => void;
-  attachMcpWidget: (messageId: string, widget: McpUiWidget) => void;
-  closeMcpWidget: (messageId: string, toolCallId: string) => void;
   setStreaming: (streaming: boolean) => void;
   setMode: (mode: EditorMode) => void;
   clearMessages: () => void;
+
+  // Actions - Agent Progress
+  setActiveAgentProgress: (progress: AgentProgressState | null) => void;
+  pushAgentTimeline: (event: AgentTimelineEvent) => void;
+  completeAgentTimelineEvent: (id: string, outcome?: "completed" | "failed") => void;
+  clearAgentTimeline: () => void;
 
   // Plan Mode V2 Actions
   setActivePlan: (plan: Plan | null) => void;
@@ -218,6 +253,8 @@ export const useEditorStore = create<EditorState>()(
       messages: [],
       mode: "agent",
       isStreaming: false,
+      activeAgentProgress: null,
+      agentTimeline: [],
       activePlan: null,
       planPhase: "idle" as PlanPhase,
       pendingQuestions: null,
@@ -284,35 +321,29 @@ export const useEditorStore = create<EditorState>()(
             m.id === id ? { ...m, ...fields } : m
           ),
         })),
-      attachMcpWidget: (messageId, widget) =>
-        set((state) => ({
-          messages: state.messages.map((m) =>
-            m.id === messageId
-              ? {
-                  ...m,
-                  mcpWidgets: { ...(m.mcpWidgets ?? {}), [widget.toolCallId]: widget },
-                }
-              : m,
-          ),
-        })),
-      closeMcpWidget: (messageId, toolCallId) =>
-        set((state) => ({
-          messages: state.messages.map((m) => {
-            if (m.id !== messageId) return m;
-            const existing = m.mcpWidgets?.[toolCallId];
-            if (!existing) return m;
-            return {
-              ...m,
-              mcpWidgets: {
-                ...m.mcpWidgets,
-                [toolCallId]: { ...existing, closed: true },
-              },
-            };
-          }),
-        })),
       setStreaming: (streaming) => set({ isStreaming: streaming }),
       setMode: (mode) => set({ mode }),
       clearMessages: () => set({ messages: [] }),
+
+      // Agent progress actions
+      setActiveAgentProgress: (progress) => set({ activeAgentProgress: progress }),
+      pushAgentTimeline: (event) =>
+        set((state) => ({
+          agentTimeline: [...state.agentTimeline.slice(-99), event], // cap at 100 entries
+        })),
+      completeAgentTimelineEvent: (id, outcome = "completed") =>
+        set((state) => ({
+          agentTimeline: state.agentTimeline.map((e) =>
+            e.id === id
+              ? {
+                  ...e,
+                  status: outcome,
+                  durationMs: Date.now() - new Date(e.timestamp).getTime(),
+                }
+              : e
+          ),
+        })),
+      clearAgentTimeline: () => set({ agentTimeline: [] }),
 
       // Plan Mode V2
       setActivePlan: (plan) => set({ activePlan: plan, planPhase: plan ? "reviewing" : "idle" }),
@@ -390,6 +421,9 @@ export const useEditorStore = create<EditorState>()(
         sidebarCollapsed: state.sidebarCollapsed,
         viewMode: state.viewMode,
         mode: state.mode,
+        activePlan: state.activePlan,
+        planPhase: state.planPhase,
+        pendingQuestions: state.pendingQuestions,
       }),
     }
   )

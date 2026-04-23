@@ -1,168 +1,203 @@
 "use client";
 
 import { memo, useCallback, useState, useMemo, useRef, useEffect } from "react";
-import { Bot, User, Copy, Check, Loader2, Brain, Wrench, ListChecks, Undo2 } from "lucide-react";
+import {
+  Bot, User, Copy, Check, Loader2, Brain, Wrench, Sparkles,
+  ListChecks, Undo2, AlertCircle, Terminal, Package, Search,
+  FileEdit, FilePlus, Cpu, ChevronDown, XCircle,
+} from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "../hooks/use-editor-store";
 import { useEditorStore } from "../hooks/use-editor-store";
 import { MessageAttachments } from "./attachment-preview";
 import { TokenCounter } from "./token-counter";
 import { apiFetch } from "@/lib/api";
+import { ToolCallCard } from "./tool-call-card";
+import { ErrorRecoveryCard } from "./error-recovery-card";
 import { McpWidgetRenderer } from "./mcp-widgets/mcp-widget-renderer";
-
 import { renderMarkdown, CodeBlockCopyButton, ToolActivitySummary } from "./chat-message-helpers";
+import type { AgentPhase, AgentProgressState } from "../hooks/use-agent-progress";
+import { PHASE_LABELS } from "../hooks/use-agent-progress";
+import { InlineClarificationCard } from "./plan/inline-clarification";
 
-// ─── Streaming Status Indicator ─────────────────────────────
-function StreamingStatus({ status }: { status?: string }) {
-  if (!status) return null;
-
-  // Known prefixed formats: "type:friendly message"
-  const KNOWN_PREFIXES = new Set(["plan", "tool_call", "tool_result", "status"]);
-  const colonIdx = status.indexOf(":");
-  const maybeType = colonIdx > 0 ? status.slice(0, colonIdx) : "";
-  const isPrefixed = KNOWN_PREFIXES.has(maybeType);
-
-  const statusType = isPrefixed ? maybeType : "";
-  const friendlyMsg = isPrefixed ? status.slice(colonIdx + 1) : "";
-
-  // If it's literally "thinking" (old format) or unprefixed text, treat as thinking
-  const isThinking = status === "thinking" || (!isPrefixed && statusType === "");
-  const isPlan = statusType === "plan";
-  const isToolCall = statusType === "tool_call";
-  const isToolResult = statusType === "tool_result";
-
-  const icon = isThinking ? (
-    <Brain className="h-3 w-3 text-brand-400 animate-pulse" />
-  ) : isPlan ? (
-    <ListChecks className="h-3 w-3 text-brand-400 animate-pulse" />
-  ) : isToolCall ? (
-    <Wrench className="h-3 w-3 text-blue-400 animate-spin" />
-  ) : isToolResult ? (
-    <Check className="h-3 w-3 text-green-500" />
-  ) : (
-    <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
-  );
-
-  const label = isThinking
-    ? (status === "thinking" ? "Thinking\u2026" : status)
-    : isPlan
-      ? friendlyMsg || "Planning\u2026"
-      : isToolCall
-        ? friendlyMsg || "Working on it\u2026"
-        : isToolResult
-          ? friendlyMsg || "Done"
-          : status;
-
-  return (
-    <div className={`flex items-center gap-1.5 text-xs mb-1.5 ${
-      isToolResult ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
-    }`}>
-      {icon}
-      <span>{label}</span>
-    </div>
-  );
-}
-
-// ─── Waiting Indicator (shown before any content arrives) ───
-function WaitingIndicator({ status }: { status?: string }) {
-  // Parse prefixed status like "tool_call:Reading package.json"
-  const colonIdx = status ? status.indexOf(":") : -1;
-  const KNOWN_PREFIXES = new Set(["plan", "tool_call", "tool_result", "status"]);
-  const maybeType = colonIdx > 0 ? status!.slice(0, colonIdx) : "";
-  const isPrefixed = KNOWN_PREFIXES.has(maybeType);
-  const statusType = isPrefixed ? maybeType : "";
-  const friendlyMsg = isPrefixed ? status!.slice(colonIdx + 1) : "";
-
-  const isToolCall = statusType === "tool_call";
-  const isToolResult = statusType === "tool_result";
-  const isPlan = statusType === "plan";
-
-  // Pick icon and label based on what the AI is doing
-  let icon: React.ReactNode;
-  let label: string;
-  let sublabel: string | null = null;
-
-  if (isToolCall) {
-    icon = <Wrench className="h-4 w-4 text-blue-400 animate-spin" />;
-    label = friendlyMsg || "Working on it\u2026";
-  } else if (isToolResult) {
-    icon = <Check className="h-4 w-4 text-green-500" />;
-    label = friendlyMsg || "Done";
-  } else if (isPlan) {
-    icon = <ListChecks className="h-4 w-4 text-brand-400 animate-pulse" />;
-    label = friendlyMsg || "Planning\u2026";
-  } else {
-    icon = <Brain className="h-4 w-4 text-brand-400 animate-pulse" />;
-    label = "Thinking\u2026";
-    sublabel = "Analyzing your request";
+// ─── Phase → Icon mapping ─────────────────────────────────────
+function PhaseIcon({ phase, className = "" }: { phase: AgentPhase; className?: string }) {
+  const base = `shrink-0 ${className}`;
+  switch (phase) {
+    case "thinking": return <Brain className={`${base} text-brand-400 animate-pulse`} />;
+    case "planning": return <ListChecks className={`${base} text-brand-400 animate-pulse`} />;
+    case "clarifying": return <Brain className={`${base} text-amber-400`} />;
+    case "reading_files": return <Search className={`${base} text-blue-400`} />;
+    case "writing_files": return <FileEdit className={`${base} text-blue-400 animate-pulse`} />;
+    case "running_command": return <Terminal className={`${base} text-purple-400 animate-pulse`} />;
+    case "installing": return <Package className={`${base} text-orange-400 animate-pulse`} />;
+    case "testing": return <Cpu className={`${base} text-indigo-400 animate-pulse`} />;
+    case "fixing": return <Wrench className={`${base} text-amber-400 animate-spin`} />;
+    case "streaming_response": return <Loader2 className={`${base} text-brand-400 animate-spin`} />;
+    case "completed": return <Check className={`${base} text-green-500`} />;
+    case "failed": return <AlertCircle className={`${base} text-red-400`} />;
+    case "cancelled": return <XCircle className={`${base} text-muted-foreground`} />;
+    default: return <Loader2 className={`${base} text-brand-400 animate-spin`} />;
   }
+}
+
+// ─── Streaming Status Indicator ───────────────────────────────
+// Shown inline beneath the message header while content is also streaming
+function StreamingStatus({ progress }: { progress?: AgentProgressState }) {
+  if (!progress || progress.phase === "streaming_response") return null;
+
+  const isError = progress.phase === "failed";
+  const isCancelled = progress.phase === "cancelled";
 
   return (
-    <div className="flex items-center gap-2.5 text-sm text-muted-foreground py-1">
-      {icon}
-      <div className="flex flex-col gap-0.5">
-        <span className="font-medium">{label}</span>
-        {sublabel && (
-          <span className="text-xs text-muted-foreground/60">{sublabel}</span>
-        )}
-      </div>
-      <span className="inline-flex items-center gap-[3px] ml-1">
-        <span className="status-dot-1 inline-block h-1 w-1 rounded-full bg-brand-400" />
-        <span className="status-dot-2 inline-block h-1 w-1 rounded-full bg-brand-400" />
-        <span className="status-dot-3 inline-block h-1 w-1 rounded-full bg-brand-400" />
-      </span>
+    <div className={`flex items-center gap-1.5 text-xs mb-1.5 ${isError ? "text-red-400" :
+        isCancelled ? "text-muted-foreground" :
+          "text-muted-foreground"
+      }`}>
+      <PhaseIcon phase={progress.phase} className="h-3 w-3" />
+      <span>{progress.message}</span>
     </div>
   );
 }
 
-// ─── Thinking Section (live-streaming, auto-scroll) ─────────
-function ThinkingSection({ content, isStreaming }: { content: string; isStreaming: boolean }) {
+// ─── Glowing Progress Card (formerly WaitingIndicator) ──────────
+// Shown during agent execution when no content has streamed yet, or while terminal commands run
+function GlowingProgressCard({ progress }: { progress?: AgentProgressState }) {
+  const phase = progress?.phase ?? "thinking";
+  const message = progress?.message ?? "Thinking…";
+
+  // Grab the agent timeline to show a cool checklist
+  const agentTimeline = useEditorStore((s) => s.agentTimeline);
+
+  const isError = phase === "failed";
+  const isCancelled = phase === "cancelled";
+
+  // Take the last 3 completed/in_progress events
+  const visibleEvents = agentTimeline
+    .filter(t => t.status !== "failed" && !t.message.includes("undefined"))
+    .slice(-4);
+
+  return (
+    <div className="relative mt-2 mb-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-6 shadow-2xl">
+      {/* Background radial glow */}
+      <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-brand-600/10 to-transparent pointer-events-none" />
+      <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-500/20 blur-[60px] pointer-events-none rounded-full" />
+
+      {/* Orb */}
+      <div className="flex flex-col items-center relative z-10">
+        <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-400/20 via-purple-500/20 to-transparent border border-white/10 shadow-[0_0_30px_rgba(168,85,247,0.3)]">
+          <Sparkles className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)] animate-pulse" />
+          {/* subtle rotating dashed border effect */}
+          <div className="absolute inset-0 rounded-full border border-dashed border-white/20 animate-[spin_10s_linear_infinite]" />
+        </div>
+
+        {/* Title */}
+        <h3 className="mt-4 text-sm font-semibold text-white tracking-wide">
+          {message}
+        </h3>
+
+        {/* Dynamic Checklist */}
+        <div className="mt-4 w-full flex flex-col gap-2 relative">
+          {visibleEvents.map((evt, idx) => {
+            const isLast = idx === visibleEvents.length - 1;
+            const isSpinning = isLast && !isError && phase !== "completed";
+            return (
+              <div key={evt.id} className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 transition-all">
+                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/15 border border-brand-500/30">
+                  {isSpinning ? (
+                    <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
+                  ) : (
+                    <Check className="h-3 w-3 text-brand-400" />
+                  )}
+                </div>
+                <span className={`text-[11px] font-medium truncate ${isSpinning ? "text-brand-100" : "text-muted-foreground"}`}>
+                  {evt.message}
+                </span>
+              </div>
+            );
+          })}
+
+          {visibleEvents.length === 0 && !isError && (
+            <div className="flex items-center gap-2.5 opacity-60">
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/10 border border-brand-500/20">
+                <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
+              </div>
+              <span className="text-[11px] font-medium text-muted-foreground">Preparing workspace…</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Progress Bar ──────────────────────────────────────────────
+function ProgressBar({ percent }: { percent: number }) {
+  return (
+    <div className="w-full h-0.5 bg-muted/50 rounded-full overflow-hidden my-1.5">
+      <div
+        className="h-full bg-gradient-to-r from-brand-500 to-purple-500 rounded-full transition-all duration-700 ease-out"
+        style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+      />
+    </div>
+  );
+}
+
+// ─── Thinking Section ──────────────────────────────────────────
+function ThinkingSection({
+  content,
+  isStreaming,
+  summaryLine,
+}: {
+  content: string;
+  isStreaming: boolean;
+  summaryLine?: string;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(isStreaming);
   const wasStreamingRef = useRef(isStreaming);
+  const wordCount = content ? content.trim().split(/\s+/).length : 0;
 
-  // Auto-open when streaming starts
   useEffect(() => {
     if (isStreaming && !wasStreamingRef.current) setIsOpen(true);
     wasStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
-  // Auto-scroll to bottom as new content streams in
   useEffect(() => {
     if (isOpen && isStreaming && scrollRef.current) {
       const el = scrollRef.current;
-      // Only auto-scroll if user hasn't scrolled up manually
       const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      if (isNearBottom) {
-        el.scrollTop = el.scrollHeight;
-      }
+      if (isNearBottom) el.scrollTop = el.scrollHeight;
     }
   }, [content, isOpen, isStreaming]);
+
+  // Derive a 1-line summary from the first meaningful sentence if not provided
+  const displaySummary = summaryLine || (() => {
+    if (!content) return "";
+    const firstSentence = content.replace(/\n+/g, " ").trim().split(/[.!?]/)[0];
+    if (!firstSentence) return "";
+    return firstSentence.length > 80
+      ? firstSentence.slice(0, 77) + "…"
+      : firstSentence;
+  })();
 
   return (
     <div className="mb-2 rounded-md border border-border/50 bg-muted/20 text-xs">
       <button
         type="button"
         onClick={() => setIsOpen((p) => !p)}
-        className="w-full cursor-pointer select-none px-2.5 py-1.5 text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+        className="w-full cursor-pointer select-none px-2.5 py-1.5 text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
       >
-        <Brain className={`h-3 w-3 text-brand-400 ${isStreaming ? "animate-pulse" : ""}`} />
-        <span className="flex-1 text-left">
-          {isStreaming ? "Thinking\u2026" : "Thought process"}
+        <Brain className={`h-3 w-3 text-brand-400 shrink-0 ${isStreaming ? "animate-pulse" : ""}`} />
+        <span className="flex-1 text-left truncate">
+          {isStreaming ? "Thinking…" : (displaySummary || "Thought process")}
         </span>
-        <svg
-          className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
+        <span className="text-[10px] text-muted-foreground/40 shrink-0">{wordCount}w</span>
+        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
       </button>
       {isOpen && (
         <div
           ref={scrollRef}
-          className="px-2.5 pb-2 text-muted-foreground/80 whitespace-pre-wrap max-h-72 overflow-y-auto text-[11px] leading-relaxed scroll-smooth"
+          className="px-2.5 pb-2 text-muted-foreground/80 whitespace-pre-wrap max-h-64 overflow-y-auto text-[11px] leading-relaxed scroll-smooth border-t border-border/30"
         >
           {content}
           {isStreaming && (
@@ -174,20 +209,80 @@ function ThinkingSection({ content, isStreaming }: { content: string; isStreamin
   );
 }
 
-// ─── Message Component ──────────────────────────────────────
+// ─── Main ChatMessage Component ────────────────────────────────
 interface ChatMessageProps {
   message: ChatMessageType;
+  /** Called when the user answers an inline clarification question so the parent
+   * can forward the answer to the AI via sendMessage. */
+  onClarificationAnswer?: (content: string) => void;
 }
 
-export const ChatMessage = memo(function ChatMessage({
-  message,
-}: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, onClarificationAnswer }: ChatMessageProps) {
   const isUser = message.role === "user";
   const hasThinking = !!message.thinkingContent;
+
+  // Derive progress — prefer new typed field, fall back to legacy liveStatus
+  const agentProgress: AgentProgressState | undefined =
+    message.agentProgress ??
+    (message.liveStatus
+      ? (() => {
+        // Backward-compat: parse legacy colon-string format
+        const colonIdx = message.liveStatus.indexOf(":");
+        const KNOWN = new Set(["plan", "tool_call", "tool_result", "status"]);
+        const maybeType = colonIdx > 0 ? message.liveStatus.slice(0, colonIdx) : "";
+        const isPrefixed = KNOWN.has(maybeType);
+        const msg = isPrefixed ? message.liveStatus.slice(colonIdx + 1) : message.liveStatus;
+        const phase: AgentPhase =
+          maybeType === "tool_call" ? "writing_files" :
+            maybeType === "tool_result" ? "completed" :
+              maybeType === "plan" ? "planning" :
+                "thinking";
+        return { phase, message: msg || PHASE_LABELS[phase] };
+      })()
+      : undefined);
+
   const isWaiting = message.isStreaming && !message.content && !hasThinking;
   const isActivelyStreaming = message.isStreaming && !!(message.content || hasThinking);
+  const isTerminal =
+    agentProgress?.phase === "failed" ||
+    agentProgress?.phase === "cancelled";
+
   const [undoing, setUndoing] = useState(false);
   const { projectId, updateMessageFields } = useEditorStore();
+
+  // ─── Inline clarification send ────────────────────────────────
+  const handleClarificationAnswer = useCallback(
+    (questionId: string, answer: string) => {
+      // Update local UI state to mark the question as answered
+      updateMessageFields(message.id, {
+        clarificationQuestion: message.clarificationQuestion
+          ? { ...message.clarificationQuestion, answered: true, answer }
+          : undefined,
+      });
+      // Build the outgoing content
+      const content =
+        answer === "__skipped__"
+          ? `[Skipped: "${message.clarificationQuestion?.question ?? "question"}"]`
+          : answer;
+      // Add a visible user message in the chat store
+      useEditorStore.getState().addMessage({
+        id: crypto.randomUUID(),
+        role: "user",
+        content,
+        timestamp: new Date().toISOString(),
+      });
+      // Forward to parent (chat-panel) which calls sendMessage to reach the API
+      onClarificationAnswer?.(content);
+    },
+    [message.id, message.clarificationQuestion, updateMessageFields, onClarificationAnswer]
+  );
+
+  const handleClarificationSkip = useCallback(
+    (questionId: string) => {
+      handleClarificationAnswer(questionId, "__skipped__");
+    },
+    [handleClarificationAnswer]
+  );
 
   const canUndo =
     !isUser &&
@@ -211,27 +306,36 @@ export const ChatMessage = memo(function ChatMessage({
     }
   }, [projectId, message.versionSha, message.id, undoing, updateMessageFields]);
 
-  // Memoize rendered markdown — only recompute when content changes
-  // Strip trailing colon during streaming (LLM often emits ":" before tool calls)
+  // Memoize rendered markdown
   const renderedHtml = useMemo(() => {
     if (!message.content) return "";
-    const content = isActivelyStreaming ? message.content.replace(/:\s*$/, "") : message.content;
+    const content =
+      isActivelyStreaming
+        ? message.content.replace(/:\s*$/, "")
+        : message.content;
     return renderMarkdown(content);
   }, [message.content, isActivelyStreaming]);
 
+  // Live tool call cards (from liveToolCalls array)
+  const liveToolCalls = message.liveToolCalls ?? [];
+  // Show cards only during streaming or if they recently completed (< 30s)
+  const visibleToolCalls = isActivelyStreaming || isWaiting
+    ? liveToolCalls
+    : liveToolCalls.filter((tc) => tc.status !== "running");
+
+  // Progress percent (for plan step tracking)
+  const progressPercent = agentProgress?.percent;
+
   return (
     <div
-      className={`flex gap-3 px-4 py-3 ${
-        isUser ? "" : "bg-muted/30"
-      }`}
+      className={`flex gap-3 px-4 py-3 ${isUser ? "" : "bg-muted/30"}`}
     >
       {/* Avatar */}
       <div
-        className={`flex h-7 w-7 flex-none items-center justify-center rounded-full ${
-          isUser
+        className={`flex h-7 w-7 flex-none items-center justify-center rounded-full ${isUser
             ? "bg-primary text-primary-foreground"
             : "bg-gradient-to-br from-brand-500 to-brand-300 text-white"
-        }`}
+          }`}
       >
         {isUser ? (
           <User className="h-3.5 w-3.5" />
@@ -242,6 +346,7 @@ export const ChatMessage = memo(function ChatMessage({
 
       {/* Content */}
       <div className="min-w-0 flex-1">
+        {/* Header row */}
         <div className="mb-1 flex items-center gap-2">
           <span className="text-xs font-semibold text-foreground">
             {isUser ? "You" : "Doable AI"}
@@ -257,18 +362,37 @@ export const ChatMessage = memo(function ChatMessage({
           )}
         </div>
 
-        {/* Attachments — show for user messages */}
+        {/* Attachments (user messages) */}
         {isUser && message.attachments && message.attachments.length > 0 && (
           <MessageAttachments attachments={message.attachments} />
         )}
 
-        {/* Thinking content — live-streaming with auto-scroll */}
+        {/* Thinking section */}
         {message.thinkingContent && (
-          <ThinkingSection content={message.thinkingContent} isStreaming={!!message.isStreaming} />
+          <ThinkingSection
+            content={message.thinkingContent}
+            isStreaming={!!message.isStreaming}
+          />
         )}
 
-        {/* Live status indicator — hidden during waiting state since WaitingIndicator handles it */}
-        {message.isStreaming && !isWaiting && <StreamingStatus status={message.liveStatus} />}
+        {/* Progress bar when plan step position is known */}
+        {progressPercent !== undefined && message.isStreaming && (
+          <ProgressBar percent={progressPercent} />
+        )}
+
+        {/* Live tool call cards */}
+        {visibleToolCalls.length > 0 && (
+          <div className="mb-1.5 space-y-0.5">
+            {visibleToolCalls.map((tc) => (
+              <ToolCallCard key={tc.id} {...tc} />
+            ))}
+          </div>
+        )}
+
+        {/* Inline status (only when content is also streaming — not waiting state) */}
+        {message.isStreaming && !isWaiting && (
+          <StreamingStatus progress={agentProgress} />
+        )}
 
         {/* Undone badge */}
         {message.undone && (
@@ -278,10 +402,14 @@ export const ChatMessage = memo(function ChatMessage({
           </div>
         )}
 
+        {/* Main content */}
         {isWaiting ? (
-          <WaitingIndicator status={message.liveStatus} />
+          <GlowingProgressCard progress={agentProgress} />
         ) : message.content ? (
-          <div className={`prose-editor text-sm leading-relaxed ${message.undone ? "text-muted-foreground opacity-60" : "text-foreground"}`}>
+          <div
+            className={`prose-editor text-sm leading-relaxed ${message.undone ? "text-muted-foreground opacity-60" : "text-foreground"
+              } ${isActivelyStreaming ? "streaming-bubble" : ""}`}
+          >
             <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
             {isActivelyStreaming && (
               <span className="streaming-caret inline-flex items-center ml-1 align-middle gap-[3px]">
@@ -291,7 +419,39 @@ export const ChatMessage = memo(function ChatMessage({
               </span>
             )}
           </div>
+        ) : isTerminal && !isWaiting ? (
+          agentProgress?.phase === "failed" ? (
+            <ErrorRecoveryCard
+              kind="generic"
+              message={agentProgress.message}
+            />
+          ) : (
+            <GlowingProgressCard progress={agentProgress} />
+          )
         ) : null}
+        
+                {/* Inline clarification question card */}
+        {!isUser && message.clarificationQuestion && (
+          <InlineClarificationCard
+            questionId={message.clarificationQuestion.id}
+            question={message.clarificationQuestion.question}
+            options={message.clarificationQuestion.options}
+            context={message.clarificationQuestion.context}
+            answered={message.clarificationQuestion.answered}
+            answer={message.clarificationQuestion.answer}
+            onAnswer={handleClarificationAnswer}
+            onSkip={handleClarificationSkip}
+          />
+        )}
+
+        {/* MCP interactive UI widgets — rendered inline below assistant text */}
+        {!isUser && message.mcpWidgets && Object.values(message.mcpWidgets).length > 0 && (
+          <div className="space-y-1">
+            {Object.values(message.mcpWidgets).map((widget) => (
+              <McpWidgetRenderer key={widget.toolCallId} widget={widget} messageId={message.id} />
+            ))}
+          </div>
+        )}
 
         {/* Tool activity summary — shown for history messages with tool calls */}
         {!isUser && !message.isStreaming && !message.content && message.hadToolCalls && message.toolCallDetails && (
@@ -303,17 +463,12 @@ export const ChatMessage = memo(function ChatMessage({
           </div>
         )}
 
-        {/* Interactive MCP widgets attached to this assistant message */}
-        {!isUser && message.mcpWidgets && Object.values(message.mcpWidgets).map((widget) => (
-          <McpWidgetRenderer key={widget.toolCallId} widget={widget} messageId={message.id} />
-        ))}
-
-        {/* Per-message usage display (tokens, cost, duration) */}
+        {/* Token counter */}
         {!isUser && !message.isStreaming && message.usage && (
           <TokenCounter usage={message.usage} />
         )}
 
-        {/* Undo button for AI messages that made file changes */}
+        {/* Undo button */}
         {canUndo && (
           <button
             onClick={handleUndo}
@@ -327,6 +482,29 @@ export const ChatMessage = memo(function ChatMessage({
             )}
             {undoing ? "Undoing..." : "Undo changes"}
           </button>
+        )}
+
+        {/* ─── Suggestion Pills ────────────────────────────────────────── */}
+        {!isUser && !message.isStreaming && message.content && isTerminal && !message.clarificationQuestion && !message.undone && (
+          <div className="mt-3 flex flex-wrap gap-2 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-300">
+            {["Make the stats pop more", "Add a dark / light toggle", "Improve the activity table", "Add more animations"].map((sugg) => (
+              <button
+                key={sugg}
+                onClick={() => {
+                  const chatInput = document.querySelector<HTMLTextAreaElement>('textarea');
+                  if (chatInput) {
+                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+                    nativeInputValueSetter?.call(chatInput, sugg);
+                    chatInput.dispatchEvent(new Event("input", { bubbles: true }));
+                    chatInput.focus();
+                  }
+                }}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-white/10 hover:text-foreground transition-all duration-200"
+              >
+                {sugg}
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </div>

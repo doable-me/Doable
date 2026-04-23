@@ -57,7 +57,7 @@ chatRoutes.use("/projects/:id/chat/suggestions", suggestionLimiter);
 
 // Credit check: require at least 1 credit before allowing AI chat
 chatRoutes.use("/projects/:id/chat", async (c, next) => {
-  if (c.req.method === "POST") return requireCredits(1)(c, next);
+  if (c.req.method === "POST") return requireCredits(1)(c as never, next);
   return next();
 });
 chatRoutes.use("/projects/:id/chat/fix-error", requireCredits(1));

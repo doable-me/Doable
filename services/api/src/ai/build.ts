@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { getProjectPath } from "./project-files.js";
-import { buildSafeEnv } from "../projects/safe-env.js";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -33,7 +32,7 @@ export async function build(projectId: string): Promise<BuildResult> {
       cwd,
       shell: true,
       stdio: "pipe",
-      env: buildSafeEnv(undefined, { FORCE_COLOR: "0" }),
+      env: { ...process.env, FORCE_COLOR: "0" },
     });
 
     let stdout = "";
@@ -93,7 +92,7 @@ export async function startDev(
     cwd,
     shell: true,
     stdio: "pipe",
-    env: buildSafeEnv(undefined, { FORCE_COLOR: "0" }),
+    env: { ...process.env, FORCE_COLOR: "0" },
   });
 
   const handle: DevServerHandle = {

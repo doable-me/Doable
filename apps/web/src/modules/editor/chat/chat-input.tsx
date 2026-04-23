@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Paperclip, Square } from "lucide-react";
+import { Send, Paperclip, Square, Plus, ArrowUp, ChevronDown, Sparkles } from "lucide-react";
 import { ModeToggle } from "./mode-toggle";
 import { useAttachments, ACCEPTED_EXTENSIONS, type Attachment } from "@/hooks/use-attachments";
 import { AttachmentPreviewStrip } from "./attachment-preview";
@@ -148,13 +148,7 @@ export function ChatInput({
   );
 
   return (
-    <div className="border-t border-border bg-background p-3">
-      {/* Mode toggle */}
-      <div className="mb-2 flex items-center justify-between">
-        <ModeToggle />
-      </div>
-
-      {/* Hidden file input */}
+    <div className="pt-2 pb-4 px-4 bg-gradient-to-t from-background via-background to-transparent shrink-0">
       <input
         ref={fileInputRef}
         type="file"
@@ -164,77 +158,82 @@ export function ChatInput({
         className="hidden"
       />
 
-      {/* Input area */}
       <div
-        className={`rounded-lg border bg-muted/20 p-2 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring transition-shadow ${
-          isDragging ? "border-primary ring-1 ring-primary bg-primary/5" : "border-border"
+        className={`relative flex flex-col rounded-2xl border shadow-[0_0_20px_rgba(0,0,0,0.05)] backdrop-blur-xl transition-all duration-300 ease-out bg-muted/20 ${
+          isDragging
+            ? "border-brand-500 bg-brand-500/5 ring-1 ring-brand-400 scale-[1.01]"
+            : "border-border/80 hover:border-border"
         }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Attachment preview strip */}
         <AttachmentPreviewStrip
           attachments={attachments}
           onRemove={removeAttachment}
         />
 
-        <div className="flex items-end gap-2">
-          {/* Attachment button */}
-          <button
-            onClick={openFilePicker}
-            className="relative flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            title="Attach file"
-          >
-            <Paperclip className="h-4 w-4" />
-            {attachments.length > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
-                {attachments.length}
-              </span>
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onInput={handleInput}
+          onPaste={onPaste}
+          placeholder={value ? "" : placeholder}
+          disabled={disabled}
+          rows={1}
+          className="w-full max-h-[40vh] min-h-[48px] resize-none bg-transparent px-4 py-3.5 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus:outline-none disabled:opacity-50"
+        />
+
+        <div className="flex items-center justify-between px-2 pb-2 mt-1">
+          {/* Left side: Attach + ModeToggle */}
+          <div className="flex items-center gap-2">
+             <button
+               onClick={openFilePicker}
+               className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-200 border border-white/5"
+               title="Attach files"
+             >
+               <Plus className="h-4 w-4" />
+               {attachments.length > 0 && (
+                 <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 text-[10px] font-medium text-white shadow-sm">
+                   {attachments.length}
+                 </span>
+               )}
+             </button>
+             
+             <ModeToggle />
+          </div>
+
+          {/* Right side: Send / Stop */}
+          <div className="flex items-center gap-2">
+            {isStreaming ? (
+              <button
+                onClick={onStop}
+                className="flex h-8 items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/20 px-3 text-red-500 hover:bg-red-500/20 transition-colors"
+                title="Stop generating"
+              >
+                <Square className="h-3 w-3 fill-current" />
+                <span className="text-[11px] font-medium">Stop</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!hasContent || disabled}
+                className="group flex h-8 items-center gap-1.5 rounded-full bg-brand-500 border border-brand-500/20 px-3 text-white shadow-sm hover:bg-brand-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="Send message"
+              >
+                <span className="text-[11px] font-medium tracking-wide">Send</span>
+                <ArrowUp className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5" />
+              </button>
             )}
-          </button>
-
-          {/* Textarea */}
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onInput={handleInput}
-            onPaste={onPaste}
-            placeholder={value ? "" : placeholder}
-            disabled={disabled}
-            rows={1}
-            className="max-h-[200px] min-h-[36px] flex-1 resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
-          />
-
-          {/* Send / Stop */}
-          {isStreaming ? (
-            <button
-              onClick={onStop}
-              className="flex h-8 w-8 flex-none items-center justify-center rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-              title="Stop generating"
-            >
-              <Square className="h-3.5 w-3.5" />
-            </button>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!hasContent || disabled}
-              className="flex h-8 w-8 flex-none items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Send message"
-            >
-              <Send className="h-3.5 w-3.5" />
-            </button>
-          )}
+          </div>
         </div>
       </div>
-
-      {/* Hint */}
-      <p className="mt-1.5 text-[11px] text-muted-foreground">
-        Press <kbd className="rounded border border-border px-1 py-0.5 text-[10px] font-mono">Enter</kbd> to send,{" "}
-        <kbd className="rounded border border-border px-1 py-0.5 text-[10px] font-mono">Shift+Enter</kbd> for new line
-      </p>
+      
+      <div className="mt-2 text-center text-[10px] text-muted-foreground/40 font-medium tracking-wide">
+        Shift + Enter for new line
+      </div>
     </div>
   );
 }

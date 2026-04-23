@@ -31,25 +31,25 @@ export function renderMarkdown(text: string): string {
   html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
 
   // Headings (# to ####) — must be at start of line
-  html = html.replace(/^#### (.+)$/gm, '<h4 class="chat-h4">$1</h4>');
-  html = html.replace(/^### (.+)$/gm, '<h3 class="chat-h3">$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2 class="chat-h2">$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1 class="chat-h1">$1</h1>');
+  html = html.replace(/^#### (.+)$/gm, '<h4 class="chat-h4 bubble-heading">$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3 class="chat-h3 bubble-heading">$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2 class="chat-h2 bubble-heading">$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1 class="chat-h1 bubble-heading">$1</h1>');
 
   // Unordered lists: lines starting with - or *
-  html = html.replace(/^[*-] (.+)$/gm, '<li class="chat-li">$1</li>');
+  html = html.replace(/^[*-] (.+)$/gm, '<li class="premium-ul-li bubble-item"><div class="ul-bullet"></div><div class="li-content">$1</div></li>');
 
   // Ordered lists: lines starting with 1. 2. etc.
-  html = html.replace(/^\d+\. (.+)$/gm, '<li class="chat-li-ol">$1</li>');
+  html = html.replace(/^(\d+)\. (.+)$/gm, '<li class="premium-ol-li bubble-item"><div class="ol-number">$1</div><div class="li-content">$2</div></li>');
 
   // Wrap consecutive <li> runs in <ul>/<ol>
   html = html.replace(
-    /((?:<li class="chat-li">[\s\S]*?<\/li>\s*)+)/g,
-    '<ul class="chat-ul">$1</ul>'
+    /((?:<li class="premium-ul-li bubble-item">[\s\S]*?<\/li>\s*)+)/g,
+    '<ul class="premium-ul">$1</ul>'
   );
   html = html.replace(
-    /((?:<li class="chat-li-ol">[\s\S]*?<\/li>\s*)+)/g,
-    '<ol class="chat-ol">$1</ol>'
+    /((?:<li class="premium-ol-li bubble-item">[\s\S]*?<\/li>\s*)+)/g,
+    '<ol class="premium-ol">$1</ol>'
   );
 
   // Horizontal rules
@@ -62,7 +62,7 @@ export function renderMarkdown(text: string): string {
   html = html.replace(/\n/g, "<br />");
 
   // Clean up: remove <br /> right after block elements
-  html = html.replace(/<\/(h[1-4]|li|ul|ol|pre|hr)><br \/>/g, "</$1>");
+  html = html.replace(/<\/(h[1-4]|li|ul|ol|pre|hr|div)><br \/>/g, "</$1>");
   html = html.replace(/<hr class="chat-hr" \/><br \/>/g, '<hr class="chat-hr" />');
 
   return html;
@@ -121,14 +121,20 @@ export function ToolActivitySummary({ toolCalls }: { toolCalls: Array<{ name: st
   if (entries.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-      <Wrench className="h-3 w-3 text-blue-400" />
-      {entries.map(([name, count], i) => (
-        <span key={name}>
-          {friendlyName(name, count)}
-          {i < entries.length - 1 ? " · " : ""}
-        </span>
-      ))}
+    <div className="my-2 flex flex-col rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden shadow-sm backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div className="flex items-center gap-2.5 px-3 py-2">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand-500/15 border border-brand-500/20">
+          <Wrench className="h-3 w-3 text-brand-400" />
+        </div>
+        <div className="flex-1 min-w-0 flex flex-wrap gap-x-2 gap-y-1 items-center text-[12px] text-muted-foreground/80">
+          {entries.map(([name, count], i) => (
+            <span key={name} className="flex items-center gap-2">
+              <span className="font-medium text-foreground/90">{friendlyName(name, count)}</span>
+              {i < entries.length - 1 && <span className="h-1 w-1 rounded-full bg-border/80" />}
+            </span>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

@@ -35,9 +35,9 @@ export async function resolveAiEngine(
   model?: string;
   provider?: ByokProviderConfig;
   githubToken?: string;
+  providerId?: string;
   modelSource: string;
   providerSource: string;
-  copilotAccountId?: string;
 }> {
   let resolvedProvider: ByokProviderConfig | undefined = overrides.provider;
   let resolvedModel: string | undefined = overrides.model;
@@ -139,5 +139,12 @@ export async function resolveAiEngine(
     }
   }
 
-  return { model: resolvedModel, provider: resolvedProvider, githubToken, modelSource, providerSource, copilotAccountId: selectedCopilotAccountId };
+  return {
+    model: resolvedModel,
+    provider: resolvedProvider,
+    githubToken,
+    providerId: selectedProviderId,
+    modelSource,
+    providerSource,
+  };
 }

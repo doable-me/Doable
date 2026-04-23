@@ -17,7 +17,9 @@ export function usePreview(projectId: string | null) {
     if (!iframeRef.current || !baseUrl) return;
     setPreviewLoading(true);
     iframeRef.current.src = `${baseUrl}?t=${Date.now()}`;
-  }, [baseUrl, setPreviewLoading]);
+    // Keep previewUrl in sync so the toolbar URL bar reflects the current location
+    setPreviewUrl(baseUrl);
+  }, [baseUrl, setPreviewLoading, setPreviewUrl]);
 
   const navigate = useCallback(
     (path: string) => {

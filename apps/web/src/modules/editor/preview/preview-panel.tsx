@@ -260,7 +260,7 @@ export function PreviewPanel() {
             onLoad={onLoadWithHmrReset}
             onError={handleError}
             className="h-full w-full border-0"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-fullscreen"
             title="Project preview"
           />
         </div>

@@ -98,6 +98,15 @@ export function registerSuggestionsRoute(app: Hono<AuthEnv>) {
             fallbackToken = (await aiSettingsDb.getCopilotAccountToken(settings.default_copilot_account_id)) ?? undefined;
           }
           configs.push({ model: "gpt-4o-mini", githubToken: fallbackToken, provider: undefined, label: "fallback" });
+          if (fallbackToken) {
+            configs.push({ model: "gpt-4o-mini", githubToken: fallbackToken, provider: undefined, label: "fallback" });
+          }
+        }
+
+        // Avoid starting SDK sessions when neither GitHub auth nor a custom provider is configured.
+        const runnableConfigs = configs.filter((cfg) => cfg.provider || cfg.githubToken);
+        if (runnableConfigs.length === 0) {
+          return c.json({ data: [] });
         }
 
         const suggestionSystemPrompt = `You generate short, contextual next-step suggestion chips for an AI app builder. Given the user's last prompt and the AI's response, return exactly 4 suggestions as a JSON array of strings. Each suggestion should be 2-6 words, actionable, and relevant to what was just built. Do NOT include generic suggestions. Focus on what the user would logically want to do next with THIS specific app. Return ONLY the JSON array, no other text.`;
@@ -105,7 +114,7 @@ export function registerSuggestionsRoute(app: Hono<AuthEnv>) {
 
         const manager = getCopilotManager();
 
-        for (const config of configs) {
+        for (const config of runnableConfigs) {
           try {
             const suggestions = await manager.withAutoRetry("suggestions", config.githubToken, async (engine) => {
               const sessionId = await engine.createSession({

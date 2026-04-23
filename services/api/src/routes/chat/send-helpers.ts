@@ -99,4 +99,15 @@ export function handleToolEndEvent(stream: SSEStreamingApi, toolName: string, ar
       stream.writeSSE({ data: JSON.stringify({ type: "plan", data: { plan } }) }).catch(() => {});
     } catch { /* parse error */ }
   }
+  if (toolName === "mark_step_complete") {
+    const { stepId, planId, status } = args as { stepId?: string; planId?: string; status?: string };
+    if (stepId && planId) {
+      stream.writeSSE({
+        data: JSON.stringify({
+          type: "plan_step_update",
+          data: { stepId, planId, status: status ?? "completed" },
+        }),
+      }).catch(() => {});
+    }
+  }
 }

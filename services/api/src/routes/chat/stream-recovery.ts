@@ -11,12 +11,6 @@ const MAX_AUTO_CONTINUE = 6;
 const MAX_READ_ONLY_CYCLES = 3;
 const FILE_WRITE_TOOLS = new Set(["create_file", "edit_file", "write_file", "create", "edit", "write"]);
 const READ_TOOLS = new Set(["read_file", "list_files", "search_files", "read", "list", "search"]);
-// Tools that represent real progress even if no file was written
-// (installs, deploys, shell commands, MCP integration calls).
-const PROGRESS_TOOLS = new Set([
-  "install_package", "run_command", "deploy_preview",
-  "provision_supabase", "request_integration", "bash", "shell",
-]);
 
 /** Run auto-continue loops if AI explored but wrote 0 files. */
 export async function handleAutoContinue(
@@ -38,20 +32,9 @@ export async function handleAutoContinue(
     return;
   }
 
-  // If the AI delivered a non-trivial text response this turn, treat as a
-  // legitimate inspect/answer turn — do NOT force auto-continue. This avoids
-  // the false-positive "stuck reading" error when the user asked a question
-  // (e.g. "check the header", "what does X do?") and the AI legitimately
-  // used read tools to answer.
-  if (state.assistantContent.trim().length >= 40) return;
-
   let autoContinueCount = 0;
   let prevReadFingerprint = "";
   let consecutiveReadOnlyCycles = 0;
-  // Track tool-call count at start of each iteration so we can fingerprint
-  // ONLY the calls produced by the current iteration (not the cumulative
-  // sliding -20 window which produced false matches).
-  let toolCallStartIdx = state.assistantToolCalls.length;
 
   while (autoContinueCount < MAX_AUTO_CONTINUE) {
     const wroteFiles = state.assistantToolCalls.some(
@@ -59,22 +42,11 @@ export async function handleAutoContinue(
     );
     if (!state.hadToolCalls || wroteFiles) break;
 
-    // Progress detection: if the most recent iteration produced any
-    // non-read tool call (install_package, run_command, deploy_preview,
-    // MCP, etc.), the AI is making progress — do not stall.
-    const iterationCalls = state.assistantToolCalls.slice(toolCallStartIdx);
-    const madeProgress = iterationCalls.some((tc) => {
-      const name = (tc as { name?: string }).name ?? "";
-      return PROGRESS_TOOLS.has(name) || FILE_WRITE_TOOLS.has(name);
-    });
-    if (autoContinueCount > 0 && madeProgress) {
-      // Reset stall counters — real work happened this iteration.
-      consecutiveReadOnlyCycles = 0;
-      prevReadFingerprint = "";
-    }
-
-    // Stall detection: fingerprint reads from THIS iteration only.
-    const readFiles = iterationCalls
+    // Stall detection: same-file fingerprinting
+    const toolCallsSinceLastContinue = autoContinueCount === 0
+      ? state.assistantToolCalls
+      : state.assistantToolCalls.slice(-20);
+    const readFiles = toolCallsSinceLastContinue
       .filter((tc) => READ_TOOLS.has((tc as { name?: string }).name ?? ""))
       .map((tc) => {
         const args = tc as Record<string, unknown>;
@@ -83,36 +55,27 @@ export async function handleAutoContinue(
       .sort()
       .join("|");
 
-    if (
-      autoContinueCount > 0 &&
-      !madeProgress &&
-      readFiles === prevReadFingerprint &&
-      readFiles !== ""
-    ) {
+    if (autoContinueCount > 0 && readFiles === prevReadFingerprint && readFiles !== "") {
       state.traceCollector?.onError(`Stall: same files read in consecutive continues: ${readFiles.slice(0, 100)}`, "auto_continue_fingerprint");
       console.warn(`[Chat][${projectId.slice(0, 8)}] stall detected — same files read`);
       await stream.writeSSE({
         data: JSON.stringify({
-          type: "status",
-          data: { phase: "stopped", message: "Stopping auto-continue — the preview may already reflect your changes. Refresh to verify." },
+          type: "error",
+          data: "The AI appears to be stuck reading the same files without making progress. Try rephrasing your request or check the preview for errors.",
         }),
       }).catch(() => {});
       break;
     }
     prevReadFingerprint = readFiles;
 
-    if (madeProgress) {
-      // Don't tick the read-only stall counter when real work happened.
-    } else {
-      consecutiveReadOnlyCycles++;
-    }
+    consecutiveReadOnlyCycles++;
     if (consecutiveReadOnlyCycles >= MAX_READ_ONLY_CYCLES) {
       state.traceCollector?.onError(`Stall: ${consecutiveReadOnlyCycles} consecutive read-only continues`, "auto_continue_write_free");
       console.warn(`[Chat][${projectId.slice(0, 8)}] stall detected — ${consecutiveReadOnlyCycles} read-only continues`);
       await stream.writeSSE({
         data: JSON.stringify({
-          type: "status",
-          data: { phase: "stopped", message: "Stopping auto-continue — the AI was investigating without writing changes. Refresh to check the preview, or send a more specific instruction." },
+          type: "error",
+          data: "The AI has been investigating without making changes. Please provide more specific guidance, or check the preview console for errors.",
         }),
       }).catch(() => {});
       break;
@@ -121,10 +84,6 @@ export async function handleAutoContinue(
     autoContinueCount++;
     state.traceCollector?.onAutoContinue(autoContinueCount, `read-only cycle ${autoContinueCount}/${MAX_AUTO_CONTINUE}`);
     console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue attempt ${autoContinueCount}/${MAX_AUTO_CONTINUE}`);
-
-    // Mark where this iteration's tool calls begin so the next loop's
-    // fingerprint covers only the calls produced below.
-    toolCallStartIdx = state.assistantToolCalls.length;
 
     try {
       await stream.writeSSE({
@@ -154,6 +113,7 @@ export async function handleAutoContinue(
           }
           const sseData = mapEventToSSE(evt as Record<string, unknown>);
           if (!sseData) return;
+          state.lastRealEventAt = Date.now();
           // Suppress session.error during auto-continue — the loop handles recovery
           if (sseData.type === "error") return;
           if (sseData.type === "text_delta") {
@@ -165,6 +125,9 @@ export async function handleAutoContinue(
           } else if (sseData.type === "thinking") {
             const t = typeof sseData.data === "string" ? sseData.data : "";
             if (t) state.assistantThinking += t;
+            stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
+          } else if (sseData.type === "tool_delta") {
+            state.sawToolDelta = true;
             stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
           } else {
             stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
@@ -183,16 +146,12 @@ export async function handleAutoContinue(
     const stillNoFiles = !state.assistantToolCalls.some(
       (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
     );
-    const madeAnyProgress = state.assistantToolCalls.some((tc) => {
-      const name = (tc as { name?: string }).name ?? "";
-      return PROGRESS_TOOLS.has(name);
-    });
-    if (stillNoFiles && !madeAnyProgress) {
+    if (stillNoFiles) {
       console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue hit ceiling`);
       await stream.writeSSE({
         data: JSON.stringify({
-          type: "status",
-          data: { phase: "stopped", message: "The AI needed more steps than expected. Refresh to check the preview, or try a simpler/more specific request." },
+          type: "error",
+          data: "The AI needed more steps than expected. It may be blocked by a configuration issue. Check the preview for errors or try a simpler request.",
         }),
       }).catch(() => {});
     }
@@ -227,22 +186,28 @@ export async function handleEmptyResponseRetry(
         if (state.usageCollector) state.usageCollector.onUsageEvent(retryEvent);
         const retrySseData = mapEventToSSE(retryEvent);
         if (retrySseData?.type === "text_delta") {
+          state.lastRealEventAt = Date.now();
           const rawDelta = typeof retrySseData.data === "string" ? retrySseData.data : "";
           for (const chunk of retryRouter.process(rawDelta)) {
             if (!chunk.content) continue;
             if (chunk.type === "text") {
               state.assistantContent += chunk.content;
               stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }).catch(() => {});
-            } else {
+            } else if (chunk.type === "thinking") {
               state.assistantThinking += chunk.content;
               stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
+            } else {
+              state.sawToolDelta = true;
+              stream.writeSSE({ data: JSON.stringify({ type: "tool_delta", data: chunk.content }) }).catch(() => {});
             }
           }
         } else if (retrySseData?.type === "thinking") {
+          state.lastRealEventAt = Date.now();
           const td = typeof retrySseData.data === "string" ? retrySseData.data : "";
           state.assistantThinking += td;
           stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(td) }) }).catch(() => {});
         } else if (retrySseData && retrySseData.type !== "done") {
+          state.lastRealEventAt = Date.now();
           if (retrySseData.type === "tool_call" || retrySseData.type === "tool_result") state.hadToolCalls = true;
           stream.writeSSE({ data: JSON.stringify(retrySseData) }).catch(() => {});
         }
@@ -253,9 +218,12 @@ export async function handleEmptyResponseRetry(
       if (chunk.type === "text") {
         state.assistantContent += chunk.content;
         await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
-      } else {
+      } else if (chunk.type === "thinking") {
         state.assistantThinking += chunk.content;
         await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
+      } else {
+        state.sawToolDelta = true;
+        await stream.writeSSE({ data: JSON.stringify({ type: "tool_delta", data: chunk.content }) });
       }
     }
     console.log(`[Chat][${projectId.slice(0, 8)}] retry result — content: ${state.assistantContent.length}, thinking: ${state.assistantThinking.length}, tools: ${state.hadToolCalls}`);

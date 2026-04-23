@@ -12,19 +12,19 @@ export function ModeToggle() {
   const { mode, setMode } = useEditorStore();
 
   return (
-    <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/30 p-0.5">
+    <div className="flex shrink-0 items-center gap-0 rounded-full border border-white/5 bg-white/[0.03] p-0.5">
       {modes.map(({ id, label, icon: Icon, desc }) => (
         <button
           key={id}
           onClick={() => setMode(id)}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+          className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${
             mode === id
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-brand-500/20 text-brand-300 shadow-sm"
+              : "text-muted-foreground/60 hover:text-muted-foreground"
           }`}
           title={desc}
         >
-          <Icon className="h-3.5 w-3.5" />
+          <Icon className={`h-3 w-3 ${mode === id ? "text-brand-400" : ""}`} />
           {label}
         </button>
       ))}

@@ -6,8 +6,13 @@ import { getActiveTrace } from "../ai/trace-collector.js";
 import { xray } from "../integrations/xray.js";
 import { fetchCtx, createTracedFetch, type HttpTraceEntry } from "../integrations/runner.js";
 
+function dlog(msg: string) {
+  if (!process.env.MCP_DEBUG) return;
+  console.error(`[${new Date().toISOString()}] [tool-bridge] ${msg}`);
+}
+
 /**
- * Side-channel queue for `__ui` payloads.
+ * Side-channel queue for __ui payloads.
  *
  * The Copilot SDK double-encodes tool return values (wraps our
  * `{ success, result, __ui }` into a JSON string under `textResultForLlm`),
@@ -18,11 +23,16 @@ import { fetchCtx, createTracedFetch, type HttpTraceEntry } from "../integration
 export const pendingUiPayloads: McpUiPayload[] = [];
 
 /**
- * Tools whose names start with these are internal — invoked by Doable's
- * mcp-action endpoint directly over MCP, NOT by the LLM. We do NOT expose
- * them as callable Copilot SDK tools, otherwise the model may invoke them
- * directly with invented arguments and bypass the interactive widget flow.
+ * Convert MCP tools to Copilot SDK Tool[] definitions.
+ * Each MCP tool becomes a defineTool() with handler that calls the MCP server.
+ *
+ * Naming convention: mcp_{connectorName}_{toolName}
+ * This ensures uniqueness across connectors and distinguishes from built-in tools.
  */
+// Tools starting with these prefixes are internal — invoked by Doable's
+// mcp-action endpoint directly over MCP, NOT by the LLM. We do NOT expose
+// them as callable Copilot SDK tools, otherwise the model may invoke them
+// directly with invented arguments and bypass the interactive widget flow.
 const INTERNAL_TOOL_NAMES = new Set([
   "ui_action",
   // Generators are triggered by ui_action when the user clicks a picker option,
@@ -31,13 +41,6 @@ const INTERNAL_TOOL_NAMES = new Set([
   "generate_pptx",
 ]);
 
-/**
- * Convert MCP tools to Copilot SDK Tool[] definitions.
- * Each MCP tool becomes a defineTool() with handler that calls the MCP server.
- *
- * Naming convention: mcp_{connectorName}_{toolName}
- * This ensures uniqueness across connectors and distinguishes from built-in tools.
- */
 export function createMcpTools(
   resolvedTools: ResolvedMcpTool[],
   connectorManager: ConnectorManager,
@@ -148,13 +151,15 @@ export function createMcpTools(
           const uiPayload = extractUiPayload(result.content, connectorId, tool.name);
           if (uiPayload) {
             pendingUiPayloads.push(uiPayload);
+            dlog(`handler: pushed __ui to queue (len=${pendingUiPayloads.length})`);
           }
           // For UI-bearing results, give the LLM a short stub instead of the
           // raw JSON — otherwise it reads the picker JSON and paraphrases
-          // the option labels as a text list, confusing the user.
+          // "Web Slides / PowerPoint" as a text list, confusing the user.
           const llmFacing = uiPayload
-            ? `An interactive picker is now shown to the user. Wait for their selection. Do not write any code or call any other tools yet. Respond with exactly: "Please choose an option above."`
+            ? `An interactive picker is now shown to the user. Wait for their selection. Do not write any code or call any other tools yet. Respond with exactly: "Please choose a format above."`
             : textResult;
+          dlog(`handler return: hasUi=${!!uiPayload} llmFacingLen=${llmFacing.length}`);
           return {
             success: true,
             result: llmFacing,
@@ -219,22 +224,25 @@ export function createMcpTools(
  *   { "type": "text", "text": "{\"__ui\":{\"uiType\":\"table\",...}}" }
  *
  * The toolCallId is not known inside the tool handler, so we leave it empty
- * here and let tool-callbacks.ts fill it in from the SDK event context.
+ * here and let tool-callbacks.ts fill it in from the Copilot SDK event context.
  */
 function extractUiPayload(
   content: McpContent[],
   connectorId: string,
   toolName: string,
 ): McpUiPayload | null {
+  dlog(`extractUiPayload tool=${toolName} items=${content.length} types=${content.map((c) => c.type).join(",")}`);
   for (const item of content) {
     if (item.type !== "text") continue;
     const text = item.text.trim();
-    if (!text.includes("__ui")) continue;
+    dlog(`extractUiPayload text preview: ${text.slice(0, 200)}`);
+    if (!text.includes("__ui")) { dlog(`  skip: no __ui in text`); continue; }
     try {
       const parsed = JSON.parse(text);
       const ui = parsed?.__ui;
-      if (!ui || typeof ui !== "object") continue;
-      if (!ui.uiType || !["table", "form", "confirm", "select"].includes(ui.uiType)) continue;
+      if (!ui || typeof ui !== "object") { dlog(`  skip: parsed has no __ui object`); continue; }
+      if (!ui.uiType || !["table", "form", "confirm", "select"].includes(ui.uiType)) { dlog(`  skip: bad uiType=${ui.uiType}`); continue; }
+      dlog(`  EXTRACTED uiType=${ui.uiType}`);
       return {
         uiType: ui.uiType,
         toolCallId: "",
@@ -243,7 +251,8 @@ function extractUiPayload(
         schema: ui.schema ?? {},
         state: ui.state ?? {},
       } satisfies McpUiPayload;
-    } catch {
+    } catch (e) {
+      dlog(`  JSON.parse failed: ${(e as Error).message}`);
       // Not JSON or not a valid UI payload — skip
     }
   }

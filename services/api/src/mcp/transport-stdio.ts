@@ -26,7 +26,7 @@ export class StdioTransport implements McpTransport {
 
     this.process = spawn(this.command, this.args, {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...this.env },  // MCP servers are admin-configured, not user-facing
+      env: { ...process.env, ...this.env },
       shell: process.platform === "win32",
     });
 

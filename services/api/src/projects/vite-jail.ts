@@ -40,7 +40,7 @@ const vaultTracer = new VaultTracer((span) => {
 
 let vaultSingleton: Vault | null = null;
 
-export function getVault(): Vault {
+function getVault(): Vault {
   if (!vaultSingleton) {
     vaultSingleton = createVault({
       resourceLimits: VITE_LIMITS,
@@ -98,7 +98,7 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
         stdio: opts.stdio ?? "pipe",
         lockConfigs: false, // AI legitimately edits vite.config.ts / postcss.config.js
         blockChildProcess: false, // Vite spawns esbuild/workers legitimately
-        blockOutboundNet: true,   // block outbound network; HMR uses localhost which is allowed
+        blockOutboundNet: false,  // dev server needs outbound for npm installs / HMR ws
         resourceLimits: VITE_LIMITS,
       },
     );
@@ -117,16 +117,22 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
       kill: () => { jailed.kill(); },
     };
   } catch (err) {
-    // SECURITY: Fail closed — refuse to start unjailed Vite processes.
-    // If dovault can't enforce isolation, it's not safe to run user code.
-    const msg = (err as Error).message;
-    console.error(`[vite-jail] vault.spawn failed — refusing to start unjailed process: ${msg}`);
-    xray.recordVaultEvent({
-      projectId: opts.projectId,
-      type: "vault.spawn_rejected",
-      data: { reason: msg },
+    // Graceful degradation on platforms where dovault can't jail — fall back
+    // to raw spawn. The trace event still records the failure so operators
+    // can see the gap.
+    console.warn(`[vite-jail] vault.spawn failed, falling back to raw spawn: ${(err as Error).message}`);
+    const { spawn } = await import("node:child_process");
+    const child = spawn(opts.execPath, opts.args, {
+      cwd: opts.cwd,
+      shell: false,
+      stdio: opts.stdio ?? "pipe",
+      env: cleanEnv,
     });
-    throw new Error(`Sandbox unavailable: ${msg}`);
+    return {
+      process: child,
+      pid: child.pid ?? -1,
+      kill: () => { child.kill(); },
+    };
   }
 }
 

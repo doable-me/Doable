@@ -38,6 +38,7 @@ export function createProcessEvent(
 
     const evtType = (event as Record<string, unknown>).type as string;
     const evtData = (event as Record<string, unknown>).data as Record<string, unknown> | undefined;
+    state.lastRealEventAt = Date.now();
 
     if (state.usageCollector) state.usageCollector.onUsageEvent(event);
     state.traceCollector?.onSdkEvent(event as Record<string, unknown>);
@@ -147,27 +148,37 @@ function handleAssistantMessageCatchUp(
   const deltasSoFar = state.assistantContent.slice(state.msgIdDeltaStart);
   if (sanitizedContent.length > deltasSoFar.length) {
     const missing = sanitizedContent.slice(deltasSoFar.length);
+    let visibleText = "";
     for (const chunk of channelRouter.process(missing)) {
       if (!chunk.content) continue;
       if (chunk.type === "text") {
+        visibleText += chunk.content;
         stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }).catch(() => {});
-      } else {
+      } else if (chunk.type === "thinking") {
         state.assistantThinking += chunk.content;
         stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
+      } else if (chunk.type === "tool") {
+        state.sawToolDelta = true;
+        stream.writeSSE({ data: JSON.stringify({ type: "tool_delta", data: chunk.content }) }).catch(() => {});
       }
     }
-    state.assistantContent = state.assistantContent.slice(0, state.msgIdDeltaStart) + sanitizedContent;
+    state.assistantContent = state.assistantContent.slice(0, state.msgIdDeltaStart) + visibleText;
   } else if (!deltasSoFar && !state.assistantContent) {
+    let visibleText = "";
     for (const chunk of channelRouter.process(sanitizedContent)) {
       if (!chunk.content) continue;
       if (chunk.type === "text") {
+        visibleText += chunk.content;
         stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }).catch(() => {});
-      } else {
+      } else if (chunk.type === "thinking") {
         state.assistantThinking += chunk.content;
         stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
+      } else if (chunk.type === "tool") {
+        state.sawToolDelta = true;
+        stream.writeSSE({ data: JSON.stringify({ type: "tool_delta", data: chunk.content }) }).catch(() => {});
       }
     }
-    state.assistantContent = sanitizedContent;
+    state.assistantContent = visibleText;
   }
 }
 
@@ -176,6 +187,8 @@ function routeSseEvent(
   sseData: { type: string; data: unknown }, evtData: Record<string, unknown> | undefined,
   projectId: string, userId: string, messageId: string,
 ) {
+  state.lastRealEventAt = Date.now();
+
   if (sseData.type === "tool_result") {
     state.hadToolCalls = true;
     const resultData = sseData.data as Record<string, unknown>;
@@ -210,11 +223,17 @@ function routeSseEvent(
         stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }).catch(() => {});
         state.lastSseEmitAt = Date.now();
         state.sseFrameCount++;
-      } else {
+      } else if (chunk.type === "thinking") {
         state.assistantThinking += chunk.content;
         state.traceCollector?.onThinkingDelta(chunk.content);
         broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: stripServerPaths(chunk.content), messageId, isThinking: true }, userId).catch(() => {});
         stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
+        state.lastSseEmitAt = Date.now();
+        state.sseFrameCount++;
+      } else if (chunk.type === "tool") {
+        state.sawToolDelta = true;
+        broadcastToRoom(projectId, { type: "ai:tool-delta", chunk: chunk.content, messageId }, userId).catch(() => {});
+        stream.writeSSE({ data: JSON.stringify({ type: "tool_delta", data: chunk.content }) }).catch(() => {});
         state.lastSseEmitAt = Date.now();
         state.sseFrameCount++;
       }

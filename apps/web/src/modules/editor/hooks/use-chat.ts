@@ -1,12 +1,16 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useEditorStore, type ChatMessage } from "./use-editor-store";
 import type { Attachment } from "@/hooks/use-attachments";
 import { API_BASE, generateId } from "./use-chat-types";
 import type { SupabaseProvisionRequest, PendingIntegrationRequest } from "./use-chat-types";
 import { dispatchSSEEvent, type SSEContext } from "./use-chat-sse";
 import { useChatLifecycle } from "./use-chat-lifecycle";
+import {
+  getStaleThreshold,
+  type AgentPhase,
+} from "./use-agent-progress";
 
 export type { SupabaseProvisionRequest, PendingIntegrationRequest } from "./use-chat-types";
 
@@ -19,17 +23,16 @@ export function useChat(
   const ownMessageIds = useRef<Set<string>>(new Set());
   // Track remote streaming message IDs → assistant message IDs in the store
   const remoteStreamMap = useRef<Map<string, string>>(new Map());
+  // Track the last user message content for the Cancel → Resume feature
+  const lastUserMessageRef = useRef<string>("");
+  // Track current agent phase outside state so stale-detection can read it
+  const currentPhaseRef = useRef<AgentPhase>("thinking");
 
-  // Phase 2A: Supabase provisioning request — set when the AI calls
-  // `provision_supabase`. The chat surface watches this and opens
-  // <SupabaseProvisionDialog>; cleared by `dismissSupabaseProvision`.
+  // Supabase provisioning request
   const [supabaseProvisionRequest, setSupabaseProvisionRequest] =
     useState<SupabaseProvisionRequest | null>(null);
 
-  // Phase 1H: integration Connect card. Set when the AI calls
-  // `request_integration` OR an Activepieces tool fails with
-  // credentials_missing. Cleared by `dismissIntegrationRequest` or
-  // auto-cleared once the user reconnects via the integrations panel.
+  // Integration Connect card
   const [pendingIntegrationRequest, setPendingIntegrationRequest] =
     useState<PendingIntegrationRequest | null>(null);
 
@@ -43,13 +46,27 @@ export function useChat(
     updateMessageFields,
     setStreaming,
     clearMessages,
+    setActiveAgentProgress,
+    clearAgentTimeline,
   } = useEditorStore();
 
-  // Collab + history + clear are handled by useChatLifecycle below
+  // ─── Document title: update while streaming in background tab ──
+  useEffect(() => {
+    const store = useEditorStore.getState();
+    if (!isStreaming) {
+      document.title = "Doable";
+      return;
+    }
+    const progress = store.activeAgentProgress;
+    document.title = `⚡ ${progress?.message ?? "Building…"} — Doable`;
+  }, [isStreaming]);
 
+  // ─── sendMessage ─────────────────────────────────────────────────
   const sendMessage = useCallback(
-    async (content: string, attachments?: Attachment[], displayContent?: string) => {
+    async (content: string, attachments?: Attachment[]) => {
       if (!projectId || !content.trim() || isStreaming) return;
+
+      lastUserMessageRef.current = content.trim();
 
       const broadcastMsgId = generateId();
       ownMessageIds.current.add(broadcastMsgId);
@@ -57,9 +74,7 @@ export function useChat(
       const userMessage: ChatMessage = {
         id: generateId(),
         role: "user",
-        // Show short label in UI when provided (e.g. "Selected: Web Slides")
-        // instead of the full prompt with injected MCP skill instructions.
-        content: (displayContent ?? content).trim(),
+        content: content.trim(),
         timestamp: new Date().toISOString(),
         attachments: attachments?.map((a) => ({
           type: a.type,
@@ -71,16 +86,21 @@ export function useChat(
       addMessage(userMessage);
 
       const assistantId = generateId();
+
+      // ── Optimistic "Connecting…" state — visible within 50ms ──
       const assistantMessage: ChatMessage = {
         id: assistantId,
         role: "assistant",
         content: "",
         timestamp: new Date().toISOString(),
         isStreaming: true,
-        liveStatus: "thinking",
+        agentProgress: { phase: "thinking", message: "Connecting to AI…" },
       };
       addMessage(assistantMessage);
       setStreaming(true);
+      setActiveAgentProgress({ phase: "thinking", message: "Connecting to AI…" });
+      clearAgentTimeline();
+      currentPhaseRef.current = "thinking";
 
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -100,11 +120,9 @@ export function useChat(
             },
             body: JSON.stringify({
               content: content.trim(),
-              ...(displayContent && displayContent.trim() && displayContent.trim() !== content.trim()
-                ? { displayContent: displayContent.trim() }
-                : {}),
-              mode,
-              broadcastMsgId,
+              // Read mode from store at call time to avoid stale closures
+              // (e.g. approvePlan switches mode to "agent" before calling sendMessage).
+              mode: useEditorStore.getState().mode,
               attachments: attachments?.map((a) => ({
                 type: a.mimeType,
                 data: a.data,
@@ -116,8 +134,26 @@ export function useChat(
         );
 
         if (!response.ok) {
-          throw new Error(`Chat request failed: ${response.status}`);
+          const status = response.status;
+          if (status === 429) {
+            const retryAfter = parseInt(response.headers.get("retry-after") ?? "30", 10);
+            updateMessageFields(assistantId, {
+              agentProgress: { phase: "failed", message: `Rate limit reached. Retry in ${retryAfter}s.` },
+              isStreaming: false,
+            });
+            setStreaming(false);
+            setActiveAgentProgress(null);
+            return;
+          }
+          throw new Error(`Chat request failed: ${status}`);
         }
+
+        // SSE connection open — update to analysing state
+        updateMessageFields(assistantId, {
+          agentProgress: { phase: "thinking", message: "Analyzing your request…" },
+        });
+        setActiveAgentProgress({ phase: "thinking", message: "Analyzing your request…" });
+        currentPhaseRef.current = "thinking";
 
         const reader = response.body?.getReader();
         if (!reader) throw new Error("No response body");
@@ -130,6 +166,7 @@ export function useChat(
         let pendingFlush = false;
         let lastFlushedLen = 0;
 
+        // ── rAF-batched flush ──────────────────────────────────────
         const flushToState = () => {
           rafHandle = null;
           pendingFlush = false;
@@ -160,12 +197,32 @@ export function useChat(
           setSupabaseProvisionRequest,
           setPendingIntegrationRequest,
           setStreaming,
+          addClarificationMessage: (q) => {
+            const clarifyMsgId = `clarify_${q.id}_${Date.now()}`;
+            addMessage({
+              id: clarifyMsgId,
+              role: "assistant",
+              content: "",
+              timestamp: new Date().toISOString(),
+              clarificationQuestion: {
+                id: q.id,
+                question: q.question,
+                options: q.options,
+                context: q.context,
+                answered: false,
+              },
+            });
+          },
         };
 
         try {
           let streamDone = false;
-          let lastMeaningfulEvent = Date.now();
-          const STALE_STREAM_MS = 30_000;
+          // ── Phase 2: Dual-clock stale detection ────────────────
+          // lastProgressEvent: resets on tool_call / thinking / text_delta
+          // lastServerHeartbeat: resets on ANY event including keep_alive
+          let lastProgressEvent = Date.now();
+          let lastServerHeartbeat = Date.now();
+          let warnedStale = false;
 
           while (!streamDone) {
             const { done, value } = await reader.read();
@@ -190,24 +247,66 @@ export function useChat(
 
               try {
                 const parsed = JSON.parse(data);
-                if (parsed.type !== "keep_alive") {
-                  lastMeaningfulEvent = Date.now();
+
+                // keep_alive resets heartbeat only (not progress clock)
+                if (parsed.type === "keep_alive") {
+                  lastServerHeartbeat = Date.now();
+                  warnedStale = false;
+                  continue;
+                }
+
+                // All real events reset both clocks
+                lastProgressEvent = Date.now();
+                lastServerHeartbeat = Date.now();
+                warnedStale = false;
+
+                // Track current phase for adaptive stale threshold
+                if (parsed.type === "tool_call") {
+                  const inferredPhase = useEditorStore.getState()
+                    .messages.find((m) => m.id === assistantId)
+                    ?.agentProgress?.phase ?? "thinking";
+                  currentPhaseRef.current = inferredPhase as AgentPhase;
                 }
 
                 const result = dispatchSSEEvent(parsed, sseCtx);
+
                 if (result.textDelta) {
-                  accumulated += result.textDelta;
-                  scheduleFlush();
+                  // Detect and strip inline_clarification JSON blocks emitted by AI
+                  const clarifyRe = /\{"type"\s*:\s*"inline_clarification"[\s\S]*?\}\s*\}/g;
+                  let delta = result.textDelta;
+                  const clarifyMatches = delta.match(clarifyRe);
+                  if (clarifyMatches) {
+                    for (const match of clarifyMatches) {
+                      try {
+                        const parsed = JSON.parse(match);
+                        if (parsed.data?.id && parsed.data?.question) {
+                          // Dispatch as synthetic SSE through the same context
+                          dispatchSSEEvent({ type: "inline_clarification", data: parsed.data }, sseCtx);
+                          delta = delta.replace(match, "").replace(/```json\n?/g, "").replace(/```\n?/g, "");
+                        }
+                      } catch { /* ignore malformed */ }
+                    }
+                  }
+                  if (delta.trim()) {
+                    accumulated += delta;
+                    scheduleFlush();
+                  }
                 }
+
                 if (result.thinkingDelta) {
                   thinkingAccumulated += result.thinkingDelta;
+                  // Show a curated 1-line preview as the status message
                   const preview = result.thinkingDelta.replace(/\s+/g, " ").trim();
-                  const statusText = preview.length <= 80
-                    ? preview
-                    : preview.slice(0, 77).replace(/\s+\S*$/, "") + "\u2026";
+                  const statusText =
+                    preview.length <= 80
+                      ? preview
+                      : preview.slice(0, 77).replace(/\s+\S*$/, "") + "…";
                   updateMessageFields(assistantId, {
                     thinkingContent: thinkingAccumulated,
-                    liveStatus: statusText || "thinking",
+                    agentProgress: {
+                      phase: "thinking",
+                      message: statusText || "Thinking…",
+                    },
                   });
                 }
               } catch {
@@ -215,12 +314,41 @@ export function useChat(
               }
             }
 
-            if (!streamDone && Date.now() - lastMeaningfulEvent > STALE_STREAM_MS) {
-              console.warn("[Chat] Stream stale — no meaningful events for 30s, closing");
-              clearInterval(fallbackFlushId);
-              if (rafHandle) cancelAnimationFrame(rafHandle);
-              if (accumulated) updateMessage(assistantId, accumulated);
-              break;
+            // ── Phase-aware stale detection ─────────────────────────
+            if (!streamDone) {
+              const phase = currentPhaseRef.current;
+              const staleThreshold = getStaleThreshold(phase);
+              const silentMs = Date.now() - lastProgressEvent;
+              const heartbeatSilentMs = Date.now() - lastServerHeartbeat;
+
+              // Warn user 15s before we'd close
+              if (
+                silentMs > staleThreshold - 15_000 &&
+                silentMs < staleThreshold &&
+                !warnedStale
+              ) {
+                warnedStale = true;
+                updateMessageFields(assistantId, {
+                  agentProgress: {
+                    phase,
+                    message: "This step is taking longer than usual…",
+                  },
+                });
+                console.info(`[Chat] Stream quiet for ${Math.round(silentMs / 1000)}s in phase "${phase}" — showing warning`);
+              }
+
+              // Only close if BOTH progress AND heartbeat are both silent
+              // (heartbeat alone keeps stream alive during long operations)
+              if (
+                silentMs > staleThreshold &&
+                heartbeatSilentMs > staleThreshold
+              ) {
+                console.warn(`[Chat] Stream stale — no events for ${Math.round(silentMs / 1000)}s in phase "${phase}", closing`);
+                clearInterval(fallbackFlushId);
+                if (rafHandle) cancelAnimationFrame(rafHandle);
+                if (accumulated) updateMessage(assistantId, accumulated);
+                break;
+              }
             }
           }
         } finally {
@@ -230,45 +358,77 @@ export function useChat(
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
+          // User cancelled — mark as cancelled state (not an error)
+          updateMessageFields(assistantId, {
+            agentProgress: { phase: "cancelled", message: "Task cancelled" },
+          });
+          setActiveAgentProgress(null);
           return;
         }
+        updateMessageFields(assistantId, {
+          agentProgress: { phase: "failed", message: "Something went wrong. Please try again." },
+        });
         const errorContent = "Sorry, something went wrong. Please try again.";
-        updateMessage(assistantId, errorContent);
+        if (!useEditorStore.getState().messages.find((m) => m.id === assistantId)?.content) {
+          updateMessage(assistantId, errorContent);
+        }
       } finally {
         setStreaming(false);
-        updateMessageFields(assistantId, { isStreaming: false, liveStatus: undefined });
+        setActiveAgentProgress(null);
+        currentPhaseRef.current = "idle";
+        updateMessageFields(assistantId, { isStreaming: false });
         abortRef.current = null;
         setTimeout(() => ownMessageIds.current.delete(broadcastMsgId), 30_000);
       }
     },
-    [projectId, mode, isStreaming, addMessage, updateMessage, updateMessageFields, setStreaming, setSupabaseProvisionRequest, setPendingIntegrationRequest]
+    [
+      projectId,
+      mode,
+      isStreaming,
+      addMessage,
+      updateMessage,
+      updateMessageFields,
+      setStreaming,
+      setActiveAgentProgress,
+      clearAgentTimeline,
+      setSupabaseProvisionRequest,
+      setPendingIntegrationRequest,
+    ]
   );
 
+  // ─── stopStreaming — with cancelled state ─────────────────────────
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort();
     setStreaming(false);
-  }, [setStreaming]);
+    setActiveAgentProgress(null);
+  }, [setStreaming, setActiveAgentProgress]);
 
+  // ─── answerClarification ─────────────────────────────────────────
   const answerClarification = useCallback(
     async (answers: Record<string, string>) => {
       if (!projectId) return;
+      // Capture pending questions BEFORE clearing — needed to map IDs to text
+      const pendingQs = useEditorStore.getState().pendingQuestions ?? [];
+      const questionTextById = Object.fromEntries(pendingQs.map((q) => [q.id, q.question]));
       useEditorStore.getState().setPendingQuestions(null);
       useEditorStore.getState().setPlanPhase("planning");
       const answerText = Object.entries(answers)
-        .map(([q, a]) => `${q}: ${a}`)
+        .filter(([, a]) => a.trim())
+        .map(([id, a]) => `${questionTextById[id] ?? id}: ${a}`)
         .join("\n");
       sendMessage(`Here are my answers:\n${answerText}`);
     },
     [projectId, sendMessage],
   );
 
+  // ─── approvePlan ─────────────────────────────────────────────────
   const approvePlan = useCallback(
     async (planId: string) => {
       if (!projectId) return;
       try {
         const { getStoredTokens } = await import("@/lib/api");
         const { accessToken } = getStoredTokens();
-        await fetch(`${API_BASE}/projects/${projectId}/chat/plan/approve`, {
+        await fetch(`${API_BASE}/projects/${projectId}/plan/approve`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -277,9 +437,10 @@ export function useChat(
           body: JSON.stringify({ planId }),
         });
         useEditorStore.getState().approvePlan();
-        // Trigger the AI to start building after mode switches to agent
         setTimeout(() => {
-          sendMessage("The plan has been approved. Please start building it now, step by step. Follow the plan in .doable/plan.md.");
+          sendMessage(
+            "The plan has been approved. Please start building it now, step by step. Follow the plan in .doable/plan.md."
+          );
         }, 100);
       } catch (err) {
         console.error("Failed to approve plan:", err);
@@ -288,13 +449,14 @@ export function useChat(
     [projectId, sendMessage],
   );
 
+  // ─── abandonPlan ─────────────────────────────────────────────────
   const abandonPlan = useCallback(
     async (planId: string) => {
       if (!projectId) return;
       try {
         const { getStoredTokens } = await import("@/lib/api");
         const { accessToken } = getStoredTokens();
-        await fetch(`${API_BASE}/projects/${projectId}/chat/plan/abandon`, {
+        await fetch(`${API_BASE}/projects/${projectId}/plan/abandon`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -310,21 +472,28 @@ export function useChat(
     [projectId],
   );
 
-  const { loadHistory, loadMore, hasMore, loadingMore, clearChat, dismissSupabaseProvision, dismissIntegrationRequest } =
-    useChatLifecycle({
-      projectId,
-      collabSubscribe,
-      addMessage,
-      prependMessages,
-      updateMessage,
-      updateMessageFields,
-      clearMessages,
-      ownMessageIds,
-      remoteStreamMap,
-      setSupabaseProvisionRequest,
-      setPendingIntegrationRequest,
-      sendMessage,
-    });
+  const {
+    loadHistory,
+    loadMore,
+    hasMore,
+    loadingMore,
+    clearChat,
+    dismissSupabaseProvision,
+    dismissIntegrationRequest,
+  } = useChatLifecycle({
+    projectId,
+    collabSubscribe,
+    addMessage,
+    prependMessages,
+    updateMessage,
+    updateMessageFields,
+    clearMessages,
+    ownMessageIds,
+    remoteStreamMap,
+    setSupabaseProvisionRequest,
+    setPendingIntegrationRequest,
+    sendMessage,
+  });
 
   return {
     messages,
@@ -343,6 +512,6 @@ export function useChat(
     dismissSupabaseProvision,
     pendingIntegrationRequest,
     dismissIntegrationRequest,
+    lastUserMessage: lastUserMessageRef,
   };
 }
-

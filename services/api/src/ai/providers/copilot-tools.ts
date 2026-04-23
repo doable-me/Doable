@@ -140,13 +140,12 @@ export function createDoableTools(projectId: string, userId?: string): Tool[] {
         const { packages, dev } = args;
         emitToolEvent(projectId, "install_package", "start", { packages });
         const { spawn: spawnCmd } = await import("node:child_process");
-        const { buildSafeEnv } = await import("../../projects/safe-env.js");
         const projectPath = getProjectPath(projectId);
         const pkgList = packages.split(/\s+/).filter(Boolean);
         const npmArgs = ["install", "--ignore-scripts", ...(dev ? ["--save-dev"] : []), ...pkgList, "--legacy-peer-deps"];
 
         return new Promise((resolve) => {
-          const child = spawnCmd("npm", npmArgs, { cwd: projectPath, shell: true, stdio: "pipe", env: buildSafeEnv(undefined, { FORCE_COLOR: "0" }) });
+          const child = spawnCmd("npm", npmArgs, { cwd: projectPath, shell: true, stdio: "pipe", env: { ...process.env, FORCE_COLOR: "0" } });
           let output = "";
           child.stdout?.on("data", (d: Buffer) => { output += d.toString(); });
           child.stderr?.on("data", (d: Buffer) => { output += d.toString(); });
@@ -326,80 +325,6 @@ export function createDoableTools(projectId: string, userId?: string): Tool[] {
       handler: async (args: { stepId: string; planId: string }) => {
         emitToolEvent(projectId, "mark_step_complete", "end", { stepId: args.stepId, planId: args.planId, status: "completed" });
         return { success: true, stepId: args.stepId, planId: args.planId, status: "completed" };
-      },
-    }),
-
-    defineTool("run_command", {
-      description: "Run a shell command in the project directory. Only safe web-dev commands are allowed (npm, npx, node, git, cat, ls, mkdir, etc.). Dangerous commands (rm, curl, sudo, python, etc.) are blocked. Use this for running build scripts, listing files, checking git status, or running npm scripts.",
-      parameters: {
-        type: "object" as const,
-        properties: {
-          command: { type: "string" as const, description: "The full command to run (e.g. 'npm run build', 'npx tsc --noEmit', 'cat package.json')" },
-        },
-        required: ["command"] as const,
-      },
-      handler: async (args: { command: string }) => {
-        const { command } = args;
-        emitToolEvent(projectId, "run_command", "start", { command });
-
-        try {
-          const { getVault } = await import("../../projects/vite-jail.js");
-          const { buildSafeEnv } = await import("../../projects/safe-env.js");
-          const projectPath = getProjectPath(projectId);
-
-          // Parse command into executable + args
-          // Use shell-based parsing: split on first space for the base command,
-          // pass the rest as a single shell argument
-          const trimmed = command.trim();
-          if (!trimmed) {
-            return { success: false, error: "Empty command" };
-          }
-
-          const vault = getVault();
-          const safeEnv = buildSafeEnv(undefined, { FORCE_COLOR: "0" });
-
-          // Run through vault.exec() — applies OS-level isolation:
-          //   Linux: systemd ProtectSystem=strict + ReadWritePaths (real FS jail)
-          //   Windows: Job Objects (resource limits + kill-on-close)
-          const result = await vault.exec(
-            process.platform === "win32" ? "cmd.exe" : "/bin/sh",
-            process.platform === "win32" ? ["/c", trimmed] : ["-c", trimmed],
-            {
-              cwd: projectPath,
-              jail: projectPath,
-              env: safeEnv,
-              timeout: 60_000,
-              blockNetwork: true,
-            },
-          );
-
-          const output = (result.stdout + (result.stderr ? "\n" + result.stderr : "")).trim();
-          emitToolEvent(projectId, "run_command", "end", { command, exitCode: result.exitCode });
-
-          if (result.killed) {
-            return {
-              success: false,
-              message: `Command killed (${result.signal ?? "timeout"})`,
-              output: output.slice(-2000),
-            };
-          }
-
-          // Restart dev server if the command likely changed dependencies
-          if (result.exitCode === 0 && /\b(npm|pnpm|yarn)\s+(install|add|remove|uninstall)\b/.test(trimmed)) {
-            if (isRunning(projectId)) {
-              try { await restartDevServer(projectId, userId ? { userId } : undefined); } catch {}
-            }
-          }
-
-          return {
-            success: result.exitCode === 0,
-            exitCode: result.exitCode,
-            output: output.slice(-3000),
-          };
-        } catch (err) {
-          emitToolEvent(projectId, "run_command", "end", { command, error: (err as Error).message });
-          return { success: false, error: (err as Error).message };
-        }
       },
     }),
   ] as Tool[]);

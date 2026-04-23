@@ -7,6 +7,11 @@ import type { ChatStreamState } from "./types.js";
 import type { TraceCollector } from "../../ai/trace-collector.js";
 import { sql } from "../../db/index.js";
 import { pendingUiPayloads } from "../../mcp/tool-bridge.js";
+
+function dlog(msg: string) {
+  if (!process.env.MCP_DEBUG) return;
+  console.error(`[${new Date().toISOString()}] [tool-callbacks] ${msg}`);
+}
 import {
   friendlyToolMessage,
   friendlyToolResult,
@@ -50,9 +55,7 @@ export function createToolProgressCallbacks(
       recordAssistantToolCall(toolName, args as Record<string, unknown>);
       traceCollector?.onToolStart(toolName, args);
       const friendly = friendlyToolMessage(toolName, args as Record<string, unknown>);
-      // Surface common arg shapes (path/command/packages) as top-level fields so
-      // the UI can render richer tool-call cards without re-parsing args.
-      const a = (args && typeof args === "object" ? (args as Record<string, unknown>) : {});
+      const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
       const path =
         (a.path as string | undefined) ??
         (a.filePath as string | undefined) ??
@@ -60,14 +63,11 @@ export function createToolProgressCallbacks(
         (a.target as string | undefined);
       const rawCmd = a.command ?? a.cmd ?? a.input;
       const command = typeof rawCmd === "string" ? rawCmd : undefined;
-      const lowerName = toolName.toLowerCase();
       const packages = Array.isArray(a.packages)
         ? (a.packages as unknown[]).filter((p) => typeof p === "string").join(" ")
-        : typeof a.packages === "string"
-          ? (a.packages as string)
-          : typeof a.name === "string" && (lowerName.includes("install") || lowerName.includes("package"))
-            ? (a.name as string)
-            : undefined;
+        : typeof a.packages === "string" ? (a.packages as string)
+        : typeof a.name === "string" && (toolName.toLowerCase().includes("install") || toolName.toLowerCase().includes("package"))
+          ? (a.name as string) : undefined;
       stream.writeSSE({ data: JSON.stringify({
         type: "tool_call",
         data: {
@@ -91,7 +91,7 @@ export function createToolProgressCallbacks(
       state.hadToolCalls = true;
       traceCollector?.onToolEnd(toolName, _args, result);
       const friendly = friendlyToolResult(toolName, result, true);
-      const ea = (_args && typeof _args === "object" ? (_args as Record<string, unknown>) : {});
+      const ea = (_args && typeof _args === "object" ? _args : {}) as Record<string, unknown>;
       const endPath =
         (ea.path as string | undefined) ??
         (ea.filePath as string | undefined) ??
@@ -171,29 +171,32 @@ export function createToolProgressCallbacks(
         } catch { /* non-critical */ }
       }
       {
-        // Drain any pending __ui payloads pushed by tool-bridge during this
-        // tool call. We use a side-channel queue because the Copilot SDK
-        // double-encodes our handler return value, making in-band __ui
-        // extraction unreliable.
-        const uiPayload = pendingUiPayloads.shift();
+        // Drain any pending __ui payloads pushed by tool-bridge during
+        // this tool call. We use a side-channel queue because the Copilot
+        // SDK double-encodes our handler return value into `textResultForLlm`,
+        // making in-band __ui extraction unreliable.
+        const uiPayload = pendingUiPayloads.shift() as Record<string, unknown> | undefined;
+        dlog(`mcp_ui_open check tool=${toolName} hasUi=${!!uiPayload} uiType=${uiPayload?.uiType ?? "n/a"} queueLen=${pendingUiPayloads.length}`);
         if (uiPayload && uiPayload.uiType) {
-          const emittedToolCallId = uiPayload.toolCallId || `tc_${toolName}_${Date.now()}`;
+          const emittedToolCallId = (uiPayload.toolCallId as string) || `tc_${toolName}_${Date.now()}`;
+          const sseData = JSON.stringify({
+            type: "mcp_ui_open",
+            data: {
+              toolCallId: emittedToolCallId,
+              connectorId: uiPayload.connectorId,
+              toolName,
+              title: uiPayload.title,
+              uiType: uiPayload.uiType,
+              schema: uiPayload.schema ?? {},
+              state: uiPayload.state ?? {},
+            },
+          });
+          dlog(`mcp_ui_open EMITTING SSE event toolCallId=${emittedToolCallId} bytes=${sseData.length}`);
           // Signal to stream-recovery that we're waiting for user input — do NOT auto-continue.
           state.awaitingMcpWidget = true;
-          stream.writeSSE({
-            data: JSON.stringify({
-              type: "mcp_ui_open",
-              data: {
-                toolCallId: emittedToolCallId,
-                connectorId: uiPayload.connectorId,
-                toolName,
-                title: uiPayload.title,
-                uiType: uiPayload.uiType,
-                schema: uiPayload.schema ?? {},
-                state: uiPayload.state ?? {},
-              },
-            }),
-          }).catch(() => {});
+          stream.writeSSE({ data: sseData })
+            .then(() => dlog(`mcp_ui_open SSE write OK`))
+            .catch((e) => dlog(`mcp_ui_open SSE write FAILED: ${(e as Error).message}`));
         }
       }
     },

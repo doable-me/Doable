@@ -301,10 +301,267 @@
 .prose-editor .chat-h2 { font-size: 1.1rem; font-weight: 650; margin: 0.6rem 0 0.2rem; line-height: 1.3; }
 .prose-editor .chat-h3 { font-size: 1rem; font-weight: 600; margin: 0.5rem 0 0.15rem; line-height: 1.3; }
 .prose-editor .chat-h4 { font-size: 0.9rem; font-weight: 600; margin: 0.4rem 0 0.1rem; line-height: 1.3; }
-.prose-editor .chat-ul { list-style: disc; padding-left: 1.25rem; margin: 0.25rem 0; }
-.prose-editor .chat-ol { list-style: decimal; padding-left: 1.25rem; margin: 0.25rem 0; }
-.prose-editor .chat-li,
-.prose-editor .chat-li-ol { margin: 0.1rem 0; }
+.prose-editor .bubble-heading {
+  padding-left: 0.6rem;
+  border-left: 2px solid;
+  border-image: linear-gradient(to bottom, hsl(var(--brand-500)), hsl(var(--brand-400)/0.4)) 1;
+  animation: bubbleIn 0.3s cubic-bezier(0.22,1,0.36,1) both;
+}
+/* ─── Premium Chat Lists ─────────────────────────────── */
+.prose-editor .premium-ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+.prose-editor .premium-ul-li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  background-color: hsl(var(--muted)/0.3);
+  border: 1px solid hsl(var(--border)/0.5);
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.prose-editor .premium-ul-li:hover {
+  background-color: hsl(var(--background));
+  border-color: hsl(var(--border));
+}
+.prose-editor .ul-bullet {
+  flex-shrink: 0;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-top: 0.25rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, hsl(var(--brand-500)), hsl(var(--brand-400)));
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prose-editor .ul-bullet::after {
+  content: "";
+  width: 0.25rem;
+  height: 0.25rem;
+  background: white;
+  border-radius: 9999px;
+}
+.prose-editor .li-content {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.5;
+  color: hsl(var(--foreground)/0.9);
+}
+
+.prose-editor .premium-ol {
+  display: flex;
+  flex-direction: column;
+  margin: 1.25rem 0;
+  padding: 0;
+  list-style: none;
+  position: relative;
+}
+.prose-editor .premium-ol::before {
+  content: "";
+  position: absolute;
+  top: 0.25rem;
+  bottom: 0.5rem;
+  left: 0.6875rem; /* center of 1.375rem */
+  width: 2px;
+  background: linear-gradient(to bottom, hsl(var(--brand-500)/0.3), transparent);
+  z-index: 0;
+}
+.prose-editor .premium-ol-li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  position: relative;
+  z-index: 1;
+  padding-bottom: 1rem;
+}
+.prose-editor .premium-ol-li:last-child {
+  padding-bottom: 0;
+}
+.prose-editor .ol-number {
+  flex-shrink: 0;
+  width: 1.375rem;
+  height: 1.375rem;
+  margin-top: 0.125rem;
+  border-radius: 9999px;
+  background: hsl(var(--background));
+  border: 1.5px solid hsl(var(--brand-500)/0.4);
+  color: hsl(var(--brand-500));
+  font-size: 0.65rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 3px hsl(var(--background));
+}
 .prose-editor .chat-hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 0.5rem 0; }
 .prose-editor .code-block { background: hsl(var(--muted)); border-radius: 0.375rem; padding: 0.75rem; margin: 0.5rem 0; overflow-x: auto; font-size: 0.8rem; }
 .prose-editor .inline-code { background: hsl(var(--muted)); border-radius: 0.25rem; padding: 0.1rem 0.3rem; font-size: 0.85em; }
+
+/* ─── AI Chatbox — Phase 4/5 animation tokens ───────────── */
+
+/* Plan step completion flash (green → transparent over 1.2s) */
+@keyframes step-complete {
+  0%   { background-color: transparent; }
+  25%  { background-color: hsl(142 76% 36% / 0.18); }
+  100% { background-color: transparent; }
+}
+.animate-step-complete {
+  animation: step-complete 1.2s ease-out forwards;
+}
+
+/* Activity feed running row subtle pulse */
+@keyframes pulse-subtle {
+  0%, 100% { background-color: transparent; }
+  50%       { background-color: hsl(var(--brand-500) / 0.04); }
+}
+.animate-pulse-subtle {
+  animation: pulse-subtle 3s ease-in-out infinite;
+}
+
+/* Tool call card running border glow */
+@keyframes border-pulse {
+  0%, 100% { border-color: hsl(217 91% 60% / 0.25); }
+  50%       { border-color: hsl(217 91% 60% / 0.55); }
+}
+.animate-border-pulse {
+  animation: border-pulse 2s ease-in-out infinite;
+}
+
+/* Hide scrollbar (used in compact plan pill strip) */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── Bubble Chat Animations ───────────────────────────── */
+@keyframes bubbleIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+    filter: blur(1px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes bubbleInLeft {
+  from { opacity: 0; transform: translateX(-6px) translateY(4px); }
+  to   { opacity: 1; transform: translateX(0) translateY(0); }
+}
+
+@keyframes planStepIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes clarificationSlideIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes shimmerSwipe {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+@keyframes optionPulse {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--brand-500) / 0); }
+  50%       { box-shadow: 0 0 0 3px hsl(var(--brand-500) / 0.12); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
+}
+
+/* Bubble list items — animated in sequentially */
+.bubble-item {
+  animation: bubbleIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.bubble-item:nth-child(1)  { animation-delay: 0ms; }
+.bubble-item:nth-child(2)  { animation-delay: 55ms; }
+.bubble-item:nth-child(3)  { animation-delay: 110ms; }
+.bubble-item:nth-child(4)  { animation-delay: 165ms; }
+.bubble-item:nth-child(5)  { animation-delay: 220ms; }
+.bubble-item:nth-child(6)  { animation-delay: 275ms; }
+.bubble-item:nth-child(7)  { animation-delay: 330ms; }
+.bubble-item:nth-child(n+8){ animation-delay: 385ms; }
+
+/* Streaming: highlight the newest bubble */
+.streaming-bubble .bubble-item:last-child {
+  box-shadow: 0 0 10px hsl(var(--brand-500) / 0.1);
+  border-color: hsl(var(--brand-500) / 0.2) !important;
+}
+
+/* Prevent rapid DOM recreation from resetting animations while actively streaming */
+.streaming-bubble .bubble-item,
+.streaming-bubble .bubble-heading {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: translateY(0) scale(1) !important;
+  filter: blur(0) !important;
+}
+
+/* Plan step bubble — glassmorphism entry */
+.plan-step-bubble {
+  animation: planStepIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Clarification card entry */
+.clarification-card {
+  animation: clarificationSlideIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Shimmer hover overlay on option buttons */
+.option-btn {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+.option-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--brand-500) / 0.08),
+    transparent
+  );
+  transform: translateX(-100%);
+  transition: none;
+}
+.option-btn:hover::after {
+  animation: shimmerSwipe 0.6s ease forwards;
+}
+.option-btn.selected {
+  animation: optionPulse 1.5s ease-in-out infinite;
+}
+
+/* Glow dot on clarification header */
+.clarify-glow-dot {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+/* Reduced motion: disable all new animations */
+@media (prefers-reduced-motion: reduce) {
+  .bubble-item,
+  .plan-step-bubble,
+  .clarification-card {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+  .option-btn::after { display: none; }
+}
+

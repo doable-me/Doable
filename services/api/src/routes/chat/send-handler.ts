@@ -37,11 +37,37 @@ import { resolveUserDisplay, saveUserMessage, preInsertAssistantMessage } from "
 import { handleAutoContinue, handleEmptyResponseRetry } from "./stream-recovery.js";
 import { handleAutoFixPreview, handleVersionAndMemory, handleFinalCleanup, handleStreamError } from "./post-processing.js";
 
+async function assertToolCapableModel(providerId: string | undefined, modelId: string | undefined): Promise<void> {
+  if (!providerId || !modelId) return;
+
+  const [modelRow] = await sql<{ supports_tools: boolean }[]>`
+    SELECT supports_tools
+    FROM ai_provider_models
+    WHERE provider_id = ${providerId} AND model_id = ${modelId}
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  if (modelRow && modelRow.supports_tools === false) {
+    throw new Error("Selected model does not support tool calling. Choose a model with tool calling enabled in AI Settings.");
+  }
+
+  // Fallback to provider-level capability when model-level metadata is unavailable.
+  const [providerRow] = await sql<{ supports_tools: boolean | null }[]>`
+    SELECT supports_tools
+    FROM ai_providers
+    WHERE id = ${providerId}
+    LIMIT 1
+  `;
+  if (!modelRow && providerRow?.supports_tools === false) {
+    throw new Error("Selected provider does not support tool calling. Switch to a provider/model that supports tools.");
+  }
+}
+
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(100_000),
-  // Optional short label persisted in chat history in place of `content` (which
-  // may contain large injected MCP tool/skill instructions that shouldn't
-  // pollute the user-visible transcript). The LLM still receives the full `content`.
+  // Optional short label to persist in chat history in place of `content` (which
+  // may contain large injected tool/skill instructions that shouldn't pollute
+  // the user-visible transcript). The LLM still receives the full `content`.
   displayContent: z.string().max(4_000).optional(),
   mode: z.enum(["agent", "plan", "visual-edit"]).default("agent"),
   model: z.string().optional(),
@@ -52,7 +78,6 @@ const sendMessageSchema = z.object({
   }).optional(),
   providerId: z.string().uuid().optional(),
   copilotAccountId: z.string().uuid().optional(),
-  broadcastMsgId: z.string().max(100).optional(),
   attachments: z.array(z.object({
     type: z.string(),
     data: z.string(),
@@ -67,7 +92,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
     zValidator("json", sendMessageSchema),
     async (c) => {
       const projectId = c.req.param("id");
-      const { content, displayContent, mode, model, provider, providerId, copilotAccountId, broadcastMsgId, attachments } = c.req.valid("json");
+      const { content, displayContent, mode, model, provider, providerId, copilotAccountId, attachments } = c.req.valid("json");
       const userId = c.get("userId")!;
 
       // Verify project access — must be at least a member (viewers are read-only)
@@ -139,14 +164,29 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
             resolveAiEngine(projectId, userId, { copilotAccountId, providerId, provider: provider as ByokProviderConfig | undefined, model }),
             sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`.catch(() => []),
           ]);
-          const { model: resolvedModel, provider: resolvedProvider, githubToken: resolvedGithubToken, modelSource, providerSource, copilotAccountId: resolvedCopilotAccountId } = aiConfig;
+          const {
+            model: resolvedModel,
+            provider: resolvedProvider,
+            githubToken: resolvedGithubToken,
+            providerId: resolvedProviderId,
+            modelSource,
+            providerSource,
+          } = aiConfig;
           const workspaceId: string | undefined = workspaceRow[0]?.workspace_id;
 
-          state.usageCollector = workspaceId ? createUsageCollector({ userId, workspaceId, projectId, provider: resolvedProvider ? "byok" : "copilot", providerLabel: resolvedProvider?.type ?? "GitHub Copilot", byokProviderId: providerId, copilotAccountId: resolvedCopilotAccountId, mode }) : null;
+          await assertToolCapableModel(resolvedProviderId, resolvedModel);
+
+          state.usageCollector = workspaceId ? createUsageCollector({ userId, workspaceId, projectId, provider: resolvedProvider ? "byok" : "copilot", providerLabel: resolvedProvider?.type ?? "GitHub Copilot", byokProviderId: providerId, mode }) : null;
           state.traceCollector = workspaceId ? createTraceCollector({ projectId, userId, workspaceId, provider: resolvedProvider ? "byok" : "copilot", providerLabel: resolvedProvider?.type ?? "GitHub Copilot", model: resolvedModel }) : null;
           state.traceCollector?.onRequestStart(augmentedContent?.length ?? null, mode ?? "agent", !!(attachments?.length));
           state.traceCollector?.onStreamStart();
           state.traceCollector?.recordUserMessage(augmentedContent);
+
+          if (!resolvedProvider && !resolvedGithubToken) {
+            const missingAuthMsg = "AI is not configured for this workspace/user. Connect a GitHub Copilot account or add a custom provider key in Settings > AI.";
+            state.traceCollector?.onError(missingAuthMsg, "AUTH", "missing_auth_or_provider");
+            throw new Error(missingAuthMsg);
+          }
 
           const [projectContext, allTools] = await Promise.all([
             buildProjectContextForMode(projectId, mode, workspaceId, userId),
@@ -167,7 +207,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
           const { displayName, color } = await resolveUserDisplay(userId);
           if (dbSessionId) await saveUserMessage(dbSessionId, displayContent ?? content, userId, displayName, color);
-          const messageId = broadcastMsgId || crypto.randomUUID();
+          const messageId = crypto.randomUUID();
           broadcastToRoom(projectId, { type: "ai:message-sent", userId, displayName, content: content.slice(0, 200), messageId }, userId).catch(() => {});
 
           activeRequests.set(projectId, { mode, startedAt: Date.now() });
@@ -175,26 +215,20 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           if (dbSessionId) state.assistantMessageId = await preInsertAssistantMessage(dbSessionId);
 
           const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
-            // Emit a friendly per-tool status event on tool start so the UI can
-            // show "Creating index.ts..." / "Reading foo.ts..." while the tool
-            // runs (purely additive — frontend already handles `status` events).
             if (status === "start") {
-              const a = (args && typeof args === "object" ? (args as Record<string, unknown>) : {});
-              const rawName = a.path ?? a.filePath ?? a.file ?? a.name ?? a.target;
-              const fileName = typeof rawName === "string" ? rawName : "";
-              const shortName = fileName ? (fileName.split(/[\\/]/).pop() ?? "") : "";
+              const fileName = args?.path ?? args?.filePath ?? args?.file ?? args?.name ?? args?.target ?? "";
+              const shortName = typeof fileName === "string" ? fileName.split("/").pop() ?? "" : "";
               if (shortName) {
-                const lower = toolName.toLowerCase();
-                let statusMsg: string;
-                if (lower.includes("create") || lower.includes("write")) statusMsg = `Creating ${shortName}...`;
-                else if (lower.includes("edit") || lower.includes("update") || lower.includes("apply") || lower.includes("patch")) statusMsg = `Updating ${shortName}...`;
-                else if (lower.includes("read") || lower.includes("view") || lower.includes("get")) statusMsg = `Reading ${shortName}...`;
-                else if (lower.includes("delete") || lower.includes("remove")) statusMsg = `Deleting ${shortName}...`;
+                let statusMsg = "";
+                if (toolName.toLowerCase().includes("create") || toolName.toLowerCase().includes("write")) statusMsg = `Creating ${shortName}...`;
+                else if (toolName.toLowerCase().includes("edit") || toolName.toLowerCase().includes("update")) statusMsg = `Updating ${shortName}...`;
+                else if (toolName.toLowerCase().includes("read")) statusMsg = `Reading ${shortName}...`;
+                else if (toolName.toLowerCase().includes("delete")) statusMsg = `Deleting ${shortName}...`;
                 else statusMsg = `Working on ${shortName}...`;
-                stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "building", message: statusMsg } }) }).catch(() => {});
-                broadcastToRoom(projectId, { type: "ai:status", messageId, data: { phase: "building", message: statusMsg } }, userId).catch(() => {});
+                const ssePayload = { type: "status", data: { phase: "building", message: statusMsg } };
+                stream.writeSSE({ data: JSON.stringify(ssePayload) }).catch(() => {});
+                broadcastToRoom(projectId, { type: "ai:status", messageId, data: ssePayload.data }, userId).catch(() => {});
               }
-              return;
             }
             if (status !== "end") return;
             handleToolEndEvent(stream, toolName, args, projectId);
@@ -234,13 +268,41 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
             for (const chunk of channelRouter.flush()) {
               if (!chunk.content) continue;
-              if (chunk.type === "text") { state.assistantContent += chunk.content; await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }); }
-              else { state.assistantThinking += chunk.content; await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }); }
+              if (chunk.type === "text") {
+                state.assistantContent += chunk.content;
+                await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
+              } else if (chunk.type === "thinking") {
+                state.assistantThinking += chunk.content;
+                await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
+              } else {
+                state.sawToolDelta = true;
+                await stream.writeSSE({ data: JSON.stringify({ type: "tool_delta", data: chunk.content }) });
+              }
             }
             console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${state.assistantContent.length}, thinking: ${state.assistantThinking.length}, tools: ${state.hadToolCalls}`);
 
+            // Save pre-recovery content length to detect if auto-continue added anything
+            const contentBeforeRecovery = state.assistantContent.length;
             await handleAutoContinue(stream, state, currentEngine, sessionId!, projectId, mode, recordAssistantToolCall);
             await handleEmptyResponseRetry(stream, state, currentEngine, sessionId!, projectId, augmentedContent, fileAttachments);
+
+            if (!state.hadToolCalls && state.sawToolDelta) {
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: "error",
+                  data: "This model streamed tool-like text but did not execute any tools. Switch to a model with tool calling support in AI Settings.",
+                }),
+              });
+            }
+
+            // Emit deferred session.error only if auto-continue didn't produce new content
+            if (state.deferredError && state.assistantContent.length <= contentBeforeRecovery) {
+              console.log(`[Chat][${projectId.slice(0, 8)}] emitting deferred error (no recovery): ${state.deferredError.slice(0, 80)}`);
+              await stream.writeSSE({ data: JSON.stringify({ type: "error", data: state.deferredError }) });
+            } else if (state.deferredError) {
+              console.log(`[Chat][${projectId.slice(0, 8)}] swallowed deferred error — auto-continue recovered (${state.assistantContent.length - contentBeforeRecovery} chars added)`);
+            }
+            state.deferredError = undefined;
 
             // Flush pending tool names
             for (const pendingName of state.pendingToolNames) {

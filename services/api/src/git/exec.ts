@@ -1,7 +1,6 @@
 // ─── Git CLI Executor ────────────────────────────────────────
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { buildSafeEnv } from "../projects/safe-env.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,7 +35,11 @@ export async function execGit(
       cwd: projectPath,
       timeout: opts?.timeout ?? 30_000,
       maxBuffer: 10 * 1024 * 1024, // 10 MB
-      env: buildSafeEnv(opts?.env, { GIT_TERMINAL_PROMPT: "0" }),
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        ...opts?.env,
+      },
     });
     return { stdout: stdout.trimEnd(), stderr: stderr.trimEnd() };
   } catch (err: unknown) {

@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, memo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiUpdateUserAiPreferences, apiRecordProjectView, apiListAiProviders, apiGetShareStats, type ApiEffectiveAiConfig, type ApiAiProvider } from "@/lib/api";
+import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, apiGetShareStats, type ApiEffectiveAiConfig, type ApiAiProvider } from "@/lib/api";
 import { consumeBridge, hasBridge, type BridgeSSEEvent } from "@/lib/prompt-bridge";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
@@ -119,6 +119,8 @@ import { VisualEditToolbar } from "@/modules/editor/visual-edit/visual-edit-tool
 import type { ClarificationQuestion, Plan } from "@doable/shared/types/ai";
 import { ClarificationFlow, PlanCard, PlanProgress } from "@/modules/editor/chat/plan";
 import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
+import { McpWidgetRenderer } from "@/modules/editor/chat/mcp-widgets/mcp-widget-renderer";
+import { useEditorStore, type McpUiWidget } from "@/modules/editor/hooks/use-editor-store";
 
 // ─── Dynamically import Monaco (browser-only) ───────────────
 const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
@@ -182,6 +184,7 @@ interface ChatMsg {
   thinkingContent?: string;
   senderInfo?: { userId: string; displayName: string; color: string; isRemote: boolean };
   liveStatus?: string;
+  mcpWidgets?: Record<string, McpUiWidget>;
 }
 
 type TaskCardTab = "details" | "preview";
@@ -399,6 +402,8 @@ async function streamChat(
   onPlan?: (plan: Plan) => void,
   onPlanStepUpdate?: (stepId: string, status: string) => void,
   onProvisionSupabase?: (req: { name: string; reason: string }) => void,
+  onMcpUiOpen?: (widget: McpUiWidget) => void,
+  displayContent?: string,
 ) {
   let currentToken = getStoredTokens().accessToken;
 
@@ -411,6 +416,7 @@ async function streamChat(
       },
       body: JSON.stringify({
         content: message,
+        ...(displayContent ? { displayContent } : {}),
         mode,
         ...(attachments?.length ? { attachments } : {}),
         ...(modelOverride ? { model: modelOverride } : {}),
@@ -516,17 +522,45 @@ async function streamChat(
             args?: Record<string, unknown>;
           };
 
-          if (parsed.type !== "keep_alive") {
+          if (parsed.type === "keep_alive") {
             lastMeaningfulEvent = Date.now();
+            continue;
           }
+          lastMeaningfulEvent = Date.now();
 
           // Handle tool_call events — show "in progress" card immediately
           if (parsed.type === "tool_call" && onToolStarted) {
             const d = parsed.data as Record<string, unknown> | undefined;
             const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
-            const toolArgs = (d?.arguments as Record<string, unknown>) ?? {};
+            let toolArgs: Record<string, unknown> = {};
+            const rawArgs = d?.arguments ?? d?.args;
+            if (typeof rawArgs === "string" && rawArgs.trim()) {
+              try {
+                toolArgs = JSON.parse(rawArgs);
+              } catch {
+                toolArgs = {};
+              }
+            } else if (typeof rawArgs === "object" && rawArgs !== null) {
+              toolArgs = rawArgs as Record<string, unknown>;
+            }
             if (toolName) {
               pendingToolNames.push(toolName);
+              onToolStarted(toolName, toolArgs);
+            }
+          }
+          
+          // Handle tool_executing events — tool arguments are fully available before completing
+          if (parsed.type === "tool_executing" && onToolStarted) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+            let toolArgs: Record<string, unknown> = {};
+            const rawArgs = d?.arguments ?? d?.args;
+            if (typeof rawArgs === "string" && rawArgs.trim()) {
+              try { toolArgs = JSON.parse(rawArgs); } catch { toolArgs = {}; }
+            } else if (typeof rawArgs === "object" && rawArgs !== null) {
+              toolArgs = rawArgs as Record<string, unknown>;
+            }
+            if (toolName) {
               onToolStarted(toolName, toolArgs);
             }
           }
@@ -542,7 +576,17 @@ async function streamChat(
           if ((parsed.type === "tool_result" || parsed.type === "tool.completed") && onToolCompleted) {
             const d = parsed.data as Record<string, unknown> | undefined;
             let toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
-            const toolArgs = (d?.result as Record<string, unknown>) ?? (d?.args as Record<string, unknown>) ?? {};
+            let toolArgs: Record<string, unknown> = {};
+            const rawArgs = d?.result ?? d?.args;
+            if (typeof rawArgs === "string" && rawArgs.trim()) {
+              try {
+                toolArgs = JSON.parse(rawArgs);
+              } catch {
+                toolArgs = {};
+              }
+            } else if (typeof rawArgs === "object" && rawArgs !== null) {
+              toolArgs = rawArgs as Record<string, unknown>;
+            }
             // If tool_result lacks a name, use the name from the last tool_call
             if (!toolName && pendingToolNames.length > 0) {
               toolName = pendingToolNames.shift()!;
@@ -598,6 +642,23 @@ async function streamChat(
             const name = (d?.name as string | undefined) ?? "";
             const reason = (d?.reason as string | undefined) ?? "";
             onProvisionSupabase({ name, reason });
+          }
+
+          // MCP interactive UI widget — surface the picker to the user
+          if (parsed.type === "mcp_ui_open" && onMcpUiOpen) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            if (d && typeof d.toolCallId === "string" && typeof d.uiType === "string") {
+              onMcpUiOpen({
+                toolCallId: d.toolCallId as string,
+                connectorId: (d.connectorId as string) ?? "",
+                toolName: (d.toolName as string) ?? "",
+                uiType: d.uiType as McpUiWidget["uiType"],
+                title: (d.title as string) ?? (d.toolName as string) ?? "Tool UI",
+                schema: (d.schema as McpUiWidget["schema"]) ?? {},
+                state: (d.state as Record<string, unknown>) ?? {},
+                closed: false,
+              });
+            }
           }
 
           // Forward thinking events for live status display
@@ -704,6 +765,7 @@ interface BridgeCallbacks {
   onPlan?: (plan: Plan) => void;
   onPlanStepUpdate?: (stepId: string, status: string) => void;
   onProvisionSupabase?: (req: { name: string; reason: string }) => void;
+  onMcpUiOpen?: (widget: McpUiWidget) => void;
 }
 
 function processOneSSEPayload(
@@ -784,6 +846,22 @@ function processOneSSEPayload(
       const name = (d?.name as string | undefined) ?? "";
       const reason = (d?.reason as string | undefined) ?? "";
       cb.onProvisionSupabase({ name, reason });
+    }
+
+    if (parsed.type === "mcp_ui_open" && cb.onMcpUiOpen) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      if (d && typeof d.toolCallId === "string" && typeof d.uiType === "string") {
+        cb.onMcpUiOpen({
+          toolCallId: d.toolCallId as string,
+          connectorId: (d.connectorId as string) ?? "",
+          toolName: (d.toolName as string) ?? "",
+          uiType: d.uiType as McpUiWidget["uiType"],
+          title: (d.title as string) ?? (d.toolName as string) ?? "Tool UI",
+          schema: (d.schema as McpUiWidget["schema"]) ?? {},
+          state: (d.state as Record<string, unknown>) ?? {},
+          closed: false,
+        });
+      }
     }
 
     if (parsed.type === "thinking" && cb.onThinking) {
@@ -896,8 +974,7 @@ async function resumeBridgeStream(
 // ─── Markdown Rendering (static — outside component for memoization) ────
 
 function formatInlineStatic(text: string): React.ReactNode {
-  // Split on bold, inline code, italic (single *), and links [text](url)
-  const segments = text.split(/(\*\*.*?\*\*|`[^`]+`|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g);
+  const segments = text.split(/(\*\*.*?\*\*|`[^`]+`)/g);
   return segments.map((seg, j) => {
     if (seg.startsWith("**") && seg.endsWith("**")) {
       return (
@@ -914,23 +991,6 @@ function formatInlineStatic(text: string): React.ReactNode {
         >
           {seg.slice(1, -1)}
         </code>
-      );
-    }
-    // Italic: *text* (but not inside ** which is already handled)
-    if (seg.startsWith("*") && seg.endsWith("*") && !seg.startsWith("**")) {
-      return (
-        <em key={j} className="italic text-zinc-300">
-          {seg.slice(1, -1)}
-        </em>
-      );
-    }
-    // Links: [text](url)
-    const linkMatch = seg.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (linkMatch) {
-      return (
-        <a key={j} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 underline underline-offset-2">
-          {linkMatch[1]}
-        </a>
       );
     }
     return seg;
@@ -969,14 +1029,14 @@ function formatContent(content: string) {
       if (!listBuffer) return;
       if (listBuffer.ordered) {
         elements.push(
-          <ol key={`ol-${elements.length}`} className="my-2 ml-5 list-decimal space-y-1 text-zinc-300">
-            {listBuffer.items.map((item, idx) => (<li key={idx} className="pl-1">{item}</li>))}
+          <ol key={`ol-${elements.length}`} className="my-1.5 ml-4 list-decimal space-y-0.5 text-zinc-300">
+            {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
           </ol>
         );
       } else {
         elements.push(
-          <ul key={`ul-${elements.length}`} className="my-2 ml-5 list-disc space-y-1 text-zinc-300">
-            {listBuffer.items.map((item, idx) => (<li key={idx} className="pl-1">{item}</li>))}
+          <ul key={`ul-${elements.length}`} className="my-1.5 ml-4 list-disc space-y-0.5 text-zinc-300">
+            {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
           </ul>
         );
       }
@@ -985,59 +1045,6 @@ function formatContent(content: string) {
 
     for (let li = 0; li < textLines.length; li++) {
       const line = textLines[li]!;
-
-      // Horizontal rule: --- or *** or ___
-      if (/^[-]{3,}$/.test(line.trim()) || /^[*]{3,}$/.test(line.trim()) || /^[_]{3,}$/.test(line.trim())) {
-        flushList();
-        elements.push(
-          <hr key={`hr-${i}-${li}`} className="my-3 border-t border-zinc-700/60" />
-        );
-        continue;
-      }
-
-      // Headings: # to ####
-      const h4Match = line.match(/^####\s+(.*)/);
-      if (h4Match) {
-        flushList();
-        elements.push(
-          <h4 key={`h4-${i}-${li}`} className="mt-3 mb-1 text-[13px] font-semibold text-zinc-200">
-            {formatInlineStatic(h4Match[1] ?? "")}
-          </h4>
-        );
-        continue;
-      }
-      const h3Match = line.match(/^###\s+(.*)/);
-      if (h3Match) {
-        flushList();
-        elements.push(
-          <h3 key={`h3-${i}-${li}`} className="mt-3 mb-1 text-[14px] font-semibold text-zinc-100">
-            {formatInlineStatic(h3Match[1] ?? "")}
-          </h3>
-        );
-        continue;
-      }
-      const h2Match = line.match(/^##\s+(.*)/);
-      if (h2Match) {
-        flushList();
-        elements.push(
-          <h2 key={`h2-${i}-${li}`} className="mt-4 mb-1.5 text-[15px] font-bold text-white">
-            {formatInlineStatic(h2Match[1] ?? "")}
-          </h2>
-        );
-        continue;
-      }
-      const h1Match = line.match(/^#\s+(.*)/);
-      if (h1Match) {
-        flushList();
-        elements.push(
-          <h1 key={`h1-${i}-${li}`} className="mt-4 mb-2 text-[16px] font-bold text-white">
-            {formatInlineStatic(h1Match[1] ?? "")}
-          </h1>
-        );
-        continue;
-      }
-
-      // List items
       const ulMatch = line.match(/^\s*[-*]\s+(.*)/);
       const olMatch = line.match(/^\s*\d+\.\s+(.*)/);
 
@@ -1049,20 +1056,12 @@ function formatContent(content: string) {
         listBuffer.items.push(formatInlineStatic(olMatch[1] ?? ""));
       } else {
         flushList();
-        // Blank line → paragraph break
-        if (line.trim() === "") {
-          // Only add spacing if there's content before this
-          if (elements.length > 0) {
-            elements.push(<div key={`br-${i}-${li}`} className="h-2" />);
-          }
-        } else {
-          elements.push(
-            <span key={`line-${i}-${li}`} className="whitespace-pre-wrap">
-              {formatInlineStatic(line)}
-              {li < textLines.length - 1 ? "\n" : ""}
-            </span>
-          );
-        }
+        elements.push(
+          <span key={`line-${i}-${li}`} className="whitespace-pre-wrap">
+            {formatInlineStatic(line)}
+            {li < textLines.length - 1 ? "\n" : ""}
+          </span>
+        );
       }
     }
     flushList();
@@ -1087,55 +1086,13 @@ function deriveProjectName(prompt: string): string {
   return name.replace(/[.!?,;:]+$/, "") || "New Project";
 }
 
-/** Summarize tool actions for the collapsible card header */
-function summarizeToolActions(actions: ToolAction[]): string {
-  if (actions.length === 1) return actions[0]!.description;
-
-  const fileChangeCount = actions.filter(a => {
-    const t = a.toolName.toLowerCase();
-    return t.includes("create") || t.includes("write") || t.includes("edit") || t.includes("update") || t.includes("patch") || t.includes("delete") || t.includes("remove") || t.includes("rename");
-  }).length;
-
-  if (fileChangeCount > 0) {
-    return `${fileChangeCount} file ${fileChangeCount === 1 ? "change" : "changes"}`;
-  }
-  return `${actions.length} ${actions.length === 1 ? "action" : "actions"}`;
-}
-
 /** Generate a human-readable description for a tool action */
 function describeToolAction(toolName: string, args?: Record<string, unknown>): string {
-  const fileName = args?.path ?? args?.filePath ?? args?.file ?? "";
+  const fileName = args?.path ?? args?.filePath ?? args?.file ?? args?.name ?? args?.target ?? "";
   const shortName = typeof fileName === "string" ? fileName.split("/").pop() ?? "" : "";
 
-  // SDK-level tools — human-friendly names for internal Copilot tools
-  const lower0 = toolName.toLowerCase();
-  if (lower0 === "report_intent" || lower0 === "report-intent") {
-    const intent = args?.intent ?? args?.description ?? "";
-    if (typeof intent === "string" && intent.trim()) {
-      const short = intent.trim().length > 60 ? intent.trim().slice(0, 57) + "\u2026" : intent.trim();
-      return `Planning: ${short}`;
-    }
-    return "Analyzing approach";
-  }
-  if (lower0 === "ask_clarification" || lower0 === "ask-clarification" || lower0 === "askclarification") {
-    return "Asking clarifying questions";
-  }
-  if (lower0 === "report_progress" || lower0 === "report-progress") {
-    return "Reporting progress";
-  }
-  if (lower0 === "search" || lower0 === "grep" || lower0 === "search_files" || lower0 === "grep_search") {
-    const query = args?.query ?? args?.pattern ?? "";
-    if (typeof query === "string" && query.trim()) {
-      const short = query.trim().length > 40 ? query.trim().slice(0, 37) + "\u2026" : query.trim();
-      return `Searching: ${short}`;
-    }
-    return "Searching project";
-  }
-  if (lower0 === "glob" || lower0 === "list_directory" || lower0 === "view") {
-    return "Exploring files";
-  }
-
   // Shell-ish tools: surface the actual command being run
+  const lower0 = toolName.toLowerCase();
   if (lower0.includes("bash") || lower0.includes("shell") || lower0.includes("powershell")
       || lower0.includes("cmd") || lower0.includes("exec") || lower0.includes("run_command")
       || lower0.includes("terminal")) {
@@ -1165,6 +1122,9 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
   }
   if (toolName.toLowerCase().includes("read")) {
     return shortName ? `Reading ${shortName}` : "Reading file";
+  }
+  if (toolName.toLowerCase().includes("search") || toolName.toLowerCase().includes("find") || toolName.toLowerCase().includes("grep")) {
+    return "Searching files";
   }
   if (toolName.toLowerCase().includes("list")) {
     return "Scanning project structure";
@@ -1204,6 +1164,111 @@ function humanizeThinking(text: string): string {
   const truncated = clean.slice(0, 77);
   const lastSpace = truncated.lastIndexOf(" ");
   return (lastSpace > 40 ? truncated.slice(0, lastSpace) : truncated) + "\u2026";
+}
+
+type NormalizedFunctionStep = {
+  id: string;
+  name: string;
+  description: string;
+  filePath?: string;
+};
+
+function tryParseFunctionParams(rawParams?: string): Record<string, unknown> | undefined {
+  if (!rawParams) return undefined;
+  const normalized = rawParams
+    .replace(/\\n/g, "\n")
+    .replace(/\\\"/g, '"')
+    .trim();
+  try {
+    const parsed = JSON.parse(normalized);
+    if (parsed && typeof parsed === "object") {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Best effort only: if params are malformed, still show tool name.
+  }
+  return undefined;
+}
+
+function extractFunctionSteps(text: string): NormalizedFunctionStep[] {
+  if (!text) return [];
+  const re = /<function\s+name="([^"]+)"(?:\s+parameters=(\{[\s\S]*?\}))?\s*><\/function>/gi;
+  const steps: NormalizedFunctionStep[] = [];
+  let m: RegExpExecArray | null;
+
+  while ((m = re.exec(text)) !== null) {
+    const name = (m[1] ?? "").trim();
+    if (!name) continue;
+    const args = tryParseFunctionParams(m[2]);
+    const fileName = args?.path ?? args?.filePath ?? args?.file;
+    steps.push({
+      id: `${name}-${steps.length}`,
+      name,
+      description: describeToolAction(name, args),
+      filePath: typeof fileName === "string" ? fileName : undefined,
+    });
+  }
+
+  return steps;
+}
+
+function stripFunctionMarkup(text: string): string {
+  if (!text) return "";
+  let stripped = text.replace(/<function\s+name="[^"]+"(?:\s+parameters=\{[\s\S]*?\})?\s*><\/function>/gi, "");
+  // Collapse injected MCP widget selection prompt (keep only a short "Selected: <label>" line).
+  // Any user message that contains the MCP continuation sentinel — regardless of where
+  // the "I selected" prefix sits — gets replaced so the raw tool instructions never
+  // leak into the chat UI. Covers fresh turns AND historical messages stored in DB.
+  const mcpSentinel = /Proceed based on the tool'?s instructions below\./i;
+  if (mcpSentinel.test(stripped)) {
+    const labelMatch = stripped.match(/I selected "([^"]+)"/i);
+    stripped = labelMatch ? `Selected: ${labelMatch[1]}` : "Selected";
+  } else {
+    // Legacy form that may have lost the sentinel sentence but kept the prefix.
+    stripped = stripped.replace(
+      /^\s*I selected "([^"]+)"\s*\(value:\s*[^)]+\)\s*in the "[^"]+" widget\.[\s\S]*$/i,
+      "Selected: $1",
+    );
+  }
+  // Also strip stray MCP skill dumps (no prefix at all) that include the mandatory
+  // output protocol heading — collapse to a neutral label so chat stays clean.
+  if (/MANDATORY OUTPUT PROTOCOL|SKILL\.md|web-slides-generator/i.test(stripped) &&
+      stripped.length > 400) {
+    stripped = "Selected: (tool instructions)";
+  }
+  // Collapse excessive newlines (3 or more down to 2) and trim
+  return stripped.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function renderFunctionStepList(content: string, compact = false): React.ReactNode {
+  const steps = extractFunctionSteps(content);
+  if (steps.length === 0) {
+    return <span>{content}</span>;
+  }
+
+  return (
+    <div className={compact ? "space-y-2 mt-1" : "space-y-3 mt-2"}>
+      <div className="text-[12px] font-medium text-brand-300 flex items-center gap-2">
+        <Sparkles className="h-3.5 w-3.5 animate-pulse" />
+        Planning these actions:
+      </div>
+      <div className="flex flex-col gap-2">
+        {steps.map((step, idx) => (
+          <div key={step.id} className="flex items-center gap-3 animate-in slide-in-from-bottom-2 fade-in duration-300 rounded-lg bg-black/20 border border-white/5 p-2 hover:bg-black/40 hover:border-white/10 transition-colors">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-500/20 text-brand-400 font-bold text-[10px]">
+              {idx + 1}
+            </div>
+            <div className="flex-1 min-w-0 flex flex-col">
+              <span className="text-[13px] font-medium text-zinc-200 truncate">{step.description}</span>
+              {step.filePath && (
+                <span className="text-[10px] text-zinc-500 font-mono truncate">{step.filePath}</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /** Shown while AI suggestions load, or if the suggestions API fails */
@@ -1289,8 +1354,6 @@ export default function EditorPage() {
   // ─── Workspace / AI enforcement state ────────────────────
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [effectiveAiConfig, setEffectiveAiConfig] = useState<ApiEffectiveAiConfig | null>(null);
-  const aiConfigAppliedRef = useRef(false);
-  const saveUserPrefTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── File tree state ──────────────────────────────────────
   const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
@@ -1433,22 +1496,7 @@ export default function EditorPage() {
     else localStorage.removeItem("doable_selected_provider_id");
     if (copilotAccountId) localStorage.setItem("doable_selected_copilot_account", copilotAccountId);
     else localStorage.removeItem("doable_selected_copilot_account");
-
-    // Persist to DB (debounced) so the selection survives page refreshes
-    if (workspaceId) {
-      if (saveUserPrefTimerRef.current) clearTimeout(saveUserPrefTimerRef.current);
-      saveUserPrefTimerRef.current = setTimeout(() => {
-        const source = providerId ? "custom" as const : "copilot" as const;
-        apiUpdateUserAiPreferences(workspaceId, {
-          source,
-          copilotAccountId: copilotAccountId ?? null,
-          copilotModel: !providerId ? modelId : null,
-          providerId: providerId ?? null,
-          providerModel: providerId ? modelId : null,
-        }).catch(console.error);
-      }, 600);
-    }
-  }, [effectiveAiConfig?.enforce_ai, workspaceId]);
+  }, [effectiveAiConfig?.enforce_ai]);
 
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
   const [messages, setMessages] = useState<ChatMsg[]>(() => {
@@ -1558,6 +1606,9 @@ export default function EditorPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // True only while this tab owns an active SSE stream reader.
+  // Prevents periodic DB history sync from overwriting live streamed content.
+  const localStreamActiveRef = useRef(false);
   // Dedupe suggestion fetches: React StrictMode runs state updaters twice
   // in development, and fetchAISuggestions is (historically) called inside
   // a setMessages((prev) => {...}) updater. Without this guard, every
@@ -1601,6 +1652,13 @@ export default function EditorPage() {
     }
   }, [isNewProject, resolvedProjectId]);
 
+  // ─── Sync projectId into editor store so MCP widgets can post actions ─
+  useEffect(() => {
+    if (resolvedProjectId) {
+      useEditorStore.getState().setProjectId(resolvedProjectId);
+    }
+  }, [resolvedProjectId]);
+
   // ─── Fetch workspace_id from project ──────────────────────
   useEffect(() => {
     if (!resolvedProjectId) return;
@@ -1634,18 +1692,19 @@ export default function EditorPage() {
   }, [workspaceId]);
 
   // ─── Apply AI enforcement or server-side user preferences ──
-  // Enforcement always applies. For non-enforced configs, only apply on
-  // initial load so that in-session dropdown changes are not stomped.
   useEffect(() => {
     if (!effectiveAiConfig) return;
     if (effectiveAiConfig.enforce_ai) {
-      // Enforced — always override all model selection state
+      // Enforced — override all model selection state
       setSelectedModelId(effectiveAiConfig.enforced_model ?? "");
       setSelectedProviderId(effectiveAiConfig.enforced_provider_id ?? null);
       setSelectedCopilotAccountId(effectiveAiConfig.enforced_copilot_account_id ?? null);
-    } else if (!aiConfigAppliedRef.current) {
-      // First load only — seed from server-side user prefs / workspace defaults
-      aiConfigAppliedRef.current = true;
+    } else {
+      // Not enforced — pick the active side based on `*_source`. With migration
+      // 042, both copilot and custom configs may be persisted at once; the
+      // active side is determined by the source flag, not by "which is set".
+      // Prefer the user override (if active and populated), else fall back to
+      // the workspace default.
       const userActive =
         (effectiveAiConfig.user_source === "copilot" && !!effectiveAiConfig.user_copilot_account_id) ||
         (effectiveAiConfig.user_source === "custom" && !!effectiveAiConfig.user_provider_id);
@@ -2162,6 +2221,11 @@ export default function EditorPage() {
   // Load chat history from API (database-backed) on mount
   useEffect(() => {
     const loadFromApi = async () => {
+      // While a local stream is active, history rows lag behind token streaming.
+      // Replacing chat state here would make the chat panel appear frozen.
+      if (localStreamActiveRef.current) {
+        return;
+      }
       try {
         const json = await apiFetch<{ data: any[] }>(`/projects/${resolvedProjectId}/chat/history`);
         if (Array.isArray(json.data) && json.data.length > 0) {
@@ -2219,13 +2283,7 @@ export default function EditorPage() {
                 }),
                 isStreaming: false,
                 thinkingContent,
-                toolActions: (m.tool_actions
-                  ? m.tool_actions.map((ta: { id: string; toolName: string; description: string; isExpanded?: boolean; isBookmarked?: boolean; filePath?: string; status?: string }) => ({
-                      ...ta,
-                      // Re-generate description using latest describeToolAction for better formatting
-                      description: describeToolAction(ta.toolName || "", ta.filePath ? { path: ta.filePath } : undefined),
-                    }))
-                  : Array.isArray(m.tool_calls) && m.tool_calls.length > 0
+                toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
                   ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => ({
                       id: `hist-${m.id}-${i}`,
                       toolName: tc.name || "unknown",
@@ -2387,6 +2445,7 @@ export default function EditorPage() {
 
         const controller = bridge.abortController;
         abortRef.current = controller;
+        localStreamActiveRef.current = true;
 
         // Resume the in-flight stream with the standard callback set
         resumeBridgeStream(
@@ -2447,6 +2506,7 @@ export default function EditorPage() {
               setLiveStatus("");
               setIsFirstGeneration(false);
               setHasActiveToolCalls(false);
+              localStreamActiveRef.current = false;
               loadFileTree();
               if (selectedFile) {
                 delete fileContentsCache.current[selectedFile];
@@ -2492,6 +2552,7 @@ export default function EditorPage() {
               setLiveStatus("");
               setIsFirstGeneration(false);
               setHasActiveToolCalls(false);
+              localStreamActiveRef.current = false;
             },
             onToolCompleted: handleToolCompleted,
             onToolStarted: handleToolStarted,
@@ -2529,6 +2590,15 @@ export default function EditorPage() {
             },
             onProvisionSupabase: (req) => {
               setSupabaseProvisionRequest(req);
+            },
+            onMcpUiOpen: (widget) => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, mcpWidgets: { ...(m.mcpWidgets ?? {}), [widget.toolCallId]: widget } }
+                    : m
+                )
+              );
             },
           },
         );
@@ -2640,9 +2710,20 @@ export default function EditorPage() {
         // Dedup: skip if we already have a running tool action with the same name+path
         // (multiple SSE channels can fire for the same tool call — BUG-118)
         const existing = lastAssistant.toolActions ?? [];
-        if (existing.some((a) => a.status === "running" && a.toolName === toolName && a.filePath === filePath)) {
+        
+        // Find existing running action for this tool
+        const runningIdx = existing.findIndex((a) => a.status === "running" && a.toolName === toolName && (!a.filePath || a.filePath === filePath));
+        
+        if (runningIdx !== -1) {
+          // If we got a new filePath or better description, update it!
+          if ((filePath && !existing[runningIdx]!.filePath) || description !== existing[runningIdx]!.description) {
+            const updated = [...existing];
+            updated[runningIdx] = { ...updated[runningIdx]!, filePath: filePath ?? updated[runningIdx]!.filePath, description };
+            return prev.map((m) => m.id === lastAssistant.id ? { ...m, toolActions: updated } : m);
+          }
           return prev;
         }
+        
         const action: ToolAction = {
           id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           toolName,
@@ -2675,15 +2756,20 @@ export default function EditorPage() {
           (a) => a.toolName === toolName && a.status === "running"
         );
 
+        const filePath = typeof (_args?.path ?? _args?.filePath ?? _args?.file) === "string"
+            ? (_args?.path ?? _args?.filePath ?? _args?.file) as string
+            : undefined;
+        const finalDescription = describeToolAction(toolName, _args);
+
         if (runningAction) {
-          // Update existing running card to completed
+          // Update existing running card to completed and refresh description/path with final args
           return prev.map((m) =>
             m.id === lastAssistant.id
               ? {
                   ...m,
                   toolActions: m.toolActions?.map((a) =>
                     a.id === runningAction.id
-                      ? { ...a, status: "completed" as const }
+                      ? { ...a, status: "completed" as const, description: finalDescription, filePath: filePath ?? a.filePath }
                       : a
                   ),
                 }
@@ -2692,13 +2778,10 @@ export default function EditorPage() {
         }
 
         // No running card found — add a new completed card (fallback)
-        const filePath = typeof (_args?.path ?? _args?.filePath ?? _args?.file) === "string"
-            ? (_args?.path ?? _args?.filePath ?? _args?.file) as string
-            : undefined;
         const action: ToolAction = {
           id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           toolName,
-          description: describeToolAction(toolName, _args),
+          description: finalDescription,
           isExpanded: false,
           isBookmarked: false,
           filePath,
@@ -2765,15 +2848,17 @@ export default function EditorPage() {
 
   // ─── Send message to real API ──────────────────────────────
   const sendMessage = useCallback(
-    (text: string, msgAttachments?: Attachment[], modeOverride?: ChatMode) => {
+    (text: string, msgAttachments?: Attachment[], modeOverride?: ChatMode, displayOverride?: string) => {
       const trimmed = text.trim();
       if (!trimmed || isStreaming) return;
 
-      // Add user message
+      // Add user message (the visible bubble may use a shorter label than
+      // what's sent to the LLM, e.g. for MCP auto-continue where the full
+      // skill instructions would otherwise flood the chat).
       const userMsg: ChatMsg = {
         id: Date.now().toString(),
         role: "user",
-        content: trimmed,
+        content: (displayOverride ?? trimmed).trim(),
         timestamp: nowTimestamp(),
         ...(msgAttachments?.length ? { attachments: msgAttachments.map((a) => ({ type: a.mimeType || (a as any).type || "application/octet-stream", data: a.data, name: a.name, preview: a.preview, fileType: a.type })) } : {}),
       };
@@ -2803,6 +2888,7 @@ export default function EditorPage() {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      localStreamActiveRef.current = true;
 
       // Use explicit mode override if provided, otherwise detect from prefix or state
       const effectiveMode: ChatMode = modeOverride ?? (trimmed.startsWith("[Visual Edit]") ? "visual-edit" : chatMode);
@@ -2875,6 +2961,7 @@ export default function EditorPage() {
           setLiveStatus("");
           setIsFirstGeneration(false);
           setHasActiveToolCalls(false);
+          localStreamActiveRef.current = false;
           loadFileTree();
           if (selectedFile) {
             delete fileContentsCache.current[selectedFile];
@@ -2945,6 +3032,7 @@ export default function EditorPage() {
           setLiveStatus("");
           setIsFirstGeneration(false);
           setHasActiveToolCalls(false);
+          localStreamActiveRef.current = false;
         },
         // onToolCompleted
         handleToolCompleted,
@@ -3004,10 +3092,37 @@ export default function EditorPage() {
         (req) => {
           setSupabaseProvisionRequest(req);
         },
+        // onMcpUiOpen — MCP interactive widget (e.g. presentation format picker)
+        (widget) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, mcpWidgets: { ...(m.mcpWidgets ?? {}), [widget.toolCallId]: widget } }
+                : m
+            )
+          );
+        },
+        // displayContent — persist short label in chat history when provided
+        // (keeps raw MCP skill instructions out of the stored transcript).
+        displayOverride,
       );
     },
     [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, handleToolStarted, loadFileTree, selectedFile, loadFileContent, previewUrl, selectedModelId, selectedProviderId, selectedCopilotAccountId]
   );
+
+  // ─── Listen for MCP widget auto-continue events ───────────
+  // When the user picks an option in an MCP interactive widget, the widget
+  // dispatches `doable:mcp-continue` so we can resume the chat automatically
+  // (otherwise the LLM has no memory of the selection and will just re-ask).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ prompt?: string; display?: string }>).detail;
+      const prompt = detail?.prompt;
+      if (prompt) sendMessage(prompt, undefined, undefined, detail?.display);
+    };
+    window.addEventListener("doable:mcp-continue", handler);
+    return () => window.removeEventListener("doable:mcp-continue", handler);
+  }, [sendMessage]);
 
   // Send message handler (from input)
   const handleSend = useCallback(() => {
@@ -3060,6 +3175,7 @@ export default function EditorPage() {
   const handleStopStreaming = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    localStreamActiveRef.current = false;
     // Also tell the server to cancel the in-flight Copilot SDK call.
     // Without this explicit POST, the server would detect the fetch
     // disconnect via c.req.raw.signal (recent fix) — belt-and-suspenders
@@ -4203,7 +4319,8 @@ export default function EditorPage() {
             ) : (
             <>
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin">
+            <div className="flex-1 overflow-y-auto px-4 pt-4 space-y-4 scrollbar-thin flex flex-col">
+              <div className="flex-1" />
               {messages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center px-6">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-600/10 mb-4">
@@ -4364,141 +4481,10 @@ export default function EditorPage() {
                           )}
                         </div>
 
-                        {/* ── Task Card: collapsible card with tool actions ── */}
-                        {msg.toolActions && msg.toolActions.length > 0 && (
-                          <div className="mb-3 rounded-xl border border-zinc-700/50 bg-zinc-800/40 overflow-hidden">
-                            {/* Card header — clickable to collapse/expand */}
-                            <button
-                              onClick={() => toggleTaskCardCollapse(msg.id)}
-                              className="flex w-full items-center justify-between px-3 py-2.5 hover:bg-zinc-800/60 transition-colors"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-600/20">
-                                  <Wrench className="h-3.5 w-3.5 text-brand-400" />
-                                </div>
-                                <span className="text-[13px] font-medium text-zinc-200 truncate">
-                                  {summarizeToolActions(msg.toolActions)}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <span className="text-[11px] text-zinc-600">
-                                  {msg.toolActions.length} {msg.toolActions.length === 1 ? "action" : "actions"}
-                                </span>
-                                {collapsedTaskCards.has(msg.id) ? (
-                                  <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
-                                ) : (
-                                  <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
-                                )}
-                              </div>
-                            </button>
-
-                            {/* Card body — only shown when not collapsed */}
-                            {!collapsedTaskCards.has(msg.id) && (
-                              <div className="border-t border-zinc-700/30">
-                                {/* Tabs: Details | Preview */}
-                                <div className="flex border-b border-zinc-700/30">
-                                  <button
-                                    onClick={() => setTaskCardTabs((prev) => ({ ...prev, [msg.id]: "details" }))}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                                      (taskCardTabs[msg.id] ?? "details") === "details"
-                                        ? "text-brand-400 border-b-2 border-brand-400"
-                                        : "text-zinc-500 hover:text-zinc-300"
-                                    }`}
-                                  >
-                                    <ListChecks className="h-3 w-3" />
-                                    Details
-                                  </button>
-                                  <button
-                                    onClick={() => setTaskCardTabs((prev) => ({ ...prev, [msg.id]: "preview" }))}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                                      taskCardTabs[msg.id] === "preview"
-                                        ? "text-brand-400 border-b-2 border-brand-400"
-                                        : "text-zinc-500 hover:text-zinc-300"
-                                    }`}
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                    Preview
-                                  </button>
-                                </div>
-
-                                {/* Tab content */}
-                                {(taskCardTabs[msg.id] ?? "details") === "details" ? (
-                                  <div className="p-2 space-y-0.5">
-                                    {msg.toolActions.map((action) => {
-                                      const tl = action.toolName.toLowerCase();
-                                      const isCreate = tl.includes("create") || tl.includes("write");
-                                      const isEdit = tl.includes("edit") || tl.includes("update") || tl.includes("patch");
-                                      const isDelete = tl.includes("delete") || tl.includes("remove");
-                                      const isRead = tl.includes("read");
-                                      const isInstall = tl.includes("install") || tl.includes("package");
-                                      const isCommand = tl.includes("bash") || tl.includes("shell") || tl.includes("terminal") || tl.includes("exec");
-                                      const isAnalysis = tl.includes("report") || tl.includes("clarif") || tl.includes("intent") || tl.includes("list") || tl.includes("glob") || tl.includes("search") || tl.includes("grep") || tl.includes("view");
-
-                                      const dotColor = action.status === "running" ? "bg-blue-400 animate-pulse"
-                                        : isCreate ? "bg-emerald-400"
-                                        : isEdit ? "bg-amber-400"
-                                        : isDelete ? "bg-red-400"
-                                        : isInstall ? "bg-purple-400"
-                                        : isCommand ? "bg-cyan-400"
-                                        : isAnalysis ? "bg-zinc-500"
-                                        : "bg-zinc-400";
-
-                                      return (
-                                      <div
-                                        key={action.id}
-                                        className="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-zinc-700/30 transition-colors"
-                                      >
-                                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                                          <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
-                                          <div className="min-w-0 flex-1">
-                                            <span className="text-zinc-300 truncate block">
-                                              {action.description}
-                                              {action.status === "running" && (
-                                                <span className="ml-1.5 text-[11px] text-brand-400/70 animate-pulse">in progress</span>
-                                              )}
-                                            </span>
-                                            {action.filePath && (
-                                              <span className="text-[11px] text-zinc-600 truncate block">
-                                                {action.filePath}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleToggleBookmark(msg.id, action.id);
-                                          }}
-                                          className="flex-shrink-0 p-1 rounded hover:bg-zinc-700/50 transition-colors"
-                                          title={action.isBookmarked ? "Remove bookmark" : "Bookmark this version"}
-                                        >
-                                          {action.isBookmarked ? (
-                                            <BookmarkCheck className="h-3.5 w-3.5 text-brand-400" />
-                                          ) : (
-                                            <Bookmark className="h-3.5 w-3.5 text-zinc-600 hover:text-zinc-400" />
-                                          )}
-                                        </button>
-                                      </div>
-                                      );
-                                    })}
-                                  </div>
-                                ) : (
-                                  /* Preview tab — shows a mini preview placeholder */
-                                  <div className="p-4 flex items-center justify-center">
-                                    <div className="text-center">
-                                      <div className="flex h-16 w-24 mx-auto items-center justify-center rounded-lg border border-zinc-700/40 bg-zinc-900/40 mb-2">
-                                        <Eye className="h-5 w-5 text-zinc-600" />
-                                      </div>
-                                      <p className="text-[11px] text-zinc-600">
-                                        Preview updates in the right panel
-                                      </p>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
+                        {/* ── Task Card: collapsible card with tool actions ──
+                            Removed per user request — only the purple streaming
+                            orb below should display file modifications. ── */}
+                        {/* Task card block removed — the purple streaming orb below displays file modifications. */}
 
                         {/* Inline thinking indicator */}
                         {msg.thinkingContent && (
@@ -4510,7 +4496,9 @@ export default function EditorPage() {
                               {msg.isStreaming ? "Thinking..." : "Thought process"}
                             </summary>
                             <div className="px-3 pb-2 text-zinc-500 whitespace-pre-wrap max-h-40 overflow-y-auto">
-                              {msg.thinkingContent}
+                              {extractFunctionSteps(msg.thinkingContent).length > 0
+                                ? renderFunctionStepList(msg.thinkingContent, true)
+                                : msg.thinkingContent}
                             </div>
                           </details>
                         )}
@@ -4518,33 +4506,73 @@ export default function EditorPage() {
                         <div
                           className={`text-[14px] leading-relaxed ${
                             msg.isError
-                              ? "text-red-300 bg-red-950/30 border border-red-900/40 rounded-lg px-3 py-2"
+                              ? "text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 flex items-start gap-3 shadow-sm backdrop-blur-sm relative overflow-hidden"
                               : "text-zinc-300"
                           }`}
                         >
-                          {msg.content
-                            ? <MemoizedMessageContent content={msg.content} />
-                            : msg.isStreaming && (
-                                <div className="status-shimmer-bg rounded-lg px-3 py-2.5 -mx-1">
-                                  <div className="flex items-center gap-3">
-                                    <div className="flex items-center gap-1">
-                                      <span className="status-dot-1 h-1.5 w-1.5 rounded-full bg-brand-400" />
-                                      <span className="status-dot-2 h-1.5 w-1.5 rounded-full bg-brand-400" />
-                                      <span className="status-dot-3 h-1.5 w-1.5 rounded-full bg-brand-400" />
-                                    </div>
-                                    <span key={liveStatus || "default"} className="status-text-enter text-[13px] text-zinc-400">
-                                      {liveStatus || "Understanding your request..."}
-                                    </span>
-                                  </div>
-                                </div>
-                              )}
-                          {msg.isStreaming && msg.content && (
-                            <span className="streaming-caret inline-flex items-center ml-0.5 align-middle gap-[3px]">
-                              <span className="status-dot-1 inline-block h-1.5 w-1.5 rounded-full bg-brand-400" />
-                              <span className="status-dot-2 inline-block h-1.5 w-1.5 rounded-full bg-brand-400" />
-                              <span className="status-dot-3 inline-block h-1.5 w-1.5 rounded-full bg-brand-400" />
-                            </span>
+                          {msg.isError && (
+                            <>
+                              <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-b from-red-500/10 to-transparent pointer-events-none" />
+                              <div className="shrink-0 mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500/20">
+                                <XCircle className="h-3 w-3 text-red-400" />
+                              </div>
+                            </>
                           )}
+                          <div className={msg.isError ? "flex-1 min-w-0 font-medium text-[13px]" : ""}>
+                            {msg.content && (
+                              extractFunctionSteps(msg.content).length > 0 && stripFunctionMarkup(msg.content).length === 0
+                                ? renderFunctionStepList(msg.content)
+                                : <MemoizedMessageContent content={stripFunctionMarkup(msg.content)} />
+                            )}
+                            
+                            {/* Live Streaming Glowing Orb - visible while streaming, and
+                                afterwards as a summary when there are tool actions */}
+                            {!msg.isError && (msg.isStreaming || (msg.toolActions && msg.toolActions.length > 0)) && (
+                              <div className="relative mt-4 mb-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-5 shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm ml-auto mr-auto">
+                                <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-brand-600/10 to-transparent pointer-events-none" />
+                                <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-500/20 blur-[60px] pointer-events-none rounded-full" />
+                                
+                                <div className="flex flex-col items-center relative z-10 w-full text-center">
+                                  <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-400/20 via-purple-500/20 to-transparent border border-white/10 shadow-[0_0_30px_rgba(168,85,247,0.3)]">
+                                    {msg.isStreaming ? (
+                                      <>
+                                        <Sparkles className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)] animate-pulse" />
+                                        <div className="absolute inset-0 rounded-full border border-dashed border-white/20 animate-[spin_10s_linear_infinite]" />
+                                      </>
+                                    ) : (
+                                      <Check className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
+                                    )}
+                                  </div>
+                                  <h3 className="mt-4 mb-3 text-sm font-semibold text-white tracking-wide">
+                                    {msg.isStreaming
+                                      ? (liveStatus || "Building...")
+                                      : `${msg.toolActions?.length ?? 0} ${((msg.toolActions?.length ?? 0) === 1) ? "change" : "changes"} applied`}
+                                  </h3>
+                                  
+                                  {msg.toolActions && msg.toolActions.length > 0 && (
+                                    <div className="w-full flex flex-col gap-2 relative mt-1">
+                                      {msg.toolActions.map((action, idx) => (
+                                        <div key={idx} className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 w-full bg-white/5 rounded-md p-1.5 border border-white/5 text-left">
+                                          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/15 border border-brand-500/30">
+                                             {action.status === "running" ? (
+                                               <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
+                                             ) : action.status === "failed" ? (
+                                               <XCircle className="h-3 w-3 text-red-400" />
+                                             ) : (
+                                               <Check className="h-3 w-3 text-brand-400" />
+                                             )}
+                                          </div>
+                                          <span className="text-[11px] font-medium truncate text-zinc-300 flex-1">
+                                            {action.description}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         {/* ── Message Actions: feedback + copy + more menu ── */}
@@ -4628,6 +4656,19 @@ export default function EditorPage() {
                                 </div>
                               )}
                             </div>
+                          </div>
+                        )}
+
+                        {/* ── MCP interactive widgets (e.g. presentation format picker) ── */}
+                        {msg.mcpWidgets && Object.values(msg.mcpWidgets).length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {Object.values(msg.mcpWidgets).map((widget) => (
+                              <McpWidgetRenderer
+                                key={widget.toolCallId}
+                                widget={widget}
+                                messageId={msg.id}
+                              />
+                            ))}
                           </div>
                         )}
 
@@ -4842,179 +4883,194 @@ export default function EditorPage() {
 
               {/* Chat input toolbar */}
               <div className="px-2 py-2">
-                <div
-                  className="rounded-3xl bg-[#272725] border border-[#40403F] p-3 focus-within:border-brand-500/50 focus-within:ring-1 focus-within:ring-brand-500/20 transition-all"
-                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  onDrop={fileAttachments.handleDrop}
-                >
-                  {/* Textarea */}
-                  <textarea
-                    value={inputValue}
-                    onChange={(e) => {
-                      setInputValue(e.target.value);
-                      setKeystrokeSignal((s) => s + 1);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend();
-                      }
-                    }}
-                    onPaste={fileAttachments.handlePaste}
-                    placeholder="Ask Doable..."
-                    rows={2}
-                    disabled={isStreaming}
-                    className="w-full resize-none bg-transparent px-1 pt-0 pb-1 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none disabled:opacity-50"
-                  />
+                <div className="pt-2 pb-4 px-4 bg-gradient-to-t from-[#161618] via-[#161618] to-transparent shrink-0">
+                  <div
+                    className={`relative flex flex-col rounded-3xl border shadow-lg backdrop-blur-xl transition-all duration-300 ease-out ${
+                      isDragging
+                        ? "border-brand-500 bg-brand-500/10 ring-1 ring-brand-500 scale-[1.01]"
+                        : "border-[#40403F] bg-[#272725]"
+                    }`}
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={fileAttachments.handleDrop}
+                  >
+                    {/* Attachment preview thumbnails */}
+                    {fileAttachments.attachments.length > 0 && (
+                      <div className="flex items-center gap-2 px-3 pt-3 pb-2 overflow-x-auto">
+                        {fileAttachments.attachments.map((att) => (
+                          <div key={att.id} className="relative group/thumb flex-none">
+                            {att.type === "image" ? (
+                              <img
+                                src={att.preview || att.data}
+                                alt={att.name}
+                                className="h-16 w-16 rounded-lg object-cover border border-zinc-600 shadow-md"
+                              />
+                            ) : (
+                              <div className="flex h-16 items-center gap-1.5 rounded-lg border border-zinc-600 bg-zinc-800/80 px-2.5 shadow-md">
+                                <FileText className="h-4 w-4 flex-none text-zinc-400" />
+                                <span className="max-w-[80px] truncate text-xs text-zinc-400">{att.name}</span>
+                              </div>
+                            )}
+                            <button
+                              onClick={() => fileAttachments.removeAttachment(att.id)}
+                              className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 border border-zinc-600 text-zinc-400 hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100 shadow-xl"
+                            >
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-                  {/* Attachment preview thumbnails */}
-                  {fileAttachments.attachments.length > 0 && (
-                    <div className="flex items-center gap-2 px-1 pb-2 overflow-x-auto">
-                      {fileAttachments.attachments.map((att) => (
-                        <div key={att.id} className="relative group/thumb flex-none">
-                          {att.type === "image" ? (
-                            <img
-                              src={att.preview || att.data}
-                              alt={att.name}
-                              className="h-16 w-16 rounded-lg object-cover border border-zinc-600"
-                            />
-                          ) : (
-                            <div className="flex h-16 items-center gap-1.5 rounded-lg border border-zinc-600 bg-zinc-800/50 px-2.5">
-                              <FileText className="h-4 w-4 flex-none text-zinc-400" />
-                              <span className="max-w-[80px] truncate text-xs text-zinc-400">{att.name}</span>
-                            </div>
+                    {/* Hidden file input for attachments */}
+                    <input
+                      ref={fileAttachments.fileInputRef}
+                      type="file"
+                      accept={ACCEPTED_EXTENSIONS}
+                      multiple
+                      className="hidden"
+                      onChange={fileAttachments.handleFileChange}
+                    />
+
+                    <textarea
+                      value={inputValue}
+                      onChange={(e) => {
+                        setInputValue(e.target.value);
+                        setKeystrokeSignal((s) => s + 1);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      onPaste={fileAttachments.handlePaste}
+                      placeholder={inputValue.length > 0 ? "" : "Ask Doable..."}
+                      rows={1}
+                      disabled={isStreaming}
+                      className="w-full max-h-[40vh] min-h-[48px] resize-none bg-transparent px-4 py-3.5 text-[14px] leading-relaxed text-zinc-200 placeholder:text-zinc-500/70 outline-none disabled:opacity-50"
+                    />
+
+                    {/* Bottom toolbar row */}
+                    <div className="flex items-center justify-between px-2 pb-2 mt-1">
+                      {/* Left: Attachment + Toggles Group */}
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
+                        {/* + button (rounded-full) */}
+                        <button
+                          onClick={fileAttachments.openFilePicker}
+                          className="shrink-0 relative flex h-7 w-7 items-center justify-center rounded-full border border-white/5 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200 transition-all duration-200"
+                          title="Attach file (images, text, code, PDF)"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          {fileAttachments.attachments.length > 0 && (
+                            <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-brand-500 text-[9px] font-medium text-white shadow-sm">
+                              {fileAttachments.attachments.length}
+                            </span>
                           )}
+                        </button>
+
+                        <div className="shrink-0 h-4 w-px bg-white/10 mx-0.5" />
+
+                        {/* ── Strategize / Work Mode Toggle ── */}
+                        <div className="shrink-0 flex items-center rounded-full bg-white/[0.03] border border-white/5 p-0.5">
                           <button
-                            onClick={() => fileAttachments.removeAttachment(att.id)}
-                            className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 border border-zinc-600 text-zinc-400 hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100"
+                            onClick={() => setChatMode("plan")}
+                            className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
+                              chatMode === "plan"
+                                ? "bg-brand-500/20 text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
+                                : "text-zinc-500 hover:text-zinc-300"
+                            }`}
+                            title="Strategize mode — creates plans only"
                           >
-                            <X className="h-2.5 w-2.5" />
+                            <Target className="h-3 w-3" />
+                            <span>Strategize</span>
+                          </button>
+                          <button
+                            onClick={() => setChatMode("agent")}
+                            className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
+                              chatMode === "agent"
+                                ? "bg-brand-500/20 text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
+                                : "text-zinc-500 hover:text-zinc-300"
+                            }`}
+                            title="Work mode — generates code"
+                          >
+                            <Hammer className="h-3 w-3" />
+                            <span>Work</span>
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Hidden file input for attachments */}
-                  <input
-                    ref={fileAttachments.fileInputRef}
-                    type="file"
-                    accept={ACCEPTED_EXTENSIONS}
-                    multiple
-                    className="hidden"
-                    onChange={fileAttachments.handleFileChange}
-                  />
-
-                  {/* Bottom toolbar row */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      {/* + button (rounded-full) */}
-                      <button
-                        onClick={fileAttachments.openFilePicker}
-                        className="relative flex h-7 w-7 items-center justify-center rounded-full border border-zinc-600/40 text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
-                        title="Attach file (images, text, code, PDF)"
-                      >
-                        <Plus className="h-4 w-4" />
-                        {fileAttachments.attachments.length > 0 && (
-                          <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-brand-500 text-[9px] font-medium text-white">
-                            {fileAttachments.attachments.length}
-                          </span>
-                        )}
-                      </button>
-
-                      {/* Design View button (pill) */}
-                      <button
-                        onClick={() => setActiveTab("design")}
-                        className={cn(
-                          "flex items-center gap-1.5 rounded-full border px-2.5 h-7 text-[13px] transition-colors",
-                          isDesignMode
-                            ? "border-brand-500/50 bg-brand-500/10 text-brand-300"
-                            : "border-zinc-600/40 text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
-                        )}
-                        title="Design View"
-                      >
-                        <Paintbrush className="h-3.5 w-3.5" />
-                        <span>Design View</span>
-                      </button>
-
-                      {/* Model selector — hidden unless admin enables it */}
-                      {(effectiveAiConfig?.show_model_selector ?? false) && (
-                        <EditorModelSelector
-                          selectedModelId={selectedModelId}
-                          selectedProviderId={selectedProviderId}
-                          selectedCopilotAccountId={selectedCopilotAccountId}
-                          onSelect={handleModelSelect}
-                          models={availableModels}
-                          disabled={effectiveAiConfig?.enforce_ai ?? false}
-                          enforcedLabel={effectiveAiConfig?.enforce_ai ? `Enforced: ${effectiveAiConfig.enforced_model ?? 'Default'}` : undefined}
-                        />
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      {/* ── Strategize / Work Mode Toggle ── */}
-                      <div className="flex items-center rounded-full border border-zinc-600/40 overflow-hidden">
+                        
+                        {/* Design View Toggle */}
                         <button
-                          onClick={() => setChatMode("plan")}
-                          className={`flex items-center gap-1 px-2 h-7 text-[12px] font-medium transition-all ${
-                            chatMode === "plan"
-                              ? "bg-blue-600/20 text-blue-300"
-                              : "text-zinc-500 hover:text-zinc-300"
+                          onClick={() => setActiveTab("design")}
+                          className={`shrink-0 flex items-center gap-1.5 rounded-full border px-2 h-7 text-[10px] sm:text-[11px] font-medium transition-all ${
+                            isDesignMode
+                              ? "border-brand-500/50 bg-brand-500/10 text-brand-300"
+                              : "border-white/5 bg-white/[0.03] text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
                           }`}
-                          title="Strategize mode — creates plans only"
+                          title="Design View"
                         >
-                          <Target className="h-3 w-3" />
-                          <span className="hidden sm:inline">Strategize</span>
+                          <Paintbrush className="h-3 w-3" />
+                          <span>Design View</span>
                         </button>
-                        <div className="w-px h-4 bg-zinc-600/40" />
-                        <button
-                          onClick={() => setChatMode("agent")}
-                          className={`flex items-center gap-1 px-2 h-7 text-[12px] font-medium transition-all ${
-                            chatMode === "agent"
-                              ? "bg-brand-600/20 text-brand-300"
-                              : "text-zinc-500 hover:text-zinc-300"
-                          }`}
-                          title="Work mode — generates code"
-                        >
-                          <Hammer className="h-3 w-3" />
-                          <span className="hidden sm:inline">Work</span>
-                        </button>
+                        
+                        {/* Model selector — hidden unless admin enables it */}
+                        {(effectiveAiConfig?.show_model_selector ?? false) && (
+                          <div className="shrink-0 text-[10px] sm:text-[11px]">
+                            <EditorModelSelector
+                              selectedModelId={selectedModelId}
+                              selectedProviderId={selectedProviderId}
+                              selectedCopilotAccountId={selectedCopilotAccountId}
+                              onSelect={handleModelSelect}
+                              models={availableModels}
+                              disabled={effectiveAiConfig?.enforce_ai ?? false}
+                              enforcedLabel={effectiveAiConfig?.enforce_ai ? `Enforced: ${effectiveAiConfig.enforced_model ?? 'Default'}` : undefined}
+                            />
+                          </div>
+                        )}
                       </div>
 
-                      {/* Mic button (rounded-full) — hidden on unsupported browsers */}
-                      {speechRecognition.isSupported && (
-                        <button
-                          onClick={speechRecognition.toggle}
-                          className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
-                            speechRecognition.isListening
-                              ? "text-red-400 bg-red-500/10 animate-pulse"
-                              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50"
-                          }`}
-                          title={speechRecognition.isListening ? "Stop recording" : "Voice input"}
-                        >
-                          <Mic className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                      {/* Right: Mic, Send */}
+                      <div className="shrink-0 flex items-center justify-end gap-1.5 ml-auto">
+                        {/* Mic button (rounded-full) — hidden on unsupported browsers */}
+                        {speechRecognition.isSupported && (
+                          <button
+                            onClick={speechRecognition.toggle}
+                            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                              speechRecognition.isListening
+                                ? "text-red-400 bg-red-500/10 border border-red-500/20 animate-pulse"
+                                : "text-zinc-400 hover:text-zinc-200 hover:bg-white/10 border border-transparent"
+                            }`}
+                            title={speechRecognition.isListening ? "Stop recording" : "Voice input"}
+                          >
+                            <Mic className="h-3.5 w-3.5" />
+                          </button>
+                        )}
 
-                      {/* Send / Stop button */}
-                      {isStreaming ? (
-                        <button
-                          onClick={handleStopStreaming}
-                          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-red-600/80 text-white transition-all hover:bg-red-500"
-                          title="Stop generation"
-                        >
-                          <Square className="h-3 w-3 fill-current" />
-                        </button>
-                      ) : (
-                        <button
-                          onClick={handleSend}
-                          disabled={!inputValue.trim() && fileAttachments.attachments.length === 0}
-                          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#FCFBF8] text-[#1C1C1C] transition-all hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                        {/* Send / Stop button */}
+                        {isStreaming ? (
+                          <button
+                            onClick={handleStopStreaming}
+                            className="flex h-7 items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/20 px-2.5 text-red-500 hover:bg-red-500/20 transition-colors shadow-sm"
+                            title="Stop generation"
+                          >
+                            <Square className="h-3 w-3 fill-current" />
+                            <span className="text-[10px] sm:text-[11px] font-medium">Stop</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleSend}
+                            disabled={!inputValue.trim() && fileAttachments.attachments.length === 0}
+                            className="group flex h-7 w-7 sm:w-auto sm:px-2.5 items-center justify-center gap-1.5 rounded-full bg-brand-500 border border-brand-500/20 text-white shadow-md hover:bg-brand-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            <span className="hidden sm:inline text-[10px] sm:text-[11px] font-medium tracking-wide">Send</span>
+                            <ArrowUp className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
+                  </div>
+                  
+                  <div className="mt-2 text-center text-[10px] text-zinc-500/60 font-medium tracking-wide">
+                    Shift + Enter for new line
                   </div>
                 </div>
               </div>

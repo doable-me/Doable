@@ -1,5 +1,10 @@
 import { useEditorStore, type ChatMessage } from "./use-editor-store";
 import type { SupabaseProvisionRequest, PendingIntegrationRequest } from "./use-chat-types";
+import {
+  inferPhaseFromTool,
+  extractFilePath,
+  type AgentPhase,
+} from "./use-agent-progress";
 
 export interface SSEContext {
   assistantId: string;
@@ -7,67 +12,180 @@ export interface SSEContext {
   setSupabaseProvisionRequest: (r: SupabaseProvisionRequest | null) => void;
   setPendingIntegrationRequest: (r: PendingIntegrationRequest | null) => void;
   setStreaming: (s: boolean) => void;
+  /** Inject a clarification question bubble into the chat */
+  addClarificationMessage?: (q: {
+    id: string;
+    question: string;
+    options?: string[];
+    context?: string;
+  }) => void;
 }
 
 /**
  * Dispatch a parsed SSE event from the streaming response.
- * Returns text to append to accumulated content/thinking, or null.
+ * Returns text to append to accumulated content/thinking, or empty object.
+ *
+ * Side effects:
+ * - Updates agentProgress on the assistant message
+ * - Pushes / completes entries in the global agentTimeline
+ * - Updates liveToolCalls array on the message for ToolCallCard rendering
  */
 export function dispatchSSEEvent(
   parsed: { type: string; data?: any },
   ctx: SSEContext,
 ): { textDelta?: string; thinkingDelta?: string } {
+  const store = useEditorStore.getState();
+	  // DEBUG: log every non-delta SSE type so we can verify pipeline
+  if (parsed.type !== "text_delta" && parsed.type !== "thinking" && parsed.type !== "keep_alive") {
+    // eslint-disable-next-line no-console
+    console.warn("[SSE]", parsed.type, parsed.data);
+  }
+  // ─── Text streaming ──────────────────────────────────────
   if (parsed.type === "text_delta") {
     const text = typeof parsed.data === "string" ? parsed.data : "";
+    // Switch phase to streaming_response on first text token
+    ctx.updateMessageFields(ctx.assistantId, {
+      agentProgress: {
+        phase: "streaming_response",
+        message: "Responding…",
+      },
+    });
+    store.setActiveAgentProgress({ phase: "streaming_response", message: "Responding…" });
     return { textDelta: text };
   }
 
+  // ─── Thinking / reasoning tokens ─────────────────────────
   if (parsed.type === "thinking") {
     const text = typeof parsed.data === "string" ? parsed.data : "";
     return { thinkingDelta: text };
   }
 
+  // ─── Tool call started ────────────────────────────────────
   if (parsed.type === "tool_call") {
-    const friendly =
-      parsed.data?.friendlyMessage ??
-      parsed.data?.name ??
-      "Working on it";
+    const toolName: string = parsed.data?.name ?? "";
+    const filePath = extractFilePath(parsed.data);
+    const friendly: string =
+      parsed.data?.friendlyMessage ?? parsed.data?.name ?? "Working on it";
+    const phase: AgentPhase = inferPhaseFromTool(toolName);
+    const eventId = `${toolName}_${Date.now()}`;
+
+    const progress = { phase, message: friendly, toolName, filePath };
+
     ctx.updateMessageFields(ctx.assistantId, {
-      liveStatus: `tool_call:${friendly}`,
+      agentProgress: progress,
+      // Push a new running tool card
+      liveToolCalls: [
+        ...(useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId)
+          ?.liveToolCalls ?? []),
+        {
+          id: eventId,
+          toolName,
+          filePath,
+          friendlyMessage: friendly,
+          status: "running" as const,
+          startedAt: Date.now(),
+        },
+      ],
     });
+
+    store.setActiveAgentProgress(progress);
+    store.pushAgentTimeline({
+      id: eventId,
+      phase,
+      message: friendly,
+      toolName,
+      filePath,
+      timestamp: new Date().toISOString(),
+      status: "running",
+    });
+
     return {};
   }
 
+  // ─── Tool result / completed ──────────────────────────────
   if (parsed.type === "tool_result") {
-    const friendly = parsed.data?.friendlyMessage ?? "Done";
-    ctx.updateMessageFields(ctx.assistantId, {
-      liveStatus: `tool_result:${friendly}`,
+    const toolName: string = parsed.data?.name ?? "";
+    const filePath: string | undefined = parsed.data?.path ?? extractFilePath(parsed.data);
+    const friendly: string = parsed.data?.friendlyMessage ?? "Done";
+    const linesAdded: number | undefined = parsed.data?.linesAdded;
+    const linesRemoved: number | undefined = parsed.data?.linesRemoved;
+    const success: boolean = parsed.data?.success !== false;
+
+    const msg = useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId);
+    const prevToolCalls = msg?.liveToolCalls ?? [];
+
+    // Find the most recent running entry for this tool and mark it complete
+    let matched = false;
+    const updatedToolCalls = prevToolCalls.map((tc) => {
+      if (!matched && tc.toolName === toolName && tc.status === "running") {
+        matched = true;
+        return {
+          ...tc,
+          status: (success ? "completed" : "failed") as "completed" | "failed",
+          completedAt: Date.now(),
+          filePath: filePath ?? tc.filePath,
+          linesAdded,
+          linesRemoved,
+        };
+      }
+      return tc;
     });
-    useEditorStore.getState().bumpToolResultVersion();
+
+    ctx.updateMessageFields(ctx.assistantId, {
+      agentProgress: {
+        phase: success ? "thinking" : "fixing",
+        message: friendly,
+        toolName,
+        filePath,
+      },
+      liveToolCalls: updatedToolCalls,
+    });
+
+    store.setActiveAgentProgress({
+      phase: success ? "thinking" : "fixing",
+      message: friendly,
+    });
+
+    // Complete the timeline event for this tool
+    const timeline = store.agentTimeline;
+    const last = [...timeline].reverse().find(
+      (e) => e.toolName === toolName && e.status === "running"
+    );
+    if (last) {
+      store.completeAgentTimelineEvent(last.id, success ? "completed" : "failed");
+    }
+
+    store.bumpToolResultVersion();
     return {};
   }
 
+  // ─── Status message ───────────────────────────────────────
   if (parsed.type === "status") {
-    const status = typeof parsed.data === "string"
-      ? parsed.data
-      : (parsed.data?.message ?? parsed.data?.phase ?? "");
-    ctx.updateMessageFields(ctx.assistantId, {
-      liveStatus: status ? `status:${status}` : "",
-    });
+    const rawStatus =
+      typeof parsed.data === "string"
+        ? parsed.data
+        : (parsed.data?.message ?? parsed.data?.phase ?? "");
+    const phase = (parsed.data?.phase as AgentPhase | undefined) ?? "thinking";
+    const progress = { phase, message: rawStatus || "Working…" };
+
+    ctx.updateMessageFields(ctx.assistantId, { agentProgress: progress });
+    store.setActiveAgentProgress(progress);
     return {};
   }
 
+  // ─── Provision progress ───────────────────────────────────
   if (parsed.type === "provision_progress") {
     const phase = parsed.data?.phase as string | undefined;
     const message = parsed.data?.message as string | undefined;
     if (phase && message) {
-      ctx.updateMessageFields(ctx.assistantId, {
-        liveStatus: `provision:${phase}:${message}`,
-      });
+      const progress = { phase: "installing" as AgentPhase, message };
+      ctx.updateMessageFields(ctx.assistantId, { agentProgress: progress });
+      store.setActiveAgentProgress(progress);
     }
     return {};
   }
 
+  // ─── Supabase provisioning required ──────────────────────
   if (parsed.type === "provision_supabase_required") {
     const name = (parsed.data?.name as string | undefined) ?? "";
     const reason = (parsed.data?.reason as string | undefined) ?? "";
@@ -75,6 +193,7 @@ export function dispatchSSEEvent(
     return {};
   }
 
+  // ─── Integration required ─────────────────────────────────
   if (parsed.type === "integration_required") {
     const integrationId = parsed.data?.integrationId as string | undefined;
     if (integrationId) {
@@ -89,6 +208,7 @@ export function dispatchSSEEvent(
     return {};
   }
 
+  // ─── Version / undo tracking ──────────────────────────────
   if (parsed.type === "version_created") {
     const sha = parsed.data?.sha ?? (parsed as any).sha;
     if (sha) {
@@ -100,51 +220,90 @@ export function dispatchSSEEvent(
     return {};
   }
 
-  if (parsed.type === "clarification") {
-    const questions = parsed.data?.questions;
-    if (Array.isArray(questions) && questions.length > 0) {
-      useEditorStore.getState().setPendingQuestions(questions);
-      useEditorStore.getState().setPlanPhase("clarifying");
-      ctx.setStreaming(false);
-    }
-    return {};
-  }
-
-  if (parsed.type === "plan") {
-    const plan = parsed.data?.plan;
-    if (plan) {
-      useEditorStore.getState().setActivePlan(plan);
-      useEditorStore.getState().setPlanPhase("reviewing");
-    }
-    return {};
-  }
-
-  if (parsed.type === "plan_step_update") {
-    const { stepId, status } = parsed.data ?? {};
-    if (stepId && status) {
-      useEditorStore.getState().updatePlanStep(stepId, { status });
-    }
-    return {};
-  }
-
-  if (parsed.type === "mcp_ui_open") {
-    const d = parsed.data ?? {};
-    const toolCallId = d.toolCallId as string | undefined;
-    const uiType = d.uiType as "table" | "form" | "confirm" | "select" | undefined;
-    if (toolCallId && uiType) {
-      useEditorStore.getState().attachMcpWidget(ctx.assistantId, {
-        toolCallId,
-        connectorId: (d.connectorId as string | undefined) ?? "",
-        toolName: (d.toolName as string | undefined) ?? "",
-        uiType,
-        title: (d.title as string | undefined) ?? "",
-        schema: (d.schema as Record<string, unknown> | undefined) ?? {},
-        state: (d.state as Record<string, unknown> | undefined) ?? {},
+  // ─── Inline clarification (agent mode question card) ──────────
+  if (parsed.type === "inline_clarification") {
+    const q = parsed.data;
+    if (q?.id && q?.question && ctx.addClarificationMessage) {
+      ctx.addClarificationMessage({
+        id: q.id,
+        question: q.question,
+        options: Array.isArray(q.options) ? q.options : [],
+        context: q.context as string | undefined,
       });
     }
     return {};
   }
 
+  // ─── Clarification questions ──────────────────────────────
+  if (parsed.type === "clarification") {
+    const questions = parsed.data?.questions;
+    if (Array.isArray(questions) && questions.length > 0) {
+      store.setPendingQuestions(questions);
+      store.setPlanPhase("clarifying");
+      store.setActiveAgentProgress({ phase: "clarifying", message: "Waiting for your input" });
+      ctx.updateMessageFields(ctx.assistantId, {
+        agentProgress: { phase: "clarifying", message: "Waiting for your input" },
+      });
+      ctx.setStreaming(false);
+    }
+    return {};
+  }
+
+  // ─── Plan created ─────────────────────────────────────────
+  if (parsed.type === "plan") {
+    const plan = parsed.data?.plan;
+    if (plan) {
+      store.setActivePlan(plan);
+      store.setPlanPhase("reviewing");
+      store.setActiveAgentProgress({ phase: "planning", message: "Plan ready for review" });
+      ctx.updateMessageFields(ctx.assistantId, {
+        agentProgress: { phase: "planning", message: "Plan ready for review" },
+      });
+    }
+    return {};
+  }
+
+  // ─── Plan step update ─────────────────────────────────────
+  if (parsed.type === "plan_step_update") {
+    const { stepId, status, message } = parsed.data ?? {};
+    if (stepId && status) {
+      store.updatePlanStep(stepId, { status });
+
+      if (status === "in_progress") {
+        const activePlan = store.activePlan;
+        const stepIdx = activePlan?.steps.findIndex((s) => s.id === stepId) ?? -1;
+        const stepTotal = activePlan?.steps.length ?? 0;
+        const percent =
+          stepTotal > 0 ? Math.round((stepIdx / stepTotal) * 100) : undefined;
+
+        const progress = {
+          phase: "writing_files" as AgentPhase,
+          message: message ?? "Executing step…",
+          stepIndex: stepIdx,
+          stepTotal,
+          percent,
+        };
+
+        ctx.updateMessageFields(ctx.assistantId, { agentProgress: progress });
+        store.setActiveAgentProgress(progress);
+
+        store.pushAgentTimeline({
+          id: stepId,
+          phase: "writing_files",
+          message: message ?? "Executing step…",
+          timestamp: new Date().toISOString(),
+          status: "running",
+        });
+      }
+
+      if (status === "completed" || status === "failed") {
+        store.completeAgentTimelineEvent(stepId, status as "completed" | "failed");
+      }
+    }
+    return {};
+  }
+
+  // ─── Usage / token metrics ────────────────────────────────
   if (parsed.type === "usage") {
     const u = parsed.data;
     if (u && typeof u === "object") {
@@ -161,6 +320,106 @@ export function dispatchSSEEvent(
           toolCallCount: u.toolCallCount ?? u.tool_call_count ?? 0,
         },
       });
+    }
+    return {};
+  }
+
+  // ─── Error ────────────────────────────────────────────────
+  if (parsed.type === "error") {
+    const errMsg =
+      typeof parsed.data === "string" ? parsed.data : "Unknown error";
+    ctx.updateMessageFields(ctx.assistantId, {
+      agentProgress: { phase: "failed", message: errMsg },
+    });
+    store.setActiveAgentProgress({ phase: "failed", message: errMsg });
+    return {
+      textDelta: `\n\n**Error:** ${errMsg}`,
+    };
+  }
+
+  if (parsed.type === "mcp_ui_open") {
+    const d = parsed.data;
+    // eslint-disable-next-line no-console
+    console.warn("[MCP-UI] mcp_ui_open received", { assistantId: ctx.assistantId, data: d });
+    if (d?.toolCallId && d?.uiType) {
+      const current = useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId);
+      const existing = current?.mcpWidgets ?? {};
+      ctx.updateMessageFields(ctx.assistantId, {
+        mcpWidgets: {
+          ...existing,
+          [d.toolCallId]: {
+            toolCallId: d.toolCallId,
+            connectorId: d.connectorId ?? "",
+            toolName: d.toolName ?? "",
+            uiType: d.uiType,
+            title: d.title ?? d.toolName ?? "Tool UI",
+            schema: d.schema ?? {},
+            state: d.state ?? {},
+            closed: false,
+          },
+        },
+      });
+    }
+    return {};
+  }
+
+  if (parsed.type === "mcp_ui_update") {
+    const d = parsed.data;
+    if (d?.toolCallId) {
+      const current = useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId);
+      const existing = current?.mcpWidgets ?? {};
+      const widget = existing[d.toolCallId];
+      if (widget) {
+        ctx.updateMessageFields(ctx.assistantId, {
+          mcpWidgets: {
+            ...existing,
+            [d.toolCallId]: {
+              ...widget,
+              state: d.state ?? widget.state,
+              schema: d.schema ?? widget.schema,
+            },
+          },
+        });
+      }
+    }
+    return {};
+  }
+
+  if (parsed.type === "mcp_ui_close") {
+    const d = parsed.data;
+    if (d?.toolCallId) {
+      const current = useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId);
+      const existing = current?.mcpWidgets ?? {};
+      const widget = existing[d.toolCallId];
+      if (widget) {
+        ctx.updateMessageFields(ctx.assistantId, {
+          mcpWidgets: {
+            ...existing,
+            [d.toolCallId]: { ...widget, closed: true },
+          },
+        });
+      }
+    }
+    return {};
+  }
+
+  if (parsed.type === "mcp_ui_error") {
+    const d = parsed.data;
+    if (d?.toolCallId) {
+      const current = useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId);
+      const existing = current?.mcpWidgets ?? {};
+      const widget = existing[d.toolCallId];
+      if (widget) {
+        ctx.updateMessageFields(ctx.assistantId, {
+          mcpWidgets: {
+            ...existing,
+            [d.toolCallId]: {
+              ...widget,
+              state: { ...widget.state, __error: d.message ?? "An error occurred" },
+            },
+          },
+        });
+      }
     }
     return {};
   }

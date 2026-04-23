@@ -11,6 +11,7 @@ export interface ChatStreamState {
   assistantContent: string;
   assistantThinking: string;
   hadToolCalls: boolean;
+  sawToolDelta: boolean;
   versionSha: string | undefined;
   pendingToolNames: string[];
   toolCallIdMap: Map<string, string>;
@@ -71,6 +72,7 @@ export function createInitialState(): ChatStreamState {
     assistantContent: "",
     assistantThinking: "",
     hadToolCalls: false,
+    sawToolDelta: false,
     versionSha: undefined,
     pendingToolNames: [],
     toolCallIdMap: new Map(),

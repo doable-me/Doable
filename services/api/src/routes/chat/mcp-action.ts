@@ -86,8 +86,8 @@ export function registerMcpActionRoute(app: Hono<AuthEnv>) {
 
         if (result.isError) {
           const errorText = result.content
-            .filter((it) => it.type === "text")
-            .map((it) => (it as { type: "text"; text: string }).text)
+            .filter((c) => c.type === "text")
+            .map((c) => (c as { type: "text"; text: string }).text)
             .join("\n");
           return c.json({ success: false, error: errorText });
         }
