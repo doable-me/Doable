@@ -99,6 +99,21 @@ export function ChatPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  // MCP widgets dispatch `doable:mcp-continue` after the user picks an option.
+  // Forward it to sendMessage with a short display label so the full LLM prompt
+  // (which may include MCP skill instructions) doesn't pollute the visible
+  // chat history.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ prompt?: string; display?: string }>).detail ?? {};
+      const prompt = detail.prompt;
+      if (!prompt) return;
+      sendMessage(prompt, undefined, detail.display);
+    };
+    window.addEventListener("doable:mcp-continue", handler);
+    return () => window.removeEventListener("doable:mcp-continue", handler);
+  }, [sendMessage]);
+
   // Scroll to bottom on initial load
   useEffect(() => {
     if (messages.length > 0 && prevMessageCountRef.current === 0) {

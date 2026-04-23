@@ -1,10 +1,35 @@
 import { defineTool, type Tool } from "@github/copilot-sdk";
-import type { ResolvedMcpTool, McpContent } from "./types.js";
+import type { ResolvedMcpTool, McpContent, McpUiPayload } from "./types.js";
 import type { ConnectorManager } from "./connector-manager.js";
 import type { McpConnectorConfig } from "./types.js";
 import { getActiveTrace } from "../ai/trace-collector.js";
 import { xray } from "../integrations/xray.js";
 import { fetchCtx, createTracedFetch, type HttpTraceEntry } from "../integrations/runner.js";
+
+/**
+ * Side-channel queue for `__ui` payloads.
+ *
+ * The Copilot SDK double-encodes tool return values (wraps our
+ * `{ success, result, __ui }` into a JSON string under `textResultForLlm`),
+ * which makes in-band `__ui` extraction unreliable. Instead, we push the
+ * payload here from the MCP tool handler and drain it in tool-callbacks
+ * after each tool call finishes.
+ */
+export const pendingUiPayloads: McpUiPayload[] = [];
+
+/**
+ * Tools whose names start with these are internal — invoked by Doable's
+ * mcp-action endpoint directly over MCP, NOT by the LLM. We do NOT expose
+ * them as callable Copilot SDK tools, otherwise the model may invoke them
+ * directly with invented arguments and bypass the interactive widget flow.
+ */
+const INTERNAL_TOOL_NAMES = new Set([
+  "ui_action",
+  // Generators are triggered by ui_action when the user clicks a picker option,
+  // never invoked directly by the LLM (otherwise it bypasses the picker).
+  "generate_web_slides",
+  "generate_pptx",
+]);
 
 /**
  * Convert MCP tools to Copilot SDK Tool[] definitions.
@@ -19,7 +44,9 @@ export function createMcpTools(
   connectorConfigs: Map<string, McpConnectorConfig>,
   projectId?: string,
 ): Tool[] {
-  return resolvedTools.map((resolved) => {
+  return resolvedTools
+    .filter((r) => !INTERNAL_TOOL_NAMES.has(r.tool.name))
+    .map((resolved) => {
     const { connectorId, connectorName, tool } = resolved;
 
     // Sanitize names for Copilot SDK (alphanumeric + underscores)
@@ -117,9 +144,20 @@ export function createMcpTools(
           }
 
           xr.end("success");
+          const textResult = formatMcpContent(result.content);
+          const uiPayload = extractUiPayload(result.content, connectorId, tool.name);
+          if (uiPayload) {
+            pendingUiPayloads.push(uiPayload);
+          }
+          // For UI-bearing results, give the LLM a short stub instead of the
+          // raw JSON — otherwise it reads the picker JSON and paraphrases
+          // the option labels as a text list, confusing the user.
+          const llmFacing = uiPayload
+            ? `An interactive picker is now shown to the user. Wait for their selection. Do not write any code or call any other tools yet. Respond with exactly: "Please choose an option above."`
+            : textResult;
           return {
             success: true,
-            result: formatMcpContent(result.content),
+            result: llmFacing,
             _mcpTrace: mcpTrace,
           };
         } catch (err) {
@@ -170,6 +208,46 @@ export function createMcpTools(
       },
     });
   }) as Tool[];
+}
+
+/**
+ * Scan MCP content items for a structured UI payload.
+ * MCP servers signal interactive UI by embedding a JSON object with a
+ * `__ui` key inside one of their text content items.
+ *
+ * Example content item:
+ *   { "type": "text", "text": "{\"__ui\":{\"uiType\":\"table\",...}}" }
+ *
+ * The toolCallId is not known inside the tool handler, so we leave it empty
+ * here and let tool-callbacks.ts fill it in from the SDK event context.
+ */
+function extractUiPayload(
+  content: McpContent[],
+  connectorId: string,
+  toolName: string,
+): McpUiPayload | null {
+  for (const item of content) {
+    if (item.type !== "text") continue;
+    const text = item.text.trim();
+    if (!text.includes("__ui")) continue;
+    try {
+      const parsed = JSON.parse(text);
+      const ui = parsed?.__ui;
+      if (!ui || typeof ui !== "object") continue;
+      if (!ui.uiType || !["table", "form", "confirm", "select"].includes(ui.uiType)) continue;
+      return {
+        uiType: ui.uiType,
+        toolCallId: "",
+        connectorId: ui.connectorId ?? connectorId,
+        title: ui.title ?? toolName,
+        schema: ui.schema ?? {},
+        state: ui.state ?? {},
+      } satisfies McpUiPayload;
+    } catch {
+      // Not JSON or not a valid UI payload — skip
+    }
+  }
+  return null;
 }
 
 /** Format MCP content array into a string result */

@@ -4,6 +4,56 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Plan, PlanStep, ClarificationQuestion, PlanPhase } from "@doable/shared/types/ai";
 
+// ─── MCP UI Widget Types ────────────────────────────
+export type McpUiType = "table" | "form" | "confirm" | "select";
+
+export interface McpUiColumn {
+  key: string;
+  label: string;
+  type?: "text" | "number" | "boolean" | "date" | "badge";
+}
+
+export interface McpUiAction {
+  id: string;
+  label: string;
+  variant?: "default" | "destructive" | "outline";
+  requiresSelection?: boolean;
+}
+
+export interface McpUiFormField {
+  key: string;
+  label: string;
+  type: "text" | "textarea" | "number" | "select" | "boolean";
+  placeholder?: string;
+  required?: boolean;
+  options?: Array<{ value: string; label: string }>;
+  defaultValue?: unknown;
+}
+
+export interface McpUiSelectOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface McpUiWidget {
+  toolCallId: string;
+  connectorId: string;
+  toolName: string;
+  uiType: McpUiType;
+  title: string;
+  schema: {
+    columns?: McpUiColumn[];
+    fields?: McpUiFormField[];
+    options?: McpUiSelectOption[];
+    actions?: McpUiAction[];
+    message?: string;
+  };
+  state: Record<string, unknown>;
+  /** Closed widgets stay in history but no longer render interactively */
+  closed?: boolean;
+}
+
 // ─── Types ──────────────────────────────────────────────────
 export interface FileNode {
   name: string;
@@ -43,6 +93,8 @@ export interface ChatMessage {
   hadToolCalls?: boolean;
   /** Persisted tool call details from DB (for rendering summaries after refresh) */
   toolCallDetails?: Array<{ name: string; arguments?: unknown }>;
+  /** Interactive MCP widgets attached to this message, keyed by toolCallId. */
+  mcpWidgets?: Record<string, McpUiWidget>;
   /** Usage metrics from the AI response (token counts, cost, duration) */
   usage?: {
     promptTokens: number;
@@ -124,6 +176,8 @@ interface EditorState {
   prependMessages: (messages: ChatMessage[]) => void;
   updateMessage: (id: string, content: string) => void;
   updateMessageFields: (id: string, fields: Partial<ChatMessage>) => void;
+  attachMcpWidget: (messageId: string, widget: McpUiWidget) => void;
+  closeMcpWidget: (messageId: string, toolCallId: string) => void;
   setStreaming: (streaming: boolean) => void;
   setMode: (mode: EditorMode) => void;
   clearMessages: () => void;
@@ -229,6 +283,32 @@ export const useEditorStore = create<EditorState>()(
           messages: state.messages.map((m) =>
             m.id === id ? { ...m, ...fields } : m
           ),
+        })),
+      attachMcpWidget: (messageId, widget) =>
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  mcpWidgets: { ...(m.mcpWidgets ?? {}), [widget.toolCallId]: widget },
+                }
+              : m,
+          ),
+        })),
+      closeMcpWidget: (messageId, toolCallId) =>
+        set((state) => ({
+          messages: state.messages.map((m) => {
+            if (m.id !== messageId) return m;
+            const existing = m.mcpWidgets?.[toolCallId];
+            if (!existing) return m;
+            return {
+              ...m,
+              mcpWidgets: {
+                ...m.mcpWidgets,
+                [toolCallId]: { ...existing, closed: true },
+              },
+            };
+          }),
         })),
       setStreaming: (streaming) => set({ isStreaming: streaming }),
       setMode: (mode) => set({ mode }),

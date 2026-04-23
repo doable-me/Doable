@@ -30,6 +30,8 @@ export interface ChatStreamState {
   friendlyLastTool: string | undefined;
   /** Buffered session.error message — emitted only if auto-continue doesn't recover. */
   deferredError: string | undefined;
+  /** True if an MCP interactive widget was shown — auto-continue must NOT fire. */
+  awaitingMcpWidget: boolean;
 }
 
 /** Resolved AI configuration passed to stream phases. */
@@ -86,5 +88,6 @@ export function createInitialState(): ChatStreamState {
     lastToolName: undefined,
     friendlyLastTool: undefined,
     deferredError: undefined,
+    awaitingMcpWidget: false,
   };
 }

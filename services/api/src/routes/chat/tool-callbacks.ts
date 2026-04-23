@@ -6,6 +6,7 @@ import type { SSEStreamingApi } from "hono/streaming";
 import type { ChatStreamState } from "./types.js";
 import type { TraceCollector } from "../../ai/trace-collector.js";
 import { sql } from "../../db/index.js";
+import { pendingUiPayloads } from "../../mcp/tool-bridge.js";
 import {
   friendlyToolMessage,
   friendlyToolResult,
@@ -168,6 +169,32 @@ export function createToolProgressCallbacks(
             }
           }
         } catch { /* non-critical */ }
+      }
+      {
+        // Drain any pending __ui payloads pushed by tool-bridge during this
+        // tool call. We use a side-channel queue because the Copilot SDK
+        // double-encodes our handler return value, making in-band __ui
+        // extraction unreliable.
+        const uiPayload = pendingUiPayloads.shift();
+        if (uiPayload && uiPayload.uiType) {
+          const emittedToolCallId = uiPayload.toolCallId || `tc_${toolName}_${Date.now()}`;
+          // Signal to stream-recovery that we're waiting for user input — do NOT auto-continue.
+          state.awaitingMcpWidget = true;
+          stream.writeSSE({
+            data: JSON.stringify({
+              type: "mcp_ui_open",
+              data: {
+                toolCallId: emittedToolCallId,
+                connectorId: uiPayload.connectorId,
+                toolName,
+                title: uiPayload.title,
+                uiType: uiPayload.uiType,
+                schema: uiPayload.schema ?? {},
+                state: uiPayload.state ?? {},
+              },
+            }),
+          }).catch(() => {});
+        }
       }
     },
     onSessionEnd: (reason: string, error?: string) => {

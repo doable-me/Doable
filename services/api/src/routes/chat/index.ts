@@ -13,6 +13,7 @@ import { registerSuggestionsRoute } from "./suggestions.js";
 import { registerQueueRoutes } from "./queue.js";
 import { registerTraceRoutes } from "./traces.js";
 import { registerMiscRoutes } from "./misc-routes.js";
+import { registerMcpActionRoute } from "./mcp-action.js";
 import { rateLimiter } from "../../middleware/rate-limit.js";
 
 export { getChatSessionsSnapshot } from "./session-state.js";
@@ -98,3 +99,4 @@ registerSuggestionsRoute(chatRoutes);
 registerQueueRoutes(chatRoutes);
 registerTraceRoutes(chatRoutes);
 registerMiscRoutes(chatRoutes);
+registerMcpActionRoute(chatRoutes);

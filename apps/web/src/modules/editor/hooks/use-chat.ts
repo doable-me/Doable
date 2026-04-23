@@ -48,7 +48,7 @@ export function useChat(
   // Collab + history + clear are handled by useChatLifecycle below
 
   const sendMessage = useCallback(
-    async (content: string, attachments?: Attachment[]) => {
+    async (content: string, attachments?: Attachment[], displayContent?: string) => {
       if (!projectId || !content.trim() || isStreaming) return;
 
       const broadcastMsgId = generateId();
@@ -57,7 +57,9 @@ export function useChat(
       const userMessage: ChatMessage = {
         id: generateId(),
         role: "user",
-        content: content.trim(),
+        // Show short label in UI when provided (e.g. "Selected: Web Slides")
+        // instead of the full prompt with injected MCP skill instructions.
+        content: (displayContent ?? content).trim(),
         timestamp: new Date().toISOString(),
         attachments: attachments?.map((a) => ({
           type: a.type,
@@ -98,6 +100,9 @@ export function useChat(
             },
             body: JSON.stringify({
               content: content.trim(),
+              ...(displayContent && displayContent.trim() && displayContent.trim() !== content.trim()
+                ? { displayContent: displayContent.trim() }
+                : {}),
               mode,
               broadcastMsgId,
               attachments: attachments?.map((a) => ({

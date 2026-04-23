@@ -1,0 +1,19 @@
+{
+  "name": "presentation-builder-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that lets Doable users pick between Web Slides (HTML) and PPTX for any presentation/report request.",
+  "type": "module",
+  "bin": {
+    "presentation-builder-mcp": "./index.mjs"
+  },
+  "main": "./index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

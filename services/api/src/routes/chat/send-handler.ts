@@ -39,6 +39,10 @@ import { handleAutoFixPreview, handleVersionAndMemory, handleFinalCleanup, handl
 
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(100_000),
+  // Optional short label persisted in chat history in place of `content` (which
+  // may contain large injected MCP tool/skill instructions that shouldn't
+  // pollute the user-visible transcript). The LLM still receives the full `content`.
+  displayContent: z.string().max(4_000).optional(),
   mode: z.enum(["agent", "plan", "visual-edit"]).default("agent"),
   model: z.string().optional(),
   provider: z.object({
@@ -63,7 +67,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
     zValidator("json", sendMessageSchema),
     async (c) => {
       const projectId = c.req.param("id");
-      const { content, mode, model, provider, providerId, copilotAccountId, broadcastMsgId, attachments } = c.req.valid("json");
+      const { content, displayContent, mode, model, provider, providerId, copilotAccountId, broadcastMsgId, attachments } = c.req.valid("json");
       const userId = c.get("userId")!;
 
       // Verify project access — must be at least a member (viewers are read-only)
@@ -162,7 +166,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           if (state.usageCollector && dbSessionId) state.usageCollector.setSessionId(dbSessionId);
 
           const { displayName, color } = await resolveUserDisplay(userId);
-          if (dbSessionId) await saveUserMessage(dbSessionId, content, userId, displayName, color);
+          if (dbSessionId) await saveUserMessage(dbSessionId, displayContent ?? content, userId, displayName, color);
           const messageId = broadcastMsgId || crypto.randomUUID();
           broadcastToRoom(projectId, { type: "ai:message-sent", userId, displayName, content: content.slice(0, 200), messageId }, userId).catch(() => {});
 

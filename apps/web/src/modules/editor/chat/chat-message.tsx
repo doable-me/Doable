@@ -7,6 +7,7 @@ import { useEditorStore } from "../hooks/use-editor-store";
 import { MessageAttachments } from "./attachment-preview";
 import { TokenCounter } from "./token-counter";
 import { apiFetch } from "@/lib/api";
+import { McpWidgetRenderer } from "./mcp-widgets/mcp-widget-renderer";
 
 import { renderMarkdown, CodeBlockCopyButton, ToolActivitySummary } from "./chat-message-helpers";
 
@@ -301,6 +302,11 @@ export const ChatMessage = memo(function ChatMessage({
             <ToolActivitySummary toolCalls={message.toolCallDetails} />
           </div>
         )}
+
+        {/* Interactive MCP widgets attached to this assistant message */}
+        {!isUser && message.mcpWidgets && Object.values(message.mcpWidgets).map((widget) => (
+          <McpWidgetRenderer key={widget.toolCallId} widget={widget} messageId={message.id} />
+        ))}
 
         {/* Per-message usage display (tokens, cost, duration) */}
         {!isUser && !message.isStreaming && message.usage && (

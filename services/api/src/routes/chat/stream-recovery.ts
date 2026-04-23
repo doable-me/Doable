@@ -30,6 +30,14 @@ export async function handleAutoContinue(
 ): Promise<void> {
   if (mode === "plan") return;
 
+  // If an MCP interactive widget was shown (e.g. format picker), the session
+  // is intentionally waiting for a user click — do NOT auto-continue, that
+  // would force the model to bypass the picker and start generating files.
+  if (state.awaitingMcpWidget) {
+    console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue skipped — awaiting MCP widget click`);
+    return;
+  }
+
   // If the AI delivered a non-trivial text response this turn, treat as a
   // legitimate inspect/answer turn — do NOT force auto-continue. This avoids
   // the false-positive "stuck reading" error when the user asked a question

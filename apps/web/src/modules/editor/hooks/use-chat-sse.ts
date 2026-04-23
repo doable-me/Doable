@@ -127,6 +127,24 @@ export function dispatchSSEEvent(
     return {};
   }
 
+  if (parsed.type === "mcp_ui_open") {
+    const d = parsed.data ?? {};
+    const toolCallId = d.toolCallId as string | undefined;
+    const uiType = d.uiType as "table" | "form" | "confirm" | "select" | undefined;
+    if (toolCallId && uiType) {
+      useEditorStore.getState().attachMcpWidget(ctx.assistantId, {
+        toolCallId,
+        connectorId: (d.connectorId as string | undefined) ?? "",
+        toolName: (d.toolName as string | undefined) ?? "",
+        uiType,
+        title: (d.title as string | undefined) ?? "",
+        schema: (d.schema as Record<string, unknown> | undefined) ?? {},
+        state: (d.state as Record<string, unknown> | undefined) ?? {},
+      });
+    }
+    return {};
+  }
+
   if (parsed.type === "usage") {
     const u = parsed.data;
     if (u && typeof u === "object") {
