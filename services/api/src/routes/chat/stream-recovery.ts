@@ -11,6 +11,12 @@ const MAX_AUTO_CONTINUE = 6;
 const MAX_READ_ONLY_CYCLES = 3;
 const FILE_WRITE_TOOLS = new Set(["create_file", "edit_file", "write_file", "create", "edit", "write"]);
 const READ_TOOLS = new Set(["read_file", "list_files", "search_files", "read", "list", "search"]);
+// Tools that represent real progress even if no file was written
+// (installs, deploys, shell commands, MCP integration calls).
+const PROGRESS_TOOLS = new Set([
+  "install_package", "run_command", "deploy_preview",
+  "provision_supabase", "request_integration", "bash", "shell",
+]);
 
 /** Run auto-continue loops if AI explored but wrote 0 files. */
 export async function handleAutoContinue(
@@ -24,9 +30,20 @@ export async function handleAutoContinue(
 ): Promise<void> {
   if (mode === "plan") return;
 
+  // If the AI delivered a non-trivial text response this turn, treat as a
+  // legitimate inspect/answer turn — do NOT force auto-continue. This avoids
+  // the false-positive "stuck reading" error when the user asked a question
+  // (e.g. "check the header", "what does X do?") and the AI legitimately
+  // used read tools to answer.
+  if (state.assistantContent.trim().length >= 40) return;
+
   let autoContinueCount = 0;
   let prevReadFingerprint = "";
   let consecutiveReadOnlyCycles = 0;
+  // Track tool-call count at start of each iteration so we can fingerprint
+  // ONLY the calls produced by the current iteration (not the cumulative
+  // sliding -20 window which produced false matches).
+  let toolCallStartIdx = state.assistantToolCalls.length;
 
   while (autoContinueCount < MAX_AUTO_CONTINUE) {
     const wroteFiles = state.assistantToolCalls.some(
@@ -34,11 +51,22 @@ export async function handleAutoContinue(
     );
     if (!state.hadToolCalls || wroteFiles) break;
 
-    // Stall detection: same-file fingerprinting
-    const toolCallsSinceLastContinue = autoContinueCount === 0
-      ? state.assistantToolCalls
-      : state.assistantToolCalls.slice(-20);
-    const readFiles = toolCallsSinceLastContinue
+    // Progress detection: if the most recent iteration produced any
+    // non-read tool call (install_package, run_command, deploy_preview,
+    // MCP, etc.), the AI is making progress — do not stall.
+    const iterationCalls = state.assistantToolCalls.slice(toolCallStartIdx);
+    const madeProgress = iterationCalls.some((tc) => {
+      const name = (tc as { name?: string }).name ?? "";
+      return PROGRESS_TOOLS.has(name) || FILE_WRITE_TOOLS.has(name);
+    });
+    if (autoContinueCount > 0 && madeProgress) {
+      // Reset stall counters — real work happened this iteration.
+      consecutiveReadOnlyCycles = 0;
+      prevReadFingerprint = "";
+    }
+
+    // Stall detection: fingerprint reads from THIS iteration only.
+    const readFiles = iterationCalls
       .filter((tc) => READ_TOOLS.has((tc as { name?: string }).name ?? ""))
       .map((tc) => {
         const args = tc as Record<string, unknown>;
@@ -47,27 +75,36 @@ export async function handleAutoContinue(
       .sort()
       .join("|");
 
-    if (autoContinueCount > 0 && readFiles === prevReadFingerprint && readFiles !== "") {
+    if (
+      autoContinueCount > 0 &&
+      !madeProgress &&
+      readFiles === prevReadFingerprint &&
+      readFiles !== ""
+    ) {
       state.traceCollector?.onError(`Stall: same files read in consecutive continues: ${readFiles.slice(0, 100)}`, "auto_continue_fingerprint");
       console.warn(`[Chat][${projectId.slice(0, 8)}] stall detected — same files read`);
       await stream.writeSSE({
         data: JSON.stringify({
-          type: "error",
-          data: "The AI appears to be stuck reading the same files without making progress. Try rephrasing your request or check the preview for errors.",
+          type: "status",
+          data: { phase: "stopped", message: "Stopping auto-continue — the preview may already reflect your changes. Refresh to verify." },
         }),
       }).catch(() => {});
       break;
     }
     prevReadFingerprint = readFiles;
 
-    consecutiveReadOnlyCycles++;
+    if (madeProgress) {
+      // Don't tick the read-only stall counter when real work happened.
+    } else {
+      consecutiveReadOnlyCycles++;
+    }
     if (consecutiveReadOnlyCycles >= MAX_READ_ONLY_CYCLES) {
       state.traceCollector?.onError(`Stall: ${consecutiveReadOnlyCycles} consecutive read-only continues`, "auto_continue_write_free");
       console.warn(`[Chat][${projectId.slice(0, 8)}] stall detected — ${consecutiveReadOnlyCycles} read-only continues`);
       await stream.writeSSE({
         data: JSON.stringify({
-          type: "error",
-          data: "The AI has been investigating without making changes. Please provide more specific guidance, or check the preview console for errors.",
+          type: "status",
+          data: { phase: "stopped", message: "Stopping auto-continue — the AI was investigating without writing changes. Refresh to check the preview, or send a more specific instruction." },
         }),
       }).catch(() => {});
       break;
@@ -76,6 +113,10 @@ export async function handleAutoContinue(
     autoContinueCount++;
     state.traceCollector?.onAutoContinue(autoContinueCount, `read-only cycle ${autoContinueCount}/${MAX_AUTO_CONTINUE}`);
     console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue attempt ${autoContinueCount}/${MAX_AUTO_CONTINUE}`);
+
+    // Mark where this iteration's tool calls begin so the next loop's
+    // fingerprint covers only the calls produced below.
+    toolCallStartIdx = state.assistantToolCalls.length;
 
     try {
       await stream.writeSSE({
@@ -134,12 +175,16 @@ export async function handleAutoContinue(
     const stillNoFiles = !state.assistantToolCalls.some(
       (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
     );
-    if (stillNoFiles) {
+    const madeAnyProgress = state.assistantToolCalls.some((tc) => {
+      const name = (tc as { name?: string }).name ?? "";
+      return PROGRESS_TOOLS.has(name);
+    });
+    if (stillNoFiles && !madeAnyProgress) {
       console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue hit ceiling`);
       await stream.writeSSE({
         data: JSON.stringify({
-          type: "error",
-          data: "The AI needed more steps than expected. It may be blocked by a configuration issue. Check the preview for errors or try a simpler request.",
+          type: "status",
+          data: { phase: "stopped", message: "The AI needed more steps than expected. Refresh to check the preview, or try a simpler/more specific request." },
         }),
       }).catch(() => {});
     }
