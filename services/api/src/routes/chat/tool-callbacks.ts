@@ -51,11 +51,16 @@ export function createToolProgressCallbacks(
   recordAssistantToolCall: (name?: string, args?: unknown) => void,
 ) {
   return {
-    onToolStart: (toolName: string, args: unknown) => {
-      recordAssistantToolCall(toolName, args as Record<string, unknown>);
+    onToolStart: (toolName: string, rawArgs: unknown) => {
+      // Some SDK channels wrap the real tool args under .arguments
+      // ({ toolName, arguments: {...real args...}, toolCallId }); unwrap so
+      // path/command extraction below finds the user-facing fields.
+      const argsObj = (rawArgs && typeof rawArgs === "object" ? rawArgs : {}) as Record<string, unknown>;
+      const args = (argsObj as { arguments?: Record<string, unknown> }).arguments ?? argsObj;
+      recordAssistantToolCall(toolName, args);
       traceCollector?.onToolStart(toolName, args);
-      const friendly = friendlyToolMessage(toolName, args as Record<string, unknown>);
-      const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+      const friendly = friendlyToolMessage(toolName, args);
+      const a = args;
       const path =
         (a.path as string | undefined) ??
         (a.filePath as string | undefined) ??
@@ -73,6 +78,7 @@ export function createToolProgressCallbacks(
         data: {
           name: toolName,
           friendlyMessage: friendly,
+          arguments: args,
           ...(path ? { path } : {}),
           ...(command ? { command } : {}),
           ...(packages ? { packages } : {}),
@@ -87,11 +93,13 @@ export function createToolProgressCallbacks(
         }) }).catch(() => {});
       }
     },
-    onToolEnd: (toolName: string, _args: unknown, result: unknown) => {
+    onToolEnd: (toolName: string, rawEndArgs: unknown, result: unknown) => {
+      const _argsObj = (rawEndArgs && typeof rawEndArgs === "object" ? rawEndArgs : {}) as Record<string, unknown>;
+      const _args = (_argsObj as { arguments?: Record<string, unknown> }).arguments ?? _argsObj;
       state.hadToolCalls = true;
       traceCollector?.onToolEnd(toolName, _args, result);
       const friendly = friendlyToolResult(toolName, result, true);
-      const ea = (_args && typeof _args === "object" ? _args : {}) as Record<string, unknown>;
+      const ea = _args;
       const endPath =
         (ea.path as string | undefined) ??
         (ea.filePath as string | undefined) ??
