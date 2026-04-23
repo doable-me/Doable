@@ -31,9 +31,11 @@ function userWantsBuild(userMessage: string | undefined): boolean {
   const hasRead = readOnly.test(m);
   if (hasBuild) return true;
   if (hasRead) return false;
-  // No clear signal — short questions/statements (< 12 words) are usually chat,
-  // long descriptions are usually build briefs.
-  return m.split(/\s+/).length >= 12;
+  // No clear signal — be conservative: if the AI already invoked tools (MCP
+  // calls, search, etc.) and is otherwise "done", forcing a "continue building"
+  // turn is far worse than under-continuing. Only auto-continue when the user
+  // gave a long, descriptive product brief (>= 25 words) which implies a build.
+  return m.split(/\s+/).length >= 25;
 }
 
 /** Run auto-continue loops if AI explored but wrote 0 files. */
