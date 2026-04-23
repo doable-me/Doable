@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
-import { PROVIDER_CATALOG, PROVIDER_COUNT } from "@doable/shared/ai/provider-catalog.js";
-import { providerDiscovery, type ProviderConfig } from "../ai/provider-discovery.js";
+import { PROVIDER_CATALOG, PROVIDER_COUNT, PROVIDER_BY_ID } from "@doable/shared/ai/provider-catalog.js";
+import { providerDiscovery, type ProviderConfig, type DiscoveredModel } from "../ai/provider-discovery.js";
 
 // ─── ETag for HTTP caching ───────────────────────────────
 // Compute once at startup — the catalog is static data compiled into the build.
@@ -41,6 +41,7 @@ const testConnectionSchema = z.object({
       apiVersion: z.string().optional(),
     })
     .optional(),
+  presetId: z.string().optional(),
 });
 
 providerCatalogRoutes.post(
@@ -50,22 +51,46 @@ providerCatalogRoutes.post(
   async (c) => {
     const body = c.req.valid("json");
 
+    // If this connection is tied to a known preset that doesn't expose
+    // GET /models (e.g. MiniMax), pass a validationModel so the validator
+    // can fall back to a chat.completions ping.
+    const preset = body.presetId
+      ? (PROVIDER_BY_ID as Record<string, (typeof PROVIDER_BY_ID)[keyof typeof PROVIDER_BY_ID]>)[body.presetId] ?? null
+      : null;
+    const validationModel = preset && !preset.supportsModelDiscovery
+      ? preset.defaultModels[0]?.id
+      : undefined;
+
     const config: ProviderConfig = {
       type: body.type,
       baseUrl: body.baseUrl,
       apiKey: body.apiKey,
       bearerToken: body.bearerToken,
       azure: body.azure,
+      validationModel,
     };
 
     const result = await providerDiscovery.validateProvider(config);
+
+    // When validation succeeded via the chat-ping fallback there won't be
+    // discovered models — surface the preset defaults so the wizard can
+    // show them as selectable.
+    let models: DiscoveredModel[] | undefined = result.models;
+    if (result.ok && (!models || models.length === 0) && preset && preset.defaultModels.length > 0) {
+      models = preset.defaultModels.map((m) => ({
+        id: m.id,
+        name: m.name,
+        contextWindow: m.contextWindow,
+        capabilities: { tools: m.supportsTools, vision: m.supportsVision },
+      }));
+    }
 
     return c.json({
       data: {
         ok: result.ok,
         latencyMs: result.latencyMs,
         error: result.errorMessage ?? result.error,
-        models: result.models,
+        models,
       },
     });
   },

@@ -97,6 +97,7 @@ export function useProviderWizardModels(
         selectedPreset.sdkType === "azure"
           ? { apiVersion: form.azureApiVersion }
           : undefined,
+      presetId: selectedPreset.id,
     });
 
     if (result?.ok && result.models && result.models.length > 0) {
@@ -128,6 +129,7 @@ export function useProviderWizardModels(
           apiKey: form.apiKey || undefined,
           azureApiVersion:
             selectedPreset.sdkType === "azure" ? form.azureApiVersion : undefined,
+          presetId: selectedPreset.id,
         }),
       });
 

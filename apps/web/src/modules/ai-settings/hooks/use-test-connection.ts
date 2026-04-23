@@ -23,6 +23,7 @@ export interface TestConnectionParams {
   apiKey?: string;
   bearerToken?: string;
   azure?: { apiVersion?: string };
+  presetId?: string;
 }
 
 export function useTestConnection() {
