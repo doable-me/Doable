@@ -231,7 +231,6 @@ export function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
         ? (rawStartArgs as { arguments: Record<string, unknown> }).arguments
         : rawStartArgs;
       const startPath = (startArgs?.path ?? startArgs?.filePath ?? startArgs?.file ?? startArgs?.target) as string | undefined;
-      console.log(`[sse-mapper] tool_call ${startToolName} args=${JSON.stringify(startArgs).slice(0,150)} path=${startPath}`);
       return {
         type: "tool_call",
         data: {

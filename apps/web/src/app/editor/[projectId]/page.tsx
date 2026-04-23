@@ -577,7 +577,9 @@ async function streamChat(
             const d = parsed.data as Record<string, unknown> | undefined;
             let toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
             let toolArgs: Record<string, unknown> = {};
-            const rawArgs = d?.result ?? d?.args;
+            // Prefer the request args (so file-name extraction works) and fall
+            // back to the result payload only if args are missing.
+            const rawArgs = d?.arguments ?? d?.args ?? d?.result;
             if (typeof rawArgs === "string" && rawArgs.trim()) {
               try {
                 toolArgs = JSON.parse(rawArgs);
@@ -586,6 +588,12 @@ async function streamChat(
               }
             } else if (typeof rawArgs === "object" && rawArgs !== null) {
               toolArgs = rawArgs as Record<string, unknown>;
+            }
+            // If d.path is present at the top level (server includes it for
+            // file-editing tools), surface it so describeToolAction can label
+            // the card with the file name.
+            if (typeof d?.path === "string" && !toolArgs.path) {
+              toolArgs = { ...toolArgs, path: d.path };
             }
             // If tool_result lacks a name, use the name from the last tool_call
             if (!toolName && pendingToolNames.length > 0) {
@@ -806,7 +814,11 @@ function processOneSSEPayload(
     if ((parsed.type === "tool_result" || parsed.type === "tool.completed") && cb.onToolCompleted) {
       const d = parsed.data as Record<string, unknown> | undefined;
       let toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
-      const toolArgs = (d?.result as Record<string, unknown>) ?? (d?.args as Record<string, unknown>) ?? {};
+      // Prefer request args so the file name is visible on the card.
+      let toolArgs = ((d?.arguments as Record<string, unknown>) ?? (d?.args as Record<string, unknown>) ?? (d?.result as Record<string, unknown>)) ?? {};
+      if (typeof d?.path === "string" && !(toolArgs as Record<string, unknown>).path) {
+        toolArgs = { ...toolArgs, path: d.path };
+      }
       if (!toolName && pendingToolNames.length > 0) {
         toolName = pendingToolNames.shift()!;
       } else if (toolName && pendingToolNames.length > 0 && pendingToolNames[0] === toolName) {
@@ -2778,14 +2790,18 @@ export default function EditorPage() {
         const finalDescription = describeToolAction(toolName, _args);
 
         if (runningAction) {
-          // Update existing running card to completed and refresh description/path with final args
+          // Update existing running card to completed and refresh description/path with final args.
+          // Avoid clobbering a good per-file description with the generic fallback
+          // ("Reading file") when the result payload doesn't include a path.
+          const isGenericFallback = /^(Reading|Creating|Updating|Removing|Renaming) file$/.test(finalDescription);
+          const keepExistingDesc = isGenericFallback && runningAction.description && runningAction.description !== finalDescription;
           return prev.map((m) =>
             m.id === lastAssistant.id
               ? {
                   ...m,
                   toolActions: m.toolActions?.map((a) =>
                     a.id === runningAction.id
-                      ? { ...a, status: "completed" as const, description: finalDescription, filePath: filePath ?? a.filePath }
+                      ? { ...a, status: "completed" as const, description: keepExistingDesc ? a.description : finalDescription, filePath: filePath ?? a.filePath }
                       : a
                   ),
                 }
