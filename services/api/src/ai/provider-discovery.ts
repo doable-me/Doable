@@ -71,6 +71,14 @@ export class ProviderDiscoveryService {
         };
       }
 
+      // Some OpenAI-compatible providers (MiniMax, certain gateways) don't
+      // expose GET /models. If we have a validationModel hint, fall back to
+      // a tiny chat.completions ping which authenticates *and* exercises the
+      // path the client will actually use.
+      if (response.status === 404 && config.type === "openai" && config.validationModel) {
+        return await this.validateViaChatPing(config, start);
+      }
+
       // Non-2xx response — classify the error
       let errorMessage: string | undefined;
       try {
@@ -104,6 +112,77 @@ export class ProviderDiscoveryService {
         error: code,
         errorMessage: message,
       };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * Fallback validation for providers without GET /models.
+   * Sends a single-token chat.completions request to verify the API key.
+   */
+  private async validateViaChatPing(
+    config: ProviderConfig,
+    start: number,
+  ): Promise<ValidationResult> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      ProviderDiscoveryService.VALIDATE_TIMEOUT_MS,
+    );
+
+    try {
+      const base = config.baseUrl.replace(/\/+$/, "");
+      const url = `${base}/chat/completions`;
+      const headers = {
+        ...buildHeaders(config),
+        "Content-Type": "application/json",
+      };
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: config.validationModel,
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 1,
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
+
+      const latencyMs = Math.round(performance.now() - start);
+
+      if (response.ok) {
+        // We don't parse models from a chat ping — caller will use preset
+        // defaults via a separate path.
+        return { ok: true, latencyMs };
+      }
+
+      let errorMessage: string | undefined;
+      try {
+        const body = await response.text();
+        const parsed = JSON.parse(body);
+        errorMessage =
+          parsed?.error?.message ||
+          parsed?.message ||
+          parsed?.detail ||
+          `HTTP ${response.status}`;
+      } catch {
+        errorMessage = `HTTP ${response.status} ${response.statusText}`;
+      }
+
+      const { code, message } = classifyError(null, response.status);
+      return {
+        ok: false,
+        latencyMs,
+        error: code,
+        errorMessage: errorMessage || message,
+      };
+    } catch (err) {
+      const latencyMs = Math.round(performance.now() - start);
+      const { code, message } = classifyError(err);
+      return { ok: false, latencyMs, error: code, errorMessage: message };
     } finally {
       clearTimeout(timeoutId);
     }

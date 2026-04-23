@@ -29,6 +29,12 @@ export interface ProviderConfig {
   apiKey?: string;
   bearerToken?: string;
   azure?: { apiVersion?: string };
+  /**
+   * When set, the validator will fall back to a tiny chat.completions
+   * request using this model id if GET /models is unavailable (e.g. 404).
+   * Required for providers like MiniMax that don't expose model discovery.
+   */
+  validationModel?: string;
 }
 
 // ─── Cache Entry ──────────────────────────────────────

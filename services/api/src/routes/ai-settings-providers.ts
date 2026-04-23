@@ -6,6 +6,7 @@ import { aiSettingsQueries, workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { providerDiscovery, type ProviderConfig } from "../ai/provider-discovery.js";
 import type { WorkspaceRole } from "@doable/shared";
+import { PROVIDER_BY_ID } from "@doable/shared/ai/provider-catalog.js";
 import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
 const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
@@ -144,6 +145,14 @@ aiSettingsProviderRoutes.post("/:workspaceId/ai-settings/providers/:id/validate"
 
   const { row, apiKey, bearerToken } = providerData;
 
+  // If this provider is bound to a known preset, look it up so we can:
+  //   1. fall back to chat.completions ping when /models is unavailable
+  //   2. seed ai_provider_models from preset defaults when discovery is off
+  const preset = row.preset_id ? PROVIDER_BY_ID.get(row.preset_id) ?? null : null;
+  const validationModel = preset && !preset.supportsModelDiscovery
+    ? preset.defaultModels[0]?.id
+    : undefined;
+
   const config: ProviderConfig = {
     type: row.provider_type as ProviderConfig["type"],
     baseUrl: row.base_url,
@@ -152,9 +161,21 @@ aiSettingsProviderRoutes.post("/:workspaceId/ai-settings/providers/:id/validate"
     azure: row.provider_type === "azure"
       ? { apiVersion: row.azure_api_version ?? undefined }
       : undefined,
+    validationModel,
   };
 
   const result = await providerDiscovery.validateProvider(config);
+
+  // If validation succeeded but the provider doesn't expose discovery,
+  // seed `result.models` from the preset so the route below caches them.
+  if (result.ok && (!result.models || result.models.length === 0) && preset && preset.defaultModels.length > 0) {
+    result.models = preset.defaultModels.map((m) => ({
+      id: m.id,
+      name: m.name,
+      contextWindow: m.contextWindow,
+      capabilities: { tools: m.supportsTools, vision: m.supportsVision },
+    }));
+  }
 
   const healthStatus = result.ok ? "healthy" : (result.error === "rate_limited" ? "degraded" : "down");
 
