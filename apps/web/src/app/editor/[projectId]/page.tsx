@@ -1100,7 +1100,13 @@ function deriveProjectName(prompt: string): string {
 
 /** Generate a human-readable description for a tool action */
 function describeToolAction(toolName: string, args?: Record<string, unknown>): string {
-  const fileName = args?.path ?? args?.filePath ?? args?.file ?? args?.name ?? args?.target ?? "";
+  // Some SDK channels deliver { toolName, arguments: {...real args...}, toolCallId };
+  // unwrap so the file-name extraction below finds the real path field.
+  const a0 = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+  const a = (typeof (a0 as { arguments?: unknown }).arguments === "object" && (a0 as { arguments?: unknown }).arguments !== null)
+    ? (a0 as { arguments: Record<string, unknown> }).arguments
+    : a0;
+  const fileName = a?.path ?? a?.filePath ?? a?.file ?? a?.file_path ?? a?.fileName ?? a?.name ?? a?.target ?? "";
   const shortName = typeof fileName === "string" ? fileName.split("/").pop() ?? "" : "";
 
   // Shell-ish tools: surface the actual command being run
@@ -1109,7 +1115,7 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
       || lower0.includes("cmd") || lower0.includes("exec") || lower0.includes("run_command")
       || lower0.includes("terminal")) {
     let cmd: string | undefined;
-    const rawCmd = args?.command ?? args?.cmd ?? args?.input;
+    const rawCmd = a?.command ?? a?.cmd ?? a?.input;
     if (typeof rawCmd === "string" && rawCmd.trim()) {
       cmd = rawCmd.trim();
     }
@@ -1142,7 +1148,7 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
     return "Scanning project structure";
   }
   if (toolName.toLowerCase().includes("install") || toolName.toLowerCase().includes("package")) {
-    const pkgs = args?.packages ?? args?.name ?? "";
+    const pkgs = a?.packages ?? a?.name ?? "";
     if (typeof pkgs === "string" && pkgs) {
       const first = pkgs.split(/\s+/)[0] ?? pkgs;
       return `Installing ${first}`;
