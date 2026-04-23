@@ -31,34 +31,45 @@ BEGIN
   END IF;
 
   -- ─── github_connections: encrypt access_token ──────────────
+  -- Only if the table exists
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'github_connections') THEN
+    -- Add encrypted column if it doesn't exist
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'github_connections' AND column_name = 'access_token_encrypted'
+    ) THEN
+      ALTER TABLE github_connections ADD COLUMN access_token_encrypted TEXT;
+    END IF;
 
-  -- Add encrypted column if it doesn't exist
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'github_connections' AND column_name = 'access_token_encrypted'
-  ) THEN
-    ALTER TABLE github_connections ADD COLUMN access_token_encrypted TEXT;
+    -- Migrate existing plaintext tokens (only if plaintext column exists)
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'github_connections' AND column_name = 'access_token'
+    ) THEN
+      UPDATE github_connections
+      SET access_token_encrypted = pgp_sym_encrypt(access_token, enc_key)
+      WHERE access_token IS NOT NULL
+        AND access_token_encrypted IS NULL;
+    END IF;
+
+    -- ─── github_connections: encrypt webhook_secret ────────────
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'github_connections' AND column_name = 'webhook_secret_encrypted'
+    ) THEN
+      ALTER TABLE github_connections ADD COLUMN webhook_secret_encrypted TEXT;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'github_connections' AND column_name = 'webhook_secret'
+    ) THEN
+      UPDATE github_connections
+      SET webhook_secret_encrypted = pgp_sym_encrypt(webhook_secret, enc_key)
+      WHERE webhook_secret IS NOT NULL
+        AND webhook_secret_encrypted IS NULL;
+    END IF;
   END IF;
-
-  -- Migrate existing plaintext tokens
-  UPDATE github_connections
-  SET access_token_encrypted = pgp_sym_encrypt(access_token, enc_key)
-  WHERE access_token IS NOT NULL
-    AND access_token_encrypted IS NULL;
-
-  -- ─── github_connections: encrypt webhook_secret ────────────
-
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'github_connections' AND column_name = 'webhook_secret_encrypted'
-  ) THEN
-    ALTER TABLE github_connections ADD COLUMN webhook_secret_encrypted TEXT;
-  END IF;
-
-  UPDATE github_connections
-  SET webhook_secret_encrypted = pgp_sym_encrypt(webhook_secret, enc_key)
-  WHERE webhook_secret IS NOT NULL
-    AND webhook_secret_encrypted IS NULL;
 
   -- ─── github_user_tokens: encrypt access_token ─────────────
   -- Only if the table exists (it may not be present in all migration paths)
@@ -73,10 +84,15 @@ BEGIN
       ALTER TABLE github_user_tokens ADD COLUMN access_token_encrypted TEXT;
     END IF;
 
-    UPDATE github_user_tokens
-    SET access_token_encrypted = pgp_sym_encrypt(access_token, enc_key)
-    WHERE access_token IS NOT NULL
-      AND access_token_encrypted IS NULL;
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'github_user_tokens' AND column_name = 'access_token'
+    ) THEN
+      UPDATE github_user_tokens
+      SET access_token_encrypted = pgp_sym_encrypt(access_token, enc_key)
+      WHERE access_token IS NOT NULL
+        AND access_token_encrypted IS NULL;
+    END IF;
   END IF;
 
 END $$;

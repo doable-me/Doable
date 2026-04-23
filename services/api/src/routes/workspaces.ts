@@ -18,34 +18,56 @@ workspaceRoutes.use("*", authMiddleware);
 
 // ─── List User's Workspaces (with member count + credits) ───
 workspaceRoutes.get("/", async (c) => {
-  const userId = c.get("userId");
-  const rows = await workspaces.listByUser(userId);
+  try {
+    const userId = c.get("userId");
+    if (!userId) {
+      console.error("[workspaces] No userId in context");
+      return c.json({ error: "Authentication required" }, 401);
+    }
 
-  // Enrich each workspace with member count, credits, and user's role
-  const data = await Promise.all(
-    rows.map(async (ws) => {
-      const [members, credits, userRole] = await Promise.all([
-        workspaces.listMembers(ws.id),
-        workspaces.getCredits(ws.id),
-        workspaces.getMemberRole(ws.id, userId),
-      ]);
-      return {
-        ...ws,
-        userRole: userRole ?? "member",
-        memberCount: members.length,
-        credits: credits
-          ? {
-              dailyRemaining: credits.daily_remaining,
-              dailyTotal: credits.daily_total,
-              monthlyRemaining: credits.monthly_remaining,
-              rolloverCredits: credits.rollover_credits,
-            }
-          : null,
-      };
-    })
-  );
+    let rows;
+    try {
+      rows = await workspaces.listByUser(userId);
+    } catch (dbErr: any) {
+      console.error("[workspaces] Database error listing workspaces:", dbErr);
+      return c.json({ error: `Database error: ${dbErr?.message || "Unknown error"}` }, 500);
+    }
 
-  return c.json({ data });
+    // Enrich each workspace with member count, credits, and user's role
+    let data;
+    try {
+      data = await Promise.all(
+        rows.map(async (ws) => {
+          const [members, credits, userRole] = await Promise.all([
+            workspaces.listMembers(ws.id),
+            workspaces.getCredits(ws.id),
+            workspaces.getMemberRole(ws.id, userId),
+          ]);
+          return {
+            ...ws,
+            userRole: userRole ?? "member",
+            memberCount: members.length,
+            credits: credits
+              ? {
+                  dailyRemaining: credits.daily_remaining,
+                  dailyTotal: credits.daily_total,
+                  monthlyRemaining: credits.monthly_remaining,
+                  rolloverCredits: credits.rollover_credits,
+                }
+              : null,
+          };
+        })
+      );
+    } catch (enrichErr: any) {
+      console.error("[workspaces] Error enriching data:", enrichErr);
+      return c.json({ error: `Enrichment error: ${enrichErr?.message || "Unknown error"}` }, 500);
+    }
+
+    return c.json({ data });
+  } catch (err: any) {
+    console.error("[workspaces] Unexpected error:", err);
+    return c.json({ error: `Server error: ${err?.message || "Unknown error"}` }, 500);
+  }
 });
 
 // ─── Create Workspace ───────────────────────────────────────

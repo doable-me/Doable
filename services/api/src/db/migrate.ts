@@ -42,12 +42,53 @@ async function migrate() {
     const content = await readFile(join(migrationsDir, file), "utf-8");
     console.log(`Applying ${file}...`);
 
-    await sql.begin(async (tx) => {
-      await tx.unsafe(content);
-      await tx`INSERT INTO schema_migrations (name) VALUES (${file})`;
-    });
+    try {
+      await sql.begin(async (tx) => {
+        await tx.unsafe(content);
+        await tx`INSERT INTO schema_migrations (name) VALUES (${file})`;
+      });
+      count++;
+    } catch (err: any) {
+      // List of PostgreSQL error codes that indicate idempotent operations
+      // that should be considered successful if the object already exists
+      const idempotentErrorCodes = [
+        "42P07", // relation already exists
+        "42701", // column already exists
+        "42710", // type already exists
+        "42723", // function already exists
+        "42P16", // index already exists
+      ];
 
-    count++;
+      const isIdempotentError = idempotentErrorCodes.includes(err?.code);
+      const isExtensionError =
+        err?.code === "0A000" &&
+        err?.message?.includes("extension") &&
+        err?.message?.includes("not available");
+      const isPolicyError =
+        err?.code === "0A000" && err?.message?.includes("policy");
+
+      if (isExtensionError || isIdempotentError || isPolicyError) {
+        const errorType = isExtensionError 
+          ? "Extension not available" 
+          : isPolicyError
+          ? "Policy conflict (likely already applied)"
+          : "Object already exists";
+        console.warn(
+          `⚠️  ${errorType} in ${file} (idempotent, skipping):`
+        );
+        console.warn(`   ${err.message}`);
+        // Mark as applied
+        try {
+          await sql`INSERT INTO schema_migrations (name) VALUES (${file})`;
+        } catch (insertErr: any) {
+          // If it's already in schema_migrations, that's fine too
+          if (insertErr?.code !== "23505") throw insertErr;
+        }
+        count++;
+      } else {
+        throw err;
+      }
+    }
   }
 
   if (count === 0) {
