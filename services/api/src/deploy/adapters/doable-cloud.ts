@@ -1,4 +1,5 @@
 import { mkdir, cp, rm, readdir, stat } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
@@ -18,37 +19,27 @@ const SITES_DIR =
 const DOMAIN = process.env.DOABLE_DOMAIN ?? "doable.me";
 
 /**
- * When set (e.g. "/_sites/"), publish sites under this URL path on the
- * primary DOMAIN instead of as subdomains. Required on dev where Cloudflare
- * Universal SSL doesn't cover two-level wildcards like *.dev.doable.me.
- * Caddy must be configured to map ${PUBLISH_PATH_PREFIX}{slug}/* to the
- * site's live directory; see ops docs.
+ * Optional prefix prepended to every published subdomain on this server.
+ * Used on the dev environment so dev publishes land at e.g.
+ * `dev-{slug}.doable.me` (single-label, covered by Cloudflare Universal
+ * SSL wildcard `*.doable.me`) instead of `{slug}.dev.doable.me` (two-level,
+ * NOT covered). On production this stays empty so URLs are `{slug}.doable.me`.
  */
-const PUBLISH_PATH_PREFIX = process.env.PUBLISH_PATH_PREFIX;
+const SUBDOMAIN_PREFIX = process.env.PUBLISH_SUBDOMAIN_PREFIX ?? "";
 
 /** Compute the public URL and base path for a deployed site. */
 export function computeSitePublishLocation(
   subdomain: string,
   environment: "preview" | "production",
-): { url: string; basePath: string; siteSubdomain: string } {
-  const siteSubdomain =
-    environment === "preview" ? `p-${subdomain}` : subdomain;
-  if (PUBLISH_PATH_PREFIX) {
-    const prefix = PUBLISH_PATH_PREFIX.startsWith("/")
-      ? PUBLISH_PATH_PREFIX
-      : `/${PUBLISH_PATH_PREFIX}`;
-    const cleanPrefix = prefix.endsWith("/") ? prefix : `${prefix}/`;
-    const basePath = `${cleanPrefix}${siteSubdomain}/`;
-    return {
-      url: `https://${DOMAIN}${basePath}`,
-      basePath,
-      siteSubdomain,
-    };
-  }
+): { url: string; basePath: string; siteSubdomain: string; hostname: string } {
+  const envPrefix = environment === "preview" ? "p-" : "";
+  const siteSubdomain = `${SUBDOMAIN_PREFIX}${envPrefix}${subdomain}`;
+  const hostname = `${siteSubdomain}.${DOMAIN}`;
   return {
-    url: `https://${siteSubdomain}.${DOMAIN}`,
+    url: `https://${hostname}`,
     basePath: "/",
     siteSubdomain,
+    hostname,
   };
 }
 
@@ -139,11 +130,29 @@ export class DoableCloudAdapter implements DeployAdapter {
       );
     }
 
-    // URL: subdomain (default) OR path-prefixed (when PUBLISH_PATH_PREFIX set)
-    const { url, siteSubdomain } = computeSitePublishLocation(
+    // URL: {prefix}{subdomain}.doable.me. On dev, prefix="dev-" so the
+    // single-label wildcard SSL covers it. Defaults to no prefix on prod.
+    const { url, siteSubdomain, hostname } = computeSitePublishLocation(
       subdomain,
       environment,
     );
+
+    // Optional: register a specific DNS CNAME for this hostname on the
+    // configured Cloudflare tunnel. Only runs when CLOUDFLARED_TUNNEL_ID
+    // env var is set (used on dev so dev-{slug}.doable.me overrides the
+    // wildcard *.doable.me CNAME that points at the prod tunnel). Errors
+    // are non-fatal — the file copy already succeeded.
+    if (process.env.CLOUDFLARED_TUNNEL_ID) {
+      await registerCloudflaredDns(
+        process.env.CLOUDFLARED_TUNNEL_ID,
+        hostname,
+      ).catch((err) => {
+        console.warn(
+          `[doable-cloud] DNS registration failed for ${hostname}:`,
+          err instanceof Error ? err.message : err,
+        );
+      });
+    }
 
     // Collect file info for artifact tracking
     const files = await collectFileInfo(targetDir, targetDir);
@@ -244,6 +253,29 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Add a per-publish DNS CNAME pointing the given hostname at our Cloudflare
+ * tunnel. Idempotent — `cloudflared tunnel route dns` updates an existing
+ * record in place. Resolves on success, rejects on non-zero exit.
+ */
+function registerCloudflaredDns(
+  tunnelId: string,
+  hostname: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("cloudflared", ["tunnel", "route", "dns", tunnelId, hostname], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let err = "";
+    proc.stderr.on("data", (d: Buffer) => { err += d.toString(); });
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`cloudflared exit ${code}: ${err.trim()}`));
+    });
+    proc.on("error", reject);
+  });
 }
 
 // ── Subdomain generation ─────────────────────────────────

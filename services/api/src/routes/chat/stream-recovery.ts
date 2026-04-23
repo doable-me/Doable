@@ -103,8 +103,11 @@ export async function handleAutoContinue(
           state.traceCollector?.onSdkEvent(evt as Record<string, unknown>);
           if (evtType === "tool.execution_start") {
             const toolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
-            recordAssistantToolCall(toolName, evtData as Record<string, unknown>);
-            if (toolName) state.traceCollector?.onToolStart(toolName, evtData);
+            // Unwrap envelope: real args live under .arguments on some channels.
+            const toolArgs = ((evtData as { arguments?: Record<string, unknown> })
+              ?.arguments ?? evtData) as Record<string, unknown>;
+            recordAssistantToolCall(toolName, toolArgs);
+            if (toolName) state.traceCollector?.onToolStart(toolName, toolArgs);
             state.hadToolCalls = true;
           }
           if (evtType === "tool.execution_complete" || evtType === "tool.completed") {

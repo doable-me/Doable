@@ -60,11 +60,15 @@ export function createProcessEvent(
       const tcName = (evtData?.toolName ?? evtData?.name) as string | undefined;
       if (tcId && tcName) state.toolCallIdMap.set(tcId, tcName);
       if (tcName) {
+        // Some SDK channels wrap the real tool args under .arguments;
+        // unwrap so downstream code finds args.path / args.command etc.
+        const toolArgs = ((evtData as { arguments?: Record<string, unknown> })
+          ?.arguments ?? evtData) as Record<string, unknown>;
         state.pendingToolNames.push(tcName);
-        recordAssistantToolCall(tcName, evtData as Record<string, unknown>);
+        recordAssistantToolCall(tcName, toolArgs);
         state.lastToolName = tcName;
-        state.friendlyLastTool = friendlyToolMessage(tcName, evtData as Record<string, unknown>) ?? tcName;
-        state.traceCollector?.onToolStart(tcName, evtData);
+        state.friendlyLastTool = friendlyToolMessage(tcName, toolArgs) ?? tcName;
+        state.traceCollector?.onToolStart(tcName, toolArgs);
       }
     }
     if (evtType === "tool.execution_complete" || evtType === "tool.completed" || evtType === "external_tool.completed") {

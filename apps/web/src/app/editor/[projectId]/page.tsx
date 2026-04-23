@@ -2289,15 +2289,22 @@ export default function EditorPage() {
                 isStreaming: false,
                 thinkingContent,
                 toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
-                  ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => ({
-                      id: `hist-${m.id}-${i}`,
-                      toolName: tc.name || "unknown",
-                      description: describeToolAction(tc.name || "", tc.arguments),
-                      isExpanded: false,
-                      isBookmarked: false,
-                      filePath: (tc.arguments?.path ?? tc.arguments?.filePath ?? tc.arguments?.file) as string | undefined,
-                      status: "completed" as const,
-                    }))
+                  ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => {
+                      // Some legacy rows store args double-wrapped under .arguments.arguments.
+                      const rawArgs = tc.arguments ?? {};
+                      const args = (rawArgs.arguments && typeof rawArgs.arguments === "object"
+                        ? rawArgs.arguments
+                        : rawArgs) as Record<string, unknown>;
+                      return {
+                        id: `hist-${m.id}-${i}`,
+                        toolName: tc.name || "unknown",
+                        description: describeToolAction(tc.name || "", args),
+                        isExpanded: false,
+                        isBookmarked: false,
+                        filePath: (args.path ?? args.filePath ?? args.file) as string | undefined,
+                        status: "completed" as const,
+                      };
+                    })
                   : undefined),
                 suggestions: m.suggestions || undefined,
                 senderInfo,
