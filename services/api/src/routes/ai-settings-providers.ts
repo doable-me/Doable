@@ -53,6 +53,7 @@ const addProviderSchema = z.object({
   apiKey: z.string().optional(),
   bearerToken: z.string().optional(),
   azureApiVersion: z.string().optional(),
+  presetId: z.string().optional(),
 });
 
 // POST /workspaces/:workspaceId/ai-settings/providers
@@ -76,6 +77,7 @@ aiSettingsProviderRoutes.post(
       bearerToken: body.bearerToken,
       azureApiVersion: body.azureApiVersion,
       addedBy: userId,
+      presetId: body.presetId,
     });
 
     const { encrypted_api_key, encrypted_bearer_token, ...safe } = provider;

@@ -166,12 +166,13 @@ export function aiSettingsProviderQueries(sql: postgres.Sql, encryptionKey: stri
       bearerToken?: string;
       azureApiVersion?: string;
       addedBy: string;
+      presetId?: string;
     }): Promise<AiProviderRow> {
       const [row] = await sql<AiProviderRow[]>`
         INSERT INTO ai_providers (
           workspace_id, label, provider_type, base_url,
           encrypted_api_key, encrypted_bearer_token,
-          azure_api_version, added_by
+          azure_api_version, added_by, preset_id
         ) VALUES (
           ${data.workspaceId},
           ${data.label},
@@ -180,7 +181,8 @@ export function aiSettingsProviderQueries(sql: postgres.Sql, encryptionKey: stri
           ${data.apiKey ? sql`pgp_sym_encrypt(${data.apiKey}, ${ENCRYPTION_KEY})` : null},
           ${data.bearerToken ? sql`pgp_sym_encrypt(${data.bearerToken}, ${ENCRYPTION_KEY})` : null},
           ${data.azureApiVersion ?? null},
-          ${data.addedBy}
+          ${data.addedBy},
+          ${data.presetId ?? null}
         )
         RETURNING *
       `;
