@@ -656,7 +656,6 @@ async function streamChat(
           if (parsed.type === "mcp_ui_resource") {
             const d = parsed.data as Record<string, unknown> | undefined;
             const r = d?.resource as { uri?: string; mimeType?: string; text?: string; blob?: string } | undefined;
-            console.log("[MCP-UI] received SSE event", { hasCallback: !!onMcpUiResource, toolCallId: d?.toolCallId, uri: r?.uri, mimeType: r?.mimeType, textLen: r?.text?.length ?? 0 });
             if (onMcpUiResource && d && typeof d.toolCallId === "string" && r?.uri && r?.mimeType) {
               onMcpUiResource({
                 toolCallId: d.toolCallId as string,
@@ -670,9 +669,6 @@ async function streamChat(
                 },
                 closed: false,
               });
-              console.log("[MCP-UI] dispatched to onMcpUiResource");
-            } else {
-              console.warn("[MCP-UI] guard failed", { hasCb: !!onMcpUiResource, hasD: !!d, hasUri: !!r?.uri, hasMime: !!r?.mimeType });
             }
           }
 

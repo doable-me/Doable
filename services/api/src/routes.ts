@@ -35,9 +35,11 @@ import { teamChatRoutes } from "./routes/team-chat.js";
 import { internalRoutes } from "./routes/internal.js";
 import { planRoutes } from "./routes/plan.js";
 import { directSaveRoutes } from "./direct-save/index.js";
+import artifactsRoutes from "./routes/artifacts.js";
 
 export function mountRoutes(app: Hono): void {
 app.route("/health", healthRoutes);
+app.route("/artifacts", artifactsRoutes);
 app.route("/internal", internalRoutes);
 app.route("/auth", authRoutes);
 // Preview reverse proxy — forwards /preview/:projectId/* to the Vite dev server.
