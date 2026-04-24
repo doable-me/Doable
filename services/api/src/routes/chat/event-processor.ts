@@ -11,6 +11,7 @@ import {
 } from "../../ai/tool-messages.js";
 import { parsePlanSteps } from "../../ai/plan-parser.js";
 import { mapEventToSSE, ChannelTokenRouter } from "../../ai/sse-mapper.js";
+import { popArtifacts } from "./artifact-stash.js";
 import { broadcastToRoom } from "../../ai/yjs-bridge.js";
 
 /** Create the processEvent callback for SDK sendMessage. */
@@ -213,11 +214,17 @@ function routeSseEvent(
     // canonical (always-delivered) tool_result is the most reliable carrier.
     const resolvedName = resultData?.name as string | undefined;
     if (resolvedName) {
-      const arts = state.pendingArtifacts.get(resolvedName);
-      if (process.env.MCP_DEBUG) console.log(`[event-processor] tool_result merge check name=${resolvedName} hasArts=${!!arts} count=${arts?.length ?? 0} mapSize=${state.pendingArtifacts.size}`);
+      let arts = state.pendingArtifacts.get(resolvedName);
+      if (!arts || arts.length === 0) {
+        // Fallback to process-global stash (SDK caches toolProgress
+        // callbacks across requests so per-state map may be empty).
+        arts = popArtifacts(resolvedName);
+      } else {
+        state.pendingArtifacts.delete(resolvedName);
+      }
+      if (process.env.MCP_DEBUG) console.log(`[event-processor] tool_result merge name=${resolvedName} hasArts=${!!arts} count=${arts?.length ?? 0}`);
       if (arts && arts.length > 0) {
         (resultData as Record<string, unknown>).artifacts = arts;
-        state.pendingArtifacts.delete(resolvedName);
       }
     }
     state.lastToolName = undefined;

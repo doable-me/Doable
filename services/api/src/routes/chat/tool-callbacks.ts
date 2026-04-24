@@ -8,6 +8,7 @@ import type { TraceCollector } from "../../ai/trace-collector.js";
 import { sql } from "../../db/index.js";
 import { pendingUiResources } from "../../mcp/tool-bridge.js";
 import { storeArtifact } from "../artifacts.js";
+import { pushArtifacts } from "./artifact-stash.js";
 
 const ARTIFACT_PUBLIC_URL =
   process.env.NEXT_PUBLIC_API_URL ?? process.env.API_URL ?? "http://localhost:4000";
@@ -175,11 +176,13 @@ export function createToolProgressCallbacks(
       }) }).catch(() => {});
       if (collectedArtifacts.length > 0) {
         // Stash for event-processor to merge into the canonical tool_result
-        // emit (the SDK fires tool.completed after this hook resolves; that
-        // event is what the client reliably receives, so attach there too).
+        // emit. Use a process-global stash because the Copilot SDK caches
+        // its toolProgress callbacks across requests, so per-request state
+        // is not visible to the consumer side.
+        pushArtifacts(toolName, collectedArtifacts);
         const existing = state.pendingArtifacts.get(toolName) ?? [];
         state.pendingArtifacts.set(toolName, [...existing, ...collectedArtifacts]);
-        dlog(`tool_result included ${collectedArtifacts.length} artifact(s) inline for ${toolName} (also stashed for canonical tool_result)`);
+        dlog(`tool_result included ${collectedArtifacts.length} artifact(s) inline for ${toolName} (also pushed to global stash + per-state map)`);
       }
       // ALSO emit each artifact as its own redundant tiny SSE event
       // type ("artifact"). Multiple distinct event types means even if one

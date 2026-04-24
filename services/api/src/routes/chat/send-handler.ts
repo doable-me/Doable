@@ -31,6 +31,7 @@ import { projectSessions, activeRequests } from "./session-state.js";
 import { buildSystemPrompt } from "./system-prompts.js";
 import { createRecordAssistantToolCall, createToolProgressCallbacks } from "./tool-callbacks.js";
 import { createProcessEvent } from "./event-processor.js";
+import { popArtifacts } from "./artifact-stash.js";
 import { scaffoldAndStartDev, emitConfigTraces, logToolManifest, handleToolEndEvent } from "./send-helpers.js";
 import { checkAndEvictOnModeChange, resolveSession, persistSessionToDb, filterToolsForMode, recreateSession } from "./session-manager.js";
 import { resolveUserDisplay, saveUserMessage, preInsertAssistantMessage } from "./message-persistence.js";
@@ -306,7 +307,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
             // Flush pending tool names
             for (const pendingName of state.pendingToolNames) {
-              const arts = state.pendingArtifacts.get(pendingName);
+              const arts = state.pendingArtifacts.get(pendingName) ?? popArtifacts(pendingName);
               const data: Record<string, unknown> = { name: pendingName, success: true, friendlyMessage: "Done" };
               if (arts && arts.length > 0) {
                 data.artifacts = arts;
