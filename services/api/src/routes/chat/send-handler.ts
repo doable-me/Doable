@@ -123,18 +123,34 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
       c.header("X-Accel-Buffering", "no");
 
-      // Hook client disconnect → abort in-flight call
+      // Detach generation from the HTTP request: when the client disconnects
+      // (page refresh, navigation, network blip), do NOT abort the in-flight
+      // Copilot session. Generation continues in the background and the final
+      // assistant message is persisted via finalSaveAssistantMessage in
+      // handleFinalCleanup. On reconnect, the client rehydrates via
+      // GET /chat/history (full saved message) + /chat/status (streaming flag).
+      //
+      // We still track the disconnect so SSE writes become no-ops, preventing
+      // the async handler from throwing before it reaches the DB save.
+      let clientDisconnected = false;
       c.req.raw.signal.addEventListener("abort", () => {
-        const sessionKeyForAbort = mode === "visual-edit" ? `${projectId}:visual-edit` : projectId;
-        const sid = projectSessions.get(sessionKeyForAbort);
-        if (!sid) return;
-        const eng = getCopilotManager().tryGetEngine(projectId);
-        if (!eng) return;
-        eng.abortSession(sid).catch(() => {});
-        console.log(`[Chat] client disconnected — aborting session ${sid.slice(0, 8)}…`);
+        clientDisconnected = true;
+        console.log(`[Chat] client disconnected for ${projectId.slice(0, 8)} — generation continues in background`);
       });
 
       return streamSSE(c, async (stream) => {
+        // Make SSE writes resilient after client disconnect so the rest of the
+        // pipeline (tool events, final save, cleanup) still runs to completion.
+        const originalWriteSSE = stream.writeSSE.bind(stream);
+        stream.writeSSE = async (message: Parameters<typeof originalWriteSSE>[0]) => {
+          if (clientDisconnected) return;
+          try {
+            await originalWriteSSE(message);
+          } catch {
+            clientDisconnected = true;
+          }
+        };
+
         const state = createInitialState();
         const keepAlive = setInterval(async () => {
           try { await stream.writeSSE({ data: JSON.stringify({ type: "keep_alive" }) }); } catch {}
