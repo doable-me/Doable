@@ -11,6 +11,22 @@ const MAX_AUTO_CONTINUE = 6;
 const MAX_READ_ONLY_CYCLES = 3;
 const FILE_WRITE_TOOLS = new Set(["create_file", "edit_file", "write_file", "create", "edit", "write"]);
 const READ_TOOLS = new Set(["read_file", "list_files", "search_files", "read", "list", "search"]);
+/**
+ * MCP tools that produce a finished artifact (UI resource, download, etc.)
+ * — calling one of these IS the deliverable, so auto-continue must NOT
+ * pester the model to "continue building" afterwards. Match by suffix so
+ * connector-prefixed names (mcp_<connector>_<tool>) are covered too.
+ */
+const PRODUCTIVE_TOOL_SUFFIXES = [
+  "render_pptx",
+  "render_web_slides",
+  "build_presentation",
+  "create_presentation",
+];
+function isProductiveToolName(name: string | undefined): boolean {
+  if (!name) return false;
+  return PRODUCTIVE_TOOL_SUFFIXES.some((s) => name === s || name.endsWith(`_${s}`) || name.endsWith(`.${s}`));
+}
 
 /**
  * Heuristically decide whether the user actually asked the AI to BUILD/MODIFY
@@ -75,7 +91,10 @@ export async function handleAutoContinue(
     const wroteFiles = state.assistantToolCalls.some(
       (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
     );
-    if (!state.hadToolCalls || wroteFiles) break;
+    const producedArtifact = state.assistantToolCalls.some(
+      (tc) => isProductiveToolName((tc as { name?: string }).name),
+    );
+    if (!state.hadToolCalls || wroteFiles || producedArtifact) break;
 
     // Stall detection: same-file fingerprinting
     const toolCallsSinceLastContinue = autoContinueCount === 0
