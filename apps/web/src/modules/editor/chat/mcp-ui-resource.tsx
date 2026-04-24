@@ -182,6 +182,37 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt }:
     }
   }, []);
 
+  // Belt-and-suspenders: onLoad can race React's ref/listener setup for
+  // srcdoc iframes (the browser may fire `load` before the ref commits,
+  // especially with HMR). Re-post host-ready from a mount effect and again
+  // on a short retry loop. The iframe side guards with a `fired` flag so
+  // duplicate host-ready messages are harmless.
+  useEffect(() => {
+    if (!html) return;
+    let cancelled = false;
+    const send = () => {
+      const target = iframeRef.current?.contentWindow;
+      if (!target) return;
+      try {
+        target.postMessage({ type: "host-ready" }, "*");
+      } catch {
+        /* ignore */
+      }
+    };
+    // Fire immediately after mount, then re-fire a few times to cover the
+    // case where the iframe's script hasn't attached its listener yet.
+    send();
+    const timers = [50, 150, 400, 1000, 2000].map((ms) =>
+      setTimeout(() => {
+        if (!cancelled) send();
+      }, ms),
+    );
+    return () => {
+      cancelled = true;
+      for (const t of timers) clearTimeout(t);
+    };
+  }, [html]);
+
   if (!html) {
     return (
       <div className="not-prose w-full rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 shadow-sm dark:border-amber-400/50 dark:bg-amber-950/80 dark:text-amber-200">
