@@ -176,6 +176,18 @@ export function createToolProgressCallbacks(
       if (collectedArtifacts.length > 0) {
         dlog(`tool_result included ${collectedArtifacts.length} artifact(s) inline for ${toolName}`);
       }
+      // ALSO emit each artifact as its own redundant tiny SSE event
+      // type ("artifact"). Multiple distinct event types means even if one
+      // is dropped by an upstream proxy/tunnel, the others arrive.
+      for (const a of collectedArtifacts) {
+        const payload = JSON.stringify({ type: "artifact", data: { ...a, toolName } });
+        try {
+          await stream.writeSSE({ data: payload });
+          dlog(`artifact SSE emit OK ${payload.length}B`);
+        } catch (e) {
+          dlog(`artifact SSE emit FAILED: ${(e as Error).message}`);
+        }
+      }
 
       if (toolName === "ask_clarification" && result) {
         try {

@@ -674,7 +674,7 @@ async function streamChat(
           // mcp_ui_resource event by the API so the user always gets a
           // clickable download even if the larger UI resource event is
           // dropped/buffered upstream (e.g. by Cloudflare Tunnel).
-          if (parsed.type === "artifact_ready" && onArtifactReady) {
+          if ((parsed.type === "artifact_ready" || parsed.type === "artifact") && onArtifactReady) {
             const d = parsed.data as { url?: string; fileName?: string; mimeType?: string; sizeBytes?: number; toolName?: string } | undefined;
             if (d?.url && d?.fileName && d?.mimeType) {
               onArtifactReady({
@@ -912,7 +912,7 @@ function processOneSSEPayload(
       cb.onProvisionSupabase({ name, reason });
     }
 
-    if (parsed.type === "artifact_ready" && cb.onArtifactReady) {
+    if ((parsed.type === "artifact_ready" || parsed.type === "artifact") && cb.onArtifactReady) {
       const d = parsed.data as { url?: string; fileName?: string; mimeType?: string; sizeBytes?: number; toolName?: string } | undefined;
       if (d?.url && d?.fileName && d?.mimeType) {
         cb.onArtifactReady({
