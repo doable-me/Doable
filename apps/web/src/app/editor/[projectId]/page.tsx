@@ -606,6 +606,22 @@ async function streamChat(
             if (toolName) {
               onToolCompleted(toolName, toolArgs);
             }
+            // Inline artifacts attached to tool_result (resilient
+            // alternative to standalone artifact_ready / mcp_ui_resource
+            // events that can be dropped by Cloudflare Tunnel).
+            if (Array.isArray(d?.artifacts) && onArtifactReady) {
+              for (const a of d!.artifacts as Array<Record<string, unknown>>) {
+                if (typeof a?.url === "string" && typeof a?.fileName === "string" && typeof a?.mimeType === "string") {
+                  onArtifactReady({
+                    url: a.url as string,
+                    fileName: a.fileName as string,
+                    mimeType: a.mimeType as string,
+                    sizeBytes: (a.sizeBytes as number) ?? 0,
+                    toolName,
+                  });
+                }
+              }
+            }
           }
 
           // Handle code_diff events
@@ -848,6 +864,19 @@ function processOneSSEPayload(
         pendingToolNames.shift();
       }
       if (toolName) cb.onToolCompleted(toolName, toolArgs);
+      if (Array.isArray(d?.artifacts) && cb.onArtifactReady) {
+        for (const a of d!.artifacts as Array<Record<string, unknown>>) {
+          if (typeof a?.url === "string" && typeof a?.fileName === "string" && typeof a?.mimeType === "string") {
+            cb.onArtifactReady({
+              url: a.url as string,
+              fileName: a.fileName as string,
+              mimeType: a.mimeType as string,
+              sizeBytes: (a.sizeBytes as number) ?? 0,
+              toolName,
+            });
+          }
+        }
+      }
     }
 
     if (parsed.type === "code_diff" && cb.onToolCompleted) {

@@ -146,6 +146,23 @@ export function createToolProgressCallbacks(
         (ea.filePath as string | undefined) ??
         (ea.file as string | undefined) ??
         (ea.target as string | undefined);
+      // Pre-rewrite any pendingUiResources NOW so we can attach the
+      // resulting artifact refs to the (always-delivered) tool_result
+      // event below. We mutate items in place; the drain loop later just
+      // emits them as-is. This makes downloads resilient to CF tunnel
+      // dropping `mcp_ui_resource` or `artifact_ready` SSE events.
+      const collectedArtifacts: ArtifactRef[] = [];
+      for (const item of pendingUiResources) {
+        const r = item.resource as Record<string, unknown> & { text?: string };
+        if (typeof r?.text === "string" && r.text.length > 16 * 1024) {
+          const { html: rewritten, artifacts: arts } = offloadDataUris(r.text);
+          if (arts.length > 0) {
+            collectedArtifacts.push(...arts);
+            (item.resource as Record<string, unknown>).text = rewritten;
+            (item as Record<string, unknown>)._offloaded = true;
+          }
+        }
+      }
       stream.writeSSE({ data: JSON.stringify({
         type: "tool_result",
         data: {
@@ -153,8 +170,12 @@ export function createToolProgressCallbacks(
           success: true,
           friendlyMessage: friendly,
           ...(endPath ? { path: endPath } : {}),
+          ...(collectedArtifacts.length > 0 ? { artifacts: collectedArtifacts } : {}),
         },
       }) }).catch(() => {});
+      if (collectedArtifacts.length > 0) {
+        dlog(`tool_result included ${collectedArtifacts.length} artifact(s) inline for ${toolName}`);
+      }
 
       if (toolName === "ask_clarification" && result) {
         try {
