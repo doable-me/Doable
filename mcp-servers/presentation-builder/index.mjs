@@ -199,6 +199,75 @@ function downloadHtml({ fileName, mimeType, base64, sizeBytes, summary }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// HTML resource: live web-slides preview (deck rendered inline) + download bar
+// The deck IS the UI. The host iframe renders the full deck at a fixed
+// preview height with a top toolbar offering Download and Open-in-new-tab.
+// ─────────────────────────────────────────────────────────────────────────
+function webSlidesPreviewHtml({ deckHtml, fileName, base64, sizeBytes, summary }) {
+  const sizeKb = (sizeBytes / 1024).toFixed(1);
+  // Embed deck HTML safely inside srcdoc by escaping double quotes & ampersands.
+  const srcdocSafe = deckHtml
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;");
+  const dataHref = `data:text/html;base64,${base64}`;
+  return `<!doctype html>
+<html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 12px 0; background: transparent; }
+  .wrap { color: #0f172a; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+  .bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+  .bar .ico { font-size: 18px; }
+  .bar .meta { flex: 1; min-width: 0; }
+  .bar .ttl { font-weight: 600; color: #0f172a; }
+  .bar .sub { font-size: 11px; color: #475569; }
+  .bar .btns { display: flex; gap: 6px; }
+  .bar a, .bar button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: 12px; transition: background .15s; }
+  .bar a.dl { background: #0284c7; color: #ffffff; }
+  .bar a.dl:hover { background: #0369a1; }
+  .bar a.open, .bar button.fs { background: #e2e8f0; color: #0f172a; }
+  .bar a.open:hover, .bar button.fs:hover { background: #cbd5e1; }
+  .stage { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0f172a; }
+  .stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+  .hint { padding: 8px 14px; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; background: #f8fafc; }
+</style></head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <div class="ico">🌐</div>
+    <div class="meta">
+      <div class="ttl">${escapeHtml(fileName)}</div>
+      <div class="sub">${sizeKb} KB · ${escapeHtml(summary)}</div>
+    </div>
+    <div class="btns">
+      <button class="fs" id="fs" type="button">⛶ Fullscreen</button>
+      <a class="open" target="_blank" rel="noopener" href="${dataHref}">Open ↗</a>
+      <a class="dl" download="${escapeHtml(fileName)}" href="${dataHref}">Download</a>
+    </div>
+  </div>
+  <div class="stage" id="stage">
+    <iframe id="deck" title="Web slides preview" sandbox="allow-scripts allow-same-origin" srcdoc="${srcdocSafe}"></iframe>
+  </div>
+  <div class="hint">Use ← → / Space to navigate · F for fullscreen inside the deck</div>
+</div>
+<script>
+  document.getElementById('fs').addEventListener('click', () => {
+    const stage = document.getElementById('stage');
+    if (document.fullscreenElement) document.exitFullscreen();
+    else stage.requestFullscreen();
+  });
+  function reportSize() {
+    const h = document.documentElement.scrollHeight;
+    window.parent.postMessage({ type: 'size', payload: { height: h } }, '*');
+  }
+  new ResizeObserver(reportSize).observe(document.body);
+  window.addEventListener('load', reportSize);
+  reportSize();
+</script>
+</body></html>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Server setup
 // ─────────────────────────────────────────────────────────────────────────
 const server = new Server(
@@ -298,9 +367,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         tone: args?.tone,
       });
       const base64 = Buffer.from(deckHtml, "utf8").toString("base64");
-      const cardHtml = downloadHtml({
+      const cardHtml = webSlidesPreviewHtml({
+        deckHtml,
         fileName,
-        mimeType: "text/html",
         base64,
         sizeBytes: Buffer.byteLength(deckHtml, "utf8"),
         summary: `${slideCount} slides on "${topic}" · keyboard-navigable web deck`,

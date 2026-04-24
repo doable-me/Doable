@@ -157,7 +157,7 @@ export function McpUiResourceCard({ resource, projectId, onResource }: Props) {
       <iframe
         ref={iframeRef}
         title={`mcp-app:${resource.toolName}`}
-        sandbox="allow-scripts allow-forms allow-downloads"
+        sandbox="allow-scripts allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
         srcDoc={html}
         style={{
           width: "100%",
