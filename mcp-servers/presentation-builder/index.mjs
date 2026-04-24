@@ -246,7 +246,7 @@ function webSlidesPreviewHtml({ deckHtml, fileName, base64, sizeBytes, summary }
     </div>
   </div>
   <div class="stage" id="stage">
-    <iframe id="deck" title="Web slides preview" sandbox="allow-scripts allow-same-origin" srcdoc="${srcdocSafe}"></iframe>
+    <iframe id="deck" title="Web slides preview" sandbox="allow-scripts allow-same-origin" allow="fullscreen" srcdoc="${srcdocSafe}"></iframe>
   </div>
   <div class="hint">Use ← → / Space to navigate · F for fullscreen inside the deck</div>
 </div>
