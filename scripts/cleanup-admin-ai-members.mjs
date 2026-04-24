@@ -20,7 +20,16 @@
  *   APPLY:              APPLY=1 node scripts/cleanup-admin-ai-members.mjs
  */
 
-import postgres from "postgres";
+import { createRequire } from "node:module";
+
+// Resolve the `postgres` package from the api service so this script doesn't
+// require its own node_modules. Override the lookup base via REQUIRE_FROM if
+// you want to resolve from somewhere else.
+const requireFrom = process.env.REQUIRE_FROM
+  ? new URL(`file://${process.env.REQUIRE_FROM}/`)
+  : new URL("../services/api/package.json", import.meta.url);
+const require = createRequire(requireFrom);
+const postgres = require("postgres");
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
