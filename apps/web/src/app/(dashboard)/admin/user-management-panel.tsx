@@ -12,6 +12,32 @@ import {
   ROLE_LABELS,
 } from "@doable/shared";
 import type { ApiGitHubCopilotAccount, ApiAiProvider } from "@/lib/api";
+import { ApiError } from "@/lib/api";
+
+// Server-side caps (keep in sync with services/api/src/routes/admin-users.ts)
+const CREDIT_CAPS = {
+  daily: 100_000,
+  monthly: 1_000_000,
+  rollover: 1_000_000,
+} as const;
+
+type CreditFieldErrors = Partial<Record<"dailyCredits" | "monthlyCredits" | "rolloverCredits", string>>;
+
+function extractFieldErrors(err: unknown): { fieldErrors: CreditFieldErrors; formError: string | null } | null {
+  if (!(err instanceof ApiError) || err.status !== 400) return null;
+  // Server returns { error: { formErrors: [], fieldErrors: { dailyCredits: [...] } } }
+  const raw = (err.body as unknown as { error?: unknown }).error;
+  if (!raw || typeof raw !== "object") return null;
+  const flat = raw as { formErrors?: string[]; fieldErrors?: Record<string, string[]> };
+  if (!flat.fieldErrors && !flat.formErrors) return null;
+  const fe: CreditFieldErrors = {};
+  for (const k of ["dailyCredits", "monthlyCredits", "rolloverCredits"] as const) {
+    const msgs = flat.fieldErrors?.[k];
+    if (msgs && msgs.length > 0) fe[k] = msgs[0];
+  }
+  const formError = flat.formErrors && flat.formErrors.length > 0 ? flat.formErrors[0] : null;
+  return { fieldErrors: fe, formError };
+}
 import {
   useCopilotModels,
   useProviderModels,
@@ -166,6 +192,22 @@ function UserDetailModal({
   const [creditMonthly, setCreditMonthly] = useState(c.monthlyTotal);
   const [creditRollover, setCreditRollover] = useState(c.rollover);
   const [creditSaving, setCreditSaving] = useState(false);
+  const [creditErrors, setCreditErrors] = useState<CreditFieldErrors>({});
+  const [creditFormError, setCreditFormError] = useState<string | null>(null);
+
+  function validateCredits(): CreditFieldErrors {
+    const errs: CreditFieldErrors = {};
+    const check = (key: "dailyCredits" | "monthlyCredits" | "rolloverCredits", val: number, max: number) => {
+      if (!Number.isFinite(val) || Number.isNaN(val)) errs[key] = "Must be a number";
+      else if (!Number.isInteger(val)) errs[key] = "Must be a whole number";
+      else if (val < 0) errs[key] = "Must be ≥ 0";
+      else if (val > max) errs[key] = `Must be ≤ ${max.toLocaleString()}`;
+    };
+    check("dailyCredits", creditDaily, CREDIT_CAPS.daily);
+    check("monthlyCredits", creditMonthly, CREDIT_CAPS.monthly);
+    check("rolloverCredits", creditRollover, CREDIT_CAPS.rollover);
+    return errs;
+  }
 
   const eff = getEffectiveModel(user);
   const validAccounts = accounts.filter(a => a.is_valid);
@@ -195,6 +237,14 @@ function UserDetailModal({
   }
 
   async function saveCredits(resetUsage = false) {
+    const clientErrs = validateCredits();
+    if (Object.keys(clientErrs).length > 0) {
+      setCreditErrors(clientErrs);
+      setCreditFormError(null);
+      return;
+    }
+    setCreditErrors({});
+    setCreditFormError(null);
     setCreditSaving(true);
     try {
       await onSetCredits(user.user_id, {
@@ -204,6 +254,15 @@ function UserDetailModal({
         resetUsage,
       });
       if (!resetUsage) onClose();
+    } catch (err) {
+      const parsed = extractFieldErrors(err);
+      if (parsed) {
+        setCreditErrors(parsed.fieldErrors);
+        setCreditFormError(parsed.formError);
+        return;
+      }
+      // Unknown error — surface as a form-level message instead of crashing the page
+      setCreditFormError(err instanceof Error ? err.message : "Failed to save credits");
     } finally { setCreditSaving(false); }
   }
 
@@ -439,20 +498,35 @@ function UserDetailModal({
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-1.5">Daily Credits</label>
-                  <input type="number" min={0} value={creditDaily} onChange={e => setCreditDaily(Number(e.target.value))}
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500" />
+                  <input type="number" min={0} max={CREDIT_CAPS.daily} step={1} value={creditDaily} onChange={e => setCreditDaily(Number(e.target.value))}
+                    aria-invalid={!!creditErrors.dailyCredits}
+                    className={`w-full rounded-lg border bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500 ${creditErrors.dailyCredits ? "border-red-500" : "border-zinc-700"}`} />
+                  <p className="text-[10px] text-zinc-500 mt-1">Max {CREDIT_CAPS.daily.toLocaleString()}</p>
+                  {creditErrors.dailyCredits && <p className="text-[11px] text-red-400 mt-1">{creditErrors.dailyCredits}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-1.5">Monthly Credits</label>
-                  <input type="number" min={0} value={creditMonthly} onChange={e => setCreditMonthly(Number(e.target.value))}
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500" />
+                  <input type="number" min={0} max={CREDIT_CAPS.monthly} step={1} value={creditMonthly} onChange={e => setCreditMonthly(Number(e.target.value))}
+                    aria-invalid={!!creditErrors.monthlyCredits}
+                    className={`w-full rounded-lg border bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500 ${creditErrors.monthlyCredits ? "border-red-500" : "border-zinc-700"}`} />
+                  <p className="text-[10px] text-zinc-500 mt-1">Max {CREDIT_CAPS.monthly.toLocaleString()}</p>
+                  {creditErrors.monthlyCredits && <p className="text-[11px] text-red-400 mt-1">{creditErrors.monthlyCredits}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-1.5">Rollover Credits</label>
-                  <input type="number" min={0} value={creditRollover} onChange={e => setCreditRollover(Number(e.target.value))}
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500" />
+                  <input type="number" min={0} max={CREDIT_CAPS.rollover} step={1} value={creditRollover} onChange={e => setCreditRollover(Number(e.target.value))}
+                    aria-invalid={!!creditErrors.rolloverCredits}
+                    className={`w-full rounded-lg border bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500 ${creditErrors.rolloverCredits ? "border-red-500" : "border-zinc-700"}`} />
+                  <p className="text-[10px] text-zinc-500 mt-1">Max {CREDIT_CAPS.rollover.toLocaleString()}</p>
+                  {creditErrors.rolloverCredits && <p className="text-[11px] text-red-400 mt-1">{creditErrors.rolloverCredits}</p>}
                 </div>
               </div>
+
+              {creditFormError && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  {creditFormError}
+                </div>
+              )}
 
               {/* Actions */}
               <div className="flex items-center gap-2 pt-2">

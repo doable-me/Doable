@@ -28,6 +28,18 @@ githubAccountRoutes.get("/github/status", async (c) => {
       });
     }
 
+    // If decryption failed upstream (key rotated / ciphertext corrupt),
+    // access_token will be null. Treat it as "reconnect required".
+    if (!userToken.access_token) {
+      return c.json({
+        data: {
+          connected: false,
+          githubUsername: userToken.github_username,
+          tokenExpired: true,
+        },
+      });
+    }
+
     // Verify the token is still valid
     try {
       const ghUser = await githubClient.authenticate(userToken.access_token);

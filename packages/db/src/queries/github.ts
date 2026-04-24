@@ -219,12 +219,27 @@ export function githubQueries(sql: postgres.Sql) {
     async findUserToken(
       userId: string
     ): Promise<GitHubUserTokenRow | undefined> {
-      const [row] = await sql<GitHubUserTokenRow[]>`
-        SELECT *,
-          pgp_sym_decrypt(access_token_encrypted::bytea, ${ENCRYPTION_KEY}) AS access_token
-        FROM github_user_tokens WHERE user_id = ${userId}
-      `;
-      return row;
+      // Decrypt in SQL but tolerate key mismatch / corrupt ciphertext:
+      // return the row with a NULL access_token instead of throwing, so
+      // callers can treat it as "not connected" and prompt reconnect.
+      try {
+        const [row] = await sql<GitHubUserTokenRow[]>`
+          SELECT *,
+            pgp_sym_decrypt(access_token_encrypted::bytea, ${ENCRYPTION_KEY}) AS access_token
+          FROM github_user_tokens WHERE user_id = ${userId}
+        `;
+        return row;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/wrong key|corrupt data|decrypt/i.test(msg)) {
+          const [row] = await sql<GitHubUserTokenRow[]>`
+            SELECT *, NULL::text AS access_token
+            FROM github_user_tokens WHERE user_id = ${userId}
+          `;
+          return row;
+        }
+        throw err;
+      }
     },
 
     async upsertUserToken(data: {

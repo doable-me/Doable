@@ -70,10 +70,10 @@ export function ProjectCard({
       onContextMenu={onContextMenu}
     >
       {/* Thumbnail — real image with gradient fallback */}
-      <div className={`relative h-36 rounded-t-xl overflow-hidden ${imgFailed ? `bg-gradient-to-br ${PROJECT_GRADIENTS[colorIdx]}` : ''}`}>
-        {!imgFailed ? (
+      <div className={`relative h-36 rounded-t-xl overflow-hidden ${(!project.thumbnail_url || imgFailed) ? `bg-gradient-to-br ${PROJECT_GRADIENTS[colorIdx]}` : ''}`}>
+        {project.thumbnail_url && !imgFailed ? (
           <img
-            src={`${project.thumbnail_url ? `${API_URL}${project.thumbnail_url}` : `${API_URL}/thumbnails/${project.id}.png`}?v=${encodeURIComponent(project.updated_at)}`}
+            src={`${API_URL}${project.thumbnail_url}?v=${encodeURIComponent(project.updated_at)}`}
             alt={project.name}
             draggable={false}
             className="h-full w-full object-cover object-top rounded-t-xl"

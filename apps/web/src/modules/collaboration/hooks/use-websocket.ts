@@ -63,8 +63,17 @@ export function useWebSocket() {
   }, []);
 
   useEffect(() => {
-    connect();
+    // Defer the actual WebSocket construction to a microtask. In React
+    // strict mode (dev) the effect runs → cleanup runs → effect runs again
+    // synchronously. Without the defer, the first invocation would create
+    // a WebSocket and the cleanup would call close() on it while still in
+    // CONNECTING state, producing the browser warning:
+    //   "WebSocket is closed before the connection is established."
+    // Queuing via setTimeout lets cleanup cancel the pending connect before
+    // any socket is opened.
+    const t = setTimeout(connect, 0);
     return () => {
+      clearTimeout(t);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) {
         wsRef.current.onclose = null; // prevent reconnect attempt during cleanup
