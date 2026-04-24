@@ -2455,8 +2455,12 @@ export default function EditorPage() {
               loadFileTree();
 
               // Refresh preview iframe every 6s (not every 3s — too aggressive)
+              // Skip if iframe is currently showing a web-slides artifact —
+              // that URL is the canonical preview, not the project dev server.
               const now = Date.now();
-              if (now - lastRefresh > 6000 && iframeRef.current && previewUrl) {
+              const curSrc = iframeRef.current?.src ?? "";
+              const isArtifactPreview = /\/artifacts\//.test(curSrc);
+              if (!isArtifactPreview && now - lastRefresh > 6000 && iframeRef.current && previewUrl) {
                 iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + now;
                 lastRefresh = now;
               }
@@ -2475,10 +2479,10 @@ export default function EditorPage() {
                   delete fileContentsCache.current[selectedFile];
                   loadFileContent(selectedFile);
                 }
-                // Final preview refresh
-                if (iframeRef.current && previewUrl) {
+                // Final preview refresh — unless we're already showing an artifact preview
+                if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
                   setTimeout(() => {
-                    if (iframeRef.current && previewUrl) {
+                    if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
                       iframeRef.current.src = previewUrl + "?t=" + Date.now();
                     }
                   }, 2000);
@@ -2961,6 +2965,8 @@ export default function EditorPage() {
         previewRefreshTimer.current = setTimeout(() => {
           previewRefreshTimer.current = null;
           if (iframeRef.current) {
+            // Skip if we're currently showing an HTML web-slides artifact.
+            if (/\/artifacts\//.test(iframeRef.current.src ?? "")) return;
             try {
               // Use postMessage to trigger reload via injected doable-refresh listener
               // This works cross-origin (Cloudflare tunnel) without a full src reset
@@ -3100,13 +3106,15 @@ export default function EditorPage() {
             loadFileContent(selectedFile);
           }
           // Final preview refresh — always hard reload the iframe to guarantee
-          // the user sees the latest build output (HMR can silently fail)
+          // the user sees the latest build output (HMR can silently fail).
+          // BUT skip if we're currently showing an HTML web-slides artifact —
+          // that URL must be preserved.
           if (previewRefreshTimer.current) {
             clearTimeout(previewRefreshTimer.current);
           }
           previewRefreshTimer.current = setTimeout(() => {
             previewRefreshTimer.current = null;
-            if (iframeRef.current && previewUrl) {
+            if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
               iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
             }
           }, 1500);
