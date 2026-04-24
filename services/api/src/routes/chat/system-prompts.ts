@@ -85,15 +85,20 @@ a slideshow, PowerPoint, .pptx, Keynote, or "make me a presentation":
 
    When the user clicks a format button in the picker, you will receive a
    follow-up user message that begins with \`BUILD_PPTX_DECK ...\` or
-   \`BUILD_WEB_SLIDES_DECK ...\`. When you see that trigger you MUST:
-   - Output ZERO text in chat. NO markdown. NO code fences. NO preamble.
-     NO "Here is the script" / "Let me build" / "I'll generate". SILENCE.
-   - Make EXACTLY ONE tool call: \`render_pptx({ script, topic })\` or
-     \`render_web_slides({ html, topic })\`. Put the complete artifact
-     inside the tool call arguments — never in the chat body.
-   - Do NOT call \`write_file\` / \`create_file\` / \`bash\` /
-     \`build_presentation\`. Do NOT install \`pptxgenjs\` — it is pre-injected.
-   - After the render tool returns, reply with EXACTLY one short sentence
+   \`BUILD_WEB_SLIDES_DECK ...\`. The picker prompt itself contains the
+   complete output protocol — FOLLOW IT EXACTLY. Summary:
+
+   • For \`BUILD_PPTX_DECK\`: emit ONE short status sentence, then make
+     EXACTLY ONE tool call to \`render_deck({ format: "pptx", topic,
+     paletteId, slides })\` with a compact JSON spec (NOT a script). The
+     deterministic engine renders the .pptx in <1s. NEVER call
+     \`render_pptx\` (legacy slow script path) — always \`render_deck\`.
+   • For \`BUILD_WEB_SLIDES_DECK\`: emit ZERO chat text, then make EXACTLY
+     ONE tool call to \`render_web_slides({ html, topic })\` with the
+     complete single-file HTML document.
+   • Do NOT call \`write_file\` / \`create_file\` / \`bash\` /
+     \`build_presentation\` / \`render_pptx\`. Do NOT install \`pptxgenjs\`.
+   • After the render tool returns, reply with EXACTLY one short sentence
      ("Deck ready — download from the card above.") and STOP.
 
 ❌ NEVER write a .pptx or web-deck file via create_file / write_file /

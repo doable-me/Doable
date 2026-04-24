@@ -25,10 +25,11 @@ import {
   ROLE_LABELS,
 } from "@doable/shared";
 import type { UserAiAllocation } from "./admin-shared";
+import { getCreditSummary } from "./admin-shared";
 import { FeatureRow } from "./admin-components";
 import { ThumbnailsPanel, CopilotSessionsPanel } from "./admin-panels";
 import { EmailPanel } from "./email-panel";
-import { UserManagementPanel } from "./user-management-panel";
+import { UserManagementPanel, type BulkApplyPayload } from "./user-management-panel";
 import { ToolsConfigPanel } from "./tools-config-panel";
 
 // ─── Admin Page ─────────────────────────────────────────────
@@ -113,6 +114,48 @@ export default function AdminPage() {
       await loadAllocations();
       addToast("success", "AI settings reset");
     } catch { addToast("error", "Failed to reset AI settings"); }
+  }
+
+  async function handleBulkApply(userIds: string[], payload: BulkApplyPayload) {
+    let modelOk = 0, modelFail = 0, quotaOk = 0, quotaFail = 0;
+
+    // Build a quick lookup for existing credit totals
+    const byId = new Map(allocations.map((a) => [a.user_id, a]));
+
+    for (const userId of userIds) {
+      if (payload.model) {
+        try {
+          await apiFetch(`/admin/users/${userId}/ai-allocation`, {
+            method: "PUT",
+            body: JSON.stringify(payload.model),
+          });
+          modelOk++;
+        } catch { modelFail++; }
+      }
+      if (payload.addQuota) {
+        const row = byId.get(userId);
+        const c = row ? getCreditSummary(row) : { dailyTotal: 0, monthlyTotal: 0, rollover: 0 };
+        try {
+          await apiFetch(`/admin/users/${userId}/credits`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              dailyCredits: c.dailyTotal + payload.addQuota.daily,
+              monthlyCredits: c.monthlyTotal + payload.addQuota.monthly,
+              rolloverCredits: c.rollover + payload.addQuota.rollover,
+            }),
+          });
+          quotaOk++;
+        } catch { quotaFail++; }
+      }
+    }
+
+    await loadAllocations();
+
+    const parts: string[] = [];
+    if (payload.model) parts.push(`model: ${modelOk} ok${modelFail ? `, ${modelFail} failed` : ""}`);
+    if (payload.addQuota) parts.push(`quota: ${quotaOk} ok${quotaFail ? `, ${quotaFail} failed` : ""}`);
+    const allFailed = (payload.model && modelOk === 0 && modelFail > 0) || (payload.addQuota && quotaOk === 0 && quotaFail > 0);
+    addToast(allFailed ? "error" : "success", `Bulk applied to ${userIds.length} users — ${parts.join(" · ")}`);
   }
 
   async function handleChangeRole(userId: string, role: string) {
@@ -249,6 +292,7 @@ export default function AdminPage() {
           }}
           onChangeRole={handleChangeRole}
           onChangePlan={handleChangePlan}
+          onBulkApply={handleBulkApply}
         />
       )}
 

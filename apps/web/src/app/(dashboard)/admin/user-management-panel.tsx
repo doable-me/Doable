@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   Bot, Zap, Crown, Check, X, Loader2, RotateCcw, ChevronDown,
-  Search, Shield, Sparkles,
+  Search, Shield, Sparkles, Users as UsersIcon, Plus,
 } from "lucide-react";
 import {
   WORKSPACE_PLANS,
@@ -474,6 +474,272 @@ function UserDetailModal({
   );
 }
 
+// ─── Bulk Allocate Modal ────────────────────────────────
+
+export interface BulkApplyPayload {
+  model?: {
+    source: "copilot" | "custom";
+    copilotAccountId: string | null;
+    copilotModel: string | null;
+    providerId: string | null;
+    providerModel: string | null;
+  };
+  addQuota?: {
+    daily: number;
+    monthly: number;
+    rollover: number;
+  };
+}
+
+function BulkAllocateModal({
+  selectedUsers,
+  workspaceId,
+  accounts,
+  providers,
+  onClose,
+  onApply,
+}: {
+  selectedUsers: UserAiAllocation[];
+  workspaceId: string | null;
+  accounts: ApiGitHubCopilotAccount[];
+  providers: ApiAiProvider[];
+  onClose: () => void;
+  onApply: (userIds: string[], payload: BulkApplyPayload) => Promise<void>;
+}) {
+  const [applyModel, setApplyModel] = useState(true);
+  const [applyQuota, setApplyQuota] = useState(false);
+
+  const [source, setSource] = useState<"copilot" | "custom">("copilot");
+  const [copilotAccountId, setCopilotAccountId] = useState("");
+  const [copilotModel, setCopilotModel] = useState("");
+  const [providerId, setProviderId] = useState("");
+  const [providerModel, setProviderModel] = useState("");
+
+  const [addDaily, setAddDaily] = useState(0);
+  const [addMonthly, setAddMonthly] = useState(0);
+  const [addRollover, setAddRollover] = useState(0);
+
+  const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  const validAccounts = accounts.filter(a => a.is_valid);
+  const validProviders = providers.filter(p => p.is_valid);
+
+  const { models: copilotModels, loadingModels: loadingCopilot } =
+    useCopilotModels(copilotAccountId || undefined);
+  const { models: providerModelList, loading: loadingProviderModels } =
+    useProviderModels(workspaceId, providerId);
+
+  const canApply =
+    (applyModel || applyQuota) &&
+    (!applyModel ||
+      (source === "copilot" ? !!copilotModel : !!providerId)) &&
+    (!applyQuota || addDaily > 0 || addMonthly > 0 || addRollover > 0);
+
+  async function handleApply() {
+    if (!canApply) return;
+    const payload: BulkApplyPayload = {};
+    if (applyModel) {
+      payload.model = {
+        source,
+        copilotAccountId: copilotAccountId || null,
+        copilotModel: source === "copilot" ? (copilotModel || null) : null,
+        providerId: source === "custom" ? (providerId || null) : null,
+        providerModel: source === "custom" ? (providerModel || null) : null,
+      };
+    }
+    if (applyQuota) {
+      payload.addQuota = { daily: addDaily, monthly: addMonthly, rollover: addRollover };
+    }
+    setSaving(true);
+    setProgress({ done: 0, total: selectedUsers.length });
+    try {
+      // Wrap onApply so it can report progress through a reference; for simplicity
+      // we just call onApply once with all ids — parent does its own iteration.
+      await onApply(selectedUsers.map(u => u.user_id), payload);
+      onClose();
+    } finally {
+      setSaving(false);
+      setProgress(null);
+    }
+  }
+
+  const previewNames = selectedUsers
+    .slice(0, 6)
+    .map(u => u.display_name ?? u.email.split("@")[0])
+    .join(", ");
+  const remaining = selectedUsers.length - 6;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-800">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-600/20 text-brand-400">
+            <UsersIcon className="h-5 w-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-white">Bulk Allocate AI Settings</h3>
+            <p className="text-xs text-zinc-500 truncate">
+              {selectedUsers.length} user{selectedUsers.length !== 1 ? "s" : ""}
+              {previewNames && <>: <span className="text-zinc-400">{previewNames}{remaining > 0 ? ` +${remaining} more` : ""}</span></>}
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
+          {/* Section: Model & Source */}
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50">
+            <label className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={applyModel}
+                onChange={e => setApplyModel(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500"
+              />
+              <Bot className="h-4 w-4 text-zinc-400" />
+              <span className="text-sm font-medium text-white">Set AI Model & Source</span>
+              <span className="text-[11px] text-zinc-500 ml-auto">Replaces user's current override</span>
+            </label>
+            {applyModel && (
+              <div className="px-4 py-4 space-y-3">
+                {/* Source toggle */}
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Source</label>
+                  <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
+                    <button onClick={() => setSource("copilot")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "copilot" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}>
+                      GitHub Copilot
+                    </button>
+                    <button onClick={() => setSource("custom")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "custom" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}>
+                      Custom Provider
+                    </button>
+                  </div>
+                </div>
+
+                {source === "copilot" ? (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Copilot Account</label>
+                      <select value={copilotAccountId} onChange={e => setCopilotAccountId(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
+                        <option value="">No specific account (auto)</option>
+                        {validAccounts.map(a => <option key={a.id} value={a.id}>{a.label} (@{a.github_login})</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                        Model {loadingCopilot && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
+                      </label>
+                      <select value={copilotModel} onChange={e => setCopilotModel(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
+                        <option value="">Select a model...</option>
+                        {copilotModels.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Provider</label>
+                      <select value={providerId} onChange={e => setProviderId(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
+                        <option value="">Select a provider...</option>
+                        {validProviders.map(p => <option key={p.id} value={p.id}>{p.label} ({p.provider_type})</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                        Model {loadingProviderModels && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
+                      </label>
+                      {providerId && providerModelList.length > 0 ? (
+                        <select value={providerModel} onChange={e => setProviderModel(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
+                          <option value="">Auto (provider default)</option>
+                          {providerModelList.map(m => <option key={m.id} value={m.id}>{m.name ?? m.id}</option>)}
+                        </select>
+                      ) : (
+                        <select value={providerModel} onChange={e => setProviderModel(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                          disabled={!providerId}>
+                          {FALLBACK_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Section: Add Quota */}
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50">
+            <label className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={applyQuota}
+                onChange={e => setApplyQuota(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500"
+              />
+              <Zap className="h-4 w-4 text-zinc-400" />
+              <span className="text-sm font-medium text-white">Add Additional Quota</span>
+              <span className="text-[11px] text-zinc-500 ml-auto">Adds to each user's existing credits</span>
+            </label>
+            {applyQuota && (
+              <div className="px-4 py-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">+ Daily</label>
+                    <input type="number" min={0} value={addDaily} onChange={e => setAddDaily(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">+ Monthly</label>
+                    <input type="number" min={0} value={addMonthly} onChange={e => setAddMonthly(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">+ Rollover</label>
+                    <input type="number" min={0} value={addRollover} onChange={e => setAddRollover(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500" />
+                  </div>
+                </div>
+                <p className="text-[10px] text-zinc-500 mt-2">
+                  These amounts are <span className="text-zinc-300 font-medium">added</span> to each selected user's current totals (not replaced).
+                </p>
+              </div>
+            )}
+          </div>
+
+          {progress && (
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-4 py-3">
+              <div className="flex items-center gap-2 text-xs text-zinc-300">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Applying to {progress.done} / {progress.total} users…
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-zinc-800">
+          <button onClick={onClose} disabled={saving}
+            className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors disabled:opacity-50">
+            Cancel
+          </button>
+          <button onClick={handleApply} disabled={!canApply || saving}
+            className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors">
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+            Apply to {selectedUsers.length} user{selectedUsers.length !== 1 ? "s" : ""}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main User Management Panel ─────────────────────────
 
 interface UserManagementPanelProps {
@@ -494,15 +760,18 @@ interface UserManagementPanelProps {
   onSetCredits: (userId: string, data: { dailyCredits?: number; monthlyCredits?: number; rolloverCredits?: number; resetUsage?: boolean }) => Promise<void>;
   onChangeRole: (userId: string, role: string) => void;
   onChangePlan: (userId: string, plan: string) => void;
+  onBulkApply: (userIds: string[], payload: BulkApplyPayload) => Promise<void>;
 }
 
 export function UserManagementPanel({
   users, workspaceId, accounts, providers, loading, currentUserId,
-  onAllocate, onReset, onSetCredits, onChangeRole, onChangePlan,
+  onAllocate, onReset, onSetCredits, onChangeRole, onChangePlan, onBulkApply,
 }: UserManagementPanelProps) {
   const [selectedUser, setSelectedUser] = useState<UserAiAllocation | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterSource, setFilterSource] = useState<"all" | "copilot" | "custom" | "none">("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   if (loading) {
     return <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-zinc-500" /></div>;
@@ -521,6 +790,34 @@ export function UserManagementPanel({
     }
     return true;
   });
+
+  const filteredIds = filtered.map(u => u.user_id);
+  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every(id => selectedIds.has(id));
+  const someFilteredSelected = filteredIds.some(id => selectedIds.has(id));
+
+  function toggleOne(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleAllFiltered() {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredIds.forEach(id => next.delete(id));
+      } else {
+        filteredIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  }
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  const selectedUsers = users.filter(u => selectedIds.has(u.user_id));
 
   return (
     <div className="space-y-4">
@@ -550,11 +847,46 @@ export function UserManagementPanel({
         <span className="text-[10px] text-zinc-600">{filtered.length} user{filtered.length !== 1 ? "s" : ""}</span>
       </div>
 
+      {/* Bulk action toolbar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-brand-600/40 bg-brand-600/10 px-4 py-2.5">
+          <UsersIcon className="h-4 w-4 text-brand-400" />
+          <span className="text-sm text-zinc-200">
+            <span className="font-semibold text-white">{selectedIds.size}</span> user{selectedIds.size !== 1 ? "s" : ""} selected
+          </span>
+          <button
+            onClick={clearSelection}
+            className="text-[11px] text-zinc-400 hover:text-zinc-200 underline-offset-2 hover:underline"
+          >
+            Clear
+          </button>
+          <div className="flex-1" />
+          <button
+            onClick={() => setBulkOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" /> Bulk Allocate AI / Quota
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="rounded-lg border border-zinc-800 overflow-hidden">
         <table className="w-full">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-900/50">
+              <th className="w-10 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  ref={el => {
+                    if (el) el.indeterminate = !allFilteredSelected && someFilteredSelected;
+                  }}
+                  onChange={toggleAllFiltered}
+                  aria-label="Select all"
+                  className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500 cursor-pointer"
+                />
+              </th>
               <th className="px-4 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">User</th>
               <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Role / Plan</th>
               <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Subscription</th>
@@ -566,12 +898,22 @@ export function UserManagementPanel({
           <tbody>
             {filtered.map(u => {
               const isSelf = u.user_id === currentUserId;
+              const isChecked = selectedIds.has(u.user_id);
               return (
                 <tr
                   key={u.user_id}
-                  className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-900/40 cursor-pointer transition-colors"
+                  className={`border-b border-zinc-800/50 last:border-0 hover:bg-zinc-900/40 cursor-pointer transition-colors ${isChecked ? "bg-brand-600/5" : ""}`}
                   onClick={() => setSelectedUser(u)}
                 >
+                  <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleOne(u.user_id)}
+                      aria-label={`Select ${u.email}`}
+                      className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500 cursor-pointer"
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
                       <div className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-400 shrink-0">
@@ -620,7 +962,7 @@ export function UserManagementPanel({
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-zinc-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-zinc-500">
                   {searchQuery ? "No users match your search." : "No users found."}
                 </td>
               </tr>
@@ -650,6 +992,21 @@ export function UserManagementPanel({
           onSetCredits={onSetCredits}
           onChangeRole={onChangeRole}
           onChangePlan={onChangePlan}
+        />
+      )}
+
+      {/* Bulk Allocate Modal */}
+      {bulkOpen && selectedUsers.length > 0 && (
+        <BulkAllocateModal
+          selectedUsers={selectedUsers}
+          workspaceId={workspaceId}
+          accounts={accounts}
+          providers={providers}
+          onClose={() => setBulkOpen(false)}
+          onApply={async (userIds, payload) => {
+            await onBulkApply(userIds, payload);
+            setSelectedIds(new Set());
+          }}
         />
       )}
     </div>

@@ -79,15 +79,11 @@ function buildOutline({ topic, slideCount, audience, tone }) {
 }
 
 /**
- * Build a real .pptx Buffer for the given hints.
- * Uses the skill system: topic-aware palette + rotating rich layouts
- * (cover, twoCol, stat, cards, timeline, quote, compare, takeaways, closing).
- * Returns { buffer, fileName, slideCount, paletteId }.
+ * Internal: render a sequence of slide objects (each {layout, title, bullets?, subtitle?})
+ * into a PptxGenJS buffer using the shared palette + renderer system.
  */
-export async function buildPptx({ topic, slideCount, audience, tone }) {
+async function renderPptxFromSlides({ topic, slides, palette }) {
   const t = (topic || "Presentation").trim();
-  const outline = buildOutline({ topic: t, slideCount, audience, tone });
-  const palette = pickPalette(t);
 
   // Translate web palette → PPTX-safe colors (no '#').
   const C = {
@@ -106,27 +102,55 @@ export async function buildPptx({ topic, slideCount, audience, tone }) {
   const bodyFont    = pptxFont(palette.fonts.body, "Calibri");
 
   const pptx = new PptxGenJS();
-  pptx.layout = "LAYOUT_WIDE"; // 13.33" x 7.5"
+  pptx.layout = "LAYOUT_WIDE";
   pptx.title = t;
   pptx.company = "Doable";
 
-  // Pick rotating content layouts (skips cover/closing — handled separately).
-  const layouts = planLayouts(outline.length); // ["cover", ...middle..., "closing"]
-
-  outline.forEach((slide, i) => {
-    const layout = layouts[i] || (slide.type === "cover" ? "cover" : slide.type === "closing" ? "closing" : "twoCol");
-    const ctx = { pptx, palette, C, isLightBg, headingFont, bodyFont, slide, idx: i, total: outline.length, topic: t };
+  slides.forEach((slide, i) => {
+    const layout = slide.layout || (i === 0 ? "cover" : i === slides.length - 1 ? "closing" : "twoCol");
+    const ctx = { pptx, palette, C, isLightBg, headingFont, bodyFont, slide, idx: i, total: slides.length, topic: t };
     const renderer = PPTX_RENDERERS[layout] || PPTX_RENDERERS.twoCol;
     renderer(ctx);
   });
 
   const buffer = await pptx.write({ outputType: "nodebuffer" });
-  return {
-    buffer,
-    fileName: `${slugify(t)}.pptx`,
-    slideCount: outline.length,
-    paletteId: palette.id,
-  };
+  return { buffer, fileName: `${slugify(t)}.pptx`, slideCount: slides.length, paletteId: palette.id };
+}
+
+/**
+ * Build a .pptx Buffer from a deterministic outline (no AI). Uses topic-aware
+ * palette + rotating rich layouts. Returns { buffer, fileName, slideCount, paletteId }.
+ */
+export async function buildPptx({ topic, slideCount, audience, tone }) {
+  const t = (topic || "Presentation").trim();
+  const outline = buildOutline({ topic: t, slideCount, audience, tone });
+  const layouts = planLayouts(outline.length);
+  const slides = outline.map((s, i) => ({ ...s, layout: layouts[i] || (s.type === "cover" ? "cover" : s.type === "closing" ? "closing" : "twoCol") }));
+  return renderPptxFromSlides({ topic: t, slides, palette: pickPalette(t) });
+}
+
+/**
+ * Build a .pptx Buffer from an AI-supplied JSON spec. The spec format:
+ *   { topic, paletteId?, slides: [ { layout, title, bullets?, subtitle? }, ... ] }
+ *
+ * `paletteId` is optional — if omitted/unknown, a topic-aware palette is auto-picked.
+ * Each slide's `layout` must match a key in PPTX_RENDERERS (cover, twoCol, stat, cards,
+ * timeline, quote, compare, takeaways, closing). Unknown layouts fall back to twoCol.
+ */
+export async function buildPptxFromSpec({ topic, paletteId, slides }) {
+  const t = (topic || "Presentation").trim();
+  if (!Array.isArray(slides) || slides.length === 0) {
+    throw new Error("`slides` must be a non-empty array");
+  }
+  const palette = pickPaletteById(paletteId) || pickPalette(t);
+  // Normalise each slide: ensure bullets is an array of strings.
+  const normalised = slides.map((s) => ({
+    layout: s.layout,
+    title: String(s.title || ""),
+    subtitle: s.subtitle ? String(s.subtitle) : "",
+    bullets: Array.isArray(s.bullets) ? s.bullets.map((b) => String(b)) : [],
+  }));
+  return renderPptxFromSlides({ topic: t, slides: normalised, palette });
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -591,6 +615,18 @@ function pickPalette(topic) {
   }
   return best;
 }
+
+/** Look up a palette by id; returns null when unknown so callers can fall back. */
+export function pickPaletteById(id) {
+  if (!id) return null;
+  return PALETTES.find((p) => p.id === id) || null;
+}
+
+/** Stable list of palette ids the AI can choose from in a deck spec. */
+export const PALETTE_IDS = PALETTES.map((p) => p.id);
+
+/** Layouts the AI can request per slide in a deck spec. */
+export const PPTX_LAYOUTS = ["cover", "twoCol", "stat", "cards", "timeline", "quote", "compare", "takeaways", "closing"];
 
 // ─────────────────────────────────────────────────────────────────────────
 // Layout outline planner — picks a sequence of layout types

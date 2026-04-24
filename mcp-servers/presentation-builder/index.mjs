@@ -35,7 +35,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import PptxGenJS from "pptxgenjs";
-import { buildPptx, buildWebSlides } from "./presentation-engine.mjs";
+import { buildPptx, buildWebSlides, buildPptxFromSpec, PALETTE_IDS, PPTX_LAYOUTS } from "./presentation-engine.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = join(__dirname, "skills");
@@ -126,20 +126,40 @@ function buildPptxPrompt(opts) {
   return [
     `BUILD_PPTX_DECK ${ctx}`,
     ``,
+    `You are designing a stunning PowerPoint deck. The HEAVY rendering is done by a deterministic engine — you only generate the CONTENT and DESIGN CHOICES as a JSON spec. This is fast (~10–15s) and reliable.`,
+    ``,
     `OUTPUT PROTOCOL — follow EXACTLY:`,
-    `1. Reply with NOTHING in chat. NO markdown. NO code fences. NO explanation. NO preamble.`,
-    `2. Make ONE tool call: render_pptx({ script, topic }).`,
-    `   - script: a JS BODY (no import/require, no module wrappers) that runs in an async sandbox where \`PptxGenJS\` is pre-injected. The body must:`,
-    `       const pptx = new PptxGenJS();`,
-    `       pptx.layout = "LAYOUT_WIDE";`,
-    `       const s = pptx.addSlide(); /* ... build all slides ... */`,
-    `       __pptx = pptx; // REQUIRED last line — exports the deck`,
-    `   - topic: "${String(opts.topic).replace(/"/g, '\\"')}"`,
+    `1. Reply with ONE short status sentence in chat (e.g. "Designing 8 slides about ${String(opts.topic).replace(/"/g, '\\"')}…"). NOTHING ELSE. NO markdown. NO code fences. NO outline preview.`,
+    `2. IMMEDIATELY make ONE tool call: render_deck({ format: "pptx", topic, paletteId, slides }).`,
     `3. After the tool returns, reply with EXACTLY one short sentence ("Deck ready — download from the card above.") and STOP.`,
     ``,
-    `Do NOT call write_file, create_file, install_packages, or any file system tool. Do NOT call build_presentation.`,
+    `SPEC SHAPE (compact JSON the engine renders):`,
+    `  topic: string`,
+    `  paletteId: one of [${PALETTE_IDS.map((id) => `"${id}"`).join(", ")}] — pick the palette whose mood best fits the topic`,
+    `  slides: array of slide objects, each:`,
+    `    { layout: <one of "cover"|"twoCol"|"stat"|"cards"|"timeline"|"quote"|"compare"|"takeaways"|"closing">,`,
+    `      title: string (mandatory; the on-slide headline),`,
+    `      subtitle?: string (used by cover & closing),`,
+    `      bullets?: string[] (3–4 specific facts/points the layout will display) }`,
     ``,
-    PPTX_DESIGN_BRIEF,
+    `LAYOUT GUIDE (the engine handles all visuals — colors, decorative orbs, footer, typography):`,
+    `  cover     — title + subtitle. First slide. ALWAYS use exactly once.`,
+    `  twoCol    — title + 3–4 bullets. Lead bullet shown larger on the left, all bullets in glass card right.`,
+    `  stat      — title + 3–4 bullets. Bullet[0] is the key metric label; bullets[1..3] are supporting cards.`,
+    `  cards     — title + 3 bullets (each a punchy one-liner the renderer turns into a numbered card).`,
+    `  timeline  — title + 3–4 bullets (each a step in chronological order).`,
+    `  quote     — title is the attribution (e.g. "— Stephen Hawking, A Brief History of Time"); bullets[0] is the quote itself.`,
+    `  compare   — title + 6 bullets (first 3 = "BEFORE" column, last 3 = "AFTER" column).`,
+    `  takeaways — title + 3–4 bullets (final memorable points).`,
+    `  closing   — title + subtitle. Last slide. ALWAYS use exactly once.`,
+    ``,
+    `RULES:`,
+    `- Generate ${opts.slideCount || 8} slides total: ALWAYS start with cover and end with closing; vary the middle layouts (no two adjacent slides the same).`,
+    `- Write SPECIFIC, INTERESTING facts about the topic. Real numbers, real names, real examples. NO placeholder text like "Insight #1" or "key benefit".`,
+    `- Bullets must be tight one-liners (≤ 90 chars each).`,
+    `- Pick paletteId based on topic mood: tech/AI → "neural-dark", finance → "gold-standard", nature/climate → "terra-viva", health → "vital-soft", history/academic → "scholar-crimson", art/design → "brutalist-pop", startup/saas → "venture-pulse", sports/action → "kinetic-edge".`,
+    ``,
+    `Do NOT call write_file, create_file, install_packages, render_pptx, or build_presentation.`,
   ].join("\n");
 }
 
@@ -185,11 +205,9 @@ const TOOLS = [
   {
     name: "render_pptx",
     description:
-      "Render an AI-generated PowerPoint deck from a PptxGenJS script body. Call this AFTER " +
-      "you have received the pptx SKILL prompt from the picker, with `script` containing " +
-      "the JS body (no imports). The body must use the pre-injected PptxGenJS, build the " +
-      "deck, and end by assigning `__pptx = pptx;`. Returns a download card. Reply with a " +
-      "one-line confirmation after this returns.",
+      "[LEGACY — prefer render_deck] Render an AI-generated PowerPoint deck from a PptxGenJS " +
+      "script body. Slow and brittle (AI must generate ~5KB of valid JS). Use render_deck instead, " +
+      "which takes a small JSON spec and renders deterministically in <1s.",
     inputSchema: {
       type: "object",
       properties: {
@@ -198,6 +216,49 @@ const TOOLS = [
         fileName: { type: "string", description: "Optional override for the download file name." },
       },
       required: ["script"],
+    },
+  },
+  {
+    name: "render_deck",
+    description:
+      "Render a PowerPoint deck from a compact JSON spec. PREFERRED path for AI-driven " +
+      "presentations — fast (<1s render), no syntax errors, gorgeous defaults. The deterministic " +
+      "engine handles all visuals (palette, decorative orbs, typography, footer); you only " +
+      "supply slide content + layout choices. Call AFTER receiving the BUILD_PPTX_DECK prompt " +
+      "from the picker. See the prompt for the spec shape.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        format: { type: "string", enum: ["pptx"], description: "Currently only 'pptx' is supported." },
+        topic: { type: "string", description: "Subject of the deck (used for the file name and stored as deck title)." },
+        paletteId: {
+          type: "string",
+          enum: PALETTE_IDS,
+          description: "Visual palette for the deck. Pick the one whose mood matches the topic.",
+        },
+        slides: {
+          type: "array",
+          minItems: 3,
+          maxItems: 14,
+          description: "Ordered slides. ALWAYS start with a 'cover' and end with a 'closing'.",
+          items: {
+            type: "object",
+            properties: {
+              layout: { type: "string", enum: PPTX_LAYOUTS, description: "Visual layout for this slide." },
+              title: { type: "string", description: "On-slide headline (mandatory)." },
+              subtitle: { type: "string", description: "Optional secondary line (used by cover & closing)." },
+              bullets: {
+                type: "array",
+                items: { type: "string" },
+                description: "Slide content points; meaning depends on layout (see prompt).",
+              },
+            },
+            required: ["layout", "title"],
+          },
+        },
+        fileName: { type: "string", description: "Optional override for the download file name." },
+      },
+      required: ["topic", "slides"],
     },
   },
   {
@@ -536,6 +597,46 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { isError: true, content: [{ type: "text", text: `render_web_slides failed: ${msg}` }] };
+    }
+  }
+
+  if (name === "render_deck") {
+    const topic = String(args?.topic ?? "").trim() || "presentation";
+    const fileName = String(args?.fileName ?? `${slugify(topic)}.pptx`);
+    const slides = Array.isArray(args?.slides) ? args.slides : [];
+    const paletteId = args?.paletteId ? String(args.paletteId) : undefined;
+    const format = String(args?.format ?? "pptx");
+    if (format !== "pptx") {
+      return { isError: true, content: [{ type: "text", text: `render_deck only supports format="pptx" right now (got "${format}"). Use build_presentation for HTML web decks.` }] };
+    }
+    if (slides.length === 0) {
+      return { isError: true, content: [{ type: "text", text: "Error: `slides` must be a non-empty array." }] };
+    }
+    try {
+      const { buffer, slideCount } = await buildPptxFromSpec({ topic, paletteId, slides });
+      const base64 = Buffer.from(buffer).toString("base64");
+      const html = downloadHtml({
+        fileName,
+        mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        base64,
+        sizeBytes: buffer.length,
+        summary: `AI-designed · ${slideCount} slides on "${topic}"`,
+      });
+      const ui = createUIResource({
+        uri: `ui://presentation-builder/render-deck/${Date.now()}`,
+        content: { type: "rawHtml", htmlString: html },
+        encoding: "text",
+      });
+      return {
+        content: [
+          ui,
+          { type: "text", text: `Presentation ready: ${fileName} (${slideCount} slides, ${buffer.length} bytes). User can download from the card. Acknowledge briefly and stop.` },
+        ],
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      dlog(`render_deck error: ${msg}`);
+      return { isError: true, content: [{ type: "text", text: `render_deck failed: ${msg}` }] };
     }
   }
 
