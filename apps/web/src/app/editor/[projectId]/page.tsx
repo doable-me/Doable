@@ -4718,11 +4718,13 @@ export default function EditorPage() {
                                     ),
                                   );
                                 }}
-                                onPrompt={(text) => {
+                                onPrompt={(text, displayText) => {
                                   // MCP App picker handing off a synthetic
                                   // prompt to the AI (e.g. presentation
                                   // builder forwarding skill instructions).
-                                  sendMessage(text);
+                                  // displayText keeps the visible chat bubble
+                                  // short while the LLM gets the full prompt.
+                                  sendMessage(text, undefined, undefined, displayText);
                                 }}
                               />
                             ))}

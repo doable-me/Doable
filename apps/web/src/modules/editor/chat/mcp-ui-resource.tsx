@@ -18,9 +18,11 @@ interface Props {
   /**
    * Called when the iframe sends a `prompt` action — injects a synthetic user
    * message into the chat so the AI continues with new context (e.g. picker
-   * choices that feed the AI a skill prompt).
+   * choices that feed the AI a skill prompt). The optional `displayText`
+   * lets the iframe show a short friendly bubble in the chat instead of the
+   * full machine-readable prompt that the model receives.
    */
-  onPrompt?: (text: string) => void;
+  onPrompt?: (text: string, displayText?: string) => void;
 }
 
 interface ParentMessage {
@@ -33,6 +35,7 @@ interface ParentMessage {
     message?: string;
     prompt?: string;
     text?: string;
+    displayText?: string;
   };
   // Some MCP App hosts use { method, params } shape; accept both.
   method?: string;
@@ -142,7 +145,8 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt }:
         const text = (payload.prompt as string | undefined)
           ?? (payload.text as string | undefined)
           ?? (payload.message as string | undefined);
-        if (text && onPrompt) onPrompt(text);
+        const displayText = payload.displayText as string | undefined;
+        if (text && onPrompt) onPrompt(text, displayText);
         return;
       }
       if (type === "link") {

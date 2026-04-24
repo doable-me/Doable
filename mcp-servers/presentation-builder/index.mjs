@@ -60,69 +60,86 @@ function loadSkill(name, files) {
 }
 
 function buildContextLine({ topic, slideCount, audience, tone }) {
-  const bits = [`**Topic:** ${topic}`];
-  if (slideCount) bits.push(`**Slide count:** ${slideCount}`);
-  if (audience) bits.push(`**Audience:** ${audience}`);
-  if (tone) bits.push(`**Tone:** ${tone}`);
-  return bits.join("\n");
+  const bits = [`topic="${String(topic).replace(/"/g, '\\"')}"`];
+  if (slideCount) bits.push(`slides=${slideCount}`);
+  if (audience) bits.push(`audience="${String(audience).replace(/"/g, '\\"')}"`);
+  if (tone) bits.push(`tone="${String(tone).replace(/"/g, '\\"')}"`);
+  return bits.join(" ");
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// LLM prompts — INTENTIONALLY SHORT and IMPERATIVE.
+//
+// We do NOT ship the full 26 KB skill markdown into the user message. A long
+// reference document in the user turn confuses the model into echoing the
+// markdown back as text instead of producing a tool call. Instead we send a
+// command-style brief (~70 lines) with hard output rules. The detailed design
+// guidance lives in the system prompt where the model treats it as policy,
+// not as content to summarise.
+// ─────────────────────────────────────────────────────────────────────────
+const WEB_SLIDES_DESIGN_BRIEF = `
+DESIGN RULES (apply per slide; vary across the deck):
+- Layout variety: cover, two-column, big-stat, 3-card grid, timeline, pull-quote, comparison, takeaways, closing. NEVER reuse the same layout twice in a row.
+- Composition (3 layers): (1) full-bleed background with subtle gradient + 2-3 blurred decorative orbs; (2) structural elements (numbered eyebrow, accent bar, divider line); (3) content with strict typographic hierarchy.
+- Palette: pick ONE bespoke 5-color palette that fits the topic mood. Define as CSS variables --bg, --fg, --muted, --accent, --accent2. Use real colors, not greys.
+- Typography: import 2 contrasting Google Fonts (one display + one text). Use clamp() for fluid sizing. Display font 56-104px on covers, 36-56px on section headers.
+- Animations: each slide does an entrance (fadeUp / slideIn / scaleIn). Animate child elements with staggered delays (0.05s steps). Use CSS @keyframes, no JS animation libs.
+- Navigation: arrow keys + space + click anywhere to advance. Show slide counter "3 / 10" bottom-right. Press F for fullscreen. Slide transitions with translateX + opacity.
+- Content: write SPECIFIC, INTERESTING facts about the topic. No "Insight #1" placeholders. No lorem ipsum. Real numbers, real names, real examples.
+- Single file only. Inline CSS + JS. No external assets except Google Fonts via <link>.
+`.trim();
+
+const PPTX_DESIGN_BRIEF = `
+DESIGN RULES (apply per slide; vary across the deck):
+- Layout variety: cover, two-column, big-stat, 3-card grid, timeline, pull-quote, comparison, takeaways, closing. NEVER reuse the same layout twice in a row.
+- Composition (3 layers per slide):
+    (1) Background: full-bleed addShape({rect}) filled with a topic-bespoke dark or accent color; optional 2-3 large faintly-tinted ellipse shapes for depth (transparency 70-85).
+    (2) Structural: a thin accent bar (rect, h:0.08, w:1.5), eyebrow text (numbered "01", small caps), divider lines.
+    (3) Content: strict hierarchy — title (fontSize 44-72, bold), subtitle (24-32), body (14-20), captions (10-12).
+- Palette: pick ONE bespoke 5-color palette that fits the topic mood. Hex strings WITHOUT # prefix (PptxGenJS convention). Use a dark background (e.g. "0d1117", "1a1a2e") with 1-2 vivid accent colors plus a warm light tone for text.
+- Layout: pptx.layout = "LAYOUT_WIDE" (13.333×7.5 inches).
+- Typography: choose 2 fonts — a display face (Calibri / Segoe UI / Georgia / Impact) and a body face. Stay consistent across the deck.
+- Charts (when relevant): use addChart with brand colors. Avoid default Office blue.
+- Content: write SPECIFIC, INTERESTING facts about the topic. No "Insight #1" placeholders. Real numbers, real examples.
+`.trim();
+
 function buildWebSlidesPrompt(opts) {
-  const skill = loadSkill("web-slides", [
-    "SKILL.md",
-    "theme-palettes.md",
-    "layout-templates.md",
-    "animation-recipes.md",
-  ]);
   const ctx = buildContextLine(opts);
-  const topicEsc = String(opts.topic).replace(/"/g, '\\"');
   return [
-    `Generate a stunning, single-file HTML web slides deck on this topic.`,
+    `BUILD_WEB_SLIDES_DECK ${ctx}`,
     ``,
-    ctx,
+    `OUTPUT PROTOCOL — follow EXACTLY:`,
+    `1. Reply with NOTHING in chat. NO markdown. NO code fences. NO explanation. NO preamble.`,
+    `2. Make ONE tool call: render_web_slides({ html, topic }).`,
+    `   - html: the COMPLETE single-file HTML document for the deck.`,
+    `   - topic: "${String(opts.topic).replace(/"/g, '\\"')}"`,
+    `3. After the tool returns, reply with EXACTLY one short sentence ("Deck ready — open the preview.") and STOP.`,
     ``,
-    `**MANDATORY OUTPUT PROTOCOL:**`,
-    `1. Do NOT print HTML in chat. Do NOT wrap in markdown.`,
-    `2. Do NOT call write_file or create_file.`,
-    `3. Call the MCP tool **render_web_slides** with two parameters:`,
-    `   - \`html\`: the COMPLETE single-file HTML document (inline CSS + JS, no external assets except Google Fonts).`,
-    `   - \`topic\`: "${topicEsc}"`,
-    `4. After the tool returns, reply with one short sentence ("Deck ready — open the preview.") and STOP.`,
+    `Do NOT call write_file, create_file, or any file system tool. Do NOT install packages.`,
     ``,
-    `Follow the skill below precisely. Choose a topic-bespoke palette, varied layouts, real Google Fonts, cinematic animations, decorative orbs, and per-slide content that is INTERESTING and SPECIFIC to "${topicEsc}" — no generic placeholder bullets like "Insight #1".`,
-    ``,
-    `---`,
-    `# Skill`,
-    skill,
+    WEB_SLIDES_DESIGN_BRIEF,
   ].join("\n");
 }
 
 function buildPptxPrompt(opts) {
-  const skill = loadSkill("pptx", ["SKILL.md", "pptxgenjs.md"]);
   const ctx = buildContextLine(opts);
-  const topicEsc = String(opts.topic).replace(/"/g, '\\"');
   return [
-    `Generate a stunning, design-rich PowerPoint deck on this topic.`,
+    `BUILD_PPTX_DECK ${ctx}`,
     ``,
-    ctx,
+    `OUTPUT PROTOCOL — follow EXACTLY:`,
+    `1. Reply with NOTHING in chat. NO markdown. NO code fences. NO explanation. NO preamble.`,
+    `2. Make ONE tool call: render_pptx({ script, topic }).`,
+    `   - script: a JS BODY (no import/require, no module wrappers) that runs in an async sandbox where \`PptxGenJS\` is pre-injected. The body must:`,
+    `       const pptx = new PptxGenJS();`,
+    `       pptx.layout = "LAYOUT_WIDE";`,
+    `       const s = pptx.addSlide(); /* ... build all slides ... */`,
+    `       __pptx = pptx; // REQUIRED last line — exports the deck`,
+    `   - topic: "${String(opts.topic).replace(/"/g, '\\"')}"`,
+    `3. After the tool returns, reply with EXACTLY one short sentence ("Deck ready — download from the card above.") and STOP.`,
     ``,
-    `**MANDATORY OUTPUT PROTOCOL:**`,
-    `1. Do NOT print code in chat. Do NOT wrap in markdown.`,
-    `2. Do NOT call write_file / create_file. Do NOT install packages.`,
-    `3. Call the MCP tool **render_pptx** with two parameters:`,
-    `   - \`script\`: the JavaScript BODY (no imports, no module wrappers) that builds the deck. The body MUST:`,
-    `     • Use the pre-injected \`PptxGenJS\` constructor (already in scope; do NOT import).`,
-    `     • Create \`const pptx = new PptxGenJS();\`, set \`pptx.layout = "LAYOUT_WIDE";\`, and build all slides.`,
-    `     • End by assigning \`__pptx = pptx;\` (this exports the instance — the tool serializes it).`,
-    `     • Top-level \`await\` is supported; the body runs inside an async wrapper.`,
-    `   - \`topic\`: "${topicEsc}"`,
-    `4. After the tool returns, reply with one short sentence ("Deck ready.") and STOP.`,
+    `Do NOT call write_file, create_file, install_packages, or any file system tool. Do NOT call build_presentation.`,
     ``,
-    `Follow the skill below precisely. Topic-bespoke palette, varied layouts (cover/twoCol/stat/cards/timeline/quote/compare/takeaways/closing), 3-layer composition (background + structural + content), per-slide content INTERESTING and SPECIFIC to "${topicEsc}" — no generic "Why this matters" placeholders.`,
-    ``,
-    `---`,
-    `# Skill`,
-    skill,
+    PPTX_DESIGN_BRIEF,
   ].join("\n");
 }
 
@@ -221,82 +238,82 @@ function pickerHtml({ topic, slideCount, audience, tone, htmlPrompt, pptxPrompt 
   const baseParams = JSON.stringify({ topic, slideCount: slideCount ?? null, audience: audience ?? null, tone: tone ?? null });
   const htmlPromptJson = JSON.stringify(htmlPrompt);
   const pptxPromptJson = JSON.stringify(pptxPrompt);
+  const topicJson = JSON.stringify(topic);
   return `<!doctype html>
 <html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 12px 0; background: transparent; }
-  .card { color: #0f172a; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
-  h2 { margin: 0 0 4px 0; font-size: 15px; font-weight: 700; color: #0f172a; letter-spacing: -0.01em; }
-  p.sub { margin: 0 0 16px 0; color: #475569; font-size: 13px; }
-  p.sub strong { color: #0f172a; }
+  .card { color: #0f172a; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
+  h2 { margin: 0 0 4px 0; font-size: 14px; font-weight: 600; color: #0f172a; }
+  p.sub { margin: 0 0 14px 0; color: #64748b; font-size: 12px; }
+  p.sub strong { color: #0f172a; font-weight: 600; }
   .grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
-  button.opt { all: unset; cursor: pointer; padding: 16px; border-radius: 12px; border: 1px solid #cbd5e1; background: linear-gradient(180deg,#ffffff 0%,#f8fafc 100%); color: #0f172a; transition: all .15s; display: flex; gap: 12px; align-items: flex-start; position: relative; overflow: hidden; }
-  button.opt:hover { border-color: #0284c7; background: linear-gradient(180deg,#f0f9ff 0%,#e0f2fe 100%); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(2,132,199,.12); }
-  button.opt:disabled { opacity: .5; cursor: progress; transform: none; }
-  .opt .ico { font-size: 26px; line-height: 1; }
-  .opt .body { flex: 1; min-width: 0; }
-  .opt .ttl { font-weight: 700; font-size: 14px; margin-bottom: 3px; color: #0f172a; }
-  .opt .desc { font-size: 12px; color: #475569; line-height: 1.45; }
-  .opt .badge { position: absolute; top: 8px; right: 8px; font-size: 9px; font-weight: 700; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 999px; background: linear-gradient(90deg,#8b5cf6,#ec4899); color: white; }
-  .footer { margin-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: #64748b; flex-wrap: wrap; }
-  .footer button.quick { all: unset; cursor: pointer; color: #0284c7; text-decoration: underline; font-weight: 500; }
-  .footer button.quick:hover { color: #0369a1; }
-  .status { margin-top: 10px; font-size: 12px; color: #475569; min-height: 16px; font-weight: 500; }
+  button.opt { all: unset; cursor: pointer; padding: 18px 16px; border-radius: 12px; border: 1.5px solid #e2e8f0; background: #ffffff; color: #0f172a; transition: all .15s; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
+  button.opt:hover { border-color: #6366f1; background: #f8faff; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,102,241,.15); }
+  button.opt:disabled { opacity: .55; cursor: progress; transform: none; box-shadow: none; }
+  .opt .ico { font-size: 30px; line-height: 1; }
+  .opt .ttl { font-weight: 600; font-size: 14px; color: #0f172a; }
+  .opt .desc { font-size: 11px; color: #64748b; line-height: 1.4; }
+  .footer { margin-top: 12px; display: flex; justify-content: center; gap: 8px; font-size: 11px; color: #94a3b8; }
+  .footer button.quick { all: unset; cursor: pointer; color: #64748b; text-decoration: underline; }
+  .footer button.quick:hover { color: #0f172a; }
+  .footer button.quick:disabled { opacity: .5; cursor: progress; text-decoration: none; }
+  .status { margin-top: 12px; padding: 10px 12px; font-size: 12px; color: #4338ca; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; display: none; align-items: center; gap: 8px; }
+  .status.on { display: flex; }
+  .spin { width: 14px; height: 14px; border: 2px solid #c7d2fe; border-top-color: #6366f1; border-radius: 50%; animation: sp 0.7s linear infinite; flex: none; }
+  @keyframes sp { to { transform: rotate(360deg); } }
 </style></head>
 <body>
 <div class="card">
-  <h2>How should I build your presentation?</h2>
+  <h2>Build your presentation</h2>
   <p class="sub">Topic: <strong>${escapeHtml(topic)}</strong></p>
   <div class="grid">
-    <button class="opt" data-fmt="html">
-      <span class="badge">AI · STUNNING</span>
-      <div class="ico">🌐</div>
-      <div class="body">
-        <div class="ttl">Web Slides (HTML)</div>
-        <div class="desc">Cinematic single-file deck. Topic-bespoke palette, layouts &amp; animations. Built by AI from the design skill.</div>
-      </div>
-    </button>
     <button class="opt" data-fmt="pptx">
-      <span class="badge">AI · STUNNING</span>
       <div class="ico">📊</div>
-      <div class="body">
-        <div class="ttl">PowerPoint (.pptx)</div>
-        <div class="desc">Editable in PowerPoint, Keynote, Google Slides. Rich shapes, custom typography. Built by AI.</div>
-      </div>
+      <div class="ttl">PowerPoint</div>
+      <div class="desc">Editable .pptx file</div>
+    </button>
+    <button class="opt" data-fmt="html">
+      <div class="ico">🌐</div>
+      <div class="ttl">Web Slides</div>
+      <div class="desc">Cinematic single-file deck</div>
     </button>
   </div>
   <div class="footer">
-    <span>Takes ~10–30s while the AI designs your deck.</span>
-    <span>
-      Need it instantly?
-      <button class="quick" data-quick="html" type="button">Quick HTML</button>
-      ·
-      <button class="quick" data-quick="pptx" type="button">Quick PPTX</button>
-    </span>
+    <span>Or skip the AI:</span>
+    <button class="quick" data-quick="pptx" type="button">Quick PPTX</button>
+    <span>·</span>
+    <button class="quick" data-quick="html" type="button">Quick HTML</button>
   </div>
-  <div class="status" id="status"></div>
+  <div class="status" id="status"><div class="spin"></div><span id="statusText"></span></div>
 </div>
 <script>
   const baseParams = ${baseParams};
   const htmlPrompt = ${htmlPromptJson};
   const pptxPrompt = ${pptxPromptJson};
+  const topic = ${topicJson};
   const status = document.getElementById('status');
+  const statusText = document.getElementById('statusText');
   function disable() { for (const b of document.querySelectorAll('button')) b.disabled = true; }
+  function showStatus(text) { statusText.textContent = text; status.classList.add('on'); }
   for (const btn of document.querySelectorAll('button.opt')) {
     btn.addEventListener('click', () => {
       const fmt = btn.dataset.fmt;
       disable();
-      status.textContent = 'Sending to AI to design your deck — this takes ~10–30s while the AI writes the ' + (fmt === 'pptx' ? 'PowerPoint script' : 'HTML') + ' from scratch…';
+      const label = fmt === 'pptx' ? 'PowerPoint deck' : 'web slides deck';
+      const emoji = fmt === 'pptx' ? '📊' : '🌐';
+      showStatus('Designing your ' + label + '… (15–45s)');
       const prompt = fmt === 'html' ? htmlPrompt : pptxPrompt;
-      window.parent.postMessage({ type: 'prompt', payload: { prompt } }, '*');
+      const displayText = emoji + ' Designing a ' + label + ' about "' + topic + '"…';
+      window.parent.postMessage({ type: 'prompt', payload: { prompt, displayText } }, '*');
     });
   }
   for (const btn of document.querySelectorAll('button.quick')) {
     btn.addEventListener('click', () => {
       const fmt = btn.dataset.quick;
       disable();
-      status.textContent = 'Generating quick ' + (fmt === 'pptx' ? 'PowerPoint' : 'web slides') + '…';
+      showStatus('Generating quick ' + (fmt === 'pptx' ? 'PowerPoint' : 'web slides') + '…');
       window.parent.postMessage({
         type: 'tool',
         payload: { toolName: 'build_presentation', params: { ...baseParams, format: fmt } },
