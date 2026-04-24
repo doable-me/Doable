@@ -4824,6 +4824,27 @@ export default function EditorPage() {
                                   // builder forwarding skill instructions).
                                   // displayText keeps the visible chat bubble
                                   // short while the LLM gets the full prompt.
+                                  //
+                                  // Dedup: the presentation builder's
+                                  // "Designing your deck…" card auto-fires a
+                                  // BUILD_DECK prompt on host-ready. If the
+                                  // model already obeyed the same-turn
+                                  // instructions and produced a build_deck
+                                  // tool call in this session, suppress the
+                                  // re-injection to avoid building twice.
+                                  const isBuildDeck = typeof text === "string" && text.trimStart().startsWith("BUILD_DECK");
+                                  if (isBuildDeck) {
+                                    const alreadyBuilt = messages.some((m) =>
+                                      (m.toolActions ?? []).some((tc) => {
+                                        const n = tc?.toolName ?? "";
+                                        return n === "build_deck" || n.endsWith("_build_deck") || n.endsWith(".build_deck");
+                                      }),
+                                    );
+                                    if (alreadyBuilt) {
+                                      console.log("[MCP] BUILD_DECK prompt suppressed — build_deck already ran in this session");
+                                      return;
+                                    }
+                                  }
                                   sendMessage(text, undefined, undefined, displayText);
                                 }}
                               />
