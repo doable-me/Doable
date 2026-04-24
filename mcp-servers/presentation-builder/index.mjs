@@ -30,7 +30,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createUIResource } from "@mcp-ui/server";
-import { buildPptx } from "./presentation-engine.mjs";
+import { buildPptx, buildWebSlides } from "./presentation-engine.mjs";
 
 function dlog(msg) {
   if (!process.env.MCP_DEBUG) return;
@@ -289,21 +289,41 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
     }
 
-    // format === "html" — minimal placeholder for now (kept for future).
-    const html = `<!doctype html><html><body style="font:14px sans-serif;padding:16px;color:inherit;background:transparent">` +
-      `<p>Web Slides format is not yet implemented in this MCP App. Pick PowerPoint for now.</p>` +
-      `</body></html>`;
-    const ui = createUIResource({
-      uri: `ui://presentation-builder/notice/${Date.now()}`,
-      content: { type: "rawHtml", htmlString: html },
-      encoding: "text",
-    });
-    return {
-      content: [
-        ui,
-        { type: "text", text: "Web Slides format is not yet implemented; let the user know briefly." },
-      ],
-    };
+    // format === "html" — build a single-file HTML deck and embed as data URL.
+    try {
+      const { html: deckHtml, fileName, slideCount } = buildWebSlides({
+        topic,
+        slideCount: args?.slideCount,
+        audience: args?.audience,
+        tone: args?.tone,
+      });
+      const base64 = Buffer.from(deckHtml, "utf8").toString("base64");
+      const cardHtml = downloadHtml({
+        fileName,
+        mimeType: "text/html",
+        base64,
+        sizeBytes: Buffer.byteLength(deckHtml, "utf8"),
+        summary: `${slideCount} slides on "${topic}" · keyboard-navigable web deck`,
+      });
+      const ui = createUIResource({
+        uri: `ui://presentation-builder/download/${Date.now()}`,
+        content: { type: "rawHtml", htmlString: cardHtml },
+        encoding: "text",
+      });
+      return {
+        content: [
+          ui,
+          {
+            type: "text",
+            text: `Web Slides ready: ${fileName} (${slideCount} slides). User can download from the card. Acknowledge briefly and stop.`,
+          },
+        ],
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      dlog(`build_presentation html error: ${msg}`);
+      return { isError: true, content: [{ type: "text", text: `Web slides generation failed: ${msg}` }] };
+    }
   }
 
   return { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };

@@ -142,3 +142,131 @@ export async function buildPptx({ topic, slideCount, audience, tone }) {
     slideCount: outline.length,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// HTML web-slides builder
+// ─────────────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+
+/**
+ * Build a single-file HTML slide deck. Returns { html, fileName, slideCount }.
+ * The deck is keyboard-navigable (←/→/Space), full-screen friendly, with
+ * a subtle fade animation between slides.
+ */
+export function buildWebSlides({ topic, slideCount, audience, tone }) {
+  const t = (topic || "Presentation").trim();
+  const outline = buildOutline({ topic: t, slideCount, audience, tone });
+
+  const slidesHtml = outline.map((slide, i) => {
+    if (slide.type === "cover") {
+      return `<section class="slide cover" data-i="${i}">
+        <h1>${escHtml(slide.title)}</h1>
+        ${slide.subtitle ? `<p class="sub">${escHtml(slide.subtitle)}</p>` : ""}
+        <div class="bar"></div>
+      </section>`;
+    }
+    if (slide.type === "closing") {
+      return `<section class="slide closing" data-i="${i}">
+        <div class="bar top"></div>
+        <h1>${escHtml(slide.title)}</h1>
+        <p class="sub">${escHtml(slide.subtitle)}</p>
+      </section>`;
+    }
+    const bullets = slide.bullets.map((b) => `<li>${escHtml(b)}</li>`).join("");
+    return `<section class="slide content" data-i="${i}">
+      <div class="rule"></div>
+      <h2>${escHtml(slide.title)}</h2>
+      <ul>${bullets}</ul>
+    </section>`;
+  }).join("\n");
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>${escHtml(t)} — Slides</title>
+<style>
+  :root {
+    --bg: #${THEME.bg};
+    --panel: #${THEME.panel};
+    --accent: #${THEME.accent};
+    --accent2: #${THEME.accent2};
+    --text: #${THEME.text};
+    --sub: #${THEME.subtext};
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font: 18px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; overflow: hidden; }
+  .deck { position: fixed; inset: 0; }
+  .slide { position: absolute; inset: 0; padding: 8vmin; display: flex; flex-direction: column; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .4s ease, transform .5s ease; transform: translateY(12px); }
+  .slide.active { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  .slide h1 { font-size: clamp(36px, 7vw, 84px); font-weight: 800; letter-spacing: -.02em; line-height: 1.05; }
+  .slide h2 { font-size: clamp(28px, 4vw, 52px); font-weight: 700; letter-spacing: -.01em; margin-bottom: 4vmin; }
+  .slide .sub { font-size: clamp(18px, 2.2vw, 28px); color: var(--sub); margin-top: 2vmin; max-width: 70ch; }
+  .slide ul { list-style: none; display: grid; gap: 2vmin; }
+  .slide li { font-size: clamp(20px, 2.4vw, 30px); color: var(--sub); padding-left: 1.4em; position: relative; }
+  .slide li::before { content: ""; position: absolute; left: 0; top: .65em; width: .6em; height: .15em; background: var(--accent); border-radius: 3px; }
+  .slide.cover .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 1.2vmin; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .slide.closing .bar.top { position: absolute; left: 0; right: 0; top: 0; height: 1.2vmin; background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+  .slide.content .rule { position: absolute; left: 8vmin; top: 8vmin; bottom: 8vmin; width: .4vmin; background: var(--accent); border-radius: 2px; }
+  .slide.content h2, .slide.content ul { padding-left: 4vmin; }
+  .nav { position: fixed; bottom: 2vmin; right: 2vmin; display: flex; gap: 8px; align-items: center; color: var(--sub); font-size: 13px; z-index: 10; }
+  .nav button { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 6px; background: rgba(255,255,255,.06); color: var(--text); font-size: 13px; }
+  .nav button:hover { background: rgba(255,255,255,.12); }
+  .counter { padding: 0 8px; font-variant-numeric: tabular-nums; }
+  .progress { position: fixed; top: 0; left: 0; height: 3px; background: var(--accent); transition: width .3s ease; z-index: 10; }
+  @media print { .nav, .progress { display: none; } .slide { opacity: 1 !important; pointer-events: auto !important; transform: none !important; position: relative; page-break-after: always; height: 100vh; } html, body { overflow: visible; } }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="deck" id="deck">
+${slidesHtml}
+</div>
+<div class="nav">
+  <button id="prev" title="Previous (←)">‹</button>
+  <span class="counter"><span id="cur">1</span> / <span id="tot">${outline.length}</span></span>
+  <button id="next" title="Next (→)">›</button>
+  <button id="full" title="Fullscreen (F)">⛶</button>
+</div>
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  const cur = document.getElementById('cur');
+  const progress = document.getElementById('progress');
+  let i = 0;
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    cur.textContent = i + 1;
+    progress.style.width = ((i + 1) / slides.length * 100) + '%';
+    location.hash = '#' + (i + 1);
+  }
+  document.getElementById('prev').onclick = () => show(i - 1);
+  document.getElementById('next').onclick = () => show(i + 1);
+  document.getElementById('full').onclick = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  };
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { show(i + 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { show(i - 1); e.preventDefault(); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key === 'f' || e.key === 'F') document.getElementById('full').click();
+  });
+  const startHash = parseInt(location.hash.slice(1), 10);
+  show(Number.isFinite(startHash) && startHash > 0 ? startHash - 1 : 0);
+</script>
+</body>
+</html>`;
+
+  return {
+    html,
+    fileName: `${slugify(t)}.html`,
+    slideCount: outline.length,
+  };
+}
