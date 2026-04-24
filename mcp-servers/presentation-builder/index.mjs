@@ -42,7 +42,7 @@ function dlog(msg) {
 // ─────────────────────────────────────────────────────────────────────────
 const presentationProps = {
   topic: { type: "string", description: "Subject of the presentation (required)." },
-  slideCount: { type: "number", description: "Approx. number of content slides (3–12, default 5)." },
+  slideCount: { type: "number", description: "Total number of slides including cover and closing (3–12, default 5). \"5 slides\" = 5 total." },
   audience: { type: "string", description: "Target audience — executives, students, …" },
   tone: { type: "string", description: "formal | casual | inspirational | technical | storytelling" },
 };

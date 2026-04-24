@@ -36,7 +36,11 @@ function slugify(s) {
 }
 
 function buildOutline({ topic, slideCount, audience, tone }) {
-  const n = clampSlideCount(slideCount);
+  // `slideCount` = TOTAL slides the user wants (cover + content + closing).
+  // We clamp to [3, 12], reserve 1 for cover and 1 for closing, and fill
+  // the remainder with content slides. So "4 slides" → 1 cover + 2 content + 1 closing.
+  const total = clampSlideCount(slideCount);
+  const n = Math.max(1, total - 2);
   const audienceLine = audience ? `For ${audience}.` : "";
   const toneLine = tone ? `Tone: ${tone}.` : "";
 
