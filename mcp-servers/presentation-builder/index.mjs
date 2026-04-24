@@ -144,6 +144,14 @@ function pickerHtml({ topic, slideCount, audience, tone }) {
       }, '*');
     });
   }
+  // Auto-report size to host so it can resize the iframe.
+  function reportSize() {
+    const h = document.documentElement.scrollHeight;
+    window.parent.postMessage({ type: 'size', payload: { height: h } }, '*');
+  }
+  new ResizeObserver(reportSize).observe(document.body);
+  window.addEventListener('load', reportSize);
+  reportSize();
 </script>
 </body></html>`;
 }
@@ -177,6 +185,15 @@ function downloadHtml({ fileName, mimeType, base64, sizeBytes, summary }) {
   </div>
   <a class="dl" download="${escapeHtml(fileName)}" href="data:${mimeType};base64,${base64}">Download</a>
 </div>
+<script>
+  function reportSize() {
+    const h = document.documentElement.scrollHeight;
+    window.parent.postMessage({ type: 'size', payload: { height: h } }, '*');
+  }
+  new ResizeObserver(reportSize).observe(document.body);
+  window.addEventListener('load', reportSize);
+  reportSize();
+</script>
 </body></html>`;
 }
 
