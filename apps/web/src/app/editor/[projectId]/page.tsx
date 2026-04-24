@@ -2715,7 +2715,17 @@ export default function EditorPage() {
               // the right-hand preview pane by pointing the preview iframe
               // at the artifact URL directly.
               if (/html/i.test(artifact.mimeType) || /\.html?$/i.test(artifact.fileName)) {
+                // Cancel any pending debounced preview refresh (which would
+                // re-set the iframe to the OLD previewUrl captured in its
+                // closure and clobber the artifact URL).
+                if (previewRefreshTimer.current) {
+                  clearTimeout(previewRefreshTimer.current);
+                  previewRefreshTimer.current = null;
+                }
                 setPreviewUrl(artifact.url);
+                if (iframeRef.current) {
+                  try { iframeRef.current.src = artifact.url; } catch {}
+                }
               }
             },
           },
@@ -3238,7 +3248,15 @@ export default function EditorPage() {
           // the right-hand preview pane by pointing the preview iframe
           // at the artifact URL directly.
           if (/html/i.test(artifact.mimeType) || /\.html?$/i.test(artifact.fileName)) {
+            // Cancel any pending debounced preview refresh.
+            if (previewRefreshTimer.current) {
+              clearTimeout(previewRefreshTimer.current);
+              previewRefreshTimer.current = null;
+            }
             setPreviewUrl(artifact.url);
+            if (iframeRef.current) {
+              try { iframeRef.current.src = artifact.url; } catch {}
+            }
           }
         },
         // displayContent — persist short label in chat history when provided
