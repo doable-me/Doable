@@ -227,8 +227,8 @@ export class CopilotEngine {
     const session = engine?.copilotSession;
     if (!engine || !session) return Promise.reject(new Error(`Session ${sessionId} not found`));
 
-    const INITIAL_TIMEOUT_MS = 90_000;
-    const EVENT_TIMEOUT_MS = 45_000;
+    const INITIAL_TIMEOUT_MS = 120_000;
+    const EVENT_TIMEOUT_MS = 120_000;
     let lastProgressTime = Date.now();
     let gotFirstEvent = false;
     const sid = sessionId.slice(0, 8);
