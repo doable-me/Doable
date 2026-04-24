@@ -1,13 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { sql } from "../db/index.js";
-import { aiSettingsQueries, workspaceQueries } from "@doable/db";
+import { aiSettingsQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
 const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
-const workspaces = workspaceQueries(sql);
 
 export const adminAiRoutes = new Hono<AuthEnv>();
 
@@ -24,13 +23,6 @@ async function getUserOwnedWorkspace(userId: string) {
     ORDER BY w.created_at ASC LIMIT 1
   `;
   return ws?.id ?? null;
-}
-
-async function ensureWorkspaceMember(workspaceId: string, userId: string, invitedBy: string) {
-  const role = await workspaces.getMemberRole(workspaceId, userId);
-  if (!role) {
-    await workspaces.addMember(workspaceId, userId, "member", invitedBy);
-  }
 }
 
 async function cloneCopilotAccountToWorkspace(
@@ -277,10 +269,10 @@ adminAiRoutes.put("/users/:userId/ai-allocation", async (c) => {
   const targetWorkspaceId = await getUserOwnedWorkspace(targetUserId);
   if (!targetWorkspaceId) return c.json({ error: "Target user has no workspace" }, 400);
 
-  const adminWorkspaceId = await getUserOwnedWorkspace(adminId);
-  if (adminWorkspaceId) {
-    await ensureWorkspaceMember(adminWorkspaceId, targetUserId, adminId);
-  }
+  // Note: AI artifacts are cloned into the target user's own workspace
+  // (see allocateAiToUser → cloneCopilotAccountToWorkspace/cloneProviderToWorkspace).
+  // We intentionally do NOT add the target user to the admin's workspace here —
+  // doing so silently polluted the admin's member list with every user they touched.
 
   const source: "copilot" | "custom" =
     parsed.data.source ??
@@ -346,7 +338,7 @@ adminAiRoutes.post("/users/ai-allocations/copy-my-settings", async (c) => {
     const targetWsId = await getUserOwnedWorkspace(targetId);
     if (!targetWsId) continue;
 
-    await ensureWorkspaceMember(adminWorkspaceId, targetId, adminId);
+    // Do NOT add target user to admin's workspace — clone happens in target's own workspace.
     await allocateAiToUser(adminId, targetId, targetWsId, {
       source,
       copilotAccountId,
