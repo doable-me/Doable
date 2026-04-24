@@ -185,6 +185,7 @@ interface ChatMsg {
   senderInfo?: { userId: string; displayName: string; color: string; isRemote: boolean };
   liveStatus?: string;
   mcpResources?: Record<string, McpUiResource>;
+  artifacts?: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }[];
 }
 
 type TaskCardTab = "details" | "preview";
@@ -403,6 +404,7 @@ async function streamChat(
   onPlanStepUpdate?: (stepId: string, status: string) => void,
   onProvisionSupabase?: (req: { name: string; reason: string }) => void,
   onMcpUiResource?: (resource: McpUiResource) => void,
+  onArtifactReady?: (artifact: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }) => void,
   displayContent?: string,
 ) {
   let currentToken = getStoredTokens().accessToken;
@@ -652,6 +654,23 @@ async function streamChat(
             onProvisionSupabase({ name, reason });
           }
 
+          // Small dedicated download notification — emitted alongside the
+          // mcp_ui_resource event by the API so the user always gets a
+          // clickable download even if the larger UI resource event is
+          // dropped/buffered upstream (e.g. by Cloudflare Tunnel).
+          if (parsed.type === "artifact_ready" && onArtifactReady) {
+            const d = parsed.data as { url?: string; fileName?: string; mimeType?: string; sizeBytes?: number; toolName?: string } | undefined;
+            if (d?.url && d?.fileName && d?.mimeType) {
+              onArtifactReady({
+                url: d.url,
+                fileName: d.fileName,
+                mimeType: d.mimeType,
+                sizeBytes: d.sizeBytes ?? 0,
+                toolName: d.toolName,
+              });
+            }
+          }
+
           // MCP-Apps UI resource — surface a sandboxed iframe to the user
           if (parsed.type === "mcp_ui_resource") {
             const d = parsed.data as Record<string, unknown> | undefined;
@@ -777,6 +796,7 @@ interface BridgeCallbacks {
   onPlanStepUpdate?: (stepId: string, status: string) => void;
   onProvisionSupabase?: (req: { name: string; reason: string }) => void;
   onMcpUiResource?: (resource: McpUiResource) => void;
+  onArtifactReady?: (artifact: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }) => void;
 }
 
 function processOneSSEPayload(
@@ -861,6 +881,19 @@ function processOneSSEPayload(
       const name = (d?.name as string | undefined) ?? "";
       const reason = (d?.reason as string | undefined) ?? "";
       cb.onProvisionSupabase({ name, reason });
+    }
+
+    if (parsed.type === "artifact_ready" && cb.onArtifactReady) {
+      const d = parsed.data as { url?: string; fileName?: string; mimeType?: string; sizeBytes?: number; toolName?: string } | undefined;
+      if (d?.url && d?.fileName && d?.mimeType) {
+        cb.onArtifactReady({
+          url: d.url,
+          fileName: d.fileName,
+          mimeType: d.mimeType,
+          sizeBytes: d.sizeBytes ?? 0,
+          toolName: d.toolName,
+        });
+      }
     }
 
     if (parsed.type === "mcp_ui_resource" && cb.onMcpUiResource) {
@@ -2640,6 +2673,16 @@ export default function EditorPage() {
                 )
               );
             },
+            onArtifactReady: (artifact) => {
+              setMessages((prev) =>
+                prev.map((m) => {
+                  if (m.id !== assistantId) return m;
+                  const existing = m.artifacts ?? [];
+                  if (existing.some((a) => a.url === artifact.url)) return m;
+                  return { ...m, artifacts: [...existing, artifact] };
+                })
+              );
+            },
           },
         );
         return; // bridge consumed — skip fallback path
@@ -3144,6 +3187,17 @@ export default function EditorPage() {
                 ? { ...m, mcpResources: { ...(m.mcpResources ?? {}), [resource.toolCallId]: resource } }
                 : m
             )
+          );
+        },
+        // onArtifactReady — small dedicated download notification
+        (artifact) => {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== assistantId) return m;
+              const existing = m.artifacts ?? [];
+              if (existing.some((a) => a.url === artifact.url)) return m;
+              return { ...m, artifacts: [...existing, artifact] };
+            })
           );
         },
         // displayContent — persist short label in chat history when provided
@@ -4727,6 +4781,41 @@ export default function EditorPage() {
                                   sendMessage(text, undefined, undefined, displayText);
                                 }}
                               />
+                            ))}
+                          </div>
+                        )}
+
+                        {/* ── Artifact download links (always-on fallback for
+                             generated files even when the larger
+                             mcp_ui_resource iframe event is dropped/buffered
+                             upstream e.g. by Cloudflare Tunnel). ── */}
+                        {msg.artifacts && msg.artifacts.length > 0 && (
+                          <div className="mt-2 space-y-1.5">
+                            {msg.artifacts.map((a) => (
+                              <a
+                                key={a.url}
+                                href={a.url}
+                                download={a.fileName}
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 hover:border-sky-400 hover:bg-sky-50 transition-colors text-sm no-underline"
+                              >
+                                <span className="text-2xl leading-none">
+                                  {a.mimeType.includes("presentationml") ? "📊" :
+                                   a.mimeType.includes("html") ? "🌐" :
+                                   a.mimeType.includes("pdf") ? "📄" : "📎"}
+                                </span>
+                                <span className="flex-1 min-w-0">
+                                  <span className="block font-semibold text-slate-900 truncate">
+                                    {a.fileName}
+                                  </span>
+                                  <span className="block text-xs text-slate-500">
+                                    {a.sizeBytes > 0 ? `${(a.sizeBytes / 1024).toFixed(1)} KB · ` : ""}Click to download
+                                  </span>
+                                </span>
+                                <span className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white">
+                                  Download
+                                </span>
+                              </a>
                             ))}
                           </div>
                         )}

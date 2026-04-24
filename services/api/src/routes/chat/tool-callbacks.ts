@@ -12,17 +12,20 @@ import { storeArtifact } from "../artifacts.js";
 const ARTIFACT_PUBLIC_URL =
   process.env.NEXT_PUBLIC_API_URL ?? process.env.API_URL ?? "http://localhost:4000";
 
+type ArtifactRef = { url: string; fileName: string; mimeType: string; sizeBytes: number };
+
 /**
  * Rewrite oversize `data:<mime>;base64,<b64>` URIs inside MCP-UI rawHtml
  * payloads to small `https://api/.../artifacts/<id>` URLs. Cloudflare
  * Tunnel can drop SSE events whose single `data:` line exceeds ~50KB, so
- * extracting the bytes here keeps the streamed event tiny.
+ * extracting the bytes here keeps the streamed event tiny. Also returns
+ * the artifacts so the caller can emit a separate, dedicated SSE event
+ * (the mcp_ui_resource iframe path can still be flaky on some networks).
  */
-function offloadDataUris(html: string): string {
-  if (!html || html.length < 16 * 1024) return html;
-  // Match data:<type>;base64,<payload>  where payload is a long base64 blob.
-  // Only offload payloads >= 8KB to skip tiny inline icons.
-  return html.replace(
+function offloadDataUris(html: string): { html: string; artifacts: ArtifactRef[] } {
+  const artifacts: ArtifactRef[] = [];
+  if (!html || html.length < 16 * 1024) return { html, artifacts };
+  const out = html.replace(
     /data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=]{8000,})/g,
     (_match, mime: string, b64: string) => {
       try {
@@ -35,12 +38,15 @@ function offloadDataUris(html: string): string {
           "bin";
         const fileName = `presentation-${Date.now()}.${ext}`;
         const id = storeArtifact({ bytes, mimeType: mime, fileName });
-        return `${ARTIFACT_PUBLIC_URL.replace(/\/$/, "")}/artifacts/${id}.${ext}`;
+        const url = `${ARTIFACT_PUBLIC_URL.replace(/\/$/, "")}/artifacts/${id}.${ext}`;
+        artifacts.push({ url, fileName, mimeType: mime, sizeBytes: bytes.length });
+        return url;
       } catch {
         return _match;
       }
     },
   );
+  return { html: out, artifacts };
 }
 
 function dlog(msg: string) {
@@ -226,17 +232,34 @@ export function createToolProgressCallbacks(
           const emittedToolCallId = `tc_${toolName}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
           // Off-load any oversize base64 data: URIs inside the rawHtml so the
           // resulting SSE event stays small enough to flow through Cloudflare
-          // Tunnel without buffering / drops.
+          // Tunnel without buffering / drops, and grab the artifact refs so
+          // we can also emit a small dedicated `artifact_ready` event (the
+          // mcp_ui_resource iframe path can still be flaky).
+          let artifacts: ArtifactRef[] = [];
           const safeResource = (() => {
             const r = item.resource as Record<string, unknown> & { text?: string };
             if (typeof r?.text === "string" && r.text.length > 16 * 1024) {
-              const rewritten = offloadDataUris(r.text);
+              const { html: rewritten, artifacts: arts } = offloadDataUris(r.text);
+              artifacts = arts;
               if (rewritten !== r.text) {
                 return { ...r, text: rewritten };
               }
             }
             return r;
           })();
+          // Emit one tiny `artifact_ready` event per off-loaded artifact
+          // FIRST. Even if Cloudflare Tunnel drops the larger
+          // mcp_ui_resource event, the client still gets a clickable
+          // download link.
+          for (const a of artifacts) {
+            const small = JSON.stringify({ type: "artifact_ready", data: { ...a, toolName } });
+            try {
+              await stream.writeSSE({ data: small });
+              dlog(`artifact_ready SSE write OK url=${a.url} (${small.length}B)`);
+            } catch (e) {
+              dlog(`artifact_ready SSE write FAILED: ${(e as Error).message}`);
+            }
+          }
           const sseData = JSON.stringify({
             type: "mcp_ui_resource",
             data: {
