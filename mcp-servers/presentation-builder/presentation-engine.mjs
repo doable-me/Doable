@@ -4,14 +4,19 @@
  */
 import PptxGenJS from "pptxgenjs";
 
-const THEME = {
-  bg: "0F172A",          // slate-900
-  panel: "1E293B",       // slate-800
-  accent: "38BDF8",      // sky-400
-  accent2: "F472B6",     // pink-400
-  text: "F8FAFC",        // slate-50
-  subtext: "CBD5E1",     // slate-300
-};
+// Strip leading '#' from a hex string so it's safe for pptxgenjs (which
+// rejects '#'-prefixed colors).
+function pptxColor(hex) {
+  return String(hex || "").replace(/^#/, "").toUpperCase();
+}
+
+// Pull a sensible PPTX font face out of a CSS font-family string like
+// "'Plus Jakarta Sans', sans-serif" → "Plus Jakarta Sans". Falls back to
+// Calibri for monospace/serif families that PowerPoint can't always render.
+function pptxFont(cssFontFamily, fallback = "Calibri") {
+  const m = String(cssFontFamily || "").match(/'([^']+)'/);
+  return m ? m[1] : fallback;
+}
 
 const SLIDE_TEMPLATES = [
   "Why this matters",
@@ -75,73 +80,420 @@ function buildOutline({ topic, slideCount, audience, tone }) {
 
 /**
  * Build a real .pptx Buffer for the given hints.
- * Returns { buffer, fileName, slideCount }.
+ * Uses the skill system: topic-aware palette + rotating rich layouts
+ * (cover, twoCol, stat, cards, timeline, quote, compare, takeaways, closing).
+ * Returns { buffer, fileName, slideCount, paletteId }.
  */
 export async function buildPptx({ topic, slideCount, audience, tone }) {
   const t = (topic || "Presentation").trim();
   const outline = buildOutline({ topic: t, slideCount, audience, tone });
+  const palette = pickPalette(t);
+
+  // Translate web palette → PPTX-safe colors (no '#').
+  const C = {
+    bg:      pptxColor(palette.vars.bg),
+    panel:   pptxColor(palette.vars.panel),
+    accent:  pptxColor(palette.vars.accent),
+    accent2: pptxColor(palette.vars.accent2),
+    accent3: pptxColor(palette.vars.accent3),
+    text:    pptxColor(palette.vars.text),
+    sub:     pptxColor(palette.vars.sub),
+  };
+  const isLightBg = (parseInt(C.bg.slice(0, 2), 16) +
+                     parseInt(C.bg.slice(2, 4), 16) +
+                     parseInt(C.bg.slice(4, 6), 16)) / 3 > 160;
+  const headingFont = pptxFont(palette.fonts.display, "Calibri");
+  const bodyFont    = pptxFont(palette.fonts.body, "Calibri");
 
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE"; // 13.33" x 7.5"
   pptx.title = t;
   pptx.company = "Doable";
 
-  for (const slide of outline) {
-    const s = pptx.addSlide();
-    s.background = { color: THEME.bg };
+  // Pick rotating content layouts (skips cover/closing — handled separately).
+  const layouts = planLayouts(outline.length); // ["cover", ...middle..., "closing"]
 
-    if (slide.type === "cover") {
-      s.addShape(pptx.ShapeType.rect, {
-        x: 0, y: 6.6, w: 13.33, h: 0.9, fill: { color: THEME.accent },
-      });
-      s.addText(slide.title, {
-        x: 0.6, y: 2.2, w: 12, h: 2.2,
-        fontFace: "Calibri", fontSize: 60, bold: true, color: THEME.text,
-      });
-      if (slide.subtitle) {
-        s.addText(slide.subtitle, {
-          x: 0.6, y: 4.5, w: 12, h: 1,
-          fontFace: "Calibri", fontSize: 22, color: THEME.subtext,
-        });
-      }
-    } else if (slide.type === "closing") {
-      s.addShape(pptx.ShapeType.rect, {
-        x: 0, y: 0, w: 13.33, h: 0.9, fill: { color: THEME.accent2 },
-      });
-      s.addText(slide.title, {
-        x: 0.6, y: 2.5, w: 12, h: 1.6,
-        fontFace: "Calibri", fontSize: 54, bold: true, color: THEME.text,
-      });
-      s.addText(slide.subtitle, {
-        x: 0.6, y: 4.3, w: 12, h: 1,
-        fontFace: "Calibri", fontSize: 24, color: THEME.subtext,
-      });
-    } else {
-      s.addShape(pptx.ShapeType.rect, {
-        x: 0.6, y: 0.9, w: 0.15, h: 5.5, fill: { color: THEME.accent },
-      });
-      s.addText(slide.title, {
-        x: 1.0, y: 0.7, w: 11.5, h: 1.0,
-        fontFace: "Calibri", fontSize: 36, bold: true, color: THEME.text,
-      });
-      const bulletObjs = slide.bullets.map((b) => ({
-        text: b,
-        options: { bullet: { indent: 20 }, fontSize: 22, color: THEME.subtext },
-      }));
-      s.addText(bulletObjs, {
-        x: 1.0, y: 2.0, w: 11.5, h: 4.5,
-        fontFace: "Calibri", paraSpaceAfter: 14,
-      });
-    }
-  }
+  outline.forEach((slide, i) => {
+    const layout = layouts[i] || (slide.type === "cover" ? "cover" : slide.type === "closing" ? "closing" : "twoCol");
+    const ctx = { pptx, palette, C, isLightBg, headingFont, bodyFont, slide, idx: i, total: outline.length, topic: t };
+    const renderer = PPTX_RENDERERS[layout] || PPTX_RENDERERS.twoCol;
+    renderer(ctx);
+  });
 
   const buffer = await pptx.write({ outputType: "nodebuffer" });
   return {
     buffer,
     fileName: `${slugify(t)}.pptx`,
     slideCount: outline.length,
+    paletteId: palette.id,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// PPTX per-layout renderers
+// Embodies skills/pptx/SKILL.md design rules:
+//  • Sandwich structure (dark cover + content + dark closing)
+//  • At least 3 visual layers per slide (bg deco + structural + content)
+//  • Topic-adaptive palette + typography
+//  • Rotating layouts so no two consecutive slides look the same
+// ─────────────────────────────────────────────────────────────────────────
+
+function pptxBaseBg(s, ctx, { dark = false } = {}) {
+  const { C, isLightBg, pptx } = ctx;
+  // Dark slides override the palette bg with the panel; light palettes flip.
+  const bg = dark ? (isLightBg ? C.text : C.bg) : C.bg;
+  s.background = { color: bg };
+  // Decorative layer 1: large translucent corner orb (accent2).
+  s.addShape(pptx.ShapeType.ellipse, {
+    x: -2, y: -2, w: 6, h: 6,
+    fill: { color: C.accent, transparency: 88 },
+    line: { color: C.accent, width: 0, transparency: 100 },
+  });
+  // Decorative layer 2: smaller orb on opposite corner (accent3).
+  s.addShape(pptx.ShapeType.ellipse, {
+    x: 10, y: 5, w: 5, h: 5,
+    fill: { color: C.accent3 || C.accent2, transparency: 90 },
+    line: { color: C.accent3 || C.accent2, width: 0, transparency: 100 },
+  });
+}
+
+function pptxFooter(s, ctx) {
+  const { C, headingFont, slide, idx, total } = ctx;
+  s.addText(`${idx + 1} / ${total}`, {
+    x: 12.0, y: 7.05, w: 1.1, h: 0.3,
+    fontFace: headingFont, fontSize: 10, color: C.sub, align: "right",
+  });
+  s.addText("DOABLE", {
+    x: 0.5, y: 7.05, w: 3, h: 0.3,
+    fontFace: headingFont, fontSize: 10, bold: true, color: C.accent, charSpacing: 4,
+  });
+}
+
+const PPTX_RENDERERS = {
+  cover({ pptx, C, headingFont, bodyFont, slide, total, topic }) {
+    const s = pptx.addSlide();
+    s.background = { color: C.bg };
+    // Layer 1: huge accent gradient orb top-left
+    s.addShape(pptx.ShapeType.ellipse, {
+      x: -3, y: -3, w: 9, h: 9,
+      fill: { color: C.accent, transparency: 75 },
+      line: { color: C.accent, width: 0, transparency: 100 },
+    });
+    s.addShape(pptx.ShapeType.ellipse, {
+      x: 8, y: 4, w: 8, h: 8,
+      fill: { color: C.accent2, transparency: 82 },
+      line: { color: C.accent2, width: 0, transparency: 100 },
+    });
+    // Layer 2: top tag bar
+    s.addShape(pptx.ShapeType.rect, {
+      x: 0.6, y: 0.6, w: 2.4, h: 0.05, fill: { color: C.accent }, line: { width: 0 },
+    });
+    s.addText(`PRESENTATION · ${total} SLIDES`, {
+      x: 0.6, y: 0.75, w: 8, h: 0.4,
+      fontFace: headingFont, fontSize: 12, bold: true, color: C.accent, charSpacing: 6,
+    });
+    // Layer 3: hero title
+    s.addText(slide.title, {
+      x: 0.6, y: 2.0, w: 12.1, h: 3.2,
+      fontFace: headingFont, fontSize: 64, bold: true, color: C.text, valign: "top",
+    });
+    if (slide.subtitle) {
+      s.addText(slide.subtitle, {
+        x: 0.6, y: 5.3, w: 11, h: 1.0,
+        fontFace: bodyFont, fontSize: 20, color: C.sub,
+      });
+    }
+    // Bottom rule
+    s.addShape(pptx.ShapeType.rect, {
+      x: 0, y: 7.3, w: 13.33, h: 0.2, fill: { color: C.accent }, line: { width: 0 },
+    });
+  },
+
+  closing({ pptx, C, headingFont, bodyFont, slide }) {
+    const s = pptx.addSlide();
+    s.background = { color: C.bg };
+    // Background mega text "FIN"
+    s.addText("FIN", {
+      x: 0, y: 0.5, w: 13.33, h: 7,
+      fontFace: headingFont, fontSize: 380, bold: true, color: C.panel,
+      align: "center", valign: "middle",
+    });
+    s.addShape(pptx.ShapeType.rect, {
+      x: 0, y: 0, w: 13.33, h: 0.2, fill: { color: C.accent2 }, line: { width: 0 },
+    });
+    s.addText(slide.title, {
+      x: 0.6, y: 2.4, w: 12.1, h: 1.6,
+      fontFace: headingFont, fontSize: 80, bold: true, color: C.text, align: "center",
+    });
+    s.addText(slide.subtitle, {
+      x: 0.6, y: 4.4, w: 12.1, h: 1.0,
+      fontFace: bodyFont, fontSize: 22, color: C.sub, align: "center",
+    });
+    // Accent CTA pill
+    s.addShape(pptx.ShapeType.roundRect, {
+      x: 5.6, y: 5.7, w: 2.1, h: 0.7, rectRadius: 0.35,
+      fill: { color: C.accent }, line: { width: 0 },
+    });
+    s.addText("THANK YOU", {
+      x: 5.6, y: 5.7, w: 2.1, h: 0.7,
+      fontFace: headingFont, fontSize: 14, bold: true,
+      color: C.bg, align: "center", valign: "middle", charSpacing: 4,
+    });
+  },
+
+  twoCol(ctx) {
+    const { pptx, C, headingFont, bodyFont, slide } = ctx;
+    const s = pptx.addSlide();
+    pptxBaseBg(s, ctx);
+    // Left vertical accent column
+    s.addShape(pptx.ShapeType.rect, {
+      x: 0.5, y: 1.0, w: 0.08, h: 5.5, fill: { color: C.accent }, line: { width: 0 },
+    });
+    s.addText(slide.title, {
+      x: 0.85, y: 0.7, w: 11.5, h: 1.0,
+      fontFace: headingFont, fontSize: 36, bold: true, color: C.text,
+    });
+    // Right glass card with bullets
+    s.addShape(pptx.ShapeType.roundRect, {
+      x: 6.6, y: 1.9, w: 6.2, h: 4.6, rectRadius: 0.15,
+      fill: { color: C.accent, transparency: 88 },
+      line: { color: C.accent, width: 1, transparency: 60 },
+    });
+    const bulletObjs = slide.bullets.map((b) => ({
+      text: b,
+      options: { bullet: { code: "25CF" }, fontSize: 18, color: C.text, paraSpaceAfter: 10 },
+    }));
+    s.addText(bulletObjs, {
+      x: 6.95, y: 2.2, w: 5.6, h: 4.0,
+      fontFace: bodyFont, valign: "top",
+    });
+    // Left side: lead paragraph
+    s.addText(slide.bullets[0] || "", {
+      x: 0.85, y: 2.0, w: 5.5, h: 4.5,
+      fontFace: bodyFont, fontSize: 24, color: C.sub, valign: "top",
+    });
+    pptxFooter(s, ctx);
+  },
+
+  stat(ctx) {
+    const { pptx, C, headingFont, bodyFont, slide } = ctx;
+    const s = pptx.addSlide();
+    pptxBaseBg(s, ctx);
+    const stat = `${Math.floor(70 + Math.random() * 28)}%`;
+    s.addText(slide.title, {
+      x: 0.85, y: 0.7, w: 11.5, h: 0.8,
+      fontFace: headingFont, fontSize: 28, bold: true, color: C.text,
+    });
+    // Mega stat
+    s.addText(stat, {
+      x: 0.85, y: 1.9, w: 7, h: 3.5,
+      fontFace: headingFont, fontSize: 220, bold: true, color: C.accent, valign: "top",
+    });
+    s.addText(slide.bullets[0] || "Key indicator", {
+      x: 0.85, y: 5.4, w: 7, h: 1.2,
+      fontFace: bodyFont, fontSize: 20, color: C.sub,
+    });
+    // Right column supporting bullets
+    const rest = slide.bullets.slice(1, 4);
+    rest.forEach((b, i) => {
+      s.addShape(pptx.ShapeType.roundRect, {
+        x: 8.2, y: 1.9 + i * 1.55, w: 4.6, h: 1.35, rectRadius: 0.12,
+        fill: { color: C.accent2, transparency: 88 },
+        line: { color: C.accent2, width: 1, transparency: 60 },
+      });
+      s.addText(`0${i + 1}`, {
+        x: 8.4, y: 2.0 + i * 1.55, w: 0.8, h: 0.4,
+        fontFace: headingFont, fontSize: 14, bold: true, color: C.accent2,
+      });
+      s.addText(b, {
+        x: 8.4, y: 2.4 + i * 1.55, w: 4.3, h: 0.85,
+        fontFace: bodyFont, fontSize: 14, color: C.text, valign: "top",
+      });
+    });
+    pptxFooter(s, ctx);
+  },
+
+  cards(ctx) {
+    const { pptx, C, headingFont, bodyFont, slide } = ctx;
+    const s = pptx.addSlide();
+    pptxBaseBg(s, ctx);
+    s.addText(slide.title, {
+      x: 0.85, y: 0.7, w: 11.5, h: 0.8,
+      fontFace: headingFont, fontSize: 32, bold: true, color: C.text,
+    });
+    // 3 cards left-to-right
+    const colors = [C.accent, C.accent2, C.accent3 || C.accent];
+    const items = slide.bullets.slice(0, 3);
+    items.forEach((b, i) => {
+      const x = 0.85 + i * 4.05;
+      s.addShape(pptx.ShapeType.roundRect, {
+        x, y: 2.0, w: 3.85, h: 4.5, rectRadius: 0.15,
+        fill: { color: colors[i], transparency: 84 },
+        line: { color: colors[i], width: 1.5, transparency: 50 },
+      });
+      // Number bubble
+      s.addShape(pptx.ShapeType.ellipse, {
+        x: x + 0.3, y: 2.3, w: 0.7, h: 0.7,
+        fill: { color: colors[i] }, line: { width: 0 },
+      });
+      s.addText(`${i + 1}`, {
+        x: x + 0.3, y: 2.3, w: 0.7, h: 0.7,
+        fontFace: headingFont, fontSize: 22, bold: true,
+        color: C.bg, align: "center", valign: "middle",
+      });
+      s.addText(b, {
+        x: x + 0.3, y: 3.3, w: 3.25, h: 3.0,
+        fontFace: bodyFont, fontSize: 16, color: C.text, valign: "top",
+      });
+    });
+    pptxFooter(s, ctx);
+  },
+
+  timeline(ctx) {
+    const { pptx, C, headingFont, bodyFont, slide } = ctx;
+    const s = pptx.addSlide();
+    pptxBaseBg(s, ctx);
+    s.addText(slide.title, {
+      x: 0.85, y: 0.7, w: 11.5, h: 0.8,
+      fontFace: headingFont, fontSize: 32, bold: true, color: C.text,
+    });
+    const axisY = 4.0;
+    // Horizontal axis line
+    s.addShape(pptx.ShapeType.line, {
+      x: 0.85, y: axisY, w: 11.6, h: 0,
+      line: { color: C.accent, width: 2 },
+    });
+    const items = slide.bullets.slice(0, 4);
+    const step = 11.6 / Math.max(1, items.length);
+    items.forEach((b, i) => {
+      const cx = 0.85 + step * (i + 0.5);
+      // Node dot
+      s.addShape(pptx.ShapeType.ellipse, {
+        x: cx - 0.18, y: axisY - 0.18, w: 0.36, h: 0.36,
+        fill: { color: C.accent }, line: { color: C.bg, width: 2 },
+      });
+      // Step label
+      s.addText(`STEP ${String(i + 1).padStart(2, "0")}`, {
+        x: cx - 1.2, y: axisY - 1.4, w: 2.4, h: 0.4,
+        fontFace: headingFont, fontSize: 12, bold: true, color: C.accent,
+        align: "center", charSpacing: 4,
+      });
+      s.addText(b, {
+        x: cx - 1.3, y: axisY + 0.4, w: 2.6, h: 2.4,
+        fontFace: bodyFont, fontSize: 14, color: C.text, align: "center", valign: "top",
+      });
+    });
+    pptxFooter(s, ctx);
+  },
+
+  quote(ctx) {
+    const { pptx, C, headingFont, bodyFont, slide, topic } = ctx;
+    const s = pptx.addSlide();
+    pptxBaseBg(s, ctx);
+    // Mega quote mark background
+    s.addText("\u201C", {
+      x: 0.5, y: 0.0, w: 6, h: 5,
+      fontFace: headingFont, fontSize: 400, bold: true, color: C.accent,
+    });
+    s.addText(slide.bullets[0] || `What if ${topic} could change everything?`, {
+      x: 1.5, y: 2.5, w: 10.5, h: 2.5,
+      fontFace: headingFont, fontSize: 36, italic: true, color: C.text, valign: "top",
+    });
+    s.addShape(pptx.ShapeType.rect, {
+      x: 1.5, y: 5.4, w: 0.4, h: 0.04, fill: { color: C.accent2 }, line: { width: 0 },
+    });
+    s.addText(slide.title, {
+      x: 2.0, y: 5.25, w: 8, h: 0.4,
+      fontFace: bodyFont, fontSize: 16, color: C.sub, charSpacing: 3,
+    });
+    pptxFooter(s, ctx);
+  },
+
+  compare(ctx) {
+    const { pptx, C, headingFont, bodyFont, slide } = ctx;
+    const s = pptx.addSlide();
+    pptxBaseBg(s, ctx);
+    s.addText(slide.title, {
+      x: 0.85, y: 0.7, w: 11.5, h: 0.8,
+      fontFace: headingFont, fontSize: 32, bold: true, color: C.text,
+    });
+    // Two columns with vs divider
+    const items = slide.bullets;
+    const half = Math.ceil(items.length / 2);
+    const left = items.slice(0, half);
+    const right = items.slice(half);
+    // Left card
+    s.addShape(pptx.ShapeType.roundRect, {
+      x: 0.85, y: 2.0, w: 5.65, h: 4.5, rectRadius: 0.15,
+      fill: { color: C.accent, transparency: 86 },
+      line: { color: C.accent, width: 1.5, transparency: 50 },
+    });
+    s.addText("BEFORE", {
+      x: 1.05, y: 2.2, w: 5, h: 0.5,
+      fontFace: headingFont, fontSize: 14, bold: true, color: C.accent, charSpacing: 4,
+    });
+    s.addText(left.map(b => ({ text: b, options: { bullet: true, fontSize: 16, color: C.text, paraSpaceAfter: 8 } })), {
+      x: 1.05, y: 2.9, w: 5.25, h: 3.4, fontFace: bodyFont, valign: "top",
+    });
+    // VS divider
+    s.addShape(pptx.ShapeType.ellipse, {
+      x: 6.41, y: 4.05, w: 0.5, h: 0.5,
+      fill: { color: C.accent2 }, line: { width: 0 },
+    });
+    s.addText("VS", {
+      x: 6.41, y: 4.05, w: 0.5, h: 0.5,
+      fontFace: headingFont, fontSize: 12, bold: true,
+      color: C.bg, align: "center", valign: "middle",
+    });
+    // Right card
+    s.addShape(pptx.ShapeType.roundRect, {
+      x: 6.83, y: 2.0, w: 5.65, h: 4.5, rectRadius: 0.15,
+      fill: { color: C.accent2, transparency: 86 },
+      line: { color: C.accent2, width: 1.5, transparency: 50 },
+    });
+    s.addText("AFTER", {
+      x: 7.03, y: 2.2, w: 5, h: 0.5,
+      fontFace: headingFont, fontSize: 14, bold: true, color: C.accent2, charSpacing: 4,
+    });
+    s.addText(right.map(b => ({ text: b, options: { bullet: true, fontSize: 16, color: C.text, paraSpaceAfter: 8 } })), {
+      x: 7.03, y: 2.9, w: 5.25, h: 3.4, fontFace: bodyFont, valign: "top",
+    });
+    pptxFooter(s, ctx);
+  },
+
+  takeaways(ctx) {
+    const { pptx, C, headingFont, bodyFont, slide } = ctx;
+    const s = pptx.addSlide();
+    pptxBaseBg(s, ctx);
+    s.addText("KEY TAKEAWAYS", {
+      x: 0.85, y: 0.7, w: 11.5, h: 0.4,
+      fontFace: headingFont, fontSize: 12, bold: true, color: C.accent, charSpacing: 6,
+    });
+    s.addText(slide.title, {
+      x: 0.85, y: 1.1, w: 11.5, h: 0.8,
+      fontFace: headingFont, fontSize: 32, bold: true, color: C.text,
+    });
+    const items = slide.bullets.slice(0, 4);
+    items.forEach((b, i) => {
+      const y = 2.4 + i * 1.05;
+      s.addShape(pptx.ShapeType.rect, {
+        x: 0.85, y, w: 0.08, h: 0.85, fill: { color: C.accent }, line: { width: 0 },
+      });
+      s.addText(`${i + 1}`, {
+        x: 1.1, y, w: 0.8, h: 0.85,
+        fontFace: headingFont, fontSize: 36, bold: true, color: C.accent2, valign: "middle",
+      });
+      s.addText(b, {
+        x: 2.0, y, w: 10.5, h: 0.85,
+        fontFace: bodyFont, fontSize: 18, color: C.text, valign: "middle",
+      });
+    });
+    pptxFooter(s, ctx);
+  },
+
+  // Fallbacks
+  split(ctx)    { PPTX_RENDERERS.twoCol(ctx); },
+};
 
 // ─────────────────────────────────────────────────────────────────────────
 // HTML web-slides builder
