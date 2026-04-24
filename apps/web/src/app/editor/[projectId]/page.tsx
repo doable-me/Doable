@@ -2711,6 +2711,12 @@ export default function EditorPage() {
                   return { ...m, artifacts: [...existing, artifact] };
                 })
               );
+              // If the artifact is an HTML deck (web slides), surface it in
+              // the right-hand preview pane by pointing the preview iframe
+              // at the artifact URL directly.
+              if (/html/i.test(artifact.mimeType) || /\.html?$/i.test(artifact.fileName)) {
+                setPreviewUrl(artifact.url);
+              }
             },
           },
         );
@@ -3228,6 +3234,12 @@ export default function EditorPage() {
               return { ...m, artifacts: [...existing, artifact] };
             })
           );
+          // If the artifact is an HTML deck (web slides), surface it in
+          // the right-hand preview pane by pointing the preview iframe
+          // at the artifact URL directly.
+          if (/html/i.test(artifact.mimeType) || /\.html?$/i.test(artifact.fileName)) {
+            setPreviewUrl(artifact.url);
+          }
         },
         // displayContent — persist short label in chat history when provided
         // (keeps raw MCP skill instructions out of the stored transcript).
