@@ -15,6 +15,12 @@ interface Props {
    * with) the previous one without an LLM round-trip.
    */
   onResource?: (resource: McpUiResource) => void;
+  /**
+   * Called when the iframe sends a `prompt` action — injects a synthetic user
+   * message into the chat so the AI continues with new context (e.g. picker
+   * choices that feed the AI a skill prompt).
+   */
+  onPrompt?: (text: string) => void;
 }
 
 interface ParentMessage {
@@ -25,6 +31,8 @@ interface ParentMessage {
     url?: string;
     height?: number;
     message?: string;
+    prompt?: string;
+    text?: string;
   };
   // Some MCP App hosts use { method, params } shape; accept both.
   method?: string;
@@ -51,7 +59,7 @@ interface ParentMessage {
  * to keep it dependency-light and to serve as a reference implementation
  * of the spec.
  */
-export function McpUiResourceCard({ resource, projectId, onResource }: Props) {
+export function McpUiResourceCard({ resource, projectId, onResource, onPrompt }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [iframeHeight, setIframeHeight] = useState<number>(280);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -126,6 +134,17 @@ export function McpUiResourceCard({ resource, projectId, onResource }: Props) {
         if (toolName) void handleToolCall(toolName, params);
         return;
       }
+      if (type === "prompt") {
+        // Inject a synthetic user message into the chat so the AI picks it up
+        // and continues from there. Used by MCP App pickers that need the AI
+        // to generate creative content (e.g. presentation builder picker that
+        // hands off skill instructions for HTML/PPTX generation).
+        const text = (payload.prompt as string | undefined)
+          ?? (payload.text as string | undefined)
+          ?? (payload.message as string | undefined);
+        if (text && onPrompt) onPrompt(text);
+        return;
+      }
       if (type === "link") {
         const url = payload.url as string | undefined;
         if (url && (url.startsWith("https://") || url.startsWith("http://"))) {
@@ -142,7 +161,7 @@ export function McpUiResourceCard({ resource, projectId, onResource }: Props) {
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [handleToolCall]);
+  }, [handleToolCall, onPrompt]);
 
   if (!html) {
     return (

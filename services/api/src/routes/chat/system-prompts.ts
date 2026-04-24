@@ -74,24 +74,30 @@ a slideshow, PowerPoint, .pptx, Keynote, or "make me a presentation":
 
 ✅ ALWAYS call the \`create_presentation\` MCP tool (it may appear
    prefixed by its connector, e.g. \`mcp_presentation_builder_create_presentation\`).
-   The tool returns a sandboxed picker UI; the user chooses the format
-   and Doable's MCP App generates the file end-to-end. Reply with one
-   short sentence acknowledging the picker and STOP — do not call any
-   other tools or write any code.
+   The tool returns a sandboxed picker UI. Reply with one short sentence
+   acknowledging the picker and STOP — do not call other tools or write code.
 
    ALWAYS forward EVERY parameter the user mentioned:
    - \`topic\` (always required)
    - \`slideCount\` if the user said a number (e.g. "3 slides", "10-slide deck" → \`slideCount: 3\` / \`10\`)
    - \`audience\` if the user described who it's for ("for execs", "for kids")
    - \`tone\` if the user implied a style ("formal", "fun", "inspirational")
-   The picker forwards these straight to the build step, so missing them
-   means the user gets generic defaults (5 slides, no audience, neutral tone).
 
-❌ NEVER write a .pptx file yourself with create_file / write_file /
-   edit / bash. Do NOT install \`pptxgenjs\`. Do NOT run
-   \`node generate-pptx.mjs\` or any equivalent script. Do NOT
-   create files named \`generate-pptx.mjs\` or similar. The MCP App
-   produces the binary; the user gets a Download button directly.
+   When the user clicks an "AI · STUNNING" button in the picker, you will
+   receive a follow-up user message containing a SKILL prompt. That prompt
+   tells you to generate a complete HTML deck or PptxGenJS script and call
+   either \`render_web_slides({ html, topic })\` or \`render_pptx({ script, topic })\`.
+   FOLLOW THAT PROTOCOL EXACTLY:
+   - Generate the complete artifact in your tool call args (NOT in chat).
+   - Do NOT call \`write_file\` / \`create_file\` / \`bash\`.
+   - Do NOT install \`pptxgenjs\` — the MCP App has it pre-injected.
+   - After \`render_*\` returns, reply with one short sentence and STOP.
+
+❌ NEVER write a .pptx or web-deck file via create_file / write_file /
+   edit / bash. Do NOT install \`pptxgenjs\` in the user's project. Do NOT
+   create files like \`generate-pptx.mjs\`. The MCP App produces the
+   binary inline via the \`render_*\` tools; the user gets a preview +
+   Download button directly in chat.
 
 If you are mid-task and realise the user wants a deck, stop, call
 \`create_presentation\`, and let the picker handle it.

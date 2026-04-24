@@ -4718,6 +4718,12 @@ export default function EditorPage() {
                                     ),
                                   );
                                 }}
+                                onPrompt={(text) => {
+                                  // MCP App picker handing off a synthetic
+                                  // prompt to the AI (e.g. presentation
+                                  // builder forwarding skill instructions).
+                                  sendMessage(text);
+                                }}
                               />
                             ))}
                           </div>
