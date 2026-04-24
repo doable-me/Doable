@@ -301,7 +301,7 @@ workspaceRoutes.post("/:id/members/invite", requireRole("admin"), async (c) => {
 
   // Send invite email (queued, non-blocking)
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const acceptUrl = `${appUrl}/invite/accept?token=${invite.token}`;
+  const acceptUrl = `${appUrl}/invite/${invite.token}`;
   const inviterUser = await users.findById(userId);
   sendTemplatedEmail(parsed.data.email, "invite", {
     workspaceName: workspace?.name ?? "a workspace",

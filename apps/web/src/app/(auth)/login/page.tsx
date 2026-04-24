@@ -23,13 +23,20 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const { login, isAuthenticated, isLoading: authLoading } = useAuth();
 
-  // Redirect to dashboard if already signed in (forward prompt if present)
+  // Redirect after sign-in (honor returnTo, fall back to dashboard).
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      const urlPrompt = new URLSearchParams(window.location.search).get("prompt");
-      const target = urlPrompt
-        ? `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`
-        : "/dashboard";
+      const params = new URLSearchParams(window.location.search);
+      const returnTo = params.get("returnTo");
+      const urlPrompt = params.get("prompt");
+      let target: string;
+      if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+        target = returnTo;
+      } else if (urlPrompt) {
+        target = `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`;
+      } else {
+        target = "/dashboard";
+      }
       router.replace(target);
     }
   }, [authLoading, isAuthenticated, router]);
@@ -79,11 +86,18 @@ export default function LoginPage() {
 
     try {
       await login({ email, password });
-      const urlPrompt = new URLSearchParams(window.location.search).get("prompt");
-      const dashboardUrl = urlPrompt
-        ? `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`
-        : "/dashboard";
-      router.push(dashboardUrl);
+      const params = new URLSearchParams(window.location.search);
+      const returnTo = params.get("returnTo");
+      const urlPrompt = params.get("prompt");
+      let target: string;
+      if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+        target = returnTo;
+      } else if (urlPrompt) {
+        target = `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`;
+      } else {
+        target = "/dashboard";
+      }
+      router.push(target);
     } catch (err: unknown) {
       if (err && typeof err === "object" && "body" in err) {
         const apiErr = err as { body: { error: string } };

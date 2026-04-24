@@ -246,18 +246,27 @@ export function workspaceQueries(sql: postgres.Sql) {
       // Check if expired
       if (new Date(invite.expires_at) < new Date()) return null;
 
-      // Check if already accepted
-      if (invite.accepted_at) return null;
+      // Shareable invite-links (email === '__invite_link__') are reusable by
+      // multiple users and never get marked accepted. Per-email invites are
+      // single-use and rejected once already accepted.
+      const isLinkInvite = invite.email === "__invite_link__";
+      if (!isLinkInvite && invite.accepted_at) return null;
 
-      // Mark invite as accepted
-      const [updatedInvite] = await sql<WorkspaceInviteRow[]>`
-        UPDATE workspace_invites
-        SET accepted_at = now()
-        WHERE id = ${invite.id}
-        RETURNING *
-      `;
+      // Mark per-email invite as accepted (skip for shareable links so they
+      // remain valid for additional invitees).
+      let updatedInvite = invite;
+      if (!isLinkInvite) {
+        const [row] = await sql<WorkspaceInviteRow[]>`
+          UPDATE workspace_invites
+          SET accepted_at = now()
+          WHERE id = ${invite.id}
+          RETURNING *
+        `;
+        updatedInvite = row!;
+      }
 
-      // Add user as workspace member
+      // addMember is an upsert (ON CONFLICT DO UPDATE), so this safely handles
+      // a user accepting an invite for a workspace they are already in.
       const member = await this.addMember(
         invite.workspace_id,
         userId,
@@ -265,7 +274,7 @@ export function workspaceQueries(sql: postgres.Sql) {
         invite.invited_by
       );
 
-      return { invite: updatedInvite!, member };
+      return { invite: updatedInvite, member };
     },
 
     async listInvites(workspaceId: string): Promise<WorkspaceInviteRow[]> {
