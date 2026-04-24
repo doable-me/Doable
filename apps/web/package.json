@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@doable/shared": "workspace:*",
+    "@mcp-ui/client": "^7.0.0",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-slot": "^1.1.1",
     "@tanstack/react-virtual": "^3.13.23",

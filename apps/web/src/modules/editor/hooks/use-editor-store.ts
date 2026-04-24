@@ -5,58 +5,23 @@ import { persist } from "zustand/middleware";
 import type { Plan, PlanStep, ClarificationQuestion, PlanPhase } from "@doable/shared/types/ai";
 import type { AgentProgressState, AgentTimelineEvent } from "./use-agent-progress";
 
-// ─── MCP UI Widget Types ─────────────────────────────────────
-export type McpUiType = "table" | "form" | "confirm" | "select" | "download";
-
-export interface McpUiColumn {
-  key: string;
-  label: string;
-  type?: "text" | "number" | "boolean" | "date" | "badge";
-}
-
-export interface McpUiAction {
-  id: string;
-  label: string;
-  variant?: "default" | "destructive" | "outline";
-  requiresSelection?: boolean;
-}
-
-export interface McpUiFormField {
-  key: string;
-  label: string;
-  type: "text" | "textarea" | "number" | "select" | "boolean";
-  placeholder?: string;
-  required?: boolean;
-  options?: Array<{ value: string; label: string }>;
-  defaultValue?: unknown;
-}
-
-export interface McpUiSelectOption {
-  value: string;
-  label: string;
-  description?: string;
-}
-
-export interface McpUiWidget {
+// ─── MCP-Apps UI Resource ─────────────────────────────────────
+// A standards-compliant MCP App UI resource (mcpui.dev /
+// modelcontextprotocol.io/extensions/apps). The host renders this in a
+// sandboxed iframe via @mcp-ui/client's <UIResourceRenderer />. The host
+// is generic — it knows nothing about the specific server or tool.
+export interface McpUiResource {
   toolCallId: string;
   connectorId: string;
   toolName: string;
-  uiType: McpUiType;
-  title: string;
-  schema: {
-    columns?: McpUiColumn[];
-    fields?: McpUiFormField[];
-    options?: McpUiSelectOption[];
-    actions?: McpUiAction[];
-    message?: string;
-    /** download widget: */
-    fileName?: string;
-    url?: string;
-    sizeBytes?: number;
-    mimeType?: string;
+  resource: {
+    uri: string;
+    mimeType: string;
+    text?: string;
+    blob?: string;
+    [k: string]: unknown;
   };
-  state: Record<string, unknown>;
-  /** closed widgets stay in history but no longer render interactively */
+  /** closed resources stay in history but stop rendering interactively */
   closed?: boolean;
 }
 
@@ -138,7 +103,7 @@ export interface ChatMessage {
     answer?: string;
   };
   /** Interactive MCP widgets attached to this assistant message, keyed by toolCallId. */
-  mcpWidgets?: Record<string, McpUiWidget>;
+  mcpResources?: Record<string, McpUiResource>;
 }
 
 export type EditorMode = "agent" | "plan";

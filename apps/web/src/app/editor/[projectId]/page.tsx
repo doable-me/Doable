@@ -119,8 +119,8 @@ import { VisualEditToolbar } from "@/modules/editor/visual-edit/visual-edit-tool
 import type { ClarificationQuestion, Plan } from "@doable/shared/types/ai";
 import { ClarificationFlow, PlanCard, PlanProgress } from "@/modules/editor/chat/plan";
 import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
-import { McpWidgetRenderer } from "@/modules/editor/chat/mcp-widgets/mcp-widget-renderer";
-import { useEditorStore, type McpUiWidget } from "@/modules/editor/hooks/use-editor-store";
+import { useEditorStore, type McpUiResource } from "@/modules/editor/hooks/use-editor-store";
+import { McpUiResourceCard } from "@/modules/editor/chat/mcp-ui-resource";
 
 // ─── Dynamically import Monaco (browser-only) ───────────────
 const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
@@ -184,7 +184,7 @@ interface ChatMsg {
   thinkingContent?: string;
   senderInfo?: { userId: string; displayName: string; color: string; isRemote: boolean };
   liveStatus?: string;
-  mcpWidgets?: Record<string, McpUiWidget>;
+  mcpResources?: Record<string, McpUiResource>;
 }
 
 type TaskCardTab = "details" | "preview";
@@ -402,7 +402,7 @@ async function streamChat(
   onPlan?: (plan: Plan) => void,
   onPlanStepUpdate?: (stepId: string, status: string) => void,
   onProvisionSupabase?: (req: { name: string; reason: string }) => void,
-  onMcpUiOpen?: (widget: McpUiWidget) => void,
+  onMcpUiResource?: (resource: McpUiResource) => void,
   displayContent?: string,
 ) {
   let currentToken = getStoredTokens().accessToken;
@@ -652,18 +652,21 @@ async function streamChat(
             onProvisionSupabase({ name, reason });
           }
 
-          // MCP interactive UI widget — surface the picker to the user
-          if (parsed.type === "mcp_ui_open" && onMcpUiOpen) {
+          // MCP-Apps UI resource — surface a sandboxed iframe to the user
+          if (parsed.type === "mcp_ui_resource" && onMcpUiResource) {
             const d = parsed.data as Record<string, unknown> | undefined;
-            if (d && typeof d.toolCallId === "string" && typeof d.uiType === "string") {
-              onMcpUiOpen({
+            const r = d?.resource as { uri?: string; mimeType?: string; text?: string; blob?: string } | undefined;
+            if (d && typeof d.toolCallId === "string" && r?.uri && r?.mimeType) {
+              onMcpUiResource({
                 toolCallId: d.toolCallId as string,
                 connectorId: (d.connectorId as string) ?? "",
                 toolName: (d.toolName as string) ?? "",
-                uiType: d.uiType as McpUiWidget["uiType"],
-                title: (d.title as string) ?? (d.toolName as string) ?? "Tool UI",
-                schema: (d.schema as McpUiWidget["schema"]) ?? {},
-                state: (d.state as Record<string, unknown>) ?? {},
+                resource: {
+                  uri: r.uri,
+                  mimeType: r.mimeType,
+                  text: r.text,
+                  blob: r.blob,
+                },
                 closed: false,
               });
             }
@@ -773,7 +776,7 @@ interface BridgeCallbacks {
   onPlan?: (plan: Plan) => void;
   onPlanStepUpdate?: (stepId: string, status: string) => void;
   onProvisionSupabase?: (req: { name: string; reason: string }) => void;
-  onMcpUiOpen?: (widget: McpUiWidget) => void;
+  onMcpUiResource?: (resource: McpUiResource) => void;
 }
 
 function processOneSSEPayload(
@@ -860,17 +863,20 @@ function processOneSSEPayload(
       cb.onProvisionSupabase({ name, reason });
     }
 
-    if (parsed.type === "mcp_ui_open" && cb.onMcpUiOpen) {
+    if (parsed.type === "mcp_ui_resource" && cb.onMcpUiResource) {
       const d = parsed.data as Record<string, unknown> | undefined;
-      if (d && typeof d.toolCallId === "string" && typeof d.uiType === "string") {
-        cb.onMcpUiOpen({
+      const r = d?.resource as { uri?: string; mimeType?: string; text?: string; blob?: string } | undefined;
+      if (d && typeof d.toolCallId === "string" && r?.uri && r?.mimeType) {
+        cb.onMcpUiResource({
           toolCallId: d.toolCallId as string,
           connectorId: (d.connectorId as string) ?? "",
           toolName: (d.toolName as string) ?? "",
-          uiType: d.uiType as McpUiWidget["uiType"],
-          title: (d.title as string) ?? (d.toolName as string) ?? "Tool UI",
-          schema: (d.schema as McpUiWidget["schema"]) ?? {},
-          state: (d.state as Record<string, unknown>) ?? {},
+          resource: {
+            uri: r.uri,
+            mimeType: r.mimeType,
+            text: r.text,
+            blob: r.blob,
+          },
           closed: false,
         });
       }
@@ -2625,11 +2631,11 @@ export default function EditorPage() {
             onProvisionSupabase: (req) => {
               setSupabaseProvisionRequest(req);
             },
-            onMcpUiOpen: (widget) => {
+            onMcpUiResource: (resource) => {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId
-                    ? { ...m, mcpWidgets: { ...(m.mcpWidgets ?? {}), [widget.toolCallId]: widget } }
+                    ? { ...m, mcpResources: { ...(m.mcpResources ?? {}), [resource.toolCallId]: resource } }
                     : m
                 )
               );
@@ -3130,12 +3136,12 @@ export default function EditorPage() {
         (req) => {
           setSupabaseProvisionRequest(req);
         },
-        // onMcpUiOpen — MCP interactive widget (e.g. presentation format picker)
-        (widget) => {
+        // onMcpUiResource — MCP-Apps UI resource (sandboxed iframe)
+        (resource) => {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
-                ? { ...m, mcpWidgets: { ...(m.mcpWidgets ?? {}), [widget.toolCallId]: widget } }
+                ? { ...m, mcpResources: { ...(m.mcpResources ?? {}), [resource.toolCallId]: resource } }
                 : m
             )
           );
@@ -3148,50 +3154,11 @@ export default function EditorPage() {
     [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, handleToolStarted, loadFileTree, selectedFile, loadFileContent, previewUrl, selectedModelId, selectedProviderId, selectedCopilotAccountId]
   );
 
-  // ─── Listen for MCP widget auto-continue events ───────────
-  // When the user picks an option in an MCP interactive widget, the widget
-  // dispatches `doable:mcp-continue` so we can resume the chat automatically
-  // (otherwise the LLM has no memory of the selection and will just re-ask).
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ prompt?: string; display?: string }>).detail;
-      const prompt = detail?.prompt;
-      if (prompt) sendMessage(prompt, undefined, undefined, detail?.display);
-    };
-    window.addEventListener("doable:mcp-continue", handler);
-    return () => window.removeEventListener("doable:mcp-continue", handler);
-  }, [sendMessage]);
-
-  // ─── Listen for MCP widget injection (e.g. download card) ──
-  // When an MCP picker action resolves into a server-built artifact (PPTX,
-  // PDF, …) the API returns a download widget. The select widget dispatches
-  // `doable:mcp-add-widget` so we can render it inline without an LLM round.
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ widget?: McpUiWidget }>).detail;
-      const widget = detail?.widget;
-      if (!widget?.toolCallId || !widget?.uiType) return;
-      setMessages((prev) => {
-        // Append to the most recent assistant message; if none, attach to last.
-        const idx = [...prev].reverse().findIndex((m) => m.role === "assistant");
-        if (idx === -1) return prev;
-        const realIdx = prev.length - 1 - idx;
-        return prev.map((m, i) =>
-          i === realIdx
-            ? {
-                ...m,
-                mcpWidgets: {
-                  ...(m.mcpWidgets ?? {}),
-                  [widget.toolCallId]: widget,
-                },
-              }
-            : m,
-        );
-      });
-    };
-    window.addEventListener("doable:mcp-add-widget", handler);
-    return () => window.removeEventListener("doable:mcp-add-widget", handler);
-  }, []);
+  // ─── MCP-Apps note ────────────────────────────────────────
+  // Tool calls and follow-up resources are handled inside the iframe via
+  // the @mcp-ui/client UIResourceRenderer onUIAction callback, which calls
+  // the host's generic /chat/mcp-call endpoint. The host needs no custom
+  // event bus or per-tool routing.
 
   // Send message handler (from input)
   const handleSend = useCallback(() => {
@@ -4728,14 +4695,29 @@ export default function EditorPage() {
                           </div>
                         )}
 
-                        {/* ── MCP interactive widgets (e.g. presentation format picker) ── */}
-                        {msg.mcpWidgets && Object.values(msg.mcpWidgets).length > 0 && (
+                        {/* ── MCP-Apps interactive UI resources (sandboxed iframes) ── */}
+                        {msg.mcpResources && Object.values(msg.mcpResources).length > 0 && resolvedProjectId && (
                           <div className="mt-2 space-y-1">
-                            {Object.values(msg.mcpWidgets).map((widget) => (
-                              <McpWidgetRenderer
-                                key={widget.toolCallId}
-                                widget={widget}
-                                messageId={msg.id}
+                            {Object.values(msg.mcpResources).map((res) => (
+                              <McpUiResourceCard
+                                key={res.toolCallId}
+                                resource={res}
+                                projectId={resolvedProjectId}
+                                onResource={(newRes) => {
+                                  setMessages((prev) =>
+                                    prev.map((m) =>
+                                      m.id === msg.id
+                                        ? {
+                                            ...m,
+                                            mcpResources: {
+                                              ...(m.mcpResources ?? {}),
+                                              [newRes.toolCallId]: newRes,
+                                            },
+                                          }
+                                        : m,
+                                    ),
+                                  );
+                                }}
                               />
                             ))}
                           </div>

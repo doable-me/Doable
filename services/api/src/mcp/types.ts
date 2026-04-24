@@ -96,76 +96,16 @@ export interface ResolvedMcpTool {
   tool: McpToolDefinition;
 }
 
-// ─── MCP Interactive UI Contract ─────────────────────────────────────────────
-
-/** Supported widget types that Doable can render */
-export type McpUiType = "table" | "form" | "confirm" | "select";
-
-/** A column definition for the table widget */
-export interface McpUiColumn {
-  key: string;
-  label: string;
-  type?: "text" | "number" | "boolean" | "date" | "badge";
-}
-
-/** An action button that can appear in a widget */
-export interface McpUiAction {
-  id: string;
-  label: string;
-  variant?: "default" | "destructive" | "outline";
-  /** If true, action applies to selected rows (table widget) */
-  requiresSelection?: boolean;
-}
-
-/** A field definition for the form widget */
-export interface McpUiFormField {
-  key: string;
-  label: string;
-  type: "text" | "textarea" | "number" | "select" | "boolean";
-  placeholder?: string;
-  required?: boolean;
-  options?: Array<{ value: string; label: string }>;
-  defaultValue?: unknown;
-}
-
-/** Schema for a select widget */
-export interface McpUiSelectOption {
-  value: string;
-  label: string;
-  description?: string;
-}
-
-/** The structured UI payload an MCP tool can return inside its result */
-export interface McpUiPayload {
-  uiType: McpUiType;
-  /** Unique identifier matching the originating tool call */
-  toolCallId: string;
-  /** Connector that owns this widget */
-  connectorId: string;
-  /** Human-readable widget title */
-  title: string;
-  /** Schema describes the structure of the widget */
-  schema: {
-    columns?: McpUiColumn[];
-    fields?: McpUiFormField[];
-    options?: McpUiSelectOption[];
-    actions?: McpUiAction[];
-    /** Confirm-specific prompt message */
-    message?: string;
-  };
-  /** Initial data / state of the widget */
-  state: Record<string, unknown>;
-}
+// ─── MCP Tool Result Envelope ────────────────────────────────────────────────
 
 /**
- * Envelope returned by the MCP tool handler when a UI payload is present.
- * The text `result` is still included so the AI can narrate it.
- * The `__ui` field is intercepted by tool-callbacks and emitted as an SSE event.
+ * Envelope returned by the MCP tool handler. The host streams `result` to the
+ * model and emits any `ui://` resources from the underlying MCP content array
+ * as `mcp_ui_resource` SSE events (see tool-bridge.ts → tool-callbacks.ts).
  */
 export interface McpToolEnvelope {
   success: boolean;
   result?: string;
   error?: string;
-  __ui?: McpUiPayload;
   _mcpTrace?: unknown;
 }

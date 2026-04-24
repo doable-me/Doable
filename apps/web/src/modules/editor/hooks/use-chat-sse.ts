@@ -337,89 +337,37 @@ export function dispatchSSEEvent(
     };
   }
 
-  if (parsed.type === "mcp_ui_open") {
-    const d = parsed.data;
-    // eslint-disable-next-line no-console
-    console.warn("[MCP-UI] mcp_ui_open received", { assistantId: ctx.assistantId, data: d });
-    if (d?.toolCallId && d?.uiType) {
+  // ─── MCP-Apps UI resource (standards-compliant) ──────────
+  // Server returned a `{type:'resource', resource:{uri:'ui://…',mimeType,text|blob}}`
+  // content item. We attach it to the assistant message; the chat renderer
+  // mounts it inside a sandboxed iframe via @mcp-ui/client.
+  if (parsed.type === "mcp_ui_resource") {
+    const d = parsed.data as {
+      toolCallId?: string;
+      connectorId?: string;
+      toolName?: string;
+      resource?: { uri?: string; mimeType?: string; text?: string; blob?: string };
+    };
+    if (d?.toolCallId && d?.resource?.uri && d?.resource?.mimeType) {
       const current = useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId);
-      const existing = current?.mcpWidgets ?? {};
+      const existing = current?.mcpResources ?? {};
       ctx.updateMessageFields(ctx.assistantId, {
-        mcpWidgets: {
+        mcpResources: {
           ...existing,
           [d.toolCallId]: {
             toolCallId: d.toolCallId,
             connectorId: d.connectorId ?? "",
             toolName: d.toolName ?? "",
-            uiType: d.uiType,
-            title: d.title ?? d.toolName ?? "Tool UI",
-            schema: d.schema ?? {},
-            state: d.state ?? {},
+            resource: {
+              uri: d.resource.uri,
+              mimeType: d.resource.mimeType,
+              text: d.resource.text,
+              blob: d.resource.blob,
+            },
             closed: false,
           },
         },
       });
-    }
-    return {};
-  }
-
-  if (parsed.type === "mcp_ui_update") {
-    const d = parsed.data;
-    if (d?.toolCallId) {
-      const current = useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId);
-      const existing = current?.mcpWidgets ?? {};
-      const widget = existing[d.toolCallId];
-      if (widget) {
-        ctx.updateMessageFields(ctx.assistantId, {
-          mcpWidgets: {
-            ...existing,
-            [d.toolCallId]: {
-              ...widget,
-              state: d.state ?? widget.state,
-              schema: d.schema ?? widget.schema,
-            },
-          },
-        });
-      }
-    }
-    return {};
-  }
-
-  if (parsed.type === "mcp_ui_close") {
-    const d = parsed.data;
-    if (d?.toolCallId) {
-      const current = useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId);
-      const existing = current?.mcpWidgets ?? {};
-      const widget = existing[d.toolCallId];
-      if (widget) {
-        ctx.updateMessageFields(ctx.assistantId, {
-          mcpWidgets: {
-            ...existing,
-            [d.toolCallId]: { ...widget, closed: true },
-          },
-        });
-      }
-    }
-    return {};
-  }
-
-  if (parsed.type === "mcp_ui_error") {
-    const d = parsed.data;
-    if (d?.toolCallId) {
-      const current = useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId);
-      const existing = current?.mcpWidgets ?? {};
-      const widget = existing[d.toolCallId];
-      if (widget) {
-        ctx.updateMessageFields(ctx.assistantId, {
-          mcpWidgets: {
-            ...existing,
-            [d.toolCallId]: {
-              ...widget,
-              state: { ...widget.state, __error: d.message ?? "An error occurred" },
-            },
-          },
-        });
-      }
     }
     return {};
   }

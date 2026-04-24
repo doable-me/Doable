@@ -6,7 +6,7 @@ import type { SSEStreamingApi } from "hono/streaming";
 import type { ChatStreamState } from "./types.js";
 import type { TraceCollector } from "../../ai/trace-collector.js";
 import { sql } from "../../db/index.js";
-import { pendingUiPayloads } from "../../mcp/tool-bridge.js";
+import { pendingUiResources } from "../../mcp/tool-bridge.js";
 
 function dlog(msg: string) {
   if (!process.env.MCP_DEBUG) return;
@@ -179,32 +179,30 @@ export function createToolProgressCallbacks(
         } catch { /* non-critical */ }
       }
       {
-        // Drain any pending __ui payloads pushed by tool-bridge during
-        // this tool call. We use a side-channel queue because the Copilot
-        // SDK double-encodes our handler return value into `textResultForLlm`,
-        // making in-band __ui extraction unreliable.
-        const uiPayload = pendingUiPayloads.shift() as Record<string, unknown> | undefined;
-        dlog(`mcp_ui_open check tool=${toolName} hasUi=${!!uiPayload} uiType=${uiPayload?.uiType ?? "n/a"} queueLen=${pendingUiPayloads.length}`);
-        if (uiPayload && uiPayload.uiType) {
-          const emittedToolCallId = (uiPayload.toolCallId as string) || `tc_${toolName}_${Date.now()}`;
+        // Drain MCP-Apps UI resources queued by tool-bridge during this call.
+        // The host emits each as a `mcp_ui_resource` SSE event; the web client
+        // renders them in a sandboxed iframe via @mcp-ui/client's
+        // <UIResourceRenderer />. The toolCallId is sourced from the Copilot
+        // SDK event context (toolName here) so the iframe can be associated
+        // back to the assistant message.
+        while (pendingUiResources.length > 0) {
+          const item = pendingUiResources.shift();
+          if (!item) break;
+          const emittedToolCallId = `tc_${toolName}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
           const sseData = JSON.stringify({
-            type: "mcp_ui_open",
+            type: "mcp_ui_resource",
             data: {
               toolCallId: emittedToolCallId,
-              connectorId: uiPayload.connectorId,
+              connectorId: item.connectorId,
               toolName,
-              title: uiPayload.title,
-              uiType: uiPayload.uiType,
-              schema: uiPayload.schema ?? {},
-              state: uiPayload.state ?? {},
+              resource: item.resource,
             },
           });
-          dlog(`mcp_ui_open EMITTING SSE event toolCallId=${emittedToolCallId} bytes=${sseData.length}`);
-          // Signal to stream-recovery that we're waiting for user input — do NOT auto-continue.
+          dlog(`mcp_ui_resource EMITTING SSE uri=${item.resource.uri} bytes=${sseData.length}`);
           state.awaitingMcpWidget = true;
           stream.writeSSE({ data: sseData })
-            .then(() => dlog(`mcp_ui_open SSE write OK`))
-            .catch((e) => dlog(`mcp_ui_open SSE write FAILED: ${(e as Error).message}`));
+            .then(() => dlog(`mcp_ui_resource SSE write OK`))
+            .catch((e) => dlog(`mcp_ui_resource SSE write FAILED: ${(e as Error).message}`));
         }
       }
     },

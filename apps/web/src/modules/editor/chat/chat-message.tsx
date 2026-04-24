@@ -13,7 +13,7 @@ import { TokenCounter } from "./token-counter";
 import { apiFetch } from "@/lib/api";
 import { ToolCallCard } from "./tool-call-card";
 import { ErrorRecoveryCard } from "./error-recovery-card";
-import { McpWidgetRenderer } from "./mcp-widgets/mcp-widget-renderer";
+import { McpUiResourceCard } from "./mcp-ui-resource";
 import { renderMarkdown, CodeBlockCopyButton, ToolActivitySummary } from "./chat-message-helpers";
 import type { AgentPhase, AgentProgressState } from "../hooks/use-agent-progress";
 import { PHASE_LABELS } from "../hooks/use-agent-progress";
@@ -444,11 +444,23 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
           />
         )}
 
-        {/* MCP interactive UI widgets — rendered inline below assistant text */}
-        {!isUser && message.mcpWidgets && Object.values(message.mcpWidgets).length > 0 && (
+        {/* MCP-Apps interactive UI resources — sandboxed iframes */}
+        {!isUser && projectId && message.mcpResources && Object.values(message.mcpResources).length > 0 && (
           <div className="space-y-1">
-            {Object.values(message.mcpWidgets).map((widget) => (
-              <McpWidgetRenderer key={widget.toolCallId} widget={widget} messageId={message.id} />
+            {Object.values(message.mcpResources).map((res) => (
+              <McpUiResourceCard
+                key={res.toolCallId}
+                resource={res}
+                projectId={projectId}
+                onResource={(newRes) => {
+                  updateMessageFields(message.id, {
+                    mcpResources: {
+                      ...(message.mcpResources ?? {}),
+                      [newRes.toolCallId]: newRes,
+                    },
+                  });
+                }}
+              />
             ))}
           </div>
         )}

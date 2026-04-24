@@ -72,15 +72,18 @@ The project is a Vite + React 19 + TypeScript app with Tailwind CSS v4 (using th
 For ANY request that mentions slides, a deck, a pitch, a presentation,
 a slideshow, PowerPoint, .pptx, Keynote, or "make me a presentation":
 
-✅ ALWAYS call the \`create_presentation\` MCP tool. The user picks
-   the format from a card in chat; Doable then produces the artifact
-   server-side and shows a download button.
+✅ ALWAYS call the \`create_presentation\` MCP tool (it may appear
+   prefixed by its connector, e.g. \`mcp_presentation_builder_create_presentation\`).
+   The tool returns a sandboxed picker UI; the user chooses the format
+   and Doable's MCP App generates the file end-to-end. Reply with one
+   short sentence acknowledging the picker and STOP — do not call any
+   other tools or write any code.
 
 ❌ NEVER write a .pptx file yourself with create_file / write_file /
    edit / bash. Do NOT install \`pptxgenjs\`. Do NOT run
    \`node generate-pptx.mjs\` or any equivalent script. Do NOT
-   create files named \`generate-pptx.mjs\` or similar. Doing so
-   bypasses the picker and leaves the user with no download link.
+   create files named \`generate-pptx.mjs\` or similar. The MCP App
+   produces the binary; the user gets a Download button directly.
 
 If you are mid-task and realise the user wants a deck, stop, call
 \`create_presentation\`, and let the picker handle it.

@@ -1,79 +1,141 @@
-# Presentation Builder MCP
+# presentation-builder — an MCP App example for Doable
 
-An MCP server that adds a "presentation/report" capability to Doable's chat. When the user asks for slides, a deck, a pitch, or a report, the LLM calls this server, which renders an **interactive select widget** in the chat (powered by Doable's MCP UI protocol). The user picks one of two output formats — and the server returns the matching skill instructions so the LLM produces the final artifact.
+A complete, decoupled example of an **MCP App** (per
+[modelcontextprotocol.io/extensions/apps](https://modelcontextprotocol.io/extensions/apps/overview)
+and [mcpui.dev](https://mcpui.dev)) that plugs into Doable — or any other
+MCP Apps host — without any host-side code changes.
+
+```
+┌─────────────────────┐                      ┌──────────────────────┐
+│  Doable host        │  stdio / streamable  │  presentation-       │
+│  (chat + iframe)    │ ◄──── MCP ────►      │  builder MCP server  │
+│                     │                      │  (this folder)       │
+└─────────────────────┘                      └──────────────────────┘
+        │                                              │
+        │  tool result includes a UI resource          │
+        │  ({type:'resource', resource:{uri:'ui://…',  │
+        │   mimeType:'text/html', text:'<html>…'}})    │
+        ▼                                              │
+   sandboxed iframe rendered inline in chat            │
+   (via @mcp-ui/client UIResourceRenderer)             │
+        │                                              │
+        │  user clicks PowerPoint                      │
+        │  iframe → window.parent.postMessage(         │
+        │    {type:'tool', payload:{toolName:          │
+        │     'build_presentation', params:{…}}})      │
+        ▼                                              │
+   host POSTs /chat/mcp-call ──────────────────────► tools/call build_presentation
+                                                       │
+                                                       │  PptxGenJS builds .pptx in-process
+                                                       │  Returns a NEW UIResource (download card)
+                                                       │  with the bytes embedded as a data URL
+                                                       ▼
+                                               iframe re-renders → user clicks Download
+```
+
+---
 
 ## Tools exposed
 
 | Tool | Purpose |
 |------|---------|
-| `create_presentation(topic, slideCount?, audience?, tone?)` | Returns a `__ui` select widget with two options: **Web Slides (HTML)** or **PowerPoint (.pptx)**. |
-| `ui_action(toolCallId, action, payload)` | Callback invoked by Doable when the user picks a choice. Returns the SKILL.md content for the chosen format so the LLM can generate the artifact. |
+| `create_presentation({ topic, slideCount?, audience?, tone? })` | Returns a UI resource (`ui://presentation-builder/picker/…`) showing a 2-button picker (PowerPoint / Web Slides). |
+| `build_presentation({ topic, format, slideCount?, audience?, tone? })` | Generates the artifact. For `format:"pptx"` returns a UI resource (`ui://presentation-builder/download/…`) containing a Download button with the .pptx bytes embedded as a base64 data URL. |
 
-## Install
+Both tools return both:
+1. A `UIResource` content item (rendered as a sandboxed iframe by the host).
+2. A short `text` content item that tells the LLM what to do next (e.g.,
+   "wait for the user", "presentation is ready, acknowledge briefly").
 
-```powershell
+The LLM never reads HTML. The host never knows what tools exist.
+The MCP server is the single source of truth.
+
+---
+
+## Why this is decoupled
+
+This server uses **only** standard MCP + the MCP Apps spec. It contains:
+
+- ✅ Standard `tools/list` and `tools/call` handlers (`@modelcontextprotocol/sdk`).
+- ✅ Standard UI resources via `createUIResource()` from `@mcp-ui/server`.
+- ✅ Self-contained HTML that uses `window.parent.postMessage()` per the
+   MCP Apps wire format.
+- ❌ No Doable-specific JSON envelopes.
+- ❌ No Doable-specific tool names or routing.
+- ❌ No host filesystem access.
+- ❌ No `_meta` extensions specific to Doable.
+
+This means **the same server runs unchanged on any MCP Apps host**:
+Claude Desktop, Goose, LibreChat, Postman, ui-inspector, MCPJam,
+or your own host built on `@mcp-ui/client`.
+
+---
+
+## Running locally
+
+```bash
 cd mcp-servers/presentation-builder
 pnpm install
-# or: npm install
+node index.mjs            # talks MCP over stdio
 ```
 
-## Add to Doable
+Inspect with `npx @modelcontextprotocol/inspector node index.mjs` or
+[`ui-inspector`](https://github.com/idosal/ui-inspector).
 
-Open Doable → **Settings → MCP Connectors → Add Server** and fill in:
+---
 
-- **Name:** `Presentation Builder`
-- **Transport:** `stdio`
-- **Command:** `node`
-- **Args:** `["<absolute-path-to-repo>/mcp-servers/presentation-builder/index.mjs"]`
-- **Scope:** `workspace`
+## Connecting to Doable
 
-Save. Then in any project chat, type something like:
+In Doable, add a connector with:
 
-> *"Make me a presentation on the history of coffee"*
+| Field | Value |
+|-------|-------|
+| Transport | `stdio` |
+| Command | `node` |
+| Args | `["/abs/path/to/mcp-servers/presentation-builder/index.mjs"]` |
+| Scope | `workspace` (or `user`) |
 
-The LLM will call `create_presentation`, a picker appears inline, and whichever option you click drives the final output.
+That's it. Doable's chat will list `create_presentation` (prefixed
+`mcp_presentation_builder_create_presentation`) and route the rest
+through the standard MCP Apps flow.
 
-## How the flow works
+---
 
-```
-User prompt ─▶ LLM calls create_presentation(topic="coffee")
-               │
-               ▼
-          MCP server returns `__ui` select payload
-               │
-               ▼
-     Doable emits mcp_ui_open SSE event
-               │
-               ▼
-       Select widget renders in chat
-               │
-     ┌─────────┴─────────┐
-User clicks              User clicks
-"Web Slides"             "PPTX"
-     │                      │
-     ▼                      ▼
-POST /chat/mcp-action   POST /chat/mcp-action
-     │                      │
-     ▼                      ▼
-MCP `ui_action` tool    MCP `ui_action` tool
-returns web-slides      returns pptx SKILL.md
-SKILL.md content        content
-     │                      │
-     ▼                      ▼
-LLM generates           LLM generates
-single-file HTML        PptxGenJS code
-```
+## Building your own MCP App for Doable
 
-## Environment
+Use this server as a template:
 
-| Var | Purpose |
-|-----|---------|
-| `SKILLS_DIR` | (optional) Override the path to `my_skills/`. Default: auto-detected by walking up from this file. |
+1. **Stick to the spec.** Return UI resources via `createUIResource`
+   (`@mcp-ui/server`). Do **not** invent your own JSON envelopes — the
+   host will not understand them.
+2. **Self-contained HTML.** Inline CSS + JS. The iframe is sandboxed; it
+   cannot reach back into the host page. Use `window.parent.postMessage`
+   for any callback.
+3. **Two-tool pattern.** A primary tool returns the picker UI resource;
+   secondary tool(s) do the actual work and return a result UI resource
+   (e.g., a download card, a summary, a chart). The iframe drives the
+   second call via a `{type:'tool', payload:{toolName, params}}` message.
+4. **Always include a small text item alongside the UI** so the LLM has a
+   sensible thing to do next ("Acknowledge and stop", "User must pick…",
+   "Artifact ready, stop calling tools.").
+5. **Embed binaries as data URLs** inside the download UI when possible
+   — the user gets a one-click download with no host-side endpoint
+   needed.
+6. **Test in any MCP Apps host first** (`ui-inspector` is great) before
+   plugging into Doable, to prove the decoupling.
 
-## Local testing
+The host (Doable) provides a generic `POST /projects/:id/chat/mcp-call`
+proxy that any iframe can hit via the standard MCP Apps `tool` action —
+nothing special about presentations.
 
-You can test the server by piping MCP JSON-RPC over stdio:
+---
 
-```powershell
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node index.mjs
-```
+## Files
+
+- [`index.mjs`](./index.mjs) — MCP server, two tool handlers, picker + download HTML.
+- [`presentation-engine.mjs`](./presentation-engine.mjs) — PptxGenJS deck builder (no LLM, deterministic template).
+- [`package.json`](./package.json) — deps: `@modelcontextprotocol/sdk`, `@mcp-ui/server`, `pptxgenjs`.
+
+---
+
+License: same as Doable.

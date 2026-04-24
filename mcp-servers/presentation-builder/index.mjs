@@ -1,20 +1,26 @@
 #!/usr/bin/env node
 /**
- * Presentation Builder MCP Server
- * --------------------------------
- * Exposes two tools for Doable's chat:
+ * Presentation Builder — an MCP App example for Doable.
+ * --------------------------------------------------------
+ * This server is COMPLETELY DECOUPLED from Doable. It speaks only the
+ * standard MCP protocol + the MCP Apps UI extension (mcpui.dev /
+ * modelcontextprotocol.io/extensions/apps).
  *
- *   1. `create_presentation(topic, ...)` —
- *        Returns an interactive `__ui` select widget in Doable's chat with
- *        two options: Web Slides (HTML artifact) or PPTX (PptxGenJS code).
+ * Two tools, no host-specific magic:
  *
- *   2. `ui_action(toolCallId, action, payload)` —
- *        Called by Doable when the user picks an option. Responds with the
- *        matching skill instructions (SKILL.md contents) so the Copilot LLM
- *        can proceed to generate the actual artifact.
+ *   1. `create_presentation({ topic, slideCount?, audience?, tone? })`
+ *        Returns a UIResource (HTML, sandboxed iframe in any MCP App host)
+ *        rendering a picker. The picker has two buttons. When the user clicks,
+ *        the iframe `postMessage`s a standard tool-action back to the host
+ *        which the host proxies as a `tools/call` to this server.
  *
- * Session state (topic + options) is kept in an in-memory Map keyed by
- * toolCallId. For a single-user local setup this is sufficient.
+ *   2. `build_presentation({ topic, format, slideCount?, audience?, tone? })`
+ *        Generates the artifact in-process and returns a UIResource showing a
+ *        Download card. The .pptx bytes are embedded as a base64 data URL
+ *        inside the iframe HTML, so the user can download with one click,
+ *        with zero further host involvement.
+ *
+ * Hosts that speak MCP Apps will render this without any custom code.
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -23,386 +29,271 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { readFileSync, existsSync } from "node:fs";
-import { dirname, resolve, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { createUIResource } from "@mcp-ui/server";
+import { buildPptx } from "./presentation-engine.mjs";
 
 function dlog(msg) {
   if (!process.env.MCP_DEBUG) return;
   console.error(`[${new Date().toISOString()}] [PB] ${msg}`);
 }
 
-// ----------------------------------------------------------------------------
-// Skill loader — resolve SKILL.md files from my_skills/ in repo root
-// ----------------------------------------------------------------------------
-// The server may be installed as a sibling folder of `my_skills/` inside the
-// Doable repo, OR provided via SKILLS_DIR env var if it's somewhere else.
-
-function findSkillsDir() {
-  if (process.env.SKILLS_DIR && existsSync(process.env.SKILLS_DIR)) {
-    return process.env.SKILLS_DIR;
-  }
-  // Look for the `skills` folder in the same directory as this file
-  const localSkills = join(__dirname, "skills");
-  if (existsSync(localSkills)) return localSkills;
-
-  // Fallback: search parent directories
-  let cur = __dirname;
-  for (let i = 0; i < 6; i++) {
-    const candidate = join(cur, "skills");
-    if (existsSync(candidate)) return candidate;
-    cur = resolve(cur, "..");
-  }
-  return null;
-}
-
-const SKILLS_DIR = findSkillsDir();
-
-function loadSkill(name, files) {
-  if (!SKILLS_DIR) {
-    return `[skill "${name}" not found — set SKILLS_DIR env var to the path of my_skills/]`;
-  }
-  const parts = [];
-  for (const f of files) {
-    const p = join(SKILLS_DIR, name, f);
-    if (existsSync(p)) {
-      parts.push(`\n\n===== ${name}/${f} =====\n\n` + readFileSync(p, "utf8"));
-    }
-  }
-  return parts.join("\n") || `[no files loaded for skill "${name}"]`;
-}
-
-// ----------------------------------------------------------------------------
-// Session store — remember topic per toolCallId between create_presentation
-// and the subsequent ui_action call.
-// ----------------------------------------------------------------------------
-/** @type {Map<string, { topic: string; slideCount?: number; audience?: string; tone?: string; createdAt: number }>} */
-const sessions = new Map();
-
-// Garbage-collect sessions older than 1 hour every 10 minutes
-setInterval(() => {
-  const cutoff = Date.now() - 60 * 60 * 1000;
-  for (const [id, s] of sessions) {
-    if (s.createdAt < cutoff) sessions.delete(id);
-  }
-}, 10 * 60 * 1000).unref?.();
-
-// ----------------------------------------------------------------------------
-// UI payload builder
-// ----------------------------------------------------------------------------
-function buildSelectWidget({ topic, slideCount, audience, tone }) {
-  return {
-    __ui: {
-      uiType: "select",
-      title: `How should I build your presentation on "${topic}"?`,
-      schema: {
-        options: [
-          {
-            value: "web-slides",
-            label: "🌐 Web Slides (HTML)",
-            description:
-              "A self-contained HTML artifact with cinematic animations, topic-matched theme, keyboard navigation. Viewable in any browser.",
-          },
-          {
-            value: "pptx",
-            label: "📊 PowerPoint (.pptx)",
-            description:
-              "A downloadable PowerPoint file generated with PptxGenJS. Editable in PowerPoint, Keynote, or Google Slides.",
-          },
-        ],
-        actions: [
-          { id: "proceed", label: "Generate" },
-          { id: "cancel", label: "Cancel" },
-        ],
-      },
-      state: {
-        topic,
-        slideCount: slideCount ?? null,
-        audience: audience ?? null,
-        tone: tone ?? null,
-      },
-    },
-  };
-}
-
-// ----------------------------------------------------------------------------
-// MCP server setup
-// ----------------------------------------------------------------------------
-const server = new Server(
-  { name: "presentation-builder", version: "0.1.0" },
-  { capabilities: { tools: {} } },
-);
-
-// Shared input schema for both format-specific generators
-const presentationInputSchema = {
-  type: "object",
-  properties: {
-    topic: {
-      type: "string",
-      description: "The subject of the presentation (required).",
-    },
-    slideCount: {
-      type: "number",
-      description: "Approximate number of slides (default 8–12).",
-    },
-    audience: {
-      type: "string",
-      description: "Target audience — e.g. executives, students, clients.",
-    },
-    tone: {
-      type: "string",
-      description: "formal | casual | inspirational | technical | storytelling",
-    },
-  },
-  required: ["topic"],
+// ─────────────────────────────────────────────────────────────────────────
+// Tool input schema (shared)
+// ─────────────────────────────────────────────────────────────────────────
+const presentationProps = {
+  topic: { type: "string", description: "Subject of the presentation (required)." },
+  slideCount: { type: "number", description: "Approx. number of content slides (3–12, default 5)." },
+  audience: { type: "string", description: "Target audience — executives, students, …" },
+  tone: { type: "string", description: "formal | casual | inspirational | technical | storytelling" },
 };
 
 const TOOLS = [
   {
     name: "create_presentation",
     description:
-      "**REQUIRED** tool for any request involving slides, a deck, a pitch, a presentation, a slideshow, or a visual report on any topic. " +
-      "You MUST call this tool FIRST before writing any code or editing any files when the user asks for a presentation. " +
-      "Do NOT create React components, HTML files, or PowerPoint code directly — this tool returns an interactive picker that lets the user choose between Web Slides (HTML) and PowerPoint (.pptx). " +
-      "When the user clicks a choice, the matching generator tool (generate_web_slides or generate_pptx) will be invoked automatically and return the skill content for that format. " +
-      "Trigger phrases: 'make slides', 'create a presentation', 'build a deck', 'pitch deck', 'slideshow', 'presentation on X', 'slides about Y'.",
-    inputSchema: presentationInputSchema,
+      "Show the user an interactive picker so they can choose how to build a presentation " +
+      "on a topic (PowerPoint .pptx or HTML web slides). REQUIRED for any request involving " +
+      "slides, a deck, a pitch, a presentation, a slideshow, or a visual report. Do NOT " +
+      "create files yourself — call this tool, the picker handles everything end-to-end.",
+    inputSchema: { type: "object", properties: presentationProps, required: ["topic"] },
   },
   {
-    name: "generate_web_slides",
+    name: "build_presentation",
     description:
-      "Produces a single-file HTML presentation artifact with cinematic CSS animations, topic-matched visual theme, and keyboard navigation. " +
-      "Call this when the user has explicitly chosen the Web Slides format (or said 'web slides', 'HTML slides', 'browser slides'). " +
-      "Returns the complete web-slides SKILL.md with layout templates, theme palettes, and animation recipes — use that content to generate the final HTML.",
-    inputSchema: presentationInputSchema,
-  },
-  {
-    name: "generate_pptx",
-    description:
-      "Produces a downloadable PowerPoint (.pptx) file via PptxGenJS. " +
-      "Call this when the user has explicitly chosen the PPTX format (or said 'powerpoint', 'pptx', 'microsoft powerpoint'). " +
-      "Returns the pptx SKILL.md with the full PptxGenJS API reference — use that content to generate runnable JavaScript.",
-    inputSchema: presentationInputSchema,
-  },
-  {
-    name: "ui_action",
-    description:
-      "Internal — invoked by Doable's chat UI when the user clicks an option in the select widget returned by create_presentation. Routes the click to generate_web_slides or generate_pptx.",
+      "Generate the actual presentation file. Invoked from the picker iframe via " +
+      "MCP Apps tool action. Hosts may also call it directly if the user has " +
+      "explicitly chosen a format. Returns a download card UI plus the binary.",
     inputSchema: {
       type: "object",
       properties: {
-        toolCallId: { type: "string" },
-        action: { type: "string" },
-        payload: { type: "object" },
+        ...presentationProps,
+        format: { type: "string", enum: ["pptx", "html"], description: "pptx | html" },
       },
-      required: ["toolCallId", "action"],
+      required: ["topic", "format"],
     },
   },
 ];
 
-// ----------------------------------------------------------------------------
-// Generator helpers — shared by ui_action and the two first-class tools
-// ----------------------------------------------------------------------------
-function buildContext({ topic, slideCount, audience, tone }) {
-  return (
-    `**Topic:** ${topic}` +
-    (slideCount ? `\n**Slide count:** ${slideCount}` : "") +
-    (audience ? `\n**Audience:** ${audience}` : "") +
-    (tone ? `\n**Tone:** ${tone}` : "")
-  );
+// ─────────────────────────────────────────────────────────────────────────
+// HTML resource: picker
+// ─────────────────────────────────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
 }
 
-function generateWebSlidesResult(ctx) {
-  const skill = loadSkill("web-slides", [
-    "SKILL.md",
-    "layout-templates.md",
-    "theme-palettes.md",
-    "animation-recipes.md",
-  ]);
-  return {
-    content: [
-      {
-        type: "text",
-        text:
-          `Format: **Web Slides (HTML)**\n\n${ctx}\n\n` +
-          `MANDATORY OUTPUT PROTOCOL — this runs inside Doable, not an artifact host:\n` +
-          `• You MUST create the file by calling the \`write_file\` tool with path=\`index.html\`.\n` +
-          `• Do NOT print the HTML into chat. Do NOT wrap it in markdown. Any raw HTML in your reply will be treated as a failure.\n` +
-          `• After \`write_file\` succeeds, reply with a one-line confirmation (e.g. "Deck created — open the preview.") and stop.\n` +
-          `• The file must be a single self-contained HTML document (inline CSS + JS, no external assets) that follows the skill below.\n\n` +
-          `---\n# Skill (for content, theme, layout, animation choices only)\n\n${skill}`,
-      },
-    ],
-  };
+function pickerHtml({ topic, slideCount, audience, tone }) {
+  const params = JSON.stringify({ topic, slideCount: slideCount ?? null, audience: audience ?? null, tone: tone ?? null });
+  return `<!doctype html>
+<html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 16px; background: transparent; color: #0f172a; }
+  @media (prefers-color-scheme: dark) { body { color: #f1f5f9; } }
+  .card { border: 1px solid rgba(148,163,184,.4); border-radius: 12px; padding: 16px; background: rgba(255,255,255,.03); }
+  h2 { margin: 0 0 4px 0; font-size: 15px; font-weight: 600; }
+  p.sub { margin: 0 0 14px 0; opacity: .7; font-size: 13px; }
+  .grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+  button.opt { all: unset; cursor: pointer; padding: 14px; border-radius: 10px; border: 1px solid rgba(148,163,184,.4); transition: all .15s; display: flex; gap: 12px; align-items: flex-start; background: transparent; }
+  button.opt:hover { border-color: #38bdf8; background: rgba(56,189,248,.08); }
+  button.opt:disabled { opacity: .4; cursor: progress; }
+  .opt .ico { font-size: 22px; line-height: 1; }
+  .opt .body { flex: 1; min-width: 0; }
+  .opt .ttl { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .opt .desc { font-size: 12px; opacity: .7; line-height: 1.4; }
+  .status { margin-top: 12px; font-size: 12px; opacity: .8; min-height: 16px; }
+</style></head>
+<body>
+<div class="card">
+  <h2>How should I build your presentation?</h2>
+  <p class="sub">Topic: <strong>${escapeHtml(topic)}</strong></p>
+  <div class="grid">
+    <button class="opt" data-fmt="pptx">
+      <div class="ico">📊</div>
+      <div class="body">
+        <div class="ttl">PowerPoint (.pptx)</div>
+        <div class="desc">Editable in PowerPoint, Keynote, Google Slides.</div>
+      </div>
+    </button>
+    <button class="opt" data-fmt="html">
+      <div class="ico">🌐</div>
+      <div class="body">
+        <div class="ttl">Web Slides (HTML)</div>
+        <div class="desc">Single-file deck with cinematic animations.</div>
+      </div>
+    </button>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+<script>
+  const params = ${params};
+  const status = document.getElementById('status');
+  for (const btn of document.querySelectorAll('button.opt')) {
+    btn.addEventListener('click', () => {
+      const format = btn.dataset.fmt;
+      for (const b of document.querySelectorAll('button.opt')) b.disabled = true;
+      status.textContent = 'Generating ' + (format === 'pptx' ? 'PowerPoint' : 'web slides') + '…';
+      window.parent.postMessage({
+        type: 'tool',
+        payload: {
+          toolName: 'build_presentation',
+          params: { ...params, format },
+        },
+      }, '*');
+    });
+  }
+</script>
+</body></html>`;
 }
 
-function generatePptxResult(ctx) {
-  const skill = loadSkill("pptx", ["SKILL.md", "pptxgenjs.md"]);
-  return {
-    content: [
-      {
-        type: "text",
-        text:
-          `Format: **PowerPoint (.pptx)**\n\n${ctx}\n\n` +
-          `MANDATORY OUTPUT PROTOCOL — this runs inside Doable, not an artifact host:\n` +
-          `• You MUST create the file by calling the \`write_file\` tool with path=\`generate-pptx.mjs\` (a Node script using PptxGenJS).\n` +
-          `• The script must \`import PptxGenJS from "pptxgenjs"\` and end with \`await pptx.writeFile({ fileName: "<topic>.pptx" })\`.\n` +
-          `• Do NOT print the JavaScript into chat. Do NOT wrap it in markdown. Any raw code in your reply will be treated as a failure.\n` +
-          `• After \`write_file\` succeeds, reply with a one-line confirmation and stop.\n\n` +
-          `---\n# Skill (for content, layout, typography choices only)\n\n${skill}`,
-      },
-    ],
-  };
+// ─────────────────────────────────────────────────────────────────────────
+// HTML resource: download card with embedded data URL
+// ─────────────────────────────────────────────────────────────────────────
+function downloadHtml({ fileName, mimeType, base64, sizeBytes, summary }) {
+  const sizeKb = (sizeBytes / 1024).toFixed(1);
+  return `<!doctype html>
+<html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 16px; background: transparent; color: #0f172a; }
+  @media (prefers-color-scheme: dark) { body { color: #f1f5f9; } }
+  .card { border: 1px solid rgba(148,163,184,.4); border-radius: 12px; padding: 16px; background: rgba(255,255,255,.03); display: flex; gap: 14px; align-items: center; }
+  .ico { font-size: 32px; }
+  .body { flex: 1; min-width: 0; }
+  .ttl { font-weight: 600; font-size: 14px; margin-bottom: 2px; word-break: break-word; }
+  .meta { font-size: 12px; opacity: .7; }
+  a.dl { all: unset; cursor: pointer; padding: 8px 14px; border-radius: 8px; background: #38bdf8; color: #0f172a; font-weight: 600; font-size: 13px; transition: background .15s; }
+  a.dl:hover { background: #0ea5e9; }
+</style></head>
+<body>
+<div class="card">
+  <div class="ico">📊</div>
+  <div class="body">
+    <div class="ttl">${escapeHtml(fileName)}</div>
+    <div class="meta">${sizeKb} KB · ${escapeHtml(summary)}</div>
+  </div>
+  <a class="dl" download="${escapeHtml(fileName)}" href="data:${mimeType};base64,${base64}">Download</a>
+</div>
+</body></html>`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Server setup
+// ─────────────────────────────────────────────────────────────────────────
+const server = new Server(
+  { name: "presentation-builder", version: "0.2.0" },
+  { capabilities: { tools: {} } },
+);
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const { name, arguments: args } = req.params;
-  dlog(`tools/call name=${name} args=${JSON.stringify(args).slice(0, 200)}`);
+  dlog(`tools/call name=${name}`);
 
   if (name === "create_presentation") {
     const topic = String(args?.topic ?? "").trim();
     if (!topic) {
-      return {
-        isError: true,
-        content: [{ type: "text", text: "Error: 'topic' is required." }],
-      };
+      return { isError: true, content: [{ type: "text", text: "Error: 'topic' is required." }] };
     }
-
-    // We don't know the toolCallId yet — Doable's tool-callbacks.ts fills it
-    // in before emitting the mcp_ui_open SSE event. We generate a stable key
-    // from topic+timestamp so ui_action can look it up via state echo.
-    const sessionKey = `pres_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    sessions.set(sessionKey, {
-      topic,
-      slideCount: args?.slideCount,
-      audience: args?.audience,
-      tone: args?.tone,
-      createdAt: Date.now(),
-    });
-
-    const widget = buildSelectWidget({
+    const html = pickerHtml({
       topic,
       slideCount: args?.slideCount,
       audience: args?.audience,
       tone: args?.tone,
     });
-
-    // Embed sessionKey so we can recover context in ui_action
-    widget.__ui.state.__sessionKey = sessionKey;
-
-    // Return the __ui envelope as the ONLY text content. Doable's
-    // extractUiPayload does a JSON.parse on the full text, so it must be
-    // pure JSON. The _llm field instructs the model to stop and wait.
-    const envelope = {
-      ...widget,
-      _llm:
-        "STOP. An interactive picker has been shown to the user. Do NOT call any other tools, " +
-        "do NOT create any files, do NOT write any code. Respond with a single short sentence " +
-        "like 'Please pick a format above.' and then wait. The `ui_action` tool will be invoked " +
-        "automatically when the user clicks an option — it will return the full instructions " +
-        "for the chosen format at that point.",
-    };
-
-    const respText = JSON.stringify(envelope);
-    dlog(`create_presentation -> ${respText.length} bytes, starts with: ${respText.slice(0, 120)}`);
+    const ui = createUIResource({
+      uri: `ui://presentation-builder/picker/${Date.now()}`,
+      content: { type: "rawHtml", htmlString: html },
+      encoding: "text",
+    });
     return {
-      content: [{ type: "text", text: respText }],
-    };
-  }
-
-  if (name === "ui_action") {
-    const action = String(args?.action ?? "");
-    const payload = args?.payload ?? {};
-    const selected = String(payload.selected ?? "");
-    const sessionKey = String(payload.__sessionKey ?? "");
-
-    if (action === "cancel") {
-      return {
-        content: [{ type: "text", text: "Presentation build cancelled by user." }],
-      };
-    }
-
-    if (action !== "proceed") {
-      return {
-        isError: true,
-        content: [{ type: "text", text: `Unknown action: ${action}` }],
-      };
-    }
-
-    // Recover session — fall back to the most recent one if no key
-    let session = sessionKey ? sessions.get(sessionKey) : null;
-    if (!session) {
-      const all = [...sessions.values()].sort((a, b) => b.createdAt - a.createdAt);
-      session = all[0];
-    }
-    const topic = session?.topic ?? "(topic unknown — ask the user)";
-    const slideCount = session?.slideCount;
-    const audience = session?.audience;
-    const tone = session?.tone;
-
-    const ctx = buildContext({ topic, slideCount, audience, tone });
-
-    if (selected === "web-slides") {
-      dlog(`ui_action -> routing click to generate_web_slides`);
-      return generateWebSlidesResult(ctx);
-    }
-    if (selected === "pptx") {
-      dlog(`ui_action -> routing click to generate_pptx`);
-      return generatePptxResult(ctx);
-    }
-    return {
-      isError: true,
       content: [
+        ui,
         {
           type: "text",
-          text: `Unknown selection: "${selected}". Expected "web-slides" or "pptx".`,
+          text:
+            "An interactive picker is now shown to the user. Wait for their selection. " +
+            "Do not write code or call other tools. Reply with one short sentence like " +
+            "\"Pick a format above.\" and stop.",
         },
       ],
     };
   }
 
-  if (name === "generate_web_slides") {
+  if (name === "build_presentation") {
     const topic = String(args?.topic ?? "").trim();
+    const format = String(args?.format ?? "pptx").trim();
     if (!topic) {
       return { isError: true, content: [{ type: "text", text: "Error: 'topic' is required." }] };
     }
-    const ctx = buildContext({
-      topic,
-      slideCount: args?.slideCount,
-      audience: args?.audience,
-      tone: args?.tone,
-    });
-    return generateWebSlidesResult(ctx);
-  }
-
-  if (name === "generate_pptx") {
-    const topic = String(args?.topic ?? "").trim();
-    if (!topic) {
-      return { isError: true, content: [{ type: "text", text: "Error: 'topic' is required." }] };
+    if (format !== "pptx" && format !== "html") {
+      return { isError: true, content: [{ type: "text", text: `Unknown format "${format}". Use pptx or html.` }] };
     }
-    const ctx = buildContext({
-      topic,
-      slideCount: args?.slideCount,
-      audience: args?.audience,
-      tone: args?.tone,
+
+    if (format === "pptx") {
+      try {
+        const { buffer, fileName, slideCount } = await buildPptx({
+          topic,
+          slideCount: args?.slideCount,
+          audience: args?.audience,
+          tone: args?.tone,
+        });
+        const base64 = Buffer.from(buffer).toString("base64");
+        const html = downloadHtml({
+          fileName,
+          mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          base64,
+          sizeBytes: buffer.length,
+          summary: `${slideCount} slides on "${topic}"`,
+        });
+        const ui = createUIResource({
+          uri: `ui://presentation-builder/download/${Date.now()}`,
+          content: { type: "rawHtml", htmlString: html },
+          encoding: "text",
+        });
+        return {
+          content: [
+            ui,
+            {
+              type: "text",
+              text: `Presentation ready: ${fileName} (${slideCount} slides, ${buffer.length} bytes). User can download from the card. Acknowledge briefly and stop.`,
+            },
+          ],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        dlog(`build_presentation pptx error: ${msg}`);
+        return { isError: true, content: [{ type: "text", text: `PPTX generation failed: ${msg}` }] };
+      }
+    }
+
+    // format === "html" — minimal placeholder for now (kept for future).
+    const html = `<!doctype html><html><body style="font:14px sans-serif;padding:16px;color:inherit;background:transparent">` +
+      `<p>Web Slides format is not yet implemented in this MCP App. Pick PowerPoint for now.</p>` +
+      `</body></html>`;
+    const ui = createUIResource({
+      uri: `ui://presentation-builder/notice/${Date.now()}`,
+      content: { type: "rawHtml", htmlString: html },
+      encoding: "text",
     });
-    return generatePptxResult(ctx);
+    return {
+      content: [
+        ui,
+        { type: "text", text: "Web Slides format is not yet implemented; let the user know briefly." },
+      ],
+    };
   }
 
-  return {
-    isError: true,
-    content: [{ type: "text", text: `Unknown tool: ${name}` }],
-  };
+  return { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
 });
 
-// ----------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────
 // Start
-// ----------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────
 const transport = new StdioServerTransport();
 await server.connect(transport);
-dlog(`MCP server started. skills_dir=${SKILLS_DIR ?? "(unset)"}`);
+dlog(`MCP server started.`);
