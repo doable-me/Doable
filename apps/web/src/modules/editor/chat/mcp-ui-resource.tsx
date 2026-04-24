@@ -32,6 +32,22 @@ interface Props {
    * cards can fire their BUILD_DECK follow-up turn without being dropped.
    */
   isStreaming?: boolean;
+  /**
+   * Live status lines the host wants to surface inside the iframe (e.g.
+   * emoji-prefixed narration lines extracted from the AI's streaming
+   * assistant text). Each new line the card hasn't seen yet is posted
+   * to the iframe as `{type:'status', payload:{text}}` so cards like
+   * the presentation-builder auto-build card can replace their static
+   * "Designing your deck…" message with a live progress log.
+   */
+  statusLines?: readonly string[];
+  /**
+   * Signals the iframe that the long-running operation this card
+   * represents has finished successfully. Posted as
+   * `{type:'deck-ready', payload:{text}}` so the card can flip its
+   * spinner to a check-mark.
+   */
+  completedText?: string;
 }
 
 interface ParentMessage {
@@ -71,10 +87,14 @@ interface ParentMessage {
  * to keep it dependency-light and to serve as a reference implementation
  * of the spec.
  */
-export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, isStreaming }: Props) {
+export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, isStreaming, statusLines, completedText }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [iframeHeight, setIframeHeight] = useState<number>(280);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  // Track which status lines we've already posted to the iframe so each
+  // new line streams in exactly once as the AI produces it.
+  const postedLinesRef = useRef<Set<string>>(new Set());
+  const hostReadyRef = useRef<boolean>(false);
 
   const html = typeof resource.resource.text === "string" ? resource.resource.text : "";
 
@@ -224,6 +244,50 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
       for (const t of timers) clearTimeout(t);
     };
   }, [html, isStreaming]);
+
+  // Reset the posted-lines memo whenever the underlying resource changes
+  // (new card → new iframe → replay from scratch).
+  useEffect(() => {
+    postedLinesRef.current = new Set();
+    hostReadyRef.current = false;
+  }, [html]);
+
+  // Forward any NEW status lines to the iframe. The iframe side dedups
+  // internally too, but we also gate here to avoid spamming postMessage
+  // every render. We don't gate on isStreaming — status updates are the
+  // whole point of the streaming state.
+  useEffect(() => {
+    if (!statusLines || statusLines.length === 0) return;
+    const target = iframeRef.current?.contentWindow;
+    if (!target) return;
+    const fresh: string[] = [];
+    for (const line of statusLines) {
+      if (!line) continue;
+      const key = line.trim();
+      if (!key) continue;
+      if (postedLinesRef.current.has(key)) continue;
+      postedLinesRef.current.add(key);
+      fresh.push(key);
+    }
+    if (fresh.length === 0) return;
+    try {
+      target.postMessage({ type: "status", payload: { lines: fresh } }, "*");
+    } catch {
+      /* ignore */
+    }
+  }, [statusLines]);
+
+  // Flip the card to a "done" state when the host declares completion.
+  useEffect(() => {
+    if (!completedText) return;
+    const target = iframeRef.current?.contentWindow;
+    if (!target) return;
+    try {
+      target.postMessage({ type: "deck-ready", payload: { text: completedText } }, "*");
+    } catch {
+      /* ignore */
+    }
+  }, [completedText]);
 
   if (!html) {
     return (

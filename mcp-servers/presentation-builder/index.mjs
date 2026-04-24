@@ -737,25 +737,81 @@ function autoBuildCardHtml({ topic, buildPrompt }) {
 <html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; font: 13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 10px 0; background: transparent; }
-  .card { color: #0f172a; background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border: 1px solid #c4b5fd; border-radius: 12px; padding: 14px 16px; display: flex; gap: 12px; align-items: center; box-shadow: 0 1px 3px rgba(99,102,241,.12); }
+  body { margin: 0; font: 13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 10px 0; background: transparent; color: #0f172a; }
+  .card { background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border: 1px solid #c4b5fd; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(99,102,241,.12); }
+  .hdr { display: flex; gap: 12px; align-items: center; }
   .spin { width: 18px; height: 18px; border: 2.5px solid #c7d2fe; border-top-color: #6366f1; border-radius: 50%; animation: sp 0.8s linear infinite; flex: none; }
+  .spin.done { border-top-color: #10b981; animation: none; background: #10b981; border-color: #10b981; position: relative; }
+  .spin.done::after { content: '✓'; position: absolute; inset: 0; color: white; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
   @keyframes sp { to { transform: rotate(360deg); } }
   .msg { flex: 1; min-width: 0; }
   .ttl { font-weight: 600; color: #4338ca; font-size: 13px; }
   .sub { font-size: 11px; color: #6366f1; margin-top: 2px; }
+  .log { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #c4b5fd; max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .log:empty { display: none; }
+  .line { font-size: 12px; color: #1e1b4b; line-height: 1.45; padding: 2px 0; animation: fi .25s ease-out; white-space: pre-wrap; word-wrap: break-word; font-variant-emoji: emoji; }
+  .line.stale { color: #6366f1; opacity: .65; }
+  @keyframes fi { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .meta { margin-top: 8px; display: flex; justify-content: space-between; gap: 10px; font-size: 10px; color: #6366f1; font-variant-numeric: tabular-nums; opacity: .7; }
 </style></head>
 <body>
 <div class="card">
-  <div class="spin"></div>
-  <div class="msg">
-    <div class="ttl">Designing your deck…</div>
-    <div class="sub">You'll see progress updates as each piece comes together.</div>
+  <div class="hdr">
+    <div class="spin" id="spin"></div>
+    <div class="msg">
+      <div class="ttl" id="ttl">Designing your deck…</div>
+      <div class="sub" id="sub">Warming up — the AI is beginning its research.</div>
+    </div>
   </div>
+  <div class="log" id="log"></div>
+  <div class="meta"><span id="count">0 updates</span><span id="timer">0.0s</span></div>
 </div>
 <script>
   const buildPrompt = ${buildPromptJson};
   const topic = ${topicJson};
+  const logEl = document.getElementById('log');
+  const ttlEl = document.getElementById('ttl');
+  const subEl = document.getElementById('sub');
+  const spinEl = document.getElementById('spin');
+  const countEl = document.getElementById('count');
+  const timerEl = document.getElementById('timer');
+  const t0 = performance.now();
+  let count = 0;
+  let done = false;
+  const seen = new Set();
+  function tick() {
+    if (done) return;
+    const s = ((performance.now() - t0) / 1000).toFixed(1);
+    timerEl.textContent = s + 's';
+    requestAnimationFrame(tick);
+  }
+  tick();
+  function addStatus(text) {
+    if (!text || typeof text !== 'string') return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    if (seen.has(trimmed)) return;
+    seen.add(trimmed);
+    // mark older lines as stale — the newest is the current activity.
+    for (const el of logEl.querySelectorAll('.line')) el.classList.add('stale');
+    const el = document.createElement('div');
+    el.className = 'line';
+    el.textContent = trimmed;
+    logEl.appendChild(el);
+    logEl.scrollTop = logEl.scrollHeight;
+    count++;
+    countEl.textContent = count + (count === 1 ? ' update' : ' updates');
+    subEl.textContent = trimmed.length > 80 ? trimmed.slice(0, 77) + '…' : trimmed;
+    reportSize();
+  }
+  function markDone(finalText) {
+    if (done) return;
+    done = true;
+    spinEl.classList.add('done');
+    ttlEl.textContent = finalText || 'Deck ready';
+    subEl.textContent = 'Preview and downloads are above.';
+    reportSize();
+  }
   // Handshake: wait until the host window tells us its postMessage listener
   // is attached before injecting the BUILD_DECK prompt. Firing on load would
   // race the parent's React ref/listener setup and get silently dropped.
@@ -773,7 +829,18 @@ function autoBuildCardHtml({ topic, buildPrompt }) {
   }
   window.addEventListener('message', (ev) => {
     const d = ev.data;
-    if (d && typeof d === 'object' && d.type === 'host-ready') firePrompt();
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'host-ready') firePrompt();
+    else if (d.type === 'status' && d.payload) {
+      // Parent pushes narration lines extracted from the AI's streaming
+      // assistant text so the user sees live progress in the card itself,
+      // not just the static "Designing your deck…" placeholder.
+      const lines = Array.isArray(d.payload.lines) ? d.payload.lines
+        : (typeof d.payload.text === 'string' ? [d.payload.text] : []);
+      for (const l of lines) addStatus(l);
+    } else if (d.type === 'deck-ready') {
+      markDone(d.payload && d.payload.text);
+    }
   });
   function reportSize() {
     const h = document.documentElement.scrollHeight;

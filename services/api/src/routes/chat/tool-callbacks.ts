@@ -42,9 +42,17 @@ function offloadDataUris(
 ): { html: string; artifacts: ArtifactRef[] } {
   const artifacts: ArtifactRef[] = [];
   if (!html || html.length < 16 * 1024) return { html, artifacts };
+  // Dedup identical data URIs (same mime + same base64 body). The
+  // unified deck card references the HTML data URI in BOTH the "Open"
+  // link and the "Download .html" link; without dedup each match would
+  // store a separate artifact and surface as two download rows.
+  const byKey = new Map<string, string>(); // key → public url
   const out = html.replace(
     /data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=]{8000,})/g,
     (_match, mime: string, b64: string) => {
+      const key = `${mime}|${b64.length}|${b64.slice(0, 32)}|${b64.slice(-32)}`;
+      const existing = byKey.get(key);
+      if (existing) return existing;
       try {
         const bytes = Buffer.from(b64, "base64");
         const ext =
@@ -70,6 +78,7 @@ function offloadDataUris(
         }
 
         artifacts.push(ref);
+        byKey.set(key, url);
         return url;
       } catch {
         return _match;

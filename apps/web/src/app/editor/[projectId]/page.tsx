@@ -4797,12 +4797,40 @@ export default function EditorPage() {
                         {/* ── MCP-Apps interactive UI resources (sandboxed iframes) ── */}
                         {msg.mcpResources && Object.values(msg.mcpResources).length > 0 && resolvedProjectId && (
                           <div className="mt-2 space-y-1">
-                            {Object.values(msg.mcpResources).map((res) => (
+                            {Object.values(msg.mcpResources).map((res) => {
+                              // Live-status pipeline: the presentation-builder
+                              // "Designing your deck…" card lives on THIS
+                              // message, but the narration lines stream into
+                              // the NEXT assistant message (the BUILD_DECK
+                              // follow-up turn triggered by the iframe). Pull
+                              // emoji-prefixed status lines out of every
+                              // later assistant message's content and forward
+                              // them to the iframe so it shows real progress
+                              // instead of a static spinner.
+                              const laterAssistants = messages.slice(msgIdx + 1).filter((m) => m.role === "assistant");
+                              const rawContent = laterAssistants.map((m) => m.content ?? "").join("\n");
+                              const statusLines = rawContent
+                                .split(/\n+/)
+                                .map((l) => l.trim())
+                                .filter((l) => l.length > 0 && l.length < 240)
+                                .filter((l) => /^(\p{Extended_Pictographic}|[\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{27BF}])/u.test(l));
+                              // Card is "done" once a build_deck tool call
+                              // completed in any later assistant message.
+                              const deckDone = laterAssistants.some((m) =>
+                                (m.toolActions ?? []).some((tc) => {
+                                  const n = tc?.toolName ?? "";
+                                  const matches = n === "build_deck" || n.endsWith("_build_deck") || n.endsWith(".build_deck");
+                                  return matches && tc?.status !== "failed";
+                                }),
+                              );
+                              return (
                               <McpUiResourceCard
                                 key={res.toolCallId}
                                 resource={res}
                                 projectId={resolvedProjectId}
                                 isStreaming={isStreaming}
+                                statusLines={statusLines}
+                                completedText={deckDone ? "Deck ready" : undefined}
                                 onResource={(newRes) => {
                                   setMessages((prev) =>
                                     prev.map((m) =>
@@ -4848,7 +4876,8 @@ export default function EditorPage() {
                                   sendMessage(text, undefined, undefined, displayText);
                                 }}
                               />
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
 
