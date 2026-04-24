@@ -14,6 +14,7 @@ import { sql } from "../db/index.js";
 import { scaffoldRoutes } from "./project-files/scaffold.js";
 import { fileCrudRoutes } from "./project-files/file-crud.js";
 import { devServerFileRoutes } from "./project-files/dev-server-routes.js";
+import { downloadRoutes } from "./project-files/download.js";
 
 export const projectFileRoutes = new Hono<AuthEnv>();
 
@@ -112,3 +113,4 @@ projectFileRoutes.use("/projects/:id/*", async (c, next) => {
 projectFileRoutes.route("/", scaffoldRoutes);
 projectFileRoutes.route("/", fileCrudRoutes);
 projectFileRoutes.route("/", devServerFileRoutes);
+projectFileRoutes.route("/", downloadRoutes);

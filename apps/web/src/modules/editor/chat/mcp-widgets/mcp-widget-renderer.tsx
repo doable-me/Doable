@@ -6,6 +6,7 @@ import { McpTableWidget } from "./mcp-widget-table";
 import { McpFormWidget } from "./mcp-widget-form";
 import { McpConfirmWidget } from "./mcp-widget-confirm";
 import { McpSelectWidget } from "./mcp-widget-select";
+import { McpDownloadWidget } from "./mcp-widget-download";
 
 interface McpWidgetRendererProps {
   widget: McpUiWidget;
@@ -30,6 +31,8 @@ export function McpWidgetRenderer({ widget, messageId }: McpWidgetRendererProps)
       return <McpConfirmWidget widget={widget} messageId={messageId} />;
     case "select":
       return <McpSelectWidget widget={widget} messageId={messageId} />;
+    case "download":
+      return <McpDownloadWidget widget={widget} messageId={messageId} />;
     default:
       return (
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">

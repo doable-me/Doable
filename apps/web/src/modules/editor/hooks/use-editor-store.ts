@@ -6,7 +6,7 @@ import type { Plan, PlanStep, ClarificationQuestion, PlanPhase } from "@doable/s
 import type { AgentProgressState, AgentTimelineEvent } from "./use-agent-progress";
 
 // ─── MCP UI Widget Types ─────────────────────────────────────
-export type McpUiType = "table" | "form" | "confirm" | "select";
+export type McpUiType = "table" | "form" | "confirm" | "select" | "download";
 
 export interface McpUiColumn {
   key: string;
@@ -49,6 +49,11 @@ export interface McpUiWidget {
     options?: McpUiSelectOption[];
     actions?: McpUiAction[];
     message?: string;
+    /** download widget: */
+    fileName?: string;
+    url?: string;
+    sizeBytes?: number;
+    mimeType?: string;
   };
   state: Record<string, unknown>;
   /** closed widgets stay in history but no longer render interactively */

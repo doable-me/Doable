@@ -3162,6 +3162,37 @@ export default function EditorPage() {
     return () => window.removeEventListener("doable:mcp-continue", handler);
   }, [sendMessage]);
 
+  // ─── Listen for MCP widget injection (e.g. download card) ──
+  // When an MCP picker action resolves into a server-built artifact (PPTX,
+  // PDF, …) the API returns a download widget. The select widget dispatches
+  // `doable:mcp-add-widget` so we can render it inline without an LLM round.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ widget?: McpUiWidget }>).detail;
+      const widget = detail?.widget;
+      if (!widget?.toolCallId || !widget?.uiType) return;
+      setMessages((prev) => {
+        // Append to the most recent assistant message; if none, attach to last.
+        const idx = [...prev].reverse().findIndex((m) => m.role === "assistant");
+        if (idx === -1) return prev;
+        const realIdx = prev.length - 1 - idx;
+        return prev.map((m, i) =>
+          i === realIdx
+            ? {
+                ...m,
+                mcpWidgets: {
+                  ...(m.mcpWidgets ?? {}),
+                  [widget.toolCallId]: widget,
+                },
+              }
+            : m,
+        );
+      });
+    };
+    window.addEventListener("doable:mcp-add-widget", handler);
+    return () => window.removeEventListener("doable:mcp-add-widget", handler);
+  }, []);
+
   // Send message handler (from input)
   const handleSend = useCallback(() => {
     const text = inputValue.trim() || (fileAttachments.attachments.length > 0 ? "See attached file(s)" : "");

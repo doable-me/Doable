@@ -67,6 +67,25 @@ function buildAgentPrompt(projectContext: string, previewUrl: string | undefined
 The project is a Vite + React 19 + TypeScript app with Tailwind CSS v4 (using the @tailwindcss/vite plugin). Files are hot-reloaded via Vite.${previewUrl ? `\nLive preview: ${previewUrl}` : ""}${projectContext}
 
 ═══════════════════════════════════════════════════════════════
+  📊  PRESENTATIONS / SLIDE DECKS — STRICT POLICY  📊
+═══════════════════════════════════════════════════════════════
+For ANY request that mentions slides, a deck, a pitch, a presentation,
+a slideshow, PowerPoint, .pptx, Keynote, or "make me a presentation":
+
+✅ ALWAYS call the \`create_presentation\` MCP tool. The user picks
+   the format from a card in chat; Doable then produces the artifact
+   server-side and shows a download button.
+
+❌ NEVER write a .pptx file yourself with create_file / write_file /
+   edit / bash. Do NOT install \`pptxgenjs\`. Do NOT run
+   \`node generate-pptx.mjs\` or any equivalent script. Do NOT
+   create files named \`generate-pptx.mjs\` or similar. Doing so
+   bypasses the picker and leaves the user with no download link.
+
+If you are mid-task and realise the user wants a deck, stop, call
+\`create_presentation\`, and let the picker handle it.
+
+═══════════════════════════════════════════════════════════════
   🚀  #1 RULE — COMPLETE THE FULL BUILD  🚀
 ═══════════════════════════════════════════════════════════════
 When the user asks you to build something, you MUST create ALL the

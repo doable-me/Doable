@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Loader2, AlertCircle, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { McpUiWidget } from "../../hooks/use-editor-store";
-import { useMcpAction } from "./use-mcp-action";
+import { useMcpAction, type McpActionResult } from "./use-mcp-action";
 import { useEditorStore } from "../../hooks/use-editor-store";
 
 interface McpSelectWidgetProps {
@@ -34,7 +34,9 @@ export function McpSelectWidget({ widget, messageId }: McpSelectWidgetProps) {
       toolCallId: widget.toolCallId,
       connectorId: widget.connectorId,
       action: primaryAction?.id ?? "select",
-      payload: { selected },
+      // Forward the picker's state (topic, slideCount, audience, tone, …) so
+      // the API can resolve the artifact server-side without hitting MCP.
+      payload: { selected, state: widget.state },
     });
     if (!result.success) {
       setActionError(result.error ?? "Action failed");
@@ -42,6 +44,29 @@ export function McpSelectWidget({ widget, messageId }: McpSelectWidgetProps) {
       setSubmitted(true);
       const chosen = options.find((o) => o.value === selected);
       const label = chosen?.label ?? selected;
+
+      // If the API short-circuited and built an artifact in-process (e.g.
+      // PPTX), it returns a `downloadWidget`. Surface it as a new MCP widget
+      // and skip the LLM round-trip entirely — the user already has their file.
+      const downloadWidget = (result as McpActionResult & {
+        downloadWidget?: Record<string, unknown>;
+      }).downloadWidget;
+      if (downloadWidget) {
+        window.dispatchEvent(
+          new CustomEvent("doable:mcp-add-widget", {
+            detail: {
+              widget: {
+                ...downloadWidget,
+                toolCallId: `${widget.toolCallId}-download`,
+                connectorId: widget.connectorId,
+                toolName: widget.toolName,
+              },
+            },
+          }),
+        );
+        return;
+      }
+
       const instructions = result.instructions?.trim();
       // Generic follow-up prompt — works for any MCP app. When the tool
       // returned instructions, forward them verbatim so the LLM has the full

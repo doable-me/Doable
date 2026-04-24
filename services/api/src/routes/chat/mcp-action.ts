@@ -8,9 +8,13 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
+import { writeFile as fsWriteFile, mkdir as fsMkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { sql } from "../../db/index.js";
 import { projectQueries, workspaceQueries, connectorQueries } from "@doable/db";
 import { getConnectorManager } from "../../mcp/connector-manager.js";
+import { getProjectPath } from "../../ai/project-files.js";
+import { buildPptx } from "../../integrations/presentation/pptx-builder.js";
 import type { AuthEnv } from "../../middleware/auth.js";
 
 const mcpActionSchema = z.object({
@@ -19,6 +23,63 @@ const mcpActionSchema = z.object({
   action: z.string().min(1).max(100),
   payload: z.record(z.unknown()).optional(),
 });
+
+/**
+ * When the presentation-builder picker resolves to PPTX, we bypass the MCP
+ * server entirely and build the .pptx in-process. The MCP server's PPTX path
+ * only ever returned skill instructions for the LLM to write a script — that
+ * "DIY" detour produced no download link in chat. Building server-side gives
+ * the user a real binary they can click.
+ */
+async function maybeBuildPptxLocally(
+  payload: Record<string, unknown> | undefined,
+  projectId: string,
+): Promise<{ downloadWidget: Record<string, unknown> } | null> {
+  if (!payload) return null;
+  if (payload.selected !== "pptx") return null;
+
+  const state = (payload.state ?? {}) as Record<string, unknown>;
+  const topic = String(state.topic ?? payload.topic ?? "").trim();
+  if (!topic) return null;
+
+  const slideCount = state.slideCount ?? payload.slideCount;
+  const audience = state.audience ? String(state.audience) : undefined;
+  const tone = state.tone ? String(state.tone) : undefined;
+
+  const built = await buildPptx({
+    topic,
+    slideCount: typeof slideCount === "number" ? slideCount : undefined,
+    audience,
+    tone,
+  });
+
+  // Save under the project root so the standard download endpoint can serve it.
+  const projectPath = getProjectPath(projectId);
+  await fsMkdir(projectPath, { recursive: true });
+  const outPath = join(projectPath, built.fileName);
+  await fsWriteFile(outPath, built.buffer);
+
+  console.log(
+    `[MCP Action] PPTX built locally projectId=${projectId.slice(0, 8)} ` +
+      `file=${built.fileName} bytes=${built.buffer.length} slides=${built.slideCount}`,
+  );
+
+  return {
+    downloadWidget: {
+      uiType: "download",
+      title: "Your presentation is ready",
+      schema: {
+        fileName: built.fileName,
+        url: `/projects/${projectId}/download/${encodeURIComponent(built.fileName)}`,
+        sizeBytes: built.buffer.length,
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        message: `${built.slideCount} slides on "${topic}"`,
+      },
+      state: {},
+    },
+  };
+}
 
 export function registerMcpActionRoute(app: Hono<AuthEnv>) {
   app.post(
@@ -75,6 +136,30 @@ export function registerMcpActionRoute(app: Hono<AuthEnv>) {
 
       // 4 — Forward the action to the MCP server as a tool call
       try {
+        // 4a — Special case: PPTX picker click. Build server-side and skip MCP.
+        // The MCP server's PPTX path returned skill-content for the LLM to write
+        // a Node script — that produced no download link in chat. Building here
+        // gives a real binary the user can click.
+        if (action !== "cancel") {
+          try {
+            const local = await maybeBuildPptxLocally(payload, projectId);
+            if (local) {
+              return c.json({
+                success: true,
+                state: { selected: "pptx", done: true },
+                downloadWidget: local.downloadWidget,
+              });
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`[MCP Action] Local PPTX build failed: ${msg}`);
+            return c.json(
+              { success: false, error: `PPTX generation failed: ${msg}` },
+              500,
+            );
+          }
+        }
+
         const manager = getConnectorManager();
         const client = await manager.getClient(config);
 
