@@ -6,6 +6,7 @@ import { authQueries } from "@doable/db/queries/auth.js";
 import { workspaceQueries } from "@doable/db/queries/workspaces.js";
 import { signAccessToken, signRefreshToken } from "../../lib/jwt.js";
 import { rateLimiter } from "../../middleware/rate-limit.js";
+import { ensureBuiltinConnectorsForWorkspace } from "../../mcp/builtin-connectors.js";
 
 const auth = authQueries(sql);
 const workspaces = workspaceQueries(sql);
@@ -100,13 +101,14 @@ export async function ensureWorkspace(userId: string, displayName: string | null
       finalSlug = `${slug.slice(0, 40)}-${Date.now().toString(36)}`;
     }
 
-    await workspaces.create({
+    const ws = await workspaces.create({
       name: `${baseName}'s workspace`,
       slug: finalSlug,
       ownerId: userId,
       plan: "free",
     });
     console.log(`[Auth] Auto-created workspace for user ${userId} (slug: ${finalSlug})`);
+    await ensureBuiltinConnectorsForWorkspace(ws.id, userId);
   } catch (err) {
     console.error("[Auth] Failed to auto-create workspace:", err);
     // Non-fatal — user can still log in

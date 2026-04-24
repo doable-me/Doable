@@ -6,6 +6,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { requireRole } from "../middleware/workspace-role.js";
 import { SLUG_REGEX, SLUG_MIN_LENGTH, SLUG_MAX_LENGTH, PLAN_LIMITS, type WorkspacePlan } from "@doable/shared";
 import { sendTemplatedEmail } from "../lib/email.js";
+import { ensureBuiltinConnectorsForWorkspace } from "../mcp/builtin-connectors.js";
 
 const workspaces = workspaceQueries(sql);
 const users = userQueries(sql);
@@ -101,6 +102,9 @@ workspaceRoutes.post("/", async (c) => {
     description: parsed.data.description,
     ownerId: userId,
   });
+
+  // Provision built-in MCP Apps (e.g., Presentation Builder).
+  await ensureBuiltinConnectorsForWorkspace(workspace.id, userId);
 
   // If an environment was selected, clone it into the new workspace and apply
   if (parsed.data.environmentId) {

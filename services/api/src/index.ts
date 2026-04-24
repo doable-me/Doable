@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { initDocore, shutdownDocore } from "./ai/docore-bridge.js";
 import { initEmailService, stopEmailService } from "./lib/email/index.js";
+import { backfillBuiltinConnectors } from "./mcp/builtin-connectors.js";
 import { request as httpRequest } from "node:http";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -266,6 +267,11 @@ await initDocore().catch((err) => {
 await initEmailService(sql).catch((err) => {
   console.error("[Email] init failed:", err);
 });
+
+// Provision built-in MCP Apps for any workspace that doesn't have them yet.
+// Runs once per startup; per-workspace state is tracked in
+// workspace_builtin_provisioned so user deletions are respected.
+void backfillBuiltinConnectors();
 
 const server = serve({
   fetch: app.fetch,
