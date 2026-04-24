@@ -214,6 +214,7 @@ function routeSseEvent(
     const resolvedName = resultData?.name as string | undefined;
     if (resolvedName) {
       const arts = state.pendingArtifacts.get(resolvedName);
+      if (process.env.MCP_DEBUG) console.log(`[event-processor] tool_result merge check name=${resolvedName} hasArts=${!!arts} count=${arts?.length ?? 0} mapSize=${state.pendingArtifacts.size}`);
       if (arts && arts.length > 0) {
         (resultData as Record<string, unknown>).artifacts = arts;
         state.pendingArtifacts.delete(resolvedName);
