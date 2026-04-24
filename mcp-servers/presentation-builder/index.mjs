@@ -751,9 +751,13 @@ function autoBuildCardHtml({ topic, buildPrompt }) {
 <script>
   const buildPrompt = ${buildPromptJson};
   const topic = ${topicJson};
-  // Inject the BUILD_DECK prompt back into the chat as a synthetic user turn.
-  // Use a tiny delay so the parent has mounted the iframe before we post.
-  setTimeout(() => {
+  // Handshake: wait until the host window tells us its postMessage listener
+  // is attached before injecting the BUILD_DECK prompt. Firing on load would
+  // race the parent's React ref/listener setup and get silently dropped.
+  let fired = false;
+  function firePrompt() {
+    if (fired) return;
+    fired = true;
     window.parent.postMessage({
       type: 'prompt',
       payload: {
@@ -761,7 +765,11 @@ function autoBuildCardHtml({ topic, buildPrompt }) {
         displayText: '🎨 Designing a bespoke deck about "' + topic + '"…',
       },
     }, '*');
-  }, 50);
+  }
+  window.addEventListener('message', (ev) => {
+    const d = ev.data;
+    if (d && typeof d === 'object' && d.type === 'host-ready') firePrompt();
+  });
   function reportSize() {
     const h = document.documentElement.scrollHeight;
     window.parent.postMessage({ type: 'size', payload: { height: h } }, '*');

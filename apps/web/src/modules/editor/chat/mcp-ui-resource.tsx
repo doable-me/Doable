@@ -167,6 +167,21 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt }:
     return () => window.removeEventListener("message", onMessage);
   }, [handleToolCall, onPrompt]);
 
+  // Handshake: once the iframe finishes loading, tell it the host listener
+  // is attached. Auto-start cards (e.g. presentation builder's "Designing
+  // your deck…" card) wait for this signal before posting their initial
+  // `prompt` message — otherwise the message races the React ref assignment
+  // and gets dropped silently.
+  const handleIframeLoad = useCallback(() => {
+    const target = iframeRef.current?.contentWindow;
+    if (!target) return;
+    try {
+      target.postMessage({ type: "host-ready" }, "*");
+    } catch {
+      /* cross-origin edge cases — ignore */
+    }
+  }, []);
+
   if (!html) {
     return (
       <div className="not-prose w-full rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 shadow-sm dark:border-amber-400/50 dark:bg-amber-950/80 dark:text-amber-200">
@@ -182,6 +197,7 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt }:
         title={`mcp-app:${resource.toolName}`}
         sandbox="allow-scripts allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
         srcDoc={html}
+        onLoad={handleIframeLoad}
         style={{
           width: "100%",
           height: `${iframeHeight}px`,
