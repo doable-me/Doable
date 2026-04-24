@@ -88,22 +88,25 @@ function pickerHtml({ topic, slideCount, audience, tone }) {
   return `<!doctype html>
 <html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  :root { color-scheme: light dark; }
+  /* The host iframe lives on a chat surface that may be light OR dark.
+     We use an opaque card with its own palette to guarantee readability
+     in either case. Do NOT rely on prefers-color-scheme — the iframe is
+     transparent so we cannot detect the surrounding background. */
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 16px; background: transparent; color: #0f172a; }
-  @media (prefers-color-scheme: dark) { body { color: #f1f5f9; } }
-  .card { border: 1px solid rgba(148,163,184,.4); border-radius: 12px; padding: 16px; background: rgba(255,255,255,.03); }
-  h2 { margin: 0 0 4px 0; font-size: 15px; font-weight: 600; }
-  p.sub { margin: 0 0 14px 0; opacity: .7; font-size: 13px; }
+  body { margin: 0; font: 14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 12px 0; background: transparent; }
+  .card { color: #0f172a; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+  h2 { margin: 0 0 4px 0; font-size: 15px; font-weight: 600; color: #0f172a; }
+  p.sub { margin: 0 0 14px 0; color: #475569; font-size: 13px; }
+  p.sub strong { color: #0f172a; }
   .grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
-  button.opt { all: unset; cursor: pointer; padding: 14px; border-radius: 10px; border: 1px solid rgba(148,163,184,.4); transition: all .15s; display: flex; gap: 12px; align-items: flex-start; background: transparent; }
-  button.opt:hover { border-color: #38bdf8; background: rgba(56,189,248,.08); }
-  button.opt:disabled { opacity: .4; cursor: progress; }
+  button.opt { all: unset; cursor: pointer; padding: 14px; border-radius: 10px; border: 1px solid #cbd5e1; background: #f8fafc; color: #0f172a; transition: all .15s; display: flex; gap: 12px; align-items: flex-start; }
+  button.opt:hover { border-color: #0284c7; background: #e0f2fe; }
+  button.opt:disabled { opacity: .5; cursor: progress; }
   .opt .ico { font-size: 22px; line-height: 1; }
   .opt .body { flex: 1; min-width: 0; }
-  .opt .ttl { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
-  .opt .desc { font-size: 12px; opacity: .7; line-height: 1.4; }
-  .status { margin-top: 12px; font-size: 12px; opacity: .8; min-height: 16px; }
+  .opt .ttl { font-weight: 600; font-size: 14px; margin-bottom: 2px; color: #0f172a; }
+  .opt .desc { font-size: 12px; color: #475569; line-height: 1.4; }
+  .status { margin-top: 12px; font-size: 12px; color: #475569; min-height: 16px; }
 </style></head>
 <body>
 <div class="card">
@@ -164,17 +167,15 @@ function downloadHtml({ fileName, mimeType, base64, sizeBytes, summary }) {
   return `<!doctype html>
 <html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 16px; background: transparent; color: #0f172a; }
-  @media (prefers-color-scheme: dark) { body { color: #f1f5f9; } }
-  .card { border: 1px solid rgba(148,163,184,.4); border-radius: 12px; padding: 16px; background: rgba(255,255,255,.03); display: flex; gap: 14px; align-items: center; }
-  .ico { font-size: 32px; }
+  body { margin: 0; font: 14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 12px 0; background: transparent; }
+  .card { color: #0f172a; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; display: flex; gap: 14px; align-items: center; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+  .ico { font-size: 32px; line-height: 1; }
   .body { flex: 1; min-width: 0; }
-  .ttl { font-weight: 600; font-size: 14px; margin-bottom: 2px; word-break: break-word; }
-  .meta { font-size: 12px; opacity: .7; }
-  a.dl { all: unset; cursor: pointer; padding: 8px 14px; border-radius: 8px; background: #38bdf8; color: #0f172a; font-weight: 600; font-size: 13px; transition: background .15s; }
-  a.dl:hover { background: #0ea5e9; }
+  .ttl { font-weight: 600; font-size: 14px; margin-bottom: 2px; color: #0f172a; word-break: break-word; }
+  .meta { font-size: 12px; color: #475569; }
+  a.dl { all: unset; cursor: pointer; padding: 8px 14px; border-radius: 8px; background: #0284c7; color: #ffffff; font-weight: 600; font-size: 13px; transition: background .15s; }
+  a.dl:hover { background: #0369a1; }
 </style></head>
 <body>
 <div class="card">

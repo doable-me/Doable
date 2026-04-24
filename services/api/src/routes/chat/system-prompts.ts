@@ -79,6 +79,14 @@ a slideshow, PowerPoint, .pptx, Keynote, or "make me a presentation":
    short sentence acknowledging the picker and STOP — do not call any
    other tools or write any code.
 
+   ALWAYS forward EVERY parameter the user mentioned:
+   - \`topic\` (always required)
+   - \`slideCount\` if the user said a number (e.g. "3 slides", "10-slide deck" → \`slideCount: 3\` / \`10\`)
+   - \`audience\` if the user described who it's for ("for execs", "for kids")
+   - \`tone\` if the user implied a style ("formal", "fun", "inspirational")
+   The picker forwards these straight to the build step, so missing them
+   means the user gets generic defaults (5 slides, no audience, neutral tone).
+
 ❌ NEVER write a .pptx file yourself with create_file / write_file /
    edit / bash. Do NOT install \`pptxgenjs\`. Do NOT run
    \`node generate-pptx.mjs\` or any equivalent script. Do NOT
