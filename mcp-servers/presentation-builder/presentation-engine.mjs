@@ -131,18 +131,24 @@ export async function buildPptx({ topic, slideCount, audience, tone }) {
 
 /**
  * Build a .pptx Buffer from an AI-supplied JSON spec. The spec format:
- *   { topic, paletteId?, slides: [ { layout, title, bullets?, subtitle? }, ... ] }
+ *   { topic, palette?, paletteId?, slides: [ { layout, title, bullets?, subtitle? }, ... ] }
  *
- * `paletteId` is optional — if omitted/unknown, a topic-aware palette is auto-picked.
+ * Palette resolution order:
+ *   1. `palette` — a full bespoke palette the LLM designed for this topic
+ *      (colors + fonts). Preferred path; enables truly topic-adaptive design.
+ *   2. `paletteId` — a preset id (legacy/convenience).
+ *   3. Keyword-based auto-pick from the topic (last-resort fallback only).
+ *
  * Each slide's `layout` must match a key in PPTX_RENDERERS (cover, twoCol, stat, cards,
  * timeline, quote, compare, takeaways, closing). Unknown layouts fall back to twoCol.
  */
-export async function buildPptxFromSpec({ topic, paletteId, slides }) {
+export async function buildPptxFromSpec({ topic, palette, paletteId, slides }) {
   const t = (topic || "Presentation").trim();
   if (!Array.isArray(slides) || slides.length === 0) {
     throw new Error("`slides` must be a non-empty array");
   }
-  const palette = pickPaletteById(paletteId) || pickPalette(t);
+  const resolvedPalette =
+    normalisePalette(palette) || pickPaletteById(paletteId) || pickPalette(t);
   // Normalise each slide: ensure bullets is an array of strings.
   const normalised = slides.map((s) => ({
     layout: s.layout,
@@ -150,7 +156,7 @@ export async function buildPptxFromSpec({ topic, paletteId, slides }) {
     subtitle: s.subtitle ? String(s.subtitle) : "",
     bullets: Array.isArray(s.bullets) ? s.bullets.map((b) => String(b)) : [],
   }));
-  return renderPptxFromSlides({ topic: t, slides: normalised, palette });
+  return renderPptxFromSlides({ topic: t, slides: normalised, palette: resolvedPalette });
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -620,6 +626,40 @@ function pickPalette(topic) {
 export function pickPaletteById(id) {
   if (!id) return null;
   return PALETTES.find((p) => p.id === id) || null;
+}
+
+/**
+ * Normalise an LLM-supplied bespoke palette into the renderer shape. Accepts
+ * loose input: `{ fonts?:{display,body}, fontsUrl?, vars?:{bg,panel,accent,accent2,accent3,text,sub,card?,border?} }`
+ * or flat `{ bg, panel, accent, ..., displayFont, bodyFont, fontsUrl }`.
+ * Missing fields fall back to sensible defaults. Returns null for non-objects.
+ */
+export function normalisePalette(spec) {
+  if (!spec || typeof spec !== "object") return null;
+  const v = spec.vars && typeof spec.vars === "object" ? spec.vars : spec;
+  const f = spec.fonts && typeof spec.fonts === "object" ? spec.fonts : {};
+  const vars = {
+    bg:      String(v.bg      ?? "#0f0720"),
+    panel:   String(v.panel   ?? "#1a0f35"),
+    accent:  String(v.accent  ?? "#8b5cf6"),
+    accent2: String(v.accent2 ?? "#f59e0b"),
+    accent3: String(v.accent3 ?? "#10b981"),
+    text:    String(v.text    ?? "#f8fafc"),
+    sub:     String(v.sub     ?? "#94a3b8"),
+    card:    String(v.card    ?? "rgba(255,255,255,0.06)"),
+    border:  String(v.border  ?? "rgba(255,255,255,0.18)"),
+  };
+  const fonts = {
+    display: String(f.display ?? spec.displayFont ?? "'Plus Jakarta Sans', sans-serif"),
+    body:    String(f.body    ?? spec.bodyFont    ?? "'Plus Jakarta Sans', sans-serif"),
+  };
+  return {
+    id: String(spec.id ?? "custom"),
+    keywords: [],
+    fonts,
+    fontsUrl: typeof spec.fontsUrl === "string" ? spec.fontsUrl : "",
+    vars,
+  };
 }
 
 /** Stable list of palette ids the AI can choose from in a deck spec. */

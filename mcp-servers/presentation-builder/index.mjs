@@ -126,25 +126,36 @@ function buildPptxPrompt(opts) {
   return [
     `BUILD_PPTX_DECK ${ctx}`,
     ``,
-    `You are designing a stunning PowerPoint deck. The HEAVY rendering is done by a deterministic engine — you only generate the CONTENT and DESIGN CHOICES as a JSON spec. This is fast (~10–15s) and reliable.`,
+    `You are designing a stunning, BESPOKE PowerPoint deck. A deterministic engine does the heavy rendering from a JSON spec you supply — so this is fast (<2s) and reliable. You pick the palette, fonts, layout sequence, and content. Do NOT fall back on a preset theme — design one for this exact topic.`,
     ``,
     `OUTPUT PROTOCOL — follow EXACTLY:`,
     `1. Reply with ONE short status sentence in chat (e.g. "Designing 8 slides about ${String(opts.topic).replace(/"/g, '\\"')}…"). NOTHING ELSE. NO markdown. NO code fences. NO outline preview.`,
-    `2. IMMEDIATELY make ONE tool call: render_deck({ format: "pptx", topic, paletteId, slides }).`,
+    `2. IMMEDIATELY make ONE tool call: render_deck({ format: "pptx", topic, palette, slides }).`,
     `3. After the tool returns, reply with EXACTLY one short sentence ("Deck ready — download from the card above.") and STOP.`,
     ``,
     `SPEC SHAPE (compact JSON the engine renders):`,
-    `  topic: string`,
-    `  paletteId: one of [${PALETTE_IDS.map((id) => `"${id}"`).join(", ")}] — pick the palette whose mood best fits the topic`,
-    `  slides: array of slide objects, each:`,
-    `    { layout: <one of "cover"|"twoCol"|"stat"|"cards"|"timeline"|"quote"|"compare"|"takeaways"|"closing">,`,
-    `      title: string (mandatory; the on-slide headline),`,
-    `      subtitle?: string (used by cover & closing),`,
-    `      bullets?: string[] (3–4 specific facts/points the layout will display) }`,
+    `  topic:   string`,
+    `  palette: {`,
+    `    vars: { bg, panel, accent, accent2, accent3, text, sub, card?, border? }  // hex with '#', card/border can be rgba() for translucency`,
+    `    fonts: { display: "'Display Family', genericFamily", body: "'Body Family', genericFamily" }  // pick Google Fonts that evoke the topic`,
+    `    fontsUrl?: "https://fonts.googleapis.com/css2?family=…&display=swap"`,
+    `  }`,
+    `  slides: array, each { layout, title, subtitle?, bullets? }`,
+    `    layout: one of "cover" | "twoCol" | "stat" | "cards" | "timeline" | "quote" | "compare" | "takeaways" | "closing"`,
     ``,
-    `LAYOUT GUIDE (the engine handles all visuals — colors, decorative orbs, footer, typography):`,
+    `PALETTE DESIGN RULES (critical — this is why the deck feels bespoke):`,
+    `- Choose colors that evoke the topic's MOOD and BRAND — don't default to purple/teal for everything. Examples:`,
+    `    • Claude AI / Anthropic → warm cream bg (#faf7f2) + deep orange accent (#cc785c) + ink text (#141413)`,
+    `    • Ocean conservation   → deep navy bg (#0a1f3d) + aqua accent (#2dd4bf) + sand text (#fef3c7)`,
+    `    • Mid-century design   → mustard bg (#c9a227) + teal accent (#1b6b7a) + off-white text (#f5ecd7)`,
+    `    • Gothic literature    → near-black bg (#1a1320) + crimson accent (#8b1e2d) + parchment text (#e8dcc4)`,
+    `- Ensure text/bg contrast ≥ 7:1 for title, ≥ 4.5:1 for body.`,
+    `- accent2 and accent3 should be distinct hues from accent so layouts with multiple accents (stat, cards, compare) look varied.`,
+    `- Pick fonts that match the subject: humanist serif for literature/AI-humanism, grotesk sans for tech, condensed display for sports, slab for industrial/engineering, etc. Avoid defaulting to the same pair every deck.`,
+    ``,
+    `LAYOUT GUIDE (the engine handles decorative orbs, footer, typography sizing):`,
     `  cover     — title + subtitle. First slide. ALWAYS use exactly once.`,
-    `  twoCol    — title + 3–4 bullets. Lead bullet shown larger on the left, all bullets in glass card right.`,
+    `  twoCol    — title + 3–4 bullets. Lead bullet shown larger on the left, all bullets in a glass card on the right.`,
     `  stat      — title + 3–4 bullets. Bullet[0] is the key metric label; bullets[1..3] are supporting cards.`,
     `  cards     — title + 3 bullets (each a punchy one-liner the renderer turns into a numbered card).`,
     `  timeline  — title + 3–4 bullets (each a step in chronological order).`,
@@ -153,11 +164,10 @@ function buildPptxPrompt(opts) {
     `  takeaways — title + 3–4 bullets (final memorable points).`,
     `  closing   — title + subtitle. Last slide. ALWAYS use exactly once.`,
     ``,
-    `RULES:`,
+    `CONTENT RULES:`,
     `- Generate ${opts.slideCount || 8} slides total: ALWAYS start with cover and end with closing; vary the middle layouts (no two adjacent slides the same).`,
     `- Write SPECIFIC, INTERESTING facts about the topic. Real numbers, real names, real examples. NO placeholder text like "Insight #1" or "key benefit".`,
     `- Bullets must be tight one-liners (≤ 90 chars each).`,
-    `- Pick paletteId based on topic mood: tech/AI → "neural-dark", finance → "gold-standard", nature/climate → "terra-viva", health → "vital-soft", history/academic → "scholar-crimson", art/design → "brutalist-pop", startup/saas → "venture-pulse", sports/action → "kinetic-edge".`,
     ``,
     `Do NOT call write_file, create_file, install_packages, render_pptx, or build_presentation.`,
   ].join("\n");
@@ -231,10 +241,45 @@ const TOOLS = [
       properties: {
         format: { type: "string", enum: ["pptx"], description: "Currently only 'pptx' is supported." },
         topic: { type: "string", description: "Subject of the deck (used for the file name and stored as deck title)." },
+        palette: {
+          type: "object",
+          description:
+            "BESPOKE palette you design for this specific topic. PREFER this over paletteId so " +
+            "fonts and colors match the subject (e.g. Claude AI → warm orange/cream + humanist serif; " +
+            "ocean research → teal/navy + clean sans). Hex colors WITH '#'.",
+          properties: {
+            vars: {
+              type: "object",
+              properties: {
+                bg:      { type: "string", description: "Main background (usually dark or soft light, e.g. '#0f172a' or '#faf7f2')." },
+                panel:   { type: "string", description: "Slightly offset panel/card background." },
+                accent:  { type: "string", description: "Primary accent (titles, icons, highlights)." },
+                accent2: { type: "string", description: "Secondary accent (metrics, alt emphasis)." },
+                accent3: { type: "string", description: "Tertiary accent (rare highlight / third category)." },
+                text:    { type: "string", description: "Primary text color, strong contrast against bg." },
+                sub:     { type: "string", description: "Secondary/muted text." },
+                card:    { type: "string", description: "Card fill, often a translucent rgba()." },
+                border:  { type: "string", description: "Card/divider border, often translucent rgba()." },
+              },
+              required: ["bg", "panel", "accent", "accent2", "accent3", "text", "sub"],
+            },
+            fonts: {
+              type: "object",
+              description: "CSS font-family strings. The engine extracts the first family name for PPTX.",
+              properties: {
+                display: { type: "string", description: "Headline font, e.g. \"'Fraunces', serif\"." },
+                body:    { type: "string", description: "Body font, e.g. \"'Inter', sans-serif\"." },
+              },
+              required: ["display", "body"],
+            },
+          },
+          required: ["vars", "fonts"],
+        },
         paletteId: {
           type: "string",
-          enum: PALETTE_IDS,
-          description: "Visual palette for the deck. Pick the one whose mood matches the topic.",
+          description:
+            "Optional preset id (legacy shortcut). Only used when `palette` is not supplied. " +
+            "Available ids: " + PALETTE_IDS.map((id) => `"${id}"`).join(", "),
         },
         slides: {
           type: "array",
@@ -605,6 +650,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const fileName = String(args?.fileName ?? `${slugify(topic)}.pptx`);
     const slides = Array.isArray(args?.slides) ? args.slides : [];
     const paletteId = args?.paletteId ? String(args.paletteId) : undefined;
+    const palette = args?.palette && typeof args.palette === "object" ? args.palette : undefined;
     const format = String(args?.format ?? "pptx");
     if (format !== "pptx") {
       return { isError: true, content: [{ type: "text", text: `render_deck only supports format="pptx" right now (got "${format}"). Use build_presentation for HTML web decks.` }] };
@@ -613,7 +659,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       return { isError: true, content: [{ type: "text", text: "Error: `slides` must be a non-empty array." }] };
     }
     try {
-      const { buffer, slideCount } = await buildPptxFromSpec({ topic, paletteId, slides });
+      const { buffer, slideCount } = await buildPptxFromSpec({ topic, palette, paletteId, slides });
       const base64 = Buffer.from(buffer).toString("base64");
       const html = downloadHtml({
         fileName,

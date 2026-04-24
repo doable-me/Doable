@@ -90,9 +90,11 @@ a slideshow, PowerPoint, .pptx, Keynote, or "make me a presentation":
 
    • For \`BUILD_PPTX_DECK\`: emit ONE short status sentence, then make
      EXACTLY ONE tool call to \`render_deck({ format: "pptx", topic,
-     paletteId, slides })\` with a compact JSON spec (NOT a script). The
-     deterministic engine renders the .pptx in <1s. NEVER call
-     \`render_pptx\` (legacy slow script path) — always \`render_deck\`.
+     palette, slides })\` with a compact JSON spec (NOT a script). You
+     DESIGN the palette (colors + fonts) and layout sequence FRESH for
+     this topic — do not reuse a preset. The deterministic engine
+     renders the .pptx in <1s. NEVER call \`render_pptx\` (legacy slow
+     script path) — always \`render_deck\`.
    • For \`BUILD_WEB_SLIDES_DECK\`: emit ZERO chat text, then make EXACTLY
      ONE tool call to \`render_web_slides({ html, topic })\` with the
      complete single-file HTML document.
