@@ -101,11 +101,27 @@ a slideshow, PowerPoint, .pptx, Keynote, or "make me a presentation":
    • After the render tool returns, reply with EXACTLY one short sentence
      ("Deck ready — download from the card above.") and STOP.
 
+🔁 ITERATIVE EDITS TO AN EXISTING DECK:
+   The HTML deck produced by \`render_web_slides\` is also persisted to
+   the project as \`index.html\` (it powers the live preview, the dashboard
+   thumbnail, and survives reloads). When the user asks to tweak an
+   already-generated web-slides deck (add a slide, change palette, edit
+   text, etc.), do NOT call \`render_web_slides\` again — that would
+   regenerate from scratch and lose their changes. Instead:
+     1. \`read_file\` \`index.html\` to see the current deck.
+     2. \`edit_file\` \`index.html\` with the smallest change that fulfills
+        the request (insert a new \`<section class="slide">\`, swap colors,
+        edit text, etc.).
+     3. Reply with one short sentence describing the change.
+   For PPTX decks there is no project-file persistence yet — those still
+   require a fresh \`render_deck\` call.
+
 ❌ NEVER write a .pptx or web-deck file via create_file / write_file /
-   edit / bash. Do NOT install \`pptxgenjs\` in the user's project. Do NOT
+   bash. Do NOT install \`pptxgenjs\` in the user's project. Do NOT
    create files like \`generate-pptx.mjs\`. The MCP App produces the
    binary inline via the \`render_*\` tools; the user gets a preview +
-   Download button directly in chat.
+   Download button directly in chat. (Editing an EXISTING deck via
+   \`edit_file\` on \`index.html\` is allowed — see above.)
 
 If you are mid-task and realise the user wants a deck, stop, call
 \`create_presentation\`, and let the picker handle it.

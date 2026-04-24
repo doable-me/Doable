@@ -200,7 +200,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           const sessionTools = await filterToolsForMode(allTools, mode);
           logToolManifest(allTools, sessionTools, mode, projectId, state.traceCollector);
 
-          const toolProgress = createToolProgressCallbacks(stream, state, state.traceCollector, recordAssistantToolCall);
+          const toolProgress = createToolProgressCallbacks(stream, state, state.traceCollector, recordAssistantToolCall, projectId);
           const modeChanged = checkAndEvictOnModeChange(sessionKey, mode, state.traceCollector);
           let sessionId = await resolveSession(projectId, userId, sessionKey, mode, modeChanged, resolvedModel, resolvedProvider, resolvedGithubToken, projectPath, systemPrompt, sessionTools, toolProgress, state.traceCollector, stream);
           const dbSessionId = await persistSessionToDb(projectId, userId, mode, sessionId);

@@ -54,12 +54,11 @@ artifacts.get("/:id{.+}", (c) => {
   const entry = store.get(id);
   if (!entry) return c.text("Not found", 404);
 
-  // HTML artifacts (e.g. web-slides decks) should render inline so the
-  // editor preview iframe can display them. All other types stay as a
-  // forced download. A `?download=1` query forces download for any type.
-  const isHtml = /html/i.test(entry.mimeType) || /\.html?$/i.test(entry.fileName);
-  const forceDownload = c.req.query("download") === "1";
-  const inline = isHtml && !forceDownload;
+  // Default to forced download (preserves chat download-card UX). Pass
+  // `?inline=1` to render in-browser (e.g. for opening the deck in a new
+  // tab). Live editor preview no longer uses this endpoint — the deck is
+  // persisted to the project's index.html and served via /preview/.
+  const inline = c.req.query("inline") === "1";
   const safeName = entry.fileName.replace(/"/g, "");
   const headers: Record<string, string> = {
     "content-type": entry.mimeType,
@@ -68,7 +67,6 @@ artifacts.get("/:id{.+}", (c) => {
     "cache-control": "private, max-age=3600",
   };
   if (inline) {
-    // Allow embedding in editor iframes across our subdomains.
     headers["x-frame-options"] = "ALLOWALL";
     headers["content-security-policy"] =
       "frame-ancestors 'self' https://*.doable.me https://doable.me http://localhost:* http://127.0.0.1:*";

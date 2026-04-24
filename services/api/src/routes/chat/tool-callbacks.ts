@@ -9,11 +9,19 @@ import { sql } from "../../db/index.js";
 import { pendingUiResources } from "../../mcp/tool-bridge.js";
 import { storeArtifact } from "../artifacts.js";
 import { pushArtifacts } from "./artifact-stash.js";
+import { writeProjectFile } from "../../ai/project-files.js";
 
 const ARTIFACT_PUBLIC_URL =
   process.env.NEXT_PUBLIC_API_URL ?? process.env.API_URL ?? "http://localhost:4000";
 
-type ArtifactRef = { url: string; fileName: string; mimeType: string; sizeBytes: number };
+type ArtifactRef = {
+  url: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** Project-relative file path the artifact was also persisted to (HTML decks). */
+  projectPath?: string;
+};
 
 /**
  * Rewrite oversize `data:<mime>;base64,<b64>` URIs inside MCP-UI rawHtml
@@ -22,8 +30,16 @@ type ArtifactRef = { url: string; fileName: string; mimeType: string; sizeBytes:
  * extracting the bytes here keeps the streamed event tiny. Also returns
  * the artifacts so the caller can emit a separate, dedicated SSE event
  * (the mcp_ui_resource iframe path can still be flaky on some networks).
+ *
+ * For HTML decks (web-slides), the bytes are also written to the project's
+ * `index.html` so the deck behaves like any other generated website:
+ * survives page reloads, gets thumbnailed by the dashboard, and can be
+ * iteratively edited by the AI via the standard read/edit-file tools.
  */
-function offloadDataUris(html: string): { html: string; artifacts: ArtifactRef[] } {
+function offloadDataUris(
+  html: string,
+  projectId?: string,
+): { html: string; artifacts: ArtifactRef[] } {
   const artifacts: ArtifactRef[] = [];
   if (!html || html.length < 16 * 1024) return { html, artifacts };
   const out = html.replace(
@@ -40,7 +56,20 @@ function offloadDataUris(html: string): { html: string; artifacts: ArtifactRef[]
         const fileName = `presentation-${Date.now()}.${ext}`;
         const id = storeArtifact({ bytes, mimeType: mime, fileName });
         const url = `${ARTIFACT_PUBLIC_URL.replace(/\/$/, "")}/artifacts/${id}.${ext}`;
-        artifacts.push({ url, fileName, mimeType: mime, sizeBytes: bytes.length });
+        const ref: ArtifactRef = { url, fileName, mimeType: mime, sizeBytes: bytes.length };
+
+        // Persist HTML decks into the project tree so the live preview
+        // serves them directly (refresh-safe, thumbnailable, editable).
+        if (projectId && ext === "html") {
+          const text = bytes.toString("utf-8");
+          writeProjectFile(projectId, "index.html", text).then(
+            () => { dlog(`wrote deck to projects/${projectId}/index.html (${text.length}B)`); },
+            (err) => { dlog(`writeProjectFile index.html failed: ${(err as Error).message}`); },
+          );
+          ref.projectPath = "index.html";
+        }
+
+        artifacts.push(ref);
         return url;
       } catch {
         return _match;
@@ -91,6 +120,7 @@ export function createToolProgressCallbacks(
   state: ChatStreamState,
   traceCollector: TraceCollector | null,
   recordAssistantToolCall: (name?: string, args?: unknown) => void,
+  projectId?: string,
 ) {
   return {
     onToolStart: (toolName: string, rawArgs: unknown) => {
@@ -156,7 +186,7 @@ export function createToolProgressCallbacks(
       for (const item of pendingUiResources) {
         const r = item.resource as Record<string, unknown> & { text?: string };
         if (typeof r?.text === "string" && r.text.length > 16 * 1024) {
-          const { html: rewritten, artifacts: arts } = offloadDataUris(r.text);
+          const { html: rewritten, artifacts: arts } = offloadDataUris(r.text, projectId);
           if (arts.length > 0) {
             collectedArtifacts.push(...arts);
             (item.resource as Record<string, unknown>).text = rewritten;
@@ -164,13 +194,17 @@ export function createToolProgressCallbacks(
           }
         }
       }
+      // If any artifact was persisted to a project file, surface that path
+      // on the tool_result so the editor's standard "file changed" refresh
+      // path picks it up — same UX as create_file.
+      const persistedPath = collectedArtifacts.find((a) => a.projectPath)?.projectPath;
       stream.writeSSE({ data: JSON.stringify({
         type: "tool_result",
         data: {
           name: toolName,
           success: true,
           friendlyMessage: friendly,
-          ...(endPath ? { path: endPath } : {}),
+          ...(persistedPath ? { path: persistedPath } : endPath ? { path: endPath } : {}),
           ...(collectedArtifacts.length > 0 ? { artifacts: collectedArtifacts } : {}),
         },
       }) }).catch(() => {});
@@ -280,7 +314,7 @@ export function createToolProgressCallbacks(
           const safeResource = (() => {
             const r = item.resource as Record<string, unknown> & { text?: string };
             if (typeof r?.text === "string" && r.text.length > 16 * 1024) {
-              const { html: rewritten, artifacts: arts } = offloadDataUris(r.text);
+              const { html: rewritten, artifacts: arts } = offloadDataUris(r.text, projectId);
               artifacts = arts;
               if (rewritten !== r.text) {
                 return { ...r, text: rewritten };

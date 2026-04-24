@@ -2715,22 +2715,11 @@ export default function EditorPage() {
                   return { ...m, artifacts: [...existing, artifact] };
                 })
               );
-              // If the artifact is an HTML deck (web slides), surface it in
-              // the right-hand preview pane by pointing the preview iframe
-              // at the artifact URL directly.
-              if (/html/i.test(artifact.mimeType) || /\.html?$/i.test(artifact.fileName)) {
-                // Cancel any pending debounced preview refresh (which would
-                // re-set the iframe to the OLD previewUrl captured in its
-                // closure and clobber the artifact URL).
-                if (previewRefreshTimer.current) {
-                  clearTimeout(previewRefreshTimer.current);
-                  previewRefreshTimer.current = null;
-                }
-                setPreviewUrl(artifact.url);
-                if (iframeRef.current) {
-                  try { iframeRef.current.src = artifact.url; } catch {}
-                }
-              }
+              // HTML decks are persisted by the API to the project's
+              // index.html, so the standard tool_result `path` refresh
+              // path will reload the live preview to show them. No iframe
+              // override needed here — keeps refresh, thumbnails, and
+              // iterative edits all working uniformly.
             },
           },
         );
@@ -3252,20 +3241,9 @@ export default function EditorPage() {
               return { ...m, artifacts: [...existing, artifact] };
             })
           );
-          // If the artifact is an HTML deck (web slides), surface it in
-          // the right-hand preview pane by pointing the preview iframe
-          // at the artifact URL directly.
-          if (/html/i.test(artifact.mimeType) || /\.html?$/i.test(artifact.fileName)) {
-            // Cancel any pending debounced preview refresh.
-            if (previewRefreshTimer.current) {
-              clearTimeout(previewRefreshTimer.current);
-              previewRefreshTimer.current = null;
-            }
-            setPreviewUrl(artifact.url);
-            if (iframeRef.current) {
-              try { iframeRef.current.src = artifact.url; } catch {}
-            }
-          }
+          // HTML decks are persisted by the API to the project's index.html
+          // so the live preview will refresh to show them via the standard
+          // tool_result path. No iframe override needed.
         },
         // displayContent — persist short label in chat history when provided
         // (keeps raw MCP skill instructions out of the stored transcript).
