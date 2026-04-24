@@ -77,6 +77,28 @@ export async function ensureBuiltinConnectorsForWorkspace(
       `;
       if (existing) continue;
 
+      // Dedupe: if a workspace-scope connector with the same name already
+      // exists (e.g., a user added it manually before backfill ran), claim
+      // it as the builtin instead of creating a duplicate.
+      const [dup] = await sql<Array<{ id: string }>>`
+        SELECT id FROM mcp_connectors
+        WHERE workspace_id = ${workspaceId}
+          AND scope = 'workspace'
+          AND name = ${app.name}
+        ORDER BY created_at ASC LIMIT 1
+      `;
+      if (dup) {
+        await sql`
+          INSERT INTO workspace_builtin_provisioned (workspace_id, builtin_id)
+          VALUES (${workspaceId}, ${app.id})
+          ON CONFLICT DO NOTHING
+        `;
+        console.log(
+          `[builtin-mcp] Claimed existing "${app.name}" connector ${dup.id} as builtin for workspace ${workspaceId}`,
+        );
+        continue;
+      }
+
       await connectors.createConnector({
         workspaceId,
         createdBy: ownerUserId,
