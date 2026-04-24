@@ -29,12 +29,14 @@ function CallbackHandler() {
     let accessToken: string | null = null;
     let refreshToken: string | null = null;
     let errorParam: string | null = null;
+    let returnTo: string | null = null;
 
     const hash = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
     if (hash) {
       const fragmentParams = new URLSearchParams(hash);
       accessToken = fragmentParams.get("accessToken");
       refreshToken = fragmentParams.get("refreshToken");
+      returnTo = fragmentParams.get("returnTo");
       // Clear fragment immediately so tokens don't linger in the URL bar
       if (accessToken) window.history.replaceState(null, "", window.location.pathname);
     }
@@ -44,7 +46,15 @@ function CallbackHandler() {
       accessToken = searchParams.get("accessToken");
       refreshToken = searchParams.get("refreshToken");
     }
+    if (!returnTo) returnTo = searchParams.get("returnTo");
     errorParam = searchParams.get("error");
+
+    // Validate returnTo is a safe same-origin path
+    const safeReturnTo =
+      returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")
+        ? returnTo
+        : null;
+    const redirectTarget = safeReturnTo ?? "/dashboard";
 
     if (errorParam) {
       setError(
@@ -81,8 +91,8 @@ function CallbackHandler() {
           avatarUrl: res.user.avatarUrl,
         };
         localStorage.setItem("doable_auth_user", JSON.stringify(user));
-        setStatus("Redirecting to dashboard...");
-        router.replace("/dashboard");
+        setStatus(safeReturnTo ? "Redirecting..." : "Redirecting to dashboard...");
+        router.replace(redirectTarget);
       })
       .catch(() => {
         // If /auth/me fails, try decoding the JWT as a fallback
@@ -100,8 +110,8 @@ function CallbackHandler() {
         } catch {
           // If JWT decode also fails, the AuthProvider will call /auth/me on mount
         }
-        setStatus("Redirecting to dashboard...");
-        router.replace("/dashboard");
+        setStatus(safeReturnTo ? "Redirecting..." : "Redirecting to dashboard...");
+        router.replace(redirectTarget);
       });
   }, [router, searchParams]);
 

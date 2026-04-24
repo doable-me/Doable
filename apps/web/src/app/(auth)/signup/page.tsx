@@ -17,13 +17,20 @@ export default function SignupPage() {
   const router = useRouter();
   const { register, isAuthenticated, isLoading: authLoading } = useAuth();
 
-  // Redirect to dashboard if already signed in (forward prompt if present)
+  // Redirect after sign-up (honor returnTo, fall back to dashboard).
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      const urlPrompt = new URLSearchParams(window.location.search).get("prompt");
-      const target = urlPrompt
-        ? `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`
-        : "/dashboard";
+      const params = new URLSearchParams(window.location.search);
+      const returnTo = params.get("returnTo");
+      const urlPrompt = params.get("prompt");
+      let target: string;
+      if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+        target = returnTo;
+      } else if (urlPrompt) {
+        target = `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`;
+      } else {
+        target = "/dashboard";
+      }
       router.replace(target);
     }
   }, [authLoading, isAuthenticated, router]);
@@ -80,12 +87,18 @@ export default function SignupPage() {
         password,
         displayName: displayName || undefined,
       });
-      // Forward the original prompt (from home page) to dashboard
-      const urlPrompt = new URLSearchParams(window.location.search).get("prompt");
-      const dashboardUrl = urlPrompt
-        ? `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`
-        : "/dashboard";
-      router.push(dashboardUrl);
+      const params = new URLSearchParams(window.location.search);
+      const returnTo = params.get("returnTo");
+      const urlPrompt = params.get("prompt");
+      let target: string;
+      if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+        target = returnTo;
+      } else if (urlPrompt) {
+        target = `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`;
+      } else {
+        target = "/dashboard";
+      }
+      router.push(target);
     } catch (err: unknown) {
       if (err && typeof err === "object" && "body" in err) {
         const apiErr = err as { body: { error: string } };
@@ -101,8 +114,16 @@ export default function SignupPage() {
   function handleOAuth(provider: "github" | "google") {
     setIsOAuthLoading(provider);
     setError(null);
+    const params = new URLSearchParams(window.location.search);
+    const returnToRaw = params.get("returnTo");
+    const returnTo =
+      returnToRaw && returnToRaw.startsWith("/") && !returnToRaw.startsWith("//")
+        ? returnToRaw
+        : null;
     window.location.href =
-      provider === "github" ? getGitHubLoginUrl() : getGoogleLoginUrl();
+      provider === "github"
+        ? getGitHubLoginUrl(returnTo)
+        : getGoogleLoginUrl(returnTo);
   }
 
   const isFormDisabled = isLoading || isOAuthLoading !== null;

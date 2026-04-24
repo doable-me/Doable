@@ -15,9 +15,23 @@ const auth = authQueries(sql);
 
 export const oauthRoutes = new Hono();
 
+// Validate a returnTo value is a safe same-origin path (starts with /, not //).
+function safeReturnTo(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (!value.startsWith("/")) return null;
+  if (value.startsWith("//")) return null;
+  if (value.length > 512) return null;
+  return value;
+}
+
 // ─── GET /auth/github ──────────────────────────────────────
 oauthRoutes.get("/github", (c) => {
-  const state = JSON.stringify({ type: "github", nonce: crypto.randomUUID() });
+  const returnTo = safeReturnTo(c.req.query("returnTo"));
+  const state = JSON.stringify({
+    type: "github",
+    nonce: crypto.randomUUID(),
+    ...(returnTo ? { returnTo } : {}),
+  });
   const encodedState = Buffer.from(state).toString("base64url");
   return c.redirect(getGitHubAuthUrl(encodedState));
 });
@@ -29,12 +43,14 @@ oauthRoutes.get("/github/callback", async (c) => {
   if (!code) return c.redirect(`${FRONTEND_URL}/login?error=missing_code`);
 
   // Validate state parameter to prevent CSRF (Bug-114)
+  let decodedState: { type?: string; nonce?: string; returnTo?: string } = {};
   try {
-    const decoded = JSON.parse(Buffer.from(stateParam ?? "", "base64url").toString());
-    if (decoded.type !== "github" || !decoded.nonce) throw new Error("bad state");
+    decodedState = JSON.parse(Buffer.from(stateParam ?? "", "base64url").toString());
+    if (decodedState.type !== "github" || !decodedState.nonce) throw new Error("bad state");
   } catch {
     return c.redirect(`${FRONTEND_URL}/login?error=invalid_state`);
   }
+  const returnTo = safeReturnTo(decodedState.returnTo);
 
   try {
     const { user: ghUser } = await exchangeGitHubCode(code);
@@ -51,8 +67,12 @@ oauthRoutes.get("/github/callback", async (c) => {
     const tokens = await issueTokens(user.id, user.email);
     // Pass tokens via URL fragment (not query params) so they don't appear in
     // server logs, Referer headers, or browser history entries (Bug-105).
-    const params = new URLSearchParams({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
-    return c.redirect(`${FRONTEND_URL}/auth/callback#${params.toString()}`);
+    const fragParams = new URLSearchParams({
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    });
+    if (returnTo) fragParams.set("returnTo", returnTo);
+    return c.redirect(`${FRONTEND_URL}/auth/callback#${fragParams.toString()}`);
   } catch (err) {
     console.error("[OAuth] GitHub callback error:", err);
     return c.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
@@ -61,7 +81,12 @@ oauthRoutes.get("/github/callback", async (c) => {
 
 // ─── GET /auth/google ──────────────────────────────────────
 oauthRoutes.get("/google", (c) => {
-  const state = JSON.stringify({ type: "google", nonce: crypto.randomUUID() });
+  const returnTo = safeReturnTo(c.req.query("returnTo"));
+  const state = JSON.stringify({
+    type: "google",
+    nonce: crypto.randomUUID(),
+    ...(returnTo ? { returnTo } : {}),
+  });
   const encodedState = Buffer.from(state).toString("base64url");
   return c.redirect(getGoogleAuthUrl(encodedState));
 });
@@ -73,12 +98,14 @@ oauthRoutes.get("/google/callback", async (c) => {
   if (!code) return c.redirect(`${FRONTEND_URL}/login?error=missing_code`);
 
   // Validate state parameter to prevent CSRF (Bug-114)
+  let decodedState: { type?: string; nonce?: string; returnTo?: string } = {};
   try {
-    const decoded = JSON.parse(Buffer.from(stateParam ?? "", "base64url").toString());
-    if (decoded.type !== "google" || !decoded.nonce) throw new Error("bad state");
+    decodedState = JSON.parse(Buffer.from(stateParam ?? "", "base64url").toString());
+    if (decodedState.type !== "google" || !decodedState.nonce) throw new Error("bad state");
   } catch {
     return c.redirect(`${FRONTEND_URL}/login?error=invalid_state`);
   }
+  const returnTo = safeReturnTo(decodedState.returnTo);
 
   try {
     const { user: googleUser } = await exchangeGoogleCode(code);
@@ -104,8 +131,12 @@ oauthRoutes.get("/google/callback", async (c) => {
 
     const tokens = await issueTokens(userId, email);
     // Pass tokens via URL fragment (not query params) — Bug-105
-    const params = new URLSearchParams({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
-    return c.redirect(`${FRONTEND_URL}/auth/callback#${params.toString()}`);
+    const fragParams = new URLSearchParams({
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    });
+    if (returnTo) fragParams.set("returnTo", returnTo);
+    return c.redirect(`${FRONTEND_URL}/auth/callback#${fragParams.toString()}`);
   } catch (err) {
     console.error("[OAuth] Google callback error:", err);
     return c.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);

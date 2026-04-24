@@ -113,8 +113,16 @@ export default function LoginPage() {
   function handleOAuth(provider: "github" | "google") {
     setIsOAuthLoading(provider);
     setError(null);
+    const params = new URLSearchParams(window.location.search);
+    const returnToRaw = params.get("returnTo");
+    const returnTo =
+      returnToRaw && returnToRaw.startsWith("/") && !returnToRaw.startsWith("//")
+        ? returnToRaw
+        : null;
     window.location.href =
-      provider === "github" ? getGitHubLoginUrl() : getGoogleLoginUrl();
+      provider === "github"
+        ? getGitHubLoginUrl(returnTo)
+        : getGoogleLoginUrl(returnTo);
   }
 
   const isFormDisabled = isLoading || isOAuthLoading !== null;

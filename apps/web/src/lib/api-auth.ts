@@ -67,10 +67,12 @@ export async function apiResetPassword(data: {
   });
 }
 
-export function getGitHubLoginUrl(): string {
-  return `${API_URL}/auth/github`;
+export function getGitHubLoginUrl(returnTo?: string | null): string {
+  const base = `${API_URL}/auth/github`;
+  return returnTo ? `${base}?returnTo=${encodeURIComponent(returnTo)}` : base;
 }
 
-export function getGoogleLoginUrl(): string {
-  return `${API_URL}/auth/google`;
+export function getGoogleLoginUrl(returnTo?: string | null): string {
+  const base = `${API_URL}/auth/google`;
+  return returnTo ? `${base}?returnTo=${encodeURIComponent(returnTo)}` : base;
 }
