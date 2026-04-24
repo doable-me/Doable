@@ -128,7 +128,7 @@ export function createToolProgressCallbacks(
         }) }).catch(() => {});
       }
     },
-    onToolEnd: (toolName: string, rawEndArgs: unknown, result: unknown) => {
+    onToolEnd: async (toolName: string, rawEndArgs: unknown, result: unknown) => {
       const _argsObj = (rawEndArgs && typeof rawEndArgs === "object" ? rawEndArgs : {}) as Record<string, unknown>;
       const _args = (_argsObj as { arguments?: Record<string, unknown> }).arguments ?? _argsObj;
       state.hadToolCalls = true;
@@ -248,9 +248,12 @@ export function createToolProgressCallbacks(
           });
           dlog(`mcp_ui_resource EMITTING SSE uri=${item.resource.uri} bytes=${sseData.length}`);
           state.awaitingMcpWidget = true;
-          stream.writeSSE({ data: sseData })
-            .then(() => dlog(`mcp_ui_resource SSE write OK`))
-            .catch((e) => dlog(`mcp_ui_resource SSE write FAILED: ${(e as Error).message}`));
+          try {
+            await stream.writeSSE({ data: sseData });
+            dlog(`mcp_ui_resource SSE write OK`);
+          } catch (e) {
+            dlog(`mcp_ui_resource SSE write FAILED: ${(e as Error).message}`);
+          }
         }
       }
     },
