@@ -174,7 +174,12 @@ export function createToolProgressCallbacks(
         },
       }) }).catch(() => {});
       if (collectedArtifacts.length > 0) {
-        dlog(`tool_result included ${collectedArtifacts.length} artifact(s) inline for ${toolName}`);
+        // Stash for event-processor to merge into the canonical tool_result
+        // emit (the SDK fires tool.completed after this hook resolves; that
+        // event is what the client reliably receives, so attach there too).
+        const existing = state.pendingArtifacts.get(toolName) ?? [];
+        state.pendingArtifacts.set(toolName, [...existing, ...collectedArtifacts]);
+        dlog(`tool_result included ${collectedArtifacts.length} artifact(s) inline for ${toolName} (also stashed for canonical tool_result)`);
       }
       // ALSO emit each artifact as its own redundant tiny SSE event
       // type ("artifact"). Multiple distinct event types means even if one

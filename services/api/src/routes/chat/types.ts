@@ -33,6 +33,8 @@ export interface ChatStreamState {
   deferredError: string | undefined;
   /** True if an MCP interactive widget was shown — auto-continue must NOT fire. */
   awaitingMcpWidget: boolean;
+  /** Artifacts produced by a tool, keyed by toolName, awaiting attachment to the next tool_result for that tool. */
+  pendingArtifacts: Map<string, Array<{ url: string; fileName: string; mimeType: string; sizeBytes: number }>>;
 }
 
 /** Resolved AI configuration passed to stream phases. */
@@ -91,5 +93,6 @@ export function createInitialState(): ChatStreamState {
     friendlyLastTool: undefined,
     deferredError: undefined,
     awaitingMcpWidget: false,
+    pendingArtifacts: new Map(),
   };
 }

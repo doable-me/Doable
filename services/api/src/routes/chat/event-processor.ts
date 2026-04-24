@@ -208,6 +208,17 @@ function routeSseEvent(
         resultData.name = state.pendingToolNames.shift();
       }
     }
+    // Merge any artifacts stashed by tool-callbacks.onToolEnd. CF Tunnel can
+    // drop the dedicated `artifact` / `mcp_ui_resource` SSE events, so the
+    // canonical (always-delivered) tool_result is the most reliable carrier.
+    const resolvedName = resultData?.name as string | undefined;
+    if (resolvedName) {
+      const arts = state.pendingArtifacts.get(resolvedName);
+      if (arts && arts.length > 0) {
+        (resultData as Record<string, unknown>).artifacts = arts;
+        state.pendingArtifacts.delete(resolvedName);
+      }
+    }
     state.lastToolName = undefined;
     state.friendlyLastTool = undefined;
   }
