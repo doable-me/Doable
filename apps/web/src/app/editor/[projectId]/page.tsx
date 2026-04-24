@@ -4802,6 +4802,7 @@ export default function EditorPage() {
                                 key={res.toolCallId}
                                 resource={res}
                                 projectId={resolvedProjectId}
+                                isStreaming={isStreaming}
                                 onResource={(newRes) => {
                                   setMessages((prev) =>
                                     prev.map((m) =>

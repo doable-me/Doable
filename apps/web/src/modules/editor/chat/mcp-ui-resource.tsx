@@ -23,6 +23,15 @@ interface Props {
    * full machine-readable prompt that the model receives.
    */
   onPrompt?: (text: string, displayText?: string) => void;
+  /**
+   * Whether the parent chat is currently streaming a response. When true,
+   * the card holds off on sending the `host-ready` handshake to the iframe,
+   * because injecting a synthetic user message (`onPrompt`) is a no-op
+   * during active streams (`sendMessage` early-returns on `isStreaming`).
+   * Release the handshake the moment streaming flips idle so auto-build
+   * cards can fire their BUILD_DECK follow-up turn without being dropped.
+   */
+  isStreaming?: boolean;
 }
 
 interface ParentMessage {
@@ -62,7 +71,7 @@ interface ParentMessage {
  * to keep it dependency-light and to serve as a reference implementation
  * of the spec.
  */
-export function McpUiResourceCard({ resource, projectId, onResource, onPrompt }: Props) {
+export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, isStreaming }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [iframeHeight, setIframeHeight] = useState<number>(280);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -167,12 +176,16 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt }:
     return () => window.removeEventListener("message", onMessage);
   }, [handleToolCall, onPrompt]);
 
-  // Handshake: once the iframe finishes loading, tell it the host listener
-  // is attached. Auto-start cards (e.g. presentation builder's "Designing
-  // your deck…" card) wait for this signal before posting their initial
-  // `prompt` message — otherwise the message races the React ref assignment
-  // and gets dropped silently.
+  // Handshake: once the iframe finishes loading AND the parent chat is
+  // idle (not currently streaming a response), tell the iframe the host
+  // listener is attached. Auto-start cards (e.g. presentation builder's
+  // "Designing your deck…" card) wait for this signal before posting
+  // their initial `prompt` message. We MUST gate on `!isStreaming`
+  // because the parent's `sendMessage` early-returns while a stream is
+  // active — a prompt injected during streaming is silently dropped and
+  // the auto-build flow stalls forever.
   const handleIframeLoad = useCallback(() => {
+    if (isStreaming) return; // will be fired by the isStreaming-gated effect below
     const target = iframeRef.current?.contentWindow;
     if (!target) return;
     try {
@@ -180,15 +193,16 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt }:
     } catch {
       /* cross-origin edge cases — ignore */
     }
-  }, []);
+  }, [isStreaming]);
 
-  // Belt-and-suspenders: onLoad can race React's ref/listener setup for
-  // srcdoc iframes (the browser may fire `load` before the ref commits,
-  // especially with HMR). Re-post host-ready from a mount effect and again
-  // on a short retry loop. The iframe side guards with a `fired` flag so
-  // duplicate host-ready messages are harmless.
+  // Mount/idle effect: re-post host-ready whenever streaming transitions
+  // to idle. Also retries on a short schedule so we beat any race between
+  // React commit and the iframe script's addEventListener call. The
+  // iframe side guards with a `fired` flag so duplicate messages are
+  // harmless.
   useEffect(() => {
     if (!html) return;
+    if (isStreaming) return; // wait for idle
     let cancelled = false;
     const send = () => {
       const target = iframeRef.current?.contentWindow;
@@ -199,8 +213,6 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt }:
         /* ignore */
       }
     };
-    // Fire immediately after mount, then re-fire a few times to cover the
-    // case where the iframe's script hasn't attached its listener yet.
     send();
     const timers = [50, 150, 400, 1000, 2000].map((ms) =>
       setTimeout(() => {
@@ -211,7 +223,7 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt }:
       cancelled = true;
       for (const t of timers) clearTimeout(t);
     };
-  }, [html]);
+  }, [html, isStreaming]);
 
   if (!html) {
     return (
