@@ -53,14 +53,27 @@ artifacts.get("/:id{.+}", (c) => {
   const id = raw.split(".")[0];
   const entry = store.get(id);
   if (!entry) return c.text("Not found", 404);
-  return new Response(new Uint8Array(entry.bytes), {
-    headers: {
-      "content-type": entry.mimeType,
-      "content-length": String(entry.bytes.length),
-      "content-disposition": `attachment; filename="${entry.fileName.replace(/"/g, "")}"`,
-      "cache-control": "private, max-age=3600",
-    },
-  });
+
+  // HTML artifacts (e.g. web-slides decks) should render inline so the
+  // editor preview iframe can display them. All other types stay as a
+  // forced download. A `?download=1` query forces download for any type.
+  const isHtml = /html/i.test(entry.mimeType) || /\.html?$/i.test(entry.fileName);
+  const forceDownload = c.req.query("download") === "1";
+  const inline = isHtml && !forceDownload;
+  const safeName = entry.fileName.replace(/"/g, "");
+  const headers: Record<string, string> = {
+    "content-type": entry.mimeType,
+    "content-length": String(entry.bytes.length),
+    "content-disposition": `${inline ? "inline" : "attachment"}; filename="${safeName}"`,
+    "cache-control": "private, max-age=3600",
+  };
+  if (inline) {
+    // Allow embedding in editor iframes across our subdomains.
+    headers["x-frame-options"] = "ALLOWALL";
+    headers["content-security-policy"] =
+      "frame-ancestors 'self' https://*.doable.me https://doable.me http://localhost:* http://127.0.0.1:*";
+  }
+  return new Response(new Uint8Array(entry.bytes), { headers });
 });
 
 export default artifacts;
