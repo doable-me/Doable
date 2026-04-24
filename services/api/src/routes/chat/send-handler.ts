@@ -306,9 +306,26 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
             // Flush pending tool names
             for (const pendingName of state.pendingToolNames) {
-              await stream.writeSSE({ data: JSON.stringify({ type: "tool_result", data: { name: pendingName, success: true, friendlyMessage: "Done" } }) });
+              const arts = state.pendingArtifacts.get(pendingName);
+              const data: Record<string, unknown> = { name: pendingName, success: true, friendlyMessage: "Done" };
+              if (arts && arts.length > 0) {
+                data.artifacts = arts;
+                state.pendingArtifacts.delete(pendingName);
+              }
+              await stream.writeSSE({ data: JSON.stringify({ type: "tool_result", data }) });
             }
             state.pendingToolNames.length = 0;
+            // Any artifacts not flushed via pendingToolNames (e.g. tool name
+            // wasn't queued there): emit a tool_result per remaining entry so
+            // the client still surfaces the download card.
+            for (const [toolName, arts] of state.pendingArtifacts.entries()) {
+              if (arts.length === 0) continue;
+              await stream.writeSSE({ data: JSON.stringify({
+                type: "tool_result",
+                data: { name: toolName, success: true, friendlyMessage: "Done", artifacts: arts },
+              }) });
+            }
+            state.pendingArtifacts.clear();
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             if (msg.includes("not authorized") || msg.includes("policy") || msg.includes("unauthorized")) {
