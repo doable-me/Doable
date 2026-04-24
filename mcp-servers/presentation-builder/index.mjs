@@ -2,26 +2,28 @@
 /**
  * Presentation Builder — an MCP App example for Doable.
  * --------------------------------------------------------
- * Skill-driven LLM generation, with a deterministic fallback.
+ * Maximum-creativity LLM generation with dual output (HTML preview + PPTX).
  *
  *   1. `create_presentation({ topic, slideCount?, audience?, tone? })`
- *        Returns a picker UIResource. Two AI buttons (Web Slides / PPTX)
- *        postMessage `prompt` events back to the host containing the full
- *        SKILL prompt for that format. The host injects the prompt as a
- *        synthetic user message; the chat AI generates a stunning,
- *        topic-bespoke artifact and calls render_web_slides / render_pptx.
- *        Two "Quick" links bypass the AI and call build_presentation
- *        directly for a fast deterministic deck.
+ *        Injects a synthetic user message via `prompt` postMessage that
+ *        commands the chat AI to narrate its design process transparently
+ *        and then make ONE `build_deck` call with BOTH a bespoke HTML
+ *        document AND a compact JSON spec describing the same deck.
  *
- *   2. `render_web_slides({ html, fileName?, topic? })`
- *        Wraps AI-generated HTML in an inline live preview UIResource.
+ *   2. `build_deck({ topic, html, spec })` ★ primary tool
+ *        The LLM passes:
+ *          html — fully freeform single-file HTML (max creative freedom,
+ *                 any CSS/JS, any layout, no constraints) — used for the
+ *                 inline preview + .html download.
+ *          spec — the same deck as a compact JSON structure (palette +
+ *                 slides) that the deterministic engine renders to a
+ *                 matching .pptx. Downloadable alongside the HTML.
+ *        Returns one unified UI card with: live HTML preview, Fullscreen,
+ *        Open, Download .html, Download .pptx.
  *
- *   3. `render_pptx({ script, fileName?, topic? })`
- *        Executes AI-generated PptxGenJS body in a sandboxed Function with
- *        PptxGenJS injected, captures the buffer, returns a download card.
- *
- *   4. `build_presentation({ topic, format, ... })`
- *        Deterministic fallback (in-process palette + layout engine).
+ *   3. Legacy tools kept for back-compat:
+ *        `render_web_slides`, `render_deck`, `render_pptx`,
+ *        `build_presentation` — still work, but `build_deck` is preferred.
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -174,6 +176,116 @@ function buildPptxPrompt(opts) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// UNIFIED BUILD PROMPT — max creativity + transparency + dual output.
+//
+// The LLM produces ONE `build_deck` call containing both a fully-freeform
+// HTML deck AND a compact JSON spec. This gives the user a live preview
+// (HTML, any layout/CSS imaginable) plus a downloadable .pptx rendered
+// deterministically from the matching spec.
+//
+// NARRATION is critical: the model must think out loud between milestones
+// so the user watches a real progress story, not a loading spinner. Each
+// "beat" is a short sentence sent as plain chat text BEFORE the tool call.
+// The final tool call is still the single deliverable.
+// ─────────────────────────────────────────────────────────────────────────
+function buildDeckPrompt(opts) {
+  const ctx = buildContextLine(opts);
+  const topicEsc = String(opts.topic).replace(/"/g, '\\"');
+  const slideCount = opts.slideCount || 8;
+  return [
+    `BUILD_DECK ${ctx}`,
+    ``,
+    `You are about to craft a stunning, one-of-a-kind presentation deck with BOTH a cinematic HTML preview AND a downloadable PowerPoint — from a single generation. This is a design moment, not a template fill. Approach it like an award-winning art director.`,
+    ``,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `TRANSPARENCY PROTOCOL — the user must SEE you thinking.`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `Between every design decision, emit a ONE-LINE status in chat so the user`,
+    `watches the deck come alive instead of staring at a spinner. Each line is a`,
+    `short, human sentence (no markdown, no bullet lists, no code). Flow:`,
+    ``,
+    `  1. "🔍 Researching ${topicEsc}…"        (if you need web_search, call it NOW)`,
+    `  2. "🎨 Designing a palette that feels like ${topicEsc}…"`,
+    `  3. "🔤 Choosing typography — <font> for headlines, <font> for body"`,
+    `  4. "📐 Planning ${slideCount} slides with varied layouts…"`,
+    `  5. "✍️ Writing slide <n> of ${slideCount}: <what it's about>"  (you may batch these)`,
+    `  6. "🎬 Composing the HTML deck (animations, typography, motion)…"`,
+    `  7. "📊 Translating to PowerPoint spec…"`,
+    `  8. "🚀 Rendering — one moment"   → then the tool call.`,
+    ``,
+    `Do NOT dump markdown plans. Do NOT print code blocks. Do NOT show the outline`,
+    `as a bulleted list. Each status line ≤ 90 chars. Skip steps that don't apply`,
+    `(e.g. skip research for a well-known topic). The point is continuous motion.`,
+    ``,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `CREATIVE DIRECTION — zero constraints, zero templates.`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `You are NOT filling in a template. You are DESIGNING this deck fresh:`,
+    ``,
+    `• Visual language: invent whatever layout fits the topic — asymmetric grids,`,
+    `  overlapping image-text compositions, editorial magazine spreads, full-bleed`,
+    `  typographic hero slides, kinetic type, data-viz panels, diagonal splits,`,
+    `  fullscreen quote moments, nested card galleries. Surprise the eye.`,
+    `• Palette: design a bespoke color story for THIS topic. No presets. No`,
+    `  default purple/teal. Think: what colors does this subject FEEL like?`,
+    `    – Claude AI → warm cream + deep orange + ink`,
+    `    – Ocean plastic → abyssal navy + bioluminescent aqua + warning coral`,
+    `    – Ottoman architecture → Iznik blue + gold leaf + travertine cream`,
+    `    – Cyberpunk Tokyo → jet black + neon magenta + electric cyan + rain`,
+    `• Typography: pick Google Fonts that embody the subject. Humanist serif for`,
+    `  literary/philosophy, geometric sans for tech, slab for industrial, script`,
+    `  for fashion, monospace for cyber, condensed display for sports. Contrast`,
+    `  a display face with a readable body face.`,
+    `• Motion: staggered entrance animations, kinetic accent bars, slow-floating`,
+    `  decorative blurs, parallax depth. Transitions between slides should feel`,
+    `  intentional, not jarring. Arrow keys + space + click to navigate, F for`,
+    `  fullscreen, slide counter bottom-right.`,
+    `• Content: deeply specific, true, fascinating. Real names, real dates, real`,
+    `  numbers. If you don't know something, call web_search. NEVER write`,
+    `  "Insight #1" or "key benefit" or any placeholder text.`,
+    ``,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `DELIVERABLE — one tool call: build_deck({ topic, html, spec })`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `After narrating your process, make EXACTLY ONE tool call with:`,
+    ``,
+    `  topic: "${topicEsc}"`,
+    `  html:  complete single-file HTML document — <!doctype html> … </html>`,
+    `         inline CSS + JS, Google Fonts via <link>, no external assets,`,
+    `         ${slideCount} slides (or close). This is your FREEFORM canvas — any`,
+    `         layout, any composition, any motion. Make it unforgettable.`,
+    `  spec:  the SAME deck as a structured JSON object for PPTX rendering:`,
+    `    {`,
+    `      palette: {`,
+    `        vars: { bg, panel, accent, accent2, accent3, text, sub, card?, border? }`,
+    `               // hex with '#'; card/border can be rgba() for glass`,
+    `        fonts: { display: "'Family Name', genericFallback",`,
+    `                 body:    "'Family Name', genericFallback" }`,
+    `        fontsUrl: "https://fonts.googleapis.com/css2?family=…&display=swap"`,
+    `      },`,
+    `      slides: [`,
+    `        { layout: "cover"|"twoCol"|"stat"|"cards"|"timeline"|"quote"|"compare"|"takeaways"|"closing",`,
+    `          title: string, subtitle?: string, bullets?: string[] },`,
+    `        …`,
+    `      ]`,
+    `    }`,
+    ``,
+    `The spec uses a constrained layout vocabulary (PPTX can't match arbitrary`,
+    `HTML). Map each freeform HTML slide to the closest spec layout:`,
+    `  cover/closing for title slides · stat for big-number slides ·`,
+    `  cards for 3-item grids · timeline for step sequences · quote for pull-quotes ·`,
+    `  compare for before/after · takeaways for summary · twoCol for everything else.`,
+    `Keep palette + fonts IDENTICAL to the HTML so PPTX feels like the same deck.`,
+    ``,
+    `After the tool returns, reply with EXACTLY one short sentence`,
+    `("Deck ready — preview and download above.") and STOP.`,
+    ``,
+    `Do NOT call write_file, create_file, install_packages, render_pptx,`,
+    `render_deck, render_web_slides, or build_presentation. Only build_deck.`,
+  ].join("\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Tool input schemas
 // ─────────────────────────────────────────────────────────────────────────
 const presentationProps = {
@@ -187,21 +299,92 @@ const TOOLS = [
   {
     name: "create_presentation",
     description:
-      "Show the user an interactive picker so they can choose how to build a presentation " +
-      "on a topic (PowerPoint .pptx or HTML web slides). REQUIRED for any request involving " +
-      "slides, a deck, a pitch, a presentation, a slideshow, or a visual report. After calling " +
-      "this tool, REPLY WITH ONE SHORT SENTENCE and STOP. The picker handles the rest: AI " +
-      "buttons inject a SKILL prompt back to you (continue by calling render_web_slides / " +
-      "render_pptx with your generated artifact); Quick links call build_presentation directly.",
+      "Kick off a creative presentation build. REQUIRED for any request involving slides, a " +
+      "deck, a pitch, a presentation, a slideshow, or a visual report. Returns a small " +
+      "'building…' card that immediately injects a BUILD_DECK prompt back into the chat, " +
+      "which instructs you (the AI) to narrate your design process transparently and then " +
+      "make ONE build_deck call producing both a live HTML preview and a downloadable PPTX. " +
+      "After calling this, reply with ONE short sentence ('Designing your deck…') and stop; " +
+      "the injected prompt will arrive as the next user turn.",
     inputSchema: { type: "object", properties: presentationProps, required: ["topic"] },
+  },
+  {
+    name: "build_deck",
+    description:
+      "★ PRIMARY creative-deck renderer. Call this ONCE with both a fully-freeform HTML " +
+      "document (max creativity — any layout/CSS/JS) and a compact JSON spec describing " +
+      "the same deck. Returns a unified UI card with live HTML preview, Fullscreen, Open, " +
+      "Download .html, and Download .pptx (rendered deterministically from the spec in <1s). " +
+      "Use this in response to a BUILD_DECK prompt. Do NOT also call render_web_slides / " +
+      "render_deck / render_pptx.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        topic: { type: "string", description: "Deck topic (used for file names and captions)." },
+        html: {
+          type: "string",
+          description:
+            "Complete single-file HTML document for the deck (doctype + <html>…). Fully " +
+            "freeform — any CSS/JS/layout you invent. Used for live preview + .html download.",
+        },
+        spec: {
+          type: "object",
+          description:
+            "Compact deck spec for PPTX rendering. Same palette + content as the HTML, mapped " +
+            "to a constrained layout vocabulary the engine can render.",
+          properties: {
+            palette: {
+              type: "object",
+              description: "Bespoke palette + fonts. Keep identical to the HTML.",
+              properties: {
+                vars: {
+                  type: "object",
+                  description:
+                    "Hex colors (with '#'). Keys: bg, panel, accent, accent2, accent3, text, sub. " +
+                    "Optional: card, border (may be rgba() for translucency).",
+                },
+                fonts: {
+                  type: "object",
+                  description:
+                    "{ display: \"'Family', genericFallback\", body: \"'Family', genericFallback\" }",
+                },
+                fontsUrl: { type: "string", description: "Google Fonts CSS URL." },
+              },
+              required: ["vars", "fonts"],
+            },
+            slides: {
+              type: "array",
+              description: "Ordered slide list. ALWAYS start with `cover` and end with `closing`.",
+              items: {
+                type: "object",
+                properties: {
+                  layout: {
+                    type: "string",
+                    enum: PPTX_LAYOUTS,
+                    description: "One of cover | twoCol | stat | cards | timeline | quote | compare | takeaways | closing.",
+                  },
+                  title: { type: "string" },
+                  subtitle: { type: "string" },
+                  bullets: { type: "array", items: { type: "string" } },
+                },
+                required: ["layout", "title"],
+              },
+            },
+          },
+          required: ["palette", "slides"],
+        },
+        fileName: {
+          type: "string",
+          description: "Optional base name (without extension) for the downloads.",
+        },
+      },
+      required: ["topic", "html", "spec"],
+    },
   },
   {
     name: "render_web_slides",
     description:
-      "Render an AI-generated single-file HTML web-slides deck. Call this AFTER you have " +
-      "received the web-slides SKILL prompt from the picker, with `html` containing your " +
-      "complete generated HTML document. Returns an inline preview card with Download / " +
-      "Open / Fullscreen actions. Reply with a one-line confirmation after this returns.",
+      "[LEGACY] Render only an AI-generated single-file HTML deck (no PPTX). Prefer build_deck.",
     inputSchema: {
       type: "object",
       properties: {
@@ -538,6 +721,138 @@ function webSlidesPreviewHtml({ deckHtml, fileName, base64, sizeBytes, summary }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Auto-start card — shown right after create_presentation. Immediately
+// injects the BUILD_DECK prompt back into the chat so the LLM starts
+// narrating + generating without any user click.
+// ─────────────────────────────────────────────────────────────────────────
+function autoBuildCardHtml({ topic, buildPrompt }) {
+  const buildPromptJson = JSON.stringify(buildPrompt);
+  const topicJson = JSON.stringify(topic);
+  return `<!doctype html>
+<html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 10px 0; background: transparent; }
+  .card { color: #0f172a; background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border: 1px solid #c4b5fd; border-radius: 12px; padding: 14px 16px; display: flex; gap: 12px; align-items: center; box-shadow: 0 1px 3px rgba(99,102,241,.12); }
+  .spin { width: 18px; height: 18px; border: 2.5px solid #c7d2fe; border-top-color: #6366f1; border-radius: 50%; animation: sp 0.8s linear infinite; flex: none; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .msg { flex: 1; min-width: 0; }
+  .ttl { font-weight: 600; color: #4338ca; font-size: 13px; }
+  .sub { font-size: 11px; color: #6366f1; margin-top: 2px; }
+</style></head>
+<body>
+<div class="card">
+  <div class="spin"></div>
+  <div class="msg">
+    <div class="ttl">Designing your deck…</div>
+    <div class="sub">You'll see progress updates as each piece comes together.</div>
+  </div>
+</div>
+<script>
+  const buildPrompt = ${buildPromptJson};
+  const topic = ${topicJson};
+  // Inject the BUILD_DECK prompt back into the chat as a synthetic user turn.
+  // Use a tiny delay so the parent has mounted the iframe before we post.
+  setTimeout(() => {
+    window.parent.postMessage({
+      type: 'prompt',
+      payload: {
+        prompt: buildPrompt,
+        displayText: '🎨 Designing a bespoke deck about "' + topic + '"…',
+      },
+    }, '*');
+  }, 50);
+  function reportSize() {
+    const h = document.documentElement.scrollHeight;
+    window.parent.postMessage({ type: 'size', payload: { height: h } }, '*');
+  }
+  new ResizeObserver(reportSize).observe(document.body);
+  window.addEventListener('load', reportSize);
+  reportSize();
+</script>
+</body></html>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Unified deck card — HTML preview + .html download + .pptx download.
+// Returned by build_deck. Single UI surface, both formats in one place.
+// ─────────────────────────────────────────────────────────────────────────
+function unifiedDeckCardHtml({ deckHtml, htmlBase64, htmlFileName, htmlSizeBytes, pptxBase64, pptxFileName, pptxSizeBytes, summary, slideCount }) {
+  const htmlKb = (htmlSizeBytes / 1024).toFixed(1);
+  const pptxKb = pptxBase64 ? (pptxSizeBytes / 1024).toFixed(1) : null;
+  const srcdocSafe = deckHtml.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  const htmlHref = `data:text/html;base64,${htmlBase64}`;
+  const pptxHref = pptxBase64
+    ? `data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,${pptxBase64}`
+    : null;
+  const pptxButton = pptxHref
+    ? `<a class="dl pptx" download="${escapeHtml(pptxFileName)}" href="${pptxHref}" title="${pptxKb} KB">📊 Download .pptx</a>`
+    : `<span class="dl dl-disabled" title="PPTX spec not provided">📊 .pptx unavailable</span>`;
+  return `<!doctype html>
+<html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 12px 0; background: transparent; }
+  .wrap { color: #0f172a; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+  .bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; flex-wrap: wrap; }
+  .bar .meta { flex: 1; min-width: 180px; }
+  .bar .ttl { font-weight: 600; color: #0f172a; word-break: break-word; }
+  .bar .sub { font-size: 11px; color: #475569; }
+  .bar .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .bar a, .bar button, .bar span.dl { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: 12px; transition: background .15s; display: inline-block; }
+  .bar a.dl.html { background: #0284c7; color: #ffffff; }
+  .bar a.dl.html:hover { background: #0369a1; }
+  .bar a.dl.pptx { background: #d97706; color: #ffffff; }
+  .bar a.dl.pptx:hover { background: #b45309; }
+  .bar span.dl-disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
+  .bar a.open, .bar button.fs { background: #e2e8f0; color: #0f172a; }
+  .bar a.open:hover, .bar button.fs:hover { background: #cbd5e1; }
+  .stage { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0f172a; }
+  .stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+  .hint { padding: 8px 14px; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; background: #f8fafc; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .hint .left { opacity: .85; }
+  .hint .right { opacity: .7; font-variant-numeric: tabular-nums; }
+</style></head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <div class="meta">
+      <div class="ttl">${escapeHtml(summary)}</div>
+      <div class="sub">${slideCount} slides · HTML preview is live · both downloads ready</div>
+    </div>
+    <div class="btns">
+      <button class="fs" id="fs" type="button">⛶ Fullscreen</button>
+      <a class="open" target="_blank" rel="noopener" href="${htmlHref}">Open ↗</a>
+      <a class="dl html" download="${escapeHtml(htmlFileName)}" href="${htmlHref}" title="${htmlKb} KB">🌐 Download .html</a>
+      ${pptxButton}
+    </div>
+  </div>
+  <div class="stage" id="stage">
+    <iframe id="deck" title="Deck preview" sandbox="allow-scripts allow-same-origin" allow="fullscreen" srcdoc="${srcdocSafe}"></iframe>
+  </div>
+  <div class="hint">
+    <span class="left">Use ← → / Space to navigate · F for fullscreen inside the deck</span>
+    <span class="right">.html ${htmlKb} KB${pptxKb ? ` · .pptx ${pptxKb} KB` : ""}</span>
+  </div>
+</div>
+<script>
+  document.getElementById('fs').addEventListener('click', () => {
+    const stage = document.getElementById('stage');
+    if (document.fullscreenElement) document.exitFullscreen();
+    else stage.requestFullscreen();
+  });
+  function reportSize() {
+    const h = document.documentElement.scrollHeight;
+    window.parent.postMessage({ type: 'size', payload: { height: h } }, '*');
+  }
+  new ResizeObserver(reportSize).observe(document.body);
+  window.addEventListener('load', reportSize);
+  reportSize();
+</script>
+</body></html>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Sandboxed execution of an AI-supplied PptxGenJS script body.
 // ─────────────────────────────────────────────────────────────────────────
 async function runPptxScript(scriptBody) {
@@ -586,13 +901,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       return { isError: true, content: [{ type: "text", text: "Error: 'topic' is required." }] };
     }
     const opts = { topic, slideCount: args?.slideCount, audience: args?.audience, tone: args?.tone };
-    const html = pickerHtml({
-      ...opts,
-      htmlPrompt: buildWebSlidesPrompt(opts),
-      pptxPrompt: buildPptxPrompt(opts),
+    const html = autoBuildCardHtml({
+      topic,
+      buildPrompt: buildDeckPrompt(opts),
     });
     const ui = createUIResource({
-      uri: `ui://presentation-builder/picker/${Date.now()}`,
+      uri: `ui://presentation-builder/auto-build/${Date.now()}`,
       content: { type: "rawHtml", htmlString: html },
       encoding: "text",
     });
@@ -602,9 +916,78 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         {
           type: "text",
           text:
-            "Picker shown. Wait for the user to click a format. Reply with one short sentence " +
-            "like \"Pick a format above.\" and stop. Do NOT call other tools or write code yet.",
+            "Build card shown. It will immediately inject a BUILD_DECK prompt back as a new " +
+            "user turn. Reply with ONE short sentence like \"Designing your deck…\" and STOP. " +
+            "Do NOT call other tools or write code yet — wait for the BUILD_DECK prompt to " +
+            "arrive, then follow its instructions (narrate progress + call build_deck once).",
         },
+      ],
+    };
+  }
+
+  if (name === "build_deck") {
+    const topic = String(args?.topic ?? "").trim() || "presentation";
+    const deckHtml = String(args?.html ?? "");
+    const spec = args?.spec && typeof args.spec === "object" ? args.spec : null;
+    const baseName = String(args?.fileName ?? slugify(topic));
+    const htmlFileName = `${baseName}.html`;
+    const pptxFileName = `${baseName}.pptx`;
+
+    if (!deckHtml.trim()) {
+      return { isError: true, content: [{ type: "text", text: "Error: `html` is required (the freeform single-file HTML deck)." }] };
+    }
+    if (!/<html[\s>]/i.test(deckHtml) && !/<!doctype/i.test(deckHtml)) {
+      return { isError: true, content: [{ type: "text", text: "Error: `html` does not look like a complete HTML document. Include `<!doctype html>` and `<html>`." }] };
+    }
+    if (!spec || !Array.isArray(spec.slides) || spec.slides.length === 0) {
+      return { isError: true, content: [{ type: "text", text: "Error: `spec.slides` must be a non-empty array (the PPTX layout sequence)." }] };
+    }
+
+    const htmlBase64 = Buffer.from(deckHtml, "utf8").toString("base64");
+    const htmlSizeBytes = Buffer.byteLength(deckHtml, "utf8");
+
+    let pptxBase64 = null;
+    let pptxSizeBytes = 0;
+    let pptxError = null;
+    let renderedSlideCount = spec.slides.length;
+    try {
+      const { buffer, slideCount } = await buildPptxFromSpec({
+        topic,
+        palette: spec.palette && typeof spec.palette === "object" ? spec.palette : undefined,
+        slides: spec.slides,
+      });
+      pptxBase64 = Buffer.from(buffer).toString("base64");
+      pptxSizeBytes = buffer.length;
+      renderedSlideCount = slideCount;
+    } catch (err) {
+      pptxError = err instanceof Error ? err.message : String(err);
+      dlog(`build_deck: pptx render failed: ${pptxError}`);
+    }
+
+    const cardHtml = unifiedDeckCardHtml({
+      deckHtml,
+      htmlBase64,
+      htmlFileName,
+      htmlSizeBytes,
+      pptxBase64,
+      pptxFileName,
+      pptxSizeBytes,
+      summary: `Bespoke deck on "${topic}"`,
+      slideCount: renderedSlideCount,
+    });
+    const ui = createUIResource({
+      uri: `ui://presentation-builder/build-deck/${Date.now()}`,
+      content: { type: "rawHtml", htmlString: cardHtml },
+      encoding: "text",
+    });
+
+    const followupText = pptxError
+      ? `Deck ready: ${htmlFileName} (HTML preview + download). PPTX render failed — ${pptxError}. Acknowledge briefly, mention the PPTX issue, and stop.`
+      : `Deck ready: ${htmlFileName} + ${pptxFileName} (${renderedSlideCount} slides). User can preview, fullscreen, or download either format from the card. Acknowledge briefly and stop.`;
+    return {
+      content: [
+        ui,
+        { type: "text", text: followupText },
       ],
     };
   }
