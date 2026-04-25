@@ -170,7 +170,7 @@ export function CreditToolbarIndicator({
       className={cn(
         "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
         isLow
-          ? "bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
+          ? "bg-orange-500/15 text-orange-700 dark:text-orange-400 hover:bg-orange-500/25"
           : "bg-secondary text-muted-foreground hover:bg-accent"
       )}
       title={unlimited ? "Unlimited credits" : `${total} credits remaining`}

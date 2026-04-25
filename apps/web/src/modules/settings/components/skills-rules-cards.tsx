@@ -356,7 +356,7 @@ export function CreateRuleForm({
             className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">File Patterns <span className="font-normal text-muted-foreground/60">(comma-separated, optional)</span></label>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">File Patterns <span className="font-normal text-muted-foreground">(comma-separated, optional)</span></label>
           <input type="text" value={patterns} onChange={(e) => setPatterns(e.target.value)} placeholder="*.tsx, *.ts, src/**/*.js"
             className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm font-mono outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground" />
         </div>

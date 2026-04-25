@@ -98,7 +98,7 @@ function getConfig(kind: ErrorKind, message?: string) {
         icon: Wifi,
         colorClass: "border-amber-500/20 bg-amber-500/5",
         iconClass: "text-amber-400",
-        primaryClass: "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20",
+        primaryClass: "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-500/20",
       };
     case "rate_limit":
       return {
@@ -108,7 +108,7 @@ function getConfig(kind: ErrorKind, message?: string) {
         icon: Clock,
         colorClass: "border-amber-500/20 bg-amber-500/5",
         iconClass: "text-amber-400",
-        primaryClass: "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20",
+        primaryClass: "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-500/20",
       };
     case "auth":
       return {
@@ -118,7 +118,7 @@ function getConfig(kind: ErrorKind, message?: string) {
         icon: Settings,
         colorClass: "border-red-500/20 bg-red-500/5",
         iconClass: "text-red-400",
-        primaryClass: "bg-red-500/10 text-red-400 hover:bg-red-500/20",
+        primaryClass: "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/20",
       };
     case "build_failed":
       return {
@@ -128,7 +128,7 @@ function getConfig(kind: ErrorKind, message?: string) {
         icon: Zap,
         colorClass: "border-red-500/20 bg-red-500/5",
         iconClass: "text-red-400",
-        primaryClass: "bg-red-500/10 text-red-400 hover:bg-red-500/20",
+        primaryClass: "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/20",
       };
     case "network":
       return {
@@ -138,7 +138,7 @@ function getConfig(kind: ErrorKind, message?: string) {
         icon: Wifi,
         colorClass: "border-red-500/20 bg-red-500/5",
         iconClass: "text-red-400",
-        primaryClass: "bg-red-500/10 text-red-400 hover:bg-red-500/20",
+        primaryClass: "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/20",
       };
     case "unavailable":
       return {
@@ -148,7 +148,7 @@ function getConfig(kind: ErrorKind, message?: string) {
         icon: AlertCircle,
         colorClass: "border-red-500/20 bg-red-500/5",
         iconClass: "text-red-400",
-        primaryClass: "bg-red-500/10 text-red-400 hover:bg-red-500/20",
+        primaryClass: "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/20",
       };
     default:
       return {
@@ -158,7 +158,7 @@ function getConfig(kind: ErrorKind, message?: string) {
         icon: AlertCircle,
         colorClass: "border-red-500/20 bg-red-500/5",
         iconClass: "text-red-400",
-        primaryClass: "bg-red-500/10 text-red-400 hover:bg-red-500/20",
+        primaryClass: "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/20",
       };
   }
 }

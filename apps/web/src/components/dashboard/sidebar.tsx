@@ -326,7 +326,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
           )}
           <DropdownMenu>
             <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-lg px-2 py-2 hover:bg-accent transition-colors outline-none">
-              <Avatar className="h-8 w-8"><AvatarFallback className="bg-gradient-to-br from-brand-500 to-brand-600 text-xs font-medium text-white">{initials}</AvatarFallback></Avatar>
+              <Avatar className="h-8 w-8 ring-2 ring-brand-400 dark:ring-transparent"><AvatarFallback className="bg-brand-100 dark:bg-gradient-to-br dark:from-brand-500 dark:to-brand-600 text-xs font-bold text-brand-700 dark:text-white">{initials}</AvatarFallback></Avatar>
               <div className="flex-1 text-left min-w-0"><p className="text-sm font-medium text-foreground truncate">{displayName}</p><p className="text-[11px] text-muted-foreground truncate">{user?.email ?? "user@doable.dev"}</p></div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">

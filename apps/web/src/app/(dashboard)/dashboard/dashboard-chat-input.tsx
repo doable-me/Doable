@@ -104,7 +104,7 @@ export function ChatInput({
                 onClick={startMode === "plan" ? undefined : onToggleMode}
                 className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
                   startMode === "plan"
-                    ? "bg-blue-600/20 text-blue-400"
+                    ? "bg-blue-100 dark:bg-blue-600/20 text-blue-700 dark:text-blue-400"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
                 title="Strategize first, then do the work"
@@ -117,7 +117,7 @@ export function ChatInput({
                 onClick={startMode === "agent" ? undefined : onToggleMode}
                 className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
                   startMode === "agent"
-                    ? "bg-brand-600/20 text-brand-400"
+                    ? "bg-brand-100 dark:bg-brand-600/20 text-brand-700 dark:text-brand-400"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
                 title="Start working immediately"

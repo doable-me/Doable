@@ -459,12 +459,12 @@ function UserDetailModal({
               {/* Actions */}
               <div className="flex items-center gap-2 pt-2">
                 <button onClick={saveModel} disabled={saving}
-                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-foreground hover:bg-brand-500 disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors">
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
                 </button>
                 {rowHasAllocation(user) && (
                   <button onClick={() => { onReset(user.user_id); onClose(); }}
-                    className="flex items-center gap-1.5 rounded-lg bg-amber-600/20 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-600/30 transition-colors">
+                    className="flex items-center gap-1.5 rounded-lg bg-amber-100 dark:bg-amber-600/20 px-4 py-2 text-sm font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-600/30 transition-colors">
                     <RotateCcw className="h-3.5 w-3.5" /> Reset to Defaults
                   </button>
                 )}
@@ -531,11 +531,11 @@ function UserDetailModal({
               {/* Actions */}
               <div className="flex items-center gap-2 pt-2">
                 <button onClick={() => saveCredits(false)} disabled={creditSaving}
-                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-foreground hover:bg-emerald-500 disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors">
                   {creditSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save Credits
                 </button>
                 <button onClick={() => saveCredits(true)} disabled={creditSaving}
-                  className="flex items-center gap-1.5 rounded-lg bg-amber-600/80 px-4 py-2 text-sm font-medium text-foreground hover:bg-amber-500 disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-1.5 rounded-lg bg-amber-600/80 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50 transition-colors">
                   <RotateCcw className="h-3.5 w-3.5" /> Save & Reset Usage
                 </button>
                 <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">Cancel</button>
@@ -804,7 +804,7 @@ function BulkAllocateModal({
             Cancel
           </button>
           <button onClick={handleApply} disabled={!canApply || saving}
-            className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-foreground hover:bg-brand-500 disabled:opacity-50 transition-colors">
+            className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors">
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
             Apply to {selectedUsers.length} user{selectedUsers.length !== 1 ? "s" : ""}
           </button>

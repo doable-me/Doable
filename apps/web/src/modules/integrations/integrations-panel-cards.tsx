@@ -197,7 +197,7 @@ export function CustomCard({
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {transport.friendly}{" "}
-            <span className="text-muted-foreground/60">({transport.technical})</span>
+            <span className="text-muted-foreground">({transport.technical})</span>
             {toolCount > 0 && (
               <>
                 <span className="text-muted-foreground/40 mx-1.5">&middot;</span>

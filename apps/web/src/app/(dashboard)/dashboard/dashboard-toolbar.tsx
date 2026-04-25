@@ -130,7 +130,7 @@ export function DashboardToolbar({
             onClick={() => setStarredFilter(!starredFilter)}
             className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors ${
               starredFilter
-                ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
+                ? "border-yellow-600/40 bg-yellow-500/15 text-yellow-700 dark:border-yellow-500/30 dark:text-yellow-400"
                 : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-border"
             }`}
           >

@@ -5443,7 +5443,7 @@ export default function EditorPage() {
                             onClick={() => setChatMode("plan")}
                             className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
                               chatMode === "plan"
-                                ? "bg-brand-500/20 text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
+                                ? "bg-brand-500/20 text-brand-700 dark:text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
                                 : "text-muted-foreground hover:text-foreground"
                             }`}
                             title="Strategize mode — creates plans only"
@@ -5455,7 +5455,7 @@ export default function EditorPage() {
                             onClick={() => setChatMode("agent")}
                             className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
                               chatMode === "agent"
-                                ? "bg-brand-500/20 text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
+                                ? "bg-brand-500/20 text-brand-700 dark:text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
                                 : "text-muted-foreground hover:text-foreground"
                             }`}
                             title="Work mode — generates code"
@@ -5470,7 +5470,7 @@ export default function EditorPage() {
                           onClick={() => setActiveTab("design")}
                           className={`shrink-0 flex items-center gap-1.5 rounded-full border h-7 w-7 @[26rem]:w-auto @[26rem]:px-2 justify-center text-[10px] sm:text-[11px] font-medium transition-all ${
                             isDesignMode
-                              ? "border-brand-500/50 bg-brand-500/10 text-brand-300"
+                              ? "border-brand-500/50 bg-brand-500/10 text-brand-700 dark:text-brand-300"
                               : "border-border bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
                           }`}
                           title="Design View"

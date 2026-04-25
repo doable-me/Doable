@@ -317,7 +317,7 @@ function ContextFileEditor({
             minute: "2-digit",
           })}
         </span>
-        <span className="text-muted-foreground/60">Ctrl+S to save</span>
+        <span className="text-muted-foreground">Ctrl+S to save</span>
       </div>
     </div>
   );
