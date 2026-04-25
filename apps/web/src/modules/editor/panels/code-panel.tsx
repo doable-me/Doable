@@ -18,6 +18,7 @@ import {
 import { getFileIcon, getFileIconColor } from "./code-panel-utils";
 import { TreeNode } from "./code-panel-tree";
 import { useCodePanel } from "./use-code-panel";
+import { useDarkMode } from "@/hooks/use-dark-mode";
 
 // ─── Monaco Editor (dynamic import, no SSR) ──────────────────
 const MonacoEditor = dynamic(
@@ -57,6 +58,7 @@ export function CodePanel({
     handleDownload,
     toggleFolder,
   } = useCodePanel(projectId);
+  const { isDark } = useDarkMode();
 
   // ─── Render ──────────────────────────────────────────────────
 
@@ -262,7 +264,7 @@ export function CodePanel({
                 language={activeTab.language}
                 value={activeTab.content}
                 onChange={handleEditorChange}
-                theme="vs-dark"
+                theme={isDark ? "vs-dark" : "vs"}
                 options={{
                   readOnly,
                   minimap: { enabled: false },

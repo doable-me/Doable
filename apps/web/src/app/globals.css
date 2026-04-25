@@ -121,20 +121,24 @@
     --ring: var(--brand-500);
   }
 
-  /* ─── Light-mode zinc remap ─────────────────────────────
+  /* ─── Light-mode neutral palette remap ──────────────────
    * The dashboard chrome was authored for dark mode and uses
    * `bg-zinc-900`, `text-zinc-400`, `border-zinc-800` etc. in
-   * hundreds of places. Tailwind v4 emits each zinc shade as a
-   * CSS variable (`--color-zinc-*`), so we can flip the entire
+   * hundreds of places. Tailwind v4 emits each shade as a CSS
+   * variable (`--color-zinc-*`), so we can flip the entire
    * palette under `.light` without touching individual files.
    *
-   * Mapping intent (dark zinc → light equivalent):
-   *   bg-zinc-950/900/800  → near-white surfaces (card-ish)
-   *   bg-zinc-700          → light border / muted bg
-   *   text-zinc-50/100     → strong dark text (foreground)
-   *   text-zinc-200/300    → emphasis dark text
-   *   text-zinc-400/500    → muted text
-   *   border-zinc-700/800  → light border
+   * The same approach is applied to gray/slate/neutral/stone
+   * which are used in marketing pages, template previews and
+   * a handful of dashboard surfaces.
+   *
+   * Mapping intent (dark shade → light equivalent):
+   *   bg-*-950/900/800   → near-white surfaces (card-ish)
+   *   bg-*-700           → light border / muted bg
+   *   text-*-50/100      → strong dark text (foreground)
+   *   text-*-200/300     → emphasis dark text
+   *   text-*-400/500     → muted text
+   *   border-*-700/800   → light border
    * --------------------------------------------------------- */
   .light {
     --color-zinc-50: oklch(14.1% .005 285.823);    /* was lightest -> now darkest text */
@@ -149,6 +153,58 @@
     --color-zinc-900: oklch(97% .002 286.3);       /* card background (near white) */
     --color-zinc-950: oklch(98.5% .001 286.3);     /* page background */
 
+    /* gray (mirrors zinc but with a touch more warmth) */
+    --color-gray-50: oklch(14% .006 285.823);
+    --color-gray-100: oklch(21% .006 285.885);
+    --color-gray-200: oklch(27% .006 286.033);
+    --color-gray-300: oklch(37% .013 285.805);
+    --color-gray-400: oklch(55% .016 285.938);
+    --color-gray-500: oklch(45% .015 285.9);
+    --color-gray-600: oklch(55% .016 285.938);
+    --color-gray-700: oklch(87% .006 286.286);
+    --color-gray-800: oklch(92% .004 286.3);
+    --color-gray-900: oklch(97% .002 286.3);
+    --color-gray-950: oklch(98.5% .001 286.3);
+
+    /* slate */
+    --color-slate-50: oklch(14% .013 254.6);
+    --color-slate-100: oklch(20.8% .016 254.6);
+    --color-slate-200: oklch(27.9% .025 254.6);
+    --color-slate-300: oklch(37.2% .033 256.65);
+    --color-slate-400: oklch(55.4% .041 257.42);
+    --color-slate-500: oklch(45.4% .037 257.31);
+    --color-slate-600: oklch(55.4% .041 257.42);
+    --color-slate-700: oklch(86.9% .017 256.6);
+    --color-slate-800: oklch(92.1% .013 255.5);
+    --color-slate-900: oklch(96.8% .007 247.9);
+    --color-slate-950: oklch(98.4% .003 247.9);
+
+    /* neutral */
+    --color-neutral-50: oklch(14.5% 0 0);
+    --color-neutral-100: oklch(20.5% 0 0);
+    --color-neutral-200: oklch(26.9% 0 0);
+    --color-neutral-300: oklch(37.1% 0 0);
+    --color-neutral-400: oklch(55.6% 0 0);
+    --color-neutral-500: oklch(43.9% 0 0);
+    --color-neutral-600: oklch(55.6% 0 0);
+    --color-neutral-700: oklch(87% 0 0);
+    --color-neutral-800: oklch(92.2% 0 0);
+    --color-neutral-900: oklch(97% 0 0);
+    --color-neutral-950: oklch(98.5% 0 0);
+
+    /* stone */
+    --color-stone-50: oklch(14.7% .004 49.25);
+    --color-stone-100: oklch(21.6% .006 56.04);
+    --color-stone-200: oklch(26.8% .007 34.3);
+    --color-stone-300: oklch(37.4% .01 67.56);
+    --color-stone-400: oklch(55.3% .013 58.07);
+    --color-stone-500: oklch(44.4% .011 73.64);
+    --color-stone-600: oklch(55.3% .013 58.07);
+    --color-stone-700: oklch(86.9% .005 56.37);
+    --color-stone-800: oklch(92.3% .003 48.72);
+    --color-stone-900: oklch(97% .001 106.42);
+    --color-stone-950: oklch(98.5% .001 106.42);
+
     /* `text-white` shows up on chrome (where it should flip to dark)
      * AND on brand/destructive buttons (where it must stay white).
      * Override globally to foreground, then re-pin to white when the
@@ -159,11 +215,107 @@
 }
 
 @layer utilities {
-  .light .text-white { color: hsl(var(--foreground)); }
-  .light :is([class*="bg-brand-"], .bg-primary, .bg-destructive).text-white,
-  .light :is([class*="bg-brand-"], .bg-primary, .bg-destructive) .text-white {
+  /* ─── `text-white` (and hover/focus variants) override ────────
+   * In light mode, `text-white` on chrome should flip to the
+   * foreground color. We re-pin to real white when the same or
+   * an ancestor element has a brand/primary/destructive bg so
+   * buttons stay readable. The same logic must apply to the
+   * hover/focus/group-hover variants Tailwind generates, which
+   * are otherwise written by hundreds of places.
+   * --------------------------------------------------------- */
+  .light .text-white,
+  .light .hover\:text-white:hover,
+  .light .focus\:text-white:focus,
+  .light .focus-visible\:text-white:focus-visible,
+  .light .group:hover .group-hover\:text-white,
+  .light .group:focus .group-focus\:text-white,
+  .light .group:focus-within .group-focus-within\:text-white,
+  .light .peer:hover ~ .peer-hover\:text-white,
+  .light .data-\[state\=open\]\:text-white[data-state="open"],
+  .light .data-\[state\=active\]\:text-white[data-state="active"] {
+    color: hsl(var(--foreground));
+  }
+  /* Re-pin to real white on brand/primary/destructive surfaces */
+  .light :is([class*="bg-brand-"], .bg-primary, .bg-destructive, [class*="bg-red-"], [class*="bg-emerald-"], [class*="bg-green-"], [class*="bg-amber-"], [class*="bg-blue-"]) :is(
+    .text-white,
+    .hover\:text-white,
+    .focus\:text-white,
+    .group-hover\:text-white,
+    .group-focus\:text-white
+  ),
+  .light :is([class*="bg-brand-"], .bg-primary, .bg-destructive, [class*="bg-red-"], [class*="bg-emerald-"], [class*="bg-green-"], [class*="bg-amber-"], [class*="bg-blue-"]):is(
+    .text-white,
+    .hover\:text-white:hover,
+    .focus\:text-white:focus,
+    .group-hover\:text-white,
+    .group-focus\:text-white
+  ) {
     color: #fff;
   }
+
+  /* ─── Hardcoded hex backgrounds → light equivalents ──────────
+   * Several editor-chrome surfaces and the marketing landing
+   * page use VS Code-style arbitrary hex utilities (e.g.
+   * `bg-[#1e1e1e]`, `bg-[#1C1C1C]`, `bg-[#0a0a0a]`). These do
+   * not pick up the palette remap above, so we re-target them
+   * directly here to keep light mode consistent.
+   * --------------------------------------------------------- */
+  /* Editor chrome — VS Code-style backgrounds */
+  .light .bg-\[\#1C1C1C\],
+  .light .bg-\[\#1c1c1c\] { background-color: hsl(var(--card)); }
+  .light .bg-\[\#1e1e1e\] { background-color: hsl(var(--card)); }
+  .light .bg-\[\#252526\] { background-color: hsl(var(--muted)); }
+  .light .hover\:bg-\[\#2a2a2b\]:hover,
+  .light .bg-\[\#2a2a2b\] { background-color: hsl(var(--accent)); }
+  .light .bg-\[\#1e1e2e\] { background-color: hsl(var(--muted-foreground) / 0.4); }
+  .light .hover\:bg-\[\#333\]:hover { background-color: hsl(var(--accent)); }
+  .light .border-\[\#1C1C1C\],
+  .light .border-\[\#1c1c1c\] { border-color: hsl(var(--border)); }
+
+  /* Editor chrome — off-white text colors that would otherwise vanish */
+  .light .text-\[\#FCFBF8\] { color: hsl(var(--foreground)); }
+  .light .text-\[\#F0F6FF\] { color: hsl(var(--foreground)); }
+  .light .text-\[\#9b9a97\] { color: hsl(var(--muted-foreground)); }
+  .light .text-\[\#9b9a77\]\/70 { color: hsl(var(--muted-foreground) / 0.7); }
+  .light .text-\[\#9b9a77\]\/60 { color: hsl(var(--muted-foreground) / 0.6); }
+
+  /* Re-pin to white when sitting on a known dark/brand surface */
+  .light :is([class*="bg-brand-"], .bg-primary, .bg-destructive, .bg-\[\#5337CD\], .bg-\[\#1E52F1\]) :is(
+    .text-\[\#FCFBF8\],
+    .text-\[\#F0F6FF\]
+  ) { color: #fff; }
+
+  /* Marketing/landing — dark hero & cards */
+  .light .bg-\[\#0a0a0a\] { background-color: hsl(var(--background)); }
+  .light .bg-\[\#1a1a1a\] { background-color: hsl(var(--card)); }
+  .light .bg-\[\#111\] { background-color: hsl(var(--card)); }
+  .light .bg-\[\#0f0f10\] { background-color: hsl(var(--background)); }
+
+  /* ─── Dialog / sheet scrims ───────────────────────────────────
+   * `bg-black/X` overlays look fine as dim scrims in dark mode
+   * but feel oppressive in light mode. Soften to the foreground
+   * color at lower opacity so the scrim still reads as "modal".
+   * --------------------------------------------------------- */
+  .light .bg-black\/80 { background-color: hsl(var(--foreground) / 0.45); }
+  .light .bg-black\/70 { background-color: hsl(var(--foreground) / 0.4); }
+  .light .bg-black\/60 { background-color: hsl(var(--foreground) / 0.35); }
+  .light .bg-black\/50 { background-color: hsl(var(--foreground) / 0.3); }
+  .light .bg-black\/40 { background-color: hsl(var(--foreground) / 0.06); }
+
+  /* ─── White-on-white chrome guards ────────────────────────────
+   * `border-white/10`, `bg-white/[0.02]` etc. are essentially
+   * invisible against a light background. Map them onto the
+   * foreground color so the same hairlines/tints still render.
+   * --------------------------------------------------------- */
+  .light .border-white\/5 { border-color: hsl(var(--foreground) / 0.08); }
+  .light .border-white\/8 { border-color: hsl(var(--foreground) / 0.1); }
+  .light .border-white\/10 { border-color: hsl(var(--foreground) / 0.12); }
+  .light .border-white\/20 { border-color: hsl(var(--foreground) / 0.2); }
+  .light .bg-white\/\[0\.02\] { background-color: hsl(var(--foreground) / 0.03); }
+  .light .bg-white\/5 { background-color: hsl(var(--foreground) / 0.06); }
+  .light .hover\:bg-white\/5:hover { background-color: hsl(var(--foreground) / 0.06); }
+  .light .bg-white\/10 { background-color: hsl(var(--foreground) / 0.08); }
+  .light .hover\:bg-white\/10:hover { background-color: hsl(var(--foreground) / 0.08); }
 }
 
 @layer base {

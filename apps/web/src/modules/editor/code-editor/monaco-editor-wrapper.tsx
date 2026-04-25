@@ -3,6 +3,7 @@
 import { useRef, useCallback, useEffect } from "react";
 import Editor, { type OnMount, type OnChange } from "@monaco-editor/react";
 import type { editor as MonacoEditor } from "monaco-editor";
+import { useDarkMode } from "@/hooks/use-dark-mode";
 
 // ─── Language mapping ────────────────────────────────────────
 function toMonacoLanguage(language: string): string {
@@ -51,8 +52,8 @@ export function MonacoEditorWrapper({
 }: MonacoEditorWrapperProps) {
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const valueRef = useRef(value);
+  const { isDark } = useDarkMode();
 
-  // Keep the value ref up to date for the save handler
   useEffect(() => {
     valueRef.current = value;
   }, [value]);
@@ -128,7 +129,7 @@ export function MonacoEditorWrapper({
       language={monacoLanguage}
       value={value}
       path={path}
-      theme="vs-dark"
+      theme={isDark ? "vs-dark" : "vs"}
       onChange={handleChange}
       onMount={handleMount}
       options={{
@@ -168,10 +169,10 @@ export function MonacoEditorWrapper({
         mouseWheelZoom: true,
       }}
       loading={
-        <div className="flex h-full items-center justify-center bg-[#1e1e1e]">
+        <div className="flex h-full items-center justify-center bg-card">
           <div className="flex flex-col items-center gap-2">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-brand-400" />
-            <span className="text-xs text-zinc-500">Loading editor...</span>
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-brand-400" />
+            <span className="text-xs text-muted-foreground">Loading editor...</span>
           </div>
         </div>
       }

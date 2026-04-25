@@ -319,7 +319,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
         <div className="mt-auto border-t border-zinc-800 p-3 space-y-3">
           {workspacePlan === "free" && (
             <div className="rounded-lg bg-gradient-to-br from-brand-600/20 to-brand-600/10 border border-brand-500/20 p-3">
-              <div className="flex items-center gap-2 mb-1.5"><Zap className="h-4 w-4 text-brand-400" /><span className="text-sm font-medium text-brand-300">Upgrade to Pro</span></div>
+              <div className="flex items-center gap-2 mb-1.5"><Zap className="h-4 w-4 text-brand-500" /><span className="text-sm font-medium text-brand-700 dark:text-brand-300">Upgrade to Pro</span></div>
               <p className="text-[11px] text-zinc-400 mb-2.5">Get unlimited projects and priority AI generation.</p>
               <button onClick={() => router.push("/billing")} className="w-full rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 transition-colors">Upgrade now</button>
             </div>
