@@ -259,13 +259,22 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ background: "linear-gradient(145deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%)" }}>
+    <div
+      className="flex min-h-screen items-center justify-center"
+      style={{
+        background:
+          typeof window !== "undefined" &&
+          window.matchMedia("(prefers-color-scheme: light)").matches
+            ? "linear-gradient(145deg, #fafaf9 0%, #f5f5f4 50%, #ffffff 100%)"
+            : "linear-gradient(145deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%)",
+      }}
+    >
       <div className="text-center space-y-6">
         <div className="flex justify-center">
           <DoableLogo className="w-16 h-16 drop-shadow-lg" />
         </div>
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight text-white">
+          <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
             Doable
           </h1>
           <p

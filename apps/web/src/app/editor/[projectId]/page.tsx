@@ -5418,7 +5418,7 @@ export default function EditorPage() {
                     />
 
                     {/* Bottom toolbar row */}
-                    <div className="flex items-center justify-between px-2 pb-2 mt-1">
+                    <div className="@container flex items-center justify-between px-2 pb-2 mt-1">
                       {/* Left: Attachment + Toggles Group */}
                       <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
                         {/* + button (rounded-full) */}
@@ -5449,7 +5449,7 @@ export default function EditorPage() {
                             title="Strategize mode — creates plans only"
                           >
                             <Target className="h-3 w-3" />
-                            <span>Strategize</span>
+                            <span className="hidden @[26rem]:inline">Strategize</span>
                           </button>
                           <button
                             onClick={() => setChatMode("agent")}
@@ -5461,14 +5461,14 @@ export default function EditorPage() {
                             title="Work mode — generates code"
                           >
                             <Hammer className="h-3 w-3" />
-                            <span>Work</span>
+                            <span className="hidden @[26rem]:inline">Work</span>
                           </button>
                         </div>
                         
                         {/* Design View Toggle */}
                         <button
                           onClick={() => setActiveTab("design")}
-                          className={`shrink-0 flex items-center gap-1.5 rounded-full border px-2 h-7 text-[10px] sm:text-[11px] font-medium transition-all ${
+                          className={`shrink-0 flex items-center gap-1.5 rounded-full border h-7 w-7 @[26rem]:w-auto @[26rem]:px-2 justify-center text-[10px] sm:text-[11px] font-medium transition-all ${
                             isDesignMode
                               ? "border-brand-500/50 bg-brand-500/10 text-brand-300"
                               : "border-white/5 bg-white/[0.03] text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
@@ -5476,7 +5476,7 @@ export default function EditorPage() {
                           title="Design View"
                         >
                           <Paintbrush className="h-3 w-3" />
-                          <span>Design View</span>
+                          <span className="hidden @[26rem]:inline">Design View</span>
                         </button>
                         
                         {/* Model selector — hidden unless admin enables it */}
