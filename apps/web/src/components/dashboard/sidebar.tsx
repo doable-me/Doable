@@ -204,19 +204,19 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
       <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-border bg-background">
         {/* Logo */}
         <a href="/dashboard" className="flex items-center gap-2.5 px-5 pt-5 pb-4 hover:opacity-80 transition-opacity cursor-pointer">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 border border-brand-600 dark:bg-gradient-to-br dark:from-brand-600 dark:to-brand-700 dark:border-transparent shadow-sm shadow-brand-700/20 dark:shadow-brand-900/30"><span className="text-sm font-bold text-brand-700 dark:text-white">D</span></div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 border border-brand-600 dark:bg-gradient-to-br dark:from-brand-600 dark:to-brand-700 dark:border-transparent shadow-sm shadow-brand-700/20 dark:shadow-brand-900/30"><span className="text-sm font-bold text-brand-700 dark:text-white self-end mb-1">D</span><span className="h-2 w-2 rounded-full bg-violet-700 dark:bg-violet-400 self-end mb-2 ml-0.5 shrink-0" /></div>
           <span className="text-lg font-semibold tracking-tight text-foreground">Doable</span>
         </a>
 
         {/* Workspace Selector */}
-        <div className="mx-3 mb-4 rounded-lg border border-border bg-card p-3">
+        <div className="mb-4 border-b border-border px-3 pb-3">
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex w-full items-center justify-between mb-2 outline-none">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground truncate text-left">{workspaceName}</p>
-                <p className="text-[11px] text-muted-foreground capitalize text-left">{workspacePlan} plan{memberCount > 1 ? ` \u00b7 ${memberCount} members` : ""}</p>
-              </div>
-              <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <DropdownMenuTrigger className="relative block w-full mb-2 outline-none group py-0.5 rounded-md hover:bg-brand-600/8 transition-colors duration-150 text-left pr-7">
+              <p className="text-sm font-medium text-foreground break-words group-hover:text-brand-700 dark:group-hover:text-brand-300 transition-colors duration-150">{workspaceName}</p>
+              <p className="text-[11px] text-muted-foreground capitalize">{workspacePlan} plan{memberCount > 1 ? ` \u00b7 ${memberCount} members` : ""}</p>
+              <span className="absolute right-0 top-0 shrink-0 flex items-center justify-center h-5 w-5 rounded-full bg-brand-600 group-hover:bg-brand-700 transition-all duration-150">
+                <ChevronDown strokeWidth={3} className="h-3 w-3 text-white" />
+              </span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuLabel className="text-muted-foreground">Workspaces</DropdownMenuLabel>
@@ -233,8 +233,10 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
             </DropdownMenuContent>
           </DropdownMenu>
           <div className="space-y-1">
-            <div className="flex items-center justify-between text-[11px]"><span className="text-muted-foreground">Credits today</span><span className="text-muted-foreground">{isUnlimited ? "Unlimited" : `${creditsRemaining}/${dailyTotal}`}</span></div>
-            <div className="h-1.5 w-full rounded-full bg-muted"><div className="h-1.5 rounded-full bg-gradient-to-r from-brand-600 to-brand-500 transition-all" style={{ width: `${Math.min(creditsPercent, 100)}%` }} /></div>
+            <div className="flex items-center justify-between text-[11px]"><span className="text-muted-foreground">Credits today</span><span className="text-muted-foreground">{isUnlimited ? "Unlimited" : `${creditsRemaining} left`}</span></div>
+            {!isUnlimited && (
+              <div className="h-1.5 w-full rounded-full bg-muted"><div className="h-1.5 rounded-full bg-gradient-to-r from-brand-600 to-brand-500 transition-all" style={{ width: `${Math.min(creditsPercent, 100)}%` }} /></div>
+            )}
           </div>
         </div>
 

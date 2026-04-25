@@ -53,7 +53,8 @@ export default function HomePage() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-300">
-              <span className="text-sm font-bold text-white">D</span>
+              <span className="text-sm font-bold text-white self-end mb-1">D</span>
+              <span className="h-2 w-2 rounded-full bg-violet-700 self-end mb-2 ml-0.5 shrink-0" />
             </div>
             <span className="text-lg font-semibold tracking-tight text-white">
               Doable

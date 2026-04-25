@@ -10,7 +10,8 @@ export function HomeFooter() {
           <div className="lg:col-span-2">
             <Link href="/" className="flex items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-brand-500 to-brand-300">
-                <span className="text-xs font-bold text-white">D</span>
+                <span className="text-xs font-bold text-white self-end mb-1">D</span>
+                <span className="h-2 w-2 rounded-full bg-violet-700 self-end mb-2 ml-0.5 shrink-0" />
               </div>
               <span className="text-base font-semibold text-white">
                 Doable
