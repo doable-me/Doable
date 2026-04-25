@@ -294,9 +294,9 @@ export function ConnectFlow({
             <Button
               className="w-full"
               disabled={loading}
-              onClick={() => void handleOAuth()}
+              onClick={() => void handleEnhancedAuth()}
             >
-              {loading ? "Connecting…" : `Connect ${item.displayName}`}
+              {loading ? "Connecting…" : (item.enhancedAuth.connectLabel ?? `Connect ${item.displayName}`)}
             </Button>
           </div>
         )}
