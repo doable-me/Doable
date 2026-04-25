@@ -33,7 +33,19 @@ export default function SettingsPage() {
 
   const [theme, setTheme] = useState<"dark" | "light" | "system">(() => {
     if (typeof window === "undefined") return "dark";
-    return (localStorage.getItem("doable_theme") as "dark" | "light" | "system") ?? "dark";
+    // Light & system modes are not yet fully supported (UI is dark-only).
+    // Coerce any stale stored value back to "dark" until light mode ships.
+    const stored = localStorage.getItem("doable_theme");
+    if (stored !== "dark") {
+      try { localStorage.setItem("doable_theme", "dark"); } catch { /* ignore */ }
+      try {
+        const root = document.documentElement;
+        root.classList.add("dark");
+        root.classList.remove("light");
+      } catch { /* ignore */ }
+      return "dark";
+    }
+    return "dark";
   });
   const { brandTheme, changeBrandTheme } = useBrandTheme();
 
