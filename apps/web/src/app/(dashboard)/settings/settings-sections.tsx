@@ -239,34 +239,25 @@ export function AppearanceSection({
           <Label className="text-zinc-300">Theme</Label>
           <div className="grid grid-cols-3 gap-3">
             {([
-              { value: "light" as const, label: "Light", icon: Sun, comingSoon: true },
-              { value: "dark" as const, label: "Dark", icon: Moon, comingSoon: false },
-              { value: "system" as const, label: "System", icon: Monitor, comingSoon: true },
+              { value: "light" as const, label: "Light", icon: Sun },
+              { value: "dark" as const, label: "Dark", icon: Moon },
+              { value: "system" as const, label: "System", icon: Monitor },
             ]).map((option) => {
               const isActive = theme === option.value;
-              const isDisabled = option.comingSoon;
               return (
                 <button
                   key={option.value}
                   type="button"
-                  disabled={isDisabled}
-                  onClick={() => !isDisabled && onThemeChange(option.value)}
-                  title={isDisabled ? "Light mode is coming soon" : undefined}
+                  onClick={() => onThemeChange(option.value)}
                   className={`relative flex flex-col items-center gap-2 rounded-xl border p-4 transition-colors ${
-                    isDisabled
-                      ? "cursor-not-allowed border-zinc-800/60 bg-zinc-800/20 text-zinc-600"
-                      : isActive
+                    isActive
                       ? "border-brand-600 bg-brand-600/10 text-white"
                       : "border-zinc-800 bg-zinc-800/30 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"
                   }`}
                 >
                   <option.icon className="h-5 w-5" />
                   <span className="text-xs font-medium">{option.label}</span>
-                  {isDisabled ? (
-                    <span className="text-[10px] uppercase tracking-wide text-zinc-500">Soon</span>
-                  ) : (
-                    isActive && <Check className="h-3.5 w-3.5 text-brand-600" />
-                  )}
+                  {isActive && <Check className="h-3.5 w-3.5 text-brand-600" />}
                 </button>
               );
             })}

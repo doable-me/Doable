@@ -120,6 +120,50 @@
     --input: 240 4% 16%;
     --ring: var(--brand-500);
   }
+
+  /* ─── Light-mode zinc remap ─────────────────────────────
+   * The dashboard chrome was authored for dark mode and uses
+   * `bg-zinc-900`, `text-zinc-400`, `border-zinc-800` etc. in
+   * hundreds of places. Tailwind v4 emits each zinc shade as a
+   * CSS variable (`--color-zinc-*`), so we can flip the entire
+   * palette under `.light` without touching individual files.
+   *
+   * Mapping intent (dark zinc → light equivalent):
+   *   bg-zinc-950/900/800  → near-white surfaces (card-ish)
+   *   bg-zinc-700          → light border / muted bg
+   *   text-zinc-50/100     → strong dark text (foreground)
+   *   text-zinc-200/300    → emphasis dark text
+   *   text-zinc-400/500    → muted text
+   *   border-zinc-700/800  → light border
+   * --------------------------------------------------------- */
+  .light {
+    --color-zinc-50: oklch(14.1% .005 285.823);    /* was lightest -> now darkest text */
+    --color-zinc-100: oklch(21% .006 285.885);
+    --color-zinc-200: oklch(27.4% .006 286.033);
+    --color-zinc-300: oklch(37% .013 285.805);
+    --color-zinc-400: oklch(55.2% .016 285.938);   /* muted text */
+    --color-zinc-500: oklch(45% .015 285.9);
+    --color-zinc-600: oklch(55.2% .016 285.938);
+    --color-zinc-700: oklch(87.1% .006 286.286);   /* was border-ish dark -> light border */
+    --color-zinc-800: oklch(92% .004 286.3);       /* nested surface */
+    --color-zinc-900: oklch(97% .002 286.3);       /* card background (near white) */
+    --color-zinc-950: oklch(98.5% .001 286.3);     /* page background */
+
+    /* `text-white` shows up on chrome (where it should flip to dark)
+     * AND on brand/destructive buttons (where it must stay white).
+     * Override globally to foreground, then re-pin to white when the
+     * same/adjacent element has a brand/primary/destructive bg.
+     * (Actual override is in the @layer utilities block below — that
+     * layer wins over Tailwind's color utilities.) */
+  }
+}
+
+@layer utilities {
+  .light .text-white { color: hsl(var(--foreground)); }
+  .light :is([class*="bg-brand-"], .bg-primary, .bg-destructive).text-white,
+  .light :is([class*="bg-brand-"], .bg-primary, .bg-destructive) .text-white {
+    color: #fff;
+  }
 }
 
 @layer base {

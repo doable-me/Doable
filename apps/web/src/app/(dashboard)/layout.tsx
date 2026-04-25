@@ -17,7 +17,7 @@ export default function DashboardLayout({
   return (
     <AuthProvider>
       <AuthGuard>
-        <div className="flex h-screen overflow-hidden bg-[#0a0a0a]">
+        <div className="flex h-screen overflow-hidden bg-background">
           {/* Mobile hamburger */}
           <button
             onClick={() => setMobileSidebarOpen(true)}

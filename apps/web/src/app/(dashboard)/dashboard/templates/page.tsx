@@ -59,7 +59,7 @@ export default function TemplatesPage() {
       : templates.filter((t) => t.category === activeCategory);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-5xl px-6 py-10">
         {/* Header */}
         <div className="mb-8 flex items-start justify-between">

@@ -201,7 +201,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
 
   return (
     <>
-      <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-zinc-800 bg-[#0a0a0a]">
+      <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-zinc-800 bg-background">
         {/* Logo */}
         <a href="/dashboard" className="flex items-center gap-2.5 px-5 pt-5 pb-4 hover:opacity-80 transition-opacity cursor-pointer">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-brand-700 shadow-sm shadow-brand-900/30"><span className="text-sm font-bold text-white">D</span></div>

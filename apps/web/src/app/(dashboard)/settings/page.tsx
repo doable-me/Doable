@@ -33,19 +33,8 @@ export default function SettingsPage() {
 
   const [theme, setTheme] = useState<"dark" | "light" | "system">(() => {
     if (typeof window === "undefined") return "dark";
-    // Light & system modes are not yet fully supported (UI is dark-only).
-    // Coerce any stale stored value back to "dark" until light mode ships.
-    const stored = localStorage.getItem("doable_theme");
-    if (stored !== "dark") {
-      try { localStorage.setItem("doable_theme", "dark"); } catch { /* ignore */ }
-      try {
-        const root = document.documentElement;
-        root.classList.add("dark");
-        root.classList.remove("light");
-      } catch { /* ignore */ }
-      return "dark";
-    }
-    return "dark";
+    const stored = localStorage.getItem("doable_theme") as "dark" | "light" | "system" | null;
+    return stored ?? "dark";
   });
   const { brandTheme, changeBrandTheme } = useBrandTheme();
 
@@ -125,14 +114,15 @@ export default function SettingsPage() {
     setTheme(newTheme);
     localStorage.setItem("doable_theme", newTheme);
     const root = document.documentElement;
-    if (newTheme === "system") {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      root.classList.toggle("dark", prefersDark);
-      root.classList.toggle("light", !prefersDark);
-    } else {
-      root.classList.toggle("dark", newTheme === "dark");
-      root.classList.toggle("light", newTheme === "light");
-    }
+    const resolved =
+      newTheme === "system"
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+        : newTheme;
+    root.classList.remove("dark", "light");
+    root.classList.add(resolved);
+    root.style.colorScheme = resolved;
   }
 
   async function handleDeleteAccount() {
