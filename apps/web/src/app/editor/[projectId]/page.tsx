@@ -4229,9 +4229,9 @@ export default function EditorPage() {
       onRemoteStatus={handleRemoteStatus}
       onRemoteError={handleRemoteError}
     />
-    <div className="flex h-screen flex-col bg-[#1C1C1C] text-zinc-200">
+    <div className="flex h-screen flex-col bg-card text-zinc-200">
       {/* ─── Top Bar ──────────────────────────────────────────── */}
-      <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-zinc-700/40 bg-[#1C1C1C] px-2 md:px-3">
+      <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-zinc-700/40 bg-card px-2 md:px-3">
         {/* Left: Logo + Back arrow + Project name with dropdown */}
         <div className="flex items-center gap-2.5 min-w-0">
           {/* Doable logo icon */}
@@ -4319,7 +4319,7 @@ export default function EditorPage() {
         </div>
 
         {/* Center: View toggle icon buttons */}
-        <div className="flex items-center gap-0.5 rounded-xl bg-[#232322] border border-zinc-700/30 p-0.5">
+        <div className="flex items-center gap-0.5 rounded-xl bg-muted border border-zinc-700/30 p-0.5">
           <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none">
           {/* Core toolbar buttons */}
           {([
@@ -4392,7 +4392,7 @@ export default function EditorPage() {
 
             {/* Dropdown */}
             {showMoreMenu && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-52 rounded-lg border border-zinc-700/60 bg-[#232322] shadow-xl shadow-black/40 py-1 z-50">
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-52 rounded-lg border border-zinc-700/60 bg-muted shadow-xl shadow-black/40 py-1 z-50">
                 {/* View tabs with pin/unpin */}
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">Views</div>
                 {MORE_MENU_ITEMS.map(({ key, icon: MenuIcon, label }) => {
@@ -4491,7 +4491,7 @@ export default function EditorPage() {
         <div className="flex items-center gap-1">
           {isEditingRoute ? (
             <form
-              className="flex items-center gap-1 rounded-full bg-[#272725] border border-[#4D91FF] px-2.5 py-1"
+              className="flex items-center gap-1 rounded-full bg-muted border border-[#4D91FF] px-2.5 py-1"
               onSubmit={(e) => {
                 e.preventDefault();
                 const route = routeInputValue.startsWith("/") ? routeInputValue : `/${routeInputValue}`;
@@ -4534,14 +4534,14 @@ export default function EditorPage() {
                 setIsEditingRoute(true);
                 setTimeout(() => routeInputRef.current?.select(), 0);
               }}
-              className="flex items-center gap-1 rounded-full bg-[#272725] border border-zinc-700/40 px-2.5 py-1 hover:border-zinc-500 transition-colors cursor-text"
+              className="flex items-center gap-1 rounded-full bg-muted border border-zinc-700/40 px-2.5 py-1 hover:border-zinc-500 transition-colors cursor-text"
               title="Click to navigate to a route"
             >
               <Globe className="h-3 w-3 text-zinc-500" />
               <span className="text-[11px] text-zinc-400 font-mono">{previewRoute}</span>
             </button>
           )}
-          <div className="flex items-center rounded-full bg-[#272725] border border-zinc-700/40 p-0.5">
+          <div className="flex items-center rounded-full bg-muted border border-zinc-700/40 p-0.5">
             {([
               { mode: "desktop" as DeviceMode, Icon: Monitor, label: "Desktop" },
               { mode: "tablet" as DeviceMode, Icon: Tablet, label: "Tablet (768px)" },
@@ -4567,7 +4567,7 @@ export default function EditorPage() {
                 iframeRef.current.src = previewUrl;
               }
             }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-[#272725] hover:text-zinc-300 transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-muted hover:text-zinc-300 transition-colors"
             title="Refresh preview"
             disabled={!previewUrl}
           >
@@ -4577,7 +4577,7 @@ export default function EditorPage() {
             onClick={() => {
               if (previewUrl) window.open(previewUrl, "_blank");
             }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-[#272725] hover:text-zinc-300 transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-muted hover:text-zinc-300 transition-colors"
             title="Open in new tab"
             disabled={!previewUrl}
           >
@@ -4585,7 +4585,7 @@ export default function EditorPage() {
           </button>
           <button
             onClick={handleToggleFullscreen}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-[#272725] hover:text-zinc-300 transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-muted hover:text-zinc-300 transition-colors"
             title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
           >
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -4600,7 +4600,7 @@ export default function EditorPage() {
           {/* Share: pill with muted bg, h-7 */}
           <button
             onClick={() => setShareDialogOpen(true)}
-            className="flex h-7 items-center gap-1.5 rounded-full bg-[#272725] px-2.5 text-sm text-[#FCFBF8] hover:bg-[#333] transition-colors"
+            className="flex h-7 items-center gap-1.5 rounded-full bg-muted px-2.5 text-sm text-[#FCFBF8] hover:bg-[#333] transition-colors"
           >
             <UserPlus className="h-4 w-4" />
             <span className="hidden lg:inline">Share</span>
@@ -4645,7 +4645,7 @@ export default function EditorPage() {
         {/* ─── Chat Panel ───────────────────────────────────── */}
         {showChat && (
           <div
-            className="flex flex-col border-r border-zinc-800/60 bg-[#1C1C1C]"
+            className="flex flex-col border-r border-zinc-800/60 bg-card"
             style={{
               width: (showPreview || isPanelView) ? `${splitPos}%` : "100%",
               minWidth: "260px",
@@ -5350,12 +5350,12 @@ export default function EditorPage() {
 
               {/* Chat input toolbar */}
               <div className="px-2 py-2">
-                <div className="pt-2 pb-4 px-4 bg-gradient-to-t from-[#161618] via-[#161618] to-transparent shrink-0">
+                <div className="pt-2 pb-4 px-4 bg-gradient-to-t from-background via-background to-transparent shrink-0">
                   <div
                     className={`relative flex flex-col rounded-3xl border shadow-lg backdrop-blur-xl transition-all duration-300 ease-out ${
                       isDragging
                         ? "border-brand-500 bg-brand-500/10 ring-1 ring-brand-500 scale-[1.01]"
-                        : "border-[#40403F] bg-[#272725]"
+                        : "border-border bg-muted"
                     }`}
                     onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onDrop={fileAttachments.handleDrop}
@@ -5562,9 +5562,9 @@ export default function EditorPage() {
 
         {/* ─── Code Panel ───────────────────────────────────── */}
         {showCode && (
-          <div className="flex flex-1 overflow-hidden bg-[#1C1C1C]">
+          <div className="flex flex-1 overflow-hidden bg-card">
             {/* File tree sidebar */}
-            <div className="w-56 flex-shrink-0 overflow-y-auto border-r border-zinc-800/60 bg-[#1a1917] py-2">
+            <div className="w-56 flex-shrink-0 overflow-y-auto border-r border-zinc-800/60 bg-card py-2">
               <div className="mb-1 px-3 flex items-center justify-between">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
                   Explorer
@@ -5773,9 +5773,9 @@ export default function EditorPage() {
 
         {/* ─── Preview Panel ────────────────────────────────── */}
         {showPreview && !showCode && (
-          <div className="flex flex-1 flex-col overflow-hidden bg-[#1C1C1C]">
+          <div className="flex flex-1 flex-col overflow-hidden bg-card">
             {/* Preview iframe or loading state */}
-            <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-[#141412] p-2">
+            <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-background p-2">
               {!previewUrl ? (
                 renderScaffoldOverlay()
               ) : (
@@ -5820,8 +5820,8 @@ export default function EditorPage() {
                   {(isFirstGeneration || scaffoldStatus !== "ready" || hasActiveToolCalls) && (
                     <div className={`absolute inset-0 z-10 flex flex-col items-center justify-center transition-opacity duration-500 ${
                       scaffoldStatus !== "ready" || isFirstGeneration
-                        ? "bg-[#141412]/90 backdrop-blur-sm"
-                        : "bg-[#141412]/75 backdrop-blur-[2px]"
+                        ? "bg-background/90 backdrop-blur-sm"
+                        : "bg-background/75 backdrop-blur-[2px]"
                     }`}>
                       <div className="relative mb-5">
                         <div className="h-10 w-10 rounded-full border-2 border-zinc-700 border-t-brand-400 animate-spin" />
@@ -5875,7 +5875,7 @@ export default function EditorPage() {
 
         {/* ─── Full Panel Views (Cloud, Analytics, Files, Security, Speed) ── */}
         {isPanelView && (
-          <div className="flex flex-1 flex-col overflow-hidden bg-[#1C1C1C]">
+          <div className="flex flex-1 flex-col overflow-hidden bg-card">
             {activeTab === "history" && (
               <HistoryPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
             )}
@@ -5903,7 +5903,7 @@ export default function EditorPage() {
 
       {/* ─── Share Dialog ──────────────────────────────────────── */}
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
-        <DialogContent className="bg-[#1C1C1C] border-zinc-700 text-zinc-200 max-w-md" onClick={(e) => e.stopPropagation()}>
+        <DialogContent className="bg-card border-zinc-700 text-zinc-200 max-w-md" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
             <DialogTitle className="text-white">Share Project</DialogTitle>
             <DialogDescription className="text-zinc-400">
@@ -6077,7 +6077,7 @@ export default function EditorPage() {
 
       {/* ─── Publish Modal ─────────────────────────────────────── */}
       <Dialog open={publishModalOpen} onOpenChange={setPublishModalOpen}>
-        <DialogContent className="bg-[#1C1C1C] border-zinc-700 text-zinc-200 max-w-md" onClick={(e) => e.stopPropagation()}>
+        <DialogContent className="bg-card border-zinc-700 text-zinc-200 max-w-md" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <Rocket className="h-5 w-5 text-blue-400" />
@@ -6267,7 +6267,7 @@ export default function EditorPage() {
 
       {/* ─── Delete Confirmation Dialog ────────────────────────── */}
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="bg-[#1C1C1C] border-zinc-700 text-zinc-200 max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <DialogContent className="bg-card border-zinc-700 text-zinc-200 max-w-sm" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <Trash2 className="h-5 w-5 text-red-400" />
@@ -6322,7 +6322,7 @@ export default function EditorPage() {
 
       {/* ─── Keyboard Shortcuts Dialog ─────────────────────────── */}
       <Dialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen}>
-        <DialogContent className="bg-[#1C1C1C] border-zinc-700 text-zinc-200 max-w-md" onClick={(e) => e.stopPropagation()}>
+        <DialogContent className="bg-card border-zinc-700 text-zinc-200 max-w-md" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <Keyboard className="h-5 w-5 text-zinc-400" />

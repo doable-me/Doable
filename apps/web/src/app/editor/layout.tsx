@@ -11,7 +11,7 @@ export default function EditorLayout({
   return (
     <AuthProvider>
       <AuthGuard>
-        <div className="h-screen w-screen overflow-hidden bg-[#0a0a0f]">
+        <div className="h-screen w-screen overflow-hidden bg-background">
           {children}
         </div>
       </AuthGuard>
