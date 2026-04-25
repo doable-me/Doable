@@ -2173,7 +2173,7 @@ export default function EditorPage() {
     }
   }, [selectedFile, scaffoldStatus, loadFileContent]);
 
-  // Cleanup timers on unmount
+  // Cleanup timers and in-flight stream on unmount
   useEffect(() => {
     return () => {
       if (autosaveTimerRef.current) {
@@ -2182,6 +2182,9 @@ export default function EditorPage() {
       if (previewRefreshTimer.current) {
         clearTimeout(previewRefreshTimer.current);
       }
+      // Abort any in-flight AI stream so reader.read() throws AbortError
+      // (signal.aborted → true) rather than BodyStreamBuffer was aborted
+      abortRef.current?.abort();
     };
   }, []);
 
