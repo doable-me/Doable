@@ -288,17 +288,42 @@ export function registerMiscRoutes(app: Hono<AuthEnv>) {
   });
 
   // ─── GET /ai/models ──
+  // Cache + in-flight dedup so multiple AI Settings hooks (4 instances of
+  // useCopilotModels per page) collapse to a single upstream Copilot API
+  // call. Each upstream call is ~1.8s; without this, every AI Settings
+  // visit fires 4-8 parallel calls that all wait on a slow Copilot probe.
+  const MODELS_TTL_MS = 5 * 60_000;
+  const modelsCache = new Map<string, { data: unknown; expires: number }>();
+  const modelsInflight = new Map<string, Promise<unknown>>();
   app.get("/ai/models", async (c) => {
+    const copilotAccountId = c.req.query("copilotAccountId");
+    const cacheKey = `models:${copilotAccountId ?? "default"}`;
+
+    const cached = modelsCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return c.json({ data: cached.data });
+    }
+
+    let pending = modelsInflight.get(cacheKey);
+    if (!pending) {
+      pending = (async () => {
+        let githubToken: string | undefined;
+        if (copilotAccountId) {
+          githubToken = (await aiSettingsDb.getCopilotAccountToken(copilotAccountId)) ?? undefined;
+        }
+        const manager = getCopilotManager();
+        const engine = await manager.getEngine(cacheKey, githubToken);
+        const models = await engine.listModels();
+        modelsCache.set(cacheKey, { data: models, expires: Date.now() + MODELS_TTL_MS });
+        return models;
+      })().finally(() => {
+        modelsInflight.delete(cacheKey);
+      });
+      modelsInflight.set(cacheKey, pending);
+    }
+
     try {
-      const copilotAccountId = c.req.query("copilotAccountId");
-      let githubToken: string | undefined;
-      if (copilotAccountId) {
-        githubToken = (await aiSettingsDb.getCopilotAccountToken(copilotAccountId)) ?? undefined;
-      }
-      const engineKey = `models:${copilotAccountId ?? "default"}`;
-      const manager = getCopilotManager();
-      const engine = await manager.getEngine(engineKey, githubToken);
-      const models = await engine.listModels();
+      const models = await pending;
       return c.json({ data: models });
     } catch (err) {
       return c.json({ data: [], error: err instanceof Error ? err.message : "Failed to list models" });

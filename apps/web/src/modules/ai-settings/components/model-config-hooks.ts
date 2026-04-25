@@ -82,33 +82,66 @@ export interface ProviderModelInfo {
 // ─── Hooks ──────────────────────────────────────────────────
 
 /** Fetches Copilot models dynamically. Exported for reuse (e.g. access-control-tab). */
+// Module-level cache + in-flight dedup. The AI Settings page renders
+// `useCopilotModels` 4 times (primary/suggestion × workspace/user) and
+// strict-mode double-mount can fire each twice. Without dedup that's 8
+// parallel /ai/models calls per visit, each ~1.8s. With dedup all callers
+// share a single fetch, and subsequent visits within MODELS_TTL_MS are
+// served instantly from cache.
+const MODELS_TTL_MS = 5 * 60_000;
+const _modelsCache = new Map<string, { data: { id: string; label: string }[]; expires: number }>();
+const _modelsInflight = new Map<string, Promise<{ id: string; label: string }[]>>();
+
+async function fetchCopilotModels(copilotAccountId?: string): Promise<{ id: string; label: string }[]> {
+  const key = copilotAccountId ?? "__default__";
+  const cached = _modelsCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
+  let pending = _modelsInflight.get(key);
+  if (!pending) {
+    pending = (async () => {
+      const qs = copilotAccountId ? `?copilotAccountId=${copilotAccountId}` : "";
+      const json = await apiFetch<{ data: { id: string; name: string }[] }>(`/ai/models${qs}`);
+      const fetched = json.data ?? [];
+      const models = fetched.length > 0
+        ? [
+            { id: "", label: "Auto (recommended)" },
+            ...fetched.map((m) => ({ id: m.id, label: m.name })),
+          ]
+        : FALLBACK_MODELS;
+      _modelsCache.set(key, { data: models, expires: Date.now() + MODELS_TTL_MS });
+      return models;
+    })().finally(() => {
+      _modelsInflight.delete(key);
+    });
+    _modelsInflight.set(key, pending);
+  }
+  return pending;
+}
+
 export function useCopilotModels(copilotAccountId?: string) {
-  const [models, setModels] = useState<{ id: string; label: string }[]>(FALLBACK_MODELS);
-  const [loadingModels, setLoadingModels] = useState(true);
+  const [models, setModels] = useState<{ id: string; label: string }[]>(() => {
+    const cached = _modelsCache.get(copilotAccountId ?? "__default__");
+    return cached && cached.expires > Date.now() ? cached.data : FALLBACK_MODELS;
+  });
+  const [loadingModels, setLoadingModels] = useState(() => {
+    const cached = _modelsCache.get(copilotAccountId ?? "__default__");
+    return !(cached && cached.expires > Date.now());
+  });
 
   useEffect(() => {
     let cancelled = false;
+    const cached = _modelsCache.get(copilotAccountId ?? "__default__");
+    if (cached && cached.expires > Date.now()) {
+      setModels(cached.data);
+      setLoadingModels(false);
+      return;
+    }
     setLoadingModels(true);
-    (async () => {
-      try {
-        const qs = copilotAccountId ? `?copilotAccountId=${copilotAccountId}` : "";
-        const json = await apiFetch<{ data: { id: string; name: string }[] }>(`/ai/models${qs}`);
-        if (cancelled) return;
-        const fetched = json.data ?? [];
-        if (fetched.length > 0) {
-          setModels([
-            { id: "", label: "Auto (recommended)" },
-            ...fetched.map((m) => ({ id: m.id, label: m.name })),
-          ]);
-        } else {
-          setModels(FALLBACK_MODELS);
-        }
-      } catch {
-        setModels(FALLBACK_MODELS);
-      } finally {
-        if (!cancelled) setLoadingModels(false);
-      }
-    })();
+    fetchCopilotModels(copilotAccountId)
+      .then((m) => { if (!cancelled) setModels(m); })
+      .catch(() => { if (!cancelled) setModels(FALLBACK_MODELS); })
+      .finally(() => { if (!cancelled) setLoadingModels(false); });
     return () => { cancelled = true; };
   }, [copilotAccountId]);
 
