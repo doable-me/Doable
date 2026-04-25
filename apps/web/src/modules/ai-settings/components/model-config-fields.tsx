@@ -36,14 +36,14 @@ export function HelpTooltip({ text }: { text: string }) {
     <div ref={ref} className="relative inline-flex">
       <button
         onClick={() => setOpen(!open)}
-        className="text-zinc-500 hover:text-zinc-300 transition-colors"
+        className="text-muted-foreground hover:text-foreground transition-colors"
         aria-label="Help"
       >
         <HelpCircle className="h-3.5 w-3.5" />
       </button>
       {open && (
-        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-72 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-xs text-zinc-300 leading-relaxed shadow-xl">
-          <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 h-3 w-3 rotate-45 border-l border-t border-zinc-700 bg-zinc-800" />
+        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-72 rounded-lg border border-border bg-popover px-4 py-3 text-xs text-popover-foreground leading-relaxed shadow-xl">
+          <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 h-3 w-3 rotate-45 border-l border-t border-border bg-popover" />
           {text}
         </div>
       )}
@@ -65,7 +65,7 @@ export function ModelCapabilityBadges({ model }: { model?: ProviderModelInfo }) 
       {badges.map((b) => (
         <span
           key={b.label}
-          className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400"
+          className="inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground"
         >
           <b.icon className="h-2.5 w-2.5" />
           {b.label}
@@ -121,16 +121,16 @@ export function InlineConfigFields({
     <>
       {/* Source toggle */}
       <div className="mb-4">
-        <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">
+        <label className="block text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
           Provider Source
         </label>
-        <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
+        <div className="flex rounded-lg border border-border overflow-hidden w-fit">
           <button
             onClick={() => onChange({ ...state, source: "copilot" })}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               state.source === "copilot"
                 ? "bg-brand-600 text-white"
-                : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                : "bg-secondary text-muted-foreground hover:text-foreground"
             }`}
           >
             GitHub Copilot
@@ -140,13 +140,13 @@ export function InlineConfigFields({
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               state.source === "custom"
                 ? "bg-brand-600 text-white"
-                : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                : "bg-secondary text-muted-foreground hover:text-foreground"
             }`}
           >
             Custom Provider
           </button>
         </div>
-        <p className="text-[10px] text-zinc-500 mt-1.5">
+        <p className="text-[10px] text-muted-foreground mt-1.5">
           Both configurations are saved. Switching tabs only changes which one is active —
           your other tab&apos;s selection is kept.
         </p>
@@ -157,12 +157,12 @@ export function InlineConfigFields({
         {state.source === "copilot" ? (
           <>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5">Account</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Account</label>
               <div className="flex gap-2">
                 <select
                   value={state.copilotAccountId}
                   onChange={(e) => onChange({ ...state, copilotAccountId: e.target.value })}
-                  className="flex-1 min-w-0 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                  className="flex-1 min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                 >
                   <option value="">Server Default</option>
                   {validAccounts.map((a) => (
@@ -173,7 +173,7 @@ export function InlineConfigFields({
                 </select>
                 <a
                   href={`${API_URL}/auth/github/copilot${workspaceId ? `?workspaceId=${workspaceId}` : ""}`}
-                  className="flex items-center gap-1 shrink-0 rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-2 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors"
+                  className="flex items-center gap-1 shrink-0 rounded-lg border border-input bg-background px-2.5 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-border transition-colors"
                   title="Connect GitHub Account"
                 >
                   <Plus className="h-3 w-3" />
@@ -181,12 +181,12 @@ export function InlineConfigFields({
                 </a>
               </div>
               {state.copilotAccountId === "" && (
-                <p className="text-[10px] text-zinc-500 mt-1">
+                <p className="text-[10px] text-muted-foreground mt-1">
                   Uses the server&apos;s built-in GitHub authentication. Connect your own account for more control.
                 </p>
               )}
               {validAccounts.length === 0 && (
-                <p className="text-[10px] text-zinc-500 mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
                   No accounts connected.{" "}
                   <a
                     href={`${API_URL}/auth/github/copilot${workspaceId ? `?workspaceId=${workspaceId}` : ""}`}
@@ -198,11 +198,11 @@ export function InlineConfigFields({
               )}
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Model</label>
               <select
                 value={state.copilotModel}
                 onChange={(e) => onChange({ ...state, copilotModel: e.target.value })}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
               >
                 {copilotModels.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -215,12 +215,12 @@ export function InlineConfigFields({
         ) : (
           <>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5">Provider</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Provider</label>
               <div className="flex gap-2">
                 <select
                   value={state.providerId}
                   onChange={(e) => onChange({ ...state, providerId: e.target.value, providerModel: "" })}
-                  className="flex-1 min-w-0 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                  className="flex-1 min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                 >
                   <option value="">Select a provider...</option>
                   {validProviders.map((p) => (
@@ -232,7 +232,7 @@ export function InlineConfigFields({
                 {onAddProviderClick && (
                   <button
                     onClick={onAddProviderClick}
-                    className="flex items-center gap-1 shrink-0 rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-2 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors"
+                    className="flex items-center gap-1 shrink-0 rounded-lg border border-input bg-background px-2.5 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-border transition-colors"
                     title="Add Provider"
                   >
                     <Plus className="h-3 w-3" />
@@ -241,7 +241,7 @@ export function InlineConfigFields({
                 )}
               </div>
               {validProviders.length === 0 && onAddProviderClick && (
-                <p className="text-[10px] text-zinc-500 mt-1">
+                <p className="text-[10px] text-muted-foreground mt-1">
                   No providers configured.{" "}
                   <button
                     onClick={onAddProviderClick}
@@ -253,9 +253,9 @@ export function InlineConfigFields({
               )}
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Model</label>
               {providerModelsLoading && state.providerId ? (
-                <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-zinc-500">
+                <div className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-xs text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" /> Loading models...
                 </div>
               ) : showModelDropdown ? (
@@ -270,7 +270,7 @@ export function InlineConfigFields({
                         onChange({ ...state, providerModel: e.target.value });
                       }
                     }}
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                   >
                     <option value="">Select a model...</option>
                     {providerModels.map((m) => (
@@ -294,7 +294,7 @@ export function InlineConfigFields({
                     onChange={(e) => onChange({ ...state, providerModel: e.target.value })}
                     placeholder={state.providerId ? "e.g. gpt-4o" : "Select a provider first"}
                     disabled={!state.providerId}
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500 disabled:opacity-50"
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500 disabled:opacity-50"
                   />
                   {customModelMode && providerModels.length > 0 && (
                     <button
@@ -348,17 +348,17 @@ export function ModelSection({
   onAddProviderClick?: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5">
+    <div className="rounded-lg border border-border bg-card p-5">
       <div className="flex items-center gap-2.5 mb-4">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600/15">
           <Icon className="h-4 w-4 text-brand-400" />
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-1.5">
-            <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
+            <h3 className="text-sm font-semibold text-foreground">{title}</h3>
             {helpText && <HelpTooltip text={helpText} />}
           </div>
-          <p className="text-xs text-zinc-500">{description}</p>
+          <p className="text-xs text-muted-foreground">{description}</p>
         </div>
       </div>
 

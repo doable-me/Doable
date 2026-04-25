@@ -20,11 +20,11 @@ export function SizeEditor({
   onHeightChange,
 }: SizeEditorProps) {
   return (
-    <div className="rounded-lg border border-zinc-800/60 bg-zinc-900/50">
+    <div className="rounded-lg border border-border bg-card">
       {/* Section Header */}
       <div className="flex items-center gap-2 px-3 py-2">
-        <Scaling className="h-3.5 w-3.5 text-zinc-500" />
-        <span className="text-xs font-medium text-zinc-300">Size</span>
+        <Scaling className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-medium text-foreground">Size</span>
       </div>
 
       {/* Content */}
@@ -32,14 +32,14 @@ export function SizeEditor({
         {/* Width */}
         <div className="flex items-center gap-2">
           <div className="flex w-20 shrink-0 items-center gap-1.5">
-            <MoveHorizontal className="h-3.5 w-3.5 text-zinc-600" />
-            <label className="text-[11px] text-zinc-500">Width</label>
+            <MoveHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+            <label className="text-[11px] text-muted-foreground">Width</label>
           </div>
           <input
             type="text"
             value={width}
             onChange={(e) => onWidthChange(e.target.value)}
-            className="w-full rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20 transition-colors"
+            className="w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground outline-none font-mono focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20 transition-colors"
             placeholder="auto"
           />
         </div>
@@ -47,14 +47,14 @@ export function SizeEditor({
         {/* Height */}
         <div className="flex items-center gap-2">
           <div className="flex w-20 shrink-0 items-center gap-1.5">
-            <MoveVertical className="h-3.5 w-3.5 text-zinc-600" />
-            <label className="text-[11px] text-zinc-500">Height</label>
+            <MoveVertical className="h-3.5 w-3.5 text-muted-foreground" />
+            <label className="text-[11px] text-muted-foreground">Height</label>
           </div>
           <input
             type="text"
             value={height}
             onChange={(e) => onHeightChange(e.target.value)}
-            className="w-full rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20 transition-colors"
+            className="w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground outline-none font-mono focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20 transition-colors"
             placeholder="auto"
           />
         </div>

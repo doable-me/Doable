@@ -6,7 +6,7 @@ import { formatTokenCount } from "../utils/format-usage";
 
 // ── Skeleton ──────────────────────────────────────────────────────────
 function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded bg-zinc-800 ${className}`} />;
+  return <div className={`animate-pulse rounded bg-muted ${className}`} />;
 }
 
 // ── SVG Area Chart ────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ export function AreaChart({
 
   if (loading) {
     return (
-      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
+      <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
         <Skeleton className="h-4 w-32 mb-4" />
         <Skeleton className="h-48 w-full rounded-xl" />
       </div>
@@ -31,11 +31,11 @@ export function AreaChart({
 
   if (!periods.length) {
     return (
-      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
+      <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+        <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-blue-400" /> Daily Usage
         </h3>
-        <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
+        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
           <BarChart3 className="h-8 w-8 mb-2 opacity-40" />
           <p className="text-xs">No usage data for this period</p>
         </div>
@@ -90,8 +90,8 @@ export function AreaChart({
   };
 
   return (
-    <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-      <h3 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
+    <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+      <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
         <TrendingUp className="h-4 w-4 text-blue-400" /> Daily Usage
       </h3>
       <svg
@@ -117,9 +117,9 @@ export function AreaChart({
           <g key={i}>
             <line
               x1={PX} y1={yl.y} x2={W - PX} y2={yl.y}
-              stroke="#27272a" strokeWidth="0.5"
+              stroke="hsl(var(--border))" strokeWidth="0.5"
             />
-            <text x={PX - 4} y={yl.y + 3} textAnchor="end" className="fill-zinc-600 text-[8px]">
+            <text x={PX - 4} y={yl.y + 3} textAnchor="end" className="fill-[hsl(var(--muted-foreground))] text-[8px]">
               {yl.label}
             </text>
           </g>
@@ -164,13 +164,14 @@ export function AreaChart({
               x={Math.min(points[hoverIdx].x - 50, W - PX - 100)}
               y={Math.max(points[hoverIdx].y - 32, 2)}
               width="100" height="22" rx="4"
-              className="fill-zinc-800"
+              className="fill-[hsl(var(--popover))] stroke-[hsl(var(--border))]"
+              strokeWidth="0.5"
             />
             <text
               x={Math.min(points[hoverIdx].x, W - PX - 50)}
               y={Math.max(points[hoverIdx].y - 17, 16)}
               textAnchor="middle"
-              className="fill-white text-[9px] font-medium"
+              className="fill-[hsl(var(--popover-foreground))] text-[9px] font-medium"
             >
               {formatDateLabel(points[hoverIdx].date)}: {formatTokenCount(points[hoverIdx].tokens)}
             </text>
@@ -184,7 +185,7 @@ export function AreaChart({
               key={i}
               x={pt.x} y={H - 2}
               textAnchor="middle"
-              className="fill-zinc-500 text-[8px]"
+              className="fill-[hsl(var(--muted-foreground))] text-[8px]"
             >
               {formatDateLabel(pt.date)}
             </text>
@@ -212,7 +213,7 @@ export function TokenDonut({
 }) {
   if (loading) {
     return (
-      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
+      <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
         <Skeleton className="h-4 w-28 mb-4" />
         <div className="flex items-center justify-center">
           <Skeleton className="h-36 w-36 rounded-full" />
@@ -228,11 +229,11 @@ export function TokenDonut({
 
   if (total === 0) {
     return (
-      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
+      <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+        <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
           <Layers className="h-4 w-4 text-violet-400" /> Token Breakdown
         </h3>
-        <div className="flex flex-col items-center py-6 text-zinc-500">
+        <div className="flex flex-col items-center py-6 text-muted-foreground">
           <Layers className="h-6 w-6 mb-2 opacity-40" />
           <p className="text-xs">No token data</p>
         </div>
@@ -254,8 +255,8 @@ export function TokenDonut({
   });
 
   return (
-    <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-      <h3 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
+    <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+      <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
         <Layers className="h-4 w-4 text-violet-400" /> Token Breakdown
       </h3>
       <div className="flex items-center gap-6">
@@ -279,8 +280,8 @@ export function TokenDonut({
             )}
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-lg font-bold text-white">{formatTokenCount(total)}</span>
-            <span className="text-[10px] text-zinc-500">total</span>
+            <span className="text-lg font-bold text-foreground">{formatTokenCount(total)}</span>
+            <span className="text-[10px] text-muted-foreground">total</span>
           </div>
         </div>
         <div className="space-y-2.5 flex-1 min-w-0">
@@ -289,12 +290,12 @@ export function TokenDonut({
               <div className={`w-2.5 h-2.5 rounded-full ${c.bg} shrink-0`} />
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-baseline">
-                  <span className="text-xs text-zinc-300">{c.label}</span>
-                  <span className="text-[10px] text-zinc-500 tabular-nums">
+                  <span className="text-xs text-foreground">{c.label}</span>
+                  <span className="text-[10px] text-muted-foreground tabular-nums">
                     {formatTokenCount(values[i] ?? 0)} ({total > 0 ? Math.round(((values[i] ?? 0) / total) * 100) : 0}%)
                   </span>
                 </div>
-                <div className="h-1 bg-zinc-800 rounded-full mt-1 overflow-hidden">
+                <div className="h-1 bg-muted rounded-full mt-1 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-700 ease-out`}
                     style={{
@@ -322,7 +323,7 @@ export function HourlyHeatmap({
 }) {
   if (loading) {
     return (
-      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
+      <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
         <Skeleton className="h-4 w-32 mb-4" />
         <div className="flex gap-1">
           {Array.from({ length: 24 }).map((_, i) => (
@@ -336,7 +337,7 @@ export function HourlyHeatmap({
   const maxReqs = Math.max(...hours.map((h) => h.requestCount), 1);
 
   const getIntensity = (count: number) => {
-    if (count === 0) return "bg-zinc-800/60";
+    if (count === 0) return "bg-muted";
     const pct = count / maxReqs;
     if (pct > 0.75) return "bg-blue-500";
     if (pct > 0.5) return "bg-blue-500/70";
@@ -351,8 +352,8 @@ export function HourlyHeatmap({
   };
 
   return (
-    <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-      <h3 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
+    <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+      <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
         <Activity className="h-4 w-4 text-emerald-400" /> Hourly Activity
       </h3>
       <div className="flex gap-[3px]">
@@ -363,7 +364,7 @@ export function HourlyHeatmap({
             />
             {/* Tooltip */}
             <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block z-20 pointer-events-none">
-              <div className="bg-zinc-700 text-white text-[10px] rounded-md px-2 py-1 whitespace-nowrap shadow-lg">
+              <div className="bg-popover text-popover-foreground border border-border text-[10px] rounded-md px-2 py-1 whitespace-nowrap shadow-lg">
                 <div className="font-medium">{formatHour(h.hour)}</div>
                 <div>{h.requestCount} requests</div>
                 <div>{formatTokenCount(h.totalTokens)} tokens</div>
@@ -371,7 +372,7 @@ export function HourlyHeatmap({
             </div>
             {/* Hour label */}
             {h.hour % 3 === 0 && (
-              <div className="text-[8px] text-zinc-500 text-center mt-1">{formatHour(h.hour)}</div>
+              <div className="text-[8px] text-muted-foreground text-center mt-1">{formatHour(h.hour)}</div>
             )}
           </div>
         ))}

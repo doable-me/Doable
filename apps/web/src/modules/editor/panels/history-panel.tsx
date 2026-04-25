@@ -26,13 +26,13 @@ export function HistoryPanel({ projectId, onClose }: Props) {
   }, [projectId, storeProjectId, setProjectId]);
 
   return (
-    <div className="flex h-full flex-col bg-[#1C1C1C]">
+    <div className="flex h-full flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-700/50 px-4 py-3">
-        <h2 className="text-sm font-semibold text-white">Version History</h2>
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold text-foreground">Version History</h2>
         <button
           onClick={onClose}
-          className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           title="Close"
         >
           <X className="h-4 w-4" />

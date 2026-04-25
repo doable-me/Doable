@@ -97,14 +97,14 @@ export function FileEditor({
       <div className="flex items-center gap-3 mb-4">
         <button
           onClick={onBack}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           title="Back to file list"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-zinc-200 font-mono">{file.filename}</h3>
-          <p className="text-[11px] text-zinc-500">
+          <h3 className="text-sm font-semibold text-foreground font-mono">{file.filename}</h3>
+          <p className="text-[11px] text-muted-foreground">
             {FILE_DESCRIPTIONS[file.filename] ?? "Custom context file"}
           </p>
         </div>
@@ -115,7 +115,7 @@ export function FileEditor({
             disabled={!dirty}
             className={cn(
               "p-1.5 rounded-md transition-colors",
-              dirty ? "hover:bg-zinc-800 text-zinc-300" : "text-zinc-700 cursor-not-allowed"
+              dirty ? "hover:bg-secondary text-foreground" : "text-muted-foreground cursor-not-allowed"
             )}
             title="Revert changes"
           >
@@ -126,7 +126,7 @@ export function FileEditor({
             disabled={!dirty || saving}
             className={cn(
               "p-1.5 rounded-md transition-colors",
-              dirty ? "hover:bg-zinc-800 text-zinc-300" : "text-zinc-700 cursor-not-allowed"
+              dirty ? "hover:bg-secondary text-foreground" : "text-muted-foreground cursor-not-allowed"
             )}
             title="Save (Ctrl+S)"
           >
@@ -147,13 +147,13 @@ export function FileEditor({
       <textarea
         value={content}
         onChange={(e) => handleChange(e.target.value)}
-        className="w-full min-h-[400px] rounded-lg border border-zinc-700 bg-zinc-900 p-4 text-sm font-mono leading-relaxed text-zinc-200 placeholder:text-zinc-600 resize-y focus:outline-none focus:ring-1 focus:ring-brand-500"
+        className="w-full min-h-[400px] rounded-lg border border-input bg-background p-4 text-sm font-mono leading-relaxed text-foreground placeholder:text-muted-foreground resize-y focus:outline-none focus:ring-1 focus:ring-brand-500"
         placeholder={`# ${file.filename.replace(".md", "")}\n\nStart typing...`}
         spellCheck={false}
       />
 
       {/* Footer */}
-      <div className="flex items-center justify-between mt-2 text-[11px] text-zinc-600">
+      <div className="flex items-center justify-between mt-2 text-[11px] text-muted-foreground">
         <span>{content.length.toLocaleString()} chars</span>
         <div className="flex items-center gap-2">
           {saving && <span className="text-brand-400">Saving...</span>}

@@ -186,9 +186,9 @@ export default function AdminPage() {
   if (!loading && !isPlatformAdmin) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <Shield className="h-12 w-12 text-zinc-600" />
-        <h2 className="text-lg font-semibold text-zinc-300">Access Denied</h2>
-        <p className="text-sm text-zinc-500">Platform admin access required.</p>
+        <Shield className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-lg font-semibold text-foreground">Access Denied</h2>
+        <p className="text-sm text-muted-foreground">Platform admin access required.</p>
         <Button onClick={() => router.push("/dashboard")} className="bg-brand-600 text-white hover:bg-brand-500">Back to Dashboard</Button>
       </div>
     );
@@ -220,7 +220,7 @@ export default function AdminPage() {
     <div className="mx-auto max-w-5xl px-6 py-8">
       {/* Header */}
       <div className="mb-8">
-        <button onClick={() => router.push("/dashboard")} className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-300 transition-colors mb-4">
+        <button onClick={() => router.push("/dashboard")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4">
           <ArrowLeft className="h-4 w-4" /> Back to Dashboard
         </button>
         <div className="flex items-center gap-3">
@@ -228,14 +228,14 @@ export default function AdminPage() {
             <Shield className="h-5 w-5 text-brand-400" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-white">System Administration</h1>
-            <p className="text-sm text-zinc-500">Manage platform features, users, AI tools, and access controls</p>
+            <h1 className="text-xl font-semibold text-foreground">System Administration</h1>
+            <p className="text-sm text-muted-foreground">Manage platform features, users, AI tools, and access controls</p>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-6 border-b border-zinc-800 pb-px overflow-x-auto">
+      <div className="flex items-center gap-1 mb-6 border-b border-border pb-px overflow-x-auto">
         {([
           { key: "features" as const, label: "Feature Flags", icon: Settings2 },
           { key: "users" as const, label: "Users & AI", icon: Users },
@@ -248,7 +248,7 @@ export default function AdminPage() {
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
-              activeTab === tab.key ? "text-white border-b-2 border-brand-500" : "text-zinc-500 hover:text-zinc-300"
+              activeTab === tab.key ? "text-foreground border-b-2 border-brand-500" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <tab.icon className="h-4 w-4" /> {tab.label}
@@ -263,12 +263,12 @@ export default function AdminPage() {
       {/* Feature Flags Tab */}
       {activeTab === "features" && (
         <div className="space-y-2">
-          <p className="text-xs text-zinc-500 mb-4">Toggle features on/off globally. Set minimum plan or workspace role requirements.</p>
+          <p className="text-xs text-muted-foreground mb-4">Toggle features on/off globally. Set minimum plan or workspace role requirements.</p>
           {features.map((f) => (
             <FeatureRow key={f.feature_key} feature={f} onToggle={toggleFeature} onUpdate={updateFeature} />
           ))}
           {features.length === 0 && (
-            <p className="text-sm text-zinc-500 text-center py-8">No feature flags configured.</p>
+            <p className="text-sm text-muted-foreground text-center py-8">No feature flags configured.</p>
           )}
         </div>
       )}

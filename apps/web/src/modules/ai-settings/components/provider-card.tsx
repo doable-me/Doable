@@ -14,7 +14,7 @@ export function ProviderCard({ preset, onClick }: ProviderCardProps) {
   return (
     <button
       onClick={onClick}
-      className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-800/70 w-full"
+      className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-border hover:bg-secondary w-full"
     >
       {/* Provider icon */}
       <div
@@ -27,7 +27,7 @@ export function ProviderCard({ preset, onClick }: ProviderCardProps) {
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-zinc-200 truncate">
+          <span className="text-sm font-medium text-foreground truncate">
             {preset.name}
           </span>
           {preset.freeTier && (
@@ -41,7 +41,7 @@ export function ProviderCard({ preset, onClick }: ProviderCardProps) {
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-xs text-zinc-500 line-clamp-2">
+        <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
           {preset.description}
         </p>
       </div>

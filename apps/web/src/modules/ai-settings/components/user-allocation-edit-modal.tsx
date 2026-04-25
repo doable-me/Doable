@@ -22,7 +22,7 @@ export function rowActiveModel(row: ApiUserAiAllocation): string | null {
 
 export function AllocationStatus({ row }: { row: ApiUserAiAllocation }) {
   if (!rowHasAllocation(row)) {
-    return <span className="text-xs text-zinc-500">Using workspace defaults</span>;
+    return <span className="text-xs text-muted-foreground">Using workspace defaults</span>;
   }
   if (row.source === "custom" && row.provider_id) {
     return (
@@ -38,7 +38,7 @@ export function AllocationStatus({ row }: { row: ApiUserAiAllocation }) {
       </span>
     );
   }
-  return <span className="text-xs text-zinc-400">--</span>;
+  return <span className="text-xs text-muted-foreground">--</span>;
 }
 
 // ─── Edit Allocation Modal ──────────────────────────────────
@@ -85,32 +85,32 @@ export function EditAllocationModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onCancel}>
-      <div className="w-full max-w-md rounded-xl border border-zinc-700 bg-zinc-900 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/45 backdrop-blur-sm" onClick={onCancel}>
+      <div className="w-full max-w-md rounded-xl border border-border bg-popover p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h3 className="text-sm font-semibold text-zinc-200">
+            <h3 className="text-sm font-semibold text-foreground">
               Configure AI for {row.display_name ?? row.email}
             </h3>
-            <p className="text-xs text-zinc-500 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               This overrides the workspace defaults for this user only.
             </p>
           </div>
-          <button onClick={onCancel} className="rounded p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800">
+          <button onClick={onCancel} className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-secondary">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Source toggle */}
         <div className="mb-4">
-          <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">Provider Source</label>
-          <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
+          <label className="block text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">Provider Source</label>
+          <div className="flex rounded-lg border border-border overflow-hidden w-fit">
             <button
               onClick={() => setEditSource("copilot")}
               className={`px-4 py-2 text-sm font-medium transition-colors ${
                 editSource === "copilot"
                   ? "bg-brand-600 text-white"
-                  : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                  : "bg-secondary text-muted-foreground hover:text-foreground"
               }`}
             >
               GitHub Copilot
@@ -120,13 +120,13 @@ export function EditAllocationModal({
               className={`px-4 py-2 text-sm font-medium transition-colors ${
                 editSource === "custom"
                   ? "bg-brand-600 text-white"
-                  : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                  : "bg-secondary text-muted-foreground hover:text-foreground"
               }`}
             >
               Custom Provider
             </button>
           </div>
-          <p className="text-[10px] text-zinc-500 mt-1.5">
+          <p className="text-[10px] text-muted-foreground mt-1.5">
             Both configurations are kept. The selected tab is what this user will use.
           </p>
         </div>
@@ -136,11 +136,11 @@ export function EditAllocationModal({
           {editSource === "copilot" ? (
             <>
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Account</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Account</label>
                 <select
                   value={editCopilotAccountId}
                   onChange={(e) => setEditCopilotAccountId(e.target.value)}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                 >
                   <option value="">Default (gh CLI)</option>
                   {validAccounts.map((a) => (
@@ -149,24 +149,24 @@ export function EditAllocationModal({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Model</label>
                 <input
                   type="text"
                   value={editCopilotModel}
                   onChange={(e) => setEditCopilotModel(e.target.value)}
                   placeholder="e.g. claude-sonnet-4 (leave blank for auto)"
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500"
                 />
               </div>
             </>
           ) : (
             <>
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Provider</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Provider</label>
                 <select
                   value={editProviderId}
                   onChange={(e) => setEditProviderId(e.target.value)}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                 >
                   <option value="">Select a provider...</option>
                   {validProviders.map((p) => (
@@ -175,13 +175,13 @@ export function EditAllocationModal({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Model</label>
                 <input
                   type="text"
                   value={editProviderModel}
                   onChange={(e) => setEditProviderModel(e.target.value)}
                   placeholder="e.g. gpt-4o"
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500"
                 />
               </div>
             </>
@@ -200,7 +200,7 @@ export function EditAllocationModal({
           </button>
           <button
             onClick={onCancel}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           >
             Cancel
           </button>

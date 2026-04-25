@@ -192,18 +192,18 @@ export function DesignPanel({
   const showLayoutPanel = selectedElement?.computedStyles.display === "flex" || selectedElement?.computedStyles.display === "inline-flex" || selectedElement?.computedStyles.display === "grid";
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#1C1C1C]">
+    <div className="flex h-full w-full flex-col bg-background">
       {/* ─── Header ──────────────────────────────────────────── */}
-      <div className="flex items-center justify-between border-b border-zinc-800/60 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-zinc-500">Design</span>
-          <span className="text-zinc-600">/</span>
-          <span className="font-semibold text-zinc-200">Design View</span>
+          <span className="text-muted-foreground">Design</span>
+          <span className="text-muted-foreground">/</span>
+          <span className="font-semibold text-foreground">Design View</span>
         </div>
         {selectedElement && (
           <button
             onClick={onSelectParent}
-            className="flex items-center gap-1.5 rounded-md border border-zinc-700/60 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
+            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary hover:text-foreground transition-colors"
           >
             <CornerRightUp className="h-3.5 w-3.5" />
             Select parent
@@ -216,19 +216,19 @@ export function DesignPanel({
         {/* ─── No Selection State ────────────────────────────── */}
         {!selectedElement && (
           <div className="flex flex-col items-center px-6 pt-12">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
               {mode === "selecting" ? (
                 <Crosshair className="h-6 w-6 text-brand-400 animate-pulse" />
               ) : (
-                <Sparkles className="h-6 w-6 text-zinc-500" />
+                <Sparkles className="h-6 w-6 text-muted-foreground" />
               )}
             </div>
-            <h3 className="mb-1 text-base font-semibold text-zinc-200">Design View</h3>
-            <p className="mb-2 text-center text-sm text-zinc-500">
+            <h3 className="mb-1 text-base font-semibold text-foreground">Design View</h3>
+            <p className="mb-2 text-center text-sm text-muted-foreground">
               Select an element to edit it
             </p>
-            <p className="mb-6 text-center text-xs text-zinc-600">
-              Hold <kbd className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">Ctrl</kbd> to select multiple elements
+            <p className="mb-6 text-center text-xs text-muted-foreground">
+              Hold <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">Ctrl</kbd> to select multiple elements
             </p>
             {mode === "idle" && (
               <button
@@ -330,15 +330,15 @@ export function DesignPanel({
 
             {/* ─── Sticky Pending Changes Bar ─────────────────── */}
             {hasPendingLiveChanges && (
-              <div className="sticky bottom-0 border-t border-zinc-800/60 bg-[#1C1C1C] px-4 py-3">
+              <div className="sticky bottom-0 border-t border-border bg-background px-4 py-3">
                 <div className="mb-2 flex items-center gap-2">
                   <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-xs font-medium text-zinc-300">Unsaved changes</span>
+                  <span className="text-xs font-medium text-foreground">Unsaved changes</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={onDiscardChanges}
-                    className="rounded-lg border border-zinc-700/60 px-3 py-2 text-xs font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+                    className="rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
                   >
                     Discard
                   </button>
@@ -367,16 +367,16 @@ export function DesignPanel({
       </div>
 
       {/* ─── Footer ──────────────────────────────────────────── */}
-      <div className="border-t border-zinc-800/60 px-4 py-2.5">
+      <div className="border-t border-border px-4 py-2.5">
         {/* Element breadcrumb chips */}
         <div className="mb-2 flex items-center gap-1.5">
-          <span className="flex items-center gap-1 rounded-md bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-400">
+          <span className="flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-[11px] text-muted-foreground">
             <Sparkles className="h-3 w-3" />
             Design
           </span>
           {selectedElement && (
             <>
-              <span className="text-zinc-600 text-[11px]">›</span>
+              <span className="text-muted-foreground text-[11px]">›</span>
               <span className="flex items-center gap-1 rounded-md bg-brand-500/15 px-2 py-1 text-[11px] font-medium text-brand-300">
                 {selectedElement.tagName}
               </span>
@@ -385,7 +385,7 @@ export function DesignPanel({
         </div>
         <button
           onClick={onClose}
-          className="flex w-full items-center justify-center gap-2 text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+          className="flex w-full items-center justify-center gap-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3 w-3" />
           Back to Chat

@@ -51,7 +51,7 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -59,8 +59,8 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-200">Default Model</h2>
-        <p className="text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-foreground">Default Model</h2>
+        <p className="text-sm text-muted-foreground">
           Set the workspace-level default model and provider for new sessions.
         </p>
       </div>
@@ -68,11 +68,11 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
       <div className="space-y-4 max-w-lg">
         {/* Default Model */}
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">Model</label>
+          <label className="block text-sm font-medium text-foreground mb-1.5">Model</label>
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
           >
             <option value="">Default (auto)</option>
             {COMMON_MODELS.map((m) => (
@@ -84,11 +84,11 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
         {/* Default Copilot Account */}
         {accounts.length > 0 && (
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1.5">GitHub Copilot Account</label>
+            <label className="block text-sm font-medium text-foreground mb-1.5">GitHub Copilot Account</label>
             <select
               value={copilotAccountId}
               onChange={(e) => setCopilotAccountId(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
             >
               <option value="">Default (gh CLI)</option>
               {accounts.filter((a) => a.is_valid).map((a) => (
@@ -103,11 +103,11 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
         {/* Default Provider */}
         {providers.length > 0 && (
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1.5">Custom Provider</label>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Custom Provider</label>
             <select
               value={providerId}
               onChange={(e) => setProviderId(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
             >
               <option value="">None (use Copilot)</option>
               {providers.filter((p) => p.is_valid).map((p) => (

@@ -66,18 +66,18 @@ function ColorRow({
     <div className="relative" ref={rowRef}>
       <button
         onClick={handleOpen}
-        className="flex w-full items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-zinc-800/60"
+        className="flex w-full items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-secondary"
       >
-        <label className="w-24 shrink-0 text-[11px] text-zinc-500 text-left pointer-events-none">
+        <label className="w-24 shrink-0 text-[11px] text-muted-foreground text-left pointer-events-none">
           {label}
         </label>
         <div className="flex flex-1 items-center gap-2 min-w-0">
           {/* Color swatch */}
           <div
-            className="h-5 w-5 shrink-0 rounded-full border border-zinc-600"
+            className="h-5 w-5 shrink-0 rounded-full border border-border"
             style={{ backgroundColor: swatchColor }}
           />
-          <span className="truncate text-[11px] text-zinc-300 font-mono">
+          <span className="truncate text-[11px] text-foreground font-mono">
             {displayValue}
           </span>
         </div>
@@ -92,11 +92,11 @@ function ColorRow({
             onClick={handleClose}
           />
           {/* Popover content */}
-          <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-zinc-700/60 bg-zinc-900 p-3 shadow-xl shadow-black/40">
+          <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-border bg-popover p-3 shadow-md">
             <div className="space-y-2.5">
               {/* Text input */}
               <div>
-                <label className="mb-1 block text-[10px] text-zinc-500">
+                <label className="mb-1 block text-[10px] text-muted-foreground">
                   CSS Value
                 </label>
                 <input
@@ -105,21 +105,21 @@ function ColorRow({
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={handleKeyDown}
                   autoFocus
-                  className="w-full rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1.5 text-[11px] text-zinc-300 outline-none font-mono focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20 transition-all"
+                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-[11px] text-foreground outline-none font-mono focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20 transition-all"
                   placeholder="#000000 or color name"
                 />
               </div>
 
               {/* Native color picker */}
               <div>
-                <label className="mb-1 block text-[10px] text-zinc-500">
+                <label className="mb-1 block text-[10px] text-muted-foreground">
                   Pick Color
                 </label>
                 <input
                   type="color"
                   value={draft.startsWith("#") ? draft : "#000000"}
                   onChange={handleNativeColorChange}
-                  className="h-8 w-full cursor-pointer rounded-md border border-zinc-700/60 bg-zinc-800/80 p-0.5"
+                  className="h-8 w-full cursor-pointer rounded-md border border-input bg-background p-0.5"
                 />
               </div>
 
@@ -133,7 +133,7 @@ function ColorRow({
                 </button>
                 <button
                   onClick={handleClose}
-                  className="flex-1 rounded-md bg-zinc-800 px-2 py-1.5 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-700"
+                  className="flex-1 rounded-md bg-secondary px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
                 >
                   Cancel
                 </button>
@@ -155,11 +155,11 @@ export function ColorEditor({
   onBgColorChange,
 }: ColorEditorProps) {
   return (
-    <div className="rounded-lg border border-zinc-800/60 bg-zinc-900/50">
+    <div className="rounded-lg border border-border bg-card">
       {/* Section Header */}
       <div className="flex items-center gap-2 px-3 py-2">
-        <Paintbrush className="h-3.5 w-3.5 text-zinc-500" />
-        <span className="text-xs font-medium text-zinc-300">Colors</span>
+        <Paintbrush className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-medium text-foreground">Colors</span>
       </div>
 
       {/* Content */}

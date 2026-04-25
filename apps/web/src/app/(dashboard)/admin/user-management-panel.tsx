@@ -78,7 +78,7 @@ function EffectiveModelBadge({ row }: { row: UserAiAllocation }) {
   const { label } = getSourceDetail(row, source);
   if (!model) {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border bg-zinc-800 text-zinc-500 border-zinc-700">
+      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border bg-secondary text-muted-foreground border-border">
         <span className="font-medium">Auto-select</span>
         <span className="opacity-50">· no override</span>
       </span>
@@ -88,7 +88,7 @@ function EffectiveModelBadge({ row }: { row: UserAiAllocation }) {
     enforced: "bg-red-600/15 text-red-400 border-red-600/30",
     user: "bg-emerald-600/15 text-emerald-400 border-emerald-600/30",
     workspace: "bg-blue-600/15 text-blue-400 border-blue-600/30",
-    none: "bg-zinc-800 text-zinc-500 border-zinc-700",
+    none: "bg-secondary text-muted-foreground border-border",
   };
   return (
     <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${colors[source]}`}>
@@ -104,16 +104,16 @@ function EffectiveModelBadge({ row }: { row: UserAiAllocation }) {
 function CreditMiniBar({ row }: { row: UserAiAllocation }) {
   const c = getCreditSummary(row);
   if (c.dailyTotal === 0 && c.monthlyTotal === 0) {
-    return <span className="text-[10px] text-zinc-600">No credits</span>;
+    return <span className="text-[10px] text-muted-foreground">No credits</span>;
   }
   const pct = c.dailyTotal > 0 ? Math.round((c.dailyRemaining / c.dailyTotal) * 100) : 0;
   const color = pct > 50 ? "bg-emerald-500" : pct > 20 ? "bg-amber-500" : "bg-red-500";
   return (
     <div className="flex items-center gap-2 min-w-[120px]">
-      <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+      <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
         <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-[10px] text-zinc-400 whitespace-nowrap tabular-nums">
+      <span className="text-[10px] text-muted-foreground whitespace-nowrap tabular-nums">
         {c.dailyRemaining}/{c.dailyTotal}
       </span>
     </div>
@@ -127,12 +127,12 @@ function SourceBadge({ row }: { row: UserAiAllocation }) {
   if (!rowHasAllocation(row)) {
     // Show what workspace default is, if any
     if (row.default_source === "copilot") {
-      return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">WS default · Copilot</span>;
+      return <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">WS default · Copilot</span>;
     }
     if (row.default_source === "custom") {
-      return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">WS default · Custom</span>;
+      return <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">WS default · Custom</span>;
     }
-    return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500">No source set</span>;
+    return <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">No source set</span>;
   }
   if (side === "copilot") {
     return (
@@ -267,43 +267,43 @@ function UserDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-xl rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/45 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-xl rounded-xl border border-border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-800">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-800 text-sm font-semibold text-zinc-300">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-foreground">
             {(user.display_name ?? user.email)[0]?.toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-white truncate">{user.display_name ?? user.email.split("@")[0]}</h3>
+              <h3 className="text-sm font-semibold text-foreground truncate">{user.display_name ?? user.email.split("@")[0]}</h3>
               {user.is_platform_admin && <Crown className="h-3.5 w-3.5 text-amber-400" />}
             </div>
-            <p className="text-xs text-zinc-500">{user.email}</p>
+            <p className="text-xs text-muted-foreground">{user.email}</p>
           </div>
-          <button onClick={onClose} className="rounded p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800">
+          <button onClick={onClose} className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Role & Plan row */}
-        <div className="flex items-center gap-4 px-6 py-3 border-b border-zinc-800 bg-zinc-900/50">
+        <div className="flex items-center gap-4 px-6 py-3 border-b border-border bg-card">
           <div className="flex items-center gap-2">
-            <label className="text-xs text-zinc-400">Role:</label>
+            <label className="text-xs text-muted-foreground">Role:</label>
             <select
               value={user.platform_role ?? "member"}
               onChange={e => onChangeRole(user.user_id, e.target.value)}
-              className={`rounded-md bg-zinc-800 border border-zinc-700 text-xs font-medium px-2 py-1 outline-none focus:border-brand-500 ${ROLE_COLORS[user.platform_role ?? "member"] ?? "text-zinc-300"}`}
+              className={`rounded-md bg-background border border-input text-xs font-medium px-2 py-1 outline-none focus:border-brand-500 ${ROLE_COLORS[user.platform_role ?? "member"] ?? "text-foreground"}`}
             >
               {WORKSPACE_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-xs text-zinc-400">Plan:</label>
+            <label className="text-xs text-muted-foreground">Plan:</label>
             <select
               value={user.workspace_plan ?? "free"}
               onChange={e => onChangePlan(user.user_id, e.target.value)}
-              className={`rounded-md bg-zinc-800 border border-zinc-700 text-xs font-medium px-2 py-1 outline-none focus:border-brand-500 ${PLAN_COLORS[user.workspace_plan ?? "free"] ?? "text-zinc-300"}`}
+              className={`rounded-md bg-background border border-input text-xs font-medium px-2 py-1 outline-none focus:border-brand-500 ${PLAN_COLORS[user.workspace_plan ?? "free"] ?? "text-foreground"}`}
             >
               {WORKSPACE_PLANS.map(p => <option key={p} value={p}>{PLAN_LABELS[p]}</option>)}
             </select>
@@ -311,17 +311,17 @@ function UserDetailModal({
           <div className="flex-1" />
           {/* Effective model display */}
           <div className="text-right">
-            <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">Active Model</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Active Model</div>
             <EffectiveModelBadge row={user} />
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-zinc-800">
-          <button onClick={() => setTab("model")} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${tab === "model" ? "text-white border-b-2 border-brand-500" : "text-zinc-500 hover:text-zinc-300"}`}>
+        <div className="flex border-b border-border">
+          <button onClick={() => setTab("model")} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${tab === "model" ? "text-foreground border-b-2 border-brand-500" : "text-muted-foreground hover:text-foreground"}`}>
             <Bot className="h-3.5 w-3.5" /> AI Model & Source
           </button>
-          <button onClick={() => setTab("credits")} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${tab === "credits" ? "text-white border-b-2 border-brand-500" : "text-zinc-500 hover:text-zinc-300"}`}>
+          <button onClick={() => setTab("credits")} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${tab === "credits" ? "text-foreground border-b-2 border-brand-500" : "text-muted-foreground hover:text-foreground"}`}>
             <Zap className="h-3.5 w-3.5" /> Credits
           </button>
         </div>
@@ -331,19 +331,19 @@ function UserDetailModal({
           {tab === "model" && (
             <div className="space-y-4">
               {/* Current active state */}
-              <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-4 py-3 space-y-2">
-                <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Currently Active</div>
+              <div className="rounded-lg border border-border bg-muted px-4 py-3 space-y-2">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Currently Active</div>
                 <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-                  <span className="text-zinc-500">Model:</span>
-                  <span className="text-white font-medium">{eff.model ?? "Auto-select (no model set)"}</span>
-                  <span className="text-zinc-500">Source:</span>
+                  <span className="text-muted-foreground">Model:</span>
+                  <span className="text-foreground font-medium">{eff.model ?? "Auto-select (no model set)"}</span>
+                  <span className="text-muted-foreground">Source:</span>
                   <span className={`${
                     eff.source === "enforced" ? "text-red-400" :
                     eff.source === "user" ? "text-emerald-400" :
-                    eff.source === "workspace" ? "text-blue-400" : "text-zinc-500"
+                    eff.source === "workspace" ? "text-blue-400" : "text-muted-foreground"
                   }`}>{getSourceDetail(user, eff.source).via}</span>
-                  <span className="text-zinc-500">Subscription:</span>
-                  <span className="text-zinc-300">{(() => {
+                  <span className="text-muted-foreground">Subscription:</span>
+                  <span className="text-foreground">{(() => {
                     const side = rowActiveSide(user);
                     if (side === "copilot") return `GitHub Copilot${user.copilot_account_label ? ` (${user.copilot_account_label})` : ""}`;
                     if (side === "custom") return `Custom provider${user.provider_label ? ` (${user.provider_label})` : ""}`;
@@ -357,19 +357,19 @@ function UserDetailModal({
                     Workspace enforcement is ON — this user cannot choose their own model.
                   </p>
                 )}
-                <p className="text-[10px] text-zinc-600 leading-relaxed">
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
                   Resolution: Enforcement → User override → Workspace default → Auto-select
                 </p>
               </div>
 
               {/* Source toggle */}
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">Set Override Source</label>
-                <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
-                  <button onClick={() => setSource("copilot")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "copilot" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}>
+                <label className="block text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">Set Override Source</label>
+                <div className="flex rounded-lg border border-border overflow-hidden w-fit">
+                  <button onClick={() => setSource("copilot")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "copilot" ? "bg-brand-600 text-white" : "bg-secondary text-muted-foreground hover:text-foreground"}`}>
                     GitHub Copilot
                   </button>
-                  <button onClick={() => setSource("custom")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "custom" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}>
+                  <button onClick={() => setSource("custom")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "custom" ? "bg-brand-600 text-white" : "bg-secondary text-muted-foreground hover:text-foreground"}`}>
                     Custom Provider
                   </button>
                 </div>
@@ -380,21 +380,21 @@ function UserDetailModal({
                 {source === "copilot" ? (
                   <>
                     <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Copilot Account</label>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">Copilot Account</label>
                       <select value={copilotAccountId} onChange={e => setCopilotAccountId(e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500">
                         <option value="">No specific account (auto)</option>
                         {validAccounts.map(a => <option key={a.id} value={a.id}>{a.label} (@{a.github_login})</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                         Model {loadingCopilot && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
                       </label>
                       <select
                         value={copilotModel}
                         onChange={e => setCopilotModel(e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                       >
                         {copilotModels.map(m => (
                           <option key={m.id} value={m.id}>{m.label}</option>
@@ -408,22 +408,22 @@ function UserDetailModal({
                 ) : (
                   <>
                     <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Provider</label>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">Provider</label>
                       <select value={providerId} onChange={e => setProviderId(e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500">
                         <option value="">Select a provider...</option>
                         {validProviders.map(p => <option key={p.id} value={p.id}>{p.label} ({p.provider_type})</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                         Model {loadingProviderModels && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
                       </label>
                       {providerId && providerModelList.length > 0 ? (
                         <select
                           value={providerModel}
                           onChange={e => setProviderModel(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                         >
                           <option value="">Auto (provider default)</option>
                           {providerModelList.map(m => (
@@ -437,7 +437,7 @@ function UserDetailModal({
                         <select
                           value={providerModel}
                           onChange={e => setProviderModel(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                           disabled={!providerId}
                         >
                           {FALLBACK_MODELS.map(m => (
@@ -449,7 +449,7 @@ function UserDetailModal({
                         </select>
                       )}
                       {!providerId && (
-                        <p className="text-[10px] text-zinc-500 mt-1">Select a provider to load its models.</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">Select a provider to load its models.</p>
                       )}
                     </div>
                   </>
@@ -459,7 +459,7 @@ function UserDetailModal({
               {/* Actions */}
               <div className="flex items-center gap-2 pt-2">
                 <button onClick={saveModel} disabled={saving}
-                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-foreground hover:bg-brand-500 disabled:opacity-50 transition-colors">
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
                 </button>
                 {rowHasAllocation(user) && (
@@ -468,7 +468,7 @@ function UserDetailModal({
                     <RotateCcw className="h-3.5 w-3.5" /> Reset to Defaults
                   </button>
                 )}
-                <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">Cancel</button>
+                <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">Cancel</button>
               </div>
             </div>
           )}
@@ -477,47 +477,47 @@ function UserDetailModal({
             <div className="space-y-4">
               {/* Current usage summary */}
               <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 text-center">
-                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Daily</div>
-                  <div className="text-lg font-semibold text-white tabular-nums">{c.dailyRemaining}<span className="text-zinc-600 text-sm">/{c.dailyTotal}</span></div>
-                  <div className="text-[10px] text-zinc-500">{c.dailyUsed} used</div>
+                <div className="rounded-lg border border-border bg-muted p-3 text-center">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Daily</div>
+                  <div className="text-lg font-semibold text-foreground tabular-nums">{c.dailyRemaining}<span className="text-muted-foreground text-sm">/{c.dailyTotal}</span></div>
+                  <div className="text-[10px] text-muted-foreground">{c.dailyUsed} used</div>
                 </div>
-                <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 text-center">
-                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Monthly</div>
-                  <div className="text-lg font-semibold text-white tabular-nums">{c.monthlyRemaining}<span className="text-zinc-600 text-sm">/{c.monthlyTotal}</span></div>
-                  <div className="text-[10px] text-zinc-500">{c.monthlyUsed} used</div>
+                <div className="rounded-lg border border-border bg-muted p-3 text-center">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Monthly</div>
+                  <div className="text-lg font-semibold text-foreground tabular-nums">{c.monthlyRemaining}<span className="text-muted-foreground text-sm">/{c.monthlyTotal}</span></div>
+                  <div className="text-[10px] text-muted-foreground">{c.monthlyUsed} used</div>
                 </div>
-                <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 text-center">
-                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Rollover</div>
-                  <div className="text-lg font-semibold text-white tabular-nums">{c.rollover}</div>
-                  <div className="text-[10px] text-zinc-500">bonus credits</div>
+                <div className="rounded-lg border border-border bg-muted p-3 text-center">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Rollover</div>
+                  <div className="text-lg font-semibold text-foreground tabular-nums">{c.rollover}</div>
+                  <div className="text-[10px] text-muted-foreground">bonus credits</div>
                 </div>
               </div>
 
               {/* Edit fields */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Daily Credits</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">Daily Credits</label>
                   <input type="number" min={0} max={CREDIT_CAPS.daily} step={1} value={creditDaily} onChange={e => setCreditDaily(Number(e.target.value))}
                     aria-invalid={!!creditErrors.dailyCredits}
-                    className={`w-full rounded-lg border bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500 ${creditErrors.dailyCredits ? "border-red-500" : "border-zinc-700"}`} />
-                  <p className="text-[10px] text-zinc-500 mt-1">Max {CREDIT_CAPS.daily.toLocaleString()}</p>
+                    className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500 ${creditErrors.dailyCredits ? "border-red-500" : "border-border"}`} />
+                  <p className="text-[10px] text-muted-foreground mt-1">Max {CREDIT_CAPS.daily.toLocaleString()}</p>
                   {creditErrors.dailyCredits && <p className="text-[11px] text-red-400 mt-1">{creditErrors.dailyCredits}</p>}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Monthly Credits</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">Monthly Credits</label>
                   <input type="number" min={0} max={CREDIT_CAPS.monthly} step={1} value={creditMonthly} onChange={e => setCreditMonthly(Number(e.target.value))}
                     aria-invalid={!!creditErrors.monthlyCredits}
-                    className={`w-full rounded-lg border bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500 ${creditErrors.monthlyCredits ? "border-red-500" : "border-zinc-700"}`} />
-                  <p className="text-[10px] text-zinc-500 mt-1">Max {CREDIT_CAPS.monthly.toLocaleString()}</p>
+                    className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500 ${creditErrors.monthlyCredits ? "border-red-500" : "border-border"}`} />
+                  <p className="text-[10px] text-muted-foreground mt-1">Max {CREDIT_CAPS.monthly.toLocaleString()}</p>
                   {creditErrors.monthlyCredits && <p className="text-[11px] text-red-400 mt-1">{creditErrors.monthlyCredits}</p>}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Rollover Credits</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">Rollover Credits</label>
                   <input type="number" min={0} max={CREDIT_CAPS.rollover} step={1} value={creditRollover} onChange={e => setCreditRollover(Number(e.target.value))}
                     aria-invalid={!!creditErrors.rolloverCredits}
-                    className={`w-full rounded-lg border bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500 ${creditErrors.rolloverCredits ? "border-red-500" : "border-zinc-700"}`} />
-                  <p className="text-[10px] text-zinc-500 mt-1">Max {CREDIT_CAPS.rollover.toLocaleString()}</p>
+                    className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500 ${creditErrors.rolloverCredits ? "border-red-500" : "border-border"}`} />
+                  <p className="text-[10px] text-muted-foreground mt-1">Max {CREDIT_CAPS.rollover.toLocaleString()}</p>
                   {creditErrors.rolloverCredits && <p className="text-[11px] text-red-400 mt-1">{creditErrors.rolloverCredits}</p>}
                 </div>
               </div>
@@ -531,14 +531,14 @@ function UserDetailModal({
               {/* Actions */}
               <div className="flex items-center gap-2 pt-2">
                 <button onClick={() => saveCredits(false)} disabled={creditSaving}
-                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-foreground hover:bg-emerald-500 disabled:opacity-50 transition-colors">
                   {creditSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save Credits
                 </button>
                 <button onClick={() => saveCredits(true)} disabled={creditSaving}
-                  className="flex items-center gap-1.5 rounded-lg bg-amber-600/80 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-1.5 rounded-lg bg-amber-600/80 px-4 py-2 text-sm font-medium text-foreground hover:bg-amber-500 disabled:opacity-50 transition-colors">
                   <RotateCcw className="h-3.5 w-3.5" /> Save & Reset Usage
                 </button>
-                <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">Cancel</button>
+                <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">Cancel</button>
               </div>
             </div>
           )}
@@ -645,49 +645,49 @@ function BulkAllocateModal({
   const remaining = selectedUsers.length - 6;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/45 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-xl border border-border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-800">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-600/20 text-brand-400">
             <UsersIcon className="h-5 w-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-white">Bulk Allocate AI Settings</h3>
-            <p className="text-xs text-zinc-500 truncate">
+            <h3 className="text-sm font-semibold text-foreground">Bulk Allocate AI Settings</h3>
+            <p className="text-xs text-muted-foreground truncate">
               {selectedUsers.length} user{selectedUsers.length !== 1 ? "s" : ""}
-              {previewNames && <>: <span className="text-zinc-400">{previewNames}{remaining > 0 ? ` +${remaining} more` : ""}</span></>}
+              {previewNames && <>: <span className="text-muted-foreground">{previewNames}{remaining > 0 ? ` +${remaining} more` : ""}</span></>}
             </p>
           </div>
-          <button onClick={onClose} className="rounded p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800">
+          <button onClick={onClose} className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <div className="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
           {/* Section: Model & Source */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50">
-            <label className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800 cursor-pointer">
+          <div className="rounded-lg border border-border bg-muted">
+            <label className="flex items-center gap-2 px-4 py-3 border-b border-border cursor-pointer">
               <input
                 type="checkbox"
                 checked={applyModel}
                 onChange={e => setApplyModel(e.target.checked)}
-                className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500"
+                className="h-4 w-4 rounded border-input bg-background text-brand-500 focus:ring-brand-500"
               />
-              <Bot className="h-4 w-4 text-zinc-400" />
-              <span className="text-sm font-medium text-white">Set AI Model & Source</span>
-              <span className="text-[11px] text-zinc-500 ml-auto">Replaces user's current override</span>
+              <Bot className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground">Set AI Model & Source</span>
+              <span className="text-[11px] text-muted-foreground ml-auto">Replaces user's current override</span>
             </label>
             {applyModel && (
               <div className="px-4 py-4 space-y-3">
                 {/* Source toggle */}
                 <div>
-                  <label className="block text-[10px] font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Source</label>
-                  <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
-                    <button onClick={() => setSource("copilot")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "copilot" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}>
+                  <label className="block text-[10px] font-medium text-muted-foreground mb-1.5 uppercase tracking-wider">Source</label>
+                  <div className="flex rounded-lg border border-border overflow-hidden w-fit">
+                    <button onClick={() => setSource("copilot")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "copilot" ? "bg-brand-600 text-white" : "bg-secondary text-muted-foreground hover:text-foreground"}`}>
                       GitHub Copilot
                     </button>
-                    <button onClick={() => setSource("custom")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "custom" ? "bg-brand-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}>
+                    <button onClick={() => setSource("custom")} className={`px-4 py-2 text-sm font-medium transition-colors ${source === "custom" ? "bg-brand-600 text-white" : "bg-secondary text-muted-foreground hover:text-foreground"}`}>
                       Custom Provider
                     </button>
                   </div>
@@ -696,19 +696,19 @@ function BulkAllocateModal({
                 {source === "copilot" ? (
                   <>
                     <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Copilot Account</label>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">Copilot Account</label>
                       <select value={copilotAccountId} onChange={e => setCopilotAccountId(e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500">
                         <option value="">No specific account (auto)</option>
                         {validAccounts.map(a => <option key={a.id} value={a.id}>{a.label} (@{a.github_login})</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                         Model {loadingCopilot && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
                       </label>
                       <select value={copilotModel} onChange={e => setCopilotModel(e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500">
                         <option value="">Select a model...</option>
                         {copilotModels.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
                       </select>
@@ -717,26 +717,26 @@ function BulkAllocateModal({
                 ) : (
                   <>
                     <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Provider</label>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">Provider</label>
                       <select value={providerId} onChange={e => setProviderId(e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500">
                         <option value="">Select a provider...</option>
                         {validProviders.map(p => <option key={p.id} value={p.id}>{p.label} ({p.provider_type})</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                         Model {loadingProviderModels && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
                       </label>
                       {providerId && providerModelList.length > 0 ? (
                         <select value={providerModel} onChange={e => setProviderModel(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500">
+                          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500">
                           <option value="">Auto (provider default)</option>
                           {providerModelList.map(m => <option key={m.id} value={m.id}>{m.name ?? m.id}</option>)}
                         </select>
                       ) : (
                         <select value={providerModel} onChange={e => setProviderModel(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                           disabled={!providerId}>
                           {FALLBACK_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
                         </select>
@@ -749,47 +749,47 @@ function BulkAllocateModal({
           </div>
 
           {/* Section: Add Quota */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50">
-            <label className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800 cursor-pointer">
+          <div className="rounded-lg border border-border bg-muted">
+            <label className="flex items-center gap-2 px-4 py-3 border-b border-border cursor-pointer">
               <input
                 type="checkbox"
                 checked={applyQuota}
                 onChange={e => setApplyQuota(e.target.checked)}
-                className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500"
+                className="h-4 w-4 rounded border-input bg-background text-brand-500 focus:ring-brand-500"
               />
-              <Zap className="h-4 w-4 text-zinc-400" />
-              <span className="text-sm font-medium text-white">Add Additional Quota</span>
-              <span className="text-[11px] text-zinc-500 ml-auto">Adds to each user's existing credits</span>
+              <Zap className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground">Add Additional Quota</span>
+              <span className="text-[11px] text-muted-foreground ml-auto">Adds to each user's existing credits</span>
             </label>
             {applyQuota && (
               <div className="px-4 py-4">
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">+ Daily</label>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">+ Daily</label>
                     <input type="number" min={0} value={addDaily} onChange={e => setAddDaily(Math.max(0, Number(e.target.value) || 0))}
-                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500" />
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">+ Monthly</label>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">+ Monthly</label>
                     <input type="number" min={0} value={addMonthly} onChange={e => setAddMonthly(Math.max(0, Number(e.target.value) || 0))}
-                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500" />
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">+ Rollover</label>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">+ Rollover</label>
                     <input type="number" min={0} value={addRollover} onChange={e => setAddRollover(Math.max(0, Number(e.target.value) || 0))}
-                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500" />
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500" />
                   </div>
                 </div>
-                <p className="text-[10px] text-zinc-500 mt-2">
-                  These amounts are <span className="text-zinc-300 font-medium">added</span> to each selected user's current totals (not replaced).
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  These amounts are <span className="text-foreground font-medium">added</span> to each selected user's current totals (not replaced).
                 </p>
               </div>
             )}
           </div>
 
           {progress && (
-            <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-4 py-3">
-              <div className="flex items-center gap-2 text-xs text-zinc-300">
+            <div className="rounded-lg border border-border bg-muted px-4 py-3">
+              <div className="flex items-center gap-2 text-xs text-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Applying to {progress.done} / {progress.total} users…
               </div>
@@ -798,13 +798,13 @@ function BulkAllocateModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-zinc-800">
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
           <button onClick={onClose} disabled={saving}
-            className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors disabled:opacity-50">
+            className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50">
             Cancel
           </button>
           <button onClick={handleApply} disabled={!canApply || saving}
-            className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors">
+            className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-foreground hover:bg-brand-500 disabled:opacity-50 transition-colors">
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
             Apply to {selectedUsers.length} user{selectedUsers.length !== 1 ? "s" : ""}
           </button>
@@ -848,7 +848,7 @@ export function UserManagementPanel({
   const [bulkOpen, setBulkOpen] = useState(false);
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-zinc-500" /></div>;
+    return <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   }
 
   const filtered = users.filter(u => {
@@ -898,19 +898,19 @@ export function UserManagementPanel({
       {/* Toolbar */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search users..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 pl-9 pr-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
+            className="w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500"
           />
         </div>
         <select
           value={filterSource}
           onChange={e => setFilterSource(e.target.value as typeof filterSource)}
-          className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none focus:border-brand-500"
+          className="rounded-lg border border-input bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-brand-500"
         >
           <option value="all">All sources</option>
           <option value="copilot">Copilot only</option>
@@ -918,19 +918,19 @@ export function UserManagementPanel({
           <option value="none">No AI configured</option>
         </select>
         <div className="flex-1" />
-        <span className="text-[10px] text-zinc-600">{filtered.length} user{filtered.length !== 1 ? "s" : ""}</span>
+        <span className="text-[10px] text-muted-foreground">{filtered.length} user{filtered.length !== 1 ? "s" : ""}</span>
       </div>
 
       {/* Bulk action toolbar */}
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 rounded-lg border border-brand-600/40 bg-brand-600/10 px-4 py-2.5">
           <UsersIcon className="h-4 w-4 text-brand-400" />
-          <span className="text-sm text-zinc-200">
-            <span className="font-semibold text-white">{selectedIds.size}</span> user{selectedIds.size !== 1 ? "s" : ""} selected
+          <span className="text-sm text-foreground">
+            <span className="font-semibold text-foreground">{selectedIds.size}</span> user{selectedIds.size !== 1 ? "s" : ""} selected
           </span>
           <button
             onClick={clearSelection}
-            className="text-[11px] text-zinc-400 hover:text-zinc-200 underline-offset-2 hover:underline"
+            className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
           >
             Clear
           </button>
@@ -945,10 +945,10 @@ export function UserManagementPanel({
       )}
 
       {/* Table */}
-      <div className="rounded-lg border border-zinc-800 overflow-hidden">
+      <div className="rounded-lg border border-border overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-zinc-800 bg-zinc-900/50">
+            <tr className="border-b border-border bg-card">
               <th className="w-10 px-3 py-2.5">
                 <input
                   type="checkbox"
@@ -958,14 +958,14 @@ export function UserManagementPanel({
                   }}
                   onChange={toggleAllFiltered}
                   aria-label="Select all"
-                  className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500 cursor-pointer"
+                  className="h-4 w-4 rounded border-input bg-background text-brand-500 focus:ring-brand-500 cursor-pointer"
                 />
               </th>
-              <th className="px-4 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">User</th>
-              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Role / Plan</th>
-              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Subscription</th>
-              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Active Model</th>
-              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Credits (Daily)</th>
+              <th className="px-4 py-2.5 text-left text-[10px] font-medium text-muted-foreground uppercase tracking-wider">User</th>
+              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Role / Plan</th>
+              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Subscription</th>
+              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Active Model</th>
+              <th className="px-3 py-2.5 text-left text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Credits (Daily)</th>
               <th className="w-16 px-3 py-2.5"></th>
             </tr>
           </thead>
@@ -976,7 +976,7 @@ export function UserManagementPanel({
               return (
                 <tr
                   key={u.user_id}
-                  className={`border-b border-zinc-800/50 last:border-0 hover:bg-zinc-900/40 cursor-pointer transition-colors ${isChecked ? "bg-brand-600/5" : ""}`}
+                  className={`border-b border-border last:border-0 hover:bg-card cursor-pointer transition-colors ${isChecked ? "bg-brand-600/5" : ""}`}
                   onClick={() => setSelectedUser(u)}
                 >
                   <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
@@ -985,30 +985,30 @@ export function UserManagementPanel({
                       checked={isChecked}
                       onChange={() => toggleOne(u.user_id)}
                       aria-label={`Select ${u.email}`}
-                      className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500 cursor-pointer"
+                      className="h-4 w-4 rounded border-input bg-background text-brand-500 focus:ring-brand-500 cursor-pointer"
                     />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-400 shrink-0">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-muted-foreground shrink-0">
                         {(u.display_name ?? u.email)[0]?.toUpperCase()}
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-sm text-zinc-200 truncate">{u.display_name ?? u.email.split("@")[0]}</span>
+                          <span className="text-sm text-foreground truncate">{u.display_name ?? u.email.split("@")[0]}</span>
                           {u.is_platform_admin && <Crown className="h-3 w-3 text-amber-400 shrink-0" />}
-                          {isSelf && <span className="text-[9px] px-1 py-0.5 rounded bg-zinc-800 text-zinc-500">You</span>}
+                          {isSelf && <span className="text-[9px] px-1 py-0.5 rounded bg-secondary text-muted-foreground">You</span>}
                         </div>
-                        <p className="text-[11px] text-zinc-500 truncate">{u.email}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{u.email}</p>
                       </div>
                     </div>
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-1.5">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${ROLE_COLORS[u.platform_role ?? "member"] ?? "text-zinc-400"} bg-zinc-800`}>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${ROLE_COLORS[u.platform_role ?? "member"] ?? "text-muted-foreground"} bg-secondary`}>
                         {ROLE_LABELS[u.platform_role ?? "member"]}
                       </span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${PLAN_COLORS[u.workspace_plan ?? "free"] ?? "text-zinc-400"} bg-zinc-800`}>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${PLAN_COLORS[u.workspace_plan ?? "free"] ?? "text-muted-foreground"} bg-secondary`}>
                         {PLAN_LABELS[u.workspace_plan ?? "free"]}
                       </span>
                     </div>
@@ -1025,7 +1025,7 @@ export function UserManagementPanel({
                   <td className="px-3 py-3 text-right">
                     <button
                       onClick={e => { e.stopPropagation(); setSelectedUser(u); }}
-                      className="rounded p-1.5 text-zinc-500 hover:text-brand-400 hover:bg-zinc-800 transition-colors"
+                      className="rounded p-1.5 text-muted-foreground hover:text-brand-400 hover:bg-secondary transition-colors"
                       title="Manage user"
                     >
                       <ChevronDown className="h-4 w-4 -rotate-90" />
@@ -1036,7 +1036,7 @@ export function UserManagementPanel({
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-zinc-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">
                   {searchQuery ? "No users match your search." : "No users found."}
                 </td>
               </tr>
@@ -1046,7 +1046,7 @@ export function UserManagementPanel({
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-zinc-600">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1"><Shield className="h-3 w-3 text-red-400" /> Enforced = admin-locked model</span>
         <span className="flex items-center gap-1"><Bot className="h-3 w-3 text-emerald-400" /> User · Copilot/Custom = personal override</span>
         <span className="flex items-center gap-1"><Sparkles className="h-3 w-3 text-blue-400" /> WS default = inheriting workspace setting</span>

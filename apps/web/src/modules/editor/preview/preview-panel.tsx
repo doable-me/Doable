@@ -194,9 +194,9 @@ export function PreviewPanel() {
         <div
           className={`relative h-full overflow-hidden transition-all duration-300 ${
             isMobileDevice
-              ? "rounded-[24px] border-4 border-zinc-800 shadow-2xl shadow-black/40"
+              ? "rounded-[24px] border-4 border-border shadow-2xl shadow-md"
               : isTabletDevice
-                ? "rounded-2xl border-[3px] border-zinc-800 shadow-xl shadow-black/30"
+                ? "rounded-2xl border-[3px] border-border shadow-xl shadow-md"
                 : "rounded-md border border-border shadow-sm"
           } bg-white`}
           style={{
@@ -208,7 +208,7 @@ export function PreviewPanel() {
           {/* Mobile notch */}
           {isMobileDevice && (
             <div className="absolute top-0 left-1/2 z-20 -translate-x-1/2">
-              <div className="h-[22px] w-[120px] rounded-b-xl bg-zinc-800" />
+              <div className="h-[22px] w-[120px] rounded-b-xl bg-foreground" />
             </div>
           )}
 

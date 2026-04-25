@@ -79,12 +79,12 @@ function CapabilityBadges({
     <span className="inline-flex items-center gap-0.5 ml-auto">
       {supportsVision && (
         <span title="Vision">
-          <Eye className="h-2.5 w-2.5 text-zinc-500" />
+          <Eye className="h-2.5 w-2.5 text-muted-foreground" />
         </span>
       )}
       {supportsTools && (
         <span title="Tool calling">
-          <Wrench className="h-2.5 w-2.5 text-zinc-500" />
+          <Wrench className="h-2.5 w-2.5 text-muted-foreground" />
         </span>
       )}
     </span>
@@ -129,7 +129,7 @@ function LatencyHint({ ms }: { ms?: number }) {
   if (ms == null || ms <= 0) return null;
   const label = ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
   return (
-    <span className="text-[9px] text-zinc-600 ml-1" title="Last health check latency">
+    <span className="text-[9px] text-muted-foreground ml-1" title="Last health check latency">
       {label}
     </span>
   );
@@ -165,7 +165,7 @@ export function EditorModelSelector({
   // When disabled (enforcement active), render a locked indicator
   if (disabled) {
     return (
-      <div className="flex items-center gap-1.5 rounded-full border border-zinc-600/40 px-2.5 h-7 text-[12px] text-zinc-500 cursor-not-allowed">
+      <div className="flex items-center gap-1.5 rounded-full border border-border px-2.5 h-7 text-[12px] text-muted-foreground cursor-not-allowed">
         <Lock className="h-3 w-3" />
         <span className="max-w-[100px] truncate">{enforcedLabel || "Locked"}</span>
       </div>
@@ -186,7 +186,7 @@ export function EditorModelSelector({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 rounded-full border border-zinc-600/40 px-2.5 h-7 text-[12px] text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
+        className="flex items-center gap-1.5 rounded-full border border-border px-2.5 h-7 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
       >
         <Bot className="h-3 w-3" />
         <span className="max-w-[100px] truncate">{displayLabel}</span>
@@ -194,9 +194,9 @@ export function EditorModelSelector({
       </button>
 
       {open && (
-        <div className="absolute bottom-full mb-1 left-0 z-50 w-64 max-h-80 overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl py-1">
+        <div className="absolute bottom-full mb-1 left-0 z-50 w-64 max-h-80 overflow-y-auto rounded-lg border border-border bg-popover shadow-xl py-1">
           {/* Copilot Models */}
-          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Copilot Models
           </div>
           {copilotModels.map((m) => (
@@ -209,7 +209,7 @@ export function EditorModelSelector({
               className={`flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
                 selectedModelId === m.id && !selectedProviderId
                   ? "bg-brand-600/20 text-brand-300"
-                  : "text-zinc-300 hover:bg-white/5"
+                  : "text-foreground hover:bg-accent"
               }`}
             >
               <span className="truncate">{m.label}</span>
@@ -220,15 +220,15 @@ export function EditorModelSelector({
           {/* Custom Provider Models — grouped by provider */}
           {hasProviderGroups && (
             <>
-              <div className="mx-2 my-1 border-t border-zinc-800" />
+              <div className="mx-2 my-1 border-t border-border" />
               {providerGroups.map((group) => (
                 <div key={group.name}>
                   {/* Provider group header */}
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     <HealthDot status={group.healthStatus} />
                     <span className="truncate">{group.name}</span>
                     {group.isLocal && (
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-zinc-800 px-1.5 py-px text-[8px] font-medium text-zinc-400 normal-case tracking-normal">
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-secondary px-1.5 py-px text-[8px] font-medium text-muted-foreground normal-case tracking-normal">
                         <Wifi className="h-2 w-2" />
                         Local
                       </span>
@@ -246,7 +246,7 @@ export function EditorModelSelector({
                       className={`flex w-full items-center gap-2 px-3 pl-5 py-1.5 text-sm transition-colors ${
                         selectedModelId === m.id && selectedProviderId === m.providerId
                           ? "bg-brand-600/20 text-brand-300"
-                          : "text-zinc-300 hover:bg-white/5"
+                          : "text-foreground hover:bg-accent"
                       }`}
                     >
                       <span className="truncate">{m.label}</span>
@@ -259,13 +259,13 @@ export function EditorModelSelector({
           )}
 
           {/* Manage link */}
-          <div className="mx-2 my-1 border-t border-zinc-800" />
+          <div className="mx-2 my-1 border-t border-border" />
           <button
             onClick={() => {
               router.push("/ai-settings");
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <ExternalLink className="h-3 w-3" />
             Manage AI Settings

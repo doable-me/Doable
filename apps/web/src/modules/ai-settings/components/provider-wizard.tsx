@@ -194,8 +194,8 @@ export function ProviderWizard({
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div>
-              <DialogTitle className="text-zinc-100">Add Provider</DialogTitle>
-              <DialogDescription className="text-zinc-500">
+              <DialogTitle>Add Provider</DialogTitle>
+              <DialogDescription>
                 {STEP_LABELS[step]}
                 {selectedPreset && step !== "choose" && (
                   <> — {selectedPreset.name}</>
@@ -204,7 +204,7 @@ export function ProviderWizard({
             </div>
             <button
               onClick={() => handleOpenChange(false)}
-              className="rounded-md p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
@@ -218,7 +218,7 @@ export function ProviderWizard({
             <div key={s} className="flex items-center gap-1 flex-1">
               <div
                 className={`h-1.5 flex-1 rounded-full transition-colors ${
-                  i <= stepIndex ? "bg-brand-500" : "bg-zinc-800"
+                  i <= stepIndex ? "bg-brand-500" : "bg-secondary"
                 }`}
               />
             </div>
@@ -273,10 +273,10 @@ export function ProviderWizard({
 
         {/* Footer navigation */}
         {step !== "choose" && (
-          <div className="flex items-center justify-between border-t border-zinc-800 pt-4 mt-2">
+          <div className="flex items-center justify-between border-t border-border pt-4 mt-2">
             <button
               onClick={goBack}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               <ChevronLeft className="h-4 w-4" />
               Back

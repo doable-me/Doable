@@ -19,7 +19,7 @@ import { formatTokenCount, formatCost } from "../utils/format-usage";
 
 // ── Skeleton ──────────────────────────────────────────────────────────
 function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded bg-zinc-800 ${className}`} />;
+  return <div className={`animate-pulse rounded bg-muted ${className}`} />;
 }
 
 // ── Stat Card ─────────────────────────────────────────────────────────
@@ -46,17 +46,17 @@ function StatCard({
   accent?: "blue" | "emerald" | "violet" | "amber";
 }) {
   return (
-    <div className="rounded-xl bg-zinc-900/80 border border-zinc-800 p-4 flex flex-col gap-2">
+    <div className="rounded-xl bg-card border border-border p-4 flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <div className={`p-1.5 rounded-md ${ACCENT_CLASSES[accent]}`}>{icon}</div>
-        <span className="text-xs text-zinc-500 uppercase tracking-wider">{label}</span>
+        <span className="text-xs text-muted-foreground uppercase tracking-wider">{label}</span>
       </div>
       {loading ? (
         <Skeleton className="h-6 w-20" />
       ) : (
         <div>
-          <p className="text-lg font-semibold text-white tabular-nums">{value ?? "-"}</p>
-          {subValue && <p className="text-xs text-zinc-500">{subValue}</p>}
+          <p className="text-lg font-semibold text-foreground tabular-nums">{value ?? "-"}</p>
+          {subValue && <p className="text-xs text-muted-foreground">{subValue}</p>}
         </div>
       )}
     </div>
@@ -86,9 +86,9 @@ export function PlatformUsageTab() {
 
   if (empty) {
     return (
-      <div className="rounded-2xl border border-dashed border-zinc-700 py-12 text-center">
-        <Globe className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-        <p className="text-sm text-zinc-500">No platform-wide usage data yet</p>
+      <div className="rounded-2xl border border-dashed border-border py-12 text-center">
+        <Globe className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+        <p className="text-sm text-muted-foreground">No platform-wide usage data yet</p>
       </div>
     );
   }
@@ -96,21 +96,21 @@ export function PlatformUsageTab() {
   return (
     <div className="space-y-6">
       {/* Description */}
-      <p className="text-xs text-zinc-500 bg-zinc-900/50 border border-zinc-800 rounded-lg px-4 py-2">
+      <p className="text-xs text-muted-foreground bg-card border border-border rounded-lg px-4 py-2">
         <Globe className="h-3.5 w-3.5 inline mr-1.5 text-violet-400" />
         Platform-wide view — showing usage across all workspaces and users.
       </p>
 
       {/* Sub-tab nav */}
-      <div className="flex gap-1 border-b border-zinc-800 overflow-x-auto">
+      <div className="flex gap-1 border-b border-border overflow-x-auto">
         {SUB_TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setActive(t.id)}
             className={`px-4 py-2 text-xs font-medium flex items-center gap-1.5 border-b-2 transition-colors whitespace-nowrap ${
               active === t.id
-                ? "border-violet-400 text-white"
-                : "border-transparent text-zinc-500 hover:text-zinc-300"
+                ? "border-violet-400 text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             {t.icon}
@@ -153,8 +153,8 @@ export function PlatformUsageTab() {
             />
           </div>
 
-          <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-            <h3 className="text-sm font-medium text-white mb-5 flex items-center gap-2">
+          <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+            <h3 className="text-sm font-medium text-foreground mb-5 flex items-center gap-2">
               <Crown className="h-4 w-4 text-amber-400" /> All Users Ranked by Tokens
             </h3>
             {usersLoading ? (
@@ -164,7 +164,7 @@ export function PlatformUsageTab() {
                 ))}
               </div>
             ) : users.length === 0 ? (
-              <p className="text-xs text-zinc-500">No users with usage data.</p>
+              <p className="text-xs text-muted-foreground">No users with usage data.</p>
             ) : (
               <PlatformUsersList users={users} />
             )}
@@ -173,11 +173,11 @@ export function PlatformUsageTab() {
       )}
 
       {active === "copilot" && (
-        <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-          <h3 className="text-sm font-medium text-white mb-1 flex items-center gap-2">
+        <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+          <h3 className="text-sm font-medium text-foreground mb-1 flex items-center gap-2">
             <Github className="h-4 w-4 text-blue-400" /> Copilot Subscriptions
           </h3>
-          <p className="text-xs text-zinc-500 mb-5">
+          <p className="text-xs text-muted-foreground mb-5">
             One row per GitHub Copilot subscription. Expand to see which users are assigned and which models each user called.
           </p>
           {accountsLoading ? (
@@ -187,14 +187,14 @@ export function PlatformUsageTab() {
               ))}
             </div>
           ) : accounts.length === 0 ? (
-            <p className="text-xs text-zinc-500">No Copilot accounts configured.</p>
+            <p className="text-xs text-muted-foreground">No Copilot accounts configured.</p>
           ) : (
             <SubscriptionsList
               items={accounts.map((a): SubscriptionRow => ({
                 id: `copilot:${a.githubLogin}`,
                 title: a.label || a.githubLogin,
                 subtitle: `@${a.githubLogin}`,
-                icon: <Github className="h-3.5 w-3.5 text-zinc-500 shrink-0" />,
+                icon: <Github className="h-3.5 w-3.5 text-muted-foreground shrink-0" />,
                 workspaceNames: a.workspaceNames,
                 workspaceCount: a.workspaceCount,
                 userCount: a.userCount,
@@ -211,11 +211,11 @@ export function PlatformUsageTab() {
       )}
 
       {active === "providers" && (
-        <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-          <h3 className="text-sm font-medium text-white mb-1 flex items-center gap-2">
+        <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+          <h3 className="text-sm font-medium text-foreground mb-1 flex items-center gap-2">
             <Key className="h-4 w-4 text-emerald-400" /> Custom Providers (BYOK)
           </h3>
-          <p className="text-xs text-zinc-500 mb-5">
+          <p className="text-xs text-muted-foreground mb-5">
             Custom providers like OpenAI, Anthropic, Azure. Expand to see users and per-user model usage.
           </p>
           {providersLoading ? (
@@ -225,7 +225,7 @@ export function PlatformUsageTab() {
               ))}
             </div>
           ) : providers.length === 0 ? (
-            <p className="text-xs text-zinc-500">No custom providers configured.</p>
+            <p className="text-xs text-muted-foreground">No custom providers configured.</p>
           ) : (
             <SubscriptionsList
               items={providers.map((p): SubscriptionRow => ({
@@ -249,8 +249,8 @@ export function PlatformUsageTab() {
       )}
 
       {active === "models" && (
-        <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-          <h3 className="text-sm font-medium text-white mb-5 flex items-center gap-2">
+        <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+          <h3 className="text-sm font-medium text-foreground mb-5 flex items-center gap-2">
             <Cpu className="h-4 w-4 text-violet-400" /> Model Usage Breakdown
           </h3>
           {modelsLoading ? (
@@ -260,7 +260,7 @@ export function PlatformUsageTab() {
               ))}
             </div>
           ) : models.length === 0 ? (
-            <p className="text-xs text-zinc-500">No model usage data.</p>
+            <p className="text-xs text-muted-foreground">No model usage data.</p>
           ) : (
             <PlatformModelsList models={models} />
           )}
@@ -284,34 +284,34 @@ function PlatformUsersList({ users }: { users: PlatformUser[] }) {
         return (
           <div
             key={`${u.userId}-${u.workspaceId}`}
-            className="group relative rounded-xl bg-zinc-800/40 p-3 hover:bg-zinc-800/60 transition-all duration-200"
+            className="group relative rounded-xl bg-muted/50 p-3 hover:bg-muted transition-all duration-200"
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 min-w-0">
                 {medal ? (
                   <span className="text-sm shrink-0">{medal}</span>
                 ) : (
-                  <span className="text-xs text-zinc-500 w-5 shrink-0 tabular-nums">#{rank}</span>
+                  <span className="text-xs text-muted-foreground w-5 shrink-0 tabular-nums">#{rank}</span>
                 )}
                 <div className="min-w-0">
-                  <div className="text-sm text-zinc-200 font-medium truncate">
+                  <div className="text-sm text-foreground font-medium truncate">
                     {u.displayName || u.email}
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                     <span className="truncate">{u.displayName ? u.email : ""}</span>
-                    <span className="px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-400 truncate max-w-[120px]">
+                    <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground truncate max-w-[120px]">
                       {u.workspaceName}
                     </span>
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-4 shrink-0">
-                <span className="text-xs text-zinc-400 tabular-nums">{u.requestCount} reqs</span>
+                <span className="text-xs text-muted-foreground tabular-nums">{u.requestCount} reqs</span>
                 <span className="text-xs text-blue-400 font-medium tabular-nums">{formatTokenCount(u.totalTokens)}</span>
-                <span className="text-xs text-zinc-300 font-medium tabular-nums">{formatCost(u.totalCostUsd)}</span>
+                <span className="text-xs text-foreground font-medium tabular-nums">{formatCost(u.totalCostUsd)}</span>
               </div>
             </div>
-            <div className="h-1.5 rounded-full bg-zinc-700/50 overflow-hidden">
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-500"
                 style={{ width: `${pct}%` }}
@@ -321,13 +321,13 @@ function PlatformUsersList({ users }: { users: PlatformUser[] }) {
             {/* Hover popup: usage breakdown by source + models */}
             {u.sources && u.sources.length > 0 && (
               <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-[420px] max-w-[90vw] -translate-x-1/2 group-hover:block">
-                <div className="rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-3 max-h-[400px] overflow-y-auto pointer-events-auto">
-                  <div className="text-[10px] uppercase text-zinc-500 mb-2 tracking-wider">
+                <div className="rounded-xl border border-border bg-popover shadow-2xl p-3 max-h-[400px] overflow-y-auto pointer-events-auto">
+                  <div className="text-[10px] uppercase text-muted-foreground mb-2 tracking-wider">
                     Usage breakdown — {u.displayName || u.email}
                   </div>
                   <div className="space-y-2">
                     {u.sources.map((s, idx) => (
-                      <div key={`${s.kind}-${s.label}-${idx}`} className="rounded-lg bg-zinc-800/60 p-2">
+                      <div key={`${s.kind}-${s.label}-${idx}`} className="rounded-lg bg-muted p-2">
                         <div className="flex items-center justify-between gap-2 mb-1.5">
                           <div className="flex items-center gap-1.5 min-w-0">
                             {s.kind === "copilot" ? (
@@ -335,28 +335,28 @@ function PlatformUsersList({ users }: { users: PlatformUser[] }) {
                             ) : s.kind === "provider" ? (
                               <Key className="h-3 w-3 text-emerald-400 shrink-0" />
                             ) : (
-                              <Cpu className="h-3 w-3 text-zinc-400 shrink-0" />
+                              <Cpu className="h-3 w-3 text-muted-foreground shrink-0" />
                             )}
-                            <span className="text-xs text-zinc-200 font-medium truncate">{s.label}</span>
+                            <span className="text-xs text-foreground font-medium truncate">{s.label}</span>
                             {s.githubLogin && (
-                              <span className="text-[10px] text-zinc-500 truncate">@{s.githubLogin}</span>
+                              <span className="text-[10px] text-muted-foreground truncate">@{s.githubLogin}</span>
                             )}
                             {s.providerType && (
-                              <span className="text-[10px] text-zinc-500 uppercase">{s.providerType}</span>
+                              <span className="text-[10px] text-muted-foreground uppercase">{s.providerType}</span>
                             )}
                           </div>
                           <span className="text-[10px] text-blue-400 tabular-nums shrink-0">
                             {formatTokenCount(s.totalTokens)}
                           </span>
                         </div>
-                        <div className="text-[10px] text-zinc-500 mb-1.5">
+                        <div className="text-[10px] text-muted-foreground mb-1.5">
                           {s.ownerEmail ? (
                             <>
-                              Owned by <span className="text-zinc-400">{s.ownerDisplayName || s.ownerEmail}</span>
-                              {s.ownerDisplayName && <span className="text-zinc-600"> ({s.ownerEmail})</span>}
+                              Owned by <span className="text-muted-foreground">{s.ownerDisplayName || s.ownerEmail}</span>
+                              {s.ownerDisplayName && <span className="text-muted-foreground"> ({s.ownerEmail})</span>}
                             </>
                           ) : (
-                            <span className="text-zinc-600">No owner record</span>
+                            <span className="text-muted-foreground">No owner record</span>
                           )}
                         </div>
                         <div className="space-y-0.5">
@@ -365,9 +365,9 @@ function PlatformUsersList({ users }: { users: PlatformUser[] }) {
                               key={`${s.label}-${m.model}`}
                               className="flex items-center justify-between text-[11px] py-0.5"
                             >
-                              <span className="text-zinc-300 truncate">{m.model}</span>
+                              <span className="text-foreground truncate">{m.model}</span>
                               <div className="flex items-center gap-2 shrink-0">
-                                <span className="text-[10px] text-zinc-500 tabular-nums">{m.requestCount} reqs</span>
+                                <span className="text-[10px] text-muted-foreground tabular-nums">{m.requestCount} reqs</span>
                                 <span className="text-violet-400 tabular-nums">{formatTokenCount(m.totalTokens)}</span>
                               </div>
                             </div>
@@ -453,27 +453,27 @@ function SubscriptionsList({ items }: { items: SubscriptionRow[] }) {
         const showCopilotShareWarning = sharedActiveUsers || sharedOwners;
 
         return (
-          <div key={row.id} className="rounded-xl bg-zinc-800/40 overflow-hidden">
+          <div key={row.id} className="rounded-xl bg-muted/50 overflow-hidden">
             <button
               onClick={() => hasUsers && toggle(row.id)}
               className={`w-full text-left p-3 flex items-center justify-between ${
-                hasUsers ? "hover:bg-zinc-800/60 cursor-pointer" : ""
+                hasUsers ? "hover:bg-muted cursor-pointer" : ""
               } transition-colors`}
               disabled={!hasUsers}
             >
               <div className="flex items-center gap-3 min-w-0">
                 {hasUsers && (
-                  <span className="text-zinc-500">
+                  <span className="text-muted-foreground">
                     {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   </span>
                 )}
                 <div className="min-w-0">
-                  <div className="text-sm text-zinc-200 font-medium truncate flex items-center gap-2">
+                  <div className="text-sm text-foreground font-medium truncate flex items-center gap-2">
                     {row.icon}
                     {row.title}
-                    <span className="text-[10px] text-zinc-500">{row.subtitle}</span>
+                    <span className="text-[10px] text-muted-foreground">{row.subtitle}</span>
                   </div>
-                  <div className="text-[10px] text-zinc-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                  <div className="text-[10px] text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
                     <span className="flex items-center gap-1">
                       <Building2 className="h-3 w-3" />
                       <span className="truncate max-w-[260px]" title={row.workspaceNames.join(", ")}>
@@ -488,16 +488,16 @@ function SubscriptionsList({ items }: { items: SubscriptionRow[] }) {
                       {row.userCount} user{row.userCount !== 1 ? "s" : ""}
                     </span>
                     <span title={row.owners.map((o) => o.email).join(", ")}>
-                      added by <span className="text-zinc-400">{formatOwners(row.owners)}</span>
+                      added by <span className="text-muted-foreground">{formatOwners(row.owners)}</span>
                     </span>
                     <span>on {formatAddedAt(row.addedAt)}</span>
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-4 shrink-0">
-                <span className="text-xs text-zinc-400 tabular-nums">{row.requestCount} reqs</span>
+                <span className="text-xs text-muted-foreground tabular-nums">{row.requestCount} reqs</span>
                 <span className="text-xs text-blue-400 font-medium tabular-nums">{formatTokenCount(row.totalTokens)}</span>
-                <span className="text-xs text-zinc-300 font-medium tabular-nums">{formatCost(row.totalCostUsd)}</span>
+                <span className="text-xs text-foreground font-medium tabular-nums">{formatCost(row.totalCostUsd)}</span>
               </div>
             </button>
 
@@ -524,8 +524,8 @@ function SubscriptionsList({ items }: { items: SubscriptionRow[] }) {
             )}
 
             {isExpanded && hasUsers && (
-              <div className="px-4 pb-3 pt-1 border-t border-zinc-700/50">
-                <div className="text-[10px] uppercase text-zinc-500 mb-2 tracking-wider">
+              <div className="px-4 pb-3 pt-1 border-t border-border/50">
+                <div className="text-[10px] uppercase text-muted-foreground mb-2 tracking-wider">
                   Users on this {row.id.startsWith("copilot:") ? "subscription" : "provider"}
                 </div>
                 <div className="space-y-2">
@@ -547,36 +547,36 @@ function UserModelRow({ user, parentId }: { user: PlatformSubscriptionUser; pare
   const hasModels = user.models && user.models.length > 0;
 
   return (
-    <div className="rounded-lg bg-zinc-800/30 overflow-hidden">
+    <div className="rounded-lg bg-muted/40 overflow-hidden">
       <button
         onClick={() => hasModels && setOpen((v) => !v)}
         className={`w-full text-left py-1.5 px-2 flex items-center justify-between ${
-          hasModels ? "hover:bg-zinc-800/50 cursor-pointer" : ""
+          hasModels ? "hover:bg-muted cursor-pointer" : ""
         } transition-colors`}
         disabled={!hasModels}
       >
         <div className="flex items-center gap-2 min-w-0">
           {hasModels && (
-            <span className="text-zinc-500">
+            <span className="text-muted-foreground">
               {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             </span>
           )}
           <div className="min-w-0">
-            <div className="text-xs text-zinc-300 truncate">{user.displayName || user.email}</div>
-            {user.displayName && <div className="text-[10px] text-zinc-500 truncate">{user.email}</div>}
+            <div className="text-xs text-foreground truncate">{user.displayName || user.email}</div>
+            {user.displayName && <div className="text-[10px] text-muted-foreground truncate">{user.email}</div>}
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <span className="text-[10px] text-zinc-500 tabular-nums">
+          <span className="text-[10px] text-muted-foreground tabular-nums">
             {user.models.length} model{user.models.length !== 1 ? "s" : ""}
           </span>
-          <span className="text-[10px] text-zinc-500 tabular-nums">{user.requestCount} reqs</span>
+          <span className="text-[10px] text-muted-foreground tabular-nums">{user.requestCount} reqs</span>
           <span className="text-xs text-blue-400 tabular-nums">{formatTokenCount(user.totalTokens)}</span>
         </div>
       </button>
 
       {open && hasModels && (
-        <div className="px-3 pb-2 pt-1 border-t border-zinc-700/40 space-y-1">
+        <div className="px-3 pb-2 pt-1 border-t border-border/40 space-y-1">
           {user.models.map((m) => (
             <div
               key={`${parentId}-${user.userId}-${m.model}`}
@@ -584,10 +584,10 @@ function UserModelRow({ user, parentId }: { user: PlatformSubscriptionUser; pare
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 <Cpu className="h-3 w-3 text-violet-400 shrink-0" />
-                <span className="text-zinc-300 truncate">{m.model}</span>
+                <span className="text-foreground truncate">{m.model}</span>
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                <span className="text-[10px] text-zinc-500 tabular-nums">{m.requestCount} reqs</span>
+                <span className="text-[10px] text-muted-foreground tabular-nums">{m.requestCount} reqs</span>
                 <span className="text-violet-400 tabular-nums">{formatTokenCount(m.totalTokens)}</span>
               </div>
             </div>
@@ -620,37 +620,37 @@ function PlatformModelsList({ models }: { models: PlatformModelUsage[] }) {
         const hasUsers = m.users && m.users.length > 0;
 
         return (
-          <div key={m.model} className="rounded-xl bg-zinc-800/40 overflow-hidden">
+          <div key={m.model} className="rounded-xl bg-muted/50 overflow-hidden">
             <button
               onClick={() => hasUsers && toggle(m.model)}
-              className={`w-full text-left p-3 ${hasUsers ? "hover:bg-zinc-800/60 cursor-pointer" : ""} transition-colors`}
+              className={`w-full text-left p-3 ${hasUsers ? "hover:bg-muted cursor-pointer" : ""} transition-colors`}
               disabled={!hasUsers}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2 min-w-0">
                   {hasUsers && (
-                    <span className="text-zinc-500">
+                    <span className="text-muted-foreground">
                       {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </span>
                   )}
                   <Cpu className="h-3.5 w-3.5 text-violet-400 shrink-0" />
                   <div className="min-w-0">
-                    <div className="text-sm text-zinc-200 font-medium truncate">{m.model}</div>
-                    <div className="text-[10px] text-zinc-500 flex items-center gap-2">
+                    <div className="text-sm text-foreground font-medium truncate">{m.model}</div>
+                    <div className="text-[10px] text-muted-foreground flex items-center gap-2">
                       {m.provider && (
-                        <span className="px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-400">{m.provider}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{m.provider}</span>
                       )}
                       <span>{m.userCount} user{m.userCount !== 1 ? "s" : ""}</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
-                  <span className="text-xs text-zinc-400 tabular-nums">{m.requestCount} reqs</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">{m.requestCount} reqs</span>
                   <span className="text-xs text-blue-400 font-medium tabular-nums">{formatTokenCount(m.totalTokens)}</span>
-                  <span className="text-xs text-zinc-300 font-medium tabular-nums">{formatCost(m.totalCostUsd)}</span>
+                  <span className="text-xs text-foreground font-medium tabular-nums">{formatCost(m.totalCostUsd)}</span>
                 </div>
               </div>
-              <div className="h-1.5 rounded-full bg-zinc-700/50 overflow-hidden">
+              <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-violet-500 to-violet-400 rounded-full transition-all duration-500"
                   style={{ width: `${pct}%` }}
@@ -659,23 +659,23 @@ function PlatformModelsList({ models }: { models: PlatformModelUsage[] }) {
             </button>
 
             {isExpanded && hasUsers && (
-              <div className="px-4 pb-3 pt-1 border-t border-zinc-700/50">
-                <div className="text-[10px] uppercase text-zinc-500 mb-2 tracking-wider">Used by</div>
+              <div className="px-4 pb-3 pt-1 border-t border-border/50">
+                <div className="text-[10px] uppercase text-muted-foreground mb-2 tracking-wider">Used by</div>
                 <div className="space-y-1.5">
                   {m.users.map((u) => (
                     <div
                       key={`${u.userId}-${u.workspaceName}`}
-                      className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-zinc-800/30"
+                      className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-muted/40"
                     >
                       <div className="min-w-0">
-                        <div className="text-xs text-zinc-300 truncate">{u.displayName || u.email}</div>
-                        <div className="text-[10px] text-zinc-500 truncate flex items-center gap-1.5">
+                        <div className="text-xs text-foreground truncate">{u.displayName || u.email}</div>
+                        <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1.5">
                           {u.displayName && <span>{u.email}</span>}
-                          <span className="px-1.5 py-0.5 rounded bg-zinc-700/40">{u.workspaceName}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60">{u.workspaceName}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-[10px] text-zinc-500 tabular-nums">{u.requestCount} reqs</span>
+                        <span className="text-[10px] text-muted-foreground tabular-nums">{u.requestCount} reqs</span>
                         <span className="text-xs text-violet-400 tabular-nums">{formatTokenCount(u.totalTokens)}</span>
                       </div>
                     </div>

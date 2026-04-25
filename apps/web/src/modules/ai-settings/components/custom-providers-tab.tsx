@@ -43,7 +43,7 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -52,8 +52,8 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-200">Custom AI Providers</h2>
-          <p className="text-sm text-zinc-500">
+          <h2 className="text-lg font-semibold text-foreground">Custom AI Providers</h2>
+          <p className="text-sm text-muted-foreground">
             Bring your own API keys for OpenAI, Anthropic, local models, and 50+ more.
           </p>
         </div>
@@ -67,15 +67,15 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
       </div>
 
       {providers.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-zinc-700 py-12 text-center">
-          <Key className="mx-auto h-10 w-10 text-zinc-600 mb-3" />
-          <p className="text-sm text-zinc-400">No custom providers configured.</p>
-          <p className="text-xs text-zinc-500 mt-1">
+        <div className="rounded-lg border border-dashed border-border py-12 text-center">
+          <Key className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+          <p className="text-sm text-muted-foreground">No custom providers configured.</p>
+          <p className="text-xs text-muted-foreground mt-1">
             Add your own API keys to use models from OpenAI, Anthropic, local engines, and 50+ more.
           </p>
           <button
             onClick={() => setWizardOpen(true)}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/80 transition-colors"
           >
             <Plus className="h-3.5 w-3.5" />
             Add your first provider
@@ -86,15 +86,15 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
           {providers.map((provider) => (
             <div
               key={provider.id}
-              className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
+              className="flex items-center justify-between rounded-lg border border-border bg-card p-4"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-800">
-                  <Key className="h-5 w-5 text-zinc-400" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary">
+                  <Key className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-zinc-200">{provider.label}</p>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-sm font-medium text-foreground">{provider.label}</p>
+                  <p className="text-xs text-muted-foreground">
                     {provider.provider_type} &middot; {provider.base_url}
                   </p>
                 </div>
@@ -106,7 +106,7 @@ export function CustomProvidersTab({ workspaceId, providers, loading, onAdd, onR
                 <button
                   onClick={() => handleValidate(provider.id)}
                   disabled={validating === provider.id}
-                  className="rounded p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                  className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                   title="Test connection &amp; refresh models"
                 >
                   {validating === provider.id ? (

@@ -172,7 +172,7 @@ export function ModelConfigTab({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -205,17 +205,17 @@ export function ModelConfigTab({
            My Personal Override
          ════════════════════════════════════════════════════════ */}
       {onUserPreferenceUpdate && (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5">
+        <div className="rounded-lg border border-border bg-card p-5">
           <div className="flex items-center gap-2.5 mb-4">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600/15">
               <User className="h-4 w-4 text-brand-400" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-1.5">
-                <h3 className="text-sm font-semibold text-zinc-200">My Personal Override</h3>
+                <h3 className="text-sm font-semibold text-foreground">My Personal Override</h3>
                 <HelpTooltip text="This only changes the AI model for you. It overrides the workspace defaults below. Other workspace members will still use the workspace defaults unless they set their own override. If you don't set anything here, you'll also use the workspace defaults." />
               </div>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-muted-foreground">
                 Override the workspace defaults below for yourself only — other members are not affected
               </p>
             </div>
@@ -231,13 +231,13 @@ export function ModelConfigTab({
           ) : (
             <>
               {/* Sub-tab switcher: Primary / Suggestion */}
-              <div className="flex gap-1 mb-4 border-b border-zinc-800">
+              <div className="flex gap-1 mb-4 border-b border-border">
                 <button
                   onClick={() => setUserOverrideTab("primary")}
                   className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${
                     userOverrideTab === "primary"
-                      ? "border-brand-500 text-zinc-200"
-                      : "border-transparent text-zinc-500 hover:text-zinc-300"
+                      ? "border-brand-500 text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   <Bot className="h-3.5 w-3.5" /> Primary Model
@@ -246,8 +246,8 @@ export function ModelConfigTab({
                   onClick={() => setUserOverrideTab("suggestion")}
                   className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${
                     userOverrideTab === "suggestion"
-                      ? "border-brand-500 text-zinc-200"
-                      : "border-transparent text-zinc-500 hover:text-zinc-300"
+                      ? "border-brand-500 text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   <Sparkles className="h-3.5 w-3.5" /> Suggestion Model
@@ -275,7 +275,7 @@ export function ModelConfigTab({
               {/* Suggestion override fields */}
               {userOverrideTab === "suggestion" && (
                 <div className="mb-4">
-                  <p className="text-[10px] text-zinc-500 mb-3">
+                  <p className="text-[10px] text-muted-foreground mb-3">
                     Override which model generates quick-action suggestion chips after each AI response.
                   </p>
                   <InlineConfigFields
@@ -317,11 +317,11 @@ export function ModelConfigTab({
          ════════════════════════════════════════════════════════ */}
       {isPlatformAdmin && onUserPreferenceUpdate && (
         <div className="flex items-center gap-3">
-          <div className="h-px flex-1 bg-zinc-800" />
-          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
             Workspace Defaults — applies to all members
           </span>
-          <div className="h-px flex-1 bg-zinc-800" />
+          <div className="h-px flex-1 bg-border" />
         </div>
       )}
 

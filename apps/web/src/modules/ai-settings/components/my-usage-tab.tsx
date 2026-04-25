@@ -19,7 +19,7 @@ interface MyUsageTabProps {
 
 // ── Skeleton ──────────────────────────────────────────────────────────
 function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded bg-zinc-800 ${className}`} />;
+  return <div className={`animate-pulse rounded bg-muted ${className}`} />;
 }
 
 // ── Animated Counter ──────────────────────────────────────────────────
@@ -78,13 +78,13 @@ function GlowCard({
 
   return (
     <div
-      className={`group relative bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5 transition-all duration-300 hover:border-zinc-700 hover:shadow-lg ${ring}`}
+      className={`group relative bg-card backdrop-blur border border-border rounded-2xl p-5 transition-all duration-300 hover:border-border hover:shadow-lg ${ring}`}
     >
       <div className="flex items-center gap-2 mb-3">
-        <div className={`p-1.5 rounded-lg bg-zinc-800/80`}>
+        <div className={`p-1.5 rounded-lg bg-muted`}>
           <Icon className={`h-3.5 w-3.5 ${iconColor}`} />
         </div>
-        <span className="text-zinc-400 text-xs uppercase tracking-wider font-medium">{label}</span>
+        <span className="text-muted-foreground text-xs uppercase tracking-wider font-medium">{label}</span>
       </div>
       <AnimatedValue value={value} loading={loading} />
     </div>
@@ -131,7 +131,7 @@ function CreditsGauge({
             cx="50" cy="50" r={radius}
             fill="none" stroke="currentColor"
             strokeWidth={stroke}
-            className="text-zinc-800"
+            className="text-muted"
           />
           <circle
             cx="50" cy="50" r={radius}
@@ -147,13 +147,13 @@ function CreditsGauge({
           <span className={`text-lg font-bold ${color.split(" ")[0]}`}>
             {limit > 0 ? Math.round(pct * 100) : "∞"}
           </span>
-          <span className="text-[10px] text-zinc-500">
+          <span className="text-[10px] text-muted-foreground">
             {limit > 0 ? "%" : ""}
           </span>
         </div>
       </div>
-      <span className="text-xs text-zinc-400 font-medium">{label}</span>
-      <span className="text-[10px] text-zinc-500">
+      <span className="text-xs text-muted-foreground font-medium">{label}</span>
+      <span className="text-[10px] text-muted-foreground">
         {used.toLocaleString()} / {limit > 0 ? limit.toLocaleString() : "Unlimited"}
       </span>
     </div>
@@ -182,7 +182,7 @@ function BreakdownTable({
 
   if (loading) {
     return (
-      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
+      <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
         <Skeleton className="h-4 w-24 mb-4" />
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -195,40 +195,40 @@ function BreakdownTable({
 
   if (!items.length) {
     return (
-      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-medium text-white mb-2">{title}</h3>
-        <p className="text-xs text-zinc-500">No data</p>
+      <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+        <h3 className="text-sm font-medium text-foreground mb-2">{title}</h3>
+        <p className="text-xs text-muted-foreground">No data</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-      <h3 className="text-sm font-medium text-white mb-4">{title}</h3>
+    <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+      <h3 className="text-sm font-medium text-foreground mb-4">{title}</h3>
       <div className="space-y-2.5">
         {items.map((item, i) => {
           const pct = (item.totalTokens / maxTokens) * 100;
           return (
             <div
               key={item.key}
-              className="group relative rounded-xl bg-zinc-800/40 p-3 hover:bg-zinc-800/60 transition-all duration-200"
+              className="group relative rounded-xl bg-muted/50 p-3 hover:bg-muted transition-all duration-200"
               style={{ animationDelay: `${i * 50}ms` }}
             >
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm text-zinc-200 font-medium truncate max-w-[140px]">
+                <span className="text-sm text-foreground font-medium truncate max-w-[140px]">
                   {displayKey(item)}
                 </span>
-                <span className="text-xs text-zinc-400 tabular-nums">{formatCost(item.totalCostUsd)}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">{formatCost(item.totalCostUsd)}</span>
               </div>
-              <div className="h-1.5 bg-zinc-700/50 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-700 ease-out"
                   style={{ width: `${pct}%`, backgroundColor: accent }}
                 />
               </div>
               <div className="flex justify-between mt-1">
-                <span className="text-[10px] text-zinc-500">{item.requestCount} requests</span>
-                <span className="text-[10px] text-zinc-500">{formatTokenCount(item.totalTokens)} tokens</span>
+                <span className="text-[10px] text-muted-foreground">{item.requestCount} requests</span>
+                <span className="text-[10px] text-muted-foreground">{formatTokenCount(item.totalTokens)} tokens</span>
               </div>
             </div>
           );
@@ -256,9 +256,9 @@ export function MyUsageTab({ workspaceId }: MyUsageTabProps) {
   if (allEmpty) {
     return (
       <div className="flex flex-col items-center justify-center py-16">
-        <BarChart3 className="h-10 w-10 text-zinc-600 mb-3" />
-        <p className="text-sm text-zinc-400">No usage data yet</p>
-        <p className="text-xs text-zinc-500 mt-1">Start using AI features to see your usage here.</p>
+        <BarChart3 className="h-10 w-10 text-muted-foreground mb-3" />
+        <p className="text-sm text-muted-foreground">No usage data yet</p>
+        <p className="text-xs text-muted-foreground mt-1">Start using AI features to see your usage here.</p>
       </div>
     );
   }
@@ -308,11 +308,11 @@ export function MyUsageTab({ workspaceId }: MyUsageTabProps) {
 
       {/* ── Credits Gauges ── */}
       {(creditsLoading || credits) && (
-        <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-          <h3 className="text-sm font-medium text-white mb-5 flex items-center gap-2">
+        <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+          <h3 className="text-sm font-medium text-foreground mb-5 flex items-center gap-2">
             <CreditCard className="h-4 w-4 text-rose-400" /> Credit Usage
             {credits?.planType && (
-              <span className="ml-auto text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">
+              <span className="ml-auto text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                 {credits.planType} plan
               </span>
             )}
@@ -335,15 +335,15 @@ export function MyUsageTab({ workspaceId }: MyUsageTabProps) {
       )}
 
       {/* ── Period Selector ── */}
-      <div className="flex items-center gap-1 bg-zinc-900/50 rounded-lg p-1 w-fit">
+      <div className="flex items-center gap-1 bg-card rounded-lg p-1 w-fit">
         {periodOptions.map((opt) => (
           <button
             key={opt}
             onClick={() => setPeriod(opt)}
             className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
               period === opt
-                ? "bg-zinc-700 text-white shadow-sm"
-                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+                ? "bg-secondary text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent"
             }`}
           >
             {opt}

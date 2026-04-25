@@ -113,7 +113,7 @@ export function VersionDiffDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/45 backdrop-blur-sm"
       onClick={handleOverlayClick}
     >
       <div className="flex h-[85vh] w-[92vw] max-w-7xl flex-col rounded-xl border bg-background shadow-2xl animate-in fade-in zoom-in-95 duration-200">

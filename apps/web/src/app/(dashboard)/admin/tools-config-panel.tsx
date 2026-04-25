@@ -125,7 +125,7 @@ export function ToolsConfigPanel() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-zinc-500" /></div>;
+    return <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   }
 
   const doableTools = knownTools.filter(t => t.category === "doable");
@@ -134,12 +134,12 @@ export function ToolsConfigPanel() {
   return (
     <div className="space-y-5">
       {/* Help text */}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-4 py-3">
+      <div className="rounded-lg border border-border bg-card px-4 py-3">
         <div className="flex items-start gap-2.5">
-          <HelpCircle className="h-4 w-4 text-zinc-500 mt-0.5 shrink-0" />
-          <p className="text-xs text-zinc-400 leading-relaxed">
-            Configure which tools are available in each AI mode. <strong className="text-zinc-300">Strategize</strong> (plan mode) typically
-            uses read-only tools for analysis. <strong className="text-zinc-300">Build</strong> mode has full file creation and editing tools.
+          <HelpCircle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Configure which tools are available in each AI mode. <strong className="text-foreground">Strategize</strong> (plan mode) typically
+            uses read-only tools for analysis. <strong className="text-foreground">Build</strong> mode has full file creation and editing tools.
             Changes take effect on new sessions within 60 seconds.
           </p>
         </div>
@@ -159,7 +159,7 @@ export function ToolsConfigPanel() {
           const modeLabel = mode.mode === "plan" ? "Strategize" : mode.mode === "build" ? "Build" : mode.mode.charAt(0).toUpperCase() + mode.mode.slice(1);
 
           return (
-            <div key={mode.mode} className="rounded-lg border border-zinc-800 bg-zinc-900/50">
+            <div key={mode.mode} className="rounded-lg border border-border bg-card">
               {/* Mode header */}
               <div className="flex items-center gap-3 px-4 py-3">
                 <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
@@ -169,22 +169,22 @@ export function ToolsConfigPanel() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-medium text-white">{modeLabel}</h3>
-                    <code className="text-[10px] text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded">{mode.mode}</code>
-                    <span className="text-[10px] text-zinc-500">{mode.allowed_tools.length} tools</span>
+                    <h3 className="text-sm font-medium text-foreground">{modeLabel}</h3>
+                    <code className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{mode.mode}</code>
+                    <span className="text-[10px] text-muted-foreground">{mode.allowed_tools.length} tools</span>
                   </div>
-                  {mode.description && <p className="text-xs text-zinc-500 mt-0.5">{mode.description}</p>}
+                  {mode.description && <p className="text-xs text-muted-foreground mt-0.5">{mode.description}</p>}
                 </div>
                 <div className="flex items-center gap-1">
                   {!isEditing && (
                     <button onClick={() => startEdit(mode)}
-                      className="flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition-colors">
+                      className="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/80 transition-colors">
                       <Wrench className="h-3 w-3" /> Configure
                     </button>
                   )}
                   {mode.mode !== "plan" && mode.mode !== "build" && (
                     <button onClick={() => deleteMode(mode.mode)}
-                      className="rounded p-1.5 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors" title="Delete mode">
+                      className="rounded p-1.5 text-muted-foreground hover:text-red-400 hover:bg-secondary transition-colors" title="Delete mode">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
@@ -193,15 +193,15 @@ export function ToolsConfigPanel() {
 
               {/* Current tools (when not editing) */}
               {!isEditing && (
-                <div className="border-t border-zinc-800 px-4 py-3">
+                <div className="border-t border-border px-4 py-3">
                   <div className="flex flex-wrap gap-1.5">
                     {mode.allowed_tools.map(tool => (
-                      <span key={tool} className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">
+                      <span key={tool} className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
                         {tool}
                       </span>
                     ))}
                     {mode.allowed_tools.length === 0 && (
-                      <span className="text-xs text-zinc-600 italic">No tools configured — will use hardcoded defaults</span>
+                      <span className="text-xs text-muted-foreground italic">No tools configured — will use hardcoded defaults</span>
                     )}
                   </div>
                 </div>
@@ -209,30 +209,30 @@ export function ToolsConfigPanel() {
 
               {/* Edit panel */}
               {isEditing && (
-                <div className="border-t border-zinc-800 px-4 py-4 space-y-4">
+                <div className="border-t border-border px-4 py-4 space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Description</label>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">Description</label>
                     <input type="text" value={editDescription} onChange={e => setEditDescription(e.target.value)}
                       placeholder="e.g. Read-only planning tools"
-                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500" />
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500" />
                   </div>
 
                   {/* Doable tools */}
                   <div>
-                    <h4 className="text-xs font-medium text-zinc-300 mb-2">Doable Tools</h4>
+                    <h4 className="text-xs font-medium text-foreground mb-2">Doable Tools</h4>
                     <div className="grid grid-cols-2 gap-1.5">
                       {doableTools.map(tool => (
                         <label key={tool.name}
                           className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
                             editAllowedTools.has(tool.name)
                               ? "border-brand-600/50 bg-brand-600/10"
-                              : "border-zinc-800 bg-zinc-900/30 hover:bg-zinc-800/50"
+                              : "border-border bg-card hover:bg-muted"
                           }`}>
                           <input type="checkbox" checked={editAllowedTools.has(tool.name)} onChange={() => toggleTool(tool.name)}
-                            className="rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-0" />
+                            className="rounded border-input bg-background text-brand-500 focus:ring-brand-500 focus:ring-offset-0" />
                           <div className="min-w-0">
-                            <span className="text-xs text-zinc-200 font-medium">{tool.name}</span>
-                            <p className="text-[10px] text-zinc-500 truncate">{tool.description}</p>
+                            <span className="text-xs text-foreground font-medium">{tool.name}</span>
+                            <p className="text-[10px] text-muted-foreground truncate">{tool.description}</p>
                           </div>
                         </label>
                       ))}
@@ -241,20 +241,20 @@ export function ToolsConfigPanel() {
 
                   {/* SDK tools */}
                   <div>
-                    <h4 className="text-xs font-medium text-zinc-300 mb-2">SDK Built-in Tools</h4>
+                    <h4 className="text-xs font-medium text-foreground mb-2">SDK Built-in Tools</h4>
                     <div className="grid grid-cols-2 gap-1.5">
                       {sdkTools.map(tool => (
                         <label key={tool.name}
                           className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
                             editAllowedTools.has(tool.name)
                               ? "border-brand-600/50 bg-brand-600/10"
-                              : "border-zinc-800 bg-zinc-900/30 hover:bg-zinc-800/50"
+                              : "border-border bg-card hover:bg-muted"
                           }`}>
                           <input type="checkbox" checked={editAllowedTools.has(tool.name)} onChange={() => toggleTool(tool.name)}
-                            className="rounded border-zinc-600 bg-zinc-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-0" />
+                            className="rounded border-input bg-background text-brand-500 focus:ring-brand-500 focus:ring-offset-0" />
                           <div className="min-w-0">
-                            <span className="text-xs text-zinc-200 font-medium">{tool.name}</span>
-                            <p className="text-[10px] text-zinc-500 truncate">{tool.description}</p>
+                            <span className="text-xs text-foreground font-medium">{tool.name}</span>
+                            <p className="text-[10px] text-muted-foreground truncate">{tool.description}</p>
                           </div>
                         </label>
                       ))}
@@ -276,11 +276,11 @@ export function ToolsConfigPanel() {
                       {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save Changes
                     </button>
                     <button onClick={() => setEditingMode(null)}
-                      className="rounded-lg px-4 py-2 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
+                      className="rounded-lg px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                       Cancel
                     </button>
                     <div className="flex-1" />
-                    <span className="text-[10px] text-zinc-600">{editAllowedTools.size} tools selected</span>
+                    <span className="text-[10px] text-muted-foreground">{editAllowedTools.size} tools selected</span>
                   </div>
                 </div>
               )}
@@ -291,21 +291,21 @@ export function ToolsConfigPanel() {
 
       {/* Add new mode */}
       {addingMode ? (
-        <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/50 px-4 py-3">
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-3">
           <input type="text" value={newModeName} onChange={e => setNewModeName(e.target.value)}
             placeholder="Mode name (e.g. review, debug)"
             onKeyDown={e => e.key === "Enter" && addMode()}
-            className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500" />
+            className="flex-1 rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500" />
           <button onClick={addMode} disabled={!newModeName.trim() || saving}
             className="flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors">
             <Check className="h-3 w-3" /> Add
           </button>
           <button onClick={() => { setAddingMode(false); setNewModeName(""); }}
-            className="rounded p-1.5 text-zinc-500 hover:text-zinc-300"><X className="h-3.5 w-3.5" /></button>
+            className="rounded p-1.5 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
         </div>
       ) : (
         <button onClick={() => setAddingMode(true)}
-          className="flex items-center gap-2 w-full rounded-lg border border-dashed border-zinc-700 px-4 py-3 text-xs text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-colors">
+          className="flex items-center gap-2 w-full rounded-lg border border-dashed border-border px-4 py-3 text-xs text-muted-foreground hover:text-foreground hover:border-border/60 transition-colors">
           <Plus className="h-3.5 w-3.5" /> Add New Mode
         </button>
       )}

@@ -63,7 +63,7 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -72,15 +72,15 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-200">GitHub Copilot Accounts</h2>
-          <p className="text-sm text-zinc-500">
+          <h2 className="text-lg font-semibold text-foreground">GitHub Copilot Accounts</h2>
+          <p className="text-sm text-muted-foreground">
             Connect GitHub accounts with Copilot subscriptions for AI model access.
           </p>
         </div>
         <div className="flex gap-2">
           <a
             href={`${API_URL}/auth/github/copilot${workspaceId ? `?workspaceId=${workspaceId}` : ""}`}
-            className="flex items-center gap-2 rounded-lg bg-zinc-800 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-700 transition-colors"
+            className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-colors"
           >
             <Github className="h-4 w-4" />
             Connect via OAuth
@@ -96,26 +96,26 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
       </div>
 
       {showForm && (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
+        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
           <input
             type="text"
             placeholder="Label (e.g. 'Work Account')"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500"
           />
           <input
             type="password"
             placeholder="GitHub Personal Access Token"
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500"
           />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2 justify-end">
             <button
               onClick={() => setShowForm(false)}
-              className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-200"
+              className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
             >
               Cancel
             </button>
@@ -132,10 +132,10 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
       )}
 
       {accounts.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-zinc-700 py-12 text-center">
-          <Github className="mx-auto h-10 w-10 text-zinc-600 mb-3" />
-          <p className="text-sm text-zinc-400">No GitHub accounts connected yet.</p>
-          <p className="text-xs text-zinc-500 mt-1">
+        <div className="rounded-lg border border-dashed border-border py-12 text-center">
+          <Github className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+          <p className="text-sm text-muted-foreground">No GitHub accounts connected yet.</p>
+          <p className="text-xs text-muted-foreground mt-1">
             Connect a GitHub account with a Copilot subscription to use Copilot models.
           </p>
         </div>
@@ -149,25 +149,25 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
                 className={`flex items-center justify-between rounded-lg border p-4 transition-colors ${
                   isActive
                     ? "border-brand-500/50 bg-brand-500/5"
-                    : "border-zinc-800 bg-zinc-900/50"
+                    : "border-border bg-card"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
-                    isActive ? "bg-brand-600/20" : "bg-zinc-800"
+                    isActive ? "bg-brand-600/20" : "bg-secondary"
                   }`}>
-                    <Github className={`h-5 w-5 ${isActive ? "text-brand-400" : "text-zinc-400"}`} />
+                    <Github className={`h-5 w-5 ${isActive ? "text-brand-400" : "text-muted-foreground"}`} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-zinc-200">{account.label}</p>
+                      <p className="text-sm font-medium text-foreground">{account.label}</p>
                       {isActive && (
                         <span className="rounded-full bg-brand-600/20 px-2 py-0.5 text-[10px] font-semibold text-brand-300 uppercase tracking-wider">
                           Active
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-zinc-500">@{account.github_login}</p>
+                    <p className="text-xs text-muted-foreground">@{account.github_login}</p>
                   </div>
                   {account.is_valid ? (
                     <CheckCircle className="h-4 w-4 text-green-400" />
@@ -182,7 +182,7 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
                     className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
                       isActive
                         ? "bg-brand-600/20 text-brand-300 hover:bg-brand-600/30"
-                        : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                        : "text-muted-foreground hover:text-foreground hover:bg-secondary"
                     }`}
                     title={isActive ? "Remove as default" : "Set as default"}
                   >
@@ -196,7 +196,7 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
                   <button
                     onClick={() => handleValidate(account.id)}
                     disabled={validating === account.id}
-                    className="rounded p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                    className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                     title="Test connection"
                   >
                     {validating === account.id ? (

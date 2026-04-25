@@ -72,12 +72,12 @@ export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
   const isAuditing = phase !== "idle" && phase !== "done";
 
   return (
-    <div className="flex h-full flex-col bg-[#1C1C1C] text-zinc-200">
+    <div className="flex h-full flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-800/80 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2.5">
           <Zap className="h-4.5 w-4.5 text-amber-400" />
-          <h2 className="text-sm font-semibold text-white">Speed</h2>
+          <h2 className="text-sm font-semibold text-foreground">Speed</h2>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -98,7 +98,7 @@ export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
           </button>
           <button
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
             title="Close"
           >
             <X className="h-4 w-4" />
@@ -114,10 +114,10 @@ export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 mb-4">
               <Zap className="h-8 w-8 text-amber-400" />
             </div>
-            <h3 className="text-sm font-medium text-zinc-300 mb-1">
+            <h3 className="text-sm font-medium text-foreground mb-1">
               Performance Audit
             </h3>
-            <p className="text-[13px] text-zinc-600 max-w-[300px] mb-5">
+            <p className="text-[13px] text-muted-foreground max-w-[300px] mb-5">
               Analyze your page speed, Core Web Vitals, bundle size, and get
               actionable recommendations to improve performance.
             </p>
@@ -140,7 +140,7 @@ export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
             {/* Scanning animation */}
             <div className="relative mb-6">
-              <div className="h-24 w-24 rounded-full border-4 border-zinc-800">
+              <div className="h-24 w-24 rounded-full border-4 border-border">
                 <div
                   className="h-full w-full rounded-full animate-spin"
                   style={{
@@ -150,14 +150,14 @@ export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
                 />
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="h-[88px] w-[88px] rounded-full bg-[#1C1C1C] flex items-center justify-center">
+                <div className="h-[88px] w-[88px] rounded-full bg-background flex items-center justify-center">
                   <Loader2 className="h-8 w-8 animate-spin text-[#1E52F1]" />
                 </div>
               </div>
             </div>
 
             {/* Phase label */}
-            <p className="text-sm font-medium text-zinc-300 mb-2">
+            <p className="text-sm font-medium text-foreground mb-2">
               {PHASE_LABELS[phase as AuditPhase]}
             </p>
 
@@ -175,16 +175,16 @@ export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
                           ? "bg-emerald-400"
                           : isCurrent
                             ? "bg-[#1E52F1] animate-pulse"
-                            : "bg-zinc-700"
+                            : "bg-border"
                       }`}
                     />
                     <span
                       className={`text-xs transition-colors ${
                         isDone
-                          ? "text-zinc-400"
+                          ? "text-muted-foreground"
                           : isCurrent
-                            ? "text-zinc-200"
-                            : "text-zinc-600"
+                            ? "text-foreground"
+                            : "text-muted-foreground"
                       }`}
                     >
                       {PHASE_LABELS[p]}
@@ -198,7 +198,7 @@ export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
             </div>
 
             {/* Progress bar */}
-            <div className="w-64 mt-4 h-1 rounded-full bg-zinc-800 overflow-hidden">
+            <div className="w-64 mt-4 h-1 rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full rounded-full bg-[#1E52F1] transition-all duration-500"
                 style={{ width: `${phaseProgress}%` }}

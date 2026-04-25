@@ -19,11 +19,11 @@ export function ProviderHealthBadge({ status, latencyMs }: ProviderHealthBadgePr
   const config = STATUS_CONFIG[status];
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
+    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
       <span className={`h-2 w-2 rounded-full ${config.color}`} />
       <span>{config.label}</span>
       {latencyMs !== undefined && (
-        <span className="text-zinc-500 tabular-nums">{latencyMs}ms</span>
+        <span className="text-muted-foreground tabular-nums">{latencyMs}ms</span>
       )}
     </span>
   );

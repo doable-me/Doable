@@ -41,10 +41,10 @@ type TabId = (typeof TABS)[number]["id"];
 
 function SettingsSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
-      <div className="p-6 border-b border-zinc-800">
-        <h2 className="text-lg font-semibold text-zinc-200">{title}</h2>
-        <p className="text-sm text-zinc-500 mt-1">{description}</p>
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="p-6 border-b border-border">
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{description}</p>
       </div>
       <div className="p-4">{children}</div>
     </div>
@@ -287,7 +287,7 @@ export default function WorkspaceSettingsPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-zinc-500" />
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -295,7 +295,7 @@ export default function WorkspaceSettingsPage() {
   if (!workspace) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-zinc-400 max-w-md">
+        <p className="text-muted-foreground max-w-md">
           {loadError ?? "No workspace found."}
         </p>
         <div className="flex gap-2">
@@ -315,19 +315,19 @@ export default function WorkspaceSettingsPage() {
       {/* Header */}
       <button
         onClick={() => router.push("/dashboard")}
-        className="mb-6 flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+        className="mb-6 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to dashboard
       </button>
 
-      <h1 className="text-2xl font-bold text-white mb-1">Workspace Settings</h1>
-      <p className="text-sm text-zinc-500 mb-2">
+      <h1 className="text-2xl font-bold text-foreground mb-1">Workspace Settings</h1>
+      <p className="text-sm text-muted-foreground mb-2">
         Manage your workspace, team members, environments, and integrations.
       </p>
 
       {/* ─── Tab Bar ──────────────────────────────────────── */}
-      <div className="mb-8 flex gap-1 border-b border-zinc-800">
+      <div className="mb-8 flex gap-1 border-b border-border">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -338,8 +338,8 @@ export default function WorkspaceSettingsPage() {
               className={cn(
                 "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px",
                 isActive
-                  ? "border-brand-500 text-white"
-                  : "border-transparent text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"
+                  ? "border-brand-500 text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
               )}
             >
               <Icon className="h-4 w-4" />

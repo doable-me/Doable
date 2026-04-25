@@ -25,7 +25,7 @@ interface WorkspaceUsageTabProps {
 
 // ── Skeleton ──────────────────────────────────────────────────────────
 function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded bg-zinc-800 ${className}`} />;
+  return <div className={`animate-pulse rounded bg-muted ${className}`} />;
 }
 
 // ── Colors ───────────────────────────────────────────────────────────
@@ -46,9 +46,9 @@ export function WorkspaceUsageTab({ workspaceId }: WorkspaceUsageTabProps) {
 
   if (empty) {
     return (
-      <div className="rounded-2xl border border-dashed border-zinc-700 py-12 text-center">
-        <Users className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-        <p className="text-sm text-zinc-500">No workspace usage data yet</p>
+      <div className="rounded-2xl border border-dashed border-border py-12 text-center">
+        <Users className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+        <p className="text-sm text-muted-foreground">No workspace usage data yet</p>
       </div>
     );
   }
@@ -88,8 +88,8 @@ export function WorkspaceUsageTab({ workspaceId }: WorkspaceUsageTabProps) {
       </div>
 
       {/* ── Top Token Consumers ── */}
-      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-medium text-white mb-5 flex items-center gap-2">
+      <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+        <h3 className="text-sm font-medium text-foreground mb-5 flex items-center gap-2">
           <Trophy className="h-4 w-4 text-amber-400" /> Top Token Consumers
         </h3>
         {topConsumersLoading ? (
@@ -99,15 +99,15 @@ export function WorkspaceUsageTab({ workspaceId }: WorkspaceUsageTabProps) {
             ))}
           </div>
         ) : topConsumers.length === 0 ? (
-          <p className="text-xs text-zinc-500">No usage data yet.</p>
+          <p className="text-xs text-muted-foreground">No usage data yet.</p>
         ) : (
           <TopConsumersList consumers={topConsumers} />
         )}
       </div>
 
       {/* ── Member Usage with Model Breakdown ── */}
-      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-medium text-white mb-5 flex items-center gap-2">
+      <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+        <h3 className="text-sm font-medium text-foreground mb-5 flex items-center gap-2">
           <Cpu className="h-4 w-4 text-violet-400" /> Member Usage by Model
         </h3>
         {membersLoading || memberModelsLoading ? (
@@ -117,7 +117,7 @@ export function WorkspaceUsageTab({ workspaceId }: WorkspaceUsageTabProps) {
             ))}
           </div>
         ) : members.length === 0 ? (
-          <p className="text-xs text-zinc-500">No member usage data.</p>
+          <p className="text-xs text-muted-foreground">No member usage data.</p>
         ) : (
           <MemberModelBreakdown members={members} memberModels={memberModels} />
         )}
@@ -125,8 +125,8 @@ export function WorkspaceUsageTab({ workspaceId }: WorkspaceUsageTabProps) {
 
       {/* ── Copilot Account Usage ── */}
       {copilotAccounts.length > 0 && (
-        <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-          <h3 className="text-sm font-medium text-white mb-5 flex items-center gap-2">
+        <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+          <h3 className="text-sm font-medium text-foreground mb-5 flex items-center gap-2">
             <Github className="h-4 w-4 text-blue-400" /> Copilot Account Usage
           </h3>
           {copilotAccountsLoading ? (
@@ -142,8 +142,8 @@ export function WorkspaceUsageTab({ workspaceId }: WorkspaceUsageTabProps) {
       )}
 
       {/* ── Provider Distribution (donut + legend) ── */}
-      <div className="bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-medium text-white mb-5 flex items-center gap-2">
+      <div className="bg-card backdrop-blur border border-border rounded-2xl p-5">
+        <h3 className="text-sm font-medium text-foreground mb-5 flex items-center gap-2">
           <Server className="h-4 w-4 text-violet-400" /> Provider Distribution
         </h3>
         {providersLoading ? (
@@ -151,7 +151,7 @@ export function WorkspaceUsageTab({ workspaceId }: WorkspaceUsageTabProps) {
             <Skeleton className="h-32 w-32 rounded-full" />
           </div>
         ) : providers.length === 0 ? (
-          <p className="text-xs text-zinc-500">No provider usage data.</p>
+          <p className="text-xs text-muted-foreground">No provider usage data.</p>
         ) : (
           <ProviderDonut providers={providers} />
         )}
@@ -174,38 +174,38 @@ function TopConsumersList({ consumers }: { consumers: TopConsumer[] }) {
         return (
           <div
             key={c.userId}
-            className="group rounded-xl bg-zinc-800/40 p-3 hover:bg-zinc-800/60 transition-all duration-200"
+            className="group rounded-xl bg-muted/50 p-3 hover:bg-muted transition-all duration-200"
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 min-w-0">
                 {medal ? (
                   <span className="text-sm shrink-0">{medal}</span>
                 ) : (
-                  <span className="text-xs text-zinc-500 w-5 shrink-0 tabular-nums">#{rank}</span>
+                  <span className="text-xs text-muted-foreground w-5 shrink-0 tabular-nums">#{rank}</span>
                 )}
                 <div className="min-w-0">
-                  <div className="text-sm text-zinc-200 font-medium truncate">
+                  <div className="text-sm text-foreground font-medium truncate">
                     {c.displayName || c.email}
                   </div>
                   {c.displayName && (
-                    <div className="text-[10px] text-zinc-500 truncate">{c.email}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{c.email}</div>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-4 shrink-0">
-                <span className="text-xs text-zinc-400 tabular-nums">{c.requestCount} reqs</span>
+                <span className="text-xs text-muted-foreground tabular-nums">{c.requestCount} reqs</span>
                 <span className="text-xs text-blue-400 font-medium tabular-nums">{formatTokenCount(c.totalTokens)}</span>
-                <span className="text-xs text-zinc-300 font-medium tabular-nums">{formatCost(c.totalCostUsd)}</span>
+                <span className="text-xs text-foreground font-medium tabular-nums">{formatCost(c.totalCostUsd)}</span>
               </div>
             </div>
-            <div className="h-2 bg-zinc-700/50 rounded-full overflow-hidden">
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-700 ease-out bg-gradient-to-r from-blue-500 to-violet-500"
                 style={{ width: `${pct}%` }}
               />
             </div>
             {/* Token breakdown tooltip-style info */}
-            <div className="flex gap-4 mt-2 text-[10px] text-zinc-500">
+            <div className="flex gap-4 mt-2 text-[10px] text-muted-foreground">
               <span>Prompt: {formatTokenCount(c.promptTokens)}</span>
               <span>Output: {formatTokenCount(c.completionTokens)}</span>
               {c.thinkingTokens > 0 && <span>Thinking: {formatTokenCount(c.thinkingTokens)}</span>}
@@ -255,35 +255,35 @@ function MemberModelBreakdown({
         const hasModels = userModels.length > 0;
         
         return (
-          <div key={m.userId} className="rounded-xl bg-zinc-800/40 overflow-hidden">
+          <div key={m.userId} className="rounded-xl bg-muted/50 overflow-hidden">
             <div
-              className={`p-3 ${hasModels ? "cursor-pointer hover:bg-zinc-800/60" : ""} transition-all duration-200`}
+              className={`p-3 ${hasModels ? "cursor-pointer hover:bg-muted" : ""} transition-all duration-200`}
               onClick={() => hasModels && toggle(m.userId)}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2 min-w-0">
                   {hasModels && (
                     isExpanded ? 
-                      <ChevronDown className="h-3.5 w-3.5 text-zinc-500 shrink-0" /> :
-                      <ChevronRight className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> :
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   )}
                   {isTop && <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />}
                   <div className="min-w-0">
-                    <div className="text-sm text-zinc-200 font-medium truncate">
+                    <div className="text-sm text-foreground font-medium truncate">
                       {m.displayName || m.email}
                     </div>
                     {m.displayName && (
-                      <div className="text-[10px] text-zinc-500 truncate">{m.email}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{m.email}</div>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
-                  <span className="text-xs text-zinc-400 tabular-nums">{m.requestCount} reqs</span>
-                  <span className="text-xs text-zinc-400 tabular-nums">{formatTokenCount(m.totalTokens)}</span>
-                  <span className="text-xs text-zinc-300 font-medium tabular-nums">{formatCost(m.totalCostUsd)}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">{m.requestCount} reqs</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">{formatTokenCount(m.totalTokens)}</span>
+                  <span className="text-xs text-foreground font-medium tabular-nums">{formatCost(m.totalCostUsd)}</span>
                 </div>
               </div>
-              <div className="h-2 bg-zinc-700/50 rounded-full overflow-hidden">
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-700 ease-out"
                   style={{
@@ -296,8 +296,8 @@ function MemberModelBreakdown({
             
             {/* Expanded model breakdown */}
             {isExpanded && userModels.length > 0 && (
-              <div className="px-3 pb-3 pt-1 border-t border-zinc-700/50">
-                <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">Models used</div>
+              <div className="px-3 pb-3 pt-1 border-t border-border">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Models used</div>
                 <div className="space-y-1.5">
                   {userModels.map((mm, j) => (
                     <div key={mm.model} className="flex items-center gap-2">
@@ -305,10 +305,10 @@ function MemberModelBreakdown({
                         className="w-2 h-2 rounded-full shrink-0"
                         style={{ backgroundColor: MODEL_COLORS[j % MODEL_COLORS.length] }}
                       />
-                      <span className="text-xs text-zinc-300 flex-1 truncate">{mm.model}</span>
-                      <span className="text-[10px] text-zinc-500 tabular-nums">{mm.requestCount} reqs</span>
-                      <span className="text-[10px] text-zinc-400 tabular-nums">{formatTokenCount(mm.totalTokens)}</span>
-                      <span className="text-[10px] text-zinc-300 tabular-nums">{formatCost(mm.totalCostUsd)}</span>
+                      <span className="text-xs text-foreground flex-1 truncate">{mm.model}</span>
+                      <span className="text-[10px] text-muted-foreground tabular-nums">{mm.requestCount} reqs</span>
+                      <span className="text-[10px] text-muted-foreground tabular-nums">{formatTokenCount(mm.totalTokens)}</span>
+                      <span className="text-[10px] text-foreground tabular-nums">{formatCost(mm.totalCostUsd)}</span>
                     </div>
                   ))}
                 </div>
@@ -348,23 +348,23 @@ function CopilotAccountsList({ accounts }: { accounts: CopilotAccountUsage[] }) 
   return (
     <div className="space-y-4">
       {accountList.map(([accountId, account], i) => (
-        <div key={accountId} className="rounded-xl bg-zinc-800/40 p-3">
+        <div key={accountId} className="rounded-xl bg-muted/50 p-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2 min-w-0">
-              <Github className="h-4 w-4 text-zinc-400 shrink-0" />
+              <Github className="h-4 w-4 text-muted-foreground shrink-0" />
               <div className="min-w-0">
-                <div className="text-sm text-zinc-200 font-medium truncate">{account.label}</div>
-                <div className="text-[10px] text-zinc-500 truncate">@{account.githubLogin}</div>
+                <div className="text-sm text-foreground font-medium truncate">{account.label}</div>
+                <div className="text-[10px] text-muted-foreground truncate">@{account.githubLogin}</div>
               </div>
             </div>
             <div className="flex items-center gap-4 shrink-0">
-              <span className="text-xs text-zinc-400 tabular-nums">{formatTokenCount(account.totalTokens)}</span>
-              <span className="text-xs text-zinc-300 font-medium tabular-nums">{formatCost(account.totalCostUsd)}</span>
+              <span className="text-xs text-muted-foreground tabular-nums">{formatTokenCount(account.totalTokens)}</span>
+              <span className="text-xs text-foreground font-medium tabular-nums">{formatCost(account.totalCostUsd)}</span>
             </div>
           </div>
           
           {/* Progress bar */}
-          <div className="h-1.5 bg-zinc-700/50 rounded-full overflow-hidden mb-3">
+          <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-3">
             <div
               className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400"
               style={{ width: `${(account.totalCostUsd / maxCost) * 100}%` }}
@@ -372,15 +372,15 @@ function CopilotAccountsList({ accounts }: { accounts: CopilotAccountUsage[] }) 
           </div>
           
           {/* Users who used this account */}
-          <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">Used by</div>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Used by</div>
           <div className="flex flex-wrap gap-2">
             {account.users.map((u) => (
               <div
                 key={u.userId}
-                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-zinc-700/50 text-xs"
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted text-xs"
               >
-                <span className="text-zinc-300">{u.userDisplayName || u.userEmail}</span>
-                <span className="text-zinc-500">{formatTokenCount(u.totalTokens)}</span>
+                <span className="text-foreground">{u.userDisplayName || u.userEmail}</span>
+                <span className="text-muted-foreground">{formatTokenCount(u.totalTokens)}</span>
               </div>
             ))}
           </div>
@@ -429,8 +429,8 @@ function ProviderDonut({
           ))}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-lg font-bold text-white">{formatCost(total)}</span>
-          <span className="text-[10px] text-zinc-500">total cost</span>
+          <span className="text-lg font-bold text-foreground">{formatCost(total)}</span>
+          <span className="text-[10px] text-muted-foreground">total cost</span>
         </div>
       </div>
       <div className="space-y-3 min-w-[200px]">
@@ -442,17 +442,17 @@ function ProviderDonut({
             />
             <div className="flex-1 min-w-0">
               <div className="flex justify-between items-baseline">
-                <span className="text-xs text-zinc-200 font-medium">
+                <span className="text-xs text-foreground font-medium">
                   {p.providerLabel || capitalize(p.provider)}
                 </span>
-                <span className="text-[10px] text-zinc-500 tabular-nums ml-2">
+                <span className="text-[10px] text-muted-foreground tabular-nums ml-2">
                   {formatCost(p.totalCostUsd)} ({total > 0 ? Math.round((p.totalCostUsd / total) * 100) : 0}%)
                 </span>
               </div>
               <div className="flex gap-3 mt-0.5">
-                <span className="text-[10px] text-zinc-500">{p.requestCount} reqs</span>
-                <span className="text-[10px] text-zinc-500">{formatTokenCount(p.totalTokens)} tokens</span>
-                <span className="text-[10px] text-zinc-500">{p.uniqueModels} models</span>
+                <span className="text-[10px] text-muted-foreground">{p.requestCount} reqs</span>
+                <span className="text-[10px] text-muted-foreground">{formatTokenCount(p.totalTokens)} tokens</span>
+                <span className="text-[10px] text-muted-foreground">{p.uniqueModels} models</span>
               </div>
             </div>
           </div>
@@ -489,17 +489,17 @@ function StatCard({
   }[accent] ?? "group-hover:shadow-blue-500/10";
 
   return (
-    <div className={`group bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-2xl p-5 transition-all duration-300 hover:border-zinc-700 hover:shadow-lg ${ring}`}>
+    <div className={`group bg-card backdrop-blur border border-border rounded-2xl p-5 transition-all duration-300 hover:border-border hover:shadow-lg ${ring}`}>
       <div className="flex items-center gap-2 mb-3">
-        <div className="p-1.5 rounded-lg bg-zinc-800/80">
+        <div className="p-1.5 rounded-lg bg-muted">
           {icon}
         </div>
-        <span className="text-zinc-400 text-xs uppercase tracking-wider">{label}</span>
+        <span className="text-muted-foreground text-xs uppercase tracking-wider">{label}</span>
       </div>
       {loading ? (
         <Skeleton className="h-8 w-24" />
       ) : (
-        <div className="text-white text-2xl font-bold tabular-nums">{value}</div>
+        <div className="text-foreground text-2xl font-bold tabular-nums">{value}</div>
       )}
     </div>
   );

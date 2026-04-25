@@ -272,7 +272,7 @@ export function EmailPanel() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -293,15 +293,15 @@ export function EmailPanel() {
 
       {/* Current Config Display */}
       {config && !editing ? (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5 space-y-4">
+        <div className="rounded-lg border border-border bg-card p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600/20">
                 <Mail className="h-4 w-4 text-brand-400" />
               </div>
               <div>
-                <h3 className="text-sm font-medium text-white">{config.label}</h3>
-                <p className="text-xs text-zinc-500">{config.provider.toUpperCase()} — {config.from_address}</p>
+                <h3 className="text-sm font-medium text-foreground">{config.label}</h3>
+                <p className="text-xs text-muted-foreground">{config.provider.toUpperCase()} — {config.from_address}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -319,11 +319,11 @@ export function EmailPanel() {
 
           {/* Masked credentials preview */}
           {config.credentials && Object.keys(config.credentials).length > 0 && (
-            <div className="grid grid-cols-2 gap-2 rounded-md bg-zinc-800/50 p-3">
+            <div className="grid grid-cols-2 gap-2 rounded-md bg-muted p-3">
               {Object.entries(config.credentials).map(([key, val]) => (
                 <div key={key}>
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-500">{key}</span>
-                  <p className="text-xs text-zinc-400 font-mono truncate">{val}</p>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{key}</span>
+                  <p className="text-xs text-muted-foreground font-mono truncate">{val}</p>
                 </div>
               ))}
             </div>
@@ -340,11 +340,11 @@ export function EmailPanel() {
               {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
               Send Test Email
             </Button>
-            <Button onClick={handleVerify} disabled={verifying} variant="outline" className="gap-2 text-xs border-zinc-700 text-zinc-300 hover:bg-zinc-800">
+            <Button onClick={handleVerify} disabled={verifying} variant="outline" className="gap-2 text-xs border-border text-foreground hover:bg-secondary">
               {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
               Verify Connection
             </Button>
-            <Button onClick={startEditing} variant="outline" className="text-xs border-zinc-700 text-zinc-300 hover:bg-zinc-800">
+            <Button onClick={startEditing} variant="outline" className="text-xs border-border text-foreground hover:bg-secondary">
               Change Provider
             </Button>
             <Button onClick={handleDelete} disabled={deleting} variant="outline" className="text-xs border-red-800/50 text-red-400 hover:bg-red-900/20 hover:border-red-700/50">
@@ -354,10 +354,10 @@ export function EmailPanel() {
         </div>
       ) : (
         /* Config Form */
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5 space-y-5">
+        <div className="rounded-lg border border-border bg-card p-5 space-y-5">
           <div className="flex items-center gap-3 mb-1">
             <Mail className="h-4 w-4 text-brand-400" />
-            <h3 className="text-sm font-medium text-white">
+            <h3 className="text-sm font-medium text-foreground">
               {config ? "Update Email Provider" : "Configure Email Provider"}
             </h3>
           </div>
@@ -371,13 +371,13 @@ export function EmailPanel() {
                 className={`rounded-lg border p-3 text-left transition-colors ${
                   formProvider === p
                     ? "border-brand-500 bg-brand-600/10"
-                    : "border-zinc-700 hover:border-zinc-600 bg-zinc-800/50"
+                    : "border-border hover:border-border/60 bg-muted"
                 }`}
               >
-                <span className="text-xs font-medium text-white">
+                <span className="text-xs font-medium text-foreground">
                   {p === "smtp" ? "SMTP" : p === "resend" ? "Resend" : "Gmail (OAuth)"}
                 </span>
-                <p className="text-[10px] text-zinc-500 mt-0.5">
+                <p className="text-[10px] text-muted-foreground mt-0.5">
                   {p === "smtp" ? "Gmail, SendGrid, Mailgun, SES, and 20+ providers"
                     : p === "resend" ? "Modern email API with great deliverability"
                     : "One-click Google account connection"}
@@ -389,16 +389,17 @@ export function EmailPanel() {
           {/* Gmail OAuth — just a connect button */}
           {formProvider === "google" ? (
             <div className="space-y-3">
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-muted-foreground">
                 Connect your Google account with one click. This uses OAuth so your password is never shared.
-                Only the <code className="text-zinc-300">gmail.send</code> permission is requested.
+                Only the <code className="text-foreground">gmail.send</code> permission is requested.
               </p>
+              {/* Google brand button — uses Google's official brand colors (intentional pure white). */}
               <Button onClick={handleGmailConnect} className="gap-2 bg-white text-zinc-900 hover:bg-zinc-100 text-sm font-medium">
                 <svg className="h-4 w-4" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
                 Connect Google Account
               </Button>
               {config && (
-                <Button onClick={() => setEditing(false)} variant="outline" className="text-xs border-zinc-700 text-zinc-400 hover:bg-zinc-800">
+                <Button onClick={() => setEditing(false)} variant="outline" className="text-xs border-border text-muted-foreground hover:bg-secondary">
                   Cancel
                 </Button>
               )}
@@ -408,19 +409,19 @@ export function EmailPanel() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] uppercase tracking-wider text-zinc-500 mb-1">Label</label>
+                  <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Label</label>
                   <input
                     type="text" value={formLabel} onChange={(e) => setFormLabel(e.target.value)}
                     placeholder={formProvider === "smtp" ? "Production SMTP" : "Resend Production"}
-                    className="w-full rounded-md bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 px-3 py-2 outline-none focus:border-brand-500 placeholder:text-zinc-600"
+                    className="w-full rounded-md bg-background border border-input text-sm text-foreground px-3 py-2 outline-none focus:border-brand-500 placeholder:text-muted-foreground"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] uppercase tracking-wider text-zinc-500 mb-1">From Address</label>
+                  <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">From Address</label>
                   <input
                     type="text" value={formFromAddress} onChange={(e) => setFormFromAddress(e.target.value)}
                     placeholder="Doable <noreply@yourdomain.com>"
-                    className="w-full rounded-md bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 px-3 py-2 outline-none focus:border-brand-500 placeholder:text-zinc-600"
+                    className="w-full rounded-md bg-background border border-input text-sm text-foreground px-3 py-2 outline-none focus:border-brand-500 placeholder:text-muted-foreground"
                   />
                 </div>
               </div>
@@ -428,10 +429,10 @@ export function EmailPanel() {
               {formProvider === "smtp" && (
                 <>
                   <div>
-                    <label className="block text-[11px] uppercase tracking-wider text-zinc-500 mb-1">Service</label>
+                    <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Service</label>
                     <select
                       value={smtpService} onChange={(e) => setSmtpService(e.target.value)}
-                      className="w-full rounded-md bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 px-3 py-2 outline-none focus:border-brand-500"
+                      className="w-full rounded-md bg-background border border-input text-sm text-foreground px-3 py-2 outline-none focus:border-brand-500"
                     >
                       {SMTP_SERVICES.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -440,24 +441,24 @@ export function EmailPanel() {
                   {smtpService === "Custom (manual SMTP)" && (
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[11px] uppercase tracking-wider text-zinc-500 mb-1">SMTP Host</label>
-                        <input type="text" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.example.com" className="w-full rounded-md bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 px-3 py-2 outline-none focus:border-brand-500 placeholder:text-zinc-600" />
+                        <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">SMTP Host</label>
+                        <input type="text" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.example.com" className="w-full rounded-md bg-background border border-input text-sm text-foreground px-3 py-2 outline-none focus:border-brand-500 placeholder:text-muted-foreground" />
                       </div>
                       <div>
-                        <label className="block text-[11px] uppercase tracking-wider text-zinc-500 mb-1">Port</label>
-                        <input type="number" value={smtpPort} onChange={(e) => setSmtpPort(Number(e.target.value))} className="w-full rounded-md bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 px-3 py-2 outline-none focus:border-brand-500" />
+                        <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Port</label>
+                        <input type="number" value={smtpPort} onChange={(e) => setSmtpPort(Number(e.target.value))} className="w-full rounded-md bg-background border border-input text-sm text-foreground px-3 py-2 outline-none focus:border-brand-500" />
                       </div>
                     </div>
                   )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] uppercase tracking-wider text-zinc-500 mb-1">Username</label>
-                      <input type="text" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder="user@example.com" className="w-full rounded-md bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 px-3 py-2 outline-none focus:border-brand-500 placeholder:text-zinc-600" />
+                      <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Username</label>
+                      <input type="text" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder="user@example.com" className="w-full rounded-md bg-background border border-input text-sm text-foreground px-3 py-2 outline-none focus:border-brand-500 placeholder:text-muted-foreground" />
                     </div>
                     <div>
-                      <label className="block text-[11px] uppercase tracking-wider text-zinc-500 mb-1">Password</label>
-                      <input type="password" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} placeholder="••••••••" className="w-full rounded-md bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 px-3 py-2 outline-none focus:border-brand-500 placeholder:text-zinc-600" />
+                      <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Password</label>
+                      <input type="password" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} placeholder="••••••••" className="w-full rounded-md bg-background border border-input text-sm text-foreground px-3 py-2 outline-none focus:border-brand-500 placeholder:text-muted-foreground" />
                     </div>
                   </div>
                 </>
@@ -465,8 +466,8 @@ export function EmailPanel() {
 
               {formProvider === "resend" && (
                 <div>
-                  <label className="block text-[11px] uppercase tracking-wider text-zinc-500 mb-1">API Key</label>
-                  <input type="password" value={resendApiKey} onChange={(e) => setResendApiKey(e.target.value)} placeholder="re_••••••••" className="w-full rounded-md bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 px-3 py-2 outline-none focus:border-brand-500 placeholder:text-zinc-600" />
+                  <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">API Key</label>
+                  <input type="password" value={resendApiKey} onChange={(e) => setResendApiKey(e.target.value)} placeholder="re_••••••••" className="w-full rounded-md bg-background border border-input text-sm text-foreground px-3 py-2 outline-none focus:border-brand-500 placeholder:text-muted-foreground" />
                 </div>
               )}
 
@@ -476,7 +477,7 @@ export function EmailPanel() {
                   Save & Encrypt
                 </Button>
                 {config && (
-                  <Button onClick={() => setEditing(false)} variant="outline" className="text-xs border-zinc-700 text-zinc-400 hover:bg-zinc-800">
+                  <Button onClick={() => setEditing(false)} variant="outline" className="text-xs border-border text-muted-foreground hover:bg-secondary">
                     Cancel
                   </Button>
                 )}
@@ -488,11 +489,11 @@ export function EmailPanel() {
 
       {/* No config hint */}
       {!config && !editing && (
-        <div className="rounded-lg border border-dashed border-zinc-700 bg-zinc-900/30 p-6 text-center space-y-3">
-          <Mail className="h-8 w-8 text-zinc-600 mx-auto" />
+        <div className="rounded-lg border border-dashed border-border bg-card p-6 text-center space-y-3">
+          <Mail className="h-8 w-8 text-muted-foreground mx-auto" />
           <div>
-            <p className="text-sm text-zinc-400">No email provider configured in the database</p>
-            <p className="text-xs text-zinc-600 mt-1">
+            <p className="text-sm text-muted-foreground">No email provider configured in the database</p>
+            <p className="text-xs text-muted-foreground mt-1">
               {config === null ? "Using environment variable fallback (if configured)" : ""}
             </p>
           </div>
@@ -508,7 +509,7 @@ export function EmailPanel() {
       )}
 
       {/* Info */}
-      <p className="text-[11px] text-zinc-600 leading-relaxed">
+      <p className="text-[11px] text-muted-foreground leading-relaxed">
         All credentials are encrypted at rest using AES-256. The email queue retries failed sends with exponential backoff (up to 5 attempts).
         After exhausting retries, emails move to the dead-letter queue for manual review.
       </p>
@@ -523,12 +524,12 @@ const STATUS_COLORS: Record<string, string> = {
   processing: "bg-blue-500/10 text-blue-400 border-blue-500/20",
   sent: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
   failed: "bg-red-500/10 text-red-400 border-red-500/20",
-  dead: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+  dead: "bg-muted text-muted-foreground border-border",
 };
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${STATUS_COLORS[status] ?? "bg-zinc-800 text-zinc-400 border-zinc-700"}`}>
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${STATUS_COLORS[status] ?? "bg-secondary text-muted-foreground border-border"}`}>
       {status === "dead" ? "dead letter" : status}
     </span>
   );
@@ -639,22 +640,22 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
   const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50">
+    <div className="rounded-lg border border-border bg-card">
       {/* Stats Bar */}
-      <div className="p-4 border-b border-zinc-800">
+      <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between mb-3">
-          <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
             <Inbox className="h-3.5 w-3.5" /> Email Queue
           </h4>
           <div className="flex items-center gap-2">
-            <Button onClick={onStatsChange} variant="ghost" className="h-7 px-2 text-zinc-500 hover:text-zinc-300">
+            <Button onClick={onStatsChange} variant="ghost" className="h-7 px-2 text-muted-foreground hover:text-foreground">
               <RotateCcw className="h-3 w-3" />
             </Button>
             {hasItems && (
               <Button
                 onClick={() => { setExpanded(!expanded); setSelectedItem(null); }}
                 variant="ghost"
-                className="h-7 px-2.5 text-xs text-zinc-400 hover:text-zinc-200"
+                className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground"
               >
                 {expanded ? "Collapse" : "Manage"}
               </Button>
@@ -667,7 +668,7 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
             { label: "Processing", value: stats.processing, color: "text-blue-400", key: "processing" },
             { label: "Sent", value: stats.sent, color: "text-emerald-400", key: "sent" },
             { label: "Failed", value: stats.failed, color: "text-red-400", key: "failed" },
-            { label: "Dead Letter", value: stats.dead, color: "text-zinc-500", key: "dead" },
+            { label: "Dead Letter", value: stats.dead, color: "text-muted-foreground", key: "dead" },
           ] as const).map((s) => (
             <button
               key={s.label}
@@ -678,12 +679,12 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
               }}
               className={`text-center rounded-md py-1 transition-colors ${
                 filterStatus === s.key
-                  ? "bg-zinc-800 ring-1 ring-zinc-600"
-                  : "hover:bg-zinc-800/50"
+                  ? "bg-secondary ring-1 ring-border"
+                  : "hover:bg-muted"
               }`}
             >
               <p className={`text-lg font-semibold ${s.color}`}>{s.value}</p>
-              <p className="text-[10px] text-zinc-500">{s.label}</p>
+              <p className="text-[10px] text-muted-foreground">{s.label}</p>
             </button>
           ))}
         </div>
@@ -698,13 +699,13 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
               <div className="flex items-center justify-between">
                 <button
                   onClick={() => setSelectedItem(null)}
-                  className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" /> Back to list
                 </button>
                 <div className="flex items-center gap-2">
                   {["failed", "dead"].includes(selectedItem.status) && (
-                    <Button onClick={() => handleRetry(selectedItem.id)} disabled={actionLoading === selectedItem.id} variant="outline" className="h-7 text-xs gap-1 border-zinc-700 text-zinc-300">
+                    <Button onClick={() => handleRetry(selectedItem.id)} disabled={actionLoading === selectedItem.id} variant="outline" className="h-7 text-xs gap-1 border-border text-foreground">
                       {actionLoading === selectedItem.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                       Retry
                     </Button>
@@ -718,18 +719,18 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <StatusBadge status={selectedItem.status} />
-                  <span className="text-xs text-zinc-500">Attempt {selectedItem.attempts}/{selectedItem.max_attempts}</span>
+                  <span className="text-xs text-muted-foreground">Attempt {selectedItem.attempts}/{selectedItem.max_attempts}</span>
                 </div>
-                <h3 className="text-sm font-medium text-white">{selectedItem.subject}</h3>
+                <h3 className="text-sm font-medium text-foreground">{selectedItem.subject}</h3>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
-                  <div><span className="text-zinc-500">To:</span> <span className="text-zinc-300">{selectedItem.to_address}</span></div>
-                  <div><span className="text-zinc-500">From:</span> <span className="text-zinc-300">{selectedItem.from_address ?? "—"}</span></div>
-                  <div><span className="text-zinc-500">Created:</span> <span className="text-zinc-300">{new Date(selectedItem.created_at).toLocaleString()}</span></div>
-                  {selectedItem.sent_at && <div><span className="text-zinc-500">Sent:</span> <span className="text-zinc-300">{new Date(selectedItem.sent_at).toLocaleString()}</span></div>}
+                  <div><span className="text-muted-foreground">To:</span> <span className="text-foreground">{selectedItem.to_address}</span></div>
+                  <div><span className="text-muted-foreground">From:</span> <span className="text-foreground">{selectedItem.from_address ?? "—"}</span></div>
+                  <div><span className="text-muted-foreground">Created:</span> <span className="text-foreground">{new Date(selectedItem.created_at).toLocaleString()}</span></div>
+                  {selectedItem.sent_at && <div><span className="text-muted-foreground">Sent:</span> <span className="text-foreground">{new Date(selectedItem.sent_at).toLocaleString()}</span></div>}
                   {selectedItem.next_retry_at && selectedItem.status === "failed" && (
-                    <div><span className="text-zinc-500">Next retry:</span> <span className="text-zinc-300">{new Date(selectedItem.next_retry_at).toLocaleString()}</span></div>
+                    <div><span className="text-muted-foreground">Next retry:</span> <span className="text-foreground">{new Date(selectedItem.next_retry_at).toLocaleString()}</span></div>
                   )}
-                  {selectedItem.template && <div><span className="text-zinc-500">Template:</span> <span className="text-zinc-300">{selectedItem.template}</span></div>}
+                  {selectedItem.template && <div><span className="text-muted-foreground">Template:</span> <span className="text-foreground">{selectedItem.template}</span></div>}
                 </div>
                 {selectedItem.last_error && (
                   <div className="rounded-md bg-red-950/30 border border-red-900/30 p-2.5 text-xs text-red-300 font-mono break-all">
@@ -741,8 +742,8 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
               {/* HTML Preview */}
               {selectedItem.html && (
                 <div className="space-y-1">
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-500">Preview</span>
-                  <div className="rounded-md border border-zinc-700 bg-white p-4 text-sm max-h-72 overflow-auto">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Preview</span>
+                  <div className="rounded-md border border-border bg-white p-4 text-sm max-h-72 overflow-auto">
                     <iframe
                       srcDoc={selectedItem.html}
                       sandbox=""
@@ -757,13 +758,13 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
             /* List View */
             <div>
               {/* Toolbar */}
-              <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800/50">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">
+                  <span className="text-xs text-muted-foreground">
                     {filterStatus ? `Showing ${filterStatus}` : "All emails"} · {pagination.total} total
                   </span>
                   {filterStatus && (
-                    <button onClick={() => setFilterStatus(null)} className="text-[10px] text-zinc-500 hover:text-zinc-300 underline">
+                    <button onClick={() => setFilterStatus(null)} className="text-[10px] text-muted-foreground hover:text-foreground underline">
                       clear filter
                     </button>
                   )}
@@ -774,7 +775,7 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
                       onClick={() => handleRetryAll("failed")}
                       disabled={actionLoading === "retry-all-failed"}
                       variant="outline"
-                      className="h-6 text-[10px] gap-1 border-zinc-700 text-zinc-400 px-2"
+                      className="h-6 text-[10px] gap-1 border-border text-muted-foreground px-2"
                     >
                       {actionLoading === "retry-all-failed" ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <RefreshCw className="h-2.5 w-2.5" />}
                       Retry all failed
@@ -785,7 +786,7 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
                       onClick={() => handleRetryAll("dead")}
                       disabled={actionLoading === "retry-all-dead"}
                       variant="outline"
-                      className="h-6 text-[10px] gap-1 border-zinc-700 text-zinc-400 px-2"
+                      className="h-6 text-[10px] gap-1 border-border text-muted-foreground px-2"
                     >
                       {actionLoading === "retry-all-dead" ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <RefreshCw className="h-2.5 w-2.5" />}
                       Retry all dead
@@ -808,23 +809,23 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
               {/* Items */}
               {loading ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 </div>
               ) : items.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                   <Inbox className="h-6 w-6 mb-2" />
                   <span className="text-xs">No emails {filterStatus ? `with status "${filterStatus}"` : "in queue"}</span>
                 </div>
               ) : (
-                <div className="divide-y divide-zinc-800/50">
+                <div className="divide-y divide-border">
                   {items.map((item) => (
-                    <div key={item.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-zinc-800/30 transition-colors group">
+                    <div key={item.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-muted transition-colors group">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
                           <StatusBadge status={item.status} />
-                          <span className="text-xs text-zinc-300 font-medium truncate">{item.subject}</span>
+                          <span className="text-xs text-foreground font-medium truncate">{item.subject}</span>
                         </div>
-                        <div className="flex items-center gap-3 text-[11px] text-zinc-500">
+                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                           <span>→ {item.to_address}</span>
                           <span className="flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" /> {timeAgo(item.created_at)}</span>
                           {item.attempts > 0 && <span>{item.attempts}/{item.max_attempts} attempts</span>}
@@ -836,7 +837,7 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                         <button
                           onClick={() => handleViewDetail(item.id)}
-                          className="rounded p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50"
+                          className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-secondary/80"
                           title="View details"
                         >
                           <Eye className="h-3.5 w-3.5" />
@@ -845,7 +846,7 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
                           <button
                             onClick={() => handleRetry(item.id)}
                             disabled={actionLoading === item.id}
-                            className="rounded p-1 text-zinc-500 hover:text-amber-400 hover:bg-zinc-700/50"
+                            className="rounded p-1 text-muted-foreground hover:text-amber-400 hover:bg-secondary/80"
                             title="Retry"
                           >
                             {actionLoading === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -854,7 +855,7 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
                         <button
                           onClick={() => handleDelete(item.id)}
                           disabled={actionLoading === item.id}
-                          className="rounded p-1 text-zinc-500 hover:text-red-400 hover:bg-zinc-700/50"
+                          className="rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-secondary/80"
                           title="Delete"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -867,8 +868,8 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between px-4 py-2 border-t border-zinc-800/50">
-                  <span className="text-[10px] text-zinc-500">
+                <div className="flex items-center justify-between px-4 py-2 border-t border-border/50">
+                  <span className="text-[10px] text-muted-foreground">
                     Page {pagination.page} of {totalPages}
                   </span>
                   <div className="flex items-center gap-1">
@@ -876,7 +877,7 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
                       onClick={() => loadQueue(pagination.page - 1)}
                       disabled={pagination.page <= 1 || loading}
                       variant="ghost"
-                      className="h-6 px-1.5 text-zinc-500"
+                      className="h-6 px-1.5 text-muted-foreground"
                     >
                       <ChevronLeft className="h-3.5 w-3.5" />
                     </Button>
@@ -884,7 +885,7 @@ function EmailQueueManager({ stats, onStatsChange }: { stats: QueueStats; onStat
                       onClick={() => loadQueue(pagination.page + 1)}
                       disabled={pagination.page >= totalPages || loading}
                       variant="ghost"
-                      className="h-6 px-1.5 text-zinc-500"
+                      className="h-6 px-1.5 text-muted-foreground"
                     >
                       <ChevronRight className="h-3.5 w-3.5" />
                     </Button>
