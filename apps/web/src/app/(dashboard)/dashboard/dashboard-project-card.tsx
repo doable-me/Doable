@@ -59,7 +59,7 @@ export function ProjectCard({
       className={`group relative flex flex-col overflow-hidden rounded-xl border transition-all duration-200 cursor-pointer ${
         selected
           ? "border-brand-500 bg-brand-500/5 ring-1 ring-brand-500/30"
-          : "border-zinc-800 bg-zinc-900/80 hover:border-zinc-700 hover:bg-zinc-900"
+          : "border-border bg-card hover:border-border hover:bg-accent/30"
       }`}
       draggable
       onDragStart={(e) => {
@@ -107,7 +107,7 @@ export function ProjectCard({
           className={`absolute top-2.5 left-2.5 flex h-6 w-6 items-center justify-center rounded transition-all ${
             selected
               ? "bg-brand-600 text-white opacity-100"
-              : "bg-black/30 backdrop-blur-sm text-white/70 opacity-0 group-hover:opacity-100"
+              : "bg-foreground/30 backdrop-blur-sm text-background opacity-0 group-hover:opacity-100"
           }`}
           onClick={(e) => {
             e.stopPropagation();
@@ -122,7 +122,7 @@ export function ProjectCard({
           className={`absolute top-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full transition-all ${
             project.starred
               ? "bg-yellow-500/20 text-yellow-400 opacity-100"
-              : "bg-black/30 backdrop-blur-sm text-white/70 hover:bg-black/50 hover:text-white opacity-0 group-hover:opacity-100"
+              : "bg-foreground/30 backdrop-blur-sm text-background hover:bg-foreground/50 opacity-0 group-hover:opacity-100"
           }`}
           onClick={(e) => { e.stopPropagation(); onStar(); }}
         >
@@ -132,23 +132,23 @@ export function ProjectCard({
         {/* Quick actions */}
         <div className="absolute bottom-2.5 right-2.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-all" onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex h-7 w-7 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white/80 hover:bg-black/60 hover:text-white transition-all">
+            <DropdownMenuTrigger className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground/40 backdrop-blur-sm text-background hover:bg-foreground/60 transition-all">
               <MoreHorizontal className="h-3.5 w-3.5" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-800 w-48">
-              <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={onClick}>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={onClick}>
                 <ExternalLink className="mr-2 h-3.5 w-3.5" /> Open in editor
               </DropdownMenuItem>
-              <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={onRename}>
+              <DropdownMenuItem onClick={onRename}>
                 <Pencil className="mr-2 h-3.5 w-3.5" /> Rename
               </DropdownMenuItem>
-              <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={onDuplicate}>
+              <DropdownMenuItem onClick={onDuplicate}>
                 <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate
               </DropdownMenuItem>
-              <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={() => onStar()}>
+              <DropdownMenuItem onClick={() => onStar()}>
                 <Star className="mr-2 h-3.5 w-3.5" /> {project.starred ? "Unstar" : "Star"}
               </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-zinc-800" />
+              <DropdownMenuSeparator />
               <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={onDelete}>
                 <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
               </DropdownMenuItem>
@@ -163,9 +163,9 @@ export function ProjectCard({
           {project.name?.charAt(0)?.toUpperCase() ?? "U"}
         </div>
         <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-          <h3 className="text-sm font-medium text-zinc-200 leading-tight line-clamp-1">{project.name}</h3>
+          <h3 className="text-sm font-medium text-foreground leading-tight line-clamp-1">{project.name}</h3>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-zinc-500">{formatRelativeTime(project.updated_at)}</span>
+            <span className="text-[11px] text-muted-foreground">{formatRelativeTime(project.updated_at)}</span>
             <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${statusStyle.className}`}>
               {statusStyle.label}
             </span>

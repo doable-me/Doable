@@ -41,7 +41,7 @@ function CategoryPill({
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
         active
           ? "bg-brand-500/20 text-brand-300 ring-1 ring-brand-500/40"
-          : "bg-zinc-800/60 text-zinc-400 hover:bg-zinc-700/60 hover:text-zinc-200"
+          : "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground"
       }`}
     >
       <span>{cat.icon}</span>
@@ -64,15 +64,15 @@ function ListingCard({
   return (
     <div
       onClick={onClick}
-      className="group bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-900/80 transition-all cursor-pointer"
+      className="group bg-card border border-border rounded-xl p-5 hover:border-border hover:bg-accent/30 transition-all cursor-pointer"
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex-1 min-w-0">
-          <h3 className="text-base font-semibold text-zinc-100 truncate group-hover:text-brand-300 transition-colors">
+          <h3 className="text-base font-semibold text-foreground truncate group-hover:text-brand-300 transition-colors">
             {listing.title}
           </h3>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             by {listing.publisher_name}
           </p>
         </div>
@@ -84,17 +84,17 @@ function ListingCard({
       </div>
 
       {/* Description */}
-      <p className="text-sm text-zinc-400 line-clamp-2 mb-4 min-h-[2.5rem]">
+      <p className="text-sm text-muted-foreground line-clamp-2 mb-4 min-h-[2.5rem]">
         {listing.short_desc || "No description"}
       </p>
 
       {/* Stats bar */}
-      <div className="flex items-center gap-4 text-xs text-zinc-500 mb-4">
+      <div className="flex items-center gap-4 text-xs text-muted-foreground mb-4">
         {listing.avg_rating > 0 && (
           <span className="flex items-center gap-1">
             <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
             {listing.avg_rating.toFixed(1)}
-            <span className="text-zinc-600">({listing.review_count})</span>
+            <span className="text-muted-foreground">({listing.review_count})</span>
           </span>
         )}
         <span className="flex items-center gap-1">
@@ -109,7 +109,7 @@ function ListingCard({
       </div>
 
       {/* Composition summary */}
-      <div className="flex items-center gap-3 text-xs text-zinc-500 mb-4">
+      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4">
         {listing.skill_count > 0 && (
           <span className="flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-violet-400" />
@@ -140,7 +140,7 @@ function ListingCard({
       {listing.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-4">
           {listing.tags.slice(0, 4).map((tag) => (
-            <span key={tag} className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
+            <span key={tag} className="px-2 py-0.5 bg-secondary text-secondary-foreground rounded text-xs">
               {tag}
             </span>
           ))}
@@ -149,7 +149,7 @@ function ListingCard({
 
       {/* Actions */}
       <div className="flex items-center justify-between">
-        <span className="text-xs text-zinc-600">v{listing.version}</span>
+        <span className="text-xs text-muted-foreground">v{listing.version}</span>
         <Button
           size="sm"
           variant={installed ? "outline" : "default"}
@@ -204,9 +204,9 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
           <div className="p-2 bg-brand-500/15 rounded-lg">
             <Store className="w-6 h-6 text-brand-400" />
           </div>
-          <h1 className="text-2xl font-bold text-zinc-100">Marketplace</h1>
+          <h1 className="text-2xl font-bold text-foreground">Marketplace</h1>
         </div>
-        <p className="text-zinc-400 text-sm">
+        <p className="text-muted-foreground text-sm">
           Discover and install AI environments, skills, and rules created by the community.
         </p>
       </div>
@@ -214,23 +214,23 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
       {/* Search + Sort */}
       <div className="px-8 pb-4 flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search environments, skills, tags..."
-            className="pl-9 bg-zinc-900/60 border-zinc-700"
+            className="pl-9"
           />
         </div>
-        <div className="flex items-center gap-1 bg-zinc-900/60 border border-zinc-700 rounded-lg p-0.5">
+        <div className="flex items-center gap-1 bg-card border border-border rounded-lg p-0.5">
           {(["popular", "newest", "rating"] as const).map((s) => (
             <button
               key={s}
               onClick={() => setSortBy(s)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors capitalize ${
                 sortBy === s
-                  ? "bg-zinc-700 text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-300"
+                  ? "bg-secondary text-secondary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {s === "popular" ? (
@@ -245,7 +245,7 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
 
       {/* Category pills */}
       <div className="px-8 pb-4 flex items-center gap-2 overflow-x-auto scrollbar-none">
-        <Filter className="w-4 h-4 text-zinc-500 shrink-0" />
+        <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
         {allCategories.map((cat) => (
           <CategoryPill
             key={cat.slug}
@@ -261,27 +261,27 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 animate-pulse">
-                <div className="h-5 bg-zinc-800 rounded w-3/4 mb-3" />
-                <div className="h-3 bg-zinc-800 rounded w-1/3 mb-4" />
-                <div className="h-4 bg-zinc-800 rounded w-full mb-2" />
-                <div className="h-4 bg-zinc-800 rounded w-2/3 mb-4" />
-                <div className="h-8 bg-zinc-800 rounded w-20 ml-auto" />
+              <div key={i} className="bg-card border border-border rounded-xl p-5 animate-pulse">
+                <div className="h-5 bg-muted rounded w-3/4 mb-3" />
+                <div className="h-3 bg-muted rounded w-1/3 mb-4" />
+                <div className="h-4 bg-muted rounded w-full mb-2" />
+                <div className="h-4 bg-muted rounded w-2/3 mb-4" />
+                <div className="h-8 bg-muted rounded w-20 ml-auto" />
               </div>
             ))}
           </div>
         ) : listings.length === 0 ? (
           <div className="text-center py-16">
-            <Store className="w-12 h-12 text-zinc-700 mx-auto mb-3" />
-            <p className="text-zinc-400 font-medium">No listings found</p>
-            <p className="text-zinc-500 text-sm mt-1">
+            <Store className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+            <p className="text-foreground font-medium">No listings found</p>
+            <p className="text-muted-foreground text-sm mt-1">
               {search ? "Try a different search term" : "Be the first to publish an environment!"}
             </p>
           </div>
         ) : (
           <>
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-zinc-500">{total} environment{total !== 1 ? "s" : ""}</p>
+              <p className="text-sm text-muted-foreground">{total} environment{total !== 1 ? "s" : ""}</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {listings.map((listing) => (

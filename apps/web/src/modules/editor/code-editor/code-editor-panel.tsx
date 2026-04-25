@@ -24,10 +24,10 @@ const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full items-center justify-center bg-[#1e1e1e]">
+      <div className="flex h-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-2">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-brand-400" />
-          <span className="text-xs text-zinc-500">Loading editor...</span>
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-brand-400" />
+          <span className="text-xs text-muted-foreground">Loading editor...</span>
         </div>
       </div>
     ),
@@ -190,29 +190,29 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
   }
 
   return (
-    <div className="flex h-full flex-col border-l border-border bg-[#1e1e1e]">
+    <div className="flex h-full flex-col border-l border-border bg-background">
       {/* ─── Tab bar ───────────────────────────────────────── */}
-      <div className="flex h-9 items-center overflow-x-auto border-b border-zinc-800/60 bg-[#252526] scrollbar-thin scrollbar-track-transparent scrollbar-thumb-zinc-700">
+      <div className="flex h-9 items-center overflow-x-auto border-b border-border bg-background scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border">
         {openTabs.map((tab) => {
           const isActive = tab.path === activeFilePath;
           return (
             <div
               key={tab.path}
-              className={`group flex h-full items-center gap-1.5 border-r border-zinc-800/40 px-3 text-xs cursor-pointer select-none transition-colors ${
+              className={`group flex h-full items-center gap-1.5 border-r border-border px-3 text-xs cursor-pointer select-none transition-colors ${
                 isActive
-                  ? "bg-[#1e1e1e] text-zinc-200"
-                  : "text-zinc-500 hover:bg-[#2a2a2b] hover:text-zinc-300"
+                  ? "bg-background text-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
               onClick={() => handleTabClick(tab.path)}
             >
-              <FileCode2 className="h-3 w-3 flex-none text-zinc-500" />
+              <FileCode2 className="h-3 w-3 flex-none text-muted-foreground" />
               <span className="truncate max-w-[120px]">{tab.name}</span>
               {tab.isDirty && (
                 <Circle className="h-2 w-2 flex-none fill-current text-brand-400" />
               )}
               <button
                 onClick={(e) => handleCloseTab(e, tab.path)}
-                className="flex h-4 w-4 flex-none items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-zinc-700 transition-all"
+                className="flex h-4 w-4 flex-none items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-all"
                 title="Close (Ctrl+W)"
               >
                 <X className="h-3 w-3" />
@@ -227,8 +227,8 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
             onClick={() => setShowMinimap((v) => !v)}
             className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
               showMinimap
-                ? "text-brand-400 bg-zinc-800"
-                : "text-zinc-600 hover:text-zinc-400"
+                ? "text-brand-400 bg-secondary"
+                : "text-muted-foreground hover:text-foreground"
             }`}
             title={showMinimap ? "Hide minimap" : "Show minimap"}
           >
@@ -239,8 +239,8 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
 
       {/* ─── Breadcrumb / path ─────────────────────────────── */}
       {activeTab && (
-        <div className="flex h-6 items-center border-b border-zinc-800/40 bg-[#1e1e1e] px-3">
-          <span className="text-[11px] text-zinc-600 font-mono truncate">
+        <div className="flex h-6 items-center border-b border-border bg-background px-3">
+          <span className="text-[11px] text-muted-foreground font-mono truncate">
             {activeTab.path}
           </span>
         </div>
@@ -285,17 +285,17 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
 // ─── Empty state ────────────────────────────────────────────
 function EmptyEditor() {
   return (
-    <div className="flex h-full flex-col items-center justify-center text-center bg-[#1e1e1e]">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60 mb-3">
-        <Code2 className="h-6 w-6 text-zinc-600" />
+    <div className="flex h-full flex-col items-center justify-center text-center bg-background">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-3">
+        <Code2 className="h-6 w-6 text-muted-foreground" />
       </div>
-      <p className="text-sm text-zinc-500 mb-1">
+      <p className="text-sm text-muted-foreground mb-1">
         Select a file to view its code
       </p>
-      <p className="text-xs text-zinc-700">
+      <p className="text-xs text-muted-foreground">
         Use the file explorer or chat with AI to generate files
       </p>
-      <div className="mt-4 flex flex-col gap-1 text-[11px] text-zinc-700">
+      <div className="mt-4 flex flex-col gap-1 text-[11px] text-muted-foreground">
         <span>Ctrl+S to save</span>
         <span>Ctrl+F to search</span>
         <span>Ctrl+H to replace</span>

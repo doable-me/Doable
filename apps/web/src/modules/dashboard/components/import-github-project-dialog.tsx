@@ -48,9 +48,9 @@ function ImportingProgress({ status }: { status: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 gap-3">
       <Loader2 className="h-8 w-8 animate-spin text-brand-400" />
-      <p className="text-sm text-zinc-300">{status}</p>
-      <p className="text-xs text-zinc-500 tabular-nums">{formatTime(elapsed)} elapsed</p>
-      <p className="text-xs text-zinc-600">This may take a moment for large repositories</p>
+      <p className="text-sm text-foreground">{status}</p>
+      <p className="text-xs text-muted-foreground tabular-nums">{formatTime(elapsed)} elapsed</p>
+      <p className="text-xs text-muted-foreground">This may take a moment for large repositories</p>
     </div>
   );
 }
@@ -198,13 +198,13 @@ export function ImportGitHubProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg bg-zinc-900 border-zinc-800">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-zinc-200">
+          <DialogTitle className="flex items-center gap-2">
             <GitBranch className="h-5 w-5" />
             Import from GitHub
           </DialogTitle>
-          <DialogDescription className="text-zinc-400">
+          <DialogDescription>
             Import an existing repository to continue working on it in Doable.
           </DialogDescription>
         </DialogHeader>
@@ -212,30 +212,30 @@ export function ImportGitHubProjectDialog({
         {/* Step: Checking connection */}
         {step === "checking" && (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-500" />
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         )}
 
         {/* Step: Connect GitHub */}
         {step === "connect" && (
           <div className="py-6">
-            <div className="rounded-lg border border-zinc-800 border-dashed p-8 text-center">
+            <div className="rounded-lg border border-border border-dashed p-8 text-center">
               <svg
-                className="mx-auto h-10 w-10 text-zinc-500"
+                className="mx-auto h-10 w-10 text-muted-foreground"
                 viewBox="0 0 16 16"
                 fill="currentColor"
                 aria-hidden="true"
               >
                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
               </svg>
-              <h4 className="mt-4 text-sm font-medium text-zinc-200">
+              <h4 className="mt-4 text-sm font-medium text-foreground">
                 Connect your GitHub account
               </h4>
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Authorize Doable to access your repositories.
               </p>
               <Button
-                className="mt-4 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 border border-zinc-700"
+                className="mt-4 bg-secondary text-secondary-foreground hover:bg-accent border border-border"
                 onClick={handleConnect}
               >
                 <svg
@@ -256,35 +256,35 @@ export function ImportGitHubProjectDialog({
           <div className="space-y-4">
             {/* Connected user */}
             {githubUsername && (
-              <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-800/50 px-3 py-2">
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2">
                 <span className="h-2 w-2 rounded-full bg-green-500" />
-                <span className="text-sm text-zinc-400">
+                <span className="text-sm text-muted-foreground">
                   Connected as{" "}
-                  <span className="font-medium text-zinc-200">{githubUsername}</span>
+                  <span className="font-medium text-foreground">{githubUsername}</span>
                 </span>
               </div>
             )}
 
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search repositories..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+                className="pl-9"
               />
             </div>
 
             {/* Repo list */}
-            <div className="max-h-72 overflow-y-auto rounded-lg border border-zinc-800">
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
               {reposLoading ? (
                 <div className="flex items-center justify-center gap-2 p-6">
-                  <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
-                  <span className="text-sm text-zinc-500">Loading repositories...</span>
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Loading repositories...</span>
                 </div>
               ) : filteredRepos.length === 0 ? (
-                <p className="p-6 text-center text-sm text-zinc-500">
+                <p className="p-6 text-center text-sm text-muted-foreground">
                   {searchQuery
                     ? "No repositories match your search"
                     : "No repositories found"}
@@ -293,30 +293,30 @@ export function ImportGitHubProjectDialog({
                 filteredRepos.map((repo) => (
                   <button
                     key={repo.id}
-                    className={`flex w-full items-center justify-between border-b border-zinc-800/50 px-4 py-3 text-left last:border-0 transition-colors ${
+                    className={`flex w-full items-center justify-between border-b border-border px-4 py-3 text-left last:border-0 transition-colors ${
                       selectedRepo === repo.fullName
                         ? "bg-brand-500/10 border-brand-500/20"
-                        : "hover:bg-zinc-800/50"
+                        : "hover:bg-accent"
                     }`}
                     onClick={() => setSelectedRepo(repo.fullName)}
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-zinc-200">
+                      <p className="truncate text-sm font-medium text-foreground">
                         {repo.fullName}
                       </p>
                       {repo.description && (
-                        <p className="mt-0.5 truncate text-xs text-zinc-500">
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
                           {repo.description}
                         </p>
                       )}
                     </div>
                     <div className="ml-3 flex items-center gap-1.5 shrink-0">
                       {repo.private ? (
-                        <Lock className="h-3 w-3 text-zinc-500" />
+                        <Lock className="h-3 w-3 text-muted-foreground" />
                       ) : (
-                        <Globe className="h-3 w-3 text-zinc-500" />
+                        <Globe className="h-3 w-3 text-muted-foreground" />
                       )}
-                      <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400">
+                      <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                         {repo.private ? "Private" : "Public"}
                       </span>
                     </div>
@@ -344,7 +344,6 @@ export function ImportGitHubProjectDialog({
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
             >
               Cancel
             </Button>

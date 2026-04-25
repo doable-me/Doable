@@ -64,26 +64,26 @@ export default function TemplatesPage() {
         {/* Header */}
         <div className="mb-8 flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white">Templates</h1>
-            <p className="mt-2 text-sm text-zinc-500">
+            <h1 className="text-3xl font-bold text-foreground">Templates</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
               Start from a template to build your next project
             </p>
           </div>
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search templates..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 w-64 rounded-lg border border-zinc-800 bg-zinc-900 pl-9 pr-3 text-sm text-zinc-300 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-700"
+              className="h-9 w-64 rounded-lg border border-input bg-background pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
         </div>
 
         {/* Category Filter Tabs */}
-        <div className="mb-6 flex items-center gap-1 overflow-x-auto border-b border-zinc-800 pb-px">
+        <div className="mb-6 flex items-center gap-1 overflow-x-auto border-b border-border pb-px">
           {["all", ...categories].map((cat) => {
             const config = CATEGORY_CONFIG[cat] ?? {
               label: cat.charAt(0).toUpperCase() + cat.slice(1),
@@ -98,8 +98,8 @@ export default function TemplatesPage() {
                 className={cn(
                   "flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px",
                   activeCategory === cat
-                    ? "border-white text-white"
-                    : "border-transparent text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
+                    ? "border-foreground text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -112,12 +112,12 @@ export default function TemplatesPage() {
         {/* Templates Grid */}
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-24">
-            <Loader2 className="h-8 w-8 animate-spin text-zinc-500 mb-4" />
-            <p className="text-sm text-zinc-500">Loading templates...</p>
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
+            <p className="text-sm text-muted-foreground">Loading templates...</p>
           </div>
         ) : filteredTemplates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted-foreground">
               {searchQuery
                 ? `No templates matching "${searchQuery}"`
                 : "No templates in this category yet."}

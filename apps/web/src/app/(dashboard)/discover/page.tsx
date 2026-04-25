@@ -73,7 +73,7 @@ function ProjectCard({
   isRemixing: boolean;
 }) {
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 transition-all duration-200 hover:border-zinc-600 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/20">
+    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-border hover:-translate-y-0.5 hover:shadow-lg">
       {/* Thumbnail / gradient placeholder */}
       <div className={cn("relative h-44 w-full overflow-hidden bg-gradient-to-br", getCategoryGradient(project.category))}>
         {project.thumbnail_url ? (
@@ -84,7 +84,7 @@ function ProjectCard({
           />
         ) : (
           <div className="flex h-full items-center justify-center">
-            <span className="text-3xl font-bold text-white/10">
+            <span className="text-3xl font-bold text-foreground/10">
               {project.title.charAt(0).toUpperCase()}
             </span>
           </div>
@@ -100,11 +100,11 @@ function ProjectCard({
 
         {/* Stats overlay */}
         <div className="absolute bottom-2.5 right-2.5 flex items-center gap-2">
-          <span className="flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-sm px-2 py-0.5 text-[10px] text-zinc-300">
+          <span className="flex items-center gap-1 rounded-full bg-foreground/45 backdrop-blur-sm px-2 py-0.5 text-[10px] text-background">
             <Eye className="h-3 w-3" />
             {project.view_count}
           </span>
-          <span className="flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-sm px-2 py-0.5 text-[10px] text-zinc-300">
+          <span className="flex items-center gap-1 rounded-full bg-foreground/45 backdrop-blur-sm px-2 py-0.5 text-[10px] text-background">
             <GitFork className="h-3 w-3" />
             {project.remix_count}
           </span>
@@ -114,13 +114,13 @@ function ProjectCard({
       {/* Info section */}
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="text-sm font-medium text-zinc-200 line-clamp-1 group-hover:text-white transition-colors">
+          <h3 className="text-sm font-medium text-foreground line-clamp-1 transition-colors">
             {project.title}
           </h3>
         </div>
 
         {project.description && (
-          <p className="text-xs leading-relaxed text-zinc-500 line-clamp-2">
+          <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
             {project.description}
           </p>
         )}
@@ -146,8 +146,8 @@ function ProjectCard({
             className={cn(
               "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
               isRemixing
-                ? "bg-zinc-800 text-zinc-500 cursor-wait"
-                : "bg-white text-zinc-900 hover:bg-zinc-200"
+                ? "bg-secondary text-muted-foreground cursor-wait"
+                : "bg-primary text-primary-foreground hover:bg-primary/90"
             )}
           >
             {isRemixing ? (
@@ -247,14 +247,14 @@ export default function DiscoverPage() {
         {/* Header */}
         <div className="mb-8 flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white">Discover</h1>
-            <p className="mt-2 text-sm text-zinc-500">
+            <h1 className="text-3xl font-bold text-foreground">Discover</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
               Explore community projects and remix them into your own
             </p>
           </div>
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search projects..."
@@ -263,7 +263,7 @@ export default function DiscoverPage() {
                 setSearchQuery(e.target.value);
                 setPage(1);
               }}
-              className="h-9 w-64 rounded-lg border border-zinc-800 bg-zinc-900 pl-9 pr-3 text-sm text-zinc-300 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-700"
+              className="h-9 w-64 rounded-lg border border-input bg-background pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
         </div>
@@ -273,7 +273,7 @@ export default function DiscoverPage() {
           <div className="mb-10">
             <div className="mb-4 flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-amber-400" />
-              <h2 className="text-lg font-semibold text-white">Featured</h2>
+              <h2 className="text-lg font-semibold text-foreground">Featured</h2>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {featuredProjects.slice(0, 3).map((project) => (
@@ -289,7 +289,7 @@ export default function DiscoverPage() {
         )}
 
         {/* Category Filter Tabs */}
-        <div className="mb-6 flex items-center gap-1 overflow-x-auto border-b border-zinc-800 pb-px">
+        <div className="mb-6 flex items-center gap-1 overflow-x-auto border-b border-border pb-px">
           <button
             onClick={() => {
               setActiveCategory(null);
@@ -298,8 +298,8 @@ export default function DiscoverPage() {
             className={cn(
               "flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px",
               activeCategory === null
-                ? "border-white text-white"
-                : "border-transparent text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
             )}
           >
             <Sparkles className="h-3.5 w-3.5" />
@@ -315,8 +315,8 @@ export default function DiscoverPage() {
               className={cn(
                 "flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px capitalize",
                 activeCategory === cat
-                  ? "border-white text-white"
-                  : "border-transparent text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
               )}
             >
               {cat}
@@ -327,12 +327,12 @@ export default function DiscoverPage() {
         {/* Projects Grid */}
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-24">
-            <Loader2 className="h-8 w-8 animate-spin text-zinc-500 mb-4" />
-            <p className="text-sm text-zinc-500">Loading projects...</p>
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
+            <p className="text-sm text-muted-foreground">Loading projects...</p>
           </div>
         ) : projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted-foreground">
               {searchQuery
                 ? `No projects matching "${searchQuery}"`
                 : "No community projects yet. Be the first to publish!"}
@@ -357,17 +357,17 @@ export default function DiscoverPage() {
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:border-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-border disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Previous
                 </button>
-                <span className="text-xs text-zinc-500">
+                <span className="text-xs text-muted-foreground">
                   Page {page} of {totalPages}
                 </span>
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:border-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-border disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Next
                 </button>

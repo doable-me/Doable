@@ -53,12 +53,12 @@ function CreditBar({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-sm">
-        <span className="font-medium text-zinc-200">{label}</span>
-        <span className={cn("tabular-nums text-zinc-400", isLow && "text-orange-400")}>
+        <span className="font-medium text-foreground">{label}</span>
+        <span className={cn("tabular-nums text-muted-foreground", isLow && "text-orange-400")}>
           {unlimited ? "Unlimited" : `${remaining} / ${total} remaining`}
         </span>
       </div>
-      <div className="h-2.5 w-full overflow-hidden rounded-full bg-zinc-800">
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
         <div
           className={cn("h-full rounded-full transition-all duration-500", color)}
           style={{ width: `${percentage}%` }}
@@ -71,11 +71,11 @@ function CreditBar({
 export function CreditDisplay({ credits, loading, className }: CreditDisplayProps) {
   if (loading) {
     return (
-      <div className={cn("space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6", className)}>
-        <div className="h-5 w-32 animate-pulse rounded bg-zinc-800" />
+      <div className={cn("space-y-4 rounded-xl border border-border bg-card p-6", className)}>
+        <div className="h-5 w-32 animate-pulse rounded bg-muted" />
         <div className="space-y-3">
-          <div className="h-2.5 w-full animate-pulse rounded bg-zinc-800" />
-          <div className="h-2.5 w-full animate-pulse rounded bg-zinc-800" />
+          <div className="h-2.5 w-full animate-pulse rounded bg-muted" />
+          <div className="h-2.5 w-full animate-pulse rounded bg-muted" />
         </div>
       </div>
     );
@@ -83,7 +83,7 @@ export function CreditDisplay({ credits, loading, className }: CreditDisplayProp
 
   if (!credits) {
     return (
-      <div className={cn("rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-center text-zinc-500", className)}>
+      <div className={cn("rounded-xl border border-border bg-card p-6 text-center text-muted-foreground", className)}>
         No credit information available. Subscribe to a plan to get started.
       </div>
     );
@@ -99,9 +99,9 @@ export function CreditDisplay({ credits, loading, className }: CreditDisplayProp
   const monthlyTotal = PLAN_MONTHLY_LIMITS[planKey] ?? PLAN_MONTHLY_LIMITS.free ?? 0;
 
   return (
-    <div className={cn("space-y-5 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6", className)}>
+    <div className={cn("space-y-5 rounded-xl border border-border bg-card p-6", className)}>
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">Credits</h3>
+        <h3 className="text-lg font-semibold text-foreground">Credits</h3>
         <div className="rounded-full bg-brand-500/10 border border-brand-500/20 px-3 py-1 text-sm font-medium text-brand-400">
           {showUnlimited ? "Unlimited" : `${totalAvailable} available`}
         </div>
@@ -139,7 +139,7 @@ export function CreditDisplay({ credits, loading, className }: CreditDisplayProp
       </div>
 
       {credits.last_daily_reset && (
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-muted-foreground">
           Daily credits reset:{" "}
           {new Date(credits.last_daily_reset).toLocaleString()}
         </p>
@@ -171,21 +171,21 @@ export function CreditToolbarIndicator({
         "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
         isLow
           ? "bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
-          : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+          : "bg-secondary text-muted-foreground hover:bg-accent"
       )}
       title={unlimited ? "Unlimited credits" : `${total} credits remaining`}
     >
       <span className="tabular-nums">{unlimited ? "∞" : total}</span>
-      <span className="text-zinc-500">credits</span>
+      <span className="text-muted-foreground">credits</span>
     </button>
   );
 }
 
 function CreditStat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg bg-zinc-800/50 border border-zinc-700/30 p-3 text-center">
-      <p className="text-2xl font-bold tabular-nums text-white">{formatCredits(value)}</p>
-      <p className="text-xs text-zinc-500">{label}</p>
+    <div className="rounded-lg bg-secondary border border-border p-3 text-center">
+      <p className="text-2xl font-bold tabular-nums text-foreground">{formatCredits(value)}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
     </div>
   );
 }

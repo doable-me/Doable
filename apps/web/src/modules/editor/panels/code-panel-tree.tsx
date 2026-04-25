@@ -32,10 +32,10 @@ function getFileIconColor(name: string): string {
     ts: "text-blue-400", tsx: "text-blue-400",
     js: "text-yellow-400", jsx: "text-yellow-400",
     json: "text-yellow-300", css: "text-brand-400", scss: "text-pink-400",
-    html: "text-orange-400", md: "text-zinc-400",
+    html: "text-orange-400", md: "text-muted-foreground",
     svg: "text-green-400", png: "text-green-400", jpg: "text-green-400",
   };
-  return colorMap[ext] ?? "text-zinc-500";
+  return colorMap[ext] ?? "text-muted-foreground";
 }
 
 // ─── TreeNode Component ──────────────────────────────────────
@@ -92,23 +92,23 @@ export function TreeNode({
         }}
         className={`group flex w-full items-center gap-1 py-[3px] pr-2 text-[13px] transition-colors ${
           isSelected
-            ? "bg-zinc-700/60 text-zinc-100"
-            : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+            ? "bg-accent text-foreground"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground"
         }`}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
         {isDir ? (
           isExpanded ? (
-            <ChevronDown className="h-3 w-3 flex-none text-zinc-500" />
+            <ChevronDown className="h-3 w-3 flex-none text-muted-foreground" />
           ) : (
-            <ChevronRight className="h-3 w-3 flex-none text-zinc-500" />
+            <ChevronRight className="h-3 w-3 flex-none text-muted-foreground" />
           )
         ) : (
           <span className="w-3 flex-none" />
         )}
         <Icon
           className={`h-3.5 w-3.5 flex-none ${
-            isDir ? "text-zinc-500" : getFileIconColor(node.name)
+            isDir ? "text-muted-foreground" : getFileIconColor(node.name)
           }`}
         />
         <span className="truncate">{node.name}</span>

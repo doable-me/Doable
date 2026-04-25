@@ -230,15 +230,15 @@ export function VisualEditConflictWarning({ selectedSelector }: VisualEditConfli
       className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 animate-in fade-in slide-in-from-top-2 duration-200"
     >
       <div
-        className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/95 px-3 py-2 text-xs shadow-xl backdrop-blur"
+        className="flex items-center gap-2 rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-xl backdrop-blur"
         style={{ borderColor: conflict.color }}
       >
         <span
           className="h-2 w-2 shrink-0 rounded-full"
           style={{ backgroundColor: conflict.color }}
         />
-        <span className="text-zinc-300">
-          <span className="font-semibold text-white">{conflict.displayName}</span>{" "}
+        <span className="text-foreground">
+          <span className="font-semibold text-foreground">{conflict.displayName}</span>{" "}
           is editing this element
         </span>
       </div>

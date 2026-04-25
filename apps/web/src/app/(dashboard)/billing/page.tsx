@@ -82,7 +82,7 @@ export default function BillingPage() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
-          <p className="text-sm text-zinc-400">Loading billing...</p>
+          <p className="text-sm text-muted-foreground">Loading billing...</p>
         </div>
       </div>
     );
@@ -92,9 +92,9 @@ export default function BillingPage() {
   if (!WORKSPACE_ID) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center max-w-md">
-          <p className="text-zinc-300 font-medium">Unable to load billing</p>
-          <p className="mt-2 text-sm text-zinc-500">
+        <div className="rounded-xl border border-border bg-card p-8 text-center max-w-md">
+          <p className="text-foreground font-medium">Unable to load billing</p>
+          <p className="mt-2 text-sm text-muted-foreground">
             Please sign in to manage your subscription and credits.
           </p>
           <button
@@ -114,13 +114,13 @@ export default function BillingPage() {
       <div>
         <button
           onClick={() => router.push("/dashboard")}
-          className="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition-colors"
+          className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to dashboard
         </button>
-        <h1 className="text-2xl font-bold text-white">Billing</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="text-2xl font-bold text-foreground">Billing</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Manage your subscription, credits, and usage.
         </p>
       </div>
@@ -175,7 +175,7 @@ export default function BillingPage() {
         <button
           onClick={() => openPortal()}
           disabled={actionLoading || !WORKSPACE_ID}
-          className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
           Manage Subscription
@@ -192,19 +192,19 @@ export default function BillingPage() {
 
       {/* Plans */}
       <section data-plans-section>
-        <h2 className="mb-4 text-xl font-semibold text-white">Plans</h2>
+        <h2 className="mb-4 text-xl font-semibold text-foreground">Plans</h2>
         {plansLoading ? (
           <div className="grid gap-6 md:grid-cols-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-80 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+              <div key={i} className="h-80 animate-pulse rounded-xl border border-border bg-card" />
             ))}
           </div>
         ) : plans.length === 0 ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
-            <p className="text-zinc-400">Unable to load plans. Please try again later.</p>
+          <div className="rounded-xl border border-border bg-card p-8 text-center">
+            <p className="text-muted-foreground">Unable to load plans. Please try again later.</p>
             <button
               onClick={() => window.location.reload()}
-              className="mt-3 rounded-lg bg-zinc-800 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+              className="mt-3 rounded-lg bg-secondary px-4 py-2 text-sm text-foreground hover:bg-accent transition-colors"
             >
               Retry
             </button>
@@ -221,38 +221,38 @@ export default function BillingPage() {
 
       {/* Usage History */}
       <section>
-        <h2 className="mb-4 text-xl font-semibold text-white">Usage History</h2>
+        <h2 className="mb-4 text-xl font-semibold text-foreground">Usage History</h2>
         {usageLoading ? (
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-12 animate-pulse rounded-lg border border-zinc-800 bg-zinc-900/50" />
+              <div key={i} className="h-12 animate-pulse rounded-lg border border-border bg-card" />
             ))}
           </div>
         ) : usage.length === 0 ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
-            <p className="text-zinc-500">No usage recorded yet.</p>
-            <p className="mt-1 text-xs text-zinc-600">
+          <div className="rounded-xl border border-border bg-card p-8 text-center">
+            <p className="text-muted-foreground">No usage recorded yet.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               Credit usage will appear here once you start using AI features.
             </p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-zinc-800">
+          <div className="overflow-hidden rounded-xl border border-border">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/80">
-                  <th className="px-4 py-3 text-left font-medium text-zinc-400">Action</th>
-                  <th className="px-4 py-3 text-left font-medium text-zinc-400">Credits</th>
-                  <th className="px-4 py-3 text-left font-medium text-zinc-400">Date</th>
+                <tr className="border-b border-border bg-card">
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Action</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Credits</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
                 </tr>
               </thead>
               <tbody>
                 {usage.map((entry) => (
-                  <tr key={entry.id} className="border-b border-zinc-800/50 last:border-0 hover:bg-white/[0.02] transition-colors">
-                    <td className="px-4 py-3 capitalize text-zinc-200">
+                  <tr key={entry.id} className="border-b border-border last:border-0 hover:bg-accent transition-colors">
+                    <td className="px-4 py-3 capitalize text-foreground">
                       {entry.action.replace(/_/g, " ")}
                     </td>
-                    <td className="px-4 py-3 tabular-nums text-zinc-300">{entry.credits_used}</td>
-                    <td className="px-4 py-3 text-zinc-500">
+                    <td className="px-4 py-3 tabular-nums text-foreground">{entry.credits_used}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
                       {new Date(entry.created_at).toLocaleDateString()}
                     </td>
                   </tr>

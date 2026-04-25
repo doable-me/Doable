@@ -51,16 +51,16 @@ export function SectionHeader({
     green: "bg-emerald-500",
     amber: "bg-amber-500",
     red: "bg-red-500",
-    zinc: "bg-zinc-600",
+    zinc: "bg-muted-foreground",
   };
 
   return (
-    <button onClick={onToggle} className="flex w-full items-center gap-2.5 px-4 py-3 text-left hover:bg-zinc-800/40 transition-colors">
-      {expanded ? <ChevronDown className="h-3.5 w-3.5 text-zinc-500 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-500 flex-shrink-0" />}
-      <Icon className="h-4 w-4 text-zinc-400 flex-shrink-0" />
-      <span className="text-sm font-medium text-zinc-200 flex-1">{title}</span>
+    <button onClick={onToggle} className="flex w-full items-center gap-2.5 px-4 py-3 text-left hover:bg-muted transition-colors">
+      {expanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+      <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+      <span className="text-sm font-medium text-foreground flex-1">{title}</span>
       {statusColor && <span className={`h-2 w-2 rounded-full ${colors[statusColor]} flex-shrink-0`} />}
-      {badge && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400 flex-shrink-0">{badge}</span>}
+      {badge && <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground flex-shrink-0">{badge}</span>}
     </button>
   );
 }
@@ -94,38 +94,38 @@ export function DatabaseSection({
   }, [sqlQuery]);
 
   if (!connected) {
-    return <div className="px-4 py-3 text-xs text-zinc-500">Connect to Supabase to view your database tables.</div>;
+    return <div className="px-4 py-3 text-xs text-muted-foreground">Connect to Supabase to view your database tables.</div>;
   }
 
   return (
     <div className="pb-2">
       <div className="px-4 py-2">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Tables</span>
-          <span className="text-[11px] text-zinc-600">{tables.length} tables</span>
+          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Tables</span>
+          <span className="text-[11px] text-muted-foreground">{tables.length} tables</span>
         </div>
         <div className="space-y-0.5">
           {tables.map((table) => (
             <div key={table.name}>
-              <button onClick={() => setExpandedTable((v) => (v === table.name ? null : table.name))} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-zinc-800/60 transition-colors">
-                {expandedTable === table.name ? <ChevronDown className="h-3 w-3 text-zinc-600 flex-shrink-0" /> : <ChevronRight className="h-3 w-3 text-zinc-600 flex-shrink-0" />}
-                <Database className="h-3 w-3 text-zinc-500 flex-shrink-0" />
-                <span className="text-[13px] text-zinc-300 flex-1 font-mono">{table.name}</span>
-                <span className="text-[11px] text-zinc-600">{table.rowCount.toLocaleString()} rows</span>
+              <button onClick={() => setExpandedTable((v) => (v === table.name ? null : table.name))} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-muted transition-colors">
+                {expandedTable === table.name ? <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
+                <Database className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                <span className="text-[13px] text-foreground flex-1 font-mono">{table.name}</span>
+                <span className="text-[11px] text-muted-foreground">{table.rowCount.toLocaleString()} rows</span>
               </button>
               {expandedTable === table.name && (
-                <div className="ml-7 mt-1 mb-2 rounded-md border border-zinc-800 bg-zinc-900/50 overflow-hidden">
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 px-2.5 py-1.5 border-b border-zinc-800 text-[10px] font-medium text-zinc-600 uppercase tracking-wider">
+                <div className="ml-7 mt-1 mb-2 rounded-md border border-border bg-card overflow-hidden">
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 px-2.5 py-1.5 border-b border-border text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                     <span>Column</span><span>Type</span><span>Null</span>
                   </div>
                   {table.columns.map((col) => (
-                    <div key={col.name} className="grid grid-cols-[1fr_auto_auto] gap-x-3 px-2.5 py-1 border-b border-zinc-800/50 last:border-0 text-[12px]">
-                      <span className="flex items-center gap-1.5 font-mono text-zinc-300">
+                    <div key={col.name} className="grid grid-cols-[1fr_auto_auto] gap-x-3 px-2.5 py-1 border-b border-border last:border-0 text-[12px]">
+                      <span className="flex items-center gap-1.5 font-mono text-foreground">
                         {col.isPrimary && <span className="text-amber-500 text-[10px]" title="Primary Key">PK</span>}
                         {col.name}
                       </span>
                       <span className="font-mono text-brand-400/80">{col.type}</span>
-                      <span className="text-zinc-600">{col.nullable ? "YES" : "NO"}</span>
+                      <span className="text-muted-foreground">{col.nullable ? "YES" : "NO"}</span>
                     </div>
                   ))}
                 </div>
@@ -134,17 +134,17 @@ export function DatabaseSection({
           ))}
         </div>
       </div>
-      <div className="px-4 pt-2 pb-1 border-t border-zinc-800/50">
-        <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">SQL Query</span>
+      <div className="px-4 pt-2 pb-1 border-t border-border">
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">SQL Query</span>
         <div className="mt-2 relative">
-          <textarea value={sqlQuery} onChange={(e) => setSqlQuery(e.target.value)} placeholder="SELECT * FROM users LIMIT 10;" rows={3} className="w-full rounded-md border border-zinc-700 bg-zinc-900/60 px-3 py-2 text-[12px] font-mono text-zinc-300 placeholder-zinc-700 resize-none outline-none focus:border-brand-500/50" />
+          <textarea value={sqlQuery} onChange={(e) => setSqlQuery(e.target.value)} placeholder="SELECT * FROM users LIMIT 10;" rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-[12px] font-mono text-foreground placeholder:text-muted-foreground resize-none outline-none focus:border-brand-500/50" />
           <button onClick={handleRunQuery} disabled={running || !sqlQuery.trim()} className="absolute right-2 bottom-2 flex items-center gap-1 rounded bg-brand-600/80 px-2 py-1 text-[11px] font-medium text-white hover:bg-brand-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
             {running ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
             Run
           </button>
         </div>
         {sqlResult && (
-          <div className="mt-2 max-h-40 overflow-auto rounded-md border border-zinc-800 bg-zinc-900/60">
+          <div className="mt-2 max-h-40 overflow-auto rounded-md border border-border bg-card">
             <pre className="p-2.5 text-[11px] font-mono text-emerald-400/80 leading-relaxed">{sqlResult}</pre>
           </div>
         )}
@@ -165,7 +165,7 @@ export function AuthSection({
   onToggleProvider: (id: string) => void;
 }) {
   if (!connected) {
-    return <div className="px-4 py-3 text-xs text-zinc-500">Connect to Supabase to manage authentication.</div>;
+    return <div className="px-4 py-3 text-xs text-muted-foreground">Connect to Supabase to manage authentication.</div>;
   }
 
   const userCount = 1247;
@@ -178,33 +178,33 @@ export function AuthSection({
   return (
     <div className="pb-2">
       <div className="px-4 py-2 flex items-center justify-between">
-        <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Total Users</span>
-        <span className="text-sm font-semibold text-zinc-200">{userCount.toLocaleString()}</span>
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Total Users</span>
+        <span className="text-sm font-semibold text-foreground">{userCount.toLocaleString()}</span>
       </div>
       <div className="px-4 space-y-1">
         {providers.map((provider) => (
-          <div key={provider.id} className="flex items-center justify-between rounded-md px-2.5 py-2 hover:bg-zinc-800/40 transition-colors">
+          <div key={provider.id} className="flex items-center justify-between rounded-md px-2.5 py-2 hover:bg-muted transition-colors">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-800 text-zinc-400">
+              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-secondary text-muted-foreground">
                 {provider.id === "email" && <span className="text-xs">@</span>}
                 {provider.id === "google" && <span className="text-xs font-bold">G</span>}
                 {provider.id === "github" && <span className="text-xs font-bold">GH</span>}
               </div>
-              <span className="text-[13px] text-zinc-300">{provider.name}</span>
+              <span className="text-[13px] text-foreground">{provider.name}</span>
             </div>
             <button onClick={() => onToggleProvider(provider.id)} className="transition-colors" title={provider.enabled ? "Disable" : "Enable"}>
-              {provider.enabled ? <ToggleRight className="h-5 w-5 text-emerald-500" /> : <ToggleLeft className="h-5 w-5 text-zinc-600" />}
+              {provider.enabled ? <ToggleRight className="h-5 w-5 text-emerald-500" /> : <ToggleLeft className="h-5 w-5 text-muted-foreground" />}
             </button>
           </div>
         ))}
       </div>
       <div className="px-4 pt-3">
-        <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Recent Signups</span>
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Recent Signups</span>
         <div className="mt-1.5 space-y-0.5">
           {recentSignups.map((signup, i) => (
             <div key={i} className="flex items-center justify-between rounded-md px-2.5 py-1.5 text-[12px]">
-              <span className="text-zinc-400 truncate">{signup.email}</span>
-              <span className="text-zinc-600 flex-shrink-0 ml-2">{signup.time}</span>
+              <span className="text-muted-foreground truncate">{signup.email}</span>
+              <span className="text-muted-foreground flex-shrink-0 ml-2">{signup.time}</span>
             </div>
           ))}
         </div>
@@ -223,7 +223,7 @@ export function StorageSection({
   buckets: StorageBucket[];
 }) {
   if (!connected) {
-    return <div className="px-4 py-3 text-xs text-zinc-500">Connect to Supabase to manage file storage.</div>;
+    return <div className="px-4 py-3 text-xs text-muted-foreground">Connect to Supabase to manage file storage.</div>;
   }
 
   const totalUsed = buckets.reduce((sum, b) => sum + b.sizeBytes, 0);
@@ -234,31 +234,31 @@ export function StorageSection({
     <div className="pb-2">
       <div className="px-4 py-2">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Storage Usage</span>
-          <span className="text-[11px] text-zinc-500">{formatBytes(totalUsed)} / {formatBytes(totalLimit)}</span>
+          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Storage Usage</span>
+          <span className="text-[11px] text-muted-foreground">{formatBytes(totalUsed)} / {formatBytes(totalLimit)}</span>
         </div>
-        <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
           <div className={`h-full rounded-full transition-all ${usagePct > 90 ? "bg-red-500" : usagePct > 70 ? "bg-amber-500" : "bg-brand-500"}`} style={{ width: `${Math.min(100, usagePct)}%` }} />
         </div>
       </div>
       <div className="px-4 space-y-0.5">
         {buckets.map((bucket) => (
-          <div key={bucket.name} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 hover:bg-zinc-800/40 transition-colors">
-            <Folder className="h-3.5 w-3.5 text-zinc-500 flex-shrink-0" />
+          <div key={bucket.name} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 hover:bg-muted transition-colors">
+            <Folder className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="text-[13px] font-mono text-zinc-300 truncate">{bucket.name}</span>
-                {bucket.isPublic && <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[9px] text-zinc-500">PUBLIC</span>}
+                <span className="text-[13px] font-mono text-foreground truncate">{bucket.name}</span>
+                {bucket.isPublic && <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">PUBLIC</span>}
               </div>
-              <span className="text-[11px] text-zinc-600">{bucket.fileCount} files - {formatBytes(bucket.sizeBytes)}</span>
+              <span className="text-[11px] text-muted-foreground">{bucket.fileCount} files - {formatBytes(bucket.sizeBytes)}</span>
             </div>
           </div>
         ))}
       </div>
       <div className="px-4 pt-3">
-        <div className="rounded-lg border border-dashed border-zinc-700 bg-zinc-900/30 px-4 py-4 text-center cursor-pointer hover:border-zinc-600 hover:bg-zinc-900/50 transition-colors">
-          <Upload className="mx-auto h-5 w-5 text-zinc-600" />
-          <p className="mt-1.5 text-[11px] text-zinc-500">Drop files here or click to upload</p>
+        <div className="rounded-lg border border-dashed border-border bg-card px-4 py-4 text-center cursor-pointer hover:border-border hover:bg-secondary transition-colors">
+          <Upload className="mx-auto h-5 w-5 text-muted-foreground" />
+          <p className="mt-1.5 text-[11px] text-muted-foreground">Drop files here or click to upload</p>
         </div>
       </div>
     </div>
@@ -275,25 +275,25 @@ export function EdgeFunctionsSection({
   functions: EdgeFunction[];
 }) {
   if (!connected) {
-    return <div className="px-4 py-3 text-xs text-zinc-500">Connect to Supabase to manage edge functions.</div>;
+    return <div className="px-4 py-3 text-xs text-muted-foreground">Connect to Supabase to manage edge functions.</div>;
   }
 
   return (
     <div className="pb-2">
       <div className="px-4 space-y-0.5">
         {functions.map((fn) => (
-          <div key={fn.name} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 hover:bg-zinc-800/40 transition-colors">
-            <Zap className={`h-3.5 w-3.5 flex-shrink-0 ${fn.status === "active" ? "text-emerald-500" : "text-zinc-600"}`} />
+          <div key={fn.name} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 hover:bg-muted transition-colors">
+            <Zap className={`h-3.5 w-3.5 flex-shrink-0 ${fn.status === "active" ? "text-emerald-500" : "text-muted-foreground"}`} />
             <div className="flex-1 min-w-0">
-              <span className="text-[13px] font-mono text-zinc-300 truncate block">{fn.name}</span>
-              <span className="text-[11px] text-zinc-600">{fn.status === "active" ? "Active" : "Inactive"} - Last invoked {formatTimestamp(fn.lastInvoked)}</span>
+              <span className="text-[13px] font-mono text-foreground truncate block">{fn.name}</span>
+              <span className="text-[11px] text-muted-foreground">{fn.status === "active" ? "Active" : "Inactive"} - Last invoked {formatTimestamp(fn.lastInvoked)}</span>
             </div>
-            <span className={`h-2 w-2 rounded-full flex-shrink-0 ${fn.status === "active" ? "bg-emerald-500" : "bg-zinc-700"}`} />
+            <span className={`h-2 w-2 rounded-full flex-shrink-0 ${fn.status === "active" ? "bg-emerald-500" : "bg-muted-foreground"}`} />
           </div>
         ))}
       </div>
       <div className="px-4 pt-3">
-        <button className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-zinc-700 py-2 text-[12px] text-zinc-500 hover:border-zinc-600 hover:text-zinc-400 transition-colors">
+        <button className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground hover:border-border hover:text-foreground transition-colors">
           <Plus className="h-3.5 w-3.5" />
           Create New Function
         </button>

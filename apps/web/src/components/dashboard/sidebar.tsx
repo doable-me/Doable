@@ -201,40 +201,40 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
 
   return (
     <>
-      <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-zinc-800 bg-background">
+      <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-border bg-background">
         {/* Logo */}
         <a href="/dashboard" className="flex items-center gap-2.5 px-5 pt-5 pb-4 hover:opacity-80 transition-opacity cursor-pointer">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-brand-700 shadow-sm shadow-brand-900/30"><span className="text-sm font-bold text-white">D</span></div>
-          <span className="text-lg font-semibold tracking-tight text-white">Doable</span>
+          <span className="text-lg font-semibold tracking-tight text-foreground">Doable</span>
         </a>
 
         {/* Workspace Selector */}
-        <div className="mx-3 mb-4 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+        <div className="mx-3 mb-4 rounded-lg border border-border bg-card p-3">
           <DropdownMenu>
             <DropdownMenuTrigger className="flex w-full items-center justify-between mb-2 outline-none">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-200 truncate text-left">{workspaceName}</p>
-                <p className="text-[11px] text-zinc-500 capitalize text-left">{workspacePlan} plan{memberCount > 1 ? ` \u00b7 ${memberCount} members` : ""}</p>
+                <p className="text-sm font-medium text-foreground truncate text-left">{workspaceName}</p>
+                <p className="text-[11px] text-muted-foreground capitalize text-left">{workspacePlan} plan{memberCount > 1 ? ` \u00b7 ${memberCount} members` : ""}</p>
               </div>
-              <ChevronsUpDown className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+              <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56 bg-zinc-900 border-zinc-800">
-              <DropdownMenuLabel className="text-zinc-500">Workspaces</DropdownMenuLabel>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel className="text-muted-foreground">Workspaces</DropdownMenuLabel>
               {workspaces.map((ws) => (
-                <DropdownMenuItem key={ws.id} className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={() => handleSwitchWorkspace(ws.id)}>
+                <DropdownMenuItem key={ws.id} className="focus:bg-accent focus:text-accent-foreground" onClick={() => handleSwitchWorkspace(ws.id)}>
                   <div className="flex h-5 w-5 items-center justify-center rounded bg-brand-600/20 text-xs font-semibold text-brand-400">{ws.name.charAt(0).toUpperCase()}</div>
                   <span className="ml-2 flex-1 truncate">{ws.name}</span>
                   {ws.id === activeWorkspaceId && <Check className="ml-auto h-3.5 w-3.5 text-brand-400" />}
                 </DropdownMenuItem>
               ))}
-              <DropdownMenuSeparator className="bg-zinc-800" />
-              <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={() => setCreateWsOpen(true)}><Plus className="mr-2 h-4 w-4" />Create workspace</DropdownMenuItem>
-              <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={() => router.push("/workspace-settings")}><Settings className="mr-2 h-4 w-4" />Workspace settings</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => setCreateWsOpen(true)}><Plus className="mr-2 h-4 w-4" />Create workspace</DropdownMenuItem>
+              <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => router.push("/workspace-settings")}><Settings className="mr-2 h-4 w-4" />Workspace settings</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <div className="space-y-1">
-            <div className="flex items-center justify-between text-[11px]"><span className="text-zinc-500">Credits today</span><span className="text-zinc-400">{isUnlimited ? "Unlimited" : `${creditsRemaining}/${dailyTotal}`}</span></div>
-            <div className="h-1.5 w-full rounded-full bg-zinc-800"><div className="h-1.5 rounded-full bg-gradient-to-r from-brand-600 to-brand-500 transition-all" style={{ width: `${Math.min(creditsPercent, 100)}%` }} /></div>
+            <div className="flex items-center justify-between text-[11px]"><span className="text-muted-foreground">Credits today</span><span className="text-muted-foreground">{isUnlimited ? "Unlimited" : `${creditsRemaining}/${dailyTotal}`}</span></div>
+            <div className="h-1.5 w-full rounded-full bg-muted"><div className="h-1.5 rounded-full bg-gradient-to-r from-brand-600 to-brand-500 transition-all" style={{ width: `${Math.min(creditsPercent, 100)}%` }} /></div>
           </div>
         </div>
 
@@ -268,10 +268,10 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
           {/* Starred mini list */}
           {starredProjects.length > 0 && (
             <div className="mt-3">
-              <button onClick={() => handleFilterClick("starred")} className="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-400 transition-colors"><Star className="h-3 w-3" />Starred</button>
+              <button onClick={() => handleFilterClick("starred")} className="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"><Star className="h-3 w-3" />Starred</button>
               <div className="space-y-0.5 mt-0.5">
                 {starredProjects.slice(0, 3).map((project) => (
-                  <button key={project.id} draggable onDragStart={(e) => { e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id); e.dataTransfer.effectAllowed = "move"; }} onClick={() => { router.push(`/editor/${project.id}`); onNavigate?.(); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-colors">
+                  <button key={project.id} draggable onDragStart={(e) => { e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id); e.dataTransfer.effectAllowed = "move"; }} onClick={() => { router.push(`/editor/${project.id}`); onNavigate?.(); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
                     <Star className="h-3 w-3 fill-yellow-400 text-yellow-400 shrink-0" /><span className="truncate text-xs">{project.name}</span>
                   </button>
                 ))}
@@ -281,15 +281,15 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
 
           {/* Recent */}
           <div className="mt-3">
-            <button onClick={() => setRecentOpen(!recentOpen)} className="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-400 transition-colors">
+            <button onClick={() => setRecentOpen(!recentOpen)} className="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors">
               {recentOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}Recent
             </button>
             {recentOpen && (
               <div className="space-y-0.5 mt-0.5">
-                {recentProjects.length === 0 && <p className="px-3 py-2 text-[11px] text-zinc-600">No recent projects</p>}
+                {recentProjects.length === 0 && <p className="px-3 py-2 text-[11px] text-muted-foreground">No recent projects</p>}
                 {recentProjects.map((project) => (
-                  <button key={project.id} draggable onDragStart={(e) => { e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id); e.dataTransfer.effectAllowed = "move"; }} onClick={() => { router.push(`/editor/${project.id}`); onNavigate?.(); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-colors">
-                    <div className="flex h-5 w-5 items-center justify-center rounded bg-zinc-800 text-[10px] shrink-0">{project.name.charAt(0)}</div><span className="truncate text-xs">{project.name}</span>
+                  <button key={project.id} draggable onDragStart={(e) => { e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id); e.dataTransfer.effectAllowed = "move"; }} onClick={() => { router.push(`/editor/${project.id}`); onNavigate?.(); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+                    <div className="flex h-5 w-5 items-center justify-center rounded bg-muted text-[10px] shrink-0">{project.name.charAt(0)}</div><span className="truncate text-xs">{project.name}</span>
                   </button>
                 ))}
               </div>
@@ -299,14 +299,14 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
           {/* Folders */}
           <div className="mt-3">
             <div className="flex items-center justify-between">
-              <button onClick={() => setFoldersOpen(!foldersOpen)} className="flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-400 transition-colors">
+              <button onClick={() => setFoldersOpen(!foldersOpen)} className="flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors">
                 {foldersOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}Folders
               </button>
-              <button onClick={() => setCreateFolderOpen(true)} className="mr-2 rounded p-1 text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors" title="Create folder"><FolderPlus className="h-3.5 w-3.5" /></button>
+              <button onClick={() => setCreateFolderOpen(true)} className="mr-2 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title="Create folder"><FolderPlus className="h-3.5 w-3.5" /></button>
             </div>
             {foldersOpen && (
               <div className="space-y-0.5 mt-0.5">
-                {folderTree.length === 0 && <p className="px-3 py-2 text-[11px] text-zinc-600">No folders yet</p>}
+                {folderTree.length === 0 && <p className="px-3 py-2 text-[11px] text-muted-foreground">No folders yet</p>}
                 {folderTree.map((folder) => (
                   <FolderNode key={folder.id} folder={folder} activeFolder={activeFolder} onSelect={handleFolderSelect} onRename={(f) => { setRenamingFolder(f); setRenameValue(f.name); }} onDelete={(f) => setDeletingFolder(f)} />
                 ))}
@@ -316,26 +316,26 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
         </nav>
 
         {/* Bottom Section */}
-        <div className="mt-auto border-t border-zinc-800 p-3 space-y-3">
+        <div className="mt-auto border-t border-border p-3 space-y-3">
           {workspacePlan === "free" && (
             <div className="rounded-lg bg-gradient-to-br from-brand-600/20 to-brand-600/10 border border-brand-500/20 p-3">
               <div className="flex items-center gap-2 mb-1.5"><Zap className="h-4 w-4 text-brand-500" /><span className="text-sm font-medium text-brand-700 dark:text-brand-300">Upgrade to Pro</span></div>
-              <p className="text-[11px] text-zinc-400 mb-2.5">Get unlimited projects and priority AI generation.</p>
+              <p className="text-[11px] text-muted-foreground mb-2.5">Get unlimited projects and priority AI generation.</p>
               <button onClick={() => router.push("/billing")} className="w-full rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 transition-colors">Upgrade now</button>
             </div>
           )}
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-lg px-2 py-2 hover:bg-white/5 transition-colors outline-none">
+            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-lg px-2 py-2 hover:bg-accent transition-colors outline-none">
               <Avatar className="h-8 w-8"><AvatarFallback className="bg-gradient-to-br from-brand-500 to-brand-600 text-xs font-medium text-white">{initials}</AvatarFallback></Avatar>
-              <div className="flex-1 text-left min-w-0"><p className="text-sm font-medium text-zinc-200 truncate">{displayName}</p><p className="text-[11px] text-zinc-500 truncate">{user?.email ?? "user@doable.dev"}</p></div>
+              <div className="flex-1 text-left min-w-0"><p className="text-sm font-medium text-foreground truncate">{displayName}</p><p className="text-[11px] text-muted-foreground truncate">{user?.email ?? "user@doable.dev"}</p></div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={() => router.push("/settings")}><Settings className="mr-2 h-4 w-4" />Settings</DropdownMenuItem>
-              <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={() => router.push("/ai-settings")}><Bot className="mr-2 h-4 w-4" />AI Settings</DropdownMenuItem>
-              <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={() => router.push("/usage")}><BarChart3 className="mr-2 h-4 w-4" />Usage</DropdownMenuItem>
-              <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={() => router.push("/billing")}><CreditCard className="mr-2 h-4 w-4" />Billing</DropdownMenuItem>
+              <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => router.push("/settings")}><Settings className="mr-2 h-4 w-4" />Settings</DropdownMenuItem>
+              <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => router.push("/ai-settings")}><Bot className="mr-2 h-4 w-4" />AI Settings</DropdownMenuItem>
+              <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => router.push("/usage")}><BarChart3 className="mr-2 h-4 w-4" />Usage</DropdownMenuItem>
+              <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => router.push("/billing")}><CreditCard className="mr-2 h-4 w-4" />Billing</DropdownMenuItem>
               {user?.isPlatformAdmin && <DropdownMenuItem className="text-amber-400 focus:bg-amber-500/10 focus:text-amber-300" onClick={() => router.push("/admin")}><Shield className="mr-2 h-4 w-4" />System Admin</DropdownMenuItem>}
-              <DropdownMenuSeparator className="bg-zinc-800" />
+              <DropdownMenuSeparator />
               <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={() => { logout(); router.push("/"); }}><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -344,14 +344,14 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
 
       {/* Create Workspace */}
       <Dialog open={createWsOpen} onOpenChange={(open) => { setCreateWsOpen(open); if (!open) { setNewWsName(""); setWsError(null); } }}>
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800">
-          <DialogHeader><DialogTitle className="text-zinc-200">Create workspace</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Create workspace</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><label className="mb-1 block text-sm font-medium text-zinc-300">Name</label><Input placeholder="My Team" value={newWsName} onChange={(e) => setNewWsName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateWorkspace()} autoFocus className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 focus-visible:ring-zinc-600" /></div>
+            <div><label className="mb-1 block text-sm font-medium text-foreground">Name</label><Input placeholder="My Team" value={newWsName} onChange={(e) => setNewWsName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateWorkspace()} autoFocus /></div>
             {wsError && <p className="text-xs text-red-400">{wsError}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateWsOpen(false)} className="border-zinc-700 text-zinc-300 hover:bg-zinc-800">Cancel</Button>
+            <Button variant="outline" onClick={() => setCreateWsOpen(false)}>Cancel</Button>
             <Button onClick={handleCreateWorkspace} disabled={wsSubmitting || !newWsName.trim()} className="bg-brand-600 text-white hover:bg-brand-500">{wsSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create</Button>
           </DialogFooter>
         </DialogContent>
@@ -359,11 +359,11 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
 
       {/* Create Folder */}
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800">
-          <DialogHeader><DialogTitle className="text-zinc-200">Create folder</DialogTitle></DialogHeader>
-          <div><Input placeholder="Folder name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()} autoFocus className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 focus-visible:ring-zinc-600" /></div>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Create folder</DialogTitle></DialogHeader>
+          <div><Input placeholder="Folder name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()} autoFocus /></div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateFolderOpen(false)} className="border-zinc-700 text-zinc-300 hover:bg-zinc-800">Cancel</Button>
+            <Button variant="outline" onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
             <Button onClick={handleCreateFolder} disabled={folderSubmitting || !newFolderName.trim()} className="bg-brand-600 text-white hover:bg-brand-500">{folderSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create</Button>
           </DialogFooter>
         </DialogContent>
@@ -371,11 +371,11 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
 
       {/* Rename Folder */}
       <Dialog open={!!renamingFolder} onOpenChange={(open) => !open && setRenamingFolder(null)}>
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800">
-          <DialogHeader><DialogTitle className="text-zinc-200">Rename folder</DialogTitle></DialogHeader>
-          <div><Input placeholder="Folder name" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleRenameFolder()} autoFocus className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 focus-visible:ring-zinc-600" /></div>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Rename folder</DialogTitle></DialogHeader>
+          <div><Input placeholder="Folder name" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleRenameFolder()} autoFocus /></div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRenamingFolder(null)} className="border-zinc-700 text-zinc-300 hover:bg-zinc-800">Cancel</Button>
+            <Button variant="outline" onClick={() => setRenamingFolder(null)}>Cancel</Button>
             <Button onClick={handleRenameFolder} disabled={folderSubmitting || !renameValue.trim()} className="bg-brand-600 text-white hover:bg-brand-500">{folderSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Rename</Button>
           </DialogFooter>
         </DialogContent>
@@ -383,11 +383,11 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
 
       {/* Delete Folder */}
       <Dialog open={!!deletingFolder} onOpenChange={(open) => !open && setDeletingFolder(null)}>
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800">
-          <DialogHeader><DialogTitle className="text-zinc-200">Delete folder</DialogTitle></DialogHeader>
-          <p className="text-sm text-zinc-400">Are you sure you want to delete &ldquo;{deletingFolder?.name}&rdquo;? Projects inside this folder will be moved to the root level.</p>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Delete folder</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Are you sure you want to delete &ldquo;{deletingFolder?.name}&rdquo;? Projects inside this folder will be moved to the root level.</p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletingFolder(null)} className="border-zinc-700 text-zinc-300 hover:bg-zinc-800">Cancel</Button>
+            <Button variant="outline" onClick={() => setDeletingFolder(null)}>Cancel</Button>
             <Button onClick={handleDeleteFolder} disabled={folderSubmitting} className="bg-red-600 text-white hover:bg-red-500">{folderSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Delete</Button>
           </DialogFooter>
         </DialogContent>

@@ -57,10 +57,10 @@ export function ChatInput({
 
   return (
     <div className="w-full max-w-2xl mx-auto">
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/90 shadow-2xl shadow-black/20 transition-all focus-within:border-zinc-700">
+      <div className="rounded-2xl border border-border bg-card shadow-lg transition-all focus-within:border-ring">
         <div className="p-4 pb-2">
           <textarea
-            className="w-full resize-none border-0 bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none min-h-[48px]"
+            className="w-full resize-none border-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none min-h-[48px]"
             placeholder={value ? "" : placeholder}
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -77,11 +77,11 @@ export function ChatInput({
                 <img
                   src={att.data}
                   alt={att.name}
-                  className="h-16 w-16 rounded-lg object-cover border border-zinc-700"
+                  className="h-16 w-16 rounded-lg object-cover border border-border"
                 />
                 <button
                   onClick={() => onRemoveImage(i)}
-                  className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 border border-zinc-600 text-zinc-400 hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100"
+                  className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-secondary border border-border text-muted-foreground hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100"
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>
@@ -89,36 +89,36 @@ export function ChatInput({
             ))}
           </div>
         )}
-        <div className="flex items-center justify-between border-t border-zinc-800/60 px-3 py-2">
+        <div className="flex items-center justify-between border-t border-border px-3 py-2">
           <div className="flex items-center gap-1">
             <button
               onClick={onOpenFilePicker}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/5 hover:text-zinc-300 transition-colors"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
               title="Attach image"
             >
               <Plus className="h-4 w-4" />
             </button>
             {/* Strategize / Work mode toggle */}
-            <div className="flex items-center rounded-full border border-zinc-700/50 overflow-hidden ml-1">
+            <div className="flex items-center rounded-full border border-border overflow-hidden ml-1">
               <button
                 onClick={startMode === "plan" ? undefined : onToggleMode}
                 className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
                   startMode === "plan"
                     ? "bg-blue-600/20 text-blue-400"
-                    : "text-zinc-500 hover:text-zinc-300"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
                 title="Strategize first, then do the work"
               >
                 <Target className="h-3 w-3" />
                 Strategize
               </button>
-              <div className="w-px h-4 bg-zinc-700/50" />
+              <div className="w-px h-4 bg-border" />
               <button
                 onClick={startMode === "agent" ? undefined : onToggleMode}
                 className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
                   startMode === "agent"
                     ? "bg-brand-600/20 text-brand-400"
-                    : "text-zinc-500 hover:text-zinc-300"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
                 title="Start working immediately"
               >
@@ -134,7 +134,7 @@ export function ChatInput({
                 className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
                   isListening
                     ? "text-red-400 bg-red-500/10 animate-pulse"
-                    : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }`}
                 title={isListening ? "Stop recording" : "Voice input"}
               >
@@ -147,7 +147,7 @@ export function ChatInput({
               className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
                 hasContent && !isCreating
                   ? "bg-brand-600 text-white hover:bg-brand-500"
-                  : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                  : "bg-secondary text-muted-foreground cursor-not-allowed"
               }`}
             >
               {isCreating ? (
@@ -161,7 +161,7 @@ export function ChatInput({
       </div>
       {/* Granular status while creating + connecting */}
       {isCreating && creatingStatus && (
-        <div className="mt-3 flex items-center justify-center gap-2 text-xs text-zinc-400 animate-in fade-in duration-200">
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground animate-in fade-in duration-200">
           <Loader2 className="h-3 w-3 animate-spin text-brand-400" />
           <span>{creatingStatus}</span>
         </div>

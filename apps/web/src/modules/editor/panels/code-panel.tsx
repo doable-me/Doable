@@ -63,16 +63,16 @@ export function CodePanel({
   // ─── Render ──────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full flex-col bg-zinc-900 text-zinc-100">
+    <div className="flex h-full flex-col bg-background text-foreground">
       {/* ── Header ───────────────────────────────────────────── */}
-      <div className="flex h-12 flex-none items-center justify-between border-b border-zinc-700/50 bg-zinc-900 px-4">
+      <div className="flex h-12 flex-none items-center justify-between border-b border-border bg-background px-4">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <Code2 className="h-4 w-4 text-zinc-400" />
-            <h2 className="text-sm font-semibold text-zinc-100">Code</h2>
+            <Code2 className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold text-foreground">Code</h2>
           </div>
           {readOnly && (
-            <span className="flex items-center gap-1 rounded-full bg-zinc-800 px-2.5 py-0.5 text-[11px] font-medium text-zinc-400 border border-zinc-700/50">
+            <span className="flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground border border-border">
               <Lock className="h-3 w-3" />
               Read only
             </span>
@@ -85,7 +85,7 @@ export function CodePanel({
             <>
               <button
                 onClick={handleCopy}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 title="Copy file content"
               >
                 {copied ? (
@@ -96,7 +96,7 @@ export function CodePanel({
               </button>
               <button
                 onClick={handleDownload}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 title="Download file"
               >
                 <Download className="h-3.5 w-3.5" />
@@ -106,6 +106,7 @@ export function CodePanel({
 
           {/* Upgrade button */}
           {readOnly && (
+            // TODO: replace with brand token
             <button className="ml-2 flex h-7 items-center gap-1.5 rounded-md bg-[#5337CD] px-3 text-[11px] font-medium text-white hover:bg-[#5337CD]/90 transition-colors">
               <Zap className="h-3 w-3" />
               Upgrade
@@ -115,7 +116,7 @@ export function CodePanel({
           {/* Close button */}
           <button
             onClick={onClose}
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             title="Close code panel"
           >
             <X className="h-4 w-4" />
@@ -126,22 +127,22 @@ export function CodePanel({
       {/* ── Body (file tree + editor) ──────────────────────── */}
       <div className="flex flex-1 min-h-0">
         {/* ── File Tree Sidebar ──────────────────────────────── */}
-        <div className="flex w-[250px] flex-none flex-col border-r border-zinc-700/50 bg-zinc-900/80">
+        <div className="flex w-[250px] flex-none flex-col border-r border-border bg-card">
           {/* Search input */}
           <div className="flex-none p-2">
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search code"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-7 w-full rounded-md border border-zinc-700/50 bg-zinc-800/80 pl-7 pr-2 text-xs text-zinc-300 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition-colors"
+                className="h-7 w-full rounded-md border border-input bg-background pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-1 focus:ring-border transition-colors"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -153,8 +154,8 @@ export function CodePanel({
           <div className="flex-1 overflow-y-auto overflow-x-hidden">
             {fileTreeLoading ? (
               <div className="flex flex-col items-center justify-center py-12">
-                <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
-                <p className="mt-2 text-xs text-zinc-500">Loading files...</p>
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <p className="mt-2 text-xs text-muted-foreground">Loading files...</p>
               </div>
             ) : fileTreeError ? (
               <div className="flex flex-col items-center justify-center px-4 py-12">
@@ -164,15 +165,15 @@ export function CodePanel({
                 </p>
                 <button
                   onClick={loadFileTree}
-                  className="mt-2 text-xs text-zinc-400 underline hover:text-zinc-200"
+                  className="mt-2 text-xs text-muted-foreground underline hover:text-foreground"
                 >
                   Retry
                 </button>
               </div>
             ) : fileTree.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12">
-                <File className="h-5 w-5 text-zinc-600" />
-                <p className="mt-2 text-xs text-zinc-500">No files yet</p>
+                <File className="h-5 w-5 text-muted-foreground" />
+                <p className="mt-2 text-xs text-muted-foreground">No files yet</p>
               </div>
             ) : (
               <div className="pb-4">
@@ -197,7 +198,7 @@ export function CodePanel({
         <div className="flex flex-1 flex-col min-w-0">
           {/* Tab bar */}
           {openTabs.length > 0 && (
-            <div className="flex h-9 flex-none items-center overflow-x-auto border-b border-zinc-700/50 bg-zinc-900/60">
+            <div className="flex h-9 flex-none items-center overflow-x-auto border-b border-border bg-background">
               {openTabs.map((tab) => {
                 const isActive = tab.path === activeTabPath;
                 const TabIcon = getFileIcon(tab.name);
@@ -205,10 +206,11 @@ export function CodePanel({
                   <div
                     key={tab.path}
                     onClick={() => setActiveTabPath(tab.path)}
-                    className={`group flex h-full cursor-pointer items-center gap-1.5 border-r border-zinc-700/30 px-3 text-xs transition-colors ${
+                    className={`group flex h-full cursor-pointer items-center gap-1.5 border-r border-border px-3 text-xs transition-colors ${
                       isActive
-                        ? "bg-zinc-800/80 text-zinc-100 border-t-2 border-t-[#5337CD]"
-                        : "text-zinc-500 hover:bg-zinc-800/40 hover:text-zinc-300 border-t-2 border-t-transparent"
+                        // TODO: replace with brand token
+                        ? "bg-secondary text-foreground border-t-2 border-t-[#5337CD]"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground border-t-2 border-t-transparent"
                     }`}
                   >
                     <TabIcon
@@ -218,6 +220,7 @@ export function CodePanel({
                     />
                     <span className="truncate max-w-[120px]">{tab.name}</span>
                     {tab.isDirty && (
+                      // TODO: replace with brand token
                       <Circle className="h-2 w-2 flex-none fill-current text-[#5337CD]" />
                     )}
                     <button
@@ -225,7 +228,7 @@ export function CodePanel({
                         e.stopPropagation();
                         closeTab(tab.path);
                       }}
-                      className="flex h-4 w-4 flex-none items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-zinc-700 transition-all"
+                      className="flex h-4 w-4 flex-none items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-all"
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -237,8 +240,8 @@ export function CodePanel({
 
           {/* Breadcrumb */}
           {activeTab && (
-            <div className="flex h-7 flex-none items-center border-b border-zinc-700/30 bg-zinc-900/40 px-3">
-              <span className="text-[11px] text-zinc-500 font-mono truncate">
+            <div className="flex h-7 flex-none items-center border-b border-border bg-background px-3">
+              <span className="text-[11px] text-muted-foreground font-mono truncate">
                 {activeTab.path}
               </span>
             </div>
@@ -248,8 +251,8 @@ export function CodePanel({
           <div className="flex-1 min-h-0">
             {fileLoading ? (
               <div className="flex h-full flex-col items-center justify-center">
-                <Loader2 className="h-6 w-6 animate-spin text-zinc-500" />
-                <p className="mt-2 text-sm text-zinc-500">Loading file...</p>
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <p className="mt-2 text-sm text-muted-foreground">Loading file...</p>
               </div>
             ) : fileError ? (
               <div className="flex h-full flex-col items-center justify-center px-8">
@@ -295,18 +298,18 @@ export function CodePanel({
                   },
                 }}
                 loading={
-                  <div className="flex h-full items-center justify-center bg-zinc-900">
-                    <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+                  <div className="flex h-full items-center justify-center bg-background">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                   </div>
                 }
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center">
-                <Code2 className="h-10 w-10 text-zinc-700" />
-                <p className="mt-3 text-sm text-zinc-500">
+                <Code2 className="h-10 w-10 text-muted-foreground" />
+                <p className="mt-3 text-sm text-muted-foreground">
                   Select a file to view its code
                 </p>
-                <p className="mt-1 text-xs text-zinc-600">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Browse the file tree on the left to open files
                 </p>
               </div>

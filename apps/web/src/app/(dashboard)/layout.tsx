@@ -21,7 +21,7 @@ export default function DashboardLayout({
           {/* Mobile hamburger */}
           <button
             onClick={() => setMobileSidebarOpen(true)}
-            className="fixed top-3 left-3 z-50 flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 md:hidden"
+            className="fixed top-3 left-3 z-50 flex h-9 w-9 items-center justify-center rounded-lg bg-card border border-border text-foreground md:hidden"
             aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />
@@ -30,7 +30,7 @@ export default function DashboardLayout({
           {/* Mobile overlay */}
           {mobileSidebarOpen && (
             <div
-              className="fixed inset-0 z-40 bg-black/60 md:hidden"
+              className="fixed inset-0 z-40 bg-foreground/45 md:hidden"
               onClick={closeSidebar}
             />
           )}

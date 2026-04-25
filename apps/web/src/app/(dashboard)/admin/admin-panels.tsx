@@ -79,7 +79,7 @@ export function ThumbnailsPanel() {
       case "success": return <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />;
       case "failed": return <XCircle className="h-3.5 w-3.5 text-red-500" />;
       case "skipped": return <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />;
-      default: return <Clock className="h-3.5 w-3.5 text-zinc-500" />;
+      default: return <Clock className="h-3.5 w-3.5 text-muted-foreground" />;
     }
   };
 
@@ -87,13 +87,13 @@ export function ThumbnailsPanel() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-zinc-500">Generate missing project thumbnails and view the generation log.</p>
+          <p className="text-xs text-muted-foreground">Generate missing project thumbnails and view the generation log.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button onClick={handleGenerateMissing} disabled={generating} className="gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm">
             {generating ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : <><Play className="h-4 w-4" /> Generate Missing Thumbnails</>}
           </Button>
-          <Button onClick={fetchLogs} variant="outline" className="gap-2 text-sm border-zinc-700 text-zinc-300 hover:bg-zinc-800">
+          <Button onClick={fetchLogs} variant="outline" className="gap-2 text-sm">
             <RotateCcw className="h-3.5 w-3.5" /> Refresh
           </Button>
         </div>
@@ -101,30 +101,30 @@ export function ThumbnailsPanel() {
       {result && (
         <div className="rounded-lg border border-brand-800/50 bg-brand-900/20 px-4 py-3 text-sm">
           <p className="text-brand-300 font-medium">{result.message}</p>
-          <p className="text-zinc-500 text-xs mt-1">Total projects: {result.total} | Missing: {result.missing} | Queued: {result.queued}</p>
+          <p className="text-muted-foreground text-xs mt-1">Total projects: {result.total} | Missing: {result.missing} | Queued: {result.queued}</p>
         </div>
       )}
-      <div className="rounded-lg border border-zinc-800 overflow-hidden">
-        <div className="bg-zinc-900/50 px-4 py-2.5 border-b border-zinc-800 flex items-center justify-between">
-          <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Generation Log</h3>
-          <span className="text-xs text-zinc-600">{logs.length} entries</span>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="bg-card px-4 py-2.5 border-b border-border flex items-center justify-between">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Generation Log</h3>
+          <span className="text-xs text-muted-foreground">{logs.length} entries</span>
         </div>
         {loading ? (
-          <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-zinc-500" /></div>
+          <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : logs.length === 0 ? (
-          <div className="text-center py-8 text-sm text-zinc-600">No thumbnail generation logs yet. Click &quot;Generate Missing Thumbnails&quot; to start.</div>
+          <div className="text-center py-8 text-sm text-muted-foreground">No thumbnail generation logs yet. Click &quot;Generate Missing Thumbnails&quot; to start.</div>
         ) : (
-          <div className="divide-y divide-zinc-800/50 max-h-[500px] overflow-y-auto">
+          <div className="divide-y divide-border max-h-[500px] overflow-y-auto">
             {logs.map((log) => (
-              <div key={log.id} className="px-4 py-2.5 flex items-center gap-3 text-sm hover:bg-zinc-900/30">
+              <div key={log.id} className="px-4 py-2.5 flex items-center gap-3 text-sm hover:bg-accent">
                 {statusIcon(log.status)}
                 <div className="flex-1 min-w-0">
-                  <span className="text-zinc-200 font-medium truncate block">{log.current_project_name ?? log.project_name ?? log.project_id.slice(0, 8)}</span>
+                  <span className="text-foreground font-medium truncate block">{log.current_project_name ?? log.project_name ?? log.project_id.slice(0, 8)}</span>
                   {log.error_message && <span className="text-xs text-red-400 truncate block">{log.error_message}</span>}
                 </div>
-                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${log.triggered_by === "admin" ? "bg-purple-900/30 text-purple-400" : log.triggered_by === "regenerate" ? "bg-blue-900/30 text-blue-400" : "bg-zinc-800 text-zinc-500"}`}>{log.triggered_by}</span>
-                {log.duration_ms != null && <span className="text-xs text-zinc-600">{log.duration_ms}ms</span>}
-                <span className="text-xs text-zinc-600 whitespace-nowrap">{new Date(log.created_at).toLocaleString()}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${log.triggered_by === "admin" ? "bg-purple-900/30 text-purple-400" : log.triggered_by === "regenerate" ? "bg-blue-900/30 text-blue-400" : "bg-secondary text-muted-foreground"}`}>{log.triggered_by}</span>
+                {log.duration_ms != null && <span className="text-xs text-muted-foreground">{log.duration_ms}ms</span>}
+                <span className="text-xs text-muted-foreground whitespace-nowrap">{new Date(log.created_at).toLocaleString()}</span>
               </div>
             ))}
           </div>
@@ -246,15 +246,15 @@ export function CopilotSessionsPanel() {
   }, [fetchSessions]);
 
   if (loading && !data) {
-    return <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-zinc-500" /></div>;
+    return <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   }
 
   if (!data) {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-3">
         <AlertTriangle className="h-5 w-5 text-amber-400" />
-        <p className="text-sm text-zinc-400">{error ?? "No session data available"}</p>
-        <Button onClick={() => { setLoading(true); setError(null); fetchSessions(); }} variant="outline" className="gap-2 text-sm border-zinc-700 text-zinc-300 hover:bg-zinc-800">
+        <p className="text-sm text-muted-foreground">{error ?? "No session data available"}</p>
+        <Button onClick={() => { setLoading(true); setError(null); fetchSessions(); }} variant="outline" className="gap-2 text-sm">
           <RotateCcw className="h-3.5 w-3.5" /> Retry
         </Button>
       </div>
@@ -264,11 +264,11 @@ export function CopilotSessionsPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 text-xs text-zinc-500">
-          <span className="flex items-center gap-1.5"><Zap className="h-3.5 w-3.5 text-brand-400" /><span className="text-zinc-300 font-medium">{data.poolSize}</span>/{data.maxEngines} engines</span>
-          <span>RSS <span className="text-zinc-300 font-medium">{formatBytes(data.processMemory.rss)}</span></span>
-          <span>Heap <span className="text-zinc-300 font-medium">{formatBytes(data.processMemory.heapUsed)}</span> / {formatBytes(data.processMemory.heapTotal)}</span>
-          <span>Uptime <span className="text-zinc-300 font-medium">{formatUptime(data.uptime)}</span></span>
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5"><Zap className="h-3.5 w-3.5 text-brand-400" /><span className="text-foreground font-medium">{data.poolSize}</span>/{data.maxEngines} engines</span>
+          <span>RSS <span className="text-foreground font-medium">{formatBytes(data.processMemory.rss)}</span></span>
+          <span>Heap <span className="text-foreground font-medium">{formatBytes(data.processMemory.heapUsed)}</span> / {formatBytes(data.processMemory.heapTotal)}</span>
+          <span>Uptime <span className="text-foreground font-medium">{formatUptime(data.uptime)}</span></span>
         </div>
         <div className="flex items-center gap-2">
           {data.poolSize > 0 && (
@@ -276,33 +276,33 @@ export function CopilotSessionsPanel() {
               {terminatingAll ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Stopping...</> : <><Square className="h-3.5 w-3.5" /> Stop All Engines</>}
             </Button>
           )}
-          <Button onClick={fetchSessions} variant="outline" className="gap-2 text-sm border-zinc-700 text-zinc-300 hover:bg-zinc-800">
+          <Button onClick={fetchSessions} variant="outline" className="gap-2 text-sm">
             <RotateCcw className="h-3.5 w-3.5" /> Refresh
           </Button>
         </div>
       </div>
-      <p className="text-xs text-zinc-600">Auto-refreshes every 5 seconds. Each engine is a per-project Copilot CLI subprocess.</p>
-      <div className="rounded-lg border border-zinc-800 overflow-hidden">
-        <div className="bg-zinc-900/50 px-4 py-2.5 border-b border-zinc-800">
-          <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Active Engines</h3>
+      <p className="text-xs text-muted-foreground">Auto-refreshes every 5 seconds. Each engine is a per-project Copilot CLI subprocess.</p>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="bg-card px-4 py-2.5 border-b border-border">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Engines</h3>
         </div>
         {data.engines.length === 0 ? (
-          <div className="text-center py-10 text-sm text-zinc-600">No active Copilot engines. Sessions start when users interact with AI in the editor.</div>
+          <div className="text-center py-10 text-sm text-muted-foreground">No active Copilot engines. Sessions start when users interact with AI in the editor.</div>
         ) : (
-          <div className="divide-y divide-zinc-800/50">
+          <div className="divide-y divide-border">
             {data.engines.map((engine) => (
-              <div key={engine.projectId} className="px-4 py-3 hover:bg-zinc-900/30">
+              <div key={engine.projectId} className="px-4 py-3 hover:bg-accent">
                 <div className="flex items-center gap-3">
-                  <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${engine.activeRequests > 0 ? "bg-green-500 animate-pulse" : "bg-zinc-600"}`} />
+                  <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${engine.activeRequests > 0 ? "bg-green-500 animate-pulse" : "bg-muted"}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-zinc-200 font-medium truncate">{engine.projectName ?? "Unknown Project"}</span>
-                      <span className="text-[10px] text-zinc-600 font-mono">{engine.projectId.slice(0, 8)}</span>
+                      <span className="text-sm text-foreground font-medium truncate">{engine.projectName ?? "Unknown Project"}</span>
+                      <span className="text-[10px] text-muted-foreground font-mono">{engine.projectId.slice(0, 8)}</span>
                     </div>
                     {engine.chatSessions.length > 0 && (
                       <div className="flex items-center gap-2 mt-1">
                         {engine.chatSessions.map((cs) => (
-                          <span key={cs.sessionKey} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${cs.active ? "bg-green-900/30 text-green-400" : "bg-zinc-800 text-zinc-500"}`}>
+                          <span key={cs.sessionKey} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${cs.active ? "bg-green-900/30 text-green-400" : "bg-secondary text-muted-foreground"}`}>
                             {cs.isVisualEdit ? "visual-edit" : cs.mode ?? "idle"}
                             {cs.active && cs.startedAt ? ` (${formatDuration(Date.now() - cs.startedAt)})` : ""}
                           </span>
@@ -310,8 +310,8 @@ export function CopilotSessionsPanel() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-zinc-500 shrink-0">
-                    <span title="Active requests">{engine.activeRequests > 0 ? <span className="text-green-400 font-medium">{engine.activeRequests} active</span> : <span className="text-zinc-600">idle</span>}</span>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
+                    <span title="Active requests">{engine.activeRequests > 0 ? <span className="text-green-400 font-medium">{engine.activeRequests} active</span> : <span className="text-muted-foreground">idle</span>}</span>
                     <span title="Sessions">{engine.sessionCount} sess</span>
                     <span title="Engine age">age {formatDuration(engine.ageMs)}</span>
                     <span title="Time since last use">idle {formatDuration(engine.idleMs)}</span>

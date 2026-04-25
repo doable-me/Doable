@@ -77,10 +77,10 @@ export function AiSettingsPage() {
   if (isHardDenied) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-10">
-        <div className="flex flex-col items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/50 p-12 text-center">
-          <ShieldAlert className="h-12 w-12 text-zinc-600 mb-4" />
-          <h2 className="text-lg font-semibold text-white">Access Restricted</h2>
-          <p className="mt-2 text-sm text-zinc-400 max-w-md">
+        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-12 text-center">
+          <ShieldAlert className="h-12 w-12 text-muted-foreground mb-4" />
+          <h2 className="text-lg font-semibold text-foreground">Access Restricted</h2>
+          <p className="mt-2 text-sm text-muted-foreground max-w-md">
             {featureDeniedReason === "feature_disabled"
               ? "AI Settings has been disabled by a platform administrator."
               : featureDeniedReason === "user_override_denied"
@@ -89,7 +89,7 @@ export function AiSettingsPage() {
           </p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="mt-6 rounded-lg bg-zinc-800 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+            className="mt-6 rounded-lg bg-secondary px-4 py-2 text-sm text-foreground hover:bg-accent transition-colors"
           >
             Back to Dashboard
           </button>
@@ -108,22 +108,22 @@ export function AiSettingsPage() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">AI Settings</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="text-2xl font-bold text-foreground">AI Settings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Configure which AI models power your workspace.
         </p>
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-1 border-b border-zinc-800 mb-6">
+      <div className="flex gap-1 border-b border-border mb-6">
         {tabs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
               activeTab === key
-                ? "border-brand-500 text-white"
-                : "border-transparent text-zinc-400 hover:text-zinc-200"
+                ? "border-brand-500 text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             <Icon className="h-4 w-4" />

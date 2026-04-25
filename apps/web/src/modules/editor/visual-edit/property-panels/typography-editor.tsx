@@ -73,22 +73,22 @@ export function TypographyEditor({
   const matchedSize = FONT_SIZE_OPTIONS.find((opt) => opt.value === fontSize);
 
   return (
-    <div className="rounded-lg border border-zinc-800/60 bg-zinc-900/50">
+    <div className="rounded-lg border border-border bg-card">
       {/* Section Header */}
       <div className="flex items-center gap-2 px-3 py-2">
-        <Type className="h-3.5 w-3.5 text-zinc-500" />
-        <span className="text-xs font-medium text-zinc-300">Typography</span>
+        <Type className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-medium text-foreground">Typography</span>
       </div>
 
       {/* Content */}
       <div className="space-y-2.5 px-3 pb-3">
         {/* Font Size */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-zinc-500">Size</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Size</label>
           <select
             value={matchedSize ? fontSize : ""}
             onChange={(e) => onFontSizeChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-brand-500/50 transition-colors"
+            className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-brand-500/50 transition-colors"
           >
             {!matchedSize && (
               <option value="" disabled>
@@ -105,11 +105,11 @@ export function TypographyEditor({
 
         {/* Font Style */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-zinc-500">Style</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Style</label>
           <select
             value={fontStyle}
             onChange={(e) => onFontStyleChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-brand-500/50 transition-colors"
+            className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-brand-500/50 transition-colors"
           >
             {FONT_STYLE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -121,11 +121,11 @@ export function TypographyEditor({
 
         {/* Font Weight */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-zinc-500">Weight</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Weight</label>
           <select
             value={FONT_WEIGHT_OPTIONS.find((o) => o.value === fontWeight) ? fontWeight : ""}
             onChange={(e) => onFontWeightChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-brand-500/50 transition-colors"
+            className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-brand-500/50 transition-colors"
           >
             {!FONT_WEIGHT_OPTIONS.find((o) => o.value === fontWeight) && fontWeight && (
               <option value="" disabled>
@@ -142,8 +142,8 @@ export function TypographyEditor({
 
         {/* Text Alignment */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-zinc-500">Align</label>
-          <div className="flex gap-0.5 rounded-md border border-zinc-700/60 bg-zinc-800/80 p-0.5">
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Align</label>
+          <div className="flex gap-0.5 rounded-md border border-input bg-background p-0.5">
             {ALIGNMENT_OPTIONS.map(({ value, icon: Icon, label }) => (
               <button
                 key={value}
@@ -153,7 +153,7 @@ export function TypographyEditor({
                   "rounded p-1.5 transition-colors",
                   textAlign === value
                     ? "bg-brand-500/20 text-brand-400"
-                    : "text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />

@@ -24,14 +24,14 @@ export function PricingCards({
     <div className="space-y-6">
       {/* Interval Toggle */}
       <div className="flex items-center justify-center">
-        <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/80 p-1">
+        <div className="inline-flex rounded-lg border border-border bg-card p-1">
           <button
             onClick={() => setInterval("monthly")}
             className={cn(
               "rounded-md px-4 py-2 text-sm font-medium transition-all",
               interval === "monthly"
                 ? "bg-brand-600 text-white shadow-sm"
-                : "text-zinc-400 hover:text-zinc-200"
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             Monthly
@@ -42,7 +42,7 @@ export function PricingCards({
               "rounded-md px-4 py-2 text-sm font-medium transition-all",
               interval === "yearly"
                 ? "bg-brand-600 text-white shadow-sm"
-                : "text-zinc-400 hover:text-zinc-200"
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             Yearly
@@ -68,7 +68,7 @@ export function PricingCards({
                 "relative flex flex-col rounded-xl border p-6 transition-all",
                 isPopular
                   ? "border-brand-500/50 bg-brand-500/5 shadow-lg shadow-brand-500/10"
-                  : "border-zinc-800 bg-zinc-900/50",
+                  : "border-border bg-card",
                 isCurrent && "ring-1 ring-brand-500/30"
               )}
             >
@@ -82,26 +82,26 @@ export function PricingCards({
               )}
 
               <div className="mb-4">
-                <h3 className="text-lg font-semibold text-white">{plan.name}</h3>
-                <p className="mt-1 text-sm text-zinc-400">
+                <h3 className="text-lg font-semibold text-foreground">{plan.name}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
                   {plan.description}
                 </p>
               </div>
 
               <div className="mb-6">
-                <span className="text-4xl font-bold text-white">
+                <span className="text-4xl font-bold text-foreground">
                   ${Math.round(price)}
                 </span>
                 {plan.priceMonthly > 0 && (
-                  <span className="text-zinc-500">/mo</span>
+                  <span className="text-muted-foreground">/mo</span>
                 )}
                 {interval === "yearly" && plan.priceYearly > 0 && (
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Billed ${plan.priceYearly}/year
                   </p>
                 )}
                 {plan.priceMonthly === 0 && (
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Free forever
                   </p>
                 )}
@@ -111,7 +111,7 @@ export function PricingCards({
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-2.5 text-sm">
                     <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
-                    <span className="text-zinc-300">{feature}</span>
+                    <span className="text-foreground">{feature}</span>
                   </li>
                 ))}
               </ul>
@@ -125,7 +125,7 @@ export function PricingCards({
                   "disabled:pointer-events-none disabled:opacity-50",
                   isPopular
                     ? "bg-brand-600 text-white hover:bg-brand-500 shadow-sm"
-                    : "border border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:text-white"
+                    : "border border-border bg-secondary text-foreground hover:bg-accent"
                 )}
               >
                 {loading ? (

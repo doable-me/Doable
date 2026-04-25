@@ -130,7 +130,7 @@ function fileIcon(type: string) {
     case "html": return <FileText className="h-3.5 w-3.5 text-orange-400" />;
     case "image": return <Image className="h-3.5 w-3.5 text-emerald-400" />;
     case "font": return <FileText className="h-3.5 w-3.5 text-purple-400" />;
-    default: return <FileText className="h-3.5 w-3.5 text-zinc-400" />;
+    default: return <FileText className="h-3.5 w-3.5 text-muted-foreground" />;
   }
 }
 
@@ -180,7 +180,7 @@ export function CircularGauge({
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-4xl font-bold tabular-nums" style={{ color }}>{displayScore}</span>
-        <span className="text-[11px] text-zinc-500 mt-0.5">Performance</span>
+        <span className="text-[11px] text-muted-foreground mt-0.5">Performance</span>
       </div>
     </div>
   );
@@ -204,7 +204,7 @@ export function SpeedPanelResults({
       {/* Performance Score */}
       <div className="flex flex-col items-center py-4">
         <CircularGauge score={results.score} animated />
-        <div className="mt-3 flex items-center gap-4 text-[11px] text-zinc-500">
+        <div className="mt-3 flex items-center gap-4 text-[11px] text-muted-foreground">
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-400" />90-100</span>
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" />50-89</span>
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-400" />0-49</span>
@@ -213,14 +213,14 @@ export function SpeedPanelResults({
 
       {/* Core Web Vitals */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Core Web Vitals</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Core Web Vitals</h3>
         <div className="grid grid-cols-1 gap-2">
           {results.webVitals.map((vital) => (
-            <div key={vital.shortName} className={`rounded-lg border border-zinc-800/60 p-3 ${ratingBg(vital.rating)}`}>
+            <div key={vital.shortName} className={`rounded-lg border border-border p-3 ${ratingBg(vital.rating)}`}>
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-zinc-300">{vital.shortName}</span>
-                  <span className="text-[11px] text-zinc-500">{vital.name}</span>
+                  <span className="text-xs font-semibold text-foreground">{vital.shortName}</span>
+                  <span className="text-[11px] text-muted-foreground">{vital.name}</span>
                 </div>
                 <span className="text-[11px] font-medium rounded-full px-2 py-0.5" style={{ color: ratingColor(vital.rating), backgroundColor: `${ratingColor(vital.rating)}15` }}>
                   {ratingLabel(vital.rating)}
@@ -228,8 +228,8 @@ export function SpeedPanelResults({
               </div>
               <div className="flex items-baseline gap-1">
                 <span className="text-xl font-bold tabular-nums" style={{ color: ratingColor(vital.rating) }}>{vital.value}</span>
-                <span className="text-xs text-zinc-500">{vital.unit}</span>
-                <span className="text-[10px] text-zinc-600 ml-auto">Target: {vital.target}</span>
+                <span className="text-xs text-muted-foreground">{vital.unit}</span>
+                <span className="text-[10px] text-muted-foreground ml-auto">Target: {vital.target}</span>
               </div>
             </div>
           ))}
@@ -238,18 +238,18 @@ export function SpeedPanelResults({
 
       {/* Additional Metrics */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Additional Metrics</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Additional Metrics</h3>
         <div className="grid grid-cols-2 gap-2">
           {results.additionalMetrics.map((metric) => {
             const pct = Math.min((metric.value / metric.maxValue) * 100, 100);
             return (
-              <div key={metric.name} className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 p-3">
-                <div className="text-[11px] text-zinc-500 mb-1.5 truncate">{metric.name}</div>
+              <div key={metric.name} className="rounded-lg border border-border bg-card p-3">
+                <div className="text-[11px] text-muted-foreground mb-1.5 truncate">{metric.name}</div>
                 <div className="flex items-baseline gap-1 mb-2">
                   <span className="text-lg font-bold tabular-nums" style={{ color: ratingColor(metric.rating) }}>{metric.value}</span>
-                  <span className="text-[11px] text-zinc-500">{metric.unit}</span>
+                  <span className="text-[11px] text-muted-foreground">{metric.unit}</span>
                 </div>
-                <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                   <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: ratingColor(metric.rating) }} />
                 </div>
               </div>
@@ -260,11 +260,11 @@ export function SpeedPanelResults({
 
       {/* Bundle Analysis */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Bundle Analysis</h3>
-        <div className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 p-3 mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Bundle Analysis</h3>
+        <div className="rounded-lg border border-border bg-card p-3 mb-3">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] text-zinc-500">Total Bundle Size</span>
-            <span className="text-sm font-bold text-zinc-200">{formatSize(results.bundle.total)}</span>
+            <span className="text-[11px] text-muted-foreground">Total Bundle Size</span>
+            <span className="text-sm font-bold text-foreground">{formatSize(results.bundle.total)}</span>
           </div>
           <div className="h-3 rounded-full overflow-hidden flex">
             {([
@@ -293,28 +293,28 @@ export function SpeedPanelResults({
             ] as const).map((seg) => (
               <div key={seg.key} className="flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: bundleTypeColor(seg.key) }} />
-                <span className="text-[10px] text-zinc-400">{seg.label}</span>
-                <span className="text-[10px] text-zinc-600">{formatSize(seg.value)}</span>
+                <span className="text-[10px] text-foreground">{seg.label}</span>
+                <span className="text-[10px] text-muted-foreground">{formatSize(seg.value)}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* Largest files */}
-        <div className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 overflow-hidden">
-          <div className="px-3 py-2 border-b border-zinc-800/60">
-            <span className="text-[11px] font-medium text-zinc-400">Largest Files</span>
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="px-3 py-2 border-b border-border">
+            <span className="text-[11px] font-medium text-foreground">Largest Files</span>
           </div>
-          <div className="divide-y divide-zinc-800/40">
+          <div className="divide-y divide-border">
             {results.bundle.files
               .sort((a, b) => b.size - a.size)
               .slice(0, 6)
               .map((file) => (
-                <div key={file.name} className="flex items-center gap-2.5 px-3 py-2 hover:bg-zinc-800/30 transition-colors">
+                <div key={file.name} className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted transition-colors">
                   {fileIcon(file.type)}
-                  <span className="text-[12px] text-zinc-300 flex-1 truncate">{file.name}</span>
-                  <span className="text-[11px] text-zinc-500 tabular-nums flex-shrink-0">{formatSize(file.size)}</span>
-                  <div className="w-16 h-1 rounded-full bg-zinc-800 overflow-hidden flex-shrink-0">
+                  <span className="text-[12px] text-foreground flex-1 truncate">{file.name}</span>
+                  <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">{formatSize(file.size)}</span>
+                  <div className="w-16 h-1 rounded-full bg-muted overflow-hidden flex-shrink-0">
                     <div className="h-full rounded-full" style={{ width: `${(file.size / results.bundle.files[0]!.size) * 100}%`, backgroundColor: bundleTypeColor(file.type) }} />
                   </div>
                 </div>
@@ -327,9 +327,9 @@ export function SpeedPanelResults({
           <AlertTriangle className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-[12px] font-medium text-amber-300">Tree-shaking opportunity</p>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
+            <p className="text-[11px] text-foreground mt-0.5">
               The vendor bundle contains unused exports from large libraries. Consider importing only the specific modules you need (e.g.{" "}
-              <code className="rounded bg-zinc-800 px-1 py-0.5 text-[10px] text-amber-300">
+              <code className="rounded bg-secondary px-1 py-0.5 text-[10px] text-amber-300">
                 import {"{"} debounce {"}"} from &apos;lodash/debounce&apos;
               </code>{" "}
               instead of importing the entire library).
@@ -340,21 +340,21 @@ export function SpeedPanelResults({
 
       {/* Recommendations */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Recommendations</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Recommendations</h3>
         <div className="space-y-2">
           {results.recommendations.map((rec) => {
             const isExpanded = expandedRecs.has(rec.id);
             return (
-              <div key={rec.id} className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 overflow-hidden">
-                <button onClick={() => onToggleRec(rec.id)} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-left hover:bg-zinc-800/30 transition-colors">
-                  {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-zinc-500 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-500 flex-shrink-0" />}
-                  <span className="text-[12px] font-medium text-zinc-200 flex-1">{rec.title}</span>
+              <div key={rec.id} className="rounded-lg border border-border bg-card overflow-hidden">
+                <button onClick={() => onToggleRec(rec.id)} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-left hover:bg-muted transition-colors">
+                  {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+                  <span className="text-[12px] font-medium text-foreground flex-1">{rec.title}</span>
                   <span className={`text-[10px] font-medium rounded-full px-2 py-0.5 border ${impactColor(rec.impact)}`}>{rec.impact} impact</span>
-                  <span className="text-[10px] text-zinc-500 tabular-nums flex-shrink-0">{rec.savings}</span>
+                  <span className="text-[10px] text-muted-foreground tabular-nums flex-shrink-0">{rec.savings}</span>
                 </button>
                 {isExpanded && (
-                  <div className="px-3 pb-3 pt-0 border-t border-zinc-800/40">
-                    <p className="text-[12px] text-zinc-400 leading-relaxed mt-2.5 mb-3">{rec.description}</p>
+                  <div className="px-3 pb-3 pt-0 border-t border-border">
+                    <p className="text-[12px] text-foreground leading-relaxed mt-2.5 mb-3">{rec.description}</p>
                     <button onClick={() => onSendMessage(rec.fixPrompt)} className="flex items-center gap-1.5 rounded-md bg-brand-600/20 border border-brand-500/30 px-3 py-1.5 text-[11px] font-medium text-brand-300 hover:bg-brand-600/30 transition-colors">
                       <Zap className="h-3 w-3" />
                       Fix with AI
@@ -368,7 +368,7 @@ export function SpeedPanelResults({
       </section>
 
       <div className="text-center pb-2">
-        <p className="text-[10px] text-zinc-700">Simulated audit results. Real Lighthouse integration coming soon.</p>
+        <p className="text-[10px] text-muted-foreground">Simulated audit results. Real Lighthouse integration coming soon.</p>
       </div>
     </div>
   );

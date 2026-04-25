@@ -69,14 +69,14 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
 
   return (
     <div className="space-y-5">
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5">
+      <div className="rounded-lg border border-border bg-card p-5">
         <div className="flex items-center gap-2.5 mb-4">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600/15">
             <Shield className="h-4 w-4 text-brand-400" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-200">AI Rules for Your Team</h3>
-            <p className="text-xs text-zinc-500">Lock everyone in your workspace to a specific AI model — no one can change it</p>
+            <h3 className="text-sm font-semibold text-foreground">AI Rules for Your Team</h3>
+            <p className="text-xs text-muted-foreground">Lock everyone in your workspace to a specific AI model — no one can change it</p>
           </div>
         </div>
 
@@ -86,7 +86,7 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
             <button
               onClick={() => setEnforceAi(!enforceAi)}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                enforceAi ? "bg-brand-600" : "bg-zinc-700"
+                enforceAi ? "bg-brand-600" : "bg-muted"
               }`}
             >
               <span
@@ -95,26 +95,26 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
                 }`}
               />
             </button>
-            <span className="text-sm text-zinc-200">Require everyone to use the same AI model</span>
+            <span className="text-sm text-foreground">Require everyone to use the same AI model</span>
           </label>
-          <p className="text-xs text-zinc-500 mt-2 ml-14">
+          <p className="text-xs text-muted-foreground mt-2 ml-14">
             When turned on, every workspace member uses the model you pick below. They won&apos;t be able to change it.
           </p>
         </div>
 
         {/* Enforced model configuration (only shown when enforcement is on) */}
         {enforceAi && (
-          <div className="border-t border-zinc-800 pt-4 mt-4 space-y-4">
+          <div className="border-t border-border pt-4 mt-4 space-y-4">
             {/* Source toggle */}
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">Provider Source</label>
-              <div className="flex rounded-lg border border-zinc-700 overflow-hidden w-fit">
+              <label className="block text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">Provider Source</label>
+              <div className="flex rounded-lg border border-border overflow-hidden w-fit">
                 <button
                   onClick={() => { setSource("copilot"); setProviderId(""); }}
                   className={`px-4 py-2 text-sm font-medium transition-colors ${
                     source === "copilot"
                       ? "bg-brand-600 text-white"
-                      : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                      : "bg-secondary text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   GitHub Copilot
@@ -124,7 +124,7 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
                   className={`px-4 py-2 text-sm font-medium transition-colors ${
                     source === "custom"
                       ? "bg-brand-600 text-white"
-                      : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                      : "bg-secondary text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   Custom Provider
@@ -137,11 +137,11 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
               {source === "copilot" ? (
                 <>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Account</label>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">Account</label>
                     <select
                       value={copilotAccountId}
                       onChange={(e) => setCopilotAccountId(e.target.value)}
-                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                     >
                       <option value="">Server Default</option>
                       {validAccounts.map((a) => (
@@ -149,18 +149,18 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
                       ))}
                     </select>
                     {copilotAccountId === "" && (
-                      <p className="text-[10px] text-zinc-500 mt-1">Uses the server&apos;s built-in GitHub authentication.</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">Uses the server&apos;s built-in GitHub authentication.</p>
                     )}
                     {validAccounts.length === 0 && (
-                      <p className="text-[10px] text-zinc-600 mt-1">No accounts connected yet. Go to the Connections tab to add one.</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">No accounts connected yet. Go to the Connections tab to add one.</p>
                     )}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">Model</label>
                     <select
                       value={model}
                       onChange={(e) => setModel(e.target.value)}
-                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                     >
                       {copilotModels.map((m) => (
                         <option key={m.id} value={m.id}>{m.label}</option>
@@ -171,11 +171,11 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
               ) : (
                 <>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Provider</label>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">Provider</label>
                     <select
                       value={providerId}
                       onChange={(e) => setProviderId(e.target.value)}
-                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-brand-500"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                     >
                       <option value="">Select a provider...</option>
                       {validProviders.map((p) => (
@@ -183,17 +183,17 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
                       ))}
                     </select>
                     {validProviders.length === 0 && (
-                      <p className="text-[10px] text-zinc-600 mt-1">No providers set up yet. Go to the Connections tab to add one.</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">No providers set up yet. Go to the Connections tab to add one.</p>
                     )}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">Model</label>
                     <input
                       type="text"
                       value={model}
                       onChange={(e) => setModel(e.target.value)}
                       placeholder="e.g. gpt-4o"
-                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500"
                     />
                   </div>
                 </>
@@ -204,14 +204,14 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
       </div>
 
       {/* Model Selector Visibility */}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5">
+      <div className="rounded-lg border border-border bg-card p-5">
         <div className="flex items-center gap-2.5 mb-4">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600/15">
             <Eye className="h-4 w-4 text-blue-400" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-200">Let Members Choose Their Model</h3>
-            <p className="text-xs text-zinc-500">Show or hide the model picker in the editor for workspace members</p>
+            <h3 className="text-sm font-semibold text-foreground">Let Members Choose Their Model</h3>
+            <p className="text-xs text-muted-foreground">Show or hide the model picker in the editor for workspace members</p>
           </div>
         </div>
 
@@ -219,7 +219,7 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
           <button
             onClick={() => setShowModelSelector(!showModelSelector)}
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              showModelSelector ? "bg-blue-600" : "bg-zinc-700"
+              showModelSelector ? "bg-blue-600" : "bg-muted"
             }`}
           >
             <span
@@ -228,9 +228,9 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
               }`}
             />
           </button>
-          <span className="text-sm text-zinc-200">Show model picker to workspace members</span>
+          <span className="text-sm text-foreground">Show model picker to workspace members</span>
         </label>
-        <p className="text-xs text-zinc-500 mt-2 ml-14">
+        <p className="text-xs text-muted-foreground mt-2 ml-14">
           When turned off, members won&apos;t see which model they&apos;re using. The workspace default (or enforced model) runs automatically in the background.
         </p>
       </div>

@@ -61,18 +61,18 @@ export function LayoutEditor({
 
   if (!isFlexOrGrid) {
     return (
-      <div className="rounded-lg border border-zinc-800/60 bg-zinc-900/50">
+      <div className="rounded-lg border border-border bg-card">
         {/* Section Header */}
         <div className="flex items-center gap-2 px-3 py-2">
-          <LayoutGrid className="h-3.5 w-3.5 text-zinc-500" />
-          <span className="text-xs font-medium text-zinc-300">Layout</span>
+          <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium text-foreground">Layout</span>
         </div>
 
         <div className="px-3 pb-3">
-          <p className="text-[11px] text-zinc-600">
-            Display: <span className="font-mono text-zinc-500">{display}</span>
+          <p className="text-[11px] text-muted-foreground">
+            Display: <span className="font-mono text-muted-foreground">{display}</span>
           </p>
-          <p className="mt-1 text-[10px] text-zinc-600">
+          <p className="mt-1 text-[10px] text-muted-foreground">
             Layout controls are available for flex and grid elements.
           </p>
         </div>
@@ -81,12 +81,12 @@ export function LayoutEditor({
   }
 
   return (
-    <div className="rounded-lg border border-zinc-800/60 bg-zinc-900/50">
+    <div className="rounded-lg border border-border bg-card">
       {/* Section Header */}
       <div className="flex items-center gap-2 px-3 py-2">
-        <LayoutGrid className="h-3.5 w-3.5 text-zinc-500" />
-        <span className="flex-1 text-xs font-medium text-zinc-300">Layout</span>
-        <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
+        <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="flex-1 text-xs font-medium text-foreground">Layout</span>
+        <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
           {display}
         </span>
       </div>
@@ -95,8 +95,8 @@ export function LayoutEditor({
       <div className="space-y-2.5 px-3 pb-3">
         {/* Direction */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-zinc-500">Direction</label>
-          <div className="flex gap-0.5 rounded-md border border-zinc-700/60 bg-zinc-800/80 p-0.5">
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Direction</label>
+          <div className="flex gap-0.5 rounded-md border border-input bg-background p-0.5">
             {DIRECTION_OPTIONS.map(({ value, icon: Icon, label }) => (
               <button
                 key={value}
@@ -106,7 +106,7 @@ export function LayoutEditor({
                   "flex items-center gap-1 rounded px-2 py-1.5 text-[11px] transition-colors",
                   flexDirection === value
                     ? "bg-brand-500/20 text-brand-400"
-                    : "text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -118,8 +118,8 @@ export function LayoutEditor({
 
         {/* Align Items */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-zinc-500">Align</label>
-          <div className="flex gap-0.5 rounded-md border border-zinc-700/60 bg-zinc-800/80 p-0.5">
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Align</label>
+          <div className="flex gap-0.5 rounded-md border border-input bg-background p-0.5">
             {ALIGN_OPTIONS.map(({ value, icon: Icon, label }) => (
               <button
                 key={value}
@@ -129,7 +129,7 @@ export function LayoutEditor({
                   "rounded p-1.5 transition-colors",
                   alignItems === value
                     ? "bg-brand-500/20 text-brand-400"
-                    : "text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -140,12 +140,12 @@ export function LayoutEditor({
 
         {/* Gap */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-zinc-500">Gap</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Gap</label>
           <input
             type="text"
             value={gap}
             onChange={(e) => onGapChange(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 outline-none font-mono focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20 transition-colors"
+            className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground outline-none font-mono focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20 transition-colors"
             placeholder="0px"
           />
         </div>

@@ -39,8 +39,8 @@ import type {
 const ROLE_LABELS: Record<string, { label: string; color: string }> = {
   owner: { label: "Owner", color: "text-amber-400 bg-amber-500/10" },
   admin: { label: "Admin", color: "text-blue-400 bg-blue-500/10" },
-  member: { label: "Member", color: "text-zinc-400 bg-zinc-500/10" },
-  viewer: { label: "Viewer", color: "text-zinc-500 bg-zinc-500/10" },
+  member: { label: "Member", color: "text-muted-foreground bg-muted" },
+  viewer: { label: "Viewer", color: "text-muted-foreground bg-muted" },
 };
 
 function RoleBadge({ role }: { role: string }) {
@@ -103,30 +103,30 @@ export function GeneralTab({
   return (
     <>
       {/* General Settings */}
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-6 mb-6">
+      <section className="rounded-xl border border-border bg-card p-6 mb-6">
         <div className="flex items-center gap-3 mb-5">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600/20">
             <Settings className="h-5 w-5 text-brand-400" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-zinc-200">General</h2>
-            <p className="text-xs text-zinc-500">Workspace name and description</p>
+            <h2 className="text-lg font-semibold text-foreground">General</h2>
+            <p className="text-xs text-muted-foreground">Workspace name and description</p>
           </div>
         </div>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-300">Name</label>
-            <Input value={editName} onChange={(e) => setEditName(e.target.value)} disabled={!isAdmin} className="bg-zinc-800 border-zinc-700 text-zinc-200" />
+            <label className="mb-1 block text-sm font-medium text-foreground">Name</label>
+            <Input value={editName} onChange={(e) => setEditName(e.target.value)} disabled={!isAdmin} />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-300">Description</label>
-            <Input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} placeholder="What's this workspace for?" disabled={!isAdmin} className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-600" />
+            <label className="mb-1 block text-sm font-medium text-foreground">Description</label>
+            <Input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} placeholder="What's this workspace for?" disabled={!isAdmin} />
           </div>
           <div className="flex items-center gap-3">
-            <div className="text-xs text-zinc-500 capitalize">
-              Plan: <span className="text-zinc-300 font-medium">{workspace.plan}</span>
+            <div className="text-xs text-muted-foreground capitalize">
+              Plan: <span className="text-foreground font-medium">{workspace.plan}</span>
             </div>
-            <div className="text-xs text-zinc-500">
+            <div className="text-xs text-muted-foreground">
               Your role: <RoleBadge role={workspace.userRole} />
             </div>
           </div>
@@ -140,23 +140,23 @@ export function GeneralTab({
       </section>
 
       {/* Team Members */}
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-6 mb-6">
+      <section className="rounded-xl border border-border bg-card p-6 mb-6">
         <div className="flex items-center gap-3 mb-5">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600/20">
             <Users className="h-5 w-5 text-blue-400" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-zinc-200">Team Members</h2>
-            <p className="text-xs text-zinc-500">{members.length} member{members.length !== 1 ? "s" : ""}</p>
+            <h2 className="text-lg font-semibold text-foreground">Team Members</h2>
+            <p className="text-xs text-muted-foreground">{members.length} member{members.length !== 1 ? "s" : ""}</p>
           </div>
         </div>
 
         {isAdmin && (
-          <div className="mb-5 rounded-lg border border-zinc-700/50 bg-zinc-800/50 p-4">
-            <p className="mb-3 text-sm font-medium text-zinc-300">Invite by email</p>
+          <div className="mb-5 rounded-lg border border-border bg-secondary p-4">
+            <p className="mb-3 text-sm font-medium text-foreground">Invite by email</p>
             <div className="flex gap-2">
-              <Input placeholder="colleague@company.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleInvite()} className="flex-1 bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-600" />
-              <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className="rounded-md border border-zinc-700 bg-zinc-800 px-3 text-sm text-zinc-300">
+              <Input placeholder="colleague@company.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleInvite()} className="flex-1" />
+              <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className="rounded-md border border-input bg-background px-3 text-sm text-foreground">
                 <option value="member">Member</option>
                 <option value="admin">Admin</option>
                 <option value="viewer">Viewer</option>
@@ -167,12 +167,12 @@ export function GeneralTab({
             </div>
             {inviteError && <p className="mt-2 text-xs text-red-400">{inviteError}</p>}
             <div className="mt-3 flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleGenerateLink} disabled={generatingLink} className="border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800">
+              <Button variant="outline" size="sm" onClick={handleGenerateLink} disabled={generatingLink}>
                 {generatingLink ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-1.5 h-3.5 w-3.5" />}
                 Generate invite link
               </Button>
               {inviteLink && (
-                <button onClick={handleCopyLink} className="flex items-center gap-1 rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
+                <button onClick={handleCopyLink} className="flex items-center gap-1 rounded bg-secondary px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
                   {linkCopied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
                   {linkCopied ? "Copied!" : "Copy link"}
                 </button>
@@ -183,22 +183,22 @@ export function GeneralTab({
 
         <div className="space-y-1">
           {members.map((m) => (
-            <div key={m.id} className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-white/[0.02] transition-colors">
+            <div key={m.id} className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-accent transition-colors">
               <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-zinc-700 text-xs text-zinc-300">
+                <AvatarFallback className="bg-secondary text-xs text-foreground">
                   {(m.display_name ?? m.email)?.[0]?.toUpperCase() ?? "?"}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-zinc-200 truncate">
+                <p className="text-sm font-medium text-foreground truncate">
                   {m.display_name ?? m.email}
-                  {m.user_id === user?.id && <span className="ml-1.5 text-[11px] text-zinc-500">(you)</span>}
+                  {m.user_id === user?.id && <span className="ml-1.5 text-[11px] text-muted-foreground">(you)</span>}
                 </p>
-                <p className="text-[11px] text-zinc-500 truncate">{m.email}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{m.email}</p>
               </div>
               <div className="flex items-center gap-2">
                 {isOwner && m.role !== "owner" ? (
-                  <select value={m.role} onChange={(e) => handleChangeRole(m.user_id, e.target.value)} disabled={changingRole === m.user_id} className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300">
+                  <select value={m.role} onChange={(e) => handleChangeRole(m.user_id, e.target.value)} disabled={changingRole === m.user_id} className="rounded border border-input bg-background px-2 py-1 text-[11px] text-foreground">
                     <option value="admin">Admin</option>
                     <option value="member">Member</option>
                     <option value="viewer">Viewer</option>
@@ -207,7 +207,7 @@ export function GeneralTab({
                   <RoleBadge role={m.role} />
                 )}
                 {isAdmin && m.role !== "owner" && m.user_id !== user?.id && (
-                  <button onClick={() => handleRemoveMember(m.user_id)} className="rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Remove member">
+                  <button onClick={() => handleRemoveMember(m.user_id)} className="rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Remove member">
                     <UserMinus className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -219,28 +219,28 @@ export function GeneralTab({
 
       {/* Pending Invites */}
       {isAdmin && invites.length > 0 && (
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-6 mb-6">
+        <section className="rounded-xl border border-border bg-card p-6 mb-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-600/20">
               <Mail className="h-5 w-5 text-purple-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-zinc-200">Pending Invites</h2>
-              <p className="text-xs text-zinc-500">{invites.length} pending</p>
+              <h2 className="text-lg font-semibold text-foreground">Pending Invites</h2>
+              <p className="text-xs text-muted-foreground">{invites.length} pending</p>
             </div>
           </div>
           <div className="space-y-1">
             {invites.map((inv) => (
-              <div key={inv.id} className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-white/[0.02] transition-colors">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-700">
-                  <Mail className="h-3.5 w-3.5 text-zinc-400" />
+              <div key={inv.id} className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-accent transition-colors">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary">
+                  <Mail className="h-3.5 w-3.5 text-muted-foreground" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-zinc-300 truncate">{inv.email}</p>
-                  <p className="text-[11px] text-zinc-500">Expires {new Date(inv.expires_at).toLocaleDateString()}</p>
+                  <p className="text-sm text-foreground truncate">{inv.email}</p>
+                  <p className="text-[11px] text-muted-foreground">Expires {new Date(inv.expires_at).toLocaleDateString()}</p>
                 </div>
                 <RoleBadge role={inv.role} />
-                <button onClick={() => handleRevokeInvite(inv.id)} className="rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Revoke invite">
+                <button onClick={() => handleRevokeInvite(inv.id)} className="rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Revoke invite">
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -261,7 +261,7 @@ export function GeneralTab({
               <p className="text-xs text-red-400/60">Irreversible actions</p>
             </div>
           </div>
-          <p className="mb-4 text-sm text-zinc-400">
+          <p className="mb-4 text-sm text-muted-foreground">
             Deleting this workspace will permanently remove all projects, files, and data. This cannot be undone.
           </p>
           <Button variant="outline" onClick={() => setDeleteOpen(true)} className="border-red-800 text-red-400 hover:bg-red-500/10 hover:text-red-300">
@@ -273,16 +273,16 @@ export function GeneralTab({
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete workspace</DialogTitle>
-            <DialogDescription className="text-zinc-400">
-              This will permanently delete <strong className="text-zinc-200">{workspace.name}</strong> and all its data. Type the workspace name to confirm.
+            <DialogDescription className="text-muted-foreground">
+              This will permanently delete <strong className="text-foreground">{workspace.name}</strong> and all its data. Type the workspace name to confirm.
             </DialogDescription>
           </DialogHeader>
-          <Input placeholder={workspace.name} value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} className="bg-zinc-800 border-zinc-700 text-zinc-200" />
+          <Input placeholder={workspace.name} value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} />
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setDeleteOpen(false); setDeleteConfirm(""); }} className="border-zinc-700 text-zinc-300">Cancel</Button>
+            <Button variant="outline" onClick={() => { setDeleteOpen(false); setDeleteConfirm(""); }}>Cancel</Button>
             <Button onClick={handleDelete} disabled={deleteConfirm !== workspace.name || deleting} className="bg-red-600 text-white hover:bg-red-500 disabled:opacity-50">
               {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Delete permanently

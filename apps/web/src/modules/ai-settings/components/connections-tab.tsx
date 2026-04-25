@@ -72,15 +72,15 @@ export function ConnectionsTab({
       <section>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h2 className="text-base font-semibold text-zinc-200 flex items-center gap-2">
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
               <Github className="h-4 w-4" /> GitHub AI Accounts
             </h2>
-            <p className="text-xs text-zinc-500 mt-0.5">Connect GitHub accounts that have AI access (Copilot subscription) to use GitHub-hosted models.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Connect GitHub accounts that have AI access (Copilot subscription) to use GitHub-hosted models.</p>
           </div>
           <div className="flex gap-2">
             <a
               href={`${API_URL}/auth/github/copilot${workspaceId ? `?workspaceId=${workspaceId}` : ""}`}
-              className="flex items-center gap-1.5 rounded-lg bg-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg bg-secondary px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
               title="Sign in with GitHub to connect your account automatically"
             >
               <Github className="h-3.5 w-3.5" /> Sign in with GitHub
@@ -96,16 +96,16 @@ export function ConnectionsTab({
         </div>
 
         {showAccountForm && (
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-2 mb-3">
+          <div className="rounded-lg border border-border bg-card p-3 space-y-2 mb-3">
             <input type="text" placeholder="Label (e.g. 'Work Account')" value={accountLabel}
               onChange={(e) => setAccountLabel(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500" />
+              className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500" />
             <input type="password" placeholder="Paste your GitHub access token here" value={accountToken}
               onChange={(e) => setAccountToken(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-brand-500" />
+              className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500" />
             {accountError && <p className="text-xs text-red-400">{accountError}</p>}
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowAccountForm(false)} className="px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
+              <button onClick={() => setShowAccountForm(false)} className="px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
               <button onClick={handleAddAccount} disabled={accountSubmitting || !accountLabel.trim() || !accountToken.trim()}
                 className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-500 disabled:opacity-50">
                 {accountSubmitting && <Loader2 className="h-3 w-3 animate-spin" />} Add
@@ -115,24 +115,24 @@ export function ConnectionsTab({
         )}
 
         {accountsLoading ? (
-          <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin text-zinc-500" /></div>
+          <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
         ) : accounts.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-zinc-700 py-6 text-center">
-            <p className="text-xs text-zinc-500">No GitHub accounts connected.</p>
+          <div className="rounded-lg border border-dashed border-border py-6 text-center">
+            <p className="text-xs text-muted-foreground">No GitHub accounts connected.</p>
           </div>
         ) : (
           <div className="space-y-1.5">
             {accounts.map((a) => (
-              <div key={a.id} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
+              <div key={a.id} className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2.5">
                 <div className="flex items-center gap-2.5">
-                  <Github className="h-4 w-4 text-zinc-500" />
-                  <span className="text-sm text-zinc-200">{a.label}</span>
-                  <span className="text-xs text-zinc-500">@{a.github_login}</span>
+                  <Github className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-foreground">{a.label}</span>
+                  <span className="text-xs text-muted-foreground">@{a.github_login}</span>
                   {a.is_valid ? <CheckCircle className="h-3.5 w-3.5 text-green-400" /> : <XCircle className="h-3.5 w-3.5 text-red-400" />}
                 </div>
                 <div className="flex items-center gap-1">
                   <button onClick={() => handleValidateAccount(a.id)} disabled={validating === a.id}
-                    className="rounded p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors" title="Test">
+                    className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title="Test">
                     {validating === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   </button>
                   <button onClick={() => onRemoveAccount(a.id)}
@@ -146,7 +146,7 @@ export function ConnectionsTab({
         )}
       </section>
 
-      <div className="border-t border-zinc-800" />
+      <div className="border-t border-border" />
 
       {/* ── Custom Providers (new wizard-based UI with 61 providers) ── */}
       <section>

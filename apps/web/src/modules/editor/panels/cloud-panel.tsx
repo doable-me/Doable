@@ -141,16 +141,16 @@ export function CloudPanel({ projectId, onClose }: CloudPanelProps) {
 
   return (
     <>
-      <div className="flex h-full flex-col bg-[#1C1C1C] text-white">
+      <div className="flex h-full flex-col bg-background text-foreground">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2.5">
             <Database className="h-4 w-4 text-brand-400" />
-            <h2 className="text-sm font-semibold text-white">Cloud</h2>
+            <h2 className="text-sm font-semibold text-foreground">Cloud</h2>
           </div>
           <button
             onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             title="Close"
           >
             <X className="h-3.5 w-3.5" />
@@ -158,15 +158,15 @@ export function CloudPanel({ projectId, onClose }: CloudPanelProps) {
         </div>
 
         {/* Connection Status */}
-        <div className="border-b border-zinc-800 px-4 py-3">
+        <div className="border-b border-border px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span
                 className={`h-2 w-2 rounded-full ${
-                  connected ? "bg-emerald-500" : "bg-zinc-600"
+                  connected ? "bg-emerald-500" : "bg-muted-foreground"
                 }`}
               />
-              <span className="text-xs text-zinc-400">
+              <span className="text-xs text-muted-foreground">
                 {connected ? "Connected to Supabase" : "Not connected"}
               </span>
             </div>
@@ -174,7 +174,7 @@ export function CloudPanel({ projectId, onClose }: CloudPanelProps) {
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setShowDialog(true)}
-                  className="rounded-md px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                  className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 >
                   Settings
                 </button>
@@ -196,8 +196,8 @@ export function CloudPanel({ projectId, onClose }: CloudPanelProps) {
             )}
           </div>
           {connected && connection && (
-            <div className="mt-2 rounded-md bg-zinc-900/60 px-2.5 py-1.5">
-              <p className="text-[11px] font-mono text-zinc-600 truncate">
+            <div className="mt-2 rounded-md bg-muted px-2.5 py-1.5">
+              <p className="text-[11px] font-mono text-muted-foreground truncate">
                 {connection.url}
               </p>
             </div>
@@ -206,31 +206,31 @@ export function CloudPanel({ projectId, onClose }: CloudPanelProps) {
 
         {/* Scrollable sections */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
-          <div className="border-b border-zinc-800/50">
+          <div className="border-b border-border">
             <SectionHeader icon={Database} title="Database" expanded={expandedSections.has("database")} onToggle={() => toggleSection("database")} badge={connected ? `${tables.length}` : undefined} statusColor={connected ? "green" : "zinc"} />
             {expandedSections.has("database") && <DatabaseSection connected={connected} tables={tables} />}
           </div>
 
-          <div className="border-b border-zinc-800/50">
+          <div className="border-b border-border">
             <SectionHeader icon={Shield} title="Authentication" expanded={expandedSections.has("auth")} onToggle={() => toggleSection("auth")} badge={connected ? `${authProviders.filter((p) => p.enabled).length} active` : undefined} statusColor={connected ? "green" : "zinc"} />
             {expandedSections.has("auth") && <AuthSection connected={connected} providers={authProviders} onToggleProvider={handleToggleProvider} />}
           </div>
 
-          <div className="border-b border-zinc-800/50">
+          <div className="border-b border-border">
             <SectionHeader icon={HardDrive} title="Storage" expanded={expandedSections.has("storage")} onToggle={() => toggleSection("storage")} badge={connected ? `${buckets.length} buckets` : undefined} statusColor={connected ? "green" : "zinc"} />
             {expandedSections.has("storage") && <StorageSection connected={connected} buckets={buckets} />}
           </div>
 
-          <div className="border-b border-zinc-800/50">
+          <div className="border-b border-border">
             <SectionHeader icon={Zap} title="Edge Functions" expanded={expandedSections.has("functions")} onToggle={() => toggleSection("functions")} badge={connected ? `${functions.filter((f) => f.status === "active").length} active` : undefined} statusColor={connected ? functions.some((f) => f.status === "active") ? "green" : "amber" : "zinc"} />
             {expandedSections.has("functions") && <EdgeFunctionsSection connected={connected} functions={functions} />}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="border-t border-zinc-800 px-4 py-2.5">
+        <div className="border-t border-border px-4 py-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-zinc-600">Powered by Supabase</span>
+            <span className="text-[10px] text-muted-foreground">Powered by Supabase</span>
             {connected && (
               <span className="flex items-center gap-1 text-[10px] text-emerald-500/70">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />

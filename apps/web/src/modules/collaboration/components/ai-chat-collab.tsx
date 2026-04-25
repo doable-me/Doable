@@ -33,7 +33,7 @@ export function AiStreamOverlay({ onAbort }: AiStreamOverlayProps) {
         return (
           <div
             key={messageId}
-            className="rounded-lg border border-zinc-700/60 bg-zinc-800/80 p-3"
+            className="rounded-lg border border-border bg-secondary/80 p-3"
           >
             {/* Header */}
             <div className="mb-2 flex items-center justify-between">
@@ -42,7 +42,7 @@ export function AiStreamOverlay({ onAbort }: AiStreamOverlayProps) {
                   className="inline-block h-2.5 w-2.5 rounded-full"
                   style={{ backgroundColor: color }}
                 />
-                <span className="text-xs font-medium text-zinc-300">
+                <span className="text-xs font-medium text-foreground">
                   {displayName} is chatting with AI...
                 </span>
               </div>
@@ -56,12 +56,12 @@ export function AiStreamOverlay({ onAbort }: AiStreamOverlayProps) {
             </div>
 
             {/* Streaming content */}
-            <div className="max-h-40 overflow-y-auto rounded bg-zinc-900/60 px-3 py-2 text-sm leading-relaxed text-zinc-400">
+            <div className="max-h-40 overflow-y-auto rounded bg-muted px-3 py-2 text-sm leading-relaxed text-muted-foreground">
               {text || (
-                <span className="inline-flex items-center gap-1 text-zinc-500">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-500" />
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-500 [animation-delay:150ms]" />
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-500 [animation-delay:300ms]" />
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground" />
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground [animation-delay:300ms]" />
                 </span>
               )}
             </div>
@@ -97,20 +97,20 @@ export function AiTypingIndicator() {
               className="inline-block h-2 w-2 rounded-full"
               style={{ backgroundColor: color }}
             />
-            <span className="text-[11px] text-zinc-400 italic">
+            <span className="text-[11px] text-muted-foreground italic">
               {displayName} is typing to AI
             </span>
             <span className="inline-flex items-center gap-0.5">
               <span
-                className="h-1 w-1 rounded-full bg-zinc-500 animate-bounce"
+                className="h-1 w-1 rounded-full bg-muted-foreground animate-bounce"
                 style={{ animationDelay: "0ms" }}
               />
               <span
-                className="h-1 w-1 rounded-full bg-zinc-500 animate-bounce"
+                className="h-1 w-1 rounded-full bg-muted-foreground animate-bounce"
                 style={{ animationDelay: "150ms" }}
               />
               <span
-                className="h-1 w-1 rounded-full bg-zinc-500 animate-bounce"
+                className="h-1 w-1 rounded-full bg-muted-foreground animate-bounce"
                 style={{ animationDelay: "300ms" }}
               />
             </span>
@@ -141,13 +141,13 @@ export function AiQueuePanel({ currentUserId, onCancel }: AiQueuePanelProps) {
   const ownItem = aiQueue.find((item) => item.userId === currentUserId);
 
   return (
-    <div className="rounded-lg border border-zinc-700/60 bg-zinc-800/80 mx-4 my-2 p-3">
+    <div className="rounded-lg border border-border bg-secondary/80 mx-4 my-2 p-3">
       {/* Header */}
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium text-zinc-300">
+        <span className="text-xs font-medium text-foreground">
           AI Message Queue
         </span>
-        <span className="text-[11px] text-zinc-500">
+        <span className="text-[11px] text-muted-foreground">
           {aiQueue.length} pending
         </span>
       </div>
@@ -170,11 +170,11 @@ export function AiQueuePanel({ currentUserId, onCancel }: AiQueuePanelProps) {
             <div
               key={item.id}
               className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs ${
-                isOwn ? "bg-zinc-700/50" : "bg-zinc-900/40"
+                isOwn ? "bg-secondary" : "bg-muted"
               }`}
             >
               {/* Position */}
-              <span className="w-5 shrink-0 text-center text-[10px] font-semibold text-zinc-500">
+              <span className="w-5 shrink-0 text-center text-[10px] font-semibold text-muted-foreground">
                 #{item.position}
               </span>
 
@@ -187,7 +187,7 @@ export function AiQueuePanel({ currentUserId, onCancel }: AiQueuePanelProps) {
               </div>
 
               {/* Message preview */}
-              <span className="min-w-0 flex-1 truncate text-zinc-400">
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
                 {item.content}
               </span>
 
@@ -245,7 +245,7 @@ export function AiMessageAttribution({
       </div>
       <span
         className={`text-[11px] font-medium ${
-          isOwn ? "text-blue-300" : "text-zinc-400"
+          isOwn ? "text-blue-300" : "text-muted-foreground"
         }`}
       >
         {isOwn ? "You" : displayName}

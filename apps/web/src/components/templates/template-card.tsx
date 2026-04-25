@@ -42,7 +42,7 @@ export function TemplateCard({ template, onClick }: TemplateCardProps) {
     <button
       type="button"
       onClick={onClick}
-      className="group relative flex w-full flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 text-left transition-all duration-200 hover:border-zinc-600 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/20 cursor-pointer"
+      className="group relative flex w-full flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition-all duration-200 hover:border-muted-foreground hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/10 cursor-pointer"
     >
       {/* Preview thumbnail area */}
       <div className="relative h-48 w-full overflow-hidden">
@@ -58,7 +58,7 @@ export function TemplateCard({ template, onClick }: TemplateCardProps) {
 
         {/* Official badge */}
         {template.isOfficial && (
-          <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-black/70 backdrop-blur-sm border border-brand-500/30 px-2 py-0.5">
+          <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-foreground/45 backdrop-blur-sm border border-brand-500/30 px-2 py-0.5">
             <Shield className="h-3 w-3 text-brand-400" />
             <span className="text-[10px] font-medium text-brand-300">
               Official
@@ -70,15 +70,15 @@ export function TemplateCard({ template, onClick }: TemplateCardProps) {
       {/* Info section */}
       <div className="flex flex-1 flex-col gap-1.5 p-3.5">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="text-sm font-medium text-zinc-200 line-clamp-1 group-hover:text-white transition-colors">
+          <h3 className="text-sm font-medium text-foreground line-clamp-1 group-hover:text-foreground transition-colors">
             {template.name}
           </h3>
-          <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
             {template.fileCount} {template.fileCount === 1 ? "file" : "files"}
           </span>
         </div>
 
-        <p className="text-xs leading-relaxed text-zinc-500 line-clamp-2">
+        <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
           {template.description}
         </p>
 

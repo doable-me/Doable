@@ -105,7 +105,7 @@ export function VisualEditToolbar({
 
   return (
     <div
-      className="fixed z-[9999] flex items-center gap-1 rounded-xl border border-zinc-700/60 bg-zinc-900/95 px-1.5 shadow-lg shadow-black/40 backdrop-blur-md transition-all duration-150 ease-out"
+      className="fixed z-[9999] flex items-center gap-1 rounded-xl border border-border bg-popover px-1.5 shadow-md backdrop-blur-md transition-all duration-150 ease-out"
       style={{
         top: position.top,
         left: position.left,
@@ -125,7 +125,7 @@ export function VisualEditToolbar({
           onKeyDown={handleKeyDown}
           placeholder={hasPendingChanges ? "Save first" : "Ask Doable..."}
           disabled={hasPendingChanges}
-          className="h-7 w-full rounded-lg bg-zinc-800/70 px-2.5 text-[12px] text-zinc-200 outline-none placeholder:text-zinc-500 focus:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-7 w-full rounded-lg bg-secondary px-2.5 text-[12px] text-foreground outline-none placeholder:text-muted-foreground focus:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         />
       </div>
 
@@ -134,20 +134,20 @@ export function VisualEditToolbar({
         type="button"
         onClick={handleSubmit}
         disabled={!prompt.trim()}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-brand-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-brand-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
         title="Send prompt"
       >
         <ArrowUp className="h-3.5 w-3.5" />
       </button>
 
       {/* Divider */}
-      <div className="h-5 w-px shrink-0 bg-zinc-700/50" />
+      <div className="h-5 w-px shrink-0 bg-border" />
 
       {/* Select Parent Button */}
       <button
         type="button"
         onClick={onSelectParent}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         title="Select parent element"
       >
         <CornerRightUp className="h-3.5 w-3.5" />
@@ -157,7 +157,7 @@ export function VisualEditToolbar({
       <button
         type="button"
         onClick={onViewCode}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         title="View source code"
       >
         <Code2 className="h-3.5 w-3.5" />
@@ -167,7 +167,7 @@ export function VisualEditToolbar({
       <button
         type="button"
         onClick={onDelete}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-red-400"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-red-400"
         title="Delete element"
       >
         <Trash2 className="h-3.5 w-3.5" />

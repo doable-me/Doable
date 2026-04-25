@@ -80,7 +80,7 @@ export default function DashboardPage() {
           <div className="mb-6">
             <div className="flex items-center gap-2 text-sm">
               <button
-                className="text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="text-muted-foreground hover:text-foreground transition-colors"
                 onClick={() => {
                   d.setSidebarFilter("all");
                   d.setActiveFolderId(null);
@@ -90,12 +90,12 @@ export default function DashboardPage() {
               >
                 Home
               </button>
-              <span className="text-zinc-600">/</span>
-              <span className="text-zinc-200 font-medium">
+              <span className="text-muted-foreground">/</span>
+              <span className="text-foreground font-medium">
                 {d.activeFolderName ?? (d.sidebarFilter === "starred" ? "Starred" : d.sidebarFilter === "created-by-me" ? "Created by me" : "Shared with me")}
               </span>
             </div>
-            <h1 className="text-2xl font-semibold text-white mt-2">
+            <h1 className="text-2xl font-semibold text-foreground mt-2">
               {d.activeFolderName ?? (d.sidebarFilter === "starred" ? "Starred Projects" : d.sidebarFilter === "created-by-me" ? "My Projects" : "Shared Projects")}
             </h1>
           </div>
@@ -134,8 +134,8 @@ export default function DashboardPage() {
         {/* Loading */}
         {d.isLoading && d.activeTab !== "templates" && (
           <div className="flex flex-col items-center justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-zinc-500 mb-4" />
-            <p className="text-sm text-zinc-500">Loading projects...</p>
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
+            <p className="text-sm text-muted-foreground">Loading projects...</p>
           </div>
         )}
 
@@ -161,24 +161,24 @@ export default function DashboardPage() {
 
         {/* List View */}
         {!d.isLoading && d.activeTab !== "templates" && d.viewMode === "list" && d.displayProjects.length > 0 && (
-          <div className="overflow-hidden rounded-xl border border-zinc-800">
+          <div className="overflow-hidden rounded-xl border border-border">
             <table className="w-full text-sm">
-              <thead className="bg-zinc-900/80">
-                <tr className="border-b border-zinc-800">
+              <thead className="bg-card">
+                <tr className="border-b border-border">
                   <th className="w-10 px-3 py-3" />
                   <th className="w-10 px-1 py-3" />
                   <th className="px-3 py-3 text-left">
-                    <button className="inline-flex items-center font-medium text-zinc-400 hover:text-zinc-200 transition-colors" onClick={() => d.handleSort("name")}>
+                    <button className="inline-flex items-center font-medium text-muted-foreground hover:text-foreground transition-colors" onClick={() => d.handleSort("name")}>
                       Name <SortIcon col="name" />
                     </button>
                   </th>
                   <th className="px-3 py-3 text-left">
-                    <button className="inline-flex items-center font-medium text-zinc-400 hover:text-zinc-200 transition-colors" onClick={() => d.handleSort("status")}>
+                    <button className="inline-flex items-center font-medium text-muted-foreground hover:text-foreground transition-colors" onClick={() => d.handleSort("status")}>
                       Status <SortIcon col="status" />
                     </button>
                   </th>
                   <th className="px-3 py-3 text-left">
-                    <button className="inline-flex items-center font-medium text-zinc-400 hover:text-zinc-200 transition-colors" onClick={() => d.handleSort("updated_at")}>
+                    <button className="inline-flex items-center font-medium text-muted-foreground hover:text-foreground transition-colors" onClick={() => d.handleSort("updated_at")}>
                       Updated <SortIcon col="updated_at" />
                     </button>
                   </th>
@@ -209,8 +209,8 @@ export default function DashboardPage() {
         {d.activeTab === "templates" && (
           d.isLoadingTemplates ? (
             <div className="flex flex-col items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-zinc-500 mb-4" />
-              <p className="text-sm text-zinc-500">Loading templates...</p>
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
+              <p className="text-sm text-muted-foreground">Loading templates...</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -224,7 +224,7 @@ export default function DashboardPage() {
                 ))}
               {d.templates.length === 0 && (
                 <div className="col-span-full flex flex-col items-center justify-center py-16 text-center">
-                  <p className="text-sm text-zinc-500">No templates available.</p>
+                  <p className="text-sm text-muted-foreground">No templates available.</p>
                 </div>
               )}
             </div>
@@ -234,18 +234,18 @@ export default function DashboardPage() {
         {/* Empty State */}
         {!d.isLoading && d.activeTab !== "templates" && d.displayProjects.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="h-16 w-16 rounded-2xl bg-zinc-800 flex items-center justify-center mb-4">
+            <div className="h-16 w-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">
               {d.searchQuery || d.statusFilter !== "all" || d.starredFilter
-                ? <Search className="h-8 w-8 text-zinc-600" />
-                : <Plus className="h-8 w-8 text-zinc-600" />}
+                ? <Search className="h-8 w-8 text-muted-foreground" />
+                : <Plus className="h-8 w-8 text-muted-foreground" />}
             </div>
-            <h3 className="text-lg font-medium text-zinc-300 mb-2">
+            <h3 className="text-lg font-medium text-foreground mb-2">
               {d.searchQuery ? "No projects found"
                 : d.statusFilter !== "all" || d.starredFilter ? "No matching projects"
                 : d.activeFolderId ? "This folder is empty"
                 : "No projects yet"}
             </h3>
-            <p className="text-sm text-zinc-500 max-w-sm">
+            <p className="text-sm text-muted-foreground max-w-sm">
               {d.searchQuery ? `No projects match "${d.searchQuery}". Try a different search.`
                 : d.statusFilter !== "all" || d.starredFilter ? "Try adjusting your filters."
                 : "Describe what you want to build in the chat above, or import an existing project from GitHub."}
@@ -270,12 +270,12 @@ export default function DashboardPage() {
               <button
                 onClick={d.loadMore}
                 disabled={d.isLoadingMore}
-                className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/50 px-5 py-2.5 text-sm font-medium text-zinc-300 hover:bg-zinc-700/50 hover:text-white transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-5 py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
               >
                 {d.isLoadingMore ? <><Loader2 className="h-4 w-4 animate-spin" /> Loading...</> : "Load more"}
               </button>
             )}
-            <span className="text-xs text-zinc-600">
+            <span className="text-xs text-muted-foreground">
               Showing {d.displayProjects.length} of {d.activeTab === "recent" ? d.totalRecent : d.totalProjects} project{(d.activeTab === "recent" ? d.totalRecent : d.totalProjects) !== 1 ? "s" : ""}
               {d.searchQuery && ` matching "${d.searchQuery}"`}
             </span>

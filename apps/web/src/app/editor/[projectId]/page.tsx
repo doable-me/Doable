@@ -131,10 +131,10 @@ const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full items-center justify-center bg-[#1e1e1e]">
+      <div className="flex h-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-2">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-brand-400" />
-          <span className="text-xs text-zinc-500">Loading editor...</span>
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-brand-400" />
+          <span className="text-xs text-muted-foreground">Loading editor...</span>
         </div>
       </div>
     ),
@@ -1146,7 +1146,7 @@ function formatInlineStatic(text: string): React.ReactNode {
   return segments.map((seg, j) => {
     if (seg.startsWith("**") && seg.endsWith("**")) {
       return (
-        <strong key={j} className="font-semibold text-white">
+        <strong key={j} className="font-semibold text-foreground">
           {seg.slice(2, -2)}
         </strong>
       );
@@ -1155,7 +1155,7 @@ function formatInlineStatic(text: string): React.ReactNode {
       return (
         <code
           key={j}
-          className="rounded bg-zinc-800 px-1.5 py-0.5 text-[13px] text-brand-300"
+          className="rounded bg-secondary px-1.5 py-0.5 text-[13px] text-brand-300"
         >
           {seg.slice(1, -1)}
         </code>
@@ -1175,14 +1175,14 @@ function formatContent(content: string) {
       return (
         <div
           key={i}
-          className="my-3 overflow-hidden rounded-lg border border-zinc-700/50"
+          className="my-3 overflow-hidden rounded-lg border border-border"
         >
           {lang && (
-            <div className="bg-zinc-800/80 px-3 py-1.5 text-[11px] font-medium text-zinc-400 border-b border-zinc-700/50">
+            <div className="bg-secondary px-3 py-1.5 text-[11px] font-medium text-muted-foreground border-b border-border">
               {lang}
             </div>
           )}
-          <pre className="overflow-x-auto bg-zinc-900/60 p-3 text-[13px] leading-relaxed text-zinc-300">
+          <pre className="overflow-x-auto bg-muted p-3 text-[13px] leading-relaxed text-foreground">
             <code>{code}</code>
           </pre>
         </div>
@@ -1197,13 +1197,13 @@ function formatContent(content: string) {
       if (!listBuffer) return;
       if (listBuffer.ordered) {
         elements.push(
-          <ol key={`ol-${elements.length}`} className="my-1.5 ml-4 list-decimal space-y-0.5 text-zinc-300">
+          <ol key={`ol-${elements.length}`} className="my-1.5 ml-4 list-decimal space-y-0.5 text-foreground">
             {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
           </ol>
         );
       } else {
         elements.push(
-          <ul key={`ul-${elements.length}`} className="my-1.5 ml-4 list-disc space-y-0.5 text-zinc-300">
+          <ul key={`ul-${elements.length}`} className="my-1.5 ml-4 list-disc space-y-0.5 text-foreground">
             {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
           </ul>
         );
@@ -1432,15 +1432,15 @@ function renderFunctionStepList(content: string, compact = false): React.ReactNo
       </div>
       <div className="flex flex-col gap-2">
         {steps.map((step, idx) => (
-          <div key={step.id} className="flex items-center gap-3 animate-in slide-in-from-bottom-2 fade-in duration-300 rounded-lg bg-black/20 border border-white/5 p-2 hover:bg-black/40 hover:border-white/10 transition-colors">
+          <div key={step.id} className="flex items-center gap-3 animate-in slide-in-from-bottom-2 fade-in duration-300 rounded-lg bg-foreground/15 border border-border p-2 hover:bg-foreground/30 hover:border-border transition-colors">
             <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-500/20 text-brand-400 font-bold text-[10px]">
               {idx + 1}
             </div>
             <div className="flex-1 min-w-0 flex flex-col">
-              <span className="text-[13px] font-medium text-zinc-200 truncate">{step.description}</span>
+              <span className="text-[13px] font-medium text-foreground truncate">{step.description}</span>
               {step.filePath && (
                 <span
-                  className="text-[10px] text-zinc-500 font-mono truncate"
+                  className="text-[10px] text-muted-foreground font-mono truncate"
                   title={step.filePath}
                 >
                   {step.filePath.split(/[\\/]/).pop() || step.filePath}
@@ -3645,10 +3645,10 @@ export default function EditorPage() {
               if (isFolder) toggleFolder(node.path);
               else openFileInTab(node.path);
             }}
-            className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-[13px] hover:bg-white/5 transition-colors ${
+            className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-[13px] hover:bg-accent transition-colors ${
               isSelected && !isFolder
                 ? "bg-brand-500/10 text-brand-300"
-                : "text-zinc-400"
+                : "text-muted-foreground"
             }`}
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
           >
@@ -3659,12 +3659,12 @@ export default function EditorPage() {
                     isExpanded ? "rotate-90" : ""
                   }`}
                 />
-                <Folder className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
+                <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
               </>
             ) : (
               <>
                 <span className="w-3" />
-                <File className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
+                <File className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
               </>
             )}
             <span className="truncate">{node.name}</span>
@@ -3967,7 +3967,7 @@ export default function EditorPage() {
           <h3 className="text-sm font-medium text-red-300 mb-2">
             Failed to start project
           </h3>
-          <p className="text-[13px] text-zinc-500 max-w-sm mb-4">
+          <p className="text-[13px] text-muted-foreground max-w-sm mb-4">
             {scaffoldError}
           </p>
           <button
@@ -3997,11 +3997,11 @@ export default function EditorPage() {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-8">
         <div className="relative mb-5">
-          <div className="h-10 w-10 rounded-full border-2 border-zinc-700 border-t-brand-400 animate-spin" />
+          <div className="h-10 w-10 rounded-full border-2 border-border border-t-brand-400 animate-spin" />
           <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-brand-400" />
         </div>
-        <h3 className="text-sm font-medium text-zinc-300 mb-1.5">{statusMsg}</h3>
-        <p className="text-[13px] text-zinc-600 max-w-[280px]">
+        <h3 className="text-sm font-medium text-foreground mb-1.5">{statusMsg}</h3>
+        <p className="text-[13px] text-muted-foreground max-w-[280px]">
           {subtitleMsg}
         </p>
       </div>
@@ -4229,9 +4229,9 @@ export default function EditorPage() {
       onRemoteStatus={handleRemoteStatus}
       onRemoteError={handleRemoteError}
     />
-    <div className="flex h-screen flex-col bg-card text-zinc-200">
+    <div className="flex h-screen flex-col bg-card text-foreground">
       {/* ─── Top Bar ──────────────────────────────────────────── */}
-      <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-zinc-700/40 bg-card px-2 md:px-3">
+      <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border bg-card px-2 md:px-3">
         {/* Left: Logo + Back arrow + Project name with dropdown */}
         <div className="flex items-center gap-2.5 min-w-0">
           {/* Doable logo icon */}
@@ -4267,7 +4267,7 @@ export default function EditorPage() {
                     setIsEditingName(false);
                     apiUpdateProject(resolvedProjectId, { name: nameInput }).catch(() => {});
                   }}
-                  className="bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 text-sm text-white outline-none focus:border-brand-500 w-48"
+                  className="bg-background border border-input rounded px-2 py-0.5 text-sm text-foreground outline-none focus:border-brand-500 w-48"
                 />
                 <button
                   onClick={() => {
@@ -4275,7 +4275,7 @@ export default function EditorPage() {
                     setIsEditingName(false);
                     apiUpdateProject(resolvedProjectId, { name: nameInput }).catch(() => {});
                   }}
-                  className="p-1 text-zinc-400 hover:text-white"
+                  className="p-1 text-muted-foreground hover:text-foreground"
                 >
                   <Check className="h-3.5 w-3.5" />
                 </button>
@@ -4283,10 +4283,10 @@ export default function EditorPage() {
             ) : (
               <button
                 onClick={() => setIsEditingName(true)}
-                className="group flex items-center gap-1 text-sm font-semibold text-white hover:text-white truncate"
+                className="group flex items-center gap-1 text-sm font-semibold text-foreground hover:text-foreground truncate"
               >
                 {projectName}
-                <ChevronDown className="h-3.5 w-3.5 text-zinc-500 flex-shrink-0" />
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
               </button>
             )}
             {/* Preview status subtitle */}
@@ -4311,7 +4311,7 @@ export default function EditorPage() {
 
           {/* Scaffold status indicator */}
           {scaffoldStatus !== "ready" && scaffoldStatus !== "idle" && scaffoldStatus !== "error" && (
-            <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 flex-shrink-0">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-shrink-0">
               <Loader2 className="h-3 w-3 animate-spin text-brand-400" />
               {scaffoldStatus === "scaffolding" ? "Getting ready..." : "Starting..."}
             </div>
@@ -4319,7 +4319,7 @@ export default function EditorPage() {
         </div>
 
         {/* Center: View toggle icon buttons */}
-        <div className="flex items-center gap-0.5 rounded-xl bg-muted border border-zinc-700/30 p-0.5">
+        <div className="flex items-center gap-0.5 rounded-xl bg-muted border border-border p-0.5">
           <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none">
           {/* Core toolbar buttons */}
           {([
@@ -4342,7 +4342,7 @@ export default function EditorPage() {
                 className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md ${
                   isActive
                     ? "gap-1.5 bg-brand-500/15 text-brand-400 px-2.5 py-1"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 p-1.5"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent p-1.5"
                 }`}
                 title={label}
               >
@@ -4365,7 +4365,7 @@ export default function EditorPage() {
                 className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md ${
                   isActive
                     ? "gap-1.5 bg-brand-500/15 text-brand-400 px-2.5 py-1"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 p-1.5"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent p-1.5"
                 }`}
                 title={item.label}
               >
@@ -4383,7 +4383,7 @@ export default function EditorPage() {
               className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md p-1.5 ${
                 showMoreMenu
                   ? "bg-brand-500/15 text-brand-400"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
               }`}
               title="More views"
             >
@@ -4392,9 +4392,9 @@ export default function EditorPage() {
 
             {/* Dropdown */}
             {showMoreMenu && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-52 rounded-lg border border-zinc-700/60 bg-muted shadow-xl shadow-black/40 py-1 z-50">
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-52 rounded-lg border border-border bg-muted shadow-xl shadow-md py-1 z-50">
                 {/* View tabs with pin/unpin */}
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">Views</div>
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Views</div>
                 {MORE_MENU_ITEMS.map(({ key, icon: MenuIcon, label }) => {
                   const isActive = activeTab === key;
                   const isPinned = pinnedItems.includes(key);
@@ -4404,7 +4404,7 @@ export default function EditorPage() {
                       className={`flex items-center justify-between px-3 py-2 text-sm cursor-pointer transition-colors ${
                         isActive
                           ? "bg-brand-500/10 text-brand-400"
-                          : "text-zinc-300 hover:bg-white/5"
+                          : "text-foreground hover:bg-accent"
                       }`}
                     >
                       <button
@@ -4425,7 +4425,7 @@ export default function EditorPage() {
                         className={`flex-shrink-0 p-1 rounded transition-colors ${
                           isPinned
                             ? "text-[#4D91FF] hover:text-blue-300"
-                            : "text-zinc-600 hover:text-zinc-300"
+                            : "text-muted-foreground hover:text-foreground"
                         }`}
                         title={isPinned ? "Unpin from toolbar" : "Pin to toolbar"}
                       >
@@ -4435,46 +4435,46 @@ export default function EditorPage() {
                   );
                 })}
                 {/* Separator */}
-                <div className="my-1 border-t border-zinc-700/60" />
+                <div className="my-1 border-t border-border" />
                 {/* Project actions */}
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">Project</div>
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Project</div>
                 <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
                   onClick={() => { router.push(`/projects/${resolvedProjectId}/settings`); setShowMoreMenu(false); }}
                 >
                   <Settings className="h-4 w-4 flex-shrink-0" />
                   <span>Settings</span>
                 </button>
                 <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
                   onClick={() => { handleDownloadZip(); setShowMoreMenu(false); }}
                 >
                   <Download className="h-4 w-4 flex-shrink-0" />
                   <span>Download project</span>
                 </button>
                 <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
                   onClick={() => { handleDuplicateProject(); setShowMoreMenu(false); }}
                 >
                   <CopyPlus className="h-4 w-4 flex-shrink-0" />
                   <span>{isDuplicating ? "Duplicating..." : "Duplicate project"}</span>
                 </button>
                 <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
                   onClick={() => { handleCopyProjectLink(); setShowMoreMenu(false); }}
                 >
                   <Link className="h-4 w-4 flex-shrink-0" />
                   <span>Copy project link</span>
                 </button>
                 <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
                   onClick={() => { setShortcutsDialogOpen(true); setShowMoreMenu(false); }}
                 >
                   <Keyboard className="h-4 w-4 flex-shrink-0" />
                   <span>Keyboard shortcuts</span>
                 </button>
                 {/* Separator */}
-                <div className="my-1 border-t border-zinc-700/60" />
+                <div className="my-1 border-t border-border" />
                 <button
                   className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:bg-red-950/50 hover:text-red-300 transition-colors"
                   onClick={() => { setDeleteConfirmOpen(true); setShowMoreMenu(false); }}
@@ -4522,7 +4522,7 @@ export default function EditorPage() {
                     setIsEditingRoute(false);
                   }
                 }}
-                className="bg-transparent text-[11px] text-zinc-200 font-mono outline-none w-24 placeholder-zinc-600"
+                className="bg-transparent text-[11px] text-foreground font-mono outline-none w-24 placeholder:text-muted-foreground"
                 placeholder="/path"
                 autoFocus
               />
@@ -4534,14 +4534,14 @@ export default function EditorPage() {
                 setIsEditingRoute(true);
                 setTimeout(() => routeInputRef.current?.select(), 0);
               }}
-              className="flex items-center gap-1 rounded-full bg-muted border border-zinc-700/40 px-2.5 py-1 hover:border-zinc-500 transition-colors cursor-text"
+              className="flex items-center gap-1 rounded-full bg-muted border border-border px-2.5 py-1 hover:border-border transition-colors cursor-text"
               title="Click to navigate to a route"
             >
-              <Globe className="h-3 w-3 text-zinc-500" />
-              <span className="text-[11px] text-zinc-400 font-mono">{previewRoute}</span>
+              <Globe className="h-3 w-3 text-muted-foreground" />
+              <span className="text-[11px] text-muted-foreground font-mono">{previewRoute}</span>
             </button>
           )}
-          <div className="flex items-center rounded-full bg-muted border border-zinc-700/40 p-0.5">
+          <div className="flex items-center rounded-full bg-muted border border-border p-0.5">
             {([
               { mode: "desktop" as DeviceMode, Icon: Monitor, label: "Desktop" },
               { mode: "tablet" as DeviceMode, Icon: Tablet, label: "Tablet (768px)" },
@@ -4552,8 +4552,8 @@ export default function EditorPage() {
                 onClick={() => setDeviceMode(mode)}
                 className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors ${
                   deviceMode === mode
-                    ? "bg-zinc-600 text-zinc-100"
-                    : "text-zinc-500 hover:text-zinc-300"
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
                 title={label}
               >
@@ -4567,7 +4567,7 @@ export default function EditorPage() {
                 iframeRef.current.src = previewUrl;
               }
             }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-muted hover:text-zinc-300 transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             title="Refresh preview"
             disabled={!previewUrl}
           >
@@ -4577,7 +4577,7 @@ export default function EditorPage() {
             onClick={() => {
               if (previewUrl) window.open(previewUrl, "_blank");
             }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-muted hover:text-zinc-300 transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             title="Open in new tab"
             disabled={!previewUrl}
           >
@@ -4585,7 +4585,7 @@ export default function EditorPage() {
           </button>
           <button
             onClick={handleToggleFullscreen}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-muted hover:text-zinc-300 transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
           >
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -4620,7 +4620,7 @@ export default function EditorPage() {
           {/* Upgrade */}
           <button
             onClick={() => router.push("/billing")}
-            className="flex h-7 items-center gap-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] px-2.5 text-sm text-zinc-300 hover:bg-white/[0.1] hover:text-white transition-all"
+            className="flex h-7 items-center gap-1.5 rounded-lg bg-accent border border-border px-2.5 text-sm text-foreground hover:bg-accent hover:text-foreground transition-all"
           >
             <Crown className="h-4 w-4 text-amber-400" /><span className="hidden md:inline">Upgrade</span>
           </button>
@@ -4645,7 +4645,7 @@ export default function EditorPage() {
         {/* ─── Chat Panel ───────────────────────────────────── */}
         {showChat && (
           <div
-            className="flex flex-col border-r border-zinc-800/60 bg-card"
+            className="flex flex-col border-r border-border bg-card"
             style={{
               width: (showPreview || isPanelView) ? `${splitPos}%` : "100%",
               minWidth: "260px",
@@ -4684,15 +4684,15 @@ export default function EditorPage() {
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-600/10 mb-4">
                     <Sparkles className="h-6 w-6 text-brand-400" />
                   </div>
-                  <h3 className="text-sm font-medium text-zinc-300 mb-1">
+                  <h3 className="text-sm font-medium text-foreground mb-1">
                     Start a conversation
                   </h3>
-                  <p className="text-[13px] text-zinc-600 max-w-[280px]">
+                  <p className="text-[13px] text-muted-foreground max-w-[280px]">
                     Describe what you want to build and Doable AI will generate
                     the code for you.
                   </p>
                   {/* Mode indicator in empty state */}
-                  <div className="mt-4 flex items-center gap-2 rounded-full bg-zinc-800/60 px-3 py-1.5 text-[12px] text-zinc-500">
+                  <div className="mt-4 flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5 text-[12px] text-muted-foreground">
                     {chatMode === "agent" ? (
                       <>
                         <Hammer className="h-3.5 w-3.5 text-brand-400" />
@@ -4716,7 +4716,7 @@ export default function EditorPage() {
                       <button
                         key={starter}
                         onClick={() => sendMessage(starter)}
-                        className="rounded-full border border-zinc-700/50 bg-zinc-800/60 px-3.5 py-1.5 text-[13px] text-zinc-300 hover:bg-zinc-700/60 hover:text-white hover:border-zinc-600 transition-all"
+                        className="rounded-full border border-border bg-secondary px-3.5 py-1.5 text-[13px] text-foreground hover:bg-accent hover:text-foreground hover:border-border transition-all"
                       >
                         {starter}
                       </button>
@@ -4749,12 +4749,12 @@ export default function EditorPage() {
                             <span className="text-xs font-medium" style={{ color: msg.senderInfo.color }}>
                               {msg.senderInfo.displayName}
                             </span>
-                            <span className="text-[10px] text-zinc-700">
+                            <span className="text-[10px] text-muted-foreground">
                               {msg.timestamp}
                             </span>
                           </div>
                           <div
-                            className="rounded-2xl rounded-tl-sm bg-zinc-800/60 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-200"
+                            className="rounded-2xl rounded-tl-sm bg-secondary px-4 py-2.5 text-[14px] leading-relaxed text-foreground"
                             style={{ borderLeft: `3px solid ${msg.senderInfo.color}` }}
                           >
                             {msg.attachments && msg.attachments.length > 0 && (
@@ -4764,7 +4764,7 @@ export default function EditorPage() {
                                     key={ai}
                                     src={att.data}
                                     alt={att.name}
-                                    className="h-20 w-20 rounded-lg object-cover border border-zinc-600"
+                                    className="h-20 w-20 rounded-lg object-cover border border-border"
                                   />
                                 ))}
                               </div>
@@ -4778,14 +4778,14 @@ export default function EditorPage() {
                       <div className="flex justify-end">
                         <div className="max-w-[85%]">
                           <div className="flex items-center justify-end gap-2 mb-1">
-                            <span className="text-[10px] text-zinc-700">
+                            <span className="text-[10px] text-muted-foreground">
                               {msg.timestamp}
                             </span>
-                            <span className="text-xs font-medium text-zinc-400">
+                            <span className="text-xs font-medium text-muted-foreground">
                               You
                             </span>
                           </div>
-                          <div className="rounded-2xl rounded-br-sm bg-zinc-700/80 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
+                          <div className="rounded-2xl rounded-br-sm bg-muted px-4 py-2.5 text-[14px] leading-relaxed text-foreground">
                             {msg.attachments && msg.attachments.length > 0 && (
                               <div className="flex flex-wrap gap-2 mb-2">
                                 {msg.attachments.map((att, ai) => (
@@ -4793,7 +4793,7 @@ export default function EditorPage() {
                                     key={ai}
                                     src={att.data}
                                     alt={att.name}
-                                    className="h-20 w-20 rounded-lg object-cover border border-zinc-600"
+                                    className="h-20 w-20 rounded-lg object-cover border border-border"
                                   />
                                 ))}
                               </div>
@@ -4824,7 +4824,7 @@ export default function EditorPage() {
                           >
                             {msg.isError ? "Error" : "Doable AI"}
                           </span>
-                          <span className="text-[10px] text-zinc-700">
+                          <span className="text-[10px] text-muted-foreground">
                             {msg.timestamp}
                           </span>
                           {msg.isStreaming && !msg.content && (
@@ -4846,14 +4846,14 @@ export default function EditorPage() {
 
                         {/* Inline thinking indicator */}
                         {msg.thinkingContent && (
-                          <details className="mb-2 rounded-lg border border-zinc-700/40 bg-zinc-900/30 text-[13px]">
-                            <summary className="cursor-pointer select-none px-3 py-1.5 text-zinc-500 hover:text-zinc-400 flex items-center gap-2">
+                          <details className="mb-2 rounded-lg border border-border bg-card text-[13px]">
+                            <summary className="cursor-pointer select-none px-3 py-1.5 text-muted-foreground hover:text-muted-foreground flex items-center gap-2">
                               {msg.isStreaming && (
                                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse" />
                               )}
                               {msg.isStreaming ? "Thinking..." : "Thought process"}
                             </summary>
-                            <div className="px-3 pb-2 text-zinc-500 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                            <div className="px-3 pb-2 text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
                               {extractFunctionSteps(msg.thinkingContent).length > 0
                                 ? renderFunctionStepList(msg.thinkingContent, true)
                                 : msg.thinkingContent}
@@ -4865,7 +4865,7 @@ export default function EditorPage() {
                           className={`text-[14px] leading-relaxed ${
                             msg.isError
                               ? "text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 flex items-start gap-3 shadow-sm backdrop-blur-sm relative overflow-hidden"
-                              : "text-zinc-300"
+                              : "text-foreground"
                           }`}
                         >
                           {msg.isError && (
@@ -4886,16 +4886,16 @@ export default function EditorPage() {
                             {/* Live Streaming Glowing Orb - visible while streaming, and
                                 afterwards as a summary when there are tool actions */}
                             {!msg.isError && (msg.isStreaming || (msg.toolActions && msg.toolActions.length > 0)) && (
-                              <div className="relative mt-4 mb-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-5 shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm ml-auto mr-auto">
+                              <div className="relative mt-4 mb-4 overflow-hidden rounded-2xl border border-border bg-foreground/30 p-5 shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm ml-auto mr-auto">
                                 <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-brand-600/10 to-transparent pointer-events-none" />
                                 <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-500/20 blur-[60px] pointer-events-none rounded-full" />
                                 
                                 <div className="flex flex-col items-center relative z-10 w-full text-center">
-                                  <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-400/20 via-purple-500/20 to-transparent border border-white/10 shadow-[0_0_30px_rgba(168,85,247,0.3)]">
+                                  <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-400/20 via-purple-500/20 to-transparent border border-border shadow-[0_0_30px_rgba(168,85,247,0.3)]">
                                     {msg.isStreaming ? (
                                       <>
                                         <Sparkles className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)] animate-pulse" />
-                                        <div className="absolute inset-0 rounded-full border border-dashed border-white/20 animate-[spin_10s_linear_infinite]" />
+                                        <div className="absolute inset-0 rounded-full border border-dashed border-border animate-[spin_10s_linear_infinite]" />
                                       </>
                                     ) : (
                                       <Check className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
@@ -4910,7 +4910,7 @@ export default function EditorPage() {
                                   {msg.toolActions && msg.toolActions.length > 0 && (
                                     <div className="w-full flex flex-col gap-2 relative mt-1">
                                       {msg.toolActions.map((action, idx) => (
-                                        <div key={idx} className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 w-full bg-white/5 rounded-md p-1.5 border border-white/5 text-left">
+                                        <div key={idx} className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 w-full bg-accent rounded-md p-1.5 border border-border text-left">
                                           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/15 border border-brand-500/30">
                                              {action.status === "running" ? (
                                                <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
@@ -4920,7 +4920,7 @@ export default function EditorPage() {
                                                <Check className="h-3 w-3 text-brand-400" />
                                              )}
                                           </div>
-                                          <span className="text-[11px] font-medium truncate text-zinc-300 flex-1">
+                                          <span className="text-[11px] font-medium truncate text-foreground flex-1">
                                             {action.description}
                                           </span>
                                         </div>
@@ -4942,7 +4942,7 @@ export default function EditorPage() {
                               className={`rounded-md p-1.5 transition-colors ${
                                 msg.feedbackGiven === "up"
                                   ? "bg-emerald-900/30 text-emerald-400"
-                                  : "text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300"
+                                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
                               }`}
                               title="Good response"
                             >
@@ -4954,7 +4954,7 @@ export default function EditorPage() {
                               className={`rounded-md p-1.5 transition-colors ${
                                 msg.feedbackGiven === "down"
                                   ? "bg-red-900/30 text-red-400"
-                                  : "text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300"
+                                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
                               }`}
                               title="Bad response"
                             >
@@ -4962,7 +4962,7 @@ export default function EditorPage() {
                             </button>
                             {/* Copy */}
                             <button
-                              className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300 transition-colors"
+                              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                               title="Copy message"
                               onClick={() => {
                                 navigator.clipboard.writeText(msg.content).then(() => {
@@ -4983,8 +4983,8 @@ export default function EditorPage() {
                                 onClick={() => setMoreMenuMsgId(moreMenuMsgId === msg.id ? null : msg.id)}
                                 className={`rounded-md p-1.5 transition-colors ${
                                   moreMenuMsgId === msg.id
-                                    ? "bg-zinc-800 text-zinc-300"
-                                    : "text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300"
+                                    ? "bg-secondary text-foreground"
+                                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
                                 }`}
                                 title="More actions"
                               >
@@ -4992,23 +4992,23 @@ export default function EditorPage() {
                               </button>
                               {/* Dropdown menu */}
                               {moreMenuMsgId === msg.id && (
-                                <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-lg border border-zinc-700/60 bg-zinc-800 py-1 shadow-xl shadow-black/40">
+                                <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-lg border border-border bg-popover py-1 shadow-md">
                                   <button
                                     onClick={() => {
                                       setMoreMenuMsgId(null);
                                       // Copy to clipboard as "edit" prompt
                                       setInputValue(`Edit: ${msg.content.slice(0, 100)}`);
                                     }}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-foreground hover:bg-accent transition-colors"
                                   >
-                                    <Pencil className="h-3.5 w-3.5 text-zinc-500" />
+                                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
                                     Edit message
                                   </button>
                                   <button
                                     onClick={() => handleRevertToPoint(msg.id)}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-foreground hover:bg-accent transition-colors"
                                   >
-                                    <Undo2 className="h-3.5 w-3.5 text-zinc-500" />
+                                    <Undo2 className="h-3.5 w-3.5 text-muted-foreground" />
                                     Revert to this point
                                   </button>
                                 </div>
@@ -5151,7 +5151,7 @@ export default function EditorPage() {
                                   <button
                                     key={suggestion}
                                     onClick={() => sendMessage(suggestion)}
-                                    className="rounded-full border border-zinc-700/50 bg-zinc-800/60 px-3.5 py-1.5 text-[13px] text-zinc-300 hover:bg-zinc-700/60 hover:text-white hover:border-zinc-600 transition-all"
+                                    className="rounded-full border border-border bg-secondary px-3.5 py-1.5 text-[13px] text-foreground hover:bg-accent hover:text-foreground hover:border-border transition-all"
                                   >
                                     {suggestion}
                                   </button>
@@ -5298,7 +5298,7 @@ export default function EditorPage() {
             {isPanelView && (
               <button
                 onClick={handlePanelClose}
-                className="flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-400 hover:text-white border-t border-zinc-800/40 transition-colors"
+                className="flex items-center gap-2 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground border-t border-border transition-colors"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back to Chat
@@ -5310,7 +5310,7 @@ export default function EditorPage() {
               <div className="flex justify-center px-4 -mb-1">
                 <button
                   onClick={handleStopStreaming}
-                  className="flex items-center gap-2 rounded-full border border-zinc-600/60 bg-zinc-800/90 px-4 py-2 text-[13px] font-medium text-zinc-200 shadow-lg shadow-black/30 hover:bg-zinc-700/90 hover:border-zinc-500/60 transition-all backdrop-blur-sm"
+                  className="flex items-center gap-2 rounded-full border border-border bg-secondary px-4 py-2 text-[13px] font-medium text-foreground shadow-lg shadow-md hover:bg-accent hover:border-border transition-all backdrop-blur-sm"
                 >
                   <Square className="h-3 w-3 fill-current" />
                   Stop Doable
@@ -5322,11 +5322,11 @@ export default function EditorPage() {
             <CollabChatTyping keystrokeSignal={keystrokeSignal} />
 
             {/* Input area */}
-            <div className="border-t border-zinc-800/60">
+            <div className="border-t border-border">
               {/* Credits bar */}
               {showCreditsBar && (
-                <div className="flex items-center justify-between px-4 py-2 bg-zinc-900/60 border-b border-zinc-800/40">
-                  <div className="flex items-center gap-2 text-[12px] text-zinc-400">
+                <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
+                  <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
                     <Coins className="h-3.5 w-3.5 text-amber-400" />
                     <span>5 credits remaining</span>
                   </div>
@@ -5339,7 +5339,7 @@ export default function EditorPage() {
                     </button>
                     <button
                       onClick={() => setShowCreditsBar(false)}
-                      className="p-0.5 text-zinc-600 hover:text-zinc-400 transition-colors"
+                      className="p-0.5 text-muted-foreground hover:text-muted-foreground transition-colors"
                       title="Dismiss"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -5369,17 +5369,17 @@ export default function EditorPage() {
                               <img
                                 src={att.preview || att.data}
                                 alt={att.name}
-                                className="h-16 w-16 rounded-lg object-cover border border-zinc-600 shadow-md"
+                                className="h-16 w-16 rounded-lg object-cover border border-border shadow-md"
                               />
                             ) : (
-                              <div className="flex h-16 items-center gap-1.5 rounded-lg border border-zinc-600 bg-zinc-800/80 px-2.5 shadow-md">
-                                <FileText className="h-4 w-4 flex-none text-zinc-400" />
-                                <span className="max-w-[80px] truncate text-xs text-zinc-400">{att.name}</span>
+                              <div className="flex h-16 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 shadow-md">
+                                <FileText className="h-4 w-4 flex-none text-muted-foreground" />
+                                <span className="max-w-[80px] truncate text-xs text-muted-foreground">{att.name}</span>
                               </div>
                             )}
                             <button
                               onClick={() => fileAttachments.removeAttachment(att.id)}
-                              className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 border border-zinc-600 text-zinc-400 hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100 shadow-xl"
+                              className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-secondary border border-border text-muted-foreground hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100 shadow-xl"
                             >
                               <X className="h-2.5 w-2.5" />
                             </button>
@@ -5414,7 +5414,7 @@ export default function EditorPage() {
                       placeholder={inputValue.length > 0 ? "" : "Ask Doable..."}
                       rows={1}
                       disabled={isStreaming}
-                      className="w-full max-h-[40vh] min-h-[48px] resize-none bg-transparent px-4 py-3.5 text-[14px] leading-relaxed text-zinc-200 placeholder:text-zinc-500/70 outline-none disabled:opacity-50"
+                      className="w-full max-h-[40vh] min-h-[48px] resize-none bg-transparent px-4 py-3.5 text-[14px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:opacity-50"
                     />
 
                     {/* Bottom toolbar row */}
@@ -5424,7 +5424,7 @@ export default function EditorPage() {
                         {/* + button (rounded-full) */}
                         <button
                           onClick={fileAttachments.openFilePicker}
-                          className="shrink-0 relative flex h-7 w-7 items-center justify-center rounded-full border border-white/5 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200 transition-all duration-200"
+                          className="shrink-0 relative flex h-7 w-7 items-center justify-center rounded-full border border-border bg-accent text-muted-foreground hover:bg-accent hover:text-foreground transition-all duration-200"
                           title="Attach file (images, text, code, PDF)"
                         >
                           <Plus className="h-3.5 w-3.5" />
@@ -5435,16 +5435,16 @@ export default function EditorPage() {
                           )}
                         </button>
 
-                        <div className="shrink-0 h-4 w-px bg-white/10 mx-0.5" />
+                        <div className="shrink-0 h-4 w-px bg-accent mx-0.5" />
 
                         {/* ── Strategize / Work Mode Toggle ── */}
-                        <div className="shrink-0 flex items-center rounded-full bg-white/[0.03] border border-white/5 p-0.5">
+                        <div className="shrink-0 flex items-center rounded-full bg-muted border border-border p-0.5">
                           <button
                             onClick={() => setChatMode("plan")}
                             className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
                               chatMode === "plan"
                                 ? "bg-brand-500/20 text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
-                                : "text-zinc-500 hover:text-zinc-300"
+                                : "text-muted-foreground hover:text-foreground"
                             }`}
                             title="Strategize mode — creates plans only"
                           >
@@ -5456,7 +5456,7 @@ export default function EditorPage() {
                             className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
                               chatMode === "agent"
                                 ? "bg-brand-500/20 text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
-                                : "text-zinc-500 hover:text-zinc-300"
+                                : "text-muted-foreground hover:text-foreground"
                             }`}
                             title="Work mode — generates code"
                           >
@@ -5471,7 +5471,7 @@ export default function EditorPage() {
                           className={`shrink-0 flex items-center gap-1.5 rounded-full border h-7 w-7 @[26rem]:w-auto @[26rem]:px-2 justify-center text-[10px] sm:text-[11px] font-medium transition-all ${
                             isDesignMode
                               ? "border-brand-500/50 bg-brand-500/10 text-brand-300"
-                              : "border-white/5 bg-white/[0.03] text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+                              : "border-border bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
                           }`}
                           title="Design View"
                         >
@@ -5504,7 +5504,7 @@ export default function EditorPage() {
                             className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
                               speechRecognition.isListening
                                 ? "text-red-400 bg-red-500/10 border border-red-500/20 animate-pulse"
-                                : "text-zinc-400 hover:text-zinc-200 hover:bg-white/10 border border-transparent"
+                                : "text-muted-foreground hover:text-foreground hover:bg-accent border border-transparent"
                             }`}
                             title={speechRecognition.isListening ? "Stop recording" : "Voice input"}
                           >
@@ -5536,7 +5536,7 @@ export default function EditorPage() {
                     </div>
                   </div>
                   
-                  <div className="mt-2 text-center text-[10px] text-zinc-500/60 font-medium tracking-wide">
+                  <div className="mt-2 text-center text-[10px] text-muted-foreground/60 font-medium tracking-wide">
                     Shift + Enter for new line
                   </div>
                 </div>
@@ -5564,13 +5564,13 @@ export default function EditorPage() {
         {showCode && (
           <div className="flex flex-1 overflow-hidden bg-card">
             {/* File tree sidebar */}
-            <div className="w-56 flex-shrink-0 overflow-y-auto border-r border-zinc-800/60 bg-card py-2">
+            <div className="w-56 flex-shrink-0 overflow-y-auto border-r border-border bg-card py-2">
               <div className="mb-1 px-3 flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Explorer
                 </span>
                 {fileTreeLoading && (
-                  <Loader2 className="h-3 w-3 animate-spin text-zinc-600" />
+                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                 )}
               </div>
               {scaffoldStatus !== "ready" ? (
@@ -5579,8 +5579,8 @@ export default function EditorPage() {
                     <p className="text-[12px] text-red-400">Failed to load</p>
                   ) : (
                     <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-zinc-600" />
-                      <p className="text-[12px] text-zinc-600">Loading files...</p>
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      <p className="text-[12px] text-muted-foreground">Loading files...</p>
                     </div>
                   )}
                 </div>
@@ -5596,8 +5596,8 @@ export default function EditorPage() {
                 </div>
               ) : fileTree.length === 0 ? (
                 <div className="px-3 py-4 text-center">
-                  <p className="text-[12px] text-zinc-600">No files yet</p>
-                  <p className="text-[11px] text-zinc-700 mt-1">
+                  <p className="text-[12px] text-muted-foreground">No files yet</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
                     Ask the AI to create some files
                   </p>
                 </div>
@@ -5609,17 +5609,17 @@ export default function EditorPage() {
             {/* Code display with Monaco editor */}
             <div className="flex flex-1 flex-col overflow-hidden">
               {/* Multi-tab bar */}
-              <div className="flex h-9 items-center overflow-x-auto border-b border-zinc-800/60 bg-[#252526]">
+              <div className="flex h-9 items-center overflow-x-auto border-b border-border bg-background">
                 {openFileTabs.length > 0 ? (
                   openFileTabs.map((tab) => {
                     const isActiveTab = tab.path === selectedFile;
                     return (
                       <div
                         key={tab.path}
-                        className={`group flex h-full items-center gap-1.5 border-r border-zinc-800/40 px-3 text-xs cursor-pointer select-none transition-colors ${
+                        className={`group flex h-full items-center gap-1.5 border-r border-border px-3 text-xs cursor-pointer select-none transition-colors ${
                           isActiveTab
-                            ? "bg-[#1e1e1e] text-zinc-200"
-                            : "text-zinc-500 hover:bg-[#2a2a2b] hover:text-zinc-300"
+                            ? "bg-background text-foreground"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
                         }`}
                         onClick={() => {
                           setSelectedFile(tab.path);
@@ -5631,7 +5631,7 @@ export default function EditorPage() {
                           }
                         }}
                       >
-                        <FileCode2 className="h-3 w-3 flex-none text-zinc-500" />
+                        <FileCode2 className="h-3 w-3 flex-none text-muted-foreground" />
                         <span className="truncate max-w-[120px]">{tab.name}</span>
                         <FileTabPresenceDots filePath={tab.path} currentUserId={authUser?.id ?? ""} />
                         {tab.isDirty && (
@@ -5642,7 +5642,7 @@ export default function EditorPage() {
                             e.stopPropagation();
                             closeFileTab(tab.path);
                           }}
-                          className="flex h-4 w-4 flex-none items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-zinc-700 transition-all"
+                          className="flex h-4 w-4 flex-none items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-all"
                           title="Close (Ctrl+W)"
                         >
                           <X className="h-3 w-3" />
@@ -5651,7 +5651,7 @@ export default function EditorPage() {
                     );
                   })
                 ) : (
-                  <div className="px-3 py-1.5 text-[12px] text-zinc-600">
+                  <div className="px-3 py-1.5 text-[12px] text-muted-foreground">
                     No file selected
                   </div>
                 )}
@@ -5662,8 +5662,8 @@ export default function EditorPage() {
                     onClick={() => setShowMinimap((v) => !v)}
                     className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
                       showMinimap
-                        ? "text-brand-400 bg-zinc-800"
-                        : "text-zinc-600 hover:text-zinc-400"
+                        ? "text-brand-400 bg-secondary"
+                        : "text-muted-foreground hover:text-muted-foreground"
                     }`}
                     title={showMinimap ? "Hide minimap" : "Show minimap"}
                   >
@@ -5674,8 +5674,8 @@ export default function EditorPage() {
 
               {/* Breadcrumb */}
               {selectedFile && (
-                <div className="flex h-6 items-center border-b border-zinc-800/40 bg-[#1e1e1e] px-3">
-                  <span className="text-[11px] text-zinc-600 font-mono truncate">
+                <div className="flex h-6 items-center border-b border-border bg-background px-3">
+                  <span className="text-[11px] text-muted-foreground font-mono truncate">
                     {selectedFile}
                   </span>
                 </div>
@@ -5683,18 +5683,18 @@ export default function EditorPage() {
 
               {/* Editor content */}
               {!selectedFile ? (
-                <div className="flex flex-1 items-center justify-center bg-[#1e1e1e]">
+                <div className="flex flex-1 items-center justify-center bg-background">
                   <div className="text-center px-8">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60 mx-auto mb-3">
-                      <Code2 className="h-6 w-6 text-zinc-600" />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary mx-auto mb-3">
+                      <Code2 className="h-6 w-6 text-muted-foreground" />
                     </div>
-                    <p className="text-sm text-zinc-500 mb-1">
+                    <p className="text-sm text-muted-foreground mb-1">
                       Select a file from the explorer
                     </p>
-                    <p className="text-xs text-zinc-700">
+                    <p className="text-xs text-muted-foreground">
                       Click on any file to view its content
                     </p>
-                    <div className="mt-4 flex flex-col gap-1 text-[11px] text-zinc-700">
+                    <div className="mt-4 flex flex-col gap-1 text-[11px] text-muted-foreground">
                       <span>Ctrl+S to save</span>
                       <span>Ctrl+F to search</span>
                       <span>Ctrl+H to replace</span>
@@ -5703,14 +5703,14 @@ export default function EditorPage() {
                   </div>
                 </div>
               ) : fileContentLoading ? (
-                <div className="flex flex-1 items-center justify-center bg-[#1e1e1e]">
+                <div className="flex flex-1 items-center justify-center bg-background">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="h-6 w-6 animate-spin text-brand-400" />
-                    <p className="text-sm text-zinc-500">Loading file...</p>
+                    <p className="text-sm text-muted-foreground">Loading file...</p>
                   </div>
                 </div>
               ) : fileContentError ? (
-                <div className="flex flex-1 items-center justify-center bg-[#1e1e1e]">
+                <div className="flex flex-1 items-center justify-center bg-background">
                   <div className="text-center px-8">
                     <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-3" />
                     <p className="text-sm text-red-300 mb-2">{fileContentError}</p>
@@ -5736,15 +5736,15 @@ export default function EditorPage() {
                   />
                 </div>
               ) : (
-                <div className="flex flex-1 items-center justify-center bg-[#1e1e1e]">
+                <div className="flex flex-1 items-center justify-center bg-background">
                   <div className="text-center px-8">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800/60 mx-auto mb-3">
-                      <Code2 className="h-6 w-6 text-zinc-600" />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary mx-auto mb-3">
+                      <Code2 className="h-6 w-6 text-muted-foreground" />
                     </div>
-                    <p className="text-sm text-zinc-500 mb-1">
+                    <p className="text-sm text-muted-foreground mb-1">
                       Code will appear here as the AI generates files
                     </p>
-                    <p className="text-xs text-zinc-700">
+                    <p className="text-xs text-muted-foreground">
                       Start a conversation in the Chat tab to generate your
                       project
                     </p>
@@ -5782,9 +5782,9 @@ export default function EditorPage() {
                 <div
                   className={`relative h-full overflow-hidden bg-white transition-all duration-300 ${
                     deviceMode === "mobile"
-                      ? "w-[375px] rounded-[24px] shadow-2xl shadow-black/40"
+                      ? "w-[375px] rounded-[24px] shadow-2xl shadow-md"
                       : deviceMode === "tablet"
-                        ? "w-[768px] rounded-2xl shadow-xl shadow-black/30"
+                        ? "w-[768px] rounded-2xl shadow-xl shadow-md"
                         : "w-full rounded-2xl"
                   }`}
                   style={
@@ -5824,17 +5824,17 @@ export default function EditorPage() {
                         : "bg-background/75 backdrop-blur-[2px]"
                     }`}>
                       <div className="relative mb-5">
-                        <div className="h-10 w-10 rounded-full border-2 border-zinc-700 border-t-brand-400 animate-spin" />
+                        <div className="h-10 w-10 rounded-full border-2 border-border border-t-brand-400 animate-spin" />
                         <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-brand-400" />
                       </div>
-                      <h3 className="text-sm font-medium text-zinc-300 mb-1">
+                      <h3 className="text-sm font-medium text-foreground mb-1">
                         {scaffoldStatus !== "ready"
                           ? "Setting up workspace..."
                           : planPhase === "building"
                             ? "Building from plan..."
                             : "Building your app..."}
                       </h3>
-                      <p className="text-xs text-zinc-500 max-w-[260px] text-center">
+                      <p className="text-xs text-muted-foreground max-w-[260px] text-center">
                         {liveStatus || (scaffoldStatus !== "ready" ? "Installing dependencies" : "AI is writing code")}
                       </p>
                     </div>
@@ -5903,28 +5903,28 @@ export default function EditorPage() {
 
       {/* ─── Share Dialog ──────────────────────────────────────── */}
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
-        <DialogContent className="bg-card border-zinc-700 text-zinc-200 max-w-md" onClick={(e) => e.stopPropagation()}>
+        <DialogContent className="bg-card border-border text-foreground max-w-md" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
-            <DialogTitle className="text-white">Share Project</DialogTitle>
-            <DialogDescription className="text-zinc-400">
+            <DialogTitle className="text-foreground">Share Project</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               Share your project with others or embed it on your website.
             </DialogDescription>
           </DialogHeader>
 
           <div className="mt-4 space-y-4">
             {/* Link Sharing Toggle — controls whether anyone with the link can collaborate */}
-            <div className="flex items-center justify-between rounded-lg bg-zinc-800/50 border border-zinc-700/50 px-4 py-3">
+            <div className="flex items-center justify-between rounded-lg bg-secondary border border-border px-4 py-3">
               <div className="flex items-center gap-3">
                 {projectVisibility === "public" ? (
                   <Users className="h-4 w-4 text-brand-400" />
                 ) : (
-                  <Lock className="h-4 w-4 text-zinc-500" />
+                  <Lock className="h-4 w-4 text-muted-foreground" />
                 )}
                 <div>
-                  <p className="text-sm font-medium text-zinc-200">
+                  <p className="text-sm font-medium text-foreground">
                     {projectVisibility === "public" ? "Link sharing enabled" : "Private project"}
                   </p>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-muted-foreground">
                     {projectVisibility === "public"
                       ? "Anyone with the link can join and collaborate"
                       : "Only invited collaborators can access"}
@@ -5934,7 +5934,7 @@ export default function EditorPage() {
               <button
                 onClick={handleToggleVisibility}
                 className={`relative h-6 w-11 rounded-full transition-colors ${
-                  projectVisibility === "public" ? "bg-brand-600" : "bg-zinc-600"
+                  projectVisibility === "public" ? "bg-brand-600" : "bg-secondary"
                 }`}
               >
                 <span
@@ -5948,9 +5948,9 @@ export default function EditorPage() {
             {/* Collaborate Link — only shown when link sharing is enabled */}
             {projectVisibility === "public" && (
               <div>
-                <label className="text-sm font-medium text-zinc-300 mb-1.5 block">Collaboration Link</label>
+                <label className="text-sm font-medium text-foreground mb-1.5 block">Collaboration Link</label>
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-400 font-mono truncate">
+                  <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-sm text-muted-foreground font-mono truncate">
                     {`${typeof window !== "undefined" ? window.location.origin : ""}/editor/${resolvedProjectId}`}
                   </div>
                   <button
@@ -5973,45 +5973,45 @@ export default function EditorPage() {
             {/* Share Analytics — only shown when link sharing is enabled */}
             {projectVisibility === "public" && shareStats && (shareStats.uniqueVisitors > 0 || shareStats.totalVisits > 0) && (
               <div className="space-y-3">
-                <div className="flex items-center gap-4 rounded-lg bg-zinc-800/50 border border-zinc-700/50 px-4 py-3">
+                <div className="flex items-center gap-4 rounded-lg bg-secondary border border-border px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <Eye className="h-4 w-4 text-zinc-400" />
+                    <Eye className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="text-sm font-medium text-zinc-200">{shareStats.uniqueVisitors}</p>
-                      <p className="text-xs text-zinc-500">{shareStats.uniqueVisitors === 1 ? "visitor" : "visitors"}</p>
+                      <p className="text-sm font-medium text-foreground">{shareStats.uniqueVisitors}</p>
+                      <p className="text-xs text-muted-foreground">{shareStats.uniqueVisitors === 1 ? "visitor" : "visitors"}</p>
                     </div>
                   </div>
-                  <div className="h-8 w-px bg-zinc-700/50" />
+                  <div className="h-8 w-px bg-border" />
                   <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-zinc-400" />
+                    <Users className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="text-sm font-medium text-zinc-200">{shareStats.totalVisits}</p>
-                      <p className="text-xs text-zinc-500">total views</p>
+                      <p className="text-sm font-medium text-foreground">{shareStats.totalVisits}</p>
+                      <p className="text-xs text-muted-foreground">total views</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Visitor list */}
                 {shareStats.visitors.length > 0 && (
-                  <div className="rounded-lg bg-zinc-800/50 border border-zinc-700/50 overflow-hidden">
-                    <div className="px-4 py-2 border-b border-zinc-700/50">
-                      <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider">People who viewed this project</p>
+                  <div className="rounded-lg bg-secondary border border-border overflow-hidden">
+                    <div className="px-4 py-2 border-b border-border">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">People who viewed this project</p>
                     </div>
-                    <div className="max-h-48 overflow-y-auto divide-y divide-zinc-700/30">
+                    <div className="max-h-48 overflow-y-auto divide-y divide-border">
                       {shareStats.visitors.map((visitor) => (
                         <div key={visitor.user_id} className="flex items-center justify-between px-4 py-2.5">
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="h-7 w-7 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-medium text-zinc-300 shrink-0">
+                            <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-foreground shrink-0">
                               {(visitor.display_name || visitor.email).charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-sm text-zinc-200 truncate">{visitor.display_name || visitor.email.split("@")[0]}</p>
-                              <p className="text-xs text-zinc-500 truncate">{visitor.email}</p>
+                              <p className="text-sm text-foreground truncate">{visitor.display_name || visitor.email.split("@")[0]}</p>
+                              <p className="text-xs text-muted-foreground truncate">{visitor.email}</p>
                             </div>
                           </div>
                           <div className="text-right shrink-0 ml-3">
-                            <p className="text-xs text-zinc-400">{visitor.visit_count} {visitor.visit_count === 1 ? "visit" : "visits"}</p>
-                            <p className="text-xs text-zinc-600">{new Date(visitor.last_visited_at).toLocaleDateString()}</p>
+                            <p className="text-xs text-muted-foreground">{visitor.visit_count} {visitor.visit_count === 1 ? "visit" : "visits"}</p>
+                            <p className="text-xs text-muted-foreground">{new Date(visitor.last_visited_at).toLocaleDateString()}</p>
                           </div>
                         </div>
                       ))}
@@ -6021,19 +6021,19 @@ export default function EditorPage() {
               </div>
             )}
 
-            <div className="border-t border-zinc-700/50" />
+            <div className="border-t border-border" />
 
             {/* Preview URL */}
             <div>
-              <label className="text-sm font-medium text-zinc-300 mb-1.5 block">Preview URL</label>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">Preview URL</label>
               <div className="flex items-center gap-2">
-                <div className="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-400 font-mono truncate">
+                <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-sm text-muted-foreground font-mono truncate">
                   {previewUrl ?? "Not available yet"}
                 </div>
                 <button
                   onClick={handleCopyPreviewUrl}
                   disabled={!previewUrl}
-                  className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                  className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
                   title="Copy URL"
                 >
                   {shareCopied === "preview" ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
@@ -6045,9 +6045,9 @@ export default function EditorPage() {
 
             {/* Embed Code */}
             <div>
-              <label className="text-sm font-medium text-zinc-300 mb-1.5 block">Embed Code</label>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">Embed Code</label>
               <div className="flex items-center gap-2">
-                <div className="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-2 text-xs text-zinc-400 font-mono truncate">
+                <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-xs text-muted-foreground font-mono truncate">
                   {previewUrl
                     ? `<iframe src="${previewUrl}" ...>`
                     : "Preview not available yet"}
@@ -6055,7 +6055,7 @@ export default function EditorPage() {
                 <button
                   onClick={handleCopyEmbedCode}
                   disabled={!previewUrl}
-                  className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                  className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
                   title="Copy embed code"
                 >
                   {shareCopied === "embed" ? <Check className="h-4 w-4 text-emerald-400" /> : <Code className="h-4 w-4" />}
@@ -6067,7 +6067,7 @@ export default function EditorPage() {
           <DialogFooter className="mt-6">
             <button
               onClick={() => setShareDialogOpen(false)}
-              className="rounded-md bg-zinc-800 border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
+              className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
             >
               Close
             </button>
@@ -6077,13 +6077,13 @@ export default function EditorPage() {
 
       {/* ─── Publish Modal ─────────────────────────────────────── */}
       <Dialog open={publishModalOpen} onOpenChange={setPublishModalOpen}>
-        <DialogContent className="bg-card border-zinc-700 text-zinc-200 max-w-md" onClick={(e) => e.stopPropagation()}>
+        <DialogContent className="bg-card border-border text-foreground max-w-md" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
+            <DialogTitle className="text-foreground flex items-center gap-2">
               <Rocket className="h-5 w-5 text-blue-400" />
               Publish Project
             </DialogTitle>
-            <DialogDescription className="text-zinc-400">
+            <DialogDescription className="text-muted-foreground">
               Deploy your project to make it live on the web.
             </DialogDescription>
           </DialogHeader>
@@ -6093,14 +6093,14 @@ export default function EditorPage() {
             {publishStatus === "idle" && (
               <>
                 <div>
-                  <label className="text-sm font-medium text-zinc-300 mb-2 block">Environment</label>
+                  <label className="text-sm font-medium text-foreground mb-2 block">Environment</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => setPublishEnv("production")}
                       className={`flex flex-col items-center gap-1.5 rounded-lg border px-4 py-3 text-sm transition-all ${
                         publishEnv === "production"
                           ? "border-blue-500 bg-blue-500/10 text-blue-300"
-                          : "border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-600"
+                          : "border-border bg-secondary text-muted-foreground hover:border-border"
                       }`}
                     >
                       <Globe className="h-5 w-5" />
@@ -6112,7 +6112,7 @@ export default function EditorPage() {
                       className={`flex flex-col items-center gap-1.5 rounded-lg border px-4 py-3 text-sm transition-all ${
                         publishEnv === "preview"
                           ? "border-blue-500 bg-blue-500/10 text-blue-300"
-                          : "border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-600"
+                          : "border-border bg-secondary text-muted-foreground hover:border-border"
                       }`}
                     >
                       <Eye className="h-5 w-5" />
@@ -6136,17 +6136,17 @@ export default function EditorPage() {
             {(publishStatus === "building" || publishStatus === "deploying") && (
               <div className="flex flex-col items-center py-8 text-center">
                 <Loader2 className="h-10 w-10 animate-spin text-blue-400 mb-4" />
-                <h3 className="text-sm font-medium text-zinc-200 mb-1">
+                <h3 className="text-sm font-medium text-foreground mb-1">
                   {publishStatus === "building" ? "Building project..." : "Deploying..."}
                 </h3>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   This may take a moment. Please don&apos;t close this dialog.
                 </p>
                 {/* Progress steps */}
                 <div className="mt-6 w-full max-w-xs space-y-2">
                   <div className="flex items-center gap-2 text-sm">
                     <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                    <span className="text-zinc-300">Preparing files</span>
+                    <span className="text-foreground">Preparing files</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     {publishStatus === "building" ? (
@@ -6154,7 +6154,7 @@ export default function EditorPage() {
                     ) : (
                       <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                     )}
-                    <span className={publishStatus === "building" ? "text-blue-300" : "text-zinc-300"}>
+                    <span className={publishStatus === "building" ? "text-blue-300" : "text-foreground"}>
                       Building project
                     </span>
                   </div>
@@ -6162,9 +6162,9 @@ export default function EditorPage() {
                     {publishStatus === "deploying" ? (
                       <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
                     ) : (
-                      <div className="h-4 w-4 rounded-full border border-zinc-600" />
+                      <div className="h-4 w-4 rounded-full border border-border" />
                     )}
-                    <span className={publishStatus === "deploying" ? "text-blue-300" : "text-zinc-600"}>
+                    <span className={publishStatus === "deploying" ? "text-blue-300" : "text-muted-foreground"}>
                       Deploying to {publishEnv === "production" ? "production" : "preview"}
                     </span>
                   </div>
@@ -6178,27 +6178,27 @@ export default function EditorPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 mb-4">
                   <CheckCircle2 className="h-8 w-8 text-emerald-400" />
                 </div>
-                <h3 className="text-sm font-semibold text-white mb-1">Published successfully!</h3>
-                <p className="text-xs text-zinc-500 mb-4">
+                <h3 className="text-sm font-semibold text-foreground mb-1">Published successfully!</h3>
+                <p className="text-xs text-muted-foreground mb-4">
                   Your project is now live at:
                 </p>
                 {publishedUrl && (
                   <div className="flex items-center gap-2 w-full">
-                    <div className="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-blue-400 font-mono truncate">
+                    <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-sm text-blue-400 font-mono truncate">
                       {publishedUrl}
                     </div>
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(publishedUrl);
                       }}
-                      className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
+                      className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                       title="Copy URL"
                     >
                       <Copy className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => window.open(publishedUrl, "_blank")}
-                      className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
+                      className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                       title="Open in new tab"
                     >
                       <ExternalLink className="h-4 w-4" />
@@ -6215,15 +6215,15 @@ export default function EditorPage() {
                   <XCircle className="h-8 w-8 text-red-400" />
                 </div>
                 <h3 className="text-sm font-semibold text-red-300 mb-1">Publish failed</h3>
-                <p className="text-xs text-zinc-500 mb-4 max-w-sm">
+                <p className="text-xs text-muted-foreground mb-4 max-w-sm">
                   {publishError ?? "Something went wrong during deployment."}
                 </p>
                 {publishBuildLog && (
                   <details className="w-full text-left mb-4">
-                    <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-300">
+                    <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
                       View build log
                     </summary>
-                    <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-zinc-900 border border-zinc-700 p-3 text-[11px] text-zinc-400 font-mono">
+                    <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-card border border-border p-3 text-[11px] text-muted-foreground font-mono">
                       {publishBuildLog}
                     </pre>
                   </details>
@@ -6234,7 +6234,7 @@ export default function EditorPage() {
                       setPublishStatus("idle");
                       setPublishError(null);
                     }}
-                    className="rounded-md bg-zinc-800 border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
+                    className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
                   >
                     Try again
                   </button>
@@ -6256,7 +6256,7 @@ export default function EditorPage() {
             <DialogFooter className="mt-4">
               <button
                 onClick={() => setPublishModalOpen(false)}
-                className="rounded-md bg-zinc-800 border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
+                className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
               >
                 {publishStatus === "success" ? "Done" : "Cancel"}
               </button>
@@ -6267,14 +6267,14 @@ export default function EditorPage() {
 
       {/* ─── Delete Confirmation Dialog ────────────────────────── */}
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="bg-card border-zinc-700 text-zinc-200 max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <DialogContent className="bg-card border-border text-foreground max-w-sm" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
+            <DialogTitle className="text-foreground flex items-center gap-2">
               <Trash2 className="h-5 w-5 text-red-400" />
               Delete Project
             </DialogTitle>
-            <DialogDescription className="text-zinc-400">
-              Are you sure you want to delete <strong className="text-zinc-200">{projectName}</strong>? This action cannot be undone.
+            <DialogDescription className="text-muted-foreground">
+              Are you sure you want to delete <strong className="text-foreground">{projectName}</strong>? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
 
@@ -6282,7 +6282,7 @@ export default function EditorPage() {
             <button
               onClick={() => setDeleteConfirmOpen(false)}
               disabled={isDeleting}
-              className="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700 transition-colors disabled:opacity-50"
+              className="flex-1 rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -6322,10 +6322,10 @@ export default function EditorPage() {
 
       {/* ─── Keyboard Shortcuts Dialog ─────────────────────────── */}
       <Dialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen}>
-        <DialogContent className="bg-card border-zinc-700 text-zinc-200 max-w-md" onClick={(e) => e.stopPropagation()}>
+        <DialogContent className="bg-card border-border text-foreground max-w-md" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
-              <Keyboard className="h-5 w-5 text-zinc-400" />
+            <DialogTitle className="text-foreground flex items-center gap-2">
+              <Keyboard className="h-5 w-5 text-muted-foreground" />
               Keyboard Shortcuts
             </DialogTitle>
           </DialogHeader>
@@ -6342,12 +6342,12 @@ export default function EditorPage() {
               { keys: "Esc", desc: "Close dialog" },
             ].map(({ keys, desc }) => (
               <div key={keys} className="flex items-center justify-between py-2 px-1">
-                <span className="text-sm text-zinc-400">{desc}</span>
+                <span className="text-sm text-muted-foreground">{desc}</span>
                 <div className="flex items-center gap-1">
                   {keys.split(" + ").map((k) => (
                     <kbd
                       key={k}
-                      className="rounded bg-zinc-800 border border-zinc-600 px-2 py-0.5 text-xs font-mono text-zinc-300"
+                      className="rounded bg-secondary border border-border px-2 py-0.5 text-xs font-mono text-foreground"
                     >
                       {k}
                     </kbd>
@@ -6360,7 +6360,7 @@ export default function EditorPage() {
           <DialogFooter className="mt-4">
             <button
               onClick={() => setShortcutsDialogOpen(false)}
-              className="rounded-md bg-zinc-800 border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
+              className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
             >
               Close
             </button>

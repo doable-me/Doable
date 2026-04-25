@@ -23,7 +23,7 @@ export function PresenceBar() {
   };
 
   return (
-    <div className="flex h-10 flex-shrink-0 items-center justify-between border-t border-zinc-800/60 bg-[#1C1C1C] px-3">
+    <div className="flex h-10 flex-shrink-0 items-center justify-between border-t border-border bg-card px-3">
       {/* Online avatars */}
       <div className="flex items-center gap-1.5">
         <div className="flex -space-x-1.5">
@@ -35,29 +35,29 @@ export function PresenceBar() {
               title={`${user.displayName ?? "User"} — ${user.status}`}
             >
               <div
-                className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-[#1C1C1C] text-[9px] font-semibold text-white"
+                className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card text-[9px] font-semibold text-white"
                 style={{ backgroundColor: user.color }}
               >
                 {(user.displayName ?? "?").charAt(0).toUpperCase()}
               </div>
               <span
-                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-[#1C1C1C] ${
+                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-card ${
                   user.status === "active"
                     ? "bg-green-400"
                     : user.status === "idle"
                       ? "bg-yellow-400"
-                      : "bg-zinc-500"
+                      : "bg-muted-foreground"
                 }`}
               />
             </div>
           ))}
           {members.length > 6 && (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-[#1C1C1C] bg-zinc-700 text-[9px] font-medium text-zinc-300">
+            <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-secondary text-[9px] font-medium text-foreground">
               +{members.length - 6}
             </div>
           )}
         </div>
-        <span className="text-[11px] text-zinc-500 ml-1">
+        <span className="text-[11px] text-muted-foreground ml-1">
           {members.length} online
         </span>
       </div>
@@ -65,7 +65,7 @@ export function PresenceBar() {
       {/* Team Chat button */}
       <button
         onClick={handleChatToggle}
-        className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+        className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
       >
         <MessageCircle className="h-3.5 w-3.5" />
         <span>Chat</span>

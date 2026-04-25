@@ -46,8 +46,8 @@ export function ProjectRow({
 
   return (
     <tr
-      className={`group border-b border-zinc-800/50 transition-colors cursor-pointer ${
-        selected ? "bg-brand-500/5" : "hover:bg-white/[0.02]"
+      className={`group border-b border-border transition-colors cursor-pointer ${
+        selected ? "bg-brand-500/5" : "hover:bg-accent"
       }`}
       draggable
       onDragStart={(e) => {
@@ -67,7 +67,7 @@ export function ProjectRow({
           className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
             selected
               ? "bg-brand-600 text-white"
-              : "text-zinc-600 hover:text-zinc-400"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           {selected ? (
@@ -82,7 +82,7 @@ export function ProjectRow({
       <td className="w-10 px-1 py-3">
         <button onClick={(e) => { e.stopPropagation(); onStar(); }} className="rounded p-0.5">
           <Star className={`h-4 w-4 transition-colors ${
-            project.starred ? "fill-yellow-400 text-yellow-400" : "text-zinc-600 hover:text-zinc-400"
+            project.starred ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground hover:text-foreground"
           }`} />
         </button>
       </td>
@@ -90,13 +90,13 @@ export function ProjectRow({
       {/* Name */}
       <td className="px-3 py-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-zinc-800 text-xs font-medium text-zinc-400">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-xs font-medium text-secondary-foreground">
             {project.name?.charAt(0)?.toUpperCase() ?? "U"}
           </div>
           <div className="min-w-0">
-            <span className="text-sm font-medium text-zinc-200 line-clamp-1">{project.name}</span>
+            <span className="text-sm font-medium text-foreground line-clamp-1">{project.name}</span>
             {project.description && (
-              <p className="text-[11px] text-zinc-500 line-clamp-1 mt-0.5">{project.description}</p>
+              <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{project.description}</p>
             )}
           </div>
         </div>
@@ -110,28 +110,28 @@ export function ProjectRow({
       </td>
 
       {/* Updated */}
-      <td className="px-3 py-3 text-sm text-zinc-500">{formatRelativeTime(project.updated_at)}</td>
+      <td className="px-3 py-3 text-sm text-muted-foreground">{formatRelativeTime(project.updated_at)}</td>
 
       {/* Actions */}
       <td className="w-10 px-3 py-3" onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex h-7 w-7 items-center justify-center rounded text-zinc-500 hover:text-zinc-300 hover:bg-white/5 opacity-0 group-hover:opacity-100 transition-all">
+          <DropdownMenuTrigger className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent opacity-0 group-hover:opacity-100 transition-all">
             <MoreHorizontal className="h-4 w-4" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-800 w-48">
-            <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={onClick}>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={onClick}>
               <ExternalLink className="mr-2 h-3.5 w-3.5" /> Open in editor
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={onRename}>
+            <DropdownMenuItem onClick={onRename}>
               <Pencil className="mr-2 h-3.5 w-3.5" /> Rename
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={onDuplicate}>
+            <DropdownMenuItem onClick={onDuplicate}>
               <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-zinc-300 focus:bg-white/5 focus:text-white" onClick={onStar}>
+            <DropdownMenuItem onClick={onStar}>
               <Star className="mr-2 h-3.5 w-3.5" /> {project.starred ? "Unstar" : "Star"}
             </DropdownMenuItem>
-            <DropdownMenuSeparator className="bg-zinc-800" />
+            <DropdownMenuSeparator />
             <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={onDelete}>
               <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
             </DropdownMenuItem>

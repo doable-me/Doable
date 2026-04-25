@@ -67,31 +67,31 @@ export function ProfileSection({
             </AvatarFallback>
           </Avatar>
           <div>
-            <p className="text-sm font-medium text-white">{user?.displayName ?? "User"}</p>
-            <p className="text-xs text-zinc-500">{user?.email}</p>
+            <p className="text-sm font-medium text-foreground">{user?.displayName ?? "User"}</p>
+            <p className="text-xs text-muted-foreground">{user?.email}</p>
           </div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="displayName" className="text-zinc-300">Display name</Label>
+          <Label htmlFor="displayName" className="text-foreground">Display name</Label>
           <Input
             id="displayName"
             type="text"
             placeholder="Your display name"
-            className="rounded-xl border-zinc-700 bg-zinc-800/50 text-white placeholder:text-zinc-500"
+            className="rounded-xl"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-zinc-300">Email</Label>
+          <Label htmlFor="email" className="text-foreground">Email</Label>
           <Input
             id="email"
             type="email"
             disabled
-            className="rounded-xl border-zinc-700 bg-zinc-800/50 text-zinc-400 placeholder:text-zinc-600"
+            className="rounded-xl text-muted-foreground"
             value={user?.email ?? ""}
           />
-          <p className="text-xs text-zinc-500">Contact support to change your email address.</p>
+          <p className="text-xs text-muted-foreground">Contact support to change your email address.</p>
         </div>
         <div className="flex items-center gap-3">
           <Button type="submit" size="sm" disabled={profileSaving} className="rounded-lg bg-brand-700 text-white hover:bg-brand-800">
@@ -150,7 +150,7 @@ export function SecuritySection({
     <SettingsSection icon={Shield} title="Security" description="Password and authentication">
       <div className="space-y-6">
         <form onSubmit={onPasswordChange} className="space-y-4">
-          <h4 className="text-sm font-medium text-zinc-200">Change password</h4>
+          <h4 className="text-sm font-medium text-foreground">Change password</h4>
           {passwordError && (
             <div className="flex items-start gap-2 rounded-lg bg-red-950/50 px-3 py-2.5 text-sm text-red-400">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{passwordError}</span>
@@ -162,19 +162,19 @@ export function SecuritySection({
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="currentPassword" className="text-zinc-300">Current password</Label>
+            <Label htmlFor="currentPassword" className="text-foreground">Current password</Label>
             <div className="relative">
-              <Input id="currentPassword" type={showCurrentPassword ? "text" : "password"} placeholder="Enter current password" autoComplete="current-password" required className="rounded-xl border-zinc-700 bg-zinc-800/50 pr-10 text-white placeholder:text-zinc-500" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
-              <button type="button" tabIndex={-1} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors" onClick={() => setShowCurrentPassword(!showCurrentPassword)}>
+              <Input id="currentPassword" type={showCurrentPassword ? "text" : "password"} placeholder="Enter current password" autoComplete="current-password" required className="rounded-xl pr-10" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+              <button type="button" tabIndex={-1} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setShowCurrentPassword(!showCurrentPassword)}>
                 {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="newPassword" className="text-zinc-300">New password</Label>
+            <Label htmlFor="newPassword" className="text-foreground">New password</Label>
             <div className="relative">
-              <Input id="newPassword" type={showNewPassword ? "text" : "password"} placeholder="At least 8 characters" autoComplete="new-password" required minLength={8} className="rounded-xl border-zinc-700 bg-zinc-800/50 pr-10 text-white placeholder:text-zinc-500" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-              <button type="button" tabIndex={-1} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors" onClick={() => setShowNewPassword(!showNewPassword)}>
+              <Input id="newPassword" type={showNewPassword ? "text" : "password"} placeholder="At least 8 characters" autoComplete="new-password" required minLength={8} className="rounded-xl pr-10" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+              <button type="button" tabIndex={-1} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setShowNewPassword(!showNewPassword)}>
                 {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
@@ -182,16 +182,16 @@ export function SecuritySection({
               <div className="space-y-1">
                 <div className="flex gap-1">
                   {[1, 2, 3, 4].map((level) => (
-                    <div key={level} className={`h-1 flex-1 rounded-full transition-colors ${level <= newPasswordStrength.score ? newPasswordStrength.color : "bg-zinc-700"}`} />
+                    <div key={level} className={`h-1 flex-1 rounded-full transition-colors ${level <= newPasswordStrength.score ? newPasswordStrength.color : "bg-muted"}`} />
                   ))}
                 </div>
-                <p className="text-xs text-zinc-500">{newPasswordStrength.label}</p>
+                <p className="text-xs text-muted-foreground">{newPasswordStrength.label}</p>
               </div>
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirmNewPassword" className="text-zinc-300">Confirm new password</Label>
-            <Input id="confirmNewPassword" type="password" placeholder="Re-enter new password" autoComplete="new-password" required className="rounded-xl border-zinc-700 bg-zinc-800/50 text-white placeholder:text-zinc-500" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+            <Label htmlFor="confirmNewPassword" className="text-foreground">Confirm new password</Label>
+            <Input id="confirmNewPassword" type="password" placeholder="Re-enter new password" autoComplete="new-password" required className="rounded-xl" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
             {confirmPassword.length > 0 && confirmPassword !== newPassword && (
               <p className="text-xs text-red-400">Passwords do not match</p>
             )}
@@ -200,20 +200,20 @@ export function SecuritySection({
             {passwordSaving ? (<><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />Updating...</>) : ("Update password")}
           </Button>
         </form>
-        <div className="border-t border-zinc-800" />
+        <div className="border-t border-border" />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Lock className="h-4 w-4 text-zinc-400" />
+            <Lock className="h-4 w-4 text-muted-foreground" />
             <div>
-              <p className="text-sm font-medium text-zinc-200">Two-factor authentication</p>
-              <p className="text-xs text-zinc-500">Add an extra layer of security to your account</p>
+              <p className="text-sm font-medium text-foreground">Two-factor authentication</p>
+              <p className="text-xs text-muted-foreground">Add an extra layer of security to your account</p>
             </div>
           </div>
-          <button type="button" className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${twoFactorEnabled ? "bg-brand-700" : "bg-zinc-700"}`} title="Two-factor authentication coming soon">
+          <button type="button" className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${twoFactorEnabled ? "bg-brand-700" : "bg-muted"}`} title="Two-factor authentication coming soon">
             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${twoFactorEnabled ? "translate-x-6" : "translate-x-1"}`} />
           </button>
         </div>
-        <p className="text-xs text-zinc-600 -mt-3 ml-7">Coming soon</p>
+        <p className="text-xs text-muted-foreground -mt-3 ml-7">Coming soon</p>
       </div>
     </SettingsSection>
   );
@@ -236,7 +236,7 @@ export function AppearanceSection({
     <SettingsSection icon={Palette} title="Appearance" description="Customize how Doable looks">
       <div className="space-y-5">
         <div className="space-y-3">
-          <Label className="text-zinc-300">Theme</Label>
+          <Label className="text-foreground">Theme</Label>
           <div className="grid grid-cols-3 gap-3">
             {([
               { value: "light" as const, label: "Light", icon: Sun },
@@ -252,7 +252,7 @@ export function AppearanceSection({
                   className={`relative flex flex-col items-center gap-2 rounded-xl border p-4 transition-colors ${
                     isActive
                       ? "border-brand-600 bg-brand-600/10 text-white"
-                      : "border-zinc-800 bg-zinc-800/30 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"
+                      : "border-border bg-secondary text-muted-foreground hover:border-border hover:text-foreground"
                   }`}
                 >
                   <option.icon className="h-5 w-5" />
@@ -264,7 +264,7 @@ export function AppearanceSection({
           </div>
         </div>
         <div className="space-y-3">
-          <Label className="text-zinc-300">Brand Color</Label>
+          <Label className="text-foreground">Brand Color</Label>
           <div className="flex flex-wrap gap-3">
             {BRAND_THEMES.map((bt) => (
               <button
@@ -274,7 +274,7 @@ export function AppearanceSection({
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
                   brandTheme === bt.value
                     ? "border-brand-600 bg-brand-600/10 text-white"
-                    : "border-zinc-800 bg-zinc-800/30 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"
+                    : "border-border bg-secondary text-muted-foreground hover:border-border hover:text-foreground"
                 }`}
               >
                 <span className="h-4 w-4 rounded-full" style={{ backgroundColor: bt.preview }} />
@@ -301,7 +301,7 @@ export function DangerZoneSection({
       <div className="flex items-center justify-between rounded-lg border border-red-900/50 bg-red-950/20 px-4 py-3">
         <div>
           <p className="text-sm font-medium text-red-400">Delete account</p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted-foreground">
             Permanently delete your account and all associated data. This cannot be undone.
           </p>
         </div>
@@ -330,21 +330,21 @@ export function DeleteAccountDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-zinc-800 bg-zinc-900">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-red-400">
             <AlertTriangle className="h-5 w-5" />Delete Account
           </DialogTitle>
-          <DialogDescription className="text-zinc-400">
+          <DialogDescription className="text-muted-foreground">
             This action is permanent and cannot be undone. All of your projects, data, and settings will be permanently deleted.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
-          <p className="text-sm text-zinc-300">Type <strong className="text-white">DELETE</strong> to confirm:</p>
-          <Input placeholder="Type DELETE to confirm" className="rounded-xl border-zinc-700 bg-zinc-800/50 text-white placeholder:text-zinc-600" value={deleteConfirmation} onChange={(e) => setDeleteConfirmation(e.target.value)} />
+          <p className="text-sm text-foreground">Type <strong className="text-foreground">DELETE</strong> to confirm:</p>
+          <Input placeholder="Type DELETE to confirm" className="rounded-xl" value={deleteConfirmation} onChange={(e) => setDeleteConfirmation(e.target.value)} />
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => { onOpenChange(false); setDeleteConfirmation(""); }} className="text-zinc-400 hover:text-white">Cancel</Button>
+          <Button variant="ghost" onClick={() => { onOpenChange(false); setDeleteConfirmation(""); }}>Cancel</Button>
           <Button variant="destructive" disabled={deleteConfirmation !== "DELETE" || isDeleting} onClick={onDelete} className="rounded-lg">
             {isDeleting ? (<><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />Deleting...</>) : ("Delete my account")}
           </Button>

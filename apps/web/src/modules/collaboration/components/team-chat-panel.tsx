@@ -64,13 +64,13 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
     userId ? members.find((m) => m.userId === userId) : null;
 
   return (
-    <div className="flex flex-col h-full bg-[#1C1C1C]">
+    <div className="flex flex-col h-full bg-popover">
       {/* Header */}
       {!hideHeader && (
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
-          <Users className="h-4 w-4 text-zinc-400" />
-          <span className="text-sm font-medium text-zinc-200">Team Chat</span>
-          <span className="text-[11px] text-zinc-500">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <Users className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium text-foreground">Team Chat</span>
+          <span className="text-[11px] text-muted-foreground">
             {members.length} online
           </span>
         </div>
@@ -80,16 +80,16 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <Users className="h-8 w-8 text-zinc-600 mb-2" />
-            <p className="text-sm text-zinc-500">No messages yet</p>
-            <p className="text-xs text-zinc-600 mt-1">Start a conversation with your team</p>
+            <Users className="h-8 w-8 text-muted-foreground mb-2" />
+            <p className="text-sm text-muted-foreground">No messages yet</p>
+            <p className="text-xs text-muted-foreground mt-1">Start a conversation with your team</p>
           </div>
         )}
         {messages.map((msg) => {
           if (msg.messageType === "system") {
             return (
               <div key={msg.id} className="text-center">
-                <span className="text-[11px] text-zinc-500 bg-zinc-800/50 px-2 py-0.5 rounded">
+                <span className="text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded">
                   {msg.content}
                 </span>
               </div>
@@ -110,16 +110,16 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
               </div>
               <div className={`max-w-[75%] ${isMe ? "text-right" : ""}`}>
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-xs font-medium text-zinc-300">
+                  <span className="text-xs font-medium text-foreground">
                     {isMe ? "You" : msg.displayName ?? "User"}
                   </span>
-                  <span className="text-[10px] text-zinc-600">{time}</span>
+                  <span className="text-[10px] text-muted-foreground">{time}</span>
                 </div>
                 <div
                   className={`rounded-lg px-3 py-1.5 text-sm ${
                     isMe
                       ? "bg-blue-600/20 text-blue-100"
-                      : "bg-zinc-800 text-zinc-200"
+                      : "bg-secondary text-foreground"
                   }`}
                 >
                   {msg.content}
@@ -134,14 +134,14 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
       {/* Typing indicator */}
       {typingNames.length > 0 && (
         <div className="px-4 py-1">
-          <span className="text-[11px] text-zinc-500 italic">
+          <span className="text-[11px] text-muted-foreground italic">
             {typingNames.join(", ")} {typingNames.length === 1 ? "is" : "are"} typing...
           </span>
         </div>
       )}
 
       {/* Input */}
-      <div className="border-t border-zinc-800 p-3">
+      <div className="border-t border-border p-3">
         <div className="flex items-end gap-2">
           <textarea
             ref={inputRef}
@@ -150,7 +150,7 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
             onKeyDown={handleKeyDown}
             placeholder="Message your team..."
             rows={1}
-            className="flex-1 resize-none rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none focus:ring-0"
+            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-0"
             style={{ maxHeight: "100px" }}
           />
           <button

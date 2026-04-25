@@ -75,12 +75,12 @@ export function UseTemplateDialog({
 
   return (
     <Dialog open={!!template} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="bg-zinc-900 border-zinc-800 max-w-[450px] p-0 gap-0">
+      <DialogContent className="max-w-[450px] p-0 gap-0">
         {/* Close button */}
         <button
           onClick={onClose}
           disabled={isCreating}
-          className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none disabled:pointer-events-none text-zinc-400"
+          className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none disabled:pointer-events-none text-muted-foreground"
         >
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
@@ -89,13 +89,13 @@ export function UseTemplateDialog({
         <div className="px-6 pt-6 pb-0">
           {/* Logo/icon */}
           <div className="mb-4">
-            <div className="h-8 w-8 rounded-lg bg-white/10 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-lg bg-foreground/10 flex items-center justify-center">
               <svg
                 width="16"
                 height="16"
                 viewBox="0 0 16 16"
                 fill="none"
-                className="text-white"
+                className="text-foreground"
               >
                 <path
                   d="M8 1L14.9282 5V11L8 15L1.07179 11V5L8 1Z"
@@ -108,17 +108,17 @@ export function UseTemplateDialog({
           </div>
 
           <DialogHeader className="space-y-2 text-left">
-            <DialogTitle className="text-xl font-semibold text-white">
+            <DialogTitle className="text-xl font-semibold text-foreground">
               Remix project
             </DialogTitle>
-            <DialogDescription className="text-sm text-zinc-400">
+            <DialogDescription className="text-sm text-muted-foreground">
               By remixing a project, you will create a copy that you own.
             </DialogDescription>
           </DialogHeader>
 
           {/* Form */}
           <div className="mt-6 space-y-2">
-            <Label htmlFor="project-name" className="text-sm font-medium text-zinc-300">
+            <Label htmlFor="project-name" className="text-sm font-medium text-foreground">
               Project name
             </Label>
             <Input
@@ -126,7 +126,7 @@ export function UseTemplateDialog({
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               disabled={isCreating}
-              className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 focus-visible:ring-zinc-600"
+              className="bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !isCreating && projectName.trim()) {
                   handleRemix();
@@ -139,19 +139,19 @@ export function UseTemplateDialog({
           </div>
         </div>
 
-        <DialogFooter className="px-6 py-4 mt-6 border-t border-zinc-800 flex-row justify-end gap-2">
+        <DialogFooter className="px-6 py-4 mt-6 border-t border-border flex-row justify-end gap-2">
           <Button
             variant="ghost"
             onClick={onClose}
             disabled={isCreating}
-            className="text-zinc-400 hover:text-white hover:bg-zinc-800"
+            className="text-muted-foreground hover:text-foreground hover:bg-secondary"
           >
             Cancel
           </Button>
           <Button
             onClick={handleRemix}
             disabled={isCreating || !projectName.trim()}
-            className="bg-white text-zinc-900 hover:bg-zinc-200 font-medium"
+            className="bg-foreground text-background hover:bg-foreground/90 font-medium"
           >
             {isCreating ? (
               <>

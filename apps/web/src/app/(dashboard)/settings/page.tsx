@@ -151,11 +151,11 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
       <div className="mb-8">
-        <button onClick={() => router.push("/dashboard")} className="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition-colors">
+        <button onClick={() => router.push("/dashboard")} className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" />Back to dashboard
         </button>
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
-        <p className="mt-1 text-sm text-zinc-400">Manage your account preferences and security.</p>
+        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Manage your account preferences and security.</p>
       </div>
 
       <div className="space-y-6">
@@ -165,15 +165,15 @@ export default function SettingsPage() {
         <SettingsSection icon={Monitor} title="Active Sessions" description="Devices where you are currently signed in">
           <div className="space-y-3">
             {sessions.map((session) => (
-              <div key={session.id} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-3">
+              <div key={session.id} className="flex items-center justify-between rounded-lg border border-border bg-secondary px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <session.icon className="h-5 w-5 text-zinc-400" />
+                  <session.icon className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium text-zinc-200">
+                    <p className="text-sm font-medium text-foreground">
                       {session.device}
                       {session.current && <span className="ml-2 inline-flex items-center rounded-full bg-green-900/30 px-2 py-0.5 text-[10px] font-medium text-green-400">Current</span>}
                     </p>
-                    <p className="text-xs text-zinc-500">{session.location} &middot; {session.lastActive}</p>
+                    <p className="text-xs text-muted-foreground">{session.location} &middot; {session.lastActive}</p>
                   </div>
                 </div>
               </div>
