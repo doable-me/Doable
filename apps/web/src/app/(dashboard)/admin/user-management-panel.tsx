@@ -35,7 +35,7 @@ function extractFieldErrors(err: unknown): { fieldErrors: CreditFieldErrors; for
     const msgs = flat.fieldErrors?.[k];
     if (msgs && msgs.length > 0) fe[k] = msgs[0];
   }
-  const formError = flat.formErrors && flat.formErrors.length > 0 ? flat.formErrors[0] : null;
+  const formError = flat.formErrors && flat.formErrors.length > 0 ? (flat.formErrors[0] ?? null) : null;
   return { fieldErrors: fe, formError };
 }
 import {
