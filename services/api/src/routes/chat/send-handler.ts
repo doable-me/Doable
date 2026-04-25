@@ -37,6 +37,7 @@ import { checkAndEvictOnModeChange, resolveSession, persistSessionToDb, filterTo
 import { resolveUserDisplay, saveUserMessage, preInsertAssistantMessage } from "./message-persistence.js";
 import { handleAutoContinue, handleEmptyResponseRetry } from "./stream-recovery.js";
 import { handleAutoFixPreview, handleVersionAndMemory, handleFinalCleanup, handleStreamError } from "./post-processing.js";
+import { writeStreamBuffer, shouldBufferType, type BufferedEvent, type StreamBuffer } from "./stream-buffer.js";
 
 async function assertToolCapableModel(providerId: string | undefined, modelId: string | undefined): Promise<void> {
   if (!providerId || !modelId) return;
@@ -138,11 +139,63 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
         console.log(`[Chat] client disconnected for ${projectId.slice(0, 8)} — generation continues in background`);
       });
 
+      // Ephemeral messageId for this stream — also written to ai_active_streams
+      // so /chat/status can hand it to clients that want to resume via
+      // /chat/stream-resume after a refresh/disconnect.
+      const messageId = crypto.randomUUID();
+
+      // In-memory event buffer mirrored to KV on every write — enables
+      // stream-resume after client refresh. Snapshot-write avoids races.
+      const bufferedEvents: BufferedEvent[] = [];
+      let bufferSeq = 0;
+      const flushBuffer = (done: boolean, error?: string) => {
+        const snapshot: StreamBuffer = {
+          events: bufferedEvents,
+          done,
+          updatedAt: Date.now(),
+        };
+        if (error) snapshot.error = error;
+        writeStreamBuffer(messageId, snapshot).catch(() => {});
+      };
+
+      // Register this stream IMMEDIATELY — before any of the (potentially
+      // slow) session-resolution work below. This closes the race window
+      // where a user refreshing within the first few hundred ms of a send
+      // would hit /chat/status before the DB row existed and miss the
+      // stream-resume path entirely.
+      activeRequests.set(projectId, { mode, startedAt: Date.now() });
+      sql`INSERT INTO ai_active_streams (project_id, message_id) VALUES (${projectId}, ${messageId}) ON CONFLICT (project_id) DO UPDATE SET message_id = ${messageId}, started_at = now()`.catch(() => {});
+      // Prime the KV buffer so the resume endpoint sees an empty-but-active
+      // buffer even if the user refreshes before the first SSE event fires.
+      flushBuffer(false);
+
       return streamSSE(c, async (stream) => {
         // Make SSE writes resilient after client disconnect so the rest of the
         // pipeline (tool events, final save, cleanup) still runs to completion.
+        // Also mirror every non-noise event to the KV stream buffer so a
+        // refreshed client can resume via GET /chat/stream-resume.
         const originalWriteSSE = stream.writeSSE.bind(stream);
         stream.writeSSE = async (message: Parameters<typeof originalWriteSSE>[0]) => {
+          // Mirror to buffer BEFORE the direct write — so even if the client
+          // is disconnected, the buffer still captures the event for resume.
+          try {
+            const raw = typeof message.data === "string" ? message.data : "";
+            if (raw && raw !== "[DONE]") {
+              const parsed = JSON.parse(raw) as { type?: string; data?: unknown };
+              if (parsed && typeof parsed.type === "string" && shouldBufferType(parsed.type)) {
+                bufferSeq += 1;
+                bufferedEvents.push({
+                  seq: bufferSeq,
+                  type: parsed.type,
+                  data: parsed.data,
+                  ts: Date.now(),
+                });
+                flushBuffer(false);
+              }
+            }
+          } catch {
+            // Non-JSON payloads (e.g. "[DONE]") — skip buffer mirror.
+          }
           if (clientDisconnected) return;
           try {
             await originalWriteSSE(message);
@@ -224,11 +277,10 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
           const { displayName, color } = await resolveUserDisplay(userId);
           if (dbSessionId) await saveUserMessage(dbSessionId, displayContent ?? content, userId, displayName, color);
-          const messageId = crypto.randomUUID();
           broadcastToRoom(projectId, { type: "ai:message-sent", userId, displayName, content: content.slice(0, 200), messageId }, userId).catch(() => {});
 
-          activeRequests.set(projectId, { mode, startedAt: Date.now() });
-          sql`INSERT INTO ai_active_streams (project_id, message_id) VALUES (${projectId}, ${messageId}) ON CONFLICT (project_id) DO UPDATE SET message_id = ${messageId}, started_at = now()`.catch(() => {});
+          // ai_active_streams + activeRequests already registered above,
+          // before streamSSE opened, to close the refresh-race window.
           if (dbSessionId) state.assistantMessageId = await preInsertAssistantMessage(dbSessionId);
 
           const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
@@ -363,6 +415,10 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           await handleVersionAndMemory(stream, state, projectId, userId, content, messageId);
           await handleFinalCleanup(stream, state, projectId, mode, keepAlive, softHeartbeat);
 
+          // Mark stream buffer complete with shortened TTL so late reconnects
+          // can still replay the 'complete' event before it expires.
+          flushBuffer(true);
+
           // Consume 1 credit after successful chat completion
           if (workspaceId && state.assistantContent) {
             try {
@@ -376,7 +432,10 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
             }
           }
         } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
           await handleStreamError(stream, state, err, projectId, keepAlive, softHeartbeat);
+          // Mark buffer as done + record error so resume clients can surface it.
+          flushBuffer(true, errMsg);
         }
       });
     },

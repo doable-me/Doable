@@ -1051,6 +1051,94 @@ async function resumeBridgeStream(
   cb.onDone();
 }
 
+// ─── Stream-resume SSE consumer ─────────────────────────────────────
+// Reconnects to an in-flight generation after a full page refresh via
+// GET /projects/:id/chat/stream-resume?messageId=…&lastSeq=…
+//
+// The backend replays buffered events since `lastSeq`, then continues
+// forwarding live events until the turn finishes. We use fetch() (not
+// EventSource) so we can attach the Bearer auth header used by the rest
+// of the /chat API.
+//
+// Terminal events returned by the backend close the stream cleanly:
+//   - "complete"         — generation finished after we subscribed
+//   - "already_complete" — generation already finished before we subscribed
+//   - "no_buffer"        — nothing to resume (rare; treat as already done)
+//   - "resume_timeout"   — backend hit 10-min wall clock safety ceiling
+//
+// All non-terminal events are delegated to processOneSSEPayload — the same
+// handler used by the initial-page-load bridge stream — so behavior stays
+// identical to the live /chat/send path.
+
+type StreamResumeTerminal = "complete" | "already_complete" | "no_buffer" | "resume_timeout";
+
+async function consumeStreamResume(
+  projectId: string,
+  messageId: string,
+  cb: BridgeCallbacks,
+  signal: AbortSignal,
+  lastSeqRef: { current: number },
+): Promise<StreamResumeTerminal> {
+  const token = getStoredTokens().accessToken;
+  const url = `${API_URL}/projects/${projectId}/chat/stream-resume?messageId=${encodeURIComponent(
+    messageId,
+  )}&lastSeq=${lastSeqRef.current}`;
+
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    signal,
+  });
+  if (!res.ok) throw new Error(`stream-resume ${res.status}`);
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("stream-resume: no body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const pendingToolNames: string[] = [];
+
+  while (true) {
+    if (signal.aborted) throw new DOMException("aborted", "AbortError");
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith("data: ")) continue;
+      const payload = trimmed.slice(6);
+      if (payload === "[DONE]") return "complete";
+      // Peek at envelope: track seq + intercept terminal events BEFORE
+      // delegating to the shared live-stream handler (which doesn't know
+      // about resume-specific framing).
+      try {
+        const parsed = JSON.parse(payload) as {
+          type?: string;
+          seq?: number;
+          data?: unknown;
+        };
+        if (typeof parsed.seq === "number" && parsed.seq > lastSeqRef.current) {
+          lastSeqRef.current = parsed.seq;
+        }
+        if (
+          parsed.type === "complete" ||
+          parsed.type === "already_complete" ||
+          parsed.type === "no_buffer" ||
+          parsed.type === "resume_timeout"
+        ) {
+          return parsed.type as StreamResumeTerminal;
+        }
+      } catch {
+        // Malformed JSON — fall through; processOneSSEPayload logs and skips.
+      }
+      processOneSSEPayload(payload, cb, pendingToolNames);
+    }
+  }
+  // Server closed the connection without a terminal event. Treat as
+  // complete so the caller reloads history and clears the spinner.
+  return "complete";
+}
+
 // ─── Markdown Rendering (static — outside component for memoization) ────
 
 function formatInlineStatic(text: string): React.ReactNode {
@@ -2438,25 +2526,70 @@ export default function EditorPage() {
       } catch { /* no active plan */ }
     })();
 
-    // Check if AI is still actively working (e.g., user refreshed during build)
-    // If active, set streaming state so loading indicators show, and poll for updates
+    // Check if AI is still actively working (e.g., user refreshed mid-build).
+    // Strategy:
+    //   1. Call /chat/status to see if there's an active stream and get its messageId.
+    //   2. If yes → open /chat/stream-resume for smooth live streaming (no 3s polling gap).
+    //   3. If stream-resume fails twice → fall back to legacy 3s /ai-status polling.
+    //   4. Immediately flip the last assistant message to isStreaming:true so the
+    //      loading-dots indicator renders during the gap before the first event
+    //      arrives. (loadFromApi above writes isStreaming:false for every history
+    //      row, so without this the bubble would appear blank.)
     (async () => {
       try {
-        const statusRes = await apiFetch<{ active: boolean; mode?: string }>(`/projects/${resolvedProjectId}/ai-status`);
-        if (statusRes.active) {
-          setLiveStatus("AI is still working on your project...");
-          setIsStreaming(true);
+        const [chatStatusRes, aiStatusRes] = await Promise.all([
+          apiFetch<{ streaming: boolean; messageId?: string; startedAt?: string }>(`/projects/${resolvedProjectId}/chat/status`).catch(() => null),
+          apiFetch<{ active: boolean; mode?: string }>(`/projects/${resolvedProjectId}/ai-status`).catch(() => null),
+        ]);
+        const isActive = (chatStatusRes?.streaming === true) || (aiStatusRes?.active === true);
+        if (!isActive) return;
 
-          // Reload every 3s while AI is active — chat history, file tree, preview
+        setLiveStatus("AI is still working on your project...");
+        setIsStreaming(true);
+
+        // Fix blank-bubble regression: loadFromApi stamped isStreaming:false
+        // on every history row. Immediately re-enable streaming on the last
+        // assistant so the dots render until the first resume event arrives.
+        let streamingAssistantId: string | null = null;
+        setMessages((prev) => {
+          const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
+          if (!lastAssistant) return prev;
+          streamingAssistantId = lastAssistant.id;
+          return prev.map((m) =>
+            m.id === lastAssistant.id ? { ...m, isStreaming: true } : m,
+          );
+        });
+
+        // Helper: reset UI once the generation is known to be done, regardless
+        // of which path (stream-resume or polling) discovered that.
+        const finalizeStream = async () => {
+          try { await loadFromApi(); } catch { /* best-effort */ }
+          loadFileTree();
+          if (selectedFile) {
+            delete fileContentsCache.current[selectedFile];
+            loadFileContent(selectedFile);
+          }
+          setLiveStatus("");
+          setIsStreaming(false);
+          setIsFirstGeneration(false);
+          setHasActiveToolCalls(false);
+          if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
+            setTimeout(() => {
+              if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
+                iframeRef.current.src = previewUrl + "?t=" + Date.now();
+              }
+            }, 1500);
+          }
+        };
+
+        // ── Polling fallback (kept for when stream-resume isn't available
+        // or fails twice in a row). Mirrors legacy behavior. ──
+        const pollUntilDone = () => {
           let lastRefresh = 0;
           const poll = setInterval(async () => {
             try {
               await loadFromApi();
               loadFileTree();
-
-              // Refresh preview iframe every 6s (not every 3s — too aggressive)
-              // Skip if iframe is currently showing a web-slides artifact —
-              // that URL is the canonical preview, not the project dev server.
               const now = Date.now();
               const curSrc = iframeRef.current?.src ?? "";
               const isArtifactPreview = /\/artifacts\//.test(curSrc);
@@ -2464,33 +2597,123 @@ export default function EditorPage() {
                 iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + now;
                 lastRefresh = now;
               }
-
               const check = await apiFetch<{ active: boolean }>(`/projects/${resolvedProjectId}/ai-status`);
               if (!check.active) {
                 clearInterval(poll);
-                setLiveStatus("");
-                setIsStreaming(false);
-                setIsFirstGeneration(false);
-                setHasActiveToolCalls(false);
-                // Final reload everything
-                await loadFromApi();
-                loadFileTree();
-                if (selectedFile) {
-                  delete fileContentsCache.current[selectedFile];
-                  loadFileContent(selectedFile);
-                }
-                // Final preview refresh — unless we're already showing an artifact preview
-                if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
-                  setTimeout(() => {
-                    if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
-                      iframeRef.current.src = previewUrl + "?t=" + Date.now();
-                    }
-                  }, 2000);
-                }
+                await finalizeStream();
               }
             } catch { clearInterval(poll); setIsStreaming(false); setHasActiveToolCalls(false); }
           }, 3000);
           setTimeout(() => { clearInterval(poll); setIsStreaming(false); setLiveStatus(""); setHasActiveToolCalls(false); }, 5 * 60 * 1000);
+        };
+
+        const messageId = chatStatusRes?.messageId ?? null;
+        if (!messageId) {
+          // No messageId — backend either doesn't support stream-resume yet or
+          // the active-streams row is stale. Legacy polling keeps the bubble
+          // spinner + periodic refresh working.
+          pollUntilDone();
+          return;
+        }
+
+        // ── Stream-resume path (primary) ──
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+        localStreamActiveRef.current = true;
+        const lastSeqRef = { current: 0 };
+
+        // Callbacks wire resume-stream events directly into the last assistant
+        // message captured above. Tool callbacks reuse the same handlers as
+        // the live /chat/send path so visual behavior is identical.
+        const cb: BridgeCallbacks = {
+          onChunk: (chunk: string) => {
+            if (!streamingAssistantId) return;
+            setLiveStatus("Writing response...");
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamingAssistantId ? { ...m, content: m.content + chunk } : m,
+              ),
+            );
+          },
+          onDone: () => { /* terminal-event loop in consumeStreamResume drives finalization */ },
+          onError: (_err: string) => { /* handled in catch below */ },
+          onToolStarted: handleToolStarted,
+          onToolCompleted: handleToolCompleted,
+          onThinking: (text: string) => {
+            if (!streamingAssistantId) return;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamingAssistantId
+                  ? { ...m, thinkingContent: (m.thinkingContent || "") + text }
+                  : m,
+              ),
+            );
+            const short = text.length < 60 && !text.includes("\n") ? text : humanizeThinking(text);
+            if (short) setLiveStatus(short);
+          },
+          onStatusChange: (status: string) => { if (status) setLiveStatus(status); },
+          onClarification: (questions) => {
+            setPendingQuestions(questions);
+            setPlanPhase("clarifying");
+          },
+          onPlan: (plan) => {
+            setActivePlan(plan);
+            setPlanPhase("reviewing");
+          },
+          onPlanStepUpdate: (stepId, status) => {
+            setActivePlan((prev) => {
+              if (!prev) return prev;
+              return { ...prev, steps: prev.steps.map((s) => s.id === stepId ? { ...s, status: status as any } : s) };
+            });
+          },
+          onProvisionSupabase: (req) => { setSupabaseProvisionRequest(req); },
+          onMcpUiResource: (resource) => {
+            if (!streamingAssistantId) return;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamingAssistantId
+                  ? { ...m, mcpResources: { ...(m.mcpResources ?? {}), [resource.toolCallId]: resource } }
+                  : m,
+              ),
+            );
+          },
+          onArtifactReady: (artifact) => {
+            if (!streamingAssistantId) return;
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id !== streamingAssistantId) return m;
+                const existing = m.artifacts ?? [];
+                if (existing.some((a) => a.url === artifact.url)) return m;
+                return { ...m, artifacts: [...existing, artifact] };
+              }),
+            );
+          },
+        };
+
+        try {
+          await consumeStreamResume(resolvedProjectId, messageId, cb, controller.signal, lastSeqRef);
+          localStreamActiveRef.current = false;
+          if (controller.signal.aborted) return;
+          await finalizeStream();
+        } catch (err) {
+          if (controller.signal.aborted) return;
+          // Single backoff retry preserving lastSeqRef so we don't replay
+          // already-applied events.
+          console.warn("[Chat] stream-resume error, retrying in 1s:", err);
+          try {
+            await new Promise((r) => setTimeout(r, 1000));
+            if (controller.signal.aborted) return;
+            await consumeStreamResume(resolvedProjectId, messageId, cb, controller.signal, lastSeqRef);
+            localStreamActiveRef.current = false;
+            if (controller.signal.aborted) return;
+            await finalizeStream();
+          } catch (err2) {
+            if (controller.signal.aborted) return;
+            console.warn("[Chat] stream-resume failed after retry — falling back to polling:", err2);
+            localStreamActiveRef.current = false;
+            pollUntilDone();
+          }
         }
       } catch { /* ignore */ }
     })();

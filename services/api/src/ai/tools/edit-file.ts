@@ -1,6 +1,7 @@
 import type { Tool } from "./index.js";
 import { readProjectFile, writeProjectFile } from "../project-files.js";
 import { editFileThroughYjs } from "../yjs-bridge.js";
+import { validateFileSyntax } from "./validate-syntax.js";
 
 export const editFileTool: Tool = {
   name: "edit_file",
@@ -66,6 +67,25 @@ export const editFileTool: Tool = {
       };
     }
 
+    // Compute the projected final content and run a syntax check BEFORE
+    // writing — for either the Yjs or the direct path. Catches malformed
+    // JS/TS/JSX/TSX/JSON in the same tool call so the model can retry
+    // without waiting for the post-stream auto-fix loop.
+    const updated = replaceAll
+      ? content.replaceAll(oldString, newString)
+      : content.replace(oldString, newString);
+
+    const validation = validateFileSyntax(path, updated);
+    if (!validation.ok) {
+      return {
+        success: false,
+        output: "",
+        error:
+          `Syntax error in ${path} after edit: ${validation.message}\n` +
+          `File was NOT modified. Re-read the file and try a different edit.`,
+      };
+    }
+
     // Try to edit through Yjs CRDT if collaboration is active
     try {
       const yjsResult = await editFileThroughYjs(
@@ -87,10 +107,6 @@ export const editFileTool: Tool = {
     }
 
     // Direct filesystem edit
-    const updated = replaceAll
-      ? content.replaceAll(oldString, newString)
-      : content.replace(oldString, newString);
-
     await writeProjectFile(ctx.projectId, path, updated);
 
     return {

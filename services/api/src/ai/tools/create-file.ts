@@ -1,5 +1,6 @@
 import type { Tool } from "./index.js";
 import { writeProjectFile } from "../project-files.js";
+import { validateFileSyntax } from "./validate-syntax.js";
 
 export const createFileTool: Tool = {
   name: "create_file",
@@ -35,6 +36,19 @@ export const createFileTool: Tool = {
       };
     } catch {
       // File doesn't exist, proceed with creation
+    }
+
+    // Pre-write syntax check — catches malformed JS/TS/JSX/TSX/JSON
+    // before it hits disk and breaks the dev server.
+    const validation = validateFileSyntax(path, content);
+    if (!validation.ok) {
+      return {
+        success: false,
+        output: "",
+        error:
+          `Syntax error in ${path}: ${validation.message}\n` +
+          `File was NOT created. Fix the syntax and call create_file again.`,
+      };
     }
 
     await writeProjectFile(ctx.projectId, path, content);

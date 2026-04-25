@@ -3,6 +3,7 @@
  * chat/history, clear chat, abort, models, auth-status.
  */
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { sql } from "../../db/index.js";
 import { getCopilotEngine } from "../../ai/providers/copilot.js";
 import { getCopilotManager } from "../../ai/providers/copilot-manager.js";
@@ -11,6 +12,7 @@ import { aiSettingsQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../../middleware/auth.js";
 import { projectSessions, activeRequests } from "./session-state.js";
 import { ENCRYPTION_KEY } from "../../lib/secrets.js";
+import { readStreamBuffer } from "./stream-buffer.js";
 
 const aiSettingsDb = aiSettingsQueries(sql, ENCRYPTION_KEY);
 
@@ -63,6 +65,110 @@ export function registerMiscRoutes(app: Hono<AuthEnv>) {
     } catch {
       return c.json({ streaming: false });
     }
+  });
+
+  // ─── GET /projects/:id/chat/stream-resume ──
+  // Replay buffered SSE events for an in-flight generation after a client
+  // refresh/disconnect. Does NOT affect backend generation (which runs
+  // detached from the HTTP request). Returns monotonically-numbered events
+  // with `seq > lastSeq`, then a terminal `complete` once generation ends.
+  //
+  // Query params:
+  //   - messageId (required): ephemeral messageId from /chat/status
+  //   - lastSeq (optional, default 0): highest seq already seen by client
+  //
+  // Terminal events (exactly one):
+  //   - {type: "complete"}        — buffer marked done
+  //   - {type: "already_complete"} — no buffer, but a saved message exists
+  //                                  (client should fall back to /chat/history)
+  //   - {type: "no_buffer"}        — no buffer and no saved message
+  app.get("/projects/:id/chat/stream-resume", async (c) => {
+    const projectId = c.req.param("id");
+    const messageId = c.req.query("messageId");
+    const lastSeqRaw = c.req.query("lastSeq");
+    const lastSeq = Math.max(0, parseInt(lastSeqRaw ?? "0", 10) || 0);
+
+    if (!messageId) {
+      return c.json({ error: "messageId query param required" }, 400);
+    }
+
+    c.header("X-Accel-Buffering", "no");
+
+    return streamSSE(c, async (stream) => {
+      let cursor = lastSeq;
+      let clientGone = false;
+      c.req.raw.signal.addEventListener("abort", () => { clientGone = true; });
+
+      // Safety cap — keep the loop from running indefinitely if something
+      // upstream forgets to mark the buffer done.
+      const MAX_WALL_MS = 10 * 60_000; // 10 min (matches ACTIVE_TTL_MS)
+      const startedAt = Date.now();
+
+      while (!clientGone) {
+        if (Date.now() - startedAt > MAX_WALL_MS) {
+          try {
+            await stream.writeSSE({ data: JSON.stringify({ type: "resume_timeout" }) });
+          } catch { /* ignore */ }
+          return;
+        }
+
+        const buf = await readStreamBuffer(messageId);
+
+        if (!buf) {
+          // Buffer missing — decide between three cases.
+          // messageId here is the ephemeral stream id (NOT ai_messages.id), so
+          // we check ai_active_streams to distinguish "still starting" from
+          // "already completed".
+          try {
+            const [active] = await sql`
+              SELECT message_id FROM ai_active_streams
+              WHERE project_id = ${projectId} AND message_id = ${messageId}
+              LIMIT 1
+            `;
+            if (active) {
+              // Stream is registered but buffer not yet populated (race on
+              // first event) — wait briefly and retry.
+              await new Promise((r) => setTimeout(r, 150));
+              continue;
+            }
+            // Not actively streaming — either the message was finalized (common
+            // case) or the stream is unknown. In both cases client should
+            // fall back to /chat/history to pick up the persisted message.
+            await stream.writeSSE({ data: JSON.stringify({ type: "already_complete" }) });
+          } catch {
+            await stream.writeSSE({ data: JSON.stringify({ type: "no_buffer" }) });
+          }
+          return;
+        }
+
+        // Replay any new events with seq > cursor.
+        for (const evt of buf.events) {
+          if (evt.seq <= cursor) continue;
+          try {
+            await stream.writeSSE({
+              data: JSON.stringify({ type: evt.type, data: evt.data, seq: evt.seq }),
+            });
+          } catch {
+            clientGone = true;
+            break;
+          }
+          cursor = evt.seq;
+        }
+        if (clientGone) return;
+
+        if (buf.done) {
+          try {
+            const terminal: { type: string; error?: string } = { type: "complete" };
+            if (buf.error) terminal.error = buf.error;
+            await stream.writeSSE({ data: JSON.stringify(terminal) });
+          } catch { /* ignore */ }
+          return;
+        }
+
+        // Still generating — wait a tick and re-poll.
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    });
   });
 
   // ─── GET /projects/:id/chat/history ──
