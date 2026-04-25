@@ -31,16 +31,16 @@ export default function DashboardPage() {
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="absolute inset-0 animate-pulse-drift" style={{
               width: "130%", height: "130%", top: "-15%", left: "-15%",
-              backgroundImage: "linear-gradient(160deg, #000000 0%, #000000 10%, hsl(var(--brand-950)) 18%, hsl(var(--brand-700)) 32%, hsl(var(--brand-500)) 44%, hsl(var(--brand-400)) 54%, hsl(var(--brand-300)) 64%, hsl(var(--brand-500)) 76%, hsl(var(--brand-400)) 88%, #000000 100%)",
+              backgroundImage: "linear-gradient(160deg, hsl(var(--background)) 0%, hsl(var(--background)) 10%, hsl(var(--brand-950)) 18%, hsl(var(--brand-700)) 32%, hsl(var(--brand-500)) 44%, hsl(var(--brand-400)) 54%, hsl(var(--brand-300)) 64%, hsl(var(--brand-500)) 76%, hsl(var(--brand-400)) 88%, hsl(var(--background)) 100%)",
               backgroundSize: "200% 200%",
             }} />
           </div>
           <div className="absolute inset-x-0 bottom-0 h-24 z-[1]" style={{
-            background: "linear-gradient(to top, #0a0a0a 0%, #0a0a0ae0 50%, transparent 100%)",
+            background: "linear-gradient(to top, hsl(var(--background)) 0%, hsl(var(--background) / 0.88) 50%, transparent 100%)",
           }} />
           <div className="relative z-10 px-4 sm:px-8 py-16 max-w-7xl mx-auto">
             <div className="text-center mb-6">
-              <h1 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight transition-all duration-500">
+              <h1 className="text-3xl sm:text-4xl font-semibold text-foreground tracking-tight transition-all duration-500">
                 {d.greeting}
               </h1>
             </div>
