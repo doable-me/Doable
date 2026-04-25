@@ -149,7 +149,7 @@ export function EditorToolbar({ workspaceId: workspaceIdProp }: EditorToolbarPro
         >
           <Github className="h-4 w-4" />
         </button>
-        <button className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+        <button className="flex h-8 items-center gap-1.5 rounded-md bg-violet-100 border border-violet-700 px-3 text-xs font-medium text-violet-900 hover:bg-violet-200 transition-colors">
           <Rocket className="h-3.5 w-3.5" />
           <span>Publish</span>
         </button>

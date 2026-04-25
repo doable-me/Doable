@@ -204,7 +204,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
       <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-border bg-background">
         {/* Logo */}
         <a href="/dashboard" className="flex items-center gap-2.5 px-5 pt-5 pb-4 hover:opacity-80 transition-opacity cursor-pointer">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-brand-700 shadow-sm shadow-brand-900/30"><span className="text-sm font-bold text-white">D</span></div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 border border-brand-600 dark:bg-gradient-to-br dark:from-brand-600 dark:to-brand-700 dark:border-transparent shadow-sm shadow-brand-700/20 dark:shadow-brand-900/30"><span className="text-sm font-bold text-brand-700 dark:text-white">D</span></div>
           <span className="text-lg font-semibold tracking-tight text-foreground">Doable</span>
         </a>
 
@@ -222,9 +222,9 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
               <DropdownMenuLabel className="text-muted-foreground">Workspaces</DropdownMenuLabel>
               {workspaces.map((ws) => (
                 <DropdownMenuItem key={ws.id} className="focus:bg-accent focus:text-accent-foreground" onClick={() => handleSwitchWorkspace(ws.id)}>
-                  <div className="flex h-5 w-5 items-center justify-center rounded bg-brand-600/20 text-xs font-semibold text-brand-400">{ws.name.charAt(0).toUpperCase()}</div>
+                  <div className="flex h-5 w-5 items-center justify-center rounded bg-brand-600/20 text-xs font-semibold text-brand-700 dark:text-brand-400">{ws.name.charAt(0).toUpperCase()}</div>
                   <span className="ml-2 flex-1 truncate">{ws.name}</span>
-                  {ws.id === activeWorkspaceId && <Check className="ml-auto h-3.5 w-3.5 text-brand-400" />}
+                  {ws.id === activeWorkspaceId && <Check className="ml-auto h-3.5 w-3.5 text-brand-700 dark:text-brand-400" />}
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
@@ -334,7 +334,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
               <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => router.push("/ai-settings")}><Bot className="mr-2 h-4 w-4" />AI Settings</DropdownMenuItem>
               <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => router.push("/usage")}><BarChart3 className="mr-2 h-4 w-4" />Usage</DropdownMenuItem>
               <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => router.push("/billing")}><CreditCard className="mr-2 h-4 w-4" />Billing</DropdownMenuItem>
-              {user?.isPlatformAdmin && <DropdownMenuItem className="text-amber-400 focus:bg-amber-500/10 focus:text-amber-300" onClick={() => router.push("/admin")}><Shield className="mr-2 h-4 w-4" />System Admin</DropdownMenuItem>}
+              {user?.isPlatformAdmin && <DropdownMenuItem className="text-amber-800 font-bold dark:text-amber-400 dark:font-normal focus:bg-amber-500/10 focus:text-amber-700 dark:focus:text-amber-300" onClick={() => router.push("/admin")}><Shield className="mr-2 h-4 w-4" />System Admin</DropdownMenuItem>}
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={() => { logout(); router.push("/"); }}><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem>
             </DropdownMenuContent>

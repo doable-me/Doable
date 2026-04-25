@@ -71,7 +71,7 @@ export function TemplatePreviewModal({
             <div className="flex items-center gap-3 shrink-0">
               <button
                 onClick={onUseTemplate}
-                className="px-4 py-1.5 text-sm font-medium text-background bg-foreground rounded-lg hover:bg-foreground/90 transition-colors"
+                className="px-4 py-1.5 text-sm font-medium text-primary-foreground bg-primary rounded-lg hover:bg-primary/90 transition-colors"
               >
                 Use template
               </button>

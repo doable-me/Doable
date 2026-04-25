@@ -1155,7 +1155,7 @@ function formatInlineStatic(text: string): React.ReactNode {
       return (
         <code
           key={j}
-          className="rounded bg-secondary px-1.5 py-0.5 text-[13px] text-brand-300"
+          className="rounded bg-secondary px-1.5 py-0.5 text-[13px] text-brand-700 dark:text-brand-300"
         >
           {seg.slice(1, -1)}
         </code>
@@ -1426,14 +1426,14 @@ function renderFunctionStepList(content: string, compact = false): React.ReactNo
 
   return (
     <div className={compact ? "space-y-2 mt-1" : "space-y-3 mt-2"}>
-      <div className="text-[12px] font-medium text-brand-300 flex items-center gap-2">
+      <div className="text-[12px] font-medium text-brand-700 dark:text-brand-300 flex items-center gap-2">
         <Sparkles className="h-3.5 w-3.5 animate-pulse" />
         Planning these actions:
       </div>
       <div className="flex flex-col gap-2">
         {steps.map((step, idx) => (
           <div key={step.id} className="flex items-center gap-3 animate-in slide-in-from-bottom-2 fade-in duration-300 rounded-lg bg-foreground/15 border border-border p-2 hover:bg-foreground/30 hover:border-border transition-colors">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-500/20 text-brand-400 font-bold text-[10px]">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-500/20 text-brand-700 dark:text-brand-400 font-bold text-[10px]">
               {idx + 1}
             </div>
             <div className="flex-1 min-w-0 flex flex-col">
@@ -3647,7 +3647,7 @@ export default function EditorPage() {
             }}
             className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-[13px] hover:bg-accent transition-colors ${
               isSelected && !isFolder
-                ? "bg-brand-500/10 text-brand-300"
+                ? "bg-brand-500/10 text-brand-700 dark:text-brand-300"
                 : "text-muted-foreground"
             }`}
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
@@ -3997,8 +3997,8 @@ export default function EditorPage() {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-8">
         <div className="relative mb-5">
-          <div className="h-10 w-10 rounded-full border-2 border-border border-t-brand-400 animate-spin" />
-          <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-brand-400" />
+          <div className="h-10 w-10 rounded-full border-2 border-border border-t-brand-700 dark:border-t-brand-400 animate-spin" />
+          <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-brand-700 dark:text-brand-400" />
         </div>
         <h3 className="text-sm font-medium text-foreground mb-1.5">{statusMsg}</h3>
         <p className="text-[13px] text-muted-foreground max-w-[280px]">
@@ -4237,7 +4237,7 @@ export default function EditorPage() {
           {/* Doable logo icon */}
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white font-bold text-sm shadow-md shadow-brand-900/40 hover:from-brand-400 hover:to-brand-600 transition-all"
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-brand-100 border border-brand-600 dark:bg-gradient-to-br dark:from-brand-500 dark:to-brand-700 dark:border-transparent text-brand-700 dark:text-white font-bold text-sm shadow-md shadow-brand-700/25 dark:shadow-brand-900/40 hover:brightness-95 transition-all"
             title="Back to dashboard"
           >
             D
@@ -4312,7 +4312,7 @@ export default function EditorPage() {
           {/* Scaffold status indicator */}
           {scaffoldStatus !== "ready" && scaffoldStatus !== "idle" && scaffoldStatus !== "error" && (
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-shrink-0">
-              <Loader2 className="h-3 w-3 animate-spin text-brand-400" />
+              <Loader2 className="h-3 w-3 animate-spin text-brand-700 dark:text-brand-400" />
               {scaffoldStatus === "scaffolding" ? "Getting ready..." : "Starting..."}
             </div>
           )}
@@ -4341,7 +4341,7 @@ export default function EditorPage() {
                 }}
                 className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md ${
                   isActive
-                    ? "gap-1.5 bg-brand-500/15 text-brand-400 px-2.5 py-1"
+                    ? "gap-1.5 bg-brand-500/15 text-brand-700 dark:text-brand-400 px-2.5 py-1"
                     : "text-muted-foreground hover:text-foreground hover:bg-accent p-1.5"
                 }`}
                 title={label}
@@ -4364,7 +4364,7 @@ export default function EditorPage() {
                 onClick={() => setActiveTab(tabKey)}
                 className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md ${
                   isActive
-                    ? "gap-1.5 bg-brand-500/15 text-brand-400 px-2.5 py-1"
+                    ? "gap-1.5 bg-brand-500/15 text-brand-700 dark:text-brand-400 px-2.5 py-1"
                     : "text-muted-foreground hover:text-foreground hover:bg-accent p-1.5"
                 }`}
                 title={item.label}
@@ -4382,7 +4382,7 @@ export default function EditorPage() {
               onClick={() => setShowMoreMenu((v) => !v)}
               className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md p-1.5 ${
                 showMoreMenu
-                  ? "bg-brand-500/15 text-brand-400"
+                  ? "bg-brand-500/15 text-brand-700 dark:text-brand-400"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent"
               }`}
               title="More views"
@@ -4403,7 +4403,7 @@ export default function EditorPage() {
                       key={key}
                       className={`flex items-center justify-between px-3 py-2 text-sm cursor-pointer transition-colors ${
                         isActive
-                          ? "bg-brand-500/10 text-brand-400"
+                          ? "bg-brand-500/10 text-brand-700 dark:text-brand-400"
                           : "text-foreground hover:bg-accent"
                       }`}
                     >
@@ -4622,7 +4622,7 @@ export default function EditorPage() {
             onClick={() => router.push("/billing")}
             className="flex h-7 items-center gap-1.5 rounded-lg bg-accent border border-border px-2.5 text-sm text-foreground hover:bg-accent hover:text-foreground transition-all"
           >
-            <Crown className="h-4 w-4 text-amber-400" /><span className="hidden md:inline">Upgrade</span>
+            <Crown className="h-4 w-4 text-amber-600 dark:text-amber-400" /><span className="hidden md:inline">Upgrade</span>
           </button>
           {/* Publish */}
           <button
@@ -4632,7 +4632,7 @@ export default function EditorPage() {
               setPublishedUrl(null);
               setPublishModalOpen(true);
             }}
-            className="flex h-7 items-center gap-1.5 rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-3 text-sm font-medium text-white shadow-lg shadow-brand-900/30 hover:brightness-110 transition-all"
+            className="flex h-7 items-center gap-1.5 rounded-lg bg-brand-100 border border-brand-700 px-3 text-sm font-medium text-brand-900 hover:bg-brand-200 transition-all"
           >
             <CloudUpload className="h-4 w-4 md:hidden" />
             <span className="hidden md:inline">Publish</span>
@@ -4682,7 +4682,7 @@ export default function EditorPage() {
               {messages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center px-6">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-600/10 mb-4">
-                    <Sparkles className="h-6 w-6 text-brand-400" />
+                    <Sparkles className="h-6 w-6 text-brand-700 dark:text-brand-400" />
                   </div>
                   <h3 className="text-sm font-medium text-foreground mb-1">
                     Start a conversation
@@ -4695,12 +4695,12 @@ export default function EditorPage() {
                   <div className="mt-4 flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5 text-[12px] text-muted-foreground">
                     {chatMode === "agent" ? (
                       <>
-                        <Hammer className="h-3.5 w-3.5 text-brand-400" />
+                        <Hammer className="h-3.5 w-3.5 text-brand-700 dark:text-brand-400" />
                         <span>Work mode — generates code</span>
                       </>
                     ) : (
                       <>
-                        <Target className="h-3.5 w-3.5 text-blue-400" />
+                        <Target className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                         <span>Strategize mode — creates plans only</span>
                       </>
                     )}
@@ -4810,7 +4810,7 @@ export default function EditorPage() {
                         {msg.isError ? (
                           <AlertCircle className="h-3.5 w-3.5 text-red-400" />
                         ) : (
-                          <Sparkles className="h-3.5 w-3.5 text-brand-400" />
+                          <Sparkles className="h-3.5 w-3.5 text-brand-700 dark:text-brand-400" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -4819,7 +4819,7 @@ export default function EditorPage() {
                             className={`text-xs font-medium ${
                               msg.isError
                                 ? "text-red-400"
-                                : "text-brand-400"
+                                : "text-brand-700 dark:text-brand-400"
                             }`}
                           >
                             {msg.isError ? "Error" : "Doable AI"}
@@ -4829,13 +4829,13 @@ export default function EditorPage() {
                           </span>
                           {msg.isStreaming && !msg.content && (
                             <span className="flex items-center gap-1">
-                              <span className="status-dot-1 h-1 w-1 rounded-full bg-brand-400" />
-                              <span className="status-dot-2 h-1 w-1 rounded-full bg-brand-400" />
-                              <span className="status-dot-3 h-1 w-1 rounded-full bg-brand-400" />
+                              <span className="status-dot-1 h-1 w-1 rounded-full bg-brand-700 dark:bg-brand-400" />
+                              <span className="status-dot-2 h-1 w-1 rounded-full bg-brand-700 dark:bg-brand-400" />
+                              <span className="status-dot-3 h-1 w-1 rounded-full bg-brand-700 dark:bg-brand-400" />
                             </span>
                           )}
                           {msg.isStreaming && msg.content && (
-                            <Loader2 className="h-3 w-3 animate-spin text-brand-400" />
+                            <Loader2 className="h-3 w-3 animate-spin text-brand-700 dark:text-brand-400" />
                           )}
                         </div>
 
@@ -4849,7 +4849,7 @@ export default function EditorPage() {
                           <details className="mb-2 rounded-lg border border-border bg-card text-[13px]">
                             <summary className="cursor-pointer select-none px-3 py-1.5 text-muted-foreground hover:text-muted-foreground flex items-center gap-2">
                               {msg.isStreaming && (
-                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse" />
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-700 dark:bg-brand-400 animate-pulse" />
                               )}
                               {msg.isStreaming ? "Thinking..." : "Thought process"}
                             </summary>

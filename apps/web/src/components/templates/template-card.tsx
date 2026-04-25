@@ -21,18 +21,18 @@ interface TemplateCardProps {
 function getCategoryBadgeClasses(category: string): string {
   const key = category.toLowerCase();
   if (key === "dashboard" || key === "saas-dashboard")
-    return "bg-indigo-500/15 text-indigo-400 border-indigo-500/20";
+    return "bg-indigo-500/15 text-indigo-700 border-indigo-500/20 dark:text-indigo-400";
   if (key === "marketing" || key === "landing-page")
-    return "bg-brand-500/15 text-brand-400 border-brand-500/20";
+    return "bg-brand-500/15 text-brand-700 border-brand-500/20 dark:text-brand-400";
   if (key === "ecommerce" || key === "ecommerce-store")
-    return "bg-amber-500/15 text-amber-400 border-amber-500/20";
+    return "bg-amber-500/15 text-amber-700 border-amber-500/20 dark:text-amber-400";
   if (key === "portfolio")
-    return "bg-teal-500/15 text-teal-400 border-teal-500/20";
+    return "bg-teal-500/15 text-teal-700 border-teal-500/20 dark:text-teal-400";
   if (key === "blog" || key === "content")
-    return "bg-orange-500/15 text-orange-400 border-orange-500/20";
+    return "bg-orange-500/15 text-orange-700 border-orange-500/20 dark:text-orange-400";
   if (key === "productivity" || key === "todo-app")
-    return "bg-green-500/15 text-green-400 border-green-500/20";
-  return "bg-blue-500/15 text-blue-400 border-blue-500/20";
+    return "bg-green-500/15 text-green-700 border-green-500/20 dark:text-green-400";
+  return "bg-blue-500/15 text-blue-700 border-blue-500/20 dark:text-blue-400";
 }
 
 // --- Main component ---
@@ -84,7 +84,8 @@ export function TemplateCard({ template, onClick }: TemplateCardProps) {
 
         <div className="mt-auto pt-1">
           <Badge
-            className={`rounded-full border px-2 py-0 text-[10px] font-medium capitalize ${getCategoryBadgeClasses(template.category)}`}
+            variant="outline"
+            className={`rounded-full border px-2 py-0 text-[10px] font-medium capitalize hover:bg-transparent ${getCategoryBadgeClasses(template.category)}`}
           >
             {template.category}
           </Badge>

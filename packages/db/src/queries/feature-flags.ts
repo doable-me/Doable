@@ -213,40 +213,46 @@ export function featureFlagQueries(sql: postgres.Sql) {
 
     // ─── Admin Plan Management ──────────────────────────────
     async setUserWorkspacePlan(userId: string, plan: string): Promise<{ workspaceId: string; plan: string } | null> {
-      // Find user's first owned workspace
-      const [workspace] = await sql<{ id: string }[]>`
+      // Find all workspaces owned by this user
+      const ownedWorkspaces = await sql<{ id: string }[]>`
         SELECT w.id FROM workspaces w
         INNER JOIN workspace_members wm ON wm.workspace_id = w.id
         WHERE wm.user_id = ${userId} AND wm.role = 'owner'
-        ORDER BY w.created_at ASC LIMIT 1
+        ORDER BY w.created_at ASC
       `;
-      if (!workspace) return null;
+      if (ownedWorkspaces.length === 0) return null;
 
-      const workspaceId = workspace.id;
-
-      // Update the workspace plan
-      const [updated] = await sql<{ id: string; plan: string }[]>`
-        UPDATE workspaces SET plan = ${plan}::workspace_plan WHERE id = ${workspaceId} RETURNING id, plan
-      `;
-      if (!updated) return null;
-
-      // Update credit limits for all members of that workspace
       // Cap Infinity to max int32 since PostgreSQL integer columns can't store Infinity
       const limits = PLAN_LIMITS[plan as WorkspacePlan];
-      if (limits) {
-        const MAX_INT = 2_147_483_647;
-        const daily = Number.isFinite(limits.dailyCredits) ? limits.dailyCredits : MAX_INT;
-        const monthly = Number.isFinite(limits.monthlyCredits) ? limits.monthlyCredits : MAX_INT;
-        await sql`
-          UPDATE credit_balances
-          SET daily_credits = ${daily},
-              monthly_credits = ${monthly},
-              plan_type = ${plan}
-          WHERE workspace_id = ${workspaceId}
+      const MAX_INT = 2_147_483_647;
+      const daily = limits && Number.isFinite(limits.dailyCredits) ? limits.dailyCredits : MAX_INT;
+      const monthly = limits && Number.isFinite(limits.monthlyCredits) ? limits.monthlyCredits : MAX_INT;
+
+      let lastResult: { id: string; plan: string } | null = null;
+      for (const workspace of ownedWorkspaces) {
+        const workspaceId = workspace.id;
+
+        // Update the workspace plan
+        const [updated] = await sql<{ id: string; plan: string }[]>`
+          UPDATE workspaces SET plan = ${plan}::workspace_plan WHERE id = ${workspaceId} RETURNING id, plan
         `;
+        if (!updated) continue;
+        lastResult = updated;
+
+        // Update credit limits for all members of that workspace
+        if (limits) {
+          await sql`
+            UPDATE credit_balances
+            SET daily_credits = ${daily},
+                monthly_credits = ${monthly},
+                plan_type = ${plan}
+            WHERE workspace_id = ${workspaceId}
+          `;
+        }
       }
 
-      return { workspaceId, plan: updated.plan };
+      if (!lastResult) return null;
+      return { workspaceId: lastResult.id, plan: lastResult.plan };
     },
 
     async bulkSetWorkspacePlan(userIds: string[], plan: string): Promise<number> {

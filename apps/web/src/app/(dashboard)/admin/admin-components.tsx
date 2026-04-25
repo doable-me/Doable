@@ -59,8 +59,8 @@ export function FeatureRow({
           {feature.description && <p className="text-xs text-muted-foreground mt-0.5">{feature.description}</p>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {feature.min_plan && <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-600/20 text-brand-400 font-medium">{PLAN_LABELS[feature.min_plan]}+</span>}
-          {feature.min_role && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-600/20 text-amber-400 font-medium">{ROLE_LABELS[feature.min_role]}+</span>}
+          {feature.min_plan && <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-100 border border-brand-600 text-brand-700 font-semibold dark:bg-brand-600/20 dark:border-transparent dark:text-brand-400 dark:font-medium">{PLAN_LABELS[feature.min_plan]}+</span>}
+          {feature.min_role && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 border border-amber-600 text-amber-800 font-semibold dark:bg-amber-600/20 dark:border-transparent dark:text-amber-400 dark:font-medium">{ROLE_LABELS[feature.min_role]}+</span>}
         </div>
         <button onClick={() => setExpanded(!expanded)} className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors">
           <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
