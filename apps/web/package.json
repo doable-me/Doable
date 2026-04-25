@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack --hostname 127.0.0.1",
     "build": "next build",
+    "postbuild": "node -e \"const fs=require('fs'),p=require('path');const dst=p.join('.next','standalone','apps','web');if(!fs.existsSync(p.join(dst,'.next')))process.exit(0);fs.cpSync('.next/static',p.join(dst,'.next','static'),{recursive:true});if(fs.existsSync('public'))fs.cpSync('public',p.join(dst,'public'),{recursive:true});console.log('[postbuild] copied static + public into standalone output');\"",
     "build:cf": "npx @opennextjs/cloudflare build",
     "preview:cf": "npx wrangler dev",
     "deploy:cf": "npx wrangler pages deploy",
