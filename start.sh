@@ -17,8 +17,9 @@ tmux new-session -d -s "$SESSION" -n "api" -c "$(pwd)"
 tmux send-keys -t "$SESSION:api" "pnpm dev:api" Enter
 
 # Web — Next.js production server (build then start with standalone output)
+# NOTE: `output: standalone` requires manually copying static assets after build.
 tmux new-window -t "$SESSION" -n "web" -c "$(pwd)/apps/web"
-tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && pnpm --filter web build && PORT=3000 HOSTNAME=127.0.0.1 node .next/standalone/apps/web/server.js" Enter
+tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && pnpm --filter web build && cp -r .next/static .next/standalone/apps/web/.next/static && PORT=3000 HOSTNAME=127.0.0.1 node .next/standalone/apps/web/server.js" Enter
 
 # WS — WebSocket server with tsx watch
 tmux new-window -t "$SESSION" -n "ws" -c "$(pwd)"
