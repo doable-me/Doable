@@ -251,7 +251,7 @@ export function AppearanceSection({
                   onClick={() => onThemeChange(option.value)}
                   className={`relative flex flex-col items-center gap-2 rounded-xl border p-4 transition-colors ${
                     isActive
-                      ? "border-brand-600 bg-brand-600/10 text-white"
+                  ? "border-brand-600 bg-brand-600/10 text-foreground"
                       : "border-border bg-secondary text-muted-foreground hover:border-border hover:text-foreground"
                   }`}
                 >
@@ -273,7 +273,7 @@ export function AppearanceSection({
                 onClick={() => onBrandThemeChange(bt.value)}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
                   brandTheme === bt.value
-                    ? "border-brand-600 bg-brand-600/10 text-white"
+                    ? "border-brand-600 bg-brand-600/10 text-foreground"
                     : "border-border bg-secondary text-muted-foreground hover:border-border hover:text-foreground"
                 }`}
               >

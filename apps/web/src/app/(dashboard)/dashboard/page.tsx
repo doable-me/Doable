@@ -29,10 +29,8 @@ export default function DashboardPage() {
       {!d.activeFolderId && d.sidebarFilter === "all" && (
         <div className="relative w-full overflow-hidden" style={{ minHeight: "340px" }}>
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
-            <div className="absolute inset-0 animate-pulse-drift" style={{
+            <div className="absolute inset-0 animate-pulse-drift dashboard-hero-gradient" style={{
               width: "130%", height: "130%", top: "-15%", left: "-15%",
-              backgroundImage: "linear-gradient(160deg, hsl(var(--background)) 0%, hsl(var(--background)) 10%, hsl(var(--brand-950)) 18%, hsl(var(--brand-700)) 32%, hsl(var(--brand-500)) 44%, hsl(var(--brand-400)) 54%, hsl(var(--brand-300)) 64%, hsl(var(--brand-500)) 76%, hsl(var(--brand-400)) 88%, hsl(var(--background)) 100%)",
-              backgroundSize: "200% 200%",
             }} />
           </div>
           <div className="absolute inset-x-0 bottom-0 h-24 z-[1]" style={{

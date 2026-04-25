@@ -54,14 +54,20 @@ async function assertToolCapableModel(providerId: string | undefined, modelId: s
   }
 
   // Fallback to provider-level capability when model-level metadata is unavailable.
-  const [providerRow] = await sql<{ supports_tools: boolean | null }[]>`
-    SELECT supports_tools
-    FROM ai_providers
-    WHERE id = ${providerId}
-    LIMIT 1
-  `;
-  if (!modelRow && providerRow?.supports_tools === false) {
-    throw new Error("Selected provider does not support tool calling. Switch to a provider/model that supports tools.");
+  // NOTE: Only log a warning here — do NOT hard-block. The provider-level supports_tools
+  // flag defaults to false for newly-created providers whose model metadata hasn't been
+  // populated yet, which creates false negatives. If no model-row says explicitly false,
+  // we attempt the request and let the model API surface a real error if tools are unsupported.
+  if (!modelRow) {
+    const [providerRow] = await sql<{ supports_tools: boolean | null }[]>`
+      SELECT supports_tools
+      FROM ai_providers
+      WHERE id = ${providerId}
+      LIMIT 1
+    `;
+    if (providerRow?.supports_tools === false) {
+      console.warn(`[Chat] Provider ${providerId} has supports_tools=false but no model-level row for model "${modelId}". Proceeding — model metadata may be missing.`);
+    }
   }
 }
 
