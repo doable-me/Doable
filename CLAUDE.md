@@ -16,7 +16,7 @@
 
 ## Deployment
 
-- Server: `do.fid.pw` (SSH key: `~/Documents/itdept`)
+- Server: your VPS (connect via SSH)
 - App directory: `/root/doable`
 - Services run in tmux session `doable` (windows: api, web, ws)
 - API and WS use `tsx watch` — no build step needed, auto-reloads on file changes

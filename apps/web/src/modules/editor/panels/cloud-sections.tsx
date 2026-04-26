@@ -171,7 +171,7 @@ export function AuthSection({
   const userCount = 1247;
   const recentSignups = [
     { email: "alice@example.com", time: "2m ago" },
-    { email: "bob@gmail.com", time: "18m ago" },
+    { email: "bob@example.org", time: "18m ago" },
     { email: "carol@work.co", time: "1h ago" },
   ];
 
