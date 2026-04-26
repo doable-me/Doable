@@ -91,7 +91,6 @@ SELECT
   pp.title,
   pp.description,
   pp.category,
-  pp.tags,
   pp.thumbnail_url,
   pp.view_count,
   pp.remix_count,
