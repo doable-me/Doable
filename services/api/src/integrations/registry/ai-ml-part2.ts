@@ -148,22 +148,6 @@ export const AI_ML_PART2: Record<string, IntegrationDefinition> = {
     supportsUserProvidedCredentials: true,
   },
 
-  replicate: {
-    id: "replicate",
-    piecePackage: "@activepieces/piece-replicate",
-    displayName: "Replicate",
-    description:
-      "Generate images and run open-source ML models on Replicate's cloud.",
-    logoUrl: "https://cdn.activepieces.com/pieces/replicate.png",
-    category: "ai_ml",
-    tags: ["ml", "models", "image", "generation", "open-source"],
-    authType: "secret_text",
-    actions: ["generate_image", "run_model"],
-    tier: "community",
-    requiresOAuthApp: false,
-    supportsUserProvidedCredentials: true,
-  },
-
   runware: {
     id: "runware",
     piecePackage: "@activepieces/piece-runware",
@@ -307,22 +291,6 @@ export const AI_ML_PART2: Record<string, IntegrationDefinition> = {
     tags: ["automation", "chatflow", "langchain", "self-hosted", "ai"],
     authType: "secret_text",
     actions: ["run_chatflow", "make_prediction"],
-    tier: "community",
-    requiresOAuthApp: false,
-    supportsUserProvidedCredentials: true,
-  },
-
-  langchain: {
-    id: "langchain",
-    piecePackage: "@activepieces/piece-langchain",
-    displayName: "LangChain",
-    description:
-      "Execute LangChain agents and chains for complex AI workflows.",
-    logoUrl: "https://cdn.activepieces.com/pieces/langchain.png",
-    category: "automation",
-    tags: ["automation", "agents", "chains", "langchain", "ai"],
-    authType: "secret_text",
-    actions: ["run_agent"],
     tier: "community",
     requiresOAuthApp: false,
     supportsUserProvidedCredentials: true,

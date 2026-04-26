@@ -74,25 +74,6 @@ export const FINANCE_ECOMMERCE_PART4: Record<string, IntegrationDefinition> = {
   //  ANALYTICS
   // ══════════════════════════════════════════════════════════
 
-  "google-analytics": {
-    id: "google-analytics",
-    piecePackage: "@activepieces/piece-google-analytics",
-    displayName: "Google Analytics",
-    description:
-      "Run reports and retrieve analytics data from Google Analytics 4.",
-    logoUrl: "https://cdn.activepieces.com/pieces/google-analytics.png",
-    category: "analytics",
-    tags: ["analytics", "tracking", "google", "reports"],
-    authType: "secret_text",
-    actions: [
-      "run_report",
-      "get_realtime_report",
-    ],
-    tier: "built_in",
-    requiresOAuthApp: false,
-    supportsUserProvidedCredentials: true,
-  },
-
   mixpanel: {
     id: "mixpanel",
     piecePackage: "@activepieces/piece-mixpanel",

@@ -349,22 +349,6 @@ export const CRM_MARKETING_SOCIAL_PART2: Record<string, IntegrationDefinition> =
     supportsUserProvidedCredentials: true,
   },
 
-  tiktok: {
-    id: "tiktok",
-    piecePackage: "@activepieces/piece-tiktok",
-    displayName: "TikTok",
-    description:
-      "List videos and manage your TikTok presence.",
-    logoUrl: "https://cdn.activepieces.com/pieces/tiktok.png",
-    category: "social_media",
-    tags: ["social", "video", "short-form", "trends"],
-    authType: "oauth2",
-    actions: ["list_videos", "get_profile"],
-    tier: "community",
-    requiresOAuthApp: true,
-    supportsUserProvidedCredentials: true,
-  },
-
   twitch: {
     id: "twitch",
     piecePackage: "@activepieces/piece-twitch",

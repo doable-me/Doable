@@ -112,21 +112,6 @@ export const PRODUCTIVITY_PART2: Record<string, IntegrationDefinition> = {
     supportsUserProvidedCredentials: true,
   },
 
-  height: {
-    id: "height",
-    piecePackage: "@activepieces/piece-height",
-    displayName: "Height",
-    description: "Create, list, and update tasks in Height.",
-    logoUrl: "https://cdn.activepieces.com/pieces/height.png",
-    category: "project_management",
-    tags: ["tasks", "project-management", "team"],
-    authType: "secret_text",
-    actions: ["create_task", "list_tasks", "update_task"],
-    tier: "community",
-    requiresOAuthApp: false,
-    supportsUserProvidedCredentials: true,
-  },
-
   // ── Time Tracking ─────────────────────────────────────
 
   clockify: {
@@ -176,7 +161,7 @@ export const PRODUCTIVITY_PART2: Record<string, IntegrationDefinition> = {
 
   toggl_track: {
     id: "toggl_track",
-    piecePackage: "@activepieces/piece-toggl",
+    piecePackage: "@activepieces/piece-toggl-track",
     displayName: "Toggl Track",
     description: "Create time entries and list projects in Toggl Track.",
     logoUrl: "https://cdn.activepieces.com/pieces/toggl.png",

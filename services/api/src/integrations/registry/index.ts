@@ -4,6 +4,9 @@
 // auto-generated entries from generated.ts.
 // Curated entries always override generated ones for the same ID.
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { createRequire } from "node:module";
 import type { IntegrationDefinition, IntegrationCategory } from "../types.js";
 import { REGISTRY as CURATED_REGISTRY } from "../registry.js";
 import { GENERATED_REGISTRY } from "./generated.js";
@@ -30,6 +33,48 @@ export const REGISTRY: Record<string, IntegrationDefinition> = {
   ...FINANCE_ECOMMERCE_INTEGRATIONS,
   ...CURATED_REGISTRY,
 };
+
+// ─── Boot-time pruning of unavailable pieces ──────────────────
+// If a piecePackage referenced by an entry can't be resolved on disk
+// (e.g. it was renamed/removed upstream and is not in package.json),
+// strip the entry so it doesn't surface in the catalog UI and 500 on click.
+//
+// This is a fail-soft guard. The CI-time `check-integration-pieces.mjs`
+// script catches the same drift earlier with a hard error.
+const _require = createRequire(import.meta.url);
+function _isPieceInstalled(pkg: string): boolean {
+  try {
+    _require.resolve(pkg + "/package.json");
+    return true;
+  } catch {
+    // Some pieces don't expose package.json via exports — fall back to dir check.
+    // Walk up looking for node_modules/<pkg>.
+    let dir = process.cwd();
+    for (let i = 0; i < 6; i++) {
+      const candidate = join(dir, "node_modules", ...pkg.split("/"));
+      if (existsSync(candidate)) return true;
+      const parent = join(dir, "..");
+      if (parent === dir) break;
+      dir = parent;
+    }
+    return false;
+  }
+}
+
+const _missing: string[] = [];
+for (const [id, def] of Object.entries(REGISTRY)) {
+  if (def.piecePackage && !_isPieceInstalled(def.piecePackage)) {
+    _missing.push(`${id} (${def.piecePackage})`);
+    delete REGISTRY[id];
+  }
+}
+if (_missing.length > 0) {
+  console.warn(
+    `[integrations] Pruned ${_missing.length} integration(s) whose piecePackage is not installed:\n` +
+      _missing.map((m) => `  - ${m}`).join("\n") +
+      `\n  Add them to services/api/package.json or remove them from the registry.`,
+  );
+}
 
 // ─── Helper Functions ──────────────────────────────────
 

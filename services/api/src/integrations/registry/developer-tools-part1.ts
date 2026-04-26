@@ -145,22 +145,6 @@ export const DEVELOPER_TOOLS_PART1: Record<string, IntegrationDefinition> = {
     supportsUserProvidedCredentials: true,
   },
 
-  sentry: {
-    id: "sentry",
-    piecePackage: "@activepieces/piece-sentry",
-    displayName: "Sentry",
-    description:
-      "List and resolve issues tracked in Sentry.",
-    logoUrl: "https://cdn.activepieces.com/pieces/sentry.png",
-    category: "developer_tools",
-    tags: ["error-tracking", "monitoring", "debugging", "crashes"],
-    authType: "secret_text",
-    actions: ["list_issues", "resolve_issue"],
-    tier: "community",
-    requiresOAuthApp: false,
-    supportsUserProvidedCredentials: true,
-  },
-
   // ── Product Analytics ─────────────────────────────────
 
   posthog: {

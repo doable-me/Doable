@@ -5,43 +5,6 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 export const DEVELOPER_TOOLS_PART2: Record<string, IntegrationDefinition> = {
 
-  firebase: {
-    id: "firebase",
-    piecePackage: "@activepieces/piece-firebase",
-    displayName: "Firebase",
-    description:
-      "Create, get, update documents and query collections in Firebase Firestore.",
-    logoUrl: "https://cdn.activepieces.com/pieces/firebase.png",
-    category: "data_storage",
-    tags: ["database", "nosql", "google", "realtime", "backend-as-a-service"],
-    authType: "secret_text",
-    actions: [
-      "create_document",
-      "get_document",
-      "update_document",
-      "query_collection",
-    ],
-    tier: "built_in",
-    requiresOAuthApp: false,
-    supportsUserProvidedCredentials: true,
-  },
-
-  redis: {
-    id: "redis",
-    piecePackage: "@activepieces/piece-redis",
-    displayName: "Redis",
-    description:
-      "Set and get values in a Redis key-value store.",
-    logoUrl: "https://cdn.activepieces.com/pieces/redis.png",
-    category: "data_storage",
-    tags: ["cache", "key-value", "in-memory", "open-source"],
-    authType: "secret_text",
-    actions: ["set_value", "get_value"],
-    tier: "community",
-    requiresOAuthApp: false,
-    supportsUserProvidedCredentials: true,
-  },
-
   pocketbase: {
     id: "pocketbase",
     piecePackage: "@activepieces/piece-pocketbase",

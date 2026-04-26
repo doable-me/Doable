@@ -232,27 +232,6 @@ export const FINANCE_ECOMMERCE_PART2: Record<string, IntegrationDefinition> = {
     supportsUserProvidedCredentials: true,
   },
 
-  sanity: {
-    id: "sanity",
-    piecePackage: "@activepieces/piece-sanity",
-    displayName: "Sanity",
-    description:
-      "Create, read, update, and delete documents in Sanity Studio.",
-    logoUrl: "https://cdn.activepieces.com/pieces/sanity.png",
-    category: "content",
-    tags: ["cms", "headless", "structured-content", "real-time"],
-    authType: "secret_text",
-    actions: [
-      "create_document",
-      "findDocument",
-      "update_document",
-      "delete_document",
-    ],
-    tier: "community",
-    requiresOAuthApp: false,
-    supportsUserProvidedCredentials: true,
-  },
-
   softr: {
     id: "softr",
     piecePackage: "@activepieces/piece-softr",
