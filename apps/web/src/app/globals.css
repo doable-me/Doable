@@ -794,3 +794,56 @@
   .option-btn::after { display: none; }
 }
 
+
+/* ─── Legal pages typography ─────────────────────────────── */
+.legal-article {
+  color: rgb(209, 213, 219); /* gray-300 */
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+.legal-article h1 {
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin-bottom: 0.5rem;
+}
+.legal-article h2 {
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 2.25rem;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.01em;
+}
+.legal-article h3 {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+.legal-article p { margin: 0.85rem 0; }
+.legal-article ul, .legal-article ol {
+  margin: 0.85rem 0;
+  padding-left: 1.5rem;
+}
+.legal-article ul { list-style: disc; }
+.legal-article ol { list-style: decimal; }
+.legal-article li { margin: 0.35rem 0; }
+.legal-article li::marker { color: rgb(107, 114, 128); }
+.legal-article strong { color: #fff; font-weight: 600; }
+.legal-article a {
+  color: hsl(var(--brand-400));
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.legal-article a:hover { text-decoration: underline; }
+.legal-article code {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.85em;
+  color: rgb(229, 231, 235);
+}
