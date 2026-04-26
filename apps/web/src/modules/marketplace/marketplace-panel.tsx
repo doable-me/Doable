@@ -2,18 +2,19 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Store,
   Search,
   Star,
   Download,
-  ChevronRight,
   Filter,
   Sparkles,
   BookOpen,
   Shield as ShieldIcon,
   Plug,
   TrendingUp,
+  HelpCircle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -205,9 +206,17 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
             <Store className="w-6 h-6 text-brand-400" />
           </div>
           <h1 className="text-2xl font-bold text-foreground">Marketplace</h1>
+          <Link
+            href="/help/discover-vs-marketplace"
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            title="What's the difference between Discover and Marketplace?"
+          >
+            <HelpCircle className="h-3 w-3" />
+            Discover vs Marketplace
+          </Link>
         </div>
         <p className="text-muted-foreground text-sm">
-          Discover and install AI environments, skills, and rules created by the community.
+          Install AI environments — skills, rules, knowledge, and MCP connectors — created by the community.
         </p>
       </div>
 

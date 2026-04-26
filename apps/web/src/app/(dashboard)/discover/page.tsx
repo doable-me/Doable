@@ -9,6 +9,7 @@ import {
   apiRemixProject,
   type ApiPublicProject,
 } from "@/lib/api";
+import Link from "next/link";
 import {
   Search,
   Loader2,
@@ -17,7 +18,7 @@ import {
   GitFork,
   Star,
   TrendingUp,
-  ChevronRight,
+  HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -247,7 +248,17 @@ export default function DiscoverPage() {
         {/* Header */}
         <div className="mb-8 flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Discover</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold text-foreground">Discover</h1>
+              <Link
+                href="/help/discover-vs-marketplace"
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:border-border transition-colors"
+                title="What's the difference between Discover and Marketplace?"
+              >
+                <HelpCircle className="h-3 w-3" />
+                Discover vs Marketplace
+              </Link>
+            </div>
             <p className="mt-2 text-sm text-muted-foreground">
               Explore community projects and remix them into your own
             </p>

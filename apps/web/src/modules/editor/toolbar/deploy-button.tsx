@@ -3,37 +3,36 @@
 import { useState } from "react";
 import { Rocket, CheckCircle, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { PublishDialog } from "./publish-dialog";
+import { DeployDialog } from "./deploy-dialog";
+import type { DeployStatus } from "./deploy-dialog-types";
 
-interface PublishButtonProps {
+interface DeployButtonProps {
   projectId: string;
   projectName: string;
-  lastPublishedUrl?: string | null;
+  lastDeployedUrl?: string | null;
   className?: string;
 }
 
-export function PublishButton({
+export function DeployButton({
   projectId,
   projectName,
-  lastPublishedUrl,
+  lastDeployedUrl,
   className,
-}: PublishButtonProps) {
+}: DeployButtonProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [status, setStatus] = useState<
-    "idle" | "publishing" | "success" | "error"
-  >("idle");
+  const [status, setStatus] = useState<DeployStatus>("idle");
 
   const statusIcon = {
     idle: <Rocket className="h-4 w-4" />,
-    publishing: <Loader2 className="h-4 w-4 animate-spin" />,
+    deploying: <Loader2 className="h-4 w-4 animate-spin" />,
     success: <CheckCircle className="h-4 w-4" />,
     error: <AlertCircle className="h-4 w-4" />,
   };
 
   const statusLabel = {
-    idle: lastPublishedUrl ? "Republish" : "Publish",
-    publishing: "Publishing...",
-    success: "Published",
+    idle: lastDeployedUrl ? "Redeploy" : "Deploy",
+    deploying: "Deploying...",
+    success: "Live",
     error: "Retry",
   };
 
@@ -41,7 +40,7 @@ export function PublishButton({
     <>
       <button
         onClick={() => setDialogOpen(true)}
-        disabled={status === "publishing"}
+        disabled={status === "deploying"}
         className={cn(
           "inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -58,11 +57,10 @@ export function PublishButton({
         {statusLabel[status]}
       </button>
 
-      <PublishDialog
+      <DeployDialog
         open={dialogOpen}
         onOpenChange={(open) => {
           setDialogOpen(open);
-          // Reset status back to idle when dialog closes after success
           if (!open && status === "success") {
             setTimeout(() => setStatus("idle"), 2000);
           }

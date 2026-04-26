@@ -8,7 +8,6 @@ import {
   Columns2,
   Settings,
   Github,
-  Rocket,
   PanelLeftClose,
   PanelLeft,
   Check,
@@ -16,12 +15,14 @@ import {
 } from "lucide-react";
 import { CreditToolbarIndicator } from "@/modules/billing/components/credit-display";
 import { useCredits } from "@/modules/billing/hooks/use-billing";
+import { DeployButton } from "./deploy-button";
 
 interface EditorToolbarProps {
   workspaceId?: string | null;
+  projectId?: string | null;
 }
 
-export function EditorToolbar({ workspaceId: workspaceIdProp }: EditorToolbarProps = {}) {
+export function EditorToolbar({ workspaceId: workspaceIdProp, projectId }: EditorToolbarProps = {}) {
   const {
     projectName,
     viewMode,
@@ -149,10 +150,13 @@ export function EditorToolbar({ workspaceId: workspaceIdProp }: EditorToolbarPro
         >
           <Github className="h-4 w-4" />
         </button>
-        <button className="flex h-8 items-center gap-1.5 rounded-md bg-violet-100 border border-violet-700 px-3 text-xs font-medium text-violet-900 hover:bg-violet-200 transition-colors">
-          <Rocket className="h-3.5 w-3.5" />
-          <span>Publish</span>
-        </button>
+        {projectId ? (
+          <DeployButton
+            projectId={projectId}
+            projectName={projectName}
+            className="h-8 px-3 py-0 text-xs"
+          />
+        ) : null}
       </div>
     </header>
   );

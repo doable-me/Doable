@@ -2,25 +2,17 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { X } from "lucide-react";
-import type { DeployResult, DeployError, DeploymentHistoryItem, Step } from "./publish-dialog-types";
-import { API_URL, getAuthHeaders, getAuthToken } from "./publish-dialog-types";
-import { ConfigureStep, BuildingStep, SuccessStep, ErrorStep } from "./publish-dialog-steps";
+import type { DeployDialogProps, DeployResult, DeployError, DeploymentHistoryItem, Step } from "./deploy-dialog-types";
+import { API_URL, getAuthHeaders, getAuthToken } from "./deploy-dialog-types";
+import { ConfigureStep, BuildingStep, SuccessStep, ErrorStep } from "./deploy-dialog-steps";
 
-interface PublishDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
-  projectName: string;
-  onStatusChange?: (status: "idle" | "publishing" | "success" | "error") => void;
-}
-
-export function PublishDialog({
+export function DeployDialog({
   open,
   onOpenChange,
   projectId,
   projectName,
   onStatusChange,
-}: PublishDialogProps) {
+}: DeployDialogProps) {
   const [environment, setEnvironment] = useState<"production" | "preview">("production");
   const [step, setStep] = useState<Step>("configure");
   const [result, setResult] = useState<DeployResult | null>(null);
@@ -84,8 +76,8 @@ export function PublishDialog({
     }
   };
 
-  const handlePublish = async () => {
-    setStep("building"); setBuildLog(""); onStatusChange?.("publishing");
+  const handleDeploy = async () => {
+    setStep("building"); setBuildLog(""); onStatusChange?.("deploying");
     try {
       const token = getAuthToken();
       const res = await fetch(`${API_URL}/deploy/${projectId}/stream`, {
@@ -152,7 +144,7 @@ export function PublishDialog({
           <button onClick={handleDone} className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         )}
         {step === "configure" && (
-          <ConfigureStep projectName={projectName} environment={environment} setEnvironment={setEnvironment} showHistory={showHistory} setShowHistory={setShowHistory} loadingHistory={loadingHistory} history={history} onPublish={handlePublish} />
+          <ConfigureStep projectName={projectName} environment={environment} setEnvironment={setEnvironment} showHistory={showHistory} setShowHistory={setShowHistory} loadingHistory={loadingHistory} history={history} onDeploy={handleDeploy} />
         )}
         {(step === "building" || step === "deploying") && (
           <BuildingStep step={step} buildLog={buildLog} showBuildLog={showBuildLog} setShowBuildLog={setShowBuildLog} buildLogRef={buildLogRef} />
@@ -161,7 +153,7 @@ export function PublishDialog({
           <SuccessStep result={result} buildLog={buildLog} showBuildLog={showBuildLog} setShowBuildLog={setShowBuildLog} copied={copied} onCopyUrl={copyUrl} onDone={handleDone} />
         )}
         {step === "error" && error && (
-          <ErrorStep error={error} buildLog={buildLog} showBuildLog={showBuildLog} setShowBuildLog={setShowBuildLog} onCancel={handleDone} onTryToFix={handleTryToFix} onRetry={handlePublish} />
+          <ErrorStep error={error} buildLog={buildLog} showBuildLog={showBuildLog} setShowBuildLog={setShowBuildLog} onCancel={handleDone} onTryToFix={handleTryToFix} onRetry={handleDeploy} />
         )}
       </div>
     </div>

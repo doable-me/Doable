@@ -13,7 +13,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { DeployResult, DeployError, DeploymentHistoryItem, Step } from "./publish-dialog-types";
+import type { DeployResult, DeployError, DeploymentHistoryItem, Step } from "./deploy-dialog-types";
 
 // ─── Configure Step ─────────────────────────────────────────
 
@@ -25,7 +25,7 @@ export function ConfigureStep({
   setShowHistory,
   loadingHistory,
   history,
-  onPublish,
+  onDeploy,
 }: {
   projectName: string;
   environment: "production" | "preview";
@@ -34,13 +34,13 @@ export function ConfigureStep({
   setShowHistory: (v: boolean) => void;
   loadingHistory: boolean;
   history: DeploymentHistoryItem[];
-  onPublish: () => void;
+  onDeploy: () => void;
 }) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold">Publish {projectName}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Deploy your project to make it live.</p>
+        <h2 className="text-lg font-semibold">Deploy {projectName}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Push your project to a public URL.</p>
       </div>
       <div className="space-y-2">
         <label className="text-sm font-medium">Environment</label>
@@ -53,7 +53,7 @@ export function ConfigureStep({
           ))}
         </div>
       </div>
-      <button onClick={onPublish} className="flex w-full items-center justify-center gap-2 rounded-md bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700">
+      <button onClick={onDeploy} className="flex w-full items-center justify-center gap-2 rounded-md bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700">
         <Rocket className="h-4 w-4" />Deploy to {environment === "production" ? "Live" : "Test"}
       </button>
       <button onClick={() => setShowHistory(!showHistory)} className="flex w-full items-center justify-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -157,7 +157,7 @@ export function SuccessStep({
       <div className="flex flex-col items-center gap-3 pt-2">
         <CheckCircle className="h-12 w-12 text-green-600" />
         <div className="text-center">
-          <h2 className="text-lg font-semibold">Published!</h2>
+          <h2 className="text-lg font-semibold">Live!</h2>
           <p className="mt-1 text-sm text-muted-foreground">Your project is now live.</p>
         </div>
       </div>

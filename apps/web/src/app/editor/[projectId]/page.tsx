@@ -4627,7 +4627,7 @@ export default function EditorPage() {
           >
             <Crown className="h-4 w-4 text-amber-600 dark:text-amber-400" /><span className="hidden md:inline">Upgrade</span>
           </button>
-          {/* Publish */}
+          {/* Deploy */}
           <button
             onClick={() => {
               setPublishStatus("idle");
@@ -4636,9 +4636,10 @@ export default function EditorPage() {
               setPublishModalOpen(true);
             }}
             className="flex h-7 items-center gap-1.5 rounded-lg bg-brand-100 border border-brand-700 px-3 text-sm font-medium text-brand-900 hover:bg-brand-200 transition-all"
+            title="Deploy to a public URL"
           >
             <CloudUpload className="h-4 w-4 md:hidden" />
-            <span className="hidden md:inline">Publish</span>
+            <span className="hidden md:inline">Deploy</span>
           </button>
         </div>
       </header>
@@ -6078,16 +6079,16 @@ export default function EditorPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Publish Modal ─────────────────────────────────────── */}
+      {/* ─── Deploy Modal ──────────────────────────────────────── */}
       <Dialog open={publishModalOpen} onOpenChange={setPublishModalOpen}>
         <DialogContent className="bg-card border-border text-foreground max-w-md" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
             <DialogTitle className="text-foreground flex items-center gap-2">
               <Rocket className="h-5 w-5 text-blue-400" />
-              Publish Project
+              Deploy Project
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              Deploy your project to make it live on the web.
+              Push your project to a public URL.
             </DialogDescription>
           </DialogHeader>
 
@@ -6130,7 +6131,7 @@ export default function EditorPage() {
                   className="w-full flex items-center justify-center gap-2 rounded-md bg-[#1E52F1] px-4 py-2.5 text-sm font-medium text-white hover:brightness-110 transition-colors"
                 >
                   <Rocket className="h-4 w-4" />
-                  Publish to {publishEnv === "production" ? "Live" : "Test"}
+                  Deploy to {publishEnv === "production" ? "Live" : "Test"}
                 </button>
               </>
             )}
@@ -6181,7 +6182,7 @@ export default function EditorPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 mb-4">
                   <CheckCircle2 className="h-8 w-8 text-emerald-400" />
                 </div>
-                <h3 className="text-sm font-semibold text-foreground mb-1">Published successfully!</h3>
+                <h3 className="text-sm font-semibold text-foreground mb-1">Live!</h3>
                 <p className="text-xs text-muted-foreground mb-4">
                   Your project is now live at:
                 </p>
@@ -6217,7 +6218,7 @@ export default function EditorPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500/10 mb-4">
                   <XCircle className="h-8 w-8 text-red-400" />
                 </div>
-                <h3 className="text-sm font-semibold text-red-300 mb-1">Publish failed</h3>
+                <h3 className="text-sm font-semibold text-red-300 mb-1">Deploy failed</h3>
                 <p className="text-xs text-muted-foreground mb-4 max-w-sm">
                   {publishError ?? "Something went wrong during deployment."}
                 </p>
@@ -6340,7 +6341,7 @@ export default function EditorPage() {
               { keys: "Ctrl + /", desc: "Toggle sidebar" },
               { keys: "Ctrl + B", desc: "Toggle code view" },
               { keys: "Ctrl + P", desc: "Toggle preview" },
-              { keys: "Ctrl + Shift + P", desc: "Publish project" },
+              { keys: "Ctrl + Shift + P", desc: "Deploy project" },
               { keys: "F11", desc: "Toggle fullscreen" },
               { keys: "Esc", desc: "Close dialog" },
             ].map(({ keys, desc }) => (

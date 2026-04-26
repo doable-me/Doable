@@ -1,12 +1,14 @@
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
-export interface PublishDialogProps {
+export interface DeployDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
   projectName: string;
-  onStatusChange?: (status: "idle" | "publishing" | "success" | "error") => void;
+  onStatusChange?: (status: DeployStatus) => void;
 }
+
+export type DeployStatus = "idle" | "deploying" | "success" | "error";
 
 export type Step = "configure" | "building" | "deploying" | "success" | "error";
 
