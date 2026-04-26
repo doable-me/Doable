@@ -10,6 +10,7 @@ import {
   Pencil,
   CheckSquare,
   Square,
+  Compass,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { ApiProject } from "@/lib/api";
 import { PROJECT_DRAG_TYPE } from "@/components/dashboard/sidebar";
+import { ShareDialog } from "@/modules/discover/share-dialog";
 import {
   STATUS_STYLES,
   PROJECT_GRADIENTS,
@@ -38,6 +40,8 @@ export function ProjectCard({
   onDuplicate,
   onRename,
   onContextMenu,
+  isShared = false,
+  onSharedChanged,
 }: {
   project: ApiProject;
   selected: boolean;
@@ -48,7 +52,10 @@ export function ProjectCard({
   onDuplicate: () => void;
   onRename: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  isShared?: boolean;
+  onSharedChanged?: () => void;
 }) {
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const statusStyle = STATUS_STYLES[project.status] ?? STATUS_STYLES.draft!;
   const [imgFailed, setImgFailed] = useState(false);
   const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -148,6 +155,10 @@ export function ProjectCard({
               <DropdownMenuItem onClick={() => onStar()}>
                 <Star className="mr-2 h-3.5 w-3.5" /> {project.starred ? "Unstar" : "Star"}
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShareDialogOpen(true)}>
+                <Compass className="mr-2 h-3.5 w-3.5" />
+                {isShared ? "Update Discover listing" : "Share to Discover"}
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={onDelete}>
                 <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
@@ -164,14 +175,34 @@ export function ProjectCard({
         </div>
         <div className="flex flex-col gap-0.5 min-w-0 flex-1">
           <h3 className="text-sm font-medium text-foreground leading-tight line-clamp-1">{project.name}</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[11px] text-muted-foreground">{formatRelativeTime(project.updated_at)}</span>
             <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${statusStyle.className}`}>
               {statusStyle.label}
             </span>
+            {isShared && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded-full border border-emerald-500/40 px-1.5 py-0 text-[10px] font-medium text-emerald-400"
+                title="Shared to Discover"
+              >
+                <Compass className="h-2.5 w-2.5" />
+                Discover
+              </span>
+            )}
           </div>
         </div>
       </div>
+
+      <ShareDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        projectId={project.id}
+        projectName={project.name}
+        projectDescription={project.description}
+        alreadyShared={isShared}
+        initialTitle={project.name}
+        onChanged={onSharedChanged}
+      />
     </div>
   );
 }

@@ -12,10 +12,12 @@ import {
   PanelLeft,
   Check,
   Pencil,
+  Compass,
 } from "lucide-react";
 import { CreditToolbarIndicator } from "@/modules/billing/components/credit-display";
 import { useCredits } from "@/modules/billing/hooks/use-billing";
 import { DeployButton } from "./deploy-button";
+import { ShareDialog } from "@/modules/discover/share-dialog";
 
 interface EditorToolbarProps {
   workspaceId?: string | null;
@@ -40,6 +42,7 @@ export function EditorToolbar({ workspaceId: workspaceIdProp, projectId }: Edito
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(projectName);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const handleNameSubmit = useCallback(() => {
     const trimmed = nameInput.trim();
@@ -151,6 +154,15 @@ export function EditorToolbar({ workspaceId: workspaceIdProp, projectId }: Edito
           <Github className="h-4 w-4" />
         </button>
         {projectId ? (
+          <button
+            onClick={() => setShareOpen(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            title="Share to Discover"
+          >
+            <Compass className="h-4 w-4" />
+          </button>
+        ) : null}
+        {projectId ? (
           <DeployButton
             projectId={projectId}
             projectName={projectName}
@@ -158,6 +170,16 @@ export function EditorToolbar({ workspaceId: workspaceIdProp, projectId }: Edito
           />
         ) : null}
       </div>
+
+      {projectId ? (
+        <ShareDialog
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          projectId={projectId}
+          projectName={projectName}
+          initialTitle={projectName}
+        />
+      ) : null}
     </header>
   );
 }

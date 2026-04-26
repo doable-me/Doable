@@ -508,6 +508,7 @@
     "@activepieces/pieces-framework": "^0.26.0",
     "@activepieces/shared": "^0.50.0",
     "@doable/db": "workspace:*",
+    "@doable/marketplace-bundle": "workspace:*",
     "@doable/shared": "workspace:*",
     "@github/copilot": "^1.0.16",
     "@github/copilot-sdk": "^0.2.0",

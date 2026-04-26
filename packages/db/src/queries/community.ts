@@ -69,7 +69,8 @@ export function communityQueries(sql: postgres.Sql) {
     },
 
     /**
-     * Publish a project to the community.
+     * Publish (share) a project to the community. Idempotent - re-running
+     * updates the metadata. `sharedBy` is recorded for accountability.
      */
     async publishProject(data: {
       projectId: string;
@@ -77,24 +78,63 @@ export function communityQueries(sql: postgres.Sql) {
       description?: string;
       category?: string;
       thumbnailUrl?: string;
+      sharedBy?: string;
     }): Promise<PublicProjectRow> {
       const [row] = await sql<PublicProjectRow[]>`
-        INSERT INTO public_projects (project_id, title, description, category, thumbnail_url)
+        INSERT INTO public_projects (project_id, title, description, category, thumbnail_url, shared_by, updated_at)
         VALUES (
           ${data.projectId},
           ${data.title},
           ${data.description ?? null},
           ${data.category ?? null},
-          ${data.thumbnailUrl ?? null}
+          ${data.thumbnailUrl ?? null},
+          ${data.sharedBy ?? null},
+          now()
         )
         ON CONFLICT (project_id) DO UPDATE SET
           title = EXCLUDED.title,
           description = EXCLUDED.description,
           category = EXCLUDED.category,
-          thumbnail_url = EXCLUDED.thumbnail_url
+          thumbnail_url = EXCLUDED.thumbnail_url,
+          shared_by = COALESCE(public_projects.shared_by, EXCLUDED.shared_by),
+          updated_at = now()
         RETURNING *
       `;
       return row!;
+    },
+
+    /**
+     * Toggle the `featured` flag on a public project. Admin-only at the
+     * route layer; this query intentionally has no permission checks.
+     */
+    async setFeatured(
+      projectId: string,
+      featured: boolean
+    ): Promise<PublicProjectRow | undefined> {
+      const [row] = await sql<PublicProjectRow[]>`
+        UPDATE public_projects
+        SET featured = ${featured},
+            featured_at = CASE WHEN ${featured} THEN COALESCE(featured_at, now()) ELSE NULL END,
+            updated_at = now()
+        WHERE project_id = ${projectId}
+        RETURNING *
+      `;
+      return row;
+    },
+
+    /**
+     * List projects the user has shared. Used by the dashboard to badge
+     * projects with their share state without N+1 lookups.
+     */
+    async listMySharedProjectIds(userId: string): Promise<Set<string>> {
+      const rows = await sql<{ project_id: string }[]>`
+        SELECT pp.project_id
+        FROM public_projects pp
+        INNER JOIN projects p ON p.id = pp.project_id
+        INNER JOIN workspace_members wm ON wm.workspace_id = p.workspace_id
+        WHERE wm.user_id = ${userId}
+      `;
+      return new Set(rows.map((r) => r.project_id));
     },
 
     /**

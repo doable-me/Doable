@@ -16,6 +16,8 @@ import {
   Calendar,
   Tag,
   Package,
+  BadgeCheck,
+  Flag,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -24,14 +26,17 @@ import {
   useMarketplaceListing,
   useMarketplaceInstalls,
 } from "@/modules/marketplace/use-marketplace";
+import { InstallPermissionDialog } from "@/modules/marketplace/install-permission-dialog";
+import { ReportListingDialog } from "@/modules/marketplace/report-listing-dialog";
 
 export default function MarketplaceListingPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const router = useRouter();
   const [workspace, setWorkspace] = useState<ApiWorkspace | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(true);
-  const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
+  const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const { listing, reviews, loading } = useMarketplaceListing(slug);
   const { isInstalled, install } = useMarketplaceInstalls(workspace?.id ?? "");
@@ -47,16 +52,15 @@ export default function MarketplaceListingPage({ params }: { params: Promise<{ s
     })();
   }, []);
 
-  const handleInstall = async () => {
+  const handleConfirmInstall = async () => {
     if (!listing) return;
-    setInstalling(true);
     setInstallError(null);
     try {
       await install(listing.id);
     } catch (err) {
-      setInstallError(err instanceof Error ? err.message : "Install failed");
-    } finally {
-      setInstalling(false);
+      const message = err instanceof Error ? err.message : "Install failed";
+      setInstallError(message);
+      throw err;
     }
   };
 
@@ -116,24 +120,29 @@ export default function MarketplaceListingPage({ params }: { params: Promise<{ s
               )}
             </div>
             <h1 className="text-3xl font-bold text-foreground mb-2">{listing.title}</h1>
-            <p className="text-sm text-muted-foreground">
-              by <span className="text-foreground font-medium">{listing.publisher_name}</span> · v
-              {listing.version}
+            <p className="text-sm text-muted-foreground flex items-center gap-1.5 flex-wrap">
+              <span>by</span>
+              <span className="text-foreground font-medium">{listing.publisher_name}</span>
+              {listing.publisher_verified && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0 text-[10px] font-medium text-sky-300"
+                  title="Verified publisher"
+                >
+                  <BadgeCheck className="h-3 w-3" /> Verified
+                </span>
+              )}
+              <span>· v{listing.version}</span>
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
             {workspace ? (
               <Button
                 size="lg"
-                onClick={handleInstall}
-                disabled={installing || installed}
+                onClick={() => setPermissionDialogOpen(true)}
+                disabled={installed}
                 className={installed ? "pointer-events-none opacity-60" : ""}
               >
-                {installing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Installing...
-                  </>
-                ) : installed ? (
+                {installed ? (
                   <>
                     <CheckCircle2 className="w-4 h-4 mr-2" /> Installed
                   </>
@@ -326,8 +335,32 @@ export default function MarketplaceListingPage({ params }: { params: Promise<{ s
             <p className="font-medium text-foreground mb-1">What is the Marketplace?</p>
             <p>Learn the difference between Discover (whole projects) and the Marketplace (AI environments).</p>
           </Link>
+
+          {/* Report */}
+          <button
+            onClick={() => setReportOpen(true)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-transparent px-3 py-2 text-xs text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
+          >
+            <Flag className="h-3.5 w-3.5" /> Report this listing
+          </button>
         </aside>
       </div>
+
+      {workspace && (
+        <InstallPermissionDialog
+          open={permissionDialogOpen}
+          onOpenChange={setPermissionDialogOpen}
+          listing={listing}
+          onConfirm={handleConfirmInstall}
+        />
+      )}
+
+      <ReportListingDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        listingId={listing.id}
+        listingTitle={listing.title}
+      />
     </div>
   );
 }

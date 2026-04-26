@@ -34,11 +34,18 @@ export interface MarketplaceListingRow {
   published_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  // Bundle columns (added by 052_marketplace_bundles.sql)
+  bundle_format?: "doable.json.v1" | "standards.zip.v1" | null;
+  bundle_size?: number | null;
+  bundle_sha256?: string | null;
+  manifest_summary?: Record<string, unknown> | null;
+  requires_review_reason?: string | null;
 }
 
 export interface MarketplaceListingWithPublisher extends MarketplaceListingRow {
   publisher_name: string;
   publisher_avatar: string | null;
+  publisher_verified?: boolean;
   category_name: string | null;
   category_slug: string | null;
   category_icon: string | null;
@@ -100,4 +107,4 @@ export interface EnvironmentBundle {
   // Knowledge and connectors are referenced by name (not ID) for portability
   knowledgeFiles: { filename: string; content: string }[];
 }
-
+

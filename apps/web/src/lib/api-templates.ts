@@ -93,15 +93,51 @@ export async function apiRemixProject(
   });
 }
 
-export async function apiPublishProject(
+/**
+ * Share a project to the Discover community feed.
+ * Canonical surface as of Phase 1; the legacy `/publish` endpoint still
+ * works via 308 redirect.
+ */
+export async function apiShareProject(
   projectId: string,
-  data: { title: string; description?: string; category?: string }
+  data: { title: string; description?: string; category?: string; thumbnailUrl?: string }
 ): Promise<{ data: ApiPublicProject }> {
-  return apiFetch(`/community/${projectId}/publish`, {
+  return apiFetch(`/community/${projectId}/share`, {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
+
+/** Unshare a previously-shared project from Discover. */
+export async function apiUnshareProject(
+  projectId: string
+): Promise<{ data: { success: boolean } }> {
+  return apiFetch(`/community/${projectId}/share`, { method: "DELETE" });
+}
+
+/**
+ * Returns the set of project_ids the current user has shared. Used by
+ * the dashboard to badge cards without N+1 queries.
+ */
+export async function apiMySharedProjects(): Promise<{
+  data: { projectIds: string[] };
+}> {
+  return apiFetch("/community/my/shared");
+}
+
+/** Admin-only: toggle the featured flag on a public project. */
+export async function apiSetProjectFeatured(
+  projectId: string,
+  featured: boolean
+): Promise<{ data: ApiPublicProject }> {
+  return apiFetch(`/community/${projectId}/featured`, {
+    method: "PUT",
+    body: JSON.stringify({ featured }),
+  });
+}
+
+/** @deprecated use `apiShareProject` — kept for in-flight callers. */
+export const apiPublishProject = apiShareProject;
 
 // ─── Custom Domain Types & API Methods ───────────────────
 

@@ -31,6 +31,7 @@ import { skillsRoutes } from "./routes/skills.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { wsEnvVarRoutes, projEnvVarRoutes, envVarUtilRoutes } from "./routes/env-vars.js";
 import { marketplaceRoutes } from "./routes/marketplace.js";
+import { marketplaceModerationRoutes } from "./routes/marketplace-moderation.js";
 import { teamChatRoutes } from "./routes/team-chat.js";
 import { internalRoutes } from "./routes/internal.js";
 import { planRoutes } from "./routes/plan.js";
@@ -82,6 +83,7 @@ app.route("/projects", projEnvVarRoutes);
 app.route("/env-vars", envVarUtilRoutes);
 app.route("/", marketplaceRoutes);
 app.route("/workspaces", marketplaceRoutes);
+app.route("/", marketplaceModerationRoutes);
 app.route("/workspaces/:wid/context", workspaceContextRoutes);
 app.route("/team-chat", teamChatRoutes);
 

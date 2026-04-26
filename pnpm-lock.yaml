@@ -30,12 +30,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@doable/marketplace-bundle':
+        specifier: workspace:*
+        version: link:../../packages/marketplace-bundle
       '@doable/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@mcp-ui/client':
-        specifier: ^7.0.0
-        version: 7.0.0(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
       '@monaco-editor/react':
         specifier: ^4.7.0
         version: 4.7.0(monaco-editor@0.55.1)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -167,6 +167,19 @@ importers:
         version: 22.19.15
       typescript:
         specifier: ^5.7.0
+        version: 5.9.3
+
+  packages/marketplace-bundle:
+    dependencies:
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
         version: 5.9.3
 
   packages/shared:
@@ -1665,6 +1678,9 @@ importers:
       '@doable/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@doable/marketplace-bundle':
+        specifier: workspace:*
+        version: link:../../packages/marketplace-bundle
       '@doable/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -5374,12 +5390,6 @@ packages:
   '@mailerlite/mailerlite-nodejs@1.1.0':
     resolution: {integrity: sha512-XwjO7mQJEF97v6cxjPmjmCeOtNC1XSODUlP5DhUyFmeKHWINbDHP3gcmyQ6U1xUHmQiNHSn2Vdy5tUUD3pgdOg==}
 
-  '@mcp-ui/client@7.0.0':
-    resolution: {integrity: sha512-by2YqknAegCbOIjQzEVAjTjopfrbwc0DYycWpAt33qVGv5yx8pChPVmO4l5iILrpVnRUPAtmhguPSoTTL7w0qw==}
-    peerDependencies:
-      react: ^18 || ^19
-      react-dom: ^18 || ^19
-
   '@mcp-ui/server@6.1.0':
     resolution: {integrity: sha512-uxv9JrzEzHfdGo/V/KTFKp5WeCOsaiAoQZ3V88jw1dSXUofONEw4rMwEvVP3612aj/unS2TIeM0o1I0asfIxtw==}
 
@@ -5408,20 +5418,6 @@ packages:
     resolution: {integrity: sha512-Iivz2KwWK8xlRbiWwFB/C4NXqE8VJBoRCbBkJCN98ST2UbQvA6kfyebcLsypiqylJS467XOOaBcI9DeQ3t+zqA==}
     peerDependencies:
       '@modelcontextprotocol/sdk': ^1.24.0
-      react: ^17.0.0 || ^18.0.0 || ^19.0.0
-      react-dom: ^17.0.0 || ^18.0.0 || ^19.0.0
-      zod: ^3.25.0 || ^4.0.0
-    peerDependenciesMeta:
-      react:
-        optional: true
-      react-dom:
-        optional: true
-
-  '@modelcontextprotocol/ext-apps@1.7.0':
-    resolution: {integrity: sha512-gs8rYVx6a8pyCvSpXq7TyVLTERCC94JLrcmJgBs0+3p4jp3iQdJPu1IU+2ovVdFZ1sW8JgmvTkRnxAlIizKINg==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      '@modelcontextprotocol/sdk': ^1.29.0
       react: ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^17.0.0 || ^18.0.0 || ^19.0.0
       zod: ^3.25.0 || ^4.0.0
@@ -7520,6 +7516,9 @@ packages:
   fetch-blob@3.2.0:
     resolution: {integrity: sha512-7yAQpD2UMJzLi1Dqv7qFYnPbaPx7ZfFK6PiIxQ4PfkGPyNyl2Ugx+a/umUonmKqjhM4DnfbMvdX6otXq83soQQ==}
     engines: {node: ^12.20 || >= 14.13}
+
+  fflate@0.8.2:
+    resolution: {integrity: sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==}
 
   file-stream-rotator@0.6.1:
     resolution: {integrity: sha512-u+dBid4PvZw17PmDeRcNOtCP9CCK/9lRN2w+r1xIS7yOL9JFrIBKTvrYsxT4P0pGtThYTn++QS5ChHaUov3+zQ==}
@@ -24342,17 +24341,6 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
-  '@mcp-ui/client@7.0.0(react-dom@19.0.0(react@19.0.0))(react@19.0.0)':
-    dependencies:
-      '@modelcontextprotocol/ext-apps': 1.7.0(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(zod@3.25.76)
-      '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
-      react: 19.0.0
-      react-dom: 19.0.0(react@19.0.0)
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - '@cfworker/json-schema'
-      - supports-color
-
   '@mcp-ui/server@6.1.0(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(zod@4.3.6)':
     dependencies:
       '@modelcontextprotocol/ext-apps': 0.3.1(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(zod@4.3.6)
@@ -24393,15 +24381,6 @@ snapshots:
       '@rollup/rollup-linux-x64-gnu': 4.60.1
       '@rollup/rollup-win32-arm64-msvc': 4.60.2
       '@rollup/rollup-win32-x64-msvc': 4.60.2
-      react: 19.0.0
-      react-dom: 19.0.0(react@19.0.0)
-
-  '@modelcontextprotocol/ext-apps@1.7.0(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(zod@3.25.76)':
-    dependencies:
-      '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
-      '@standard-schema/spec': 1.1.0
-      zod: 3.25.76
-    optionalDependencies:
       react: 19.0.0
       react-dom: 19.0.0(react@19.0.0)
 
@@ -24470,6 +24449,7 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@3.25.76)
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   '@modelcontextprotocol/sdk@1.29.0(zod@4.3.6)':
     dependencies:
@@ -26973,6 +26953,8 @@ snapshots:
     dependencies:
       node-domexception: 1.0.0
       web-streams-polyfill: 3.3.3
+
+  fflate@0.8.2: {}
 
   file-stream-rotator@0.6.1:
     dependencies:

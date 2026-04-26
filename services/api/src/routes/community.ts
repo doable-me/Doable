@@ -3,8 +3,18 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AuthEnv } from "../middleware/auth.js";
 import { authMiddleware } from "../middleware/auth.js";
+import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { sql } from "../db/index.js";
 import { communityQueries } from "@doable/db/queries/community";
+import { marketplaceFeaturedQueries } from "@doable/db/queries/marketplace-featured";
+import { getKVStore } from "@doable/shared/kv-store";
+
+const featured = marketplaceFeaturedQueries(sql);
+const kv = getKVStore();
+const COMMUNITY_FEATURED_KEY = "community:featured:v1";
+const COMMUNITY_FEATURED_TTL_MS = 60 * 1000;
+const COMMUNITY_CATEGORIES_KEY = "community:categories:v1";
+const COMMUNITY_CATEGORIES_TTL_MS = 5 * 60 * 1000;
 
 export const communityRoutes = new Hono<AuthEnv>();
 
@@ -54,12 +64,24 @@ communityRoutes.get("/discover", async (c) => {
  * Get featured/trending community projects.
  */
 communityRoutes.get("/featured", async (c) => {
-  const limit = parseInt(c.req.query("limit") ?? "6", 10);
-  const projects = await community.listFeaturedProjects(
-    Math.min(limit, 20)
-  );
-
-  return c.json({ data: { projects } });
+  // Try the materialised view first (denormalised + cached). Fall through
+  // to the live query path if the MV doesn't exist yet (fresh DB).
+  const cached = await kv.get<unknown[]>(COMMUNITY_FEATURED_KEY);
+  if (cached) {
+    c.header("X-Cache", "HIT");
+    return c.json({ data: { projects: cached } });
+  }
+  try {
+    const projects = await featured.listFeaturedDiscover(12);
+    await kv.set(COMMUNITY_FEATURED_KEY, projects, COMMUNITY_FEATURED_TTL_MS);
+    c.header("X-Cache", "MISS-MV");
+    return c.json({ data: { projects } });
+  } catch (err) {
+    console.warn("[community.featured] MV unavailable, falling back:", err);
+    const limit = parseInt(c.req.query("limit") ?? "6", 10);
+    const projects = await community.listFeaturedProjects(Math.min(limit, 20));
+    return c.json({ data: { projects } });
+  }
 });
 
 /**
@@ -67,57 +89,117 @@ communityRoutes.get("/featured", async (c) => {
  * List all categories used by community projects.
  */
 communityRoutes.get("/categories", async (c) => {
+  const cached = await kv.get<unknown[]>(COMMUNITY_CATEGORIES_KEY);
+  if (cached) {
+    c.header("X-Cache", "HIT");
+    return c.json({ data: { categories: cached } });
+  }
   const categories = await community.listCategories();
+  await kv.set(COMMUNITY_CATEGORIES_KEY, categories, COMMUNITY_CATEGORIES_TTL_MS);
+  c.header("X-Cache", "MISS");
   return c.json({ data: { categories } });
 });
 
 // ─── Authenticated Routes ───────────────────────────────────
 
+const shareSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  category: z.string().max(50).optional(),
+  thumbnailUrl: z.string().url().optional(),
+});
+
 /**
- * POST /community/:projectId/publish
- * Publish a project to the community (make it public and listed).
+ * Verify the requester owns the project (via workspace_members).
+ * Returns the project row or null.
+ */
+async function assertProjectOwnership(projectId: string, userId: string) {
+  const [project] = await sql<{ id: string }[]>`
+    SELECT p.id FROM projects p
+    INNER JOIN workspace_members wm ON wm.workspace_id = p.workspace_id
+    WHERE p.id = ${projectId}
+      AND wm.user_id = ${userId}
+      AND p.deleted_at IS NULL
+  `;
+  return project ?? null;
+}
+
+/**
+ * POST /community/:projectId/share
+ * Share a project to the community feed (canonical name as of Phase 1).
  */
 communityRoutes.post(
-  "/:projectId/publish",
+  "/:projectId/share",
   authMiddleware,
-  zValidator(
-    "json",
-    z.object({
-      title: z.string().min(1).max(200),
-      description: z.string().max(1000).optional(),
-      category: z.string().max(50).optional(),
-      thumbnailUrl: z.string().url().optional(),
-    })
-  ),
+  zValidator("json", shareSchema),
   async (c) => {
     const userId = c.get("userId");
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param("projectId")!;
     const { title, description, category, thumbnailUrl } = c.req.valid("json");
 
-    // Verify project ownership
-    const [project] = await sql<{ id: string }[]>`
-      SELECT p.id FROM projects p
-      INNER JOIN workspace_members wm ON wm.workspace_id = p.workspace_id
-      WHERE p.id = ${projectId}
-        AND wm.user_id = ${userId}
-        AND p.deleted_at IS NULL
-    `;
-
+    const project = await assertProjectOwnership(projectId, userId);
     if (!project) {
       return c.json({ error: "Project not found or access denied" }, 404);
     }
 
     const publicProject = await community.publishProject({
-      projectId: projectId!,
+      projectId,
       title,
       description,
       category,
       thumbnailUrl,
+      sharedBy: userId,
     });
 
     return c.json({ data: publicProject }, 201);
   }
 );
+
+/**
+ * DELETE /community/:projectId/share
+ * Unshare a project (canonical name as of Phase 1).
+ */
+communityRoutes.delete(
+  "/:projectId/share",
+  authMiddleware,
+  async (c) => {
+    const userId = c.get("userId");
+    const projectId = c.req.param("projectId")!;
+
+    const project = await assertProjectOwnership(projectId, userId);
+    if (!project) {
+      return c.json({ error: "Project not found or access denied" }, 404);
+    }
+
+    await community.unpublishProject(projectId);
+    return c.json({ data: { success: true } });
+  }
+);
+
+// ─── Backward-compat aliases (kept indefinitely) ─────────────
+// The old /publish surface was confusing (it suggested deployment).
+// We forward POST/DELETE 1:1 to /share via 308 Permanent Redirect, which
+// preserves the HTTP method (vs 301/302 which downgrade to GET).
+communityRoutes.post("/:projectId/publish", authMiddleware, (c) => {
+  const projectId = c.req.param("projectId")!;
+  return c.redirect(`/community/${projectId}/share`, 308);
+});
+
+communityRoutes.delete("/:projectId/publish", authMiddleware, (c) => {
+  const projectId = c.req.param("projectId")!;
+  return c.redirect(`/community/${projectId}/share`, 308);
+});
+
+/**
+ * GET /community/my/shared
+ * Returns the set of project_ids the requester currently has shared.
+ * Used by the dashboard to badge cards with "Shared" without N+1 lookups.
+ */
+communityRoutes.get("/my/shared", authMiddleware, async (c) => {
+  const userId = c.get("userId");
+  const ids = await community.listMySharedProjectIds(userId);
+  return c.json({ data: { projectIds: Array.from(ids) } });
+});
 
 /**
  * POST /community/:projectId/remix
@@ -221,31 +303,24 @@ communityRoutes.post(
   }
 );
 
+// ─── Admin Routes ──────────────────────────────────────────
+
 /**
- * DELETE /community/:projectId/publish
- * Unpublish a project from the community.
+ * PUT /community/:projectId/featured
+ * Toggle the featured flag (admin only).
  */
-communityRoutes.delete(
-  "/:projectId/publish",
+communityRoutes.put(
+  "/:projectId/featured",
   authMiddleware,
+  platformAdminMiddleware,
+  zValidator("json", z.object({ featured: z.boolean() })),
   async (c) => {
-    const userId = c.get("userId");
-    const projectId = c.req.param("projectId");
-
-    // Verify project ownership
-    const [project] = await sql<{ id: string }[]>`
-      SELECT p.id FROM projects p
-      INNER JOIN workspace_members wm ON wm.workspace_id = p.workspace_id
-      WHERE p.id = ${projectId}
-        AND wm.user_id = ${userId}
-        AND p.deleted_at IS NULL
-    `;
-
-    if (!project) {
-      return c.json({ error: "Project not found or access denied" }, 404);
+    const projectId = c.req.param("projectId")!;
+    const { featured } = c.req.valid("json");
+    const updated = await community.setFeatured(projectId, featured);
+    if (!updated) {
+      return c.json({ error: "Public project not found" }, 404);
     }
-
-    await community.unpublishProject(projectId!);
-    return c.json({ data: { success: true } });
+    return c.json({ data: updated });
   }
 );

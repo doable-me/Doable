@@ -16,7 +16,9 @@ import {
   Activity,
   Mail,
   Wrench,
+  ShieldCheck,
 } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ToastContainer } from "@/components/ui/toast-container";
 import { useToasts } from "@/hooks/use-toasts";
@@ -227,10 +229,18 @@ export default function AdminPage() {
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600/20">
             <Shield className="h-5 w-5 text-brand-400" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-semibold text-foreground">System Administration</h1>
             <p className="text-sm text-muted-foreground">Manage platform features, users, AI tools, and access controls</p>
           </div>
+          <Link
+            href="/admin/moderation"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+            title="Marketplace moderation queue & reports"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-brand-400" />
+            Moderation
+          </Link>
         </div>
       </div>
 

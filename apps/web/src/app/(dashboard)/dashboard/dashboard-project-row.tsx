@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   MoreHorizontal,
   Copy,
@@ -9,6 +10,7 @@ import {
   Pencil,
   CheckSquare,
   Square,
+  Compass,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -20,6 +22,7 @@ import {
 import type { ApiProject } from "@/lib/api";
 import { PROJECT_DRAG_TYPE } from "@/components/dashboard/sidebar";
 import { STATUS_STYLES, formatRelativeTime } from "./dashboard-constants";
+import { ShareDialog } from "@/modules/discover/share-dialog";
 
 export function ProjectRow({
   project,
@@ -31,6 +34,8 @@ export function ProjectRow({
   onDuplicate,
   onRename,
   onContextMenu,
+  isShared = false,
+  onSharedChanged,
 }: {
   project: ApiProject;
   selected: boolean;
@@ -41,8 +46,11 @@ export function ProjectRow({
   onDuplicate: () => void;
   onRename: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  isShared?: boolean;
+  onSharedChanged?: () => void;
 }) {
   const statusStyle = STATUS_STYLES[project.status] ?? STATUS_STYLES.draft!;
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
   return (
     <tr
@@ -104,9 +112,20 @@ export function ProjectRow({
 
       {/* Status */}
       <td className="px-3 py-3">
-        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusStyle.className}`}>
-          {statusStyle.label}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusStyle.className}`}>
+            {statusStyle.label}
+          </span>
+          {isShared && (
+            <span
+              className="inline-flex items-center gap-0.5 rounded-full border border-emerald-500/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400"
+              title="Shared to Discover"
+            >
+              <Compass className="h-2.5 w-2.5" />
+              Discover
+            </span>
+          )}
+        </div>
       </td>
 
       {/* Updated */}
@@ -131,12 +150,27 @@ export function ProjectRow({
             <DropdownMenuItem onClick={onStar}>
               <Star className="mr-2 h-3.5 w-3.5" /> {project.starred ? "Unstar" : "Star"}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setShareDialogOpen(true)}>
+              <Compass className="mr-2 h-3.5 w-3.5" />
+              {isShared ? "Update Discover listing" : "Share to Discover"}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={onDelete}>
               <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <ShareDialog
+          open={shareDialogOpen}
+          onOpenChange={setShareDialogOpen}
+          projectId={project.id}
+          projectName={project.name}
+          projectDescription={project.description}
+          alreadyShared={isShared}
+          initialTitle={project.name}
+          onChanged={onSharedChanged}
+        />
       </td>
     </tr>
   );

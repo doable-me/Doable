@@ -244,6 +244,9 @@ export interface PublicProjectRow {
   view_count: number;
   featured: boolean;
   published_at: Date;
+  shared_by?: string | null;
+  featured_at?: Date | null;
+  updated_at?: Date | null;
 }
 
 export interface ProjectRemixRow {

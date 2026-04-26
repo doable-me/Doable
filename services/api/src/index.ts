@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { initDocore, shutdownDocore } from "./ai/docore-bridge.js";
 import { initEmailService, stopEmailService } from "./lib/email/index.js";
 import { backfillBuiltinConnectors } from "./mcp/builtin-connectors.js";
+import { startMarketplaceFeaturedRefresher } from "./jobs/marketplace-featured-refresher.js";
 import { request as httpRequest } from "node:http";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -272,6 +273,10 @@ await initEmailService(sql).catch((err) => {
 // Runs once per startup; per-workspace state is tracked in
 // workspace_builtin_provisioned so user deletions are respected.
 void backfillBuiltinConnectors();
+
+// Refresh the featured-listings/discover materialised views every 5 min.
+// Cheap (sub-second on small datasets) and avoids stale featured strips.
+startMarketplaceFeaturedRefresher({ intervalMs: 5 * 60 * 1000 });
 
 const server = serve({
   fetch: app.fetch,

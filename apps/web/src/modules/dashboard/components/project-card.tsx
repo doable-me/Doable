@@ -3,7 +3,6 @@
 import { useState } from "react";
 import type { Project, ProjectStatus } from "@doable/shared";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -19,7 +18,9 @@ import {
   Trash2,
   FolderInput,
   ExternalLink,
+  Compass,
 } from "lucide-react";
+import { ShareDialog } from "@/modules/discover/share-dialog";
 
 type ProjectWithStar = Project & { starred: boolean };
 
@@ -30,6 +31,10 @@ interface ProjectCardProps {
   onDelete: (id: string) => void;
   onEdit: (project: ProjectWithStar) => void;
   onMove: (id: string) => void;
+  /** Whether this project is currently shared to Discover. */
+  isShared?: boolean;
+  /** Called after a successful share/unshare so the dashboard can refresh. */
+  onSharedChanged?: () => void;
 }
 
 const STATUS_CONFIG: Record<
@@ -62,8 +67,11 @@ export function ProjectCard({
   onDelete,
   onEdit,
   onMove,
+  isShared = false,
+  onSharedChanged,
 }: ProjectCardProps) {
   const [imageError, setImageError] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const statusCfg = STATUS_CONFIG[project.status];
 
   return (
@@ -145,6 +153,10 @@ export function ProjectCard({
                   View live
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onClick={() => setShareDialogOpen(true)}>
+                <Compass className="mr-2 h-3.5 w-3.5" />
+                {isShared ? "Update Discover listing" : "Share to Discover"}
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive"
@@ -159,12 +171,35 @@ export function ProjectCard({
 
         {/* Footer */}
         <div className="mt-auto flex items-center justify-between pt-2">
-          <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
+            {isShared && (
+              <Badge
+                variant="outline"
+                className="border-emerald-500/40 text-emerald-400"
+                title="Shared to Discover"
+              >
+                <Compass className="h-2.5 w-2.5 mr-1" />
+                Discover
+              </Badge>
+            )}
+          </div>
           <span className="text-xs text-muted-foreground">
             {formatDate(project.updatedAt)}
           </span>
         </div>
       </div>
+
+      <ShareDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        projectId={project.id}
+        projectName={project.name}
+        projectDescription={project.description}
+        alreadyShared={isShared}
+        initialTitle={project.name}
+        onChanged={onSharedChanged}
+      />
     </div>
   );
 }

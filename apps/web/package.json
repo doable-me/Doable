@@ -15,6 +15,7 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
+    "@doable/marketplace-bundle": "workspace:*",
     "@doable/shared": "workspace:*",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-slot": "^1.1.1",

@@ -37,6 +37,7 @@ export interface MarketplaceListing {
   // Enriched
   publisher_name: string;
   publisher_avatar: string | null;
+  publisher_verified?: boolean;
   category_name: string | null;
   category_slug: string | null;
   category_icon: string | null;
@@ -44,6 +45,21 @@ export interface MarketplaceListing {
   rule_count: number;
   knowledge_count: number;
   connector_count: number;
+  // Bundle summary (populated after first build/publish — may be missing
+  // on legacy listings).
+  bundle_format?: "doable.json.v1" | "standards.zip.v1" | null;
+  bundle_size?: number | null;
+  bundle_sha256?: string | null;
+  manifest_summary?: {
+    skills: number;
+    rules: number;
+    knowledge: number;
+    connectors: number;
+    permissions: string[];
+    requiresReview: boolean;
+    reviewReason?: string;
+  } | null;
+  requires_review_reason?: string | null;
 }
 
 export interface MarketplaceInstall {

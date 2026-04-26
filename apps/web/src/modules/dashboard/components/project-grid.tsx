@@ -14,6 +14,10 @@ interface ProjectGridProps {
   onDelete: (id: string) => void;
   onEdit: (project: ProjectWithStar) => void;
   onMove: (id: string) => void;
+  /** Set of project ids currently shared to Discover. Used for badging. */
+  sharedProjectIds?: Set<string>;
+  /** Called when share state changes (so the parent can refresh). */
+  onSharedChanged?: () => void;
 }
 
 function ProjectCardSkeleton() {
@@ -40,6 +44,8 @@ export function ProjectGrid({
   onDelete,
   onEdit,
   onMove,
+  sharedProjectIds,
+  onSharedChanged,
 }: ProjectGridProps) {
   if (loading) {
     return (
@@ -66,6 +72,8 @@ export function ProjectGrid({
           onDelete={onDelete}
           onEdit={onEdit}
           onMove={onMove}
+          isShared={sharedProjectIds?.has(project.id) ?? false}
+          onSharedChanged={onSharedChanged}
         />
       ))}
     </div>

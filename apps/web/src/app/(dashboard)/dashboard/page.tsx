@@ -12,9 +12,11 @@ import { ContextMenuPortal } from "./dashboard-context-menu";
 import { DashboardToolbar } from "./dashboard-toolbar";
 import { DashboardDialogs } from "./dashboard-dialogs";
 import { useDashboard } from "./use-dashboard";
+import { useMyShared } from "@/modules/discover/use-my-shared";
 
 export default function DashboardPage() {
   const d = useDashboard();
+  const shared = useMyShared();
 
   const SortIcon = ({ col }: { col: SortKey }) => {
     if (d.sortKey !== col) return <ArrowUpDown className="ml-1 h-3 w-3 opacity-30" />;
@@ -152,6 +154,8 @@ export default function DashboardPage() {
                 onDuplicate={() => d.handleDuplicate(project.id)}
                 onRename={() => { d.setRenamingProject(project); d.setRenameValue(project.name); }}
                 onContextMenu={(e) => d.showContextMenu(e, project.id)}
+                isShared={shared.sharedIds.has(project.id)}
+                onSharedChanged={shared.refresh}
               />
             ))}
           </div>
@@ -196,6 +200,8 @@ export default function DashboardPage() {
                     onDuplicate={() => d.handleDuplicate(project.id)}
                     onRename={() => { d.setRenamingProject(project); d.setRenameValue(project.name); }}
                     onContextMenu={(e) => d.showContextMenu(e, project.id)}
+                    isShared={shared.sharedIds.has(project.id)}
+                    onSharedChanged={shared.refresh}
                   />
                 ))}
               </tbody>

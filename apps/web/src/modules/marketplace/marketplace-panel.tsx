@@ -15,6 +15,9 @@ import {
   Plug,
   TrendingUp,
   HelpCircle,
+  Plus,
+  Library,
+  Upload,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,6 +27,8 @@ import {
   type MarketplaceListing,
   type MarketplaceCategory,
 } from "./use-marketplace";
+import { InstallPermissionDialog } from "./install-permission-dialog";
+import { ImportBundleDialog } from "./import-bundle-dialog";
 
 // ─── Sub-Components ─────────────────────────────────────
 
@@ -174,7 +179,8 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | undefined>();
   const [sortBy, setSortBy] = useState<"popular" | "newest" | "rating">("popular");
-  const [installing, setInstalling] = useState<string | null>(null);
+  const [pendingListing, setPendingListing] = useState<MarketplaceListing | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const { listings, categories, total, loading } = useMarketplaceBrowse({
     category: activeCategory,
@@ -187,15 +193,6 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
     () => [{ slug: "", name: "All", icon: "🔥" }, ...categories],
     [categories],
   );
-
-  const handleInstall = async (listingId: string) => {
-    setInstalling(listingId);
-    try {
-      await install(listingId);
-    } finally {
-      setInstalling(null);
-    }
-  };
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -214,6 +211,32 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
             <HelpCircle className="h-3 w-3" />
             Discover vs Marketplace
           </Link>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setImportOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+              title="Import a bundle from JSON, a Standards Zip, or a public GitHub URL"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Import
+            </button>
+            <Link
+              href="/marketplace/my-listings"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+              title="Manage listings you've published"
+            >
+              <Library className="h-3.5 w-3.5" />
+              My listings
+            </Link>
+            <Link
+              href="/marketplace/new"
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 transition-colors"
+              title="Package one of your environments and list it"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              List on Marketplace
+            </Link>
+          </div>
         </div>
         <p className="text-muted-foreground text-sm">
           Install AI environments — skills, rules, knowledge, and MCP connectors — created by the community.
@@ -298,7 +321,7 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
                   key={listing.id}
                   listing={listing}
                   installed={isInstalled(listing.id)}
-                  onInstall={() => handleInstall(listing.id)}
+                  onInstall={() => setPendingListing(listing)}
                   onClick={() => router.push(`/marketplace/${listing.slug}`)}
                 />
               ))}
@@ -306,6 +329,21 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
           </>
         )}
       </div>
+
+      {pendingListing && (
+        <InstallPermissionDialog
+          open={!!pendingListing}
+          onOpenChange={(o) => { if (!o) setPendingListing(null); }}
+          listing={pendingListing}
+          onConfirm={async () => { await install(pendingListing.id); }}
+        />
+      )}
+
+      <ImportBundleDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        workspaceId={workspaceId}
+      />
     </div>
   );
 }
