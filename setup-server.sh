@@ -165,7 +165,7 @@ fi
 systemctl enable postgresql fail2ban
 systemctl start postgresql fail2ban
 
-ok "Packages installed: node $(node -v), pnpm $(pnpm -v), psql $(psql --version | awk '{print $3}'), redis $(redis-cli -v | awk '{print $2}'), cloudflared $(cloudflared --version 2>&1 | awk '{print $3}')"
+ok "Packages installed: node $(node -v), pnpm $(pnpm -v), psql $(psql --version | awk '{print $3}'), cloudflared $(cloudflared --version 2>&1 | awk '{print $3}')"
 
 # ─── Step 2: Firewall (UFW) ──────────────────────────────────
 info "Step 2/13: Configuring firewall (UFW)..."
@@ -182,11 +182,8 @@ ufw allow 22/tcp comment "SSH - NEVER REMOVE"
 ufw default deny incoming >/dev/null 2>&1
 ufw default allow outgoing >/dev/null 2>&1
 
-# Allow application ports
-ufw allow 3000/tcp comment "Next.js frontend"
-ufw allow 4000/tcp comment "API server"
-ufw allow 4001/tcp comment "WebSocket server"
-ufw allow 8080/tcp comment "Caddy - published sites"
+# NOTE: No application ports are opened — all access goes through Cloudflare Tunnel.
+# Services bind to 127.0.0.1 only. Never expose 3000/4000/4001/8080 to the public.
 
 # ── Safety verification before enabling UFW ──
 # Verify SSH rule is actually in the ruleset before enabling
@@ -413,8 +410,8 @@ SMTP_PASS=
 RESEND_API_KEY=
 
 # Google Mail API provider (OAuth2)
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
+# GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set above in the OAuth section.
+# Set these additional vars only if using Google Mail API for sending email:
 GOOGLE_REFRESH_TOKEN=
 GOOGLE_EMAIL_USER=
 ENVEOF
@@ -438,9 +435,9 @@ info "Running database migrations..."
 
 # Create PostgreSQL extensions as superuser (required before migrations)
 info "Creating PostgreSQL extensions..."
-sudo -u postgres psql -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" 2>/dev/null || true
-sudo -u postgres psql -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || true
-sudo -u postgres psql -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" 2>/dev/null || true
+sudo -u postgres psql -d doable -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" 2>/dev/null || true
+sudo -u postgres psql -d doable -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || true
+sudo -u postgres psql -d doable -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" 2>/dev/null || true
 ok "PostgreSQL extensions created (pgcrypto, vector, pg_trgm)"
 
 # Run migrations from BOTH migration directories
@@ -448,7 +445,7 @@ for dir in services/api/src/db/migrations packages/db/migrations; do
   if [[ -d "$dir" ]]; then
     for f in $(ls "$dir"/*.sql 2>/dev/null | sort); do
       info "  Applying: $f"
-      if ! PGPASSWORD="${DB_PASS}" psql -h localhost -U "${DB_NAME}" -d "${DB_NAME}" -f "$f" 2>&1; then
+      if ! PGPASSWORD="${DB_PASS}" psql -h localhost -U doable -d doable -f "$f" 2>&1; then
         warn "Migration may have had errors: $(basename "$f") — check output above"
       fi
     done
