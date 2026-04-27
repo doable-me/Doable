@@ -219,7 +219,9 @@ projectItemRoutes.delete("/:id", async (c) => {
 
     // Usage log: just set NULL (no unique constraint on this table)
     await sql`UPDATE ai_usage_log SET project_id = NULL WHERE project_id = ${id}`;
-  } catch { /* non-critical — usage stats shouldn't block deletion */ }
+  } catch (e) {
+    console.error(`[project-delete] Usage cleanup failed for ${id}:`, e);
+  }
 
   // 2. Delete from database — instant, guarantees project disappears
   const deleted = await projects.hardDelete(id);
