@@ -9,6 +9,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Run database migrations before starting services
+echo "Running database migrations..."
+pnpm db:migrate || echo "⚠️  Migration failed (non-fatal, continuing...)"
+
 SESSION="doable"
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 

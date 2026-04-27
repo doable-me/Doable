@@ -371,7 +371,12 @@ adminAiRoutes.get("/platform-ai-defaults", async (c) => {
   try {
     const defaults = await platformDefaults.listAll();
     return c.json({ data: defaults });
-  } catch (err) {
+  } catch (err: any) {
+    // Table may not exist yet if migration 056 hasn't been applied
+    if (err?.code === "42P01") {
+      console.warn("[admin/platform-ai-defaults] Table does not exist yet — run pnpm db:migrate");
+      return c.json({ data: [] });
+    }
     console.error("[admin/platform-ai-defaults] Error:", err);
     return c.json({ error: "Internal Server Error" }, 500);
   }
