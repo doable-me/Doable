@@ -17,6 +17,7 @@ import {
   Mail,
   Wrench,
   ShieldCheck,
+  Layers,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import { ThumbnailsPanel, CopilotSessionsPanel } from "./admin-panels";
 import { EmailPanel } from "./email-panel";
 import { UserManagementPanel, type BulkApplyPayload } from "./user-management-panel";
 import { ToolsConfigPanel } from "./tools-config-panel";
+import { PlanDefaultsPanel } from "./plan-defaults-panel";
 
 // ─── Admin Page ─────────────────────────────────────────────
 
@@ -53,11 +55,11 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "thumbnails" | "copilot" | "email">(() => {
+  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "planDefaults" | "thumbnails" | "copilot" | "email">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get("tab");
-      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "thumbnails" || tab === "copilot") return tab;
+      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "planDefaults" || tab === "thumbnails" || tab === "copilot") return tab;
     }
     return "features";
   });
@@ -249,6 +251,7 @@ export default function AdminPage() {
         {([
           { key: "features" as const, label: "Feature Flags", icon: Settings2 },
           { key: "users" as const, label: "Users & AI", icon: Users },
+          { key: "planDefaults" as const, label: "Plan Defaults", icon: Layers },
           { key: "tools" as const, label: "AI Tools", icon: Wrench },
           { key: "thumbnails" as const, label: "Thumbnails", icon: ImageIcon },
           { key: "copilot" as const, label: "Sessions", icon: Activity },
@@ -305,6 +308,9 @@ export default function AdminPage() {
           onBulkApply={handleBulkApply}
         />
       )}
+
+      {/* Plan Defaults Tab */}
+      {activeTab === "planDefaults" && <PlanDefaultsPanel />}
 
       {/* AI Tools Tab */}
       {activeTab === "tools" && <ToolsConfigPanel />}

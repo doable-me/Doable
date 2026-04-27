@@ -1,16 +1,17 @@
 /**
  * AI engine resolution — decides which model, provider, and github
- * token to use for a chat request. Implements the 5-tier priority
+ * token to use for a chat request. Implements the 6-tier priority
  * chain: admin enforcement → explicit request params → user prefs
- * → workspace defaults → system default.
+ * → workspace defaults → platform defaults → system default.
  */
 
 import { sql } from "../db/index.js";
-import { aiSettingsQueries } from "@doable/db";
+import { aiSettingsQueries, platformAiDefaultsQueries } from "@doable/db";
 import type { ByokProviderConfig } from "./providers/copilot.js";
 import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
 const aiSettingsDb = aiSettingsQueries(sql, ENCRYPTION_KEY);
+const platformDefaults = platformAiDefaultsQueries(sql);
 
 /**
  * Resolve which AI engine, model, and provider to use for a request.
@@ -20,7 +21,8 @@ const aiSettingsDb = aiSettingsQueries(sql, ENCRYPTION_KEY);
  *   2. Explicit request params — copilotAccountId / providerId / model from body
  *   3. User preferences — from user_ai_preferences table
  *   4. Workspace defaults — from workspace_ai_settings
- *   5. System default — gh CLI auth (no token)
+ *   5. Platform defaults — from platform_ai_defaults (per plan tier)
+ *   6. System default — gh CLI auth (no token)
  */
 export async function resolveAiEngine(
   projectId: string,
@@ -52,10 +54,13 @@ export async function resolveAiEngine(
   if (overrides.copilotAccountId) providerSource = "github_copilot";
   if (overrides.providerId) providerSource = "user_byok";
 
+  let workspaceId: string | undefined;
+
   try {
     const [project] = await sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`;
-    if (project?.workspace_id) {
-      const config = await aiSettingsDb.getEffectiveAiConfig(project.workspace_id, userId);
+    workspaceId = project?.workspace_id;
+    if (workspaceId) {
+      const config = await aiSettingsDb.getEffectiveAiConfig(workspaceId, userId);
 
       if (config) {
         if (config.enforce_ai) {
@@ -109,6 +114,36 @@ export async function resolveAiEngine(
     }
   } catch (err) {
     console.error("[Chat] Failed to resolve workspace/user AI config:", err);
+  }
+
+  // Tier 5: Platform defaults — if no provider resolved from tiers 1–4,
+  // fall back to the admin-configured default for this workspace's plan.
+  if (!selectedCopilotAccountId && !selectedProviderId && !resolvedProvider && workspaceId) {
+    try {
+      const [ws] = await sql<{ plan: string }[]>`SELECT plan FROM workspaces WHERE id = ${workspaceId}`;
+      if (ws?.plan) {
+        const planDefault = await platformDefaults.getForPlan(ws.plan);
+        if (planDefault) {
+          if (planDefault.source === "custom" && planDefault.provider_id) {
+            selectedProviderId = planDefault.provider_id;
+            providerSource = "platform_default";
+            if (!resolvedModel && planDefault.provider_model) {
+              resolvedModel = planDefault.provider_model;
+              modelSource = "platform_default";
+            }
+          } else if (planDefault.copilot_account_id) {
+            selectedCopilotAccountId = planDefault.copilot_account_id;
+            providerSource = "platform_default";
+            if (!resolvedModel && planDefault.copilot_model) {
+              resolvedModel = planDefault.copilot_model;
+              modelSource = "platform_default";
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[Chat] Failed to resolve platform AI defaults:", err);
+    }
   }
 
   if (selectedProviderId && !resolvedProvider) {

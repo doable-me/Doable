@@ -4,9 +4,11 @@ import { createHash } from "node:crypto";
 import { sql } from "../../db/index.js";
 import { authQueries } from "@doable/db/queries/auth.js";
 import { workspaceQueries } from "@doable/db/queries/workspaces.js";
+import { platformAiDefaultsQueries } from "@doable/db/queries/platform-ai-defaults.js";
 import { signAccessToken, signRefreshToken } from "../../lib/jwt.js";
 import { rateLimiter } from "../../middleware/rate-limit.js";
 import { ensureBuiltinConnectorsForWorkspace } from "../../mcp/builtin-connectors.js";
+import { applyPlatformAiDefault } from "./platform-ai-bootstrap.js";
 
 const auth = authQueries(sql);
 const workspaces = workspaceQueries(sql);
@@ -109,6 +111,13 @@ export async function ensureWorkspace(userId: string, displayName: string | null
     });
     console.log(`[Auth] Auto-created workspace for user ${userId} (slug: ${finalSlug})`);
     await ensureBuiltinConnectorsForWorkspace(ws.id, userId);
+
+    // Apply platform AI defaults for this plan tier so the user has AI access out of the box.
+    try {
+      await applyPlatformAiDefault(ws.id, userId, "free");
+    } catch (err) {
+      console.warn("[Auth] Failed to apply platform AI defaults:", err);
+    }
   } catch (err) {
     console.error("[Auth] Failed to auto-create workspace:", err);
     // Non-fatal — user can still log in

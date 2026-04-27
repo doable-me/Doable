@@ -236,14 +236,14 @@
     color: hsl(var(--foreground));
   }
   /* Re-pin to real white on brand/primary/destructive surfaces */
-  .light :is([class*="bg-brand-"], .bg-primary, .bg-destructive, [class*="bg-red-"], [class*="bg-emerald-"], [class*="bg-green-"], [class*="bg-amber-"], [class*="bg-blue-"]) :is(
+  .light :is([class*="bg-brand-"], [class*="from-brand-"], [class*="to-brand-"], .bg-primary, .bg-destructive, [class*="bg-red-"], [class*="bg-emerald-"], [class*="bg-green-"], [class*="bg-amber-"], [class*="bg-blue-"]) :is(
     .text-white,
     .hover\:text-white,
     .focus\:text-white,
     .group-hover\:text-white,
     .group-focus\:text-white
   ),
-  .light :is([class*="bg-brand-"], .bg-primary, .bg-destructive, [class*="bg-red-"], [class*="bg-emerald-"], [class*="bg-green-"], [class*="bg-amber-"], [class*="bg-blue-"]):is(
+  .light :is([class*="bg-brand-"], [class*="from-brand-"], [class*="to-brand-"], .bg-primary, .bg-destructive, [class*="bg-red-"], [class*="bg-emerald-"], [class*="bg-green-"], [class*="bg-amber-"], [class*="bg-blue-"]):is(
     .text-white,
     .hover\:text-white:hover,
     .focus\:text-white:focus,

@@ -1759,7 +1759,7 @@ export default function EditorPage() {
   });
 
   // Share dialog state
-  const [projectVisibility, setProjectVisibility] = useState<"public" | "private">("public");
+  const [projectVisibility, setProjectVisibility] = useState<"public" | "private">("private");
   const [shareCopied, setShareCopied] = useState<string | null>(null);
 
   // Publish modal state
@@ -1851,6 +1851,9 @@ export default function EditorPage() {
         if (res.data.name) {
           setProjectName(res.data.name);
           setNameInput(res.data.name);
+        }
+        if (res.data.visibility) {
+          setProjectVisibility(res.data.visibility === "public" ? "public" : "private");
         }
       })
       .catch(console.error);
@@ -4635,7 +4638,7 @@ export default function EditorPage() {
               setPublishedUrl(null);
               setPublishModalOpen(true);
             }}
-            className="flex h-7 items-center gap-1.5 rounded-lg bg-brand-100 border border-brand-700 px-3 text-sm font-medium text-brand-900 hover:bg-brand-200 transition-all"
+            className="flex h-7 items-center gap-1.5 rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-3 text-sm font-medium text-white shadow-lg shadow-brand-900/30 hover:brightness-110 transition-all"
             title="Deploy to a public URL"
           >
             <CloudUpload className="h-4 w-4 md:hidden" />

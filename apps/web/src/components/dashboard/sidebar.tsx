@@ -68,6 +68,14 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
   const [deletingFolder, setDeletingFolder] = useState<Folder | null>(null);
   const [folderSubmitting, setFolderSubmitting] = useState(false);
 
+  // Refresh only workspace credits (lightweight — avoids full project reload)
+  const refreshCredits = useCallback(async () => {
+    try {
+      const wsRes = await apiListWorkspaces();
+      setWorkspaces(wsRes.data);
+    } catch { /* silent */ }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     async function loadData() {
@@ -93,6 +101,26 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
     loadData();
     return () => { cancelled = true; };
   }, []);
+
+  // Refresh credits when tab/window regains focus (user returns from editor)
+  useEffect(() => {
+    const onFocus = () => { refreshCredits(); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refreshCredits();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refreshCredits]);
+
+  // Periodic credit refresh every 30 seconds while sidebar is mounted
+  useEffect(() => {
+    const interval = setInterval(refreshCredits, 30_000);
+    return () => clearInterval(interval);
+  }, [refreshCredits]);
 
   useEffect(() => {
     if (!activeWorkspaceId) return;
@@ -194,7 +222,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
   const credits = (activeWorkspace as ApiWorkspace)?.credits;
   const planDefault = workspacePlan === "free" ? 5 : workspacePlan === "pro" ? 50 : 200;
   const dailyTotal = credits?.dailyTotal ?? planDefault;
-  const creditsRemaining = Math.max(0, credits?.dailyRemaining ?? 0);
+  const creditsRemaining = Math.max(0, credits?.dailyRemaining ?? planDefault);
   const isUnlimited = dailyTotal >= 2_000_000_000;
   const creditsPercent = isUnlimited ? 100 : dailyTotal > 0 ? (creditsRemaining / dailyTotal) * 100 : 0;
   const folderTree = buildFolderTree(folders);

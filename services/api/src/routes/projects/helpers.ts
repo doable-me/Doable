@@ -43,6 +43,7 @@ export async function getUserWorkspaceIdWithMinRole(
 
 // ─── Helper: verify user can access a project ────────────────
 // Checks workspace membership first, then project_collaborators.
+// For public projects, auto-joins the user as a collaborator if they don't have access yet.
 // Returns the role from whichever grants access (workspace role takes priority).
 export async function requireProjectAccess(
   userId: string,
@@ -61,6 +62,20 @@ export async function requireProjectAccess(
     WHERE project_id = ${projectId} AND user_id = ${userId}
   `;
   if (collab) return { project, role: collab.role };
+
+  // 3. Auto-join: if project has link sharing enabled (public), add as collaborator
+  if (project.visibility === "public") {
+    try {
+      await sql`
+        INSERT INTO project_collaborators (project_id, user_id, role)
+        VALUES (${projectId}, ${userId}, 'editor')
+        ON CONFLICT DO NOTHING
+      `;
+      return { project, role: "editor" };
+    } catch {
+      // Failed to auto-join — fall through to deny access
+    }
+  }
 
   return null;
 }

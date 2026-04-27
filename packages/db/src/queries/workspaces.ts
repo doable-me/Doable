@@ -322,13 +322,27 @@ export function workspaceQueries(sql: postgres.Sql) {
       // SUM is computed in bigint to avoid int4 overflow when multiple members
       // hold "unlimited" balances (INT_MAX). Result is clamped back to INT_MAX
       // before casting to int so the API contract is preserved.
+      // CASE expressions handle expired daily/monthly resets: if the reset time
+      // has passed, treat credits_used as 0 (since the next getCreditBalance
+      // call will reset them). This prevents stale used counts from yesterday
+      // inflating consumption in the sidebar display.
       const [row] = await sql<CreditsRow[]>`
         SELECT
           gen_random_uuid() as id,
           ${workspaceId}::uuid as workspace_id,
-          LEAST(COALESCE(SUM((daily_credits - daily_credits_used)::bigint), 0), 2147483647)::int as daily_remaining,
+          LEAST(COALESCE(SUM(
+            CASE WHEN daily_reset_at <= now()
+              THEN daily_credits::bigint
+              ELSE (daily_credits - daily_credits_used)::bigint
+            END
+          ), 0), 2147483647)::int as daily_remaining,
           LEAST(COALESCE(SUM(daily_credits::bigint), 0), 2147483647)::int as daily_total,
-          LEAST(COALESCE(SUM((monthly_credits - monthly_credits_used)::bigint), 0), 2147483647)::int as monthly_remaining,
+          LEAST(COALESCE(SUM(
+            CASE WHEN monthly_reset_at <= now()
+              THEN monthly_credits::bigint
+              ELSE (monthly_credits - monthly_credits_used)::bigint
+            END
+          ), 0), 2147483647)::int as monthly_remaining,
           LEAST(COALESCE(SUM(rollover_credits::bigint), 0), 2147483647)::int as rollover_credits,
           MIN(daily_reset_at) as last_daily_reset,
           MIN(monthly_reset_at) as last_monthly_reset

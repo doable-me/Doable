@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { sql } from "../db/index.js";
-import { aiSettingsQueries } from "@doable/db";
+import { aiSettingsQueries, platformAiDefaultsQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
 const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
+const platformDefaults = platformAiDefaultsQueries(sql);
 
 export const adminAiRoutes = new Hono<AuthEnv>();
 
@@ -361,4 +362,104 @@ adminAiRoutes.delete("/users/:userId/ai-allocation", async (c) => {
 
   await aiSettings.deleteUserPreferences(targetWorkspaceId, targetUserId);
   return c.json({ data: { userId: targetUserId, reset: true } });
+});
+
+// ─── Platform AI Defaults (per plan tier) ────────────────
+
+// GET /admin/platform-ai-defaults
+adminAiRoutes.get("/platform-ai-defaults", async (c) => {
+  try {
+    const defaults = await platformDefaults.listAll();
+    return c.json({ data: defaults });
+  } catch (err) {
+    console.error("[admin/platform-ai-defaults] Error:", err);
+    return c.json({ error: "Internal Server Error" }, 500);
+  }
+});
+
+const platformDefaultSchema = z.object({
+  source: z.enum(["copilot", "custom"]).optional(),
+  copilotAccountId: z.string().uuid().nullable().optional(),
+  copilotModel: z.string().max(100).nullable().optional(),
+  providerId: z.string().uuid().nullable().optional(),
+  providerModel: z.string().max(100).nullable().optional(),
+});
+
+// PUT /admin/platform-ai-defaults/:plan
+adminAiRoutes.put("/platform-ai-defaults/:plan", async (c) => {
+  const adminId = c.get("userId");
+  const plan = c.req.param("plan");
+  if (!["free", "pro", "business", "enterprise"].includes(plan)) {
+    return c.json({ error: "Invalid plan tier" }, 400);
+  }
+
+  const body = await c.req.json();
+  const parsed = platformDefaultSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  const source: "copilot" | "custom" =
+    parsed.data.source ?? (parsed.data.providerId ? "custom" : "copilot");
+
+  const row = await platformDefaults.upsert({
+    plan,
+    source,
+    copilotAccountId: source === "copilot" ? (parsed.data.copilotAccountId ?? null) : null,
+    copilotModel: source === "copilot" ? (parsed.data.copilotModel ?? null) : null,
+    providerId: source === "custom" ? (parsed.data.providerId ?? null) : null,
+    providerModel: source === "custom" ? (parsed.data.providerModel ?? null) : null,
+    updatedBy: adminId,
+  });
+
+  console.log(`[Admin] Platform AI default updated for plan=${plan} source=${source} by ${adminId}`);
+  return c.json({ data: row });
+});
+
+// POST /admin/platform-ai-defaults/apply-to-existing
+// Retroactively apply platform defaults to all workspaces on a given plan
+// that don't have a copilot account or provider configured yet.
+const applyExistingSchema = z.object({
+  plan: z.enum(["free", "pro", "business", "enterprise"]),
+  overwrite: z.boolean().default(false),
+});
+
+adminAiRoutes.post("/platform-ai-defaults/apply-to-existing", async (c) => {
+  const adminId = c.get("userId");
+  const body = await c.req.json();
+  const parsed = applyExistingSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  const { plan, overwrite } = parsed.data;
+  const defaults = await platformDefaults.getForPlan(plan);
+  if (!defaults || (!defaults.copilot_account_id && !defaults.provider_id)) {
+    return c.json({ error: `No platform AI default configured for plan '${plan}'` }, 400);
+  }
+
+  // Find all workspaces on this plan
+  const workspaces = await sql<{ id: string; owner_id: string }[]>`
+    SELECT w.id, w.owner_id FROM workspaces w WHERE w.plan = ${plan}
+  `;
+
+  let updated = 0;
+  for (const ws of workspaces) {
+    if (!overwrite) {
+      // Skip workspaces that already have a copilot account or provider configured
+      const [existing] = await sql<{ has_config: boolean }[]>`
+        SELECT (default_copilot_account_id IS NOT NULL OR default_provider_id IS NOT NULL) AS has_config
+        FROM workspace_ai_settings WHERE workspace_id = ${ws.id}
+      `;
+      if (existing?.has_config) continue;
+    }
+
+    await allocateAiToUser(adminId, ws.owner_id, ws.id, {
+      source: defaults.source as "copilot" | "custom",
+      copilotAccountId: defaults.copilot_account_id,
+      copilotModel: defaults.copilot_model,
+      providerId: defaults.provider_id,
+      providerModel: defaults.provider_model,
+    });
+    updated++;
+  }
+
+  console.log(`[Admin] Applied platform AI defaults for plan=${plan} to ${updated}/${workspaces.length} workspaces`);
+  return c.json({ data: { plan, total: workspaces.length, updated } });
 });

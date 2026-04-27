@@ -49,7 +49,7 @@ export function DeployButton({
             ? "bg-green-600 text-white hover:bg-green-700"
             : status === "error"
               ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              : "bg-green-600 text-white hover:bg-green-700",
+              : "bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-lg shadow-brand-900/30 hover:brightness-110",
           className
         )}
       >

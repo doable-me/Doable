@@ -27,3 +27,4 @@ export * from "./queries/env-vars.js";
 export * from "./queries/project-views.js";
 export * from "./queries/share-tracking.js";
 export * from "./queries/mode-tools.js";
+export * from "./queries/platform-ai-defaults.js";
