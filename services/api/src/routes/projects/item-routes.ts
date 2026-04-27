@@ -174,10 +174,15 @@ projectItemRoutes.delete("/:id", async (c) => {
     // Daily: merge into existing NULL rows, then delete project rows
     await sql`
       UPDATE ai_usage_daily dst
-      SET request_count = dst.request_count + src.request_count,
-          input_tokens  = dst.input_tokens  + src.input_tokens,
-          output_tokens = dst.output_tokens + src.output_tokens,
-          total_cost    = dst.total_cost    + src.total_cost
+      SET request_count           = dst.request_count           + src.request_count,
+          total_prompt_tokens     = dst.total_prompt_tokens     + src.total_prompt_tokens,
+          total_completion_tokens = dst.total_completion_tokens + src.total_completion_tokens,
+          total_thinking_tokens   = dst.total_thinking_tokens   + src.total_thinking_tokens,
+          total_tokens            = dst.total_tokens            + src.total_tokens,
+          total_cost_usd          = dst.total_cost_usd          + src.total_cost_usd,
+          total_credits           = dst.total_credits           + src.total_credits,
+          total_duration_ms       = dst.total_duration_ms       + src.total_duration_ms,
+          tool_call_count         = dst.tool_call_count         + src.tool_call_count
       FROM ai_usage_daily src
       WHERE src.project_id = ${id}
         AND dst.project_id IS NULL
@@ -192,10 +197,15 @@ projectItemRoutes.delete("/:id", async (c) => {
     // Monthly: same merge-then-delete
     await sql`
       UPDATE ai_usage_monthly dst
-      SET request_count = dst.request_count + src.request_count,
-          input_tokens  = dst.input_tokens  + src.input_tokens,
-          output_tokens = dst.output_tokens + src.output_tokens,
-          total_cost    = dst.total_cost    + src.total_cost
+      SET request_count           = dst.request_count           + src.request_count,
+          total_prompt_tokens     = dst.total_prompt_tokens     + src.total_prompt_tokens,
+          total_completion_tokens = dst.total_completion_tokens + src.total_completion_tokens,
+          total_thinking_tokens   = dst.total_thinking_tokens   + src.total_thinking_tokens,
+          total_tokens            = dst.total_tokens            + src.total_tokens,
+          total_cost_usd          = dst.total_cost_usd          + src.total_cost_usd,
+          total_credits           = dst.total_credits           + src.total_credits,
+          total_duration_ms       = dst.total_duration_ms       + src.total_duration_ms,
+          tool_call_count         = dst.tool_call_count         + src.tool_call_count
       FROM ai_usage_monthly src
       WHERE src.project_id = ${id}
         AND dst.project_id IS NULL
