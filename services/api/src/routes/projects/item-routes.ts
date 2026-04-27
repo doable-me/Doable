@@ -338,3 +338,61 @@ projectItemRoutes.post("/:id/move", async (c) => {
 
   return c.json({ data: project });
 });
+
+// ─── List Project Collaborators ─────────────────────────────
+projectItemRoutes.get("/:id/collaborators", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  const collaborators = await sql<{
+    user_id: string;
+    role: string;
+    added_at: string;
+    email: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  }[]>`
+    SELECT pc.user_id, pc.role, pc.added_at,
+           u.email, u.display_name, u.avatar_url
+    FROM project_collaborators pc
+    JOIN users u ON u.id = pc.user_id
+    WHERE pc.project_id = ${id}
+    ORDER BY pc.added_at ASC
+  `;
+
+  return c.json({ data: collaborators });
+});
+
+// ─── Remove Project Collaborator ────────────────────────────
+projectItemRoutes.delete("/:id/collaborators/:userId", async (c) => {
+  const id = c.req.param("id");
+  const targetUserId = c.req.param("userId");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  // Only workspace members (project owners) can remove collaborators
+  const wsRole = await workspacesQ.getMemberRole(access.project.workspace_id, userId);
+  if (!wsRole) {
+    return c.json({ error: "Only the project owner can remove collaborators" }, 403);
+  }
+
+  const result = await sql`
+    DELETE FROM project_collaborators
+    WHERE project_id = ${id} AND user_id = ${targetUserId}
+  `;
+
+  if (result.count === 0) {
+    return c.json({ error: "Collaborator not found" }, 404);
+  }
+
+  return c.json({ data: { removed: true } });
+});

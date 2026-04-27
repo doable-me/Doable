@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, memo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, apiGetShareStats, type ApiEffectiveAiConfig, type ApiAiProvider } from "@/lib/api";
+import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, apiGetShareStats, apiListCollaborators, apiRemoveCollaborator, type ApiEffectiveAiConfig, type ApiAiProvider, type ApiCollaborator } from "@/lib/api";
 import { consumeBridge, hasBridge, type BridgeSSEEvent } from "@/lib/prompt-bridge";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
@@ -1761,6 +1761,8 @@ export default function EditorPage() {
   // Share dialog state
   const [projectVisibility, setProjectVisibility] = useState<"public" | "private">("private");
   const [shareCopied, setShareCopied] = useState<string | null>(null);
+  const [collaborators, setCollaborators] = useState<ApiCollaborator[]>([]);
+  const [removingCollabId, setRemovingCollabId] = useState<string | null>(null);
 
   // Publish modal state
   const [publishStatus, setPublishStatus] = useState<"idle" | "building" | "deploying" | "success" | "error">("idle");
@@ -1861,12 +1863,15 @@ export default function EditorPage() {
     apiRecordProjectView(resolvedProjectId).catch(() => {});
   }, [resolvedProjectId]);
 
-  // ─── Fetch share stats when share dialog opens ────────────
+  // ─── Fetch share stats + collaborators when share dialog opens ─
   useEffect(() => {
     if (!shareDialogOpen || !resolvedProjectId) return;
     apiGetShareStats(resolvedProjectId)
       .then((res) => setShareStats(res.data))
       .catch(() => setShareStats(null));
+    apiListCollaborators(resolvedProjectId)
+      .then((res) => setCollaborators(res.data))
+      .catch(() => setCollaborators([]));
   }, [shareDialogOpen, resolvedProjectId]);
 
   // ─── Fetch effective AI config for enforcement + user prefs ─
@@ -5940,13 +5945,13 @@ export default function EditorPage() {
               </div>
               <button
                 onClick={handleToggleVisibility}
-                className={`relative h-6 w-11 rounded-full transition-colors ${
-                  projectVisibility === "public" ? "bg-brand-600" : "bg-secondary"
+                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                  projectVisibility === "public" ? "bg-brand-600" : "bg-muted-foreground/30"
                 }`}
               >
                 <span
-                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                    projectVisibility === "public" ? "translate-x-5" : "translate-x-0.5"
+                  className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition-transform ${
+                    projectVisibility === "public" ? "translate-x-5" : "translate-x-0"
                   }`}
                 />
               </button>
@@ -6027,6 +6032,69 @@ export default function EditorPage() {
                 )}
               </div>
             )}
+
+            {/* Collaborators List — always visible */}
+            <div className="rounded-lg bg-secondary border border-border overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Collaborators{collaborators.length > 0 ? ` (${collaborators.length})` : ""}
+                  </p>
+                </div>
+              </div>
+              {collaborators.length > 0 ? (
+                <div className="max-h-48 overflow-y-auto divide-y divide-border">
+                  {collaborators.map((collab) => (
+                    <div key={collab.user_id} className="flex items-center justify-between px-4 py-2.5">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-foreground shrink-0">
+                          {(collab.display_name || collab.email).charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm text-foreground truncate">{collab.display_name || collab.email.split("@")[0]}</p>
+                          <p className="text-xs text-muted-foreground truncate">{collab.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-3">
+                        <span className="text-xs text-muted-foreground capitalize">{collab.role}</span>
+                        <button
+                          onClick={async () => {
+                            setRemovingCollabId(collab.user_id);
+                            try {
+                              await apiRemoveCollaborator(resolvedProjectId, collab.user_id);
+                              setCollaborators((prev) => prev.filter((c) => c.user_id !== collab.user_id));
+                            } catch {
+                              // Failed to remove
+                            } finally {
+                              setRemovingCollabId(null);
+                            }
+                          }}
+                          disabled={removingCollabId === collab.user_id}
+                          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                          title="Remove collaborator"
+                        >
+                          {removingCollabId === collab.user_id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <X className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-4 py-4 text-center">
+                  <p className="text-sm text-muted-foreground">No collaborators yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {projectVisibility === "public"
+                      ? "Share the link above to invite people"
+                      : "Enable link sharing to let others join"}
+                  </p>
+                </div>
+              )}
+            </div>
 
             <div className="border-t border-border" />
 

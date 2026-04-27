@@ -141,3 +141,24 @@ export async function apiListRecentlyViewed(opts?: {
 export async function apiRecordProjectView(id: string): Promise<void> {
   await apiFetch(`/projects/${id}/view`, { method: "POST" });
 }
+
+// ─── Collaborator Types & Methods ──────────────────────────
+
+export interface ApiCollaborator {
+  user_id: string;
+  role: string;
+  added_at: string;
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+export async function apiListCollaborators(id: string): Promise<{ data: ApiCollaborator[] }> {
+  return apiFetch(`/projects/${id}/collaborators`);
+}
+
+export async function apiRemoveCollaborator(projectId: string, userId: string): Promise<{ data: { removed: boolean } }> {
+  return apiFetch(`/projects/${projectId}/collaborators/${userId}`, {
+    method: "DELETE",
+  });
+}

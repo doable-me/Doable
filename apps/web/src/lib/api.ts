@@ -25,6 +25,7 @@ export {
 
 export {
   type ApiProject,
+  type ApiCollaborator,
   apiListProjects,
   apiListSharedProjects,
   apiGetShareStats,
@@ -37,6 +38,8 @@ export {
   apiListStarredProjects,
   apiListRecentlyViewed,
   apiRecordProjectView,
+  apiListCollaborators,
+  apiRemoveCollaborator,
 } from "./api-projects";
 
 export {
