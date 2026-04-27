@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { AuthProvider } from "@/providers/auth-provider";
 import { AuthGuard } from "@/components/auth-guard";
 import { DashboardSidebar } from "@/components/dashboard/sidebar";
+import { Footer } from "@/components/dashboard/footer";
 import { Menu } from "lucide-react";
 
 export default function DashboardLayout({
@@ -46,7 +47,10 @@ export default function DashboardLayout({
           </div>
 
           {/* Main Content Area */}
-          <main className="flex-1 overflow-y-auto">{children}</main>
+          <div className="flex flex-1 flex-col overflow-y-auto">
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </div>
         </div>
       </AuthGuard>
     </AuthProvider>

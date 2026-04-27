@@ -4248,10 +4248,11 @@ export default function EditorPage() {
           {/* Doable logo icon */}
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-brand-100 border border-brand-600 dark:bg-gradient-to-br dark:from-brand-500 dark:to-brand-700 dark:border-transparent text-brand-700 dark:text-white font-bold text-sm shadow-md shadow-brand-700/25 dark:shadow-brand-900/40 hover:brightness-95 transition-all"
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-brand-100 border border-brand-600 dark:bg-gradient-to-br dark:from-brand-600 dark:to-brand-700 dark:border-transparent shadow-sm shadow-brand-700/20 dark:shadow-brand-900/30 hover:brightness-95 transition-all"
             title="Back to dashboard"
           >
-            D
+            <span className="text-sm font-bold text-brand-700 dark:text-white self-end mb-0.5">D</span>
+            <span className="h-1.5 w-1.5 rounded-full bg-violet-700 dark:bg-violet-400 self-end mb-1.5 ml-0.5 shrink-0" />
           </button>
 
           {/* Editable project name with dropdown chevron + status subtitle */}
