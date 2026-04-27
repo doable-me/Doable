@@ -163,13 +163,61 @@ projectItemRoutes.delete("/:id", async (c) => {
     return c.json({ error: "Only workspace owners and admins can delete projects" }, 403);
   }
 
-  // 1. Delete from database FIRST — instant, guarantees project disappears
+  // 1. Merge AI usage rows BEFORE deleting the project.
+  //    The ai_usage_daily/monthly tables have ON DELETE SET NULL on project_id,
+  //    but also a unique index using COALESCE(project_id, '0000...').
+  //    Setting project_id to NULL can violate that unique constraint if a
+  //    NULL-project row already exists for the same (date, user, workspace,
+  //    provider, model). Fix: merge counts into the existing NULL row, then
+  //    delete the project-specific rows so the FK SET NULL never fires.
+  try {
+    // Daily: merge into existing NULL rows, then delete project rows
+    await sql`
+      UPDATE ai_usage_daily dst
+      SET request_count = dst.request_count + src.request_count,
+          input_tokens  = dst.input_tokens  + src.input_tokens,
+          output_tokens = dst.output_tokens + src.output_tokens,
+          total_cost    = dst.total_cost    + src.total_cost
+      FROM ai_usage_daily src
+      WHERE src.project_id = ${id}
+        AND dst.project_id IS NULL
+        AND dst.date         = src.date
+        AND dst.user_id      = src.user_id
+        AND dst.workspace_id = src.workspace_id
+        AND dst.provider     = src.provider
+        AND dst.model        = src.model
+    `;
+    await sql`DELETE FROM ai_usage_daily WHERE project_id = ${id}`;
+
+    // Monthly: same merge-then-delete
+    await sql`
+      UPDATE ai_usage_monthly dst
+      SET request_count = dst.request_count + src.request_count,
+          input_tokens  = dst.input_tokens  + src.input_tokens,
+          output_tokens = dst.output_tokens + src.output_tokens,
+          total_cost    = dst.total_cost    + src.total_cost
+      FROM ai_usage_monthly src
+      WHERE src.project_id = ${id}
+        AND dst.project_id IS NULL
+        AND dst.month        = src.month
+        AND dst.user_id      = src.user_id
+        AND dst.workspace_id = src.workspace_id
+        AND dst.provider     = src.provider
+        AND dst.model        = src.model
+    `;
+    await sql`DELETE FROM ai_usage_monthly WHERE project_id = ${id}`;
+
+    // Usage log: just set NULL (no unique constraint on this table)
+    await sql`UPDATE ai_usage_log SET project_id = NULL WHERE project_id = ${id}`;
+  } catch { /* non-critical — usage stats shouldn't block deletion */ }
+
+  // 2. Delete from database — instant, guarantees project disappears
   const deleted = await projects.hardDelete(id);
   if (!deleted) {
     return c.json({ error: "Project not found" }, 404);
   }
 
-  // 2. GitHub connection cleanup (fast DB queries, safe to await)
+  // 3. GitHub connection cleanup (fast DB queries, safe to await)
   try {
     await sql`DELETE FROM github_commits WHERE connection_id IN (
       SELECT id FROM github_connections WHERE project_id = ${id}
@@ -177,7 +225,7 @@ projectItemRoutes.delete("/:id", async (c) => {
     await sql`DELETE FROM github_connections WHERE project_id = ${id}`;
   } catch { /* non-critical */ }
 
-  // 3. Filesystem + dev server cleanup in background (can be slow)
+  // 4. Filesystem + dev server cleanup in background (can be slow)
   (async () => {
     try {
       await Promise.race([
