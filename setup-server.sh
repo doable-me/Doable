@@ -510,19 +510,19 @@ credentials-file: ${CREDS_FILE}
 
 ingress:
   - hostname: ${API_DOMAIN}
-    service: http://localhost:4000
+    service: http://127.0.0.1:4000
     originRequest:
       noTLSVerify: true
   - hostname: ${WS_DOMAIN}
-    service: http://localhost:4001
+    service: http://127.0.0.1:4001
     originRequest:
       noTLSVerify: true
   - hostname: ${DOMAIN}
-    service: http://localhost:3000
+    service: http://127.0.0.1:3000
     originRequest:
       noTLSVerify: true
   - hostname: "*.${DOMAIN}"
-    service: http://localhost:8080
+    service: http://127.0.0.1:8080
     originRequest:
       noTLSVerify: true
   - service: http_status:404

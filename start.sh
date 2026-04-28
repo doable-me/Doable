@@ -9,6 +9,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Ensure all scripts are executable (git on Windows can strip +x)
+chmod +x watchdog.sh start.sh setup-server.sh 2>/dev/null || true
+
 # Run database migrations before starting services
 echo "Running database migrations..."
 pnpm db:migrate || echo "⚠️  Migration failed (non-fatal, continuing...)"
