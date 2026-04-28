@@ -5,6 +5,7 @@ import { sql } from "../db/index.js";
 import { connectorQueries, workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { getConnectorManager } from "../mcp/connector-manager.js";
+import { discoverMcpServer } from "../mcp/discovery.js";
 import type { McpConnectorConfig } from "../mcp/types.js";
 
 const connectors = connectorQueries(sql);
@@ -52,6 +53,40 @@ function rowToConfig(row: Awaited<ReturnType<typeof connectors.getConnector>>): 
     updatedAt: row!.updated_at,
   };
 }
+
+// ─── Discovery ─────────────────────────────────────────────
+
+const discoverSchema = z.object({
+  url: z.string().url(),
+});
+
+// POST /:workspaceId/connectors/discover — probe a URL for MCP server card & tools
+connectorRoutes.post(
+  "/:workspaceId/connectors/discover",
+  zValidator("json", discoverSchema),
+  async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    const userId = c.get("userId");
+
+    const err = await requireMember(workspaceId, userId);
+    if (err) return c.json({ error: err }, 403);
+
+    const { url } = c.req.valid("json");
+
+    try {
+      const result = await discoverMcpServer(url);
+      return c.json({ data: result });
+    } catch (err) {
+      return c.json({
+        data: {
+          success: false,
+          method: "none" as const,
+          error: err instanceof Error ? err.message : "Discovery failed",
+        },
+      });
+    }
+  },
+);
 
 // ─── Connector CRUD ────────────────────────────────────────
 
@@ -127,6 +162,31 @@ connectorRoutes.post(
       credentials: body.credentials,
       serverEnv: body.serverEnv,
     });
+
+    // Auto-test the connector after creation to discover tools immediately.
+    // Non-blocking — don't fail the create if test fails.
+    if (row?.id) {
+      const config = rowToConfig(row);
+      const manager = getConnectorManager();
+      manager.testConnection(config).then(async (result) => {
+        if (result.success && result.tools) {
+          await connectors.updateConnectorStatus(row.id, "active", {
+            capabilities: {
+              tools: {
+                count: result.tools.length,
+                list: result.tools.map((t) => ({ name: t.name, description: t.description })),
+              },
+            },
+          });
+        } else if (!result.success) {
+          await connectors.updateConnectorStatus(row.id, "error", {
+            errorMessage: result.error,
+          });
+        }
+      }).catch((e) => {
+        console.warn(`[Connectors] Auto-test failed for ${row.id}:`, e);
+      });
+    }
 
     return c.json({ data: row }, 201);
   },

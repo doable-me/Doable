@@ -274,11 +274,15 @@ export function connectorQueries(sql: postgres.Sql) {
       status: string,
       opts?: { errorMessage?: string; capabilities?: Record<string, unknown> },
     ): Promise<void> {
+      const capabilitiesJson = opts?.capabilities
+        ? sql.json(opts.capabilities as Parameters<typeof sql.json>[0])
+        : null;
+
       await sql`
         UPDATE mcp_connectors SET
           status = ${status},
           error_message = ${opts?.errorMessage ?? null},
-          capabilities_cache = ${opts?.capabilities ? sql.json(opts.capabilities) : null},
+          capabilities_cache = ${capabilitiesJson},
           last_connected_at = CASE WHEN ${status} = 'active' THEN now() ELSE last_connected_at END,
           updated_at = now()
         WHERE id = ${id}

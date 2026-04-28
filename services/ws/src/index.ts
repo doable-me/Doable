@@ -5,6 +5,8 @@ import { RoomManager } from "./rooms/room-manager.js";
 import { type WsClientMessage, type WsServerMessage, type PresenceUser, userColor } from "./rooms/room.js";
 import { createMessageHandler, send, type ClientState } from "./message-handler.js";
 
+import { randomBytes } from "node:crypto";
+
 const PORT = parseInt(process.env.WS_PORT ?? "4001", 10);
 const HOST = process.env.WS_HOST ?? "127.0.0.1";
 const JWT_ISSUER = process.env.JWT_ISSUER ?? "doable";
@@ -12,19 +14,20 @@ const JWT_ISSUER = process.env.JWT_ISSUER ?? "doable";
 // ─── Secret guards (crash in production if missing) ──────
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-function requireSecret(name: string, fallback: string): string {
+function requireSecret(name: string): string {
   const value = process.env[name];
-  if (value && value !== fallback) return value;
+  if (value) return value;
   if (IS_PRODUCTION) {
-    console.error(`[FATAL] ${name} is not set or is using the insecure default. Cannot start WS server in production.`);
+    console.error(`[FATAL] ${name} is not set. Cannot start WS server in production.`);
     process.exit(1);
   }
-  console.warn(`[SECURITY] ${name} is using the insecure dev fallback — set it in .env for production.`);
-  return value ?? fallback;
+  const ephemeral = randomBytes(32).toString("hex");
+  console.warn(`[SECURITY] ${name} is not set — using a random ephemeral value. Set it in .env for stable sessions.`);
+  return ephemeral;
 }
 
-const JWT_SECRET = requireSecret("JWT_SECRET", "fallback-dev-secret-change-me");
-const INTERNAL_SECRET = requireSecret("INTERNAL_SECRET", "internal-dev-secret");
+const JWT_SECRET = requireSecret("JWT_SECRET");
+const INTERNAL_SECRET = requireSecret("INTERNAL_SECRET");
 
 // ─── State ──────────────────────────────────────────────
 const rooms = new RoomManager();

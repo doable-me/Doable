@@ -10,6 +10,46 @@ export interface McpTool {
   description?: string;
 }
 
+export interface McpServerCard {
+  $schema?: string;
+  version?: string;
+  protocolVersion?: string;
+  serverInfo?: {
+    name?: string;
+    version?: string;
+    description?: string;
+    homepage?: string;
+  };
+  transport?: {
+    type?: string;
+    url?: string;
+  };
+  capabilities?: {
+    tools?: boolean;
+    resources?: boolean;
+    prompts?: boolean;
+  };
+  auth?: {
+    type?: string;
+    [key: string]: unknown;
+  };
+}
+
+export interface DiscoveryResult {
+  success: boolean;
+  method: "server-card" | "mcp-probe" | "none";
+  serverCard?: McpServerCard;
+  name?: string;
+  description?: string;
+  transportType?: "streamable_http" | "http_sse";
+  mcpEndpointUrl?: string;
+  authType?: "none" | "api_key" | "oauth2" | "bearer_token";
+  capabilities?: Record<string, unknown>;
+  tools?: McpTool[];
+  toolCount?: number;
+  error?: string;
+}
+
 export interface McpConnector {
   id: string;
   workspace_id: string;
@@ -136,6 +176,21 @@ export function useMcpConnectors(workspaceId: string) {
     [workspaceId, refresh],
   );
 
+  const discoverServer = useCallback(
+    async (url: string): Promise<DiscoveryResult> => {
+      try {
+        const json = await apiFetch<{ data: DiscoveryResult }>(
+          `/workspaces/${workspaceId}/connectors/discover`,
+          { method: "POST", body: JSON.stringify({ url }) },
+        );
+        return json.data;
+      } catch (err) {
+        return { success: false, method: "none", error: err instanceof Error ? err.message : "Discovery failed" };
+      }
+    },
+    [workspaceId],
+  );
+
   return {
     connectors,
     loading,
@@ -145,5 +200,6 @@ export function useMcpConnectors(workspaceId: string) {
     updateConnector,
     deleteConnector,
     testConnector,
+    discoverServer,
   };
 }

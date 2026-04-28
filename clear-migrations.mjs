@@ -1,12 +1,13 @@
 import postgres from 'postgres';
+import 'dotenv/config';
 
-const sql = postgres({
-  host: 'localhost',
-  port: 5432,
-  user: 'doable',
-  password: 'doable_secret',
-  database: 'doable'
-});
+const DATABASE_URL = process.env.DATABASE_URL;
+
+if (!DATABASE_URL) {
+  throw new Error('DATABASE_URL is required to run clear-migrations.mjs');
+}
+
+const sql = postgres(DATABASE_URL);
 
 try {
   console.log('Clearing schema_migrations table...');

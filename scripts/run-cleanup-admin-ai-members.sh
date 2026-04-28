@@ -1,6 +1,6 @@
 #!/bin/bash
 # Helper to run cleanup-admin-ai-members.mjs on a server.
-# Usage: cd /root/doable && bash scripts/run-cleanup-admin-ai-members.sh [APPLY]
+# Usage: cd <doable-dir> && bash scripts/run-cleanup-admin-ai-members.sh [APPLY]
 set -e
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"

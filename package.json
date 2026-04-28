@@ -1,6 +1,7 @@
 {
   "name": "doable",
   "private": true,
+  "license": "MIT",
   "packageManager": "pnpm@9.15.4",
   "scripts": {
     "build": "turbo run build",

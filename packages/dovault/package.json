@@ -1,6 +1,7 @@
 {
   "name": "dovault",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Zero-overhead runtime jail for Node.js processes — config lockdown, permission model, OS resource limits. Cross-platform (Linux + Windows).",
   "type": "module",
   "main": "./dist/index.js",

@@ -37,6 +37,12 @@ Thumbs.db
 .claude/
 CLAUDE.md
 
+# Internal dev utility scripts (contain local paths / credentials)
+services/api/_setup_supabase.cjs
+services/api/_create_table_pg.cjs
+services/api/_create_table.mjs
+packages/db/_users.mjs
+
 # Data (user-created projects, published sites, thumbnails, AI session state)
 /data/
 /sites/

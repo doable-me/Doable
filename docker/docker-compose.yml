@@ -57,7 +57,7 @@ services:
     container_name: doable-api
     restart: unless-stopped
     ports:
-      - "127.0.0.1:4000:4000"
+      - "127.0.0.1:4000:4000"  # Host binds to localhost only; 0.0.0.0 inside container is required for Docker networking
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -70,10 +70,10 @@ services:
       JWT_REFRESH_TOKEN_EXPIRES_IN: 7d
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in docker/.env}
       API_PORT: 4000
-      API_HOST: 0.0.0.0
+      API_HOST: 0.0.0.0  # Must be 0.0.0.0 inside Docker for container networking; host port is bound to 127.0.0.1
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       WS_PORT: 4001
-      WS_HOST: 0.0.0.0
+      WS_HOST: 0.0.0.0  # Must be 0.0.0.0 inside Docker for container networking
       INTERNAL_SECRET: ${INTERNAL_SECRET:?Set INTERNAL_SECRET in docker/.env}
       WS_INTERNAL_URL: http://ws:4001
       API_URL: http://api:4000
@@ -112,7 +112,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:-doable_secret}@postgres:5432/${POSTGRES_DB:-doable}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in docker/.env}
       WS_PORT: 4001
-      WS_HOST: 0.0.0.0
+      WS_HOST: 0.0.0.0  # Must be 0.0.0.0 inside Docker for container networking; host port is bound to 127.0.0.1
       INTERNAL_SECRET: ${INTERNAL_SECRET:?Set INTERNAL_SECRET in docker/.env}
       API_URL: http://api:4000
       NODE_ENV: production
@@ -141,7 +141,7 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:4001}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-      HOSTNAME: 0.0.0.0
+      HOSTNAME: 0.0.0.0  # Must be 0.0.0.0 inside Docker for container networking; host port is bound to 127.0.0.1
       PORT: 3000
       NODE_ENV: production
 

@@ -24,6 +24,21 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..", "..");
 const MCP_SERVERS_DIR = process.env.DOABLE_MCP_SERVERS_DIR
   ?? path.join(REPO_ROOT, "mcp-servers");
 
+// Cache: once the tracking table is confirmed to exist, skip future checks.
+let _provisionedTableExists: boolean | null = null;
+async function provisionedTableExists(): Promise<boolean> {
+  if (_provisionedTableExists === true) return true;
+  const [row] = await sql<Array<{ exists: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'workspace_builtin_provisioned'
+    ) AS exists
+  `;
+  _provisionedTableExists = row?.exists ?? false;
+  return _provisionedTableExists;
+}
+
 interface BuiltinMcpApp {
   /** Stable identifier — used as the row key in workspace_builtin_provisioned. */
   id: string;
@@ -50,14 +65,17 @@ const connectors = connectorQueries(sql);
 /**
  * Provision all builtin MCP Apps for a workspace, idempotently.
  *
- * Safe to call repeatedly — a row in `workspace_builtin_provisioned`
- * acts as a permanent "already done" marker, even if the user later
- * deletes the connector.
+ * A row in `workspace_builtin_provisioned` tracks that provisioning
+ * was attempted. If the actual connector is later deleted, the marker
+ * is cleared and the connector is re-created on next call.
  */
 export async function ensureBuiltinConnectorsForWorkspace(
   workspaceId: string,
   ownerUserId: string,
 ): Promise<void> {
+  // Guard: skip if the tracking table hasn't been created yet (migration 048).
+  if (!(await provisionedTableExists())) return;
+
   for (const app of BUILTIN_MCP_APPS) {
     try {
       // Skip if entrypoint isn't on disk (e.g., test env, partial install).
@@ -69,13 +87,33 @@ export async function ensureBuiltinConnectorsForWorkspace(
         continue;
       }
 
-      // Already provisioned? Skip — even if the user has since deleted it.
+      // Already provisioned? Only skip if the connector still exists and is active.
       const [existing] = await sql<Array<{ workspace_id: string }>>`
         SELECT workspace_id FROM workspace_builtin_provisioned
         WHERE workspace_id = ${workspaceId} AND builtin_id = ${app.id}
         LIMIT 1
       `;
-      if (existing) continue;
+      if (existing) {
+        // Verify the actual connector row still exists — if the user deleted
+        // it, clear the marker so we re-provision below.
+        const [connectorRow] = await sql<Array<{ id: string; status: string }>>`
+          SELECT id, status FROM mcp_connectors
+          WHERE workspace_id = ${workspaceId}
+            AND scope = 'workspace'
+            AND name = ${app.name}
+          LIMIT 1
+        `;
+        if (connectorRow) continue; // connector still present — nothing to do
+
+        // Connector was deleted; clear the marker so it gets re-created.
+        await sql`
+          DELETE FROM workspace_builtin_provisioned
+          WHERE workspace_id = ${workspaceId} AND builtin_id = ${app.id}
+        `;
+        console.log(
+          `[builtin-mcp] Marker existed but connector deleted for "${app.name}" in workspace ${workspaceId} — re-provisioning`,
+        );
+      }
 
       // Dedupe: if a workspace-scope connector with the same name already
       // exists (e.g., a user added it manually before backfill ran), claim
@@ -147,6 +185,15 @@ export async function ensureBuiltinConnectorsForWorkspace(
  */
 export async function backfillBuiltinConnectors(): Promise<void> {
   try {
+    // Guard: skip if the tracking table hasn't been created yet (migration 048).
+    // This avoids a 42P01 crash when the API starts before migrations run.
+    if (!(await provisionedTableExists())) {
+      console.warn(
+        "[builtin-mcp] Skipping backfill: workspace_builtin_provisioned table does not exist. Run migrations first.",
+      );
+      return;
+    }
+
     const workspaces = await sql<Array<{ id: string; owner_id: string }>>`
       SELECT id, owner_id FROM workspaces
     `;

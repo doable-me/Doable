@@ -5096,18 +5096,22 @@ export default function EditorPage() {
                                   // BUILD_DECK prompt on host-ready. If the
                                   // model already obeyed the same-turn
                                   // instructions and produced a build_deck
-                                  // tool call in this session, suppress the
-                                  // re-injection to avoid building twice.
+                                  // tool call for THIS card's create_presentation,
+                                  // suppress the re-injection to avoid building
+                                  // twice. Only check messages AFTER this one
+                                  // so a second presentation in the same session
+                                  // still works.
                                   const isBuildDeck = typeof text === "string" && text.trimStart().startsWith("BUILD_DECK");
                                   if (isBuildDeck) {
-                                    const alreadyBuilt = messages.some((m) =>
+                                    const laterMessages = messages.slice(msgIdx + 1);
+                                    const alreadyBuilt = laterMessages.some((m) =>
                                       (m.toolActions ?? []).some((tc) => {
                                         const n = tc?.toolName ?? "";
                                         return n === "build_deck" || n.endsWith("_build_deck") || n.endsWith(".build_deck");
                                       }),
                                     );
                                     if (alreadyBuilt) {
-                                      console.log("[MCP] BUILD_DECK prompt suppressed — build_deck already ran in this session");
+                                      console.log("[MCP] BUILD_DECK prompt suppressed — build_deck already ran for this card");
                                       return;
                                     }
                                   }

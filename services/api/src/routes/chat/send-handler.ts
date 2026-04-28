@@ -259,11 +259,28 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           state.traceCollector?.recordUserMessage(augmentedContent);
 
           if (!resolvedProvider && !resolvedGithubToken) {
-            const missingAuthMsg = "AI is not configured for this workspace/user. Connect a GitHub Copilot account or add a custom provider key in Settings > AI.";
-            state.traceCollector?.onError(missingAuthMsg, "AUTH", "missing_auth_or_provider");
-            throw new Error(missingAuthMsg);
+            // CLI fallback: only allow the workspace owner to use the local
+            // `gh` CLI auth in dev mode. Other users must have a configured
+            // provider (workspace default, platform default, or personal
+            // override). This prevents registered users from consuming the
+            // admin's personal Copilot quota.
+            let isWorkspaceOwner = false;
+            if (workspaceId) {
+              const [ownerRow] = await sql<{ owner_id: string }[]>`SELECT owner_id FROM workspaces WHERE id = ${workspaceId}`;
+              isWorkspaceOwner = ownerRow?.owner_id === userId;
+            }
+            const hasCLIFallback = process.env.NODE_ENV !== "production" && isWorkspaceOwner;
+            console.log(`[Chat][${projectId.slice(0, 8)}] No provider/token — hasCLIFallback=${hasCLIFallback} (isOwner=${isWorkspaceOwner}, NODE_ENV=${process.env.NODE_ENV})`);
+            if (!hasCLIFallback) {
+              const missingAuthMsg = "AI is not configured for this workspace/user. Connect a GitHub Copilot account or add a custom provider key in Settings > AI.";
+              state.traceCollector?.onError(missingAuthMsg, "AUTH", "missing_auth_or_provider");
+              throw new Error(missingAuthMsg);
+            }
+          } else {
+            console.log(`[Chat][${projectId.slice(0, 8)}] Auth resolved — provider=${!!resolvedProvider}, githubToken=${!!resolvedGithubToken}`);
           }
 
+          console.log(`[Chat][${projectId.slice(0, 8)}] Building context + tools...`);
           const [projectContext, allTools] = await Promise.all([
             buildProjectContextForMode(projectId, mode, workspaceId, userId),
             createAllTools(projectId, workspaceId, userId),
@@ -312,7 +329,9 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
           try {
             const manager = getCopilotManager();
+            console.log(`[Chat][${projectId.slice(0, 8)}] Getting engine (githubToken=${!!resolvedGithubToken})...`);
             let currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
+            console.log(`[Chat][${projectId.slice(0, 8)}] Engine acquired, preparing to send...`);
             if (mode === "plan" && sessionId) {
               try { await currentEngine.setSessionMode(sessionId, "plan"); state.traceCollector?.onSessionModeSwitch(sessionId, "interactive", "plan"); } catch (err) { console.warn(`[Chat] setSessionMode(plan) failed:`, err instanceof Error ? err.message : err); }
             }

@@ -71,28 +71,34 @@ export async function resolveAiEngine(
           providerSource = config.enforced_provider_id ? "workspace_byok" : "github_copilot";
           resolvedProvider = undefined;
         } else if (!selectedCopilotAccountId && !selectedProviderId && !resolvedProvider) {
-          // user_source in the DB means admin explicitly set this user's source.
-          // Treat it as an override even if copilot_account_id or provider_id is null
-          // (null means "use default copilot" / "use default provider").
+          // User preference (tier 3) — only honour if it actually resolves to
+          // a usable provider or copilot account.  A stale row with
+          // source="copilot" but copilot_account_id=null is NOT usable and
+          // must fall through to workspace defaults.
           const hasUserOverride = config.user_source !== null;
 
+          let userOverrideApplied = false;
           if (hasUserOverride) {
-            if (config.user_source === "custom") {
-              selectedProviderId = config.user_provider_id ?? undefined;
+            if (config.user_source === "custom" && config.user_provider_id) {
+              selectedProviderId = config.user_provider_id;
               providerSource = "user_byok";
+              userOverrideApplied = true;
               if (!resolvedModel && config.user_provider_model) {
                 resolvedModel = config.user_provider_model;
                 modelSource = "user_preference";
               }
-            } else {
-              selectedCopilotAccountId = config.user_copilot_account_id ?? undefined;
+            } else if (config.user_source !== "custom" && config.user_copilot_account_id) {
+              selectedCopilotAccountId = config.user_copilot_account_id;
               providerSource = "github_copilot";
+              userOverrideApplied = true;
               if (!resolvedModel && config.user_copilot_model) {
                 resolvedModel = config.user_copilot_model;
                 modelSource = "user_preference";
               }
             }
-          } else {
+          }
+
+          if (!userOverrideApplied) {
             if (config.default_source === "custom") {
               selectedProviderId = config.default_provider_id ?? undefined;
               providerSource = "workspace_byok";

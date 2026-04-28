@@ -13,7 +13,7 @@
 
 set -uo pipefail
 
-DOABLE_DIR="/root/doable"
+DOABLE_DIR="${DOABLE_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 SESSION="doable"
 LOG="/var/log/doable-watchdog.log"
 TIMEOUT=10

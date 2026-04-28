@@ -9,7 +9,7 @@ import {
   apiListProjects, apiListSharedProjects, apiListRecentlyViewed,
   apiRecordProjectView, apiCreateProject, apiToggleStarProject,
   apiDeleteProject, apiDuplicateProject, apiUpdateProject,
-  apiListTemplates, apiFetch, getStoredTokens,
+  apiListTemplates, apiFetch, getStoredTokens, apiListWorkspaces,
   type ApiProject, type ApiTemplate,
 } from "@/lib/api";
 import { startBridge, onBridgeStatus, type BridgeStatus } from "@/lib/prompt-bridge";
@@ -21,6 +21,7 @@ import { VIEW_MODE_KEY } from "./dashboard-constants";
 import { useRotatingGreeting, useContextMenu } from "./dashboard-hooks";
 
 const PAGE_SIZE = 12;
+const WS_KEY = "doable_active_workspace_id";
 
 export function useDashboard() {
   const router = useRouter();
@@ -123,7 +124,7 @@ export function useDashboard() {
     try {
       if (!append) setError(null);
       if (page > 1) setIsLoadingMore(true);
-      const activeWsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") : null;
+      const activeWsId = typeof window !== "undefined" ? localStorage.getItem(WS_KEY) : null;
       const res = await apiListProjects({ page, pageSize: PAGE_SIZE, status: statusFilter !== "all" ? statusFilter : undefined, search: debouncedSearch.trim() || undefined, folderId: activeFolderId ?? undefined, workspaceId: activeWsId ?? undefined });
       setProjects((prev) => (append ? [...prev, ...res.data] : res.data));
       setCurrentPage(page);
@@ -135,7 +136,7 @@ export function useDashboard() {
   const fetchRecentlyViewed = useCallback(async (page = 1, append = false) => {
     try {
       if (page > 1) setIsLoadingMore(true);
-      const activeWsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") : null;
+      const activeWsId = typeof window !== "undefined" ? localStorage.getItem(WS_KEY) : null;
       const res = await apiListRecentlyViewed({ page, pageSize: PAGE_SIZE, workspaceId: activeWsId ?? undefined });
       setRecentProjects((prev) => (append ? [...prev, ...res.data] : res.data));
       setRecentPage(page); setTotalRecent(res.pagination.total);
@@ -161,14 +162,34 @@ export function useDashboard() {
 
   const fetchFolders = useCallback(async () => {
     try {
-      const wsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") : null;
+      const wsId = typeof window !== "undefined" ? localStorage.getItem(WS_KEY) : null;
       if (!wsId) { setFolders([]); return; }
       const res = await apiFetch<{ data: Folder[] }>(`/folders?workspaceId=${wsId}`);
       setFolders(res.data);
     } catch { setFolders([]); }
   }, []);
 
-  useEffect(() => { fetchProjects(); fetchRecentlyViewed(); fetchFolders(); }, [fetchProjects, fetchRecentlyViewed, fetchFolders]);
+  // Validate workspace ID before fetching — prevents stale IDs from causing
+  // 403 (projects) or empty results (recently-viewed, folders) on initial load.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const wsId = typeof window !== "undefined" ? localStorage.getItem(WS_KEY) : null;
+      if (wsId) {
+        try {
+          const wsRes = await apiListWorkspaces();
+          if (cancelled) return;
+          if (!wsRes.data.some(w => w.id === wsId)) {
+            const valid = wsRes.data[0];
+            if (valid) localStorage.setItem(WS_KEY, valid.id);
+            else localStorage.removeItem(WS_KEY);
+          }
+        } catch { /* proceed with existing ID if validation fails */ }
+      }
+      if (!cancelled) { fetchProjects(); fetchRecentlyViewed(); fetchFolders(); }
+    })();
+    return () => { cancelled = true; };
+  }, [fetchProjects, fetchRecentlyViewed, fetchFolders]);
   useEffect(() => { if (activeTab === "templates" && templates.length === 0 && !isLoadingTemplates) fetchTemplates(); }, [activeTab, templates.length, isLoadingTemplates, fetchTemplates]);
 
   // ── Sidebar events ──

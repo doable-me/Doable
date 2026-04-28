@@ -48,6 +48,7 @@ export function McpPanel({ workspaceId }: McpPanelProps) {
     updateConnector,
     deleteConnector,
     testConnector,
+    discoverServer,
   } = useMcpConnectors(workspaceId);
 
   const [showForm, setShowForm] = useState(false);
@@ -116,6 +117,7 @@ export function McpPanel({ workspaceId }: McpPanelProps) {
         <AddServerForm
           onSubmit={handleCreated}
           onCancel={() => setShowForm(false)}
+          onDiscover={discoverServer}
         />
       )}
 

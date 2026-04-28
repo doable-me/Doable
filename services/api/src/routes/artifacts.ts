@@ -50,7 +50,9 @@ const artifacts = new Hono();
 artifacts.get("/:id{.+}", (c) => {
   // Strip any extension the client appended (e.g. /artifacts/abc.pptx).
   const raw = c.req.param("id");
+  if (!raw) return c.text("Not found", 404);
   const id = raw.split(".")[0];
+  if (!id) return c.text("Not found", 404);
   const entry = store.get(id);
   if (!entry) return c.text("Not found", 404);
 

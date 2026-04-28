@@ -1,12 +1,17 @@
 import postgres from 'postgres';
+import 'dotenv/config';
+import { URL } from 'node:url';
 
-const sql = postgres({
-  host: 'localhost',
-  port: 5432,
-  user: 'postgres',
-  password: 'postgres',
-  database: 'postgres' // connect to default postgres db first
-});
+const adminDatabaseUrl = process.env.RESET_DATABASE_URL ?? process.env.DATABASE_URL;
+
+if (!adminDatabaseUrl) {
+  throw new Error('RESET_DATABASE_URL or DATABASE_URL is required to run reset-db.mjs');
+}
+
+const parsedUrl = new URL(adminDatabaseUrl);
+parsedUrl.pathname = '/postgres';
+
+const sql = postgres(parsedUrl.toString());
 
 try {
   console.log('Dropping doable database...');

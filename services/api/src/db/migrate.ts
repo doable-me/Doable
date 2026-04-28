@@ -44,8 +44,9 @@ async function migrate() {
 
     try {
       await sql.begin(async (tx) => {
-        await tx.unsafe(content);
-        await tx`INSERT INTO schema_migrations (name) VALUES (${file})`;
+        const txn = tx as unknown as typeof sql;
+        await txn.unsafe(content);
+        await txn`INSERT INTO schema_migrations (name) VALUES (${file})`;
       });
       count++;
     } catch (err: any) {

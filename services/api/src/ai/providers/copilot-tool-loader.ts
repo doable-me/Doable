@@ -1,13 +1,19 @@
 /**
  * Tool composition — merges built-in Doable tools, native integration
  * tools, and MCP connector tools into a single tool set for a session.
+ *
+ * Supports progressive tool loading: when there are many MCP tools (>20),
+ * only a lightweight mcp_discover_tools meta-tool is injected. The AI uses
+ * it to search for relevant tools, which are then returned with full schemas.
+ * All MCP tools are still callable even when deferred — only their definitions
+ * are withheld from the initial context to save tokens.
  */
 
-import type { Tool } from "@github/copilot-sdk";
+import { defineTool, type Tool } from "@github/copilot-sdk";
 import { createDoableTools } from "./copilot-tools.js";
 import { getConnectorManager } from "../../mcp/connector-manager.js";
 import { createMcpTools } from "../../mcp/tool-bridge.js";
-import type { McpConnectorConfig } from "../../mcp/types.js";
+import type { McpConnectorConfig, ResolvedMcpTool } from "../../mcp/types.js";
 import type { DecryptedConnection } from "../../integrations/types.js";
 import { connectorQueries, marketplaceQueries } from "@doable/db";
 
@@ -136,6 +142,17 @@ async function loadMcpTools(
     const resolvedTools = await manager.getEffectiveTools(Array.from(configs.values()));
     if (resolvedTools.length === 0) return [];
 
+    // Progressive loading: when many MCP tools exist, inject a discovery
+    // meta-tool instead of all definitions. All tools remain callable.
+    const PROGRESSIVE_THRESHOLD = 20;
+    if (resolvedTools.length > PROGRESSIVE_THRESHOLD) {
+      const mcpTools = createMcpTools(resolvedTools, manager, configs, projectId);
+      const metaTool = createToolDiscoveryMetaTool(resolvedTools, mcpTools);
+      // Include the meta-tool + a summary of what's available
+      console.log(`[CopilotEngine] Progressive loading: ${resolvedTools.length} MCP tools deferred behind discovery meta-tool`);
+      return [metaTool, ...mcpTools];
+    }
+
     const mcpTools = createMcpTools(resolvedTools, manager, configs, projectId);
     console.log(`[CopilotEngine] Loaded ${mcpTools.length} MCP tools from ${configs.size} connectors`);
     return mcpTools;
@@ -143,4 +160,83 @@ async function loadMcpTools(
     console.warn("[CopilotEngine] MCP tool loading failed:", err instanceof Error ? err.message : err);
     return [];
   }
+}
+
+/**
+ * Progressive discovery meta-tool — lets the AI search for relevant MCP tools
+ * by keyword rather than flooding the context with all tool definitions.
+ */
+function createToolDiscoveryMetaTool(
+  resolvedTools: ResolvedMcpTool[],
+  _allTools: Tool[],
+): Tool {
+  // Build a searchable catalog
+  const catalog = resolvedTools.map((t) => ({
+    fullName: `mcp_${t.connectorName.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase()}_${t.tool.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase()}`,
+    connector: t.connectorName,
+    name: t.tool.name,
+    description: t.tool.description ?? "",
+    params: Object.keys(t.tool.inputSchema?.properties ?? {}),
+  }));
+
+  const connectorSummary = new Map<string, number>();
+  for (const t of resolvedTools) {
+    connectorSummary.set(t.connectorName, (connectorSummary.get(t.connectorName) ?? 0) + 1);
+  }
+  const summaryStr = Array.from(connectorSummary.entries())
+    .map(([name, count]) => `${name} (${count} tools)`)
+    .join(", ");
+
+  return defineTool("mcp_discover_tools", {
+    description: `Search ${catalog.length} available MCP tools across ${connectorSummary.size} servers: ${summaryStr}. Use this to find relevant tools by keyword before calling them. All listed tools are directly callable.`,
+    parameters: {
+      type: "object" as const,
+      properties: {
+        query: {
+          type: "string",
+          description: "Search keyword to find relevant MCP tools (e.g., 'database', 'file', 'search', 'create')",
+        },
+        connector: {
+          type: "string",
+          description: "Optional: filter by connector name",
+        },
+      },
+      required: ["query"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const query = String(args.query ?? "").toLowerCase();
+      const connectorFilter = args.connector ? String(args.connector).toLowerCase() : null;
+
+      const matches = catalog.filter((t) => {
+        if (connectorFilter && !t.connector.toLowerCase().includes(connectorFilter)) return false;
+        return (
+          t.name.toLowerCase().includes(query) ||
+          t.description.toLowerCase().includes(query) ||
+          t.connector.toLowerCase().includes(query) ||
+          t.params.some((p) => p.toLowerCase().includes(query))
+        );
+      });
+
+      if (matches.length === 0) {
+        return {
+          results: [],
+          message: `No MCP tools matching "${query}". Available connectors: ${summaryStr}`,
+        };
+      }
+
+      return {
+        results: matches.slice(0, 10).map((m) => ({
+          toolName: m.fullName,
+          connector: m.connector,
+          originalName: m.name,
+          description: m.description,
+          parameters: m.params,
+        })),
+        totalMatches: matches.length,
+        message: matches.length > 10
+          ? `Showing 10 of ${matches.length} matches. Refine your query for more specific results.`
+          : `Found ${matches.length} matching tool(s). You can call them directly by their toolName.`,
+      };
+    },
+  }) as Tool;
 }

@@ -52,7 +52,7 @@ export class CopilotEngine {
         ...(this.config.cliUrl ? { cliUrl: this.config.cliUrl } : {}),
         ...(this.config.githubToken
           ? { githubToken: this.config.githubToken }
-          : { useLoggedInUser: false }),
+          : { useLoggedInUser: true }),
       },
       poolSize: 1,
     });

@@ -1,6 +1,7 @@
 {
   "name": "docore",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Full-featured agent engine wrapping GitHub Copilot SDK with complete event streaming",
   "type": "module",
   "main": "./dist/index.js",

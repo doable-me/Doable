@@ -193,13 +193,13 @@ export function createToolProgressCallbacks(
       // dropping `mcp_ui_resource` or `artifact_ready` SSE events.
       const collectedArtifacts: ArtifactRef[] = [];
       for (const item of pendingUiResources) {
-        const r = item.resource as Record<string, unknown> & { text?: string };
+        const r = item.resource as unknown as Record<string, unknown> & { text?: string };
         if (typeof r?.text === "string" && r.text.length > 16 * 1024) {
           const { html: rewritten, artifacts: arts } = offloadDataUris(r.text, projectId);
           if (arts.length > 0) {
             collectedArtifacts.push(...arts);
-            (item.resource as Record<string, unknown>).text = rewritten;
-            (item as Record<string, unknown>)._offloaded = true;
+            (item.resource as unknown as Record<string, unknown>).text = rewritten;
+            (item as unknown as Record<string, unknown>)._offloaded = true;
           }
         }
       }

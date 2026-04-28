@@ -215,12 +215,12 @@ const JARGON_MAP: Array<[RegExp, string]> = [
 const SERVER_PATH_RE = /(?:[A-Za-z]:)?(?:[\\/][^\s:,)"'`]+)?[\\/]projects[\\/][a-f0-9-]+[\\/]/gi;
 export function stripServerPaths(text: string): string {
   let result = text;
-  // 1. Full project paths: /root/doable/projects/<uuid>/ → (empty, leaves relative)
+  // 1. Full project paths: /path/to/projects/<uuid>/ → (empty, leaves relative)
   result = result.replace(SERVER_PATH_RE, "");
-  // 2. Base server dir: /root/doable/ or /home/<user>/doable/
-  result = result.replace(/(?:\/root\/doable|\/home\/[^\s/]+\/doable)\//g, "");
-  // 3. Bare project dir reference without trailing file: /root/doable/projects/<uuid>
-  result = result.replace(/(?:\/root\/doable|\/home\/[^\s/]+\/doable)\/projects\/[a-f0-9-]+/g, ".");
+  // 2. Common server install dirs: /<any-path>/doable/
+  result = result.replace(/(?:\/[\w.-]+)+\/doable\//g, "");
+  // 3. Bare project dir reference without trailing file: /<any-path>/doable/projects/<uuid>
+  result = result.replace(/(?:\/[\w.-]+)+\/doable\/projects\/[a-f0-9-]+/g, ".");
   return result;
 }
 

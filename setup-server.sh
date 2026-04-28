@@ -303,7 +303,7 @@ ok "GitHub CLI authenticated"
 # ─── Step 7: Clone repo ───────────────────────────────────────
 info "Step 7/13: Cloning repository..."
 
-INSTALL_DIR="/root/doable"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/doable}"
 
 if [[ -d "$INSTALL_DIR" ]]; then
   warn "Directory $INSTALL_DIR already exists."

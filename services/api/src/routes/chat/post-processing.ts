@@ -240,6 +240,9 @@ export async function handleStreamError(
     } : undefined).catch(() => {});
   }
   console.error("[Chat] Copilot SDK error:", errMsg);
+  if (err instanceof Error && err.stack) {
+    console.error("[Chat] Stack trace:", err.stack);
+  }
 
   // Save partial assistant message
   await finalSaveAssistantMessage(

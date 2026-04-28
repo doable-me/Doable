@@ -6,9 +6,17 @@ import { PROVIDER_CATALOG, PROVIDER_COUNT, PROVIDER_BY_ID } from "@doable/shared
 import { providerDiscovery, type ProviderConfig, type DiscoveredModel } from "../ai/provider-discovery.js";
 
 // ─── ETag for HTTP caching ───────────────────────────────
-// Compute once at startup — the catalog is static data compiled into the build.
-// We use provider count + first/last IDs as a lightweight fingerprint.
-const CATALOG_ETAG = `"catalog-${PROVIDER_COUNT}-${PROVIDER_CATALOG[0]?.id ?? "empty"}"`;
+// Compute once at startup from ALL provider IDs so any add/remove/reorder
+// produces a new fingerprint. Uses a simple DJB2 hash — fast, zero deps.
+function djb2(str: string): string {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(36);
+}
+const CATALOG_FINGERPRINT = djb2(PROVIDER_CATALOG.map((p) => p.id).join(","));
+const CATALOG_ETAG = `"catalog-${PROVIDER_COUNT}-${CATALOG_FINGERPRINT}"`;
 
 export const providerCatalogRoutes = new Hono<AuthEnv>();
 
@@ -23,7 +31,9 @@ providerCatalogRoutes.get("/provider-catalog", (c) => {
   }
 
   c.header("ETag", CATALOG_ETAG);
-  c.header("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
+  // no-cache = browser MUST revalidate every request (still caches body for 304).
+  // After a deploy the new ETag causes a fresh 200; between deploys → fast 304.
+  c.header("Cache-Control", "no-cache");
 
   return c.json({ data: PROVIDER_CATALOG });
 });

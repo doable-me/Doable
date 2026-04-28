@@ -262,7 +262,9 @@ communityRoutes.post(
     }
 
     const newProjectId = await sql.begin(async (tx) => {
-      const [newProject] = await tx<{ id: string }[]>`
+      const txn = tx as unknown as typeof sql;
+
+      const [newProject] = await txn<{ id: string }[]>`
         INSERT INTO projects (name, slug, description, workspace_id)
         VALUES (${name}, ${slug}, ${publicProject.description}, ${ws.workspace_id})
         RETURNING id
@@ -274,7 +276,7 @@ communityRoutes.post(
 
       // Copy all files to the new project.
       for (const file of sourceFiles) {
-        await tx`
+        await txn`
           INSERT INTO project_files (project_id, file_path, content)
           VALUES (${newProject.id}, ${file.file_path}, ${file.content})
           ON CONFLICT (project_id, file_path)
@@ -283,7 +285,7 @@ communityRoutes.post(
       }
 
       // Record the remix and increment counts in the same transaction.
-      await communityQueries(tx).createRemix({
+      await communityQueries(txn).createRemix({
         sourceProjectId: sourceProjectId!,
         forkedProjectId: newProject.id,
         forkedBy: userId,

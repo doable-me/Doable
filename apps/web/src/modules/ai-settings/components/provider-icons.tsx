@@ -345,6 +345,30 @@ const icons: Record<string, IconFn> = {
 
   // ═══ Unify AI — text fallback ═════════════════════════════
   "unify-ai": (size) => <TextIcon text="U" size={size} fill="#14B8A6" />,
+
+  // OpenCode (Zen & Go)
+  opencode: (size) => (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="2" y="2" width="20" height="20" rx="4" fill="#10B981" />
+      <text
+        x="12"
+        y="16.5"
+        textAnchor="middle"
+        fill="#FFFFFF"
+        fontSize="11"
+        fontWeight="700"
+        fontFamily="system-ui, sans-serif"
+      >
+        OC
+      </text>
+    </svg>
+  ),
 };
 
 // ─── Main exported component ────────────────────────────────

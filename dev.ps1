@@ -24,6 +24,13 @@ if ($Kill) {
     exit 0
 }
 
+# Run database migrations before starting services (mirrors start.sh)
+Write-Host "Running database migrations..." -ForegroundColor Cyan
+pnpm db:migrate
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Warning: Migration failed (non-fatal, continuing...)" -ForegroundColor Yellow
+}
+
 # Check if session already exists
 $existing = psmux has-session -t $SessionName 2>&1
 if ($LASTEXITCODE -eq 0) {

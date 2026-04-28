@@ -28,6 +28,7 @@ export const PROVIDER_COLORS: Record<string, string> = {
   ollama: "#FFFFFF",
   copilot: "#0066FF",
   "huggingface-inference": "#FFD21E",
+  opencode: "#10B981",
   byok: "#64748B",
   custom: "#64748B",
 };

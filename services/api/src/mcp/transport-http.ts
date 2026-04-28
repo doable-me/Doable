@@ -39,6 +39,7 @@ export class StreamableHttpTransport implements McpTransport {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
         ...this.headers,
       },
       body: JSON.stringify({
@@ -72,6 +73,7 @@ export class StreamableHttpTransport implements McpTransport {
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "Accept": "application/json, text/event-stream",
       ...this.headers,
     };
     if (this.sessionId) {
