@@ -229,14 +229,22 @@ export class CopilotEngine {
 
     const INITIAL_TIMEOUT_MS = 120_000;
     const EVENT_TIMEOUT_MS = 120_000;
+    // During tool execution (MCP calls, file writes, etc.) the model waits
+    // for the tool result which can take minutes for heavy operations like
+    // presentation rendering.  Use a much longer timeout while a tool is
+    // in-flight so we don't falsely abort.
+    const TOOL_EXEC_TIMEOUT_MS = 600_000; // 10 min
     let lastProgressTime = Date.now();
     let gotFirstEvent = false;
+    let activeToolCount = 0; // tracks nested / concurrent tool executions
     const sid = sessionId.slice(0, 8);
 
+    // Events that indicate the model has started producing output — used
+    // to switch from INITIAL_TIMEOUT_MS to EVENT_TIMEOUT_MS.
     const PROGRESS_EVENTS = new Set([
       "assistant.message_delta", "assistant.streaming_delta", "assistant.message",
       "assistant.reasoning_delta", "assistant.turn_start", "assistant.turn_end",
-      "tool.execution_start", "tool.execution_complete", "tool.completed", "tool.running",
+      "tool.execution_start", "tool.execution_complete",
       "model_call.start", "model_call.end", "session.idle", "session.error", "done",
     ]);
 
@@ -258,7 +266,9 @@ export class CopilotEngine {
           finish(); return;
         }
         const since = Date.now() - lastProgressTime;
-        const timeout = gotFirstEvent ? EVENT_TIMEOUT_MS : INITIAL_TIMEOUT_MS;
+        const timeout = activeToolCount > 0
+          ? TOOL_EXEC_TIMEOUT_MS
+          : (gotFirstEvent ? EVENT_TIMEOUT_MS : INITIAL_TIMEOUT_MS);
         if (since > timeout) {
           try { onEvent?.({ type: "session.error", data: { message: `AI timed out — no response for ${Math.round(since / 1000)}s.` } } as SessionEvent); } catch {}
           finish();
@@ -267,7 +277,12 @@ export class CopilotEngine {
 
       const unsubscribe = (session as any).on((event: SessionEvent) => {
         if (settled) return;
-        if (PROGRESS_EVENTS.has(event.type)) { lastProgressTime = Date.now(); gotFirstEvent = true; }
+        // Any event from the SDK proves the session is alive — reset timeout.
+        lastProgressTime = Date.now();
+        if (PROGRESS_EVENTS.has(event.type)) gotFirstEvent = true;
+        // Track active tool executions to extend timeout while tools run
+        if (event.type === "tool.execution_start") activeToolCount++;
+        if (event.type === "tool.execution_complete") activeToolCount = Math.max(0, activeToolCount - 1);
         try { onEvent?.(event); } catch {}
         if (event.type === "session.idle" || event.type === "session.error") finish();
       });

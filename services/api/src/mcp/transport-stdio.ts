@@ -92,8 +92,8 @@ export class StdioTransport implements McpTransport {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(request.id);
-        reject(new Error(`MCP request timed out after 30s: ${request.method}`));
-      }, 30_000);
+        reject(new Error(`MCP request timed out after 120s: ${request.method}`));
+      }, 120_000);
 
       this.pendingRequests.set(request.id, {
         resolve: (resp: JsonRpcResponse) => {
