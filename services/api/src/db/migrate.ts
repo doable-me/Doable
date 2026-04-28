@@ -1,6 +1,6 @@
 import postgres from "postgres";
-import { readdir, readFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { readdir, readFile, access } from "node:fs/promises";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -29,17 +29,38 @@ async function migrate() {
   const applied = await sql`SELECT name FROM schema_migrations ORDER BY name`;
   const appliedSet = new Set(applied.map((r) => r.name));
 
-  // Read migration files
-  const migrationsDir = join(__dirname, "migrations");
-  const files = (await readdir(migrationsDir))
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
+  // Read migration files from both directories
+  // Primary: services/api/src/db/migrations (this dir)
+  // Secondary: packages/db/migrations (shared DB package)
+  // Primary wins for duplicate filenames
+  const primaryDir = join(__dirname, "migrations");
+  const secondaryDir = resolve(__dirname, "../../../../packages/db/migrations");
+
+  const fileMap = new Map<string, string>(); // filename → full path
+
+  // Load secondary first so primary overwrites duplicates
+  try {
+    await access(secondaryDir);
+    const secondaryFiles = (await readdir(secondaryDir)).filter((f) =>
+      f.endsWith(".sql")
+    );
+    for (const f of secondaryFiles) fileMap.set(f, join(secondaryDir, f));
+  } catch {
+    // packages/db/migrations may not exist — that's fine
+  }
+
+  const primaryFiles = (await readdir(primaryDir)).filter((f) =>
+    f.endsWith(".sql")
+  );
+  for (const f of primaryFiles) fileMap.set(f, join(primaryDir, f));
+
+  const files = [...fileMap.keys()].sort();
 
   let count = 0;
   for (const file of files) {
     if (appliedSet.has(file)) continue;
 
-    const content = await readFile(join(migrationsDir, file), "utf-8");
+    const content = await readFile(fileMap.get(file)!, "utf-8");
     console.log(`Applying ${file}...`);
 
     try {
