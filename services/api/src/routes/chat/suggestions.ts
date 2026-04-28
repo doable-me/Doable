@@ -5,13 +5,14 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { sql } from "../../db/index.js";
-import { aiSettingsQueries } from "@doable/db";
+import { aiSettingsQueries, platformAiDefaultsQueries } from "@doable/db";
 import { type ByokProviderConfig } from "../../ai/providers/copilot.js";
 import { getCopilotManager } from "../../ai/providers/copilot-manager.js";
 import type { AuthEnv } from "../../middleware/auth.js";
 import { ENCRYPTION_KEY } from "../../lib/secrets.js";
 
 const aiSettingsDb = aiSettingsQueries(sql, ENCRYPTION_KEY);
+const platformDefaults = platformAiDefaultsQueries(sql);
 
 const suggestionsSchema = z.object({
   lastAssistantMessage: z.string().min(1).max(4000),
@@ -49,10 +50,12 @@ export function registerSuggestionsRoute(app: Hono<AuthEnv>) {
         }> = [];
 
         let settings: Awaited<ReturnType<typeof aiSettingsDb.getSettings>> | null = null;
+        let workspaceId: string | undefined;
         try {
           const [project] = await sql`SELECT workspace_id FROM projects WHERE id = ${projectId}`;
-          if (project?.workspace_id) {
-            settings = await aiSettingsDb.getSettings(project.workspace_id);
+          workspaceId = project?.workspace_id;
+          if (workspaceId) {
+            settings = await aiSettingsDb.getSettings(workspaceId);
           }
         } catch (err) {
           console.error("[Chat] Failed to resolve suggestion settings:", err);
@@ -94,13 +97,35 @@ export function registerSuggestionsRoute(app: Hono<AuthEnv>) {
 
         if (configs.length === 0) {
           let fallbackToken: string | undefined;
+          let fallbackProvider: ByokProviderConfig | undefined;
+          let fallbackModel: string | undefined = "gpt-4o-mini";
+
           if (settings?.default_copilot_account_id) {
             fallbackToken = (await aiSettingsDb.getCopilotAccountToken(settings.default_copilot_account_id)) ?? undefined;
           }
-          configs.push({ model: "gpt-4o-mini", githubToken: fallbackToken, provider: undefined, label: "fallback" });
-          if (fallbackToken) {
-            configs.push({ model: "gpt-4o-mini", githubToken: fallbackToken, provider: undefined, label: "fallback" });
+
+          // Platform defaults fallback (mirrors engine-resolver Tier 5)
+          if (!fallbackToken && !fallbackProvider && workspaceId) {
+            try {
+              const [ws] = await sql<{ plan: string }[]>`SELECT plan FROM workspaces WHERE id = ${workspaceId}`;
+              if (ws?.plan) {
+                const planDefault = await platformDefaults.getForPlan(ws.plan);
+                if (planDefault) {
+                  if (planDefault.source === "custom" && planDefault.provider_id) {
+                    fallbackProvider = await resolveProvider(planDefault.provider_id);
+                    fallbackModel = planDefault.provider_model ?? fallbackModel;
+                  } else if (planDefault.copilot_account_id) {
+                    fallbackToken = (await aiSettingsDb.getCopilotAccountToken(planDefault.copilot_account_id)) ?? undefined;
+                    fallbackModel = planDefault.copilot_model ?? fallbackModel;
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("[Suggestions] Failed to resolve platform defaults:", err);
+            }
           }
+
+          configs.push({ model: fallbackModel, githubToken: fallbackToken, provider: fallbackProvider, label: "fallback" });
         }
 
         // Avoid starting SDK sessions when neither GitHub auth nor a custom provider is configured.
