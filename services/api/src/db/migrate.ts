@@ -79,6 +79,7 @@ async function migrate() {
         "42710", // type already exists
         "42723", // function already exists
         "42P16", // index already exists
+        "42501", // insufficient privilege (e.g. GRANT on table owned by another role)
       ];
 
       const isIdempotentError = idempotentErrorCodes.includes(err?.code);
@@ -94,6 +95,8 @@ async function migrate() {
           ? "Extension not available" 
           : isPolicyError
           ? "Policy conflict (likely already applied)"
+          : err?.code === "42501"
+          ? "Insufficient privilege (non-fatal)"
           : "Object already exists";
         console.warn(
           `⚠️  ${errorType} in ${file} (idempotent, skipping):`
