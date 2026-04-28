@@ -96,7 +96,35 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
   const postedLinesRef = useRef<Set<string>>(new Set());
   const hostReadyRef = useRef<boolean>(false);
 
+  // Observe the host page's dark/light theme so iframe cards stay in sync.
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    const update = () => setIsDark(root.classList.contains("dark"));
+    const obs = new MutationObserver(update);
+    obs.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+
   const html = typeof resource.resource.text === "string" ? resource.resource.text : "";
+
+  // Inject theme info into the iframe HTML so MCP cards can adapt their
+  // styles to dark/light mode.
+  const themeListenerScript = `<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="theme"&&e.data.payload){document.documentElement.setAttribute("data-theme",e.data.payload.theme)}});<\/script>`;
+  const themedHtml = html
+    ? (() => {
+        let h = html.replace(/<html(?=[>\s])/i, `<html data-theme="${isDark ? "dark" : "light"}"`);
+        // Inject theme listener script — prefer before </body>, fallback to end
+        if (h.includes("</body>")) {
+          h = h.replace("</body>", themeListenerScript + "</body>");
+        } else {
+          h += themeListenerScript;
+        }
+        return h;
+      })()
+    : html;
 
   const handleToolCall = useCallback(
     async (toolName: string, params: Record<string, unknown>) => {
@@ -289,7 +317,17 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
     }
   }, [completedText]);
 
-  if (!html) {
+  // Forward theme changes to the iframe via postMessage so it can
+  // update its styles without a full reload.
+  useEffect(() => {
+    const target = iframeRef.current?.contentWindow;
+    if (!target) return;
+    try {
+      target.postMessage({ type: "theme", payload: { theme: isDark ? "dark" : "light" } }, "*");
+    } catch { /* ignore */ }
+  }, [isDark]);
+
+  if (!themedHtml) {
     return (
       <div className="not-prose w-full rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 shadow-sm dark:border-amber-400/50 dark:bg-amber-950/80 dark:text-amber-200">
         MCP UI resource has no HTML payload.
@@ -303,7 +341,7 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
         ref={iframeRef}
         title={`mcp-app:${resource.toolName}`}
         sandbox="allow-scripts allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
-        srcDoc={html}
+        srcDoc={themedHtml}
         onLoad={handleIframeLoad}
         style={{
           width: "100%",

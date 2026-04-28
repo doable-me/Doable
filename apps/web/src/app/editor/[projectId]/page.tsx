@@ -5137,7 +5137,7 @@ export default function EditorPage() {
                                 href={a.url}
                                 download={a.fileName}
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 hover:border-sky-400 hover:bg-sky-50 transition-colors text-sm no-underline"
+                                className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 hover:border-primary/50 hover:bg-accent transition-colors text-sm no-underline"
                               >
                                 <span className="text-2xl leading-none">
                                   {a.mimeType.includes("presentationml") ? "📊" :
@@ -5145,14 +5145,14 @@ export default function EditorPage() {
                                    a.mimeType.includes("pdf") ? "📄" : "📎"}
                                 </span>
                                 <span className="flex-1 min-w-0">
-                                  <span className="block font-semibold text-slate-900 truncate">
+                                  <span className="block font-semibold text-foreground truncate">
                                     {a.fileName}
                                   </span>
-                                  <span className="block text-xs text-slate-500">
+                                  <span className="block text-xs text-muted-foreground">
                                     {a.sizeBytes > 0 ? `${(a.sizeBytes / 1024).toFixed(1)} KB · ` : ""}Click to download
                                   </span>
                                 </span>
-                                <span className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white">
+                                <span className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
                                   Download
                                 </span>
                               </a>

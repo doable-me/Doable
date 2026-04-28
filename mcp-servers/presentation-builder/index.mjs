@@ -753,6 +753,17 @@ function autoBuildCardHtml({ topic, buildPrompt }) {
   .line.stale { color: #6366f1; opacity: .65; }
   @keyframes fi { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   .meta { margin-top: 8px; display: flex; justify-content: space-between; gap: 10px; font-size: 10px; color: #6366f1; font-variant-numeric: tabular-nums; opacity: .7; }
+
+  /* Dark mode */
+  html[data-theme="dark"] body { color: #f4f4f5; }
+  html[data-theme="dark"] .card { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); border-color: #4338ca; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  html[data-theme="dark"] .ttl { color: #a5b4fc; }
+  html[data-theme="dark"] .sub { color: #818cf8; }
+  html[data-theme="dark"] .spin { border-color: #4338ca; border-top-color: #a5b4fc; }
+  html[data-theme="dark"] .log { border-top-color: #4338ca; }
+  html[data-theme="dark"] .line { color: #e0e7ff; }
+  html[data-theme="dark"] .line.stale { color: #818cf8; }
+  html[data-theme="dark"] .meta { color: #818cf8; }
 </style></head>
 <body>
 <div class="card">
@@ -892,6 +903,16 @@ function unifiedDeckCardHtml({ deckHtml, htmlBase64, htmlFileName, htmlSizeBytes
   .hint { padding: 8px 14px; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; background: #f8fafc; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .hint .left { opacity: .85; }
   .hint .right { opacity: .7; font-variant-numeric: tabular-nums; }
+
+  /* Dark mode */
+  html[data-theme="dark"] .wrap { background: #18181b; border-color: #27272a; color: #f4f4f5; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  html[data-theme="dark"] .bar { background: #1f1f23; border-bottom-color: #27272a; }
+  html[data-theme="dark"] .bar .ttl { color: #f4f4f5; }
+  html[data-theme="dark"] .bar .sub { color: #a1a1aa; }
+  html[data-theme="dark"] .bar a.open, html[data-theme="dark"] .bar button.fs { background: #27272a; color: #f4f4f5; }
+  html[data-theme="dark"] .bar a.open:hover, html[data-theme="dark"] .bar button.fs:hover { background: #3f3f46; }
+  html[data-theme="dark"] .bar span.dl-disabled { background: #27272a; color: #52525b; }
+  html[data-theme="dark"] .hint { color: #71717a; border-top-color: #27272a; background: #1f1f23; }
 </style></head>
 <body>
 <div class="wrap">
