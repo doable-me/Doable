@@ -6,6 +6,7 @@ import { workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { credentialVault } from "../integrations/credential-vault.js";
 import { getIntegration } from "../integrations/registry/index.js";
+import { resolveAuth } from "../integrations/runner-helpers.js";
 
 const workspaces = workspaceQueries(sql);
 
@@ -281,7 +282,8 @@ integrationConnectionRoutes.post("/integrations/connections/:id/test", authMiddl
       const firstKey = Object.keys(mod)[0];
       const piece = mod.default ?? (firstKey ? mod[firstKey] : undefined);
       if (piece?.auth?.validate) {
-        const result = await piece.auth.validate({ auth: credentials });
+        const resolved = resolveAuth(def.authType, credentials);
+        const result = await piece.auth.validate({ auth: resolved });
         if (result?.valid === false) {
           valid = false;
           message = result?.error ?? "Validation failed";

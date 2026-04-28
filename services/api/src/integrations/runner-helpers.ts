@@ -152,7 +152,7 @@ export function resolveAuth(authType: string, credentials: unknown): unknown {
     case "secret_text":
       return typeof credentials === "string"
         ? credentials
-        : (credentials as any)?.secret_text ?? credentials;
+        : (credentials as any)?.secret_text ?? (credentials as any)?.apiKey ?? (credentials as any)?.token ?? (credentials as any)?.auth ?? credentials;
     case "custom_auth":
       return { ...(credentials as Record<string, unknown>), props: credentials };
     case "basic_auth":
