@@ -53,7 +53,7 @@ export function AddServerForm({
   const [discovering, setDiscovering] = useState(false);
   const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResult | null>(null);
   const [discoveredUrl, setDiscoveredUrl] = useState("");
-  const discoverDebounce = useRef<ReturnType<typeof setTimeout>>();
+  const discoverDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const isHttp = transportType !== "stdio";
 
