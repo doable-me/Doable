@@ -312,6 +312,70 @@ export function createMessageHandler(deps: {
       }
       break;
     }
+
+    // ─── Phase D: Design Comments ────────────────────────
+    case "design-comment:add": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          const commentMsg = {
+            id: msg.data.id,
+            projectId: state.projectId,
+            userId: state.userId,
+            displayName: state.displayName,
+            userColor: userColor(state.userId),
+            xPercent: msg.data.xPercent,
+            yPercent: msg.data.yPercent,
+            selector: msg.data.selector,
+            pagePath: msg.data.pagePath,
+            content: msg.data.content,
+            parentId: msg.data.parentId,
+            resolved: false,
+            createdAt: new Date().toISOString(),
+          };
+          // Broadcast to entire room including sender
+          room.broadcast({ type: "design-comment:added", comment: commentMsg });
+          // Persist to database via internal API call
+          const API_URL = process.env.API_URL ?? "http://localhost:4000";
+          fetch(`${API_URL}/design-comments/${state.projectId}/internal`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Internal-Secret": INTERNAL_SECRET },
+            body: JSON.stringify(commentMsg),
+          }).catch((err) => console.error("[ws] Failed to persist design comment:", err));
+        }
+      }
+      break;
+    }
+
+    case "design-comment:resolve": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.broadcast({ type: "design-comment:resolved", commentId: msg.commentId, resolvedBy: state.userId });
+        }
+      }
+      break;
+    }
+
+    case "design-comment:unresolve": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.broadcast({ type: "design-comment:unresolved", commentId: msg.commentId });
+        }
+      }
+      break;
+    }
+
+    case "design-comment:delete": {
+      if (state.projectId) {
+        const room = rooms.get(state.projectId);
+        if (room) {
+          room.broadcast({ type: "design-comment:deleted", commentId: msg.commentId });
+        }
+      }
+      break;
+    }
   }
 }
 }

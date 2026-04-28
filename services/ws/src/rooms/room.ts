@@ -55,7 +55,28 @@ export type WsServerMessage =
   | { type: "visual-edit:style-change"; userId: string; selector: string; property: string; value: string }
   | { type: "visual-edit:text-change"; userId: string; selector: string; newText: string }
   | { type: "visual-edit:cursor-move"; userId: string; displayName: string; color: string; x: number; y: number }
-  | { type: "visual-edit:preview-refresh" };
+  | { type: "visual-edit:preview-refresh" }
+  // Phase D: Design comments
+  | { type: "design-comment:added"; comment: DesignCommentMsg }
+  | { type: "design-comment:resolved"; commentId: string; resolvedBy: string }
+  | { type: "design-comment:unresolved"; commentId: string }
+  | { type: "design-comment:deleted"; commentId: string };
+
+export interface DesignCommentMsg {
+  id: string;
+  projectId: string;
+  userId: string;
+  displayName: string | null;
+  userColor: string | null;
+  xPercent: number;
+  yPercent: number;
+  selector: string | null;
+  pagePath: string;
+  content: string;
+  parentId: string | null;
+  resolved: boolean;
+  createdAt: string;
+}
 
 export interface AiQueueItem {
   id: string;
@@ -99,7 +120,12 @@ export type WsClientMessage =
   | { type: "visual-edit:style-change"; selector: string; property: string; value: string }
   | { type: "visual-edit:text-change"; selector: string; newText: string }
   | { type: "visual-edit:cursor-move"; x: number; y: number }
-  | { type: "visual-edit:preview-refresh" };
+  | { type: "visual-edit:preview-refresh" }
+  // Phase D: Design comments from client
+  | { type: "design-comment:add"; data: { id: string; xPercent: number; yPercent: number; selector: string | null; pagePath: string; content: string; parentId: string | null } }
+  | { type: "design-comment:resolve"; commentId: string }
+  | { type: "design-comment:unresolve"; commentId: string }
+  | { type: "design-comment:delete"; commentId: string };
 
 // ─── User Color ──────────────────────────────────────────
 const COLORS = [

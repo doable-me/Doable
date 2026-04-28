@@ -116,6 +116,7 @@ import type { MonacoEditorWrapperProps } from "@/modules/editor/code-editor/mona
 import { CollaborativeMonacoWrapper } from "@/modules/editor/code-editor/collaborative-monaco-wrapper";
 import { useVisualEdit } from "@/modules/editor/visual-edit/use-visual-edit";
 import { VisualEditToolbar } from "@/modules/editor/visual-edit/visual-edit-toolbar";
+import { DesignCommentsLayer } from "@/modules/editor/visual-edit/sticky-notes/design-comments-layer";
 import type { ClarificationQuestion, Plan } from "@doable/shared/types/ai";
 import { ClarificationFlow, PlanCard, PlanProgress } from "@/modules/editor/chat/plan";
 import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
@@ -1789,6 +1790,7 @@ export default function EditorPage() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // True only while this tab owns an active SSE stream reader.
@@ -5793,6 +5795,7 @@ export default function EditorPage() {
                 renderScaffoldOverlay()
               ) : (
                 <div
+                  ref={previewContainerRef}
                   className={`relative h-full overflow-hidden bg-white transition-all duration-300 ${
                     deviceMode === "mobile"
                       ? "w-[375px] rounded-[24px] shadow-2xl shadow-md"
@@ -5857,6 +5860,11 @@ export default function EditorPage() {
                   )}
                   <RemoteSelectionOverlays iframeRef={iframeRef} />
                   <RemoteVisualCursors iframeRef={iframeRef} />
+                  <DesignCommentsLayer
+                    projectId={resolvedProjectId}
+                    containerRef={previewContainerRef}
+                    active={isDesignMode}
+                  />
                 </div>
               )}
               {/* First generation watermark is now merged into the building overlay above */}
