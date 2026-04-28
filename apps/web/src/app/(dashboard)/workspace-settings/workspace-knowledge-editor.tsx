@@ -7,6 +7,7 @@ import {
   RotateCcw,
   Check,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
@@ -45,9 +46,11 @@ export function FileEditor({
   const [content, setContent] = useState(file.content);
   const [originalContent, setOriginalContent] = useState(file.content);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isCustomFile = !(file.filename in FILE_DESCRIPTIONS);
   const dirty = content !== originalContent;
 
   const save = useCallback(async (contentToSave: string) => {
@@ -88,6 +91,21 @@ export function FileEditor({
     if ((e.ctrlKey || e.metaKey) && e.key === "s") {
       e.preventDefault();
       handleManualSave();
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete ${file.filename}? This cannot be undone.`)) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await apiFetch(`/workspaces/${workspaceId}/context/${file.filename}`, {
+        method: "DELETE",
+      });
+      onBack();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+      setDeleting(false);
     }
   };
 
@@ -132,6 +150,16 @@ export function FileEditor({
           >
             <Save className={cn("h-3.5 w-3.5", saving && "animate-pulse")} />
           </button>
+          {isCustomFile && (
+            <button
+              onClick={() => void handleDelete()}
+              disabled={deleting}
+              className="p-1.5 rounded-md transition-colors text-muted-foreground hover:text-red-400 hover:bg-red-950/20"
+              title="Delete file"
+            >
+              <Trash2 className={cn("h-3.5 w-3.5", deleting && "animate-pulse")} />
+            </button>
+          )}
         </div>
       </div>
 

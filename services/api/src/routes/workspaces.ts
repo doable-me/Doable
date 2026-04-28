@@ -307,7 +307,9 @@ workspaceRoutes.post("/:id/members/invite", requireRole("admin"), async (c) => {
     workspaceName: workspace?.name ?? "a workspace",
     inviterName: inviterUser?.display_name ?? inviterUser?.email ?? "Someone",
     acceptUrl,
-  }).catch(() => {}); // fire-and-forget
+  }).catch((err) => {
+    console.error(`[Invite] Failed to send invite email to ${parsed.data.email}:`, err instanceof Error ? err.message : err);
+  }); // fire-and-forget but log failures
 
   return c.json({ data: invite }, 201);
 });

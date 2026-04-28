@@ -298,7 +298,7 @@ function PickEnvironmentStep({
         <p className="mt-1 text-sm text-muted-foreground">
           Create a workspace environment first — environments bundle skills, rules, knowledge, and connectors together.
         </p>
-        <Link href="/environments" className="mt-4 text-sm text-brand-400 hover:text-brand-300">
+        <Link href="/workspace-settings?tab=environments" className="mt-4 text-sm text-brand-400 hover:text-brand-300">
           Open environments
         </Link>
       </div>

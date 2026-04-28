@@ -226,6 +226,16 @@ export function contextManager(sql: postgres.Sql) {
       return row!;
     },
 
+    async deleteWorkspaceContext(workspaceId: string, filename: string): Promise<boolean> {
+      const env = await envDb.getForWorkspace(workspaceId);
+      if (!env) return false;
+      const result = await sql`
+        DELETE FROM environment_knowledge
+        WHERE environment_id = ${env.id} AND filename = ${filename}
+      `;
+      return result.count > 0;
+    },
+
     // ── User context (via user environment) ──
     async getUserContext(userId: string, workspaceId: string): Promise<ContextFile[]> {
       const env = await envDb.getForUser(userId, workspaceId);

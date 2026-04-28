@@ -198,6 +198,24 @@ workspaceContextRoutes.put(
   }
 );
 
+/** DELETE /workspaces/:wid/context/:filename */
+workspaceContextRoutes.delete("/:filename", async (c) => {
+  const workspaceId = c.req.param("wid");
+  const filename = c.req.param("filename");
+
+  const parseResult = filenameSchema.safeParse(filename);
+  if (!parseResult.success) {
+    return c.json({ error: "Invalid filename" }, 400);
+  }
+
+  const deleted = await ctx.deleteWorkspaceContext(workspaceId!, filename!);
+  if (!deleted) {
+    return c.json({ error: "Context file not found" }, 404);
+  }
+
+  return c.json({ data: { deleted: true } });
+});
+
 // ─── User-level context overrides ────────────────────────────
 
 /** GET /workspaces/:wid/context/user — list user's overrides for this workspace */

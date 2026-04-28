@@ -246,6 +246,33 @@ integrationConnectionRoutes.post("/integrations/connections/:id/test", authMiddl
           message = `Cannot reach Supabase: ${e instanceof Error ? e.message : String(e)}`;
         }
       }
+    } else if (def.authType === "secret_text" && row.integration_id === "google_gemini") {
+      // Explicit validation for Google Gemini API keys
+      const apiKey = (credentials.apiKey ?? credentials.auth ?? credentials.token) as string | undefined;
+      if (!apiKey) {
+        valid = false;
+        message = "Missing API key.";
+      } else {
+        try {
+          const res = await fetch(
+            "https://generativelanguage.googleapis.com/v1beta/models?key=" + encodeURIComponent(apiKey),
+            { headers: { "Accept": "application/json" } },
+          );
+          if (res.ok) {
+            message = "Gemini API key is valid";
+          } else if (res.status === 400 || res.status === 401 || res.status === 403) {
+            valid = false;
+            const body = await res.text().catch(() => "");
+            message = `Invalid or unauthorized Gemini API key (HTTP ${res.status})${body ? `: ${body.slice(0, 200)}` : ""}`;
+          } else {
+            valid = false;
+            message = `Gemini API returned HTTP ${res.status}`;
+          }
+        } catch (e) {
+          valid = false;
+          message = `Cannot reach Gemini API: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      }
     }
 
     // Try piece's validate method if available
