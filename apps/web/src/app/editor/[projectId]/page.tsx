@@ -5314,7 +5314,7 @@ export default function EditorPage() {
                         {/* ── Suggestion Chips: scrollable row after last AI response ── */}
                         {!msg.isStreaming &&
                           !msg.isError &&
-                          msg.content &&
+                          (msg.content || msg.thinkingContent) &&
                           !isStreaming &&
                           (msgIdx === messages.length - 1 || (msg.suggestions && msg.suggestions.length > 0)) && (
                             <div className="mt-3 -mx-1">
