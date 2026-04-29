@@ -49,6 +49,7 @@ export function McpPanel({ workspaceId }: McpPanelProps) {
     deleteConnector,
     testConnector,
     discoverServer,
+    startOAuth,
   } = useMcpConnectors(workspaceId);
 
   const [showForm, setShowForm] = useState(false);
@@ -118,6 +119,8 @@ export function McpPanel({ workspaceId }: McpPanelProps) {
           onSubmit={handleCreated}
           onCancel={() => setShowForm(false)}
           onDiscover={discoverServer}
+          onStartOAuth={startOAuth}
+          onOAuthComplete={refresh}
         />
       )}
 

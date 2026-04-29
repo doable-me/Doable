@@ -23,16 +23,29 @@ import {
   type CreateConnectorPayload,
   type DiscoveryResult,
   type McpTool,
+  type OAuthMetadata,
 } from "../hooks/use-mcp-connectors";
 
 export function AddServerForm({
   onSubmit,
   onCancel,
   onDiscover,
+  onStartOAuth,
+  onOAuthComplete,
 }: {
   onSubmit: (payload: CreateConnectorPayload) => Promise<void>;
   onCancel: () => void;
   onDiscover?: (url: string) => Promise<DiscoveryResult>;
+  onStartOAuth?: (params: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+    mcpServerUrl: string;
+    scopes?: string[];
+    clientId?: string;
+    connectorId?: string;
+    connectorName?: string;
+  }) => Promise<string>;
+  onOAuthComplete?: () => void | Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -54,6 +67,12 @@ export function AddServerForm({
   const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResult | null>(null);
   const [discoveredUrl, setDiscoveredUrl] = useState("");
   const discoverDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // OAuth popup state
+  const [oauthConnecting, setOauthConnecting] = useState(false);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [oauthConnected, setOauthConnected] = useState(false);
+  const [oauthClientId, setOauthClientId] = useState("");
 
   const isHttp = transportType !== "stdio";
 
@@ -144,6 +163,82 @@ export function AddServerForm({
       setDiscovering(false);
     }
   }, [onDiscover, serverUrl, name, description]);
+
+  /** Open OAuth popup for MCP servers requiring OAuth */
+  const handleOAuthConnect = useCallback(async () => {
+    if (!onStartOAuth) return;
+
+    const oauthMeta = discoveryResult?.oauthMetadata;
+    if (!oauthMeta?.authorizationEndpoint || !oauthMeta?.tokenEndpoint) {
+      setOauthError("OAuth metadata not available. Enter the server URL and run discovery first.");
+      return;
+    }
+
+    setOauthConnecting(true);
+    setOauthError(null);
+
+    try {
+      const authorizationUrl = await onStartOAuth({
+        authorizationEndpoint: oauthMeta.authorizationEndpoint,
+        tokenEndpoint: oauthMeta.tokenEndpoint,
+        mcpServerUrl: discoveryResult?.mcpEndpointUrl ?? serverUrl,
+        scopes: oauthMeta.scopesSupported,
+        clientId: oauthClientId || undefined,
+        connectorName: name || discoveryResult?.name || undefined,
+      });
+
+      // Open popup
+      const width = 600, height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const popup = window.open(
+        authorizationUrl,
+        "doable-mcp-oauth",
+        `width=${width},height=${height},left=${left},top=${top},popup=1`,
+      );
+
+      if (!popup) {
+        setOauthError("Popup was blocked. Please allow popups for this site and try again.");
+        setOauthConnecting(false);
+        return;
+      }
+
+      // Listen for completion via postMessage
+      const messageHandler = (ev: MessageEvent) => {
+        const data = ev.data;
+        if (!data || typeof data !== "object") return;
+        if (data.type !== "doable:mcp-oauth-complete") return;
+
+        window.removeEventListener("message", messageHandler);
+        if (pollTimer) clearInterval(pollTimer);
+
+        if (data.success) {
+          setOauthConnected(true);
+          setOauthError(null);
+          // Refresh connectors since the callback created/updated the connector
+          void onOAuthComplete?.();
+        } else {
+          setOauthError(data.error ?? "OAuth connection failed");
+        }
+        setOauthConnecting(false);
+      };
+      window.addEventListener("message", messageHandler);
+
+      // Also poll for popup closure (fallback if postMessage doesn't fire)
+      const pollTimer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(pollTimer);
+          window.removeEventListener("message", messageHandler);
+          setOauthConnecting(false);
+          // Refresh connectors in case the token was saved
+          void onOAuthComplete?.();
+        }
+      }, 500);
+    } catch (err) {
+      setOauthError(err instanceof Error ? err.message : "Failed to start OAuth flow");
+      setOauthConnecting(false);
+    }
+  }, [onStartOAuth, onOAuthComplete, discoveryResult, serverUrl, name, oauthClientId]);
 
   const handleSubmit = useCallback(async () => {
     if (!name.trim()) { setError("Name is required"); return; }
@@ -328,9 +423,71 @@ export function AddServerForm({
         )}
 
         {authType === "oauth2" && (
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Access Token</label>
-            <input type="password" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="OAuth access token (manual entry)" autoComplete="off" className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring" />
+          <div className="space-y-3">
+            {/* OAuth Connect Button — shown when discovery found OAuth metadata */}
+            {discoveryResult?.oauthMetadata?.authorizationEndpoint && onStartOAuth && (
+              <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <Globe className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                  <span className="font-medium text-blue-800 dark:text-blue-300">
+                    OAuth authorization available
+                  </span>
+                </div>
+                {discoveryResult.oauthMetadata.issuer && (
+                  <p className="text-[10px] text-blue-700 dark:text-blue-400">
+                    Authorization server: <span className="font-mono">{discoveryResult.oauthMetadata.issuer}</span>
+                  </p>
+                )}
+                {oauthConnected ? (
+                  <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span className="font-medium">Connected successfully! You can close this form.</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void handleOAuthConnect()}
+                    disabled={oauthConnecting}
+                    className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {oauthConnecting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    )}
+                    {oauthConnecting ? "Waiting for authorization..." : "Connect with OAuth"}
+                  </button>
+                )}
+                {oauthError && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-red-600 dark:text-red-400">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    {oauthError}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Manual token input — fallback or when no OAuth metadata */}
+            {(!discoveryResult?.oauthMetadata?.authorizationEndpoint || !onStartOAuth) && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Access Token</label>
+                <input type="password" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="OAuth access token (manual entry)" autoComplete="off" className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring" />
+                <p className="text-[10px] text-muted-foreground">
+                  Enter an access token manually, or enter the server URL above and click Discover to find the OAuth flow.
+                </p>
+              </div>
+            )}
+
+            {/* Client ID input — for OAuth servers that need it */}
+            {discoveryResult?.oauthMetadata?.authorizationEndpoint && !oauthConnected && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Client ID (optional)</label>
+                <input type="text" value={oauthClientId} onChange={(e) => setOauthClientId(e.target.value)} placeholder="Client ID if required by the server" className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-ring" />
+                <p className="text-[10px] text-muted-foreground">
+                  Some OAuth servers require a client ID. Leave empty if the server supports public clients.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -476,9 +633,21 @@ function DiscoveryBanner({ result }: { result: DiscoveryResult }) {
 
         {/* Auth requirement hint */}
         {result.authType && result.authType !== "none" && (
-          <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
-            ⚠ This server requires <span className="font-medium capitalize">{result.authType.replace("_", " ")}</span> authentication
-          </p>
+          <div className="mt-1 space-y-0.5">
+            <p className="text-[10px] text-amber-600 dark:text-amber-400">
+              ⚠ This server requires <span className="font-medium capitalize">{result.authType.replace("_", " ")}</span> authentication
+            </p>
+            {result.oauthMetadata?.authorizationEndpoint && (
+              <p className="text-[10px] text-blue-600 dark:text-blue-400">
+                🔗 OAuth endpoint discovered — use the &quot;Connect with OAuth&quot; button below to authorize
+              </p>
+            )}
+            {result.authType === "oauth2" && !result.oauthMetadata?.authorizationEndpoint && !result.tools?.length && (
+              <p className="text-[10px] text-muted-foreground">
+                OAuth metadata could not be auto-discovered. You can enter an access token manually below.
+              </p>
+            )}
+          </div>
         )}
       </div>
     </div>

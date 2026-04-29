@@ -41,6 +41,30 @@ export interface McpServerCard {
   };
 }
 
+/** OAuth metadata discovered from a 401 response (RFC 9728 / RFC 8414) */
+export interface OAuthMetadata {
+  /** The authorization server issuer URL */
+  issuer?: string;
+  /** URL to redirect the user for authorization */
+  authorizationEndpoint?: string;
+  /** URL to exchange the authorization code for a token */
+  tokenEndpoint?: string;
+  /** URL for token revocation */
+  revocationEndpoint?: string;
+  /** URL for JWKS */
+  jwksUri?: string;
+  /** Scopes supported by the authorization server */
+  scopesSupported?: string[];
+  /** Grant types supported */
+  grantTypesSupported?: string[];
+  /** Whether PKCE is required/supported */
+  codeChallengeMethodsSupported?: string[];
+  /** URL of the Protected Resource Metadata document */
+  resourceMetadataUrl?: string;
+  /** The MCP server's resource identifier (for RFC 8707 resource param) */
+  resource?: string;
+}
+
 /** Result of a discovery probe */
 export interface DiscoveryResult {
   /** Whether discovery was successful */
@@ -65,6 +89,8 @@ export interface DiscoveryResult {
   tools?: McpToolDefinition[];
   /** Number of tools discovered */
   toolCount?: number;
+  /** OAuth metadata if server requires OAuth (from 401 + PRM) */
+  oauthMetadata?: OAuthMetadata;
   /** Error details if discovery failed */
   error?: string;
 }
@@ -94,9 +120,15 @@ export async function discoverMcpServer(inputUrl: string): Promise<DiscoveryResu
     if (result.mcpEndpointUrl) {
       const probeResult = await probeMcpEndpoint(result.mcpEndpointUrl);
       if (probeResult.success) {
-        result.capabilities = probeResult.capabilities;
-        result.tools = probeResult.tools;
-        result.toolCount = probeResult.tools?.length ?? 0;
+        if (probeResult.needsAuth) {
+          // Server card found + server needs OAuth
+          result.authType = "oauth2";
+          result.oauthMetadata = probeResult.oauthMetadata;
+        } else {
+          result.capabilities = probeResult.capabilities;
+          result.tools = probeResult.tools;
+          result.toolCount = probeResult.tools?.length ?? 0;
+        }
       }
     }
 
@@ -106,6 +138,18 @@ export async function discoverMcpServer(inputUrl: string): Promise<DiscoveryResu
   // Phase 2: Try direct MCP probe on the input URL
   const directProbe = await probeMcpEndpoint(inputUrl);
   if (directProbe.success) {
+    // Server was found — might need auth or might be fully accessible
+    if (directProbe.needsAuth) {
+      return {
+        success: true,
+        method: "mcp-probe",
+        mcpEndpointUrl: inputUrl,
+        transportType: "streamable_http",
+        authType: "oauth2",
+        name: extractNameFromUrl(url),
+        oauthMetadata: directProbe.oauthMetadata,
+      };
+    }
     return {
       success: true,
       method: "mcp-probe",
@@ -207,10 +251,11 @@ function parseServerCard(card: McpServerCard, baseUrl: URL): DiscoveryResult {
 /**
  * Probe an MCP endpoint directly by sending an initialize handshake.
  * If successful, also fetches tools/list.
+ * If 401, extracts OAuth metadata from WWW-Authenticate header (RFC 9728).
  */
 async function probeMcpEndpoint(
   endpointUrl: string,
-): Promise<{ success: boolean; capabilities?: McpServerCapabilities; tools?: McpToolDefinition[]; error?: string }> {
+): Promise<{ success: boolean; needsAuth?: boolean; oauthMetadata?: OAuthMetadata; capabilities?: McpServerCapabilities; tools?: McpToolDefinition[]; error?: string }> {
   try {
     // Send initialize request
     const initResponse = await fetchWithTimeout(endpointUrl, {
@@ -227,6 +272,27 @@ async function probeMcpEndpoint(
         },
       }),
     }, DISCOVERY_TIMEOUT_MS);
+
+    // Handle 401 Unauthorized — server exists but needs OAuth
+    if (initResponse.status === 401) {
+      console.log(`[MCP:Discovery] Got 401 from ${endpointUrl} — extracting OAuth metadata`);
+      const oauthMeta = await extractOAuthMetadataFrom401(initResponse, endpointUrl);
+      return {
+        success: true,
+        needsAuth: true,
+        oauthMetadata: oauthMeta,
+      };
+    }
+
+    // Handle 403 — server exists, but we don't have permission (still a successful discovery)
+    if (initResponse.status === 403) {
+      console.log(`[MCP:Discovery] Got 403 from ${endpointUrl} — server found but access denied`);
+      return {
+        success: true,
+        needsAuth: true,
+        error: "Server requires authentication (403 Forbidden)",
+      };
+    }
 
     if (!initResponse.ok) {
       return { success: false, error: `Server returned ${initResponse.status}` };
@@ -314,6 +380,121 @@ async function probeMcpEndpoint(
       error: err instanceof Error ? err.message : "Connection failed",
     };
   }
+}
+
+/**
+ * Extract OAuth metadata from a 401 response per RFC 9728 (Protected Resource Metadata).
+ *
+ * Flow:
+ * 1. Parse WWW-Authenticate header for `resource_metadata` URL
+ * 2. Fetch the Protected Resource Metadata document
+ * 3. Extract `authorization_servers` from PRM
+ * 4. Fetch the Authorization Server Metadata (RFC 8414 / OIDC Discovery)
+ * 5. Return combined OAuth metadata
+ */
+async function extractOAuthMetadataFrom401(response: Response, endpointUrl: string): Promise<OAuthMetadata> {
+  const meta: OAuthMetadata = {};
+  const wwwAuth = response.headers.get("www-authenticate") ?? "";
+
+  // Parse resource_metadata from WWW-Authenticate: Bearer resource_metadata="..."
+  const rmMatch = wwwAuth.match(/resource_metadata="([^"]+)"/);
+  let resourceMetadataUrl = rmMatch?.[1];
+
+  // Fallback: try .well-known/oauth-protected-resource on the MCP server origin
+  if (!resourceMetadataUrl) {
+    try {
+      const mcpUrl = new URL(endpointUrl);
+      resourceMetadataUrl = `${mcpUrl.origin}/.well-known/oauth-protected-resource`;
+    } catch {
+      return meta;
+    }
+  }
+
+  meta.resourceMetadataUrl = resourceMetadataUrl;
+  meta.resource = endpointUrl;
+
+  // Fetch Protected Resource Metadata
+  let authServers: string[] = [];
+  try {
+    const prmResponse = await fetchWithTimeout(resourceMetadataUrl, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    }, DISCOVERY_TIMEOUT_MS);
+
+    if (prmResponse.ok) {
+      const prm = await prmResponse.json() as Record<string, unknown>;
+      if (Array.isArray(prm.authorization_servers)) {
+        authServers = prm.authorization_servers as string[];
+      }
+      if (typeof prm.resource === "string") {
+        meta.resource = prm.resource as string;
+      }
+      if (Array.isArray(prm.scopes_supported)) {
+        meta.scopesSupported = prm.scopes_supported as string[];
+      }
+      console.log(`[MCP:Discovery] PRM found ${authServers.length} auth servers`);
+    }
+  } catch (err) {
+    console.log(`[MCP:Discovery] Failed to fetch PRM: ${err instanceof Error ? err.message : err}`);
+  }
+
+  // If no auth servers from PRM, try to extract from WWW-Authenticate realm
+  if (authServers.length === 0) {
+    const realmMatch = wwwAuth.match(/realm="([^"]+)"/);
+    if (realmMatch?.[1]) {
+      try {
+        // Check if realm is a URL (some servers use realm as the AS URL)
+        new URL(realmMatch[1]);
+        authServers = [realmMatch[1]];
+      } catch {
+        // Not a URL — ignore
+      }
+    }
+  }
+
+  // Fetch Authorization Server Metadata from the first auth server
+  if (authServers.length > 0) {
+    const asIssuer = authServers[0];
+    meta.issuer = asIssuer;
+
+    // Try RFC 8414 first, then OIDC Discovery
+    const asMetadataUrls = [
+      `${asIssuer}/.well-known/oauth-authorization-server`,
+      `${asIssuer}/.well-known/openid-configuration`,
+    ];
+
+    for (const asMetaUrl of asMetadataUrls) {
+      try {
+        const asResponse = await fetchWithTimeout(asMetaUrl, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+        }, DISCOVERY_TIMEOUT_MS);
+
+        if (asResponse.ok) {
+          const asMeta = await asResponse.json() as Record<string, unknown>;
+          meta.authorizationEndpoint = asMeta.authorization_endpoint as string | undefined;
+          meta.tokenEndpoint = asMeta.token_endpoint as string | undefined;
+          meta.revocationEndpoint = asMeta.revocation_endpoint as string | undefined;
+          meta.jwksUri = asMeta.jwks_uri as string | undefined;
+          if (Array.isArray(asMeta.scopes_supported)) {
+            meta.scopesSupported = asMeta.scopes_supported as string[];
+          }
+          if (Array.isArray(asMeta.grant_types_supported)) {
+            meta.grantTypesSupported = asMeta.grant_types_supported as string[];
+          }
+          if (Array.isArray(asMeta.code_challenge_methods_supported)) {
+            meta.codeChallengeMethodsSupported = asMeta.code_challenge_methods_supported as string[];
+          }
+          console.log(`[MCP:Discovery] AS metadata found at ${asMetaUrl}`);
+          break; // Got what we need
+        }
+      } catch {
+        // Try next URL
+      }
+    }
+  }
+
+  return meta;
 }
 
 /** Extract a readable name from a URL */

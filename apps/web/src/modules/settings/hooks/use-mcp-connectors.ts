@@ -35,6 +35,18 @@ export interface McpServerCard {
   };
 }
 
+export interface OAuthMetadata {
+  issuer?: string;
+  authorizationEndpoint?: string;
+  tokenEndpoint?: string;
+  revocationEndpoint?: string;
+  scopesSupported?: string[];
+  grantTypesSupported?: string[];
+  codeChallengeMethodsSupported?: string[];
+  resourceMetadataUrl?: string;
+  resource?: string;
+}
+
 export interface DiscoveryResult {
   success: boolean;
   method: "server-card" | "mcp-probe" | "none";
@@ -47,6 +59,7 @@ export interface DiscoveryResult {
   capabilities?: Record<string, unknown>;
   tools?: McpTool[];
   toolCount?: number;
+  oauthMetadata?: OAuthMetadata;
   error?: string;
 }
 
@@ -191,6 +204,26 @@ export function useMcpConnectors(workspaceId: string) {
     [workspaceId],
   );
 
+  /** Start MCP OAuth flow — returns authorization URL for popup */
+  const startOAuth = useCallback(
+    async (params: {
+      authorizationEndpoint: string;
+      tokenEndpoint: string;
+      mcpServerUrl: string;
+      scopes?: string[];
+      clientId?: string;
+      connectorId?: string;
+      connectorName?: string;
+    }): Promise<string> => {
+      const json = await apiFetch<{ data: { authorizationUrl: string } }>(
+        `/workspaces/${workspaceId}/connectors/mcp-oauth/authorize`,
+        { method: "POST", body: JSON.stringify(params) },
+      );
+      return json.data.authorizationUrl;
+    },
+    [workspaceId],
+  );
+
   return {
     connectors,
     loading,
@@ -201,5 +234,6 @@ export function useMcpConnectors(workspaceId: string) {
     deleteConnector,
     testConnector,
     discoverServer,
+    startOAuth,
   };
 }

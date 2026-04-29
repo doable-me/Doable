@@ -6,6 +6,12 @@ import { connectorQueries, workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { getConnectorManager } from "../mcp/connector-manager.js";
 import { discoverMcpServer } from "../mcp/discovery.js";
+import {
+  buildMcpOAuthUrl,
+  decryptState,
+  getCodeVerifier,
+  exchangeCodeForToken,
+} from "../mcp/oauth.js";
 import type { McpConnectorConfig } from "../mcp/types.js";
 
 const connectors = connectorQueries(sql);
@@ -353,3 +359,197 @@ connectorRoutes.get("/:workspaceId/connectors-effective", async (c) => {
   );
   return c.json({ data });
 });
+
+// ─── MCP OAuth Flow ────────────────────────────────────────
+
+const mcpOAuthAuthorizeSchema = z.object({
+  authorizationEndpoint: z.string().url(),
+  tokenEndpoint: z.string().url(),
+  mcpServerUrl: z.string().url(),
+  scopes: z.array(z.string()).optional(),
+  clientId: z.string().optional(),
+  connectorId: z.string().uuid().optional(),
+  connectorName: z.string().optional(),
+});
+
+// POST /:workspaceId/connectors/mcp-oauth/authorize
+// Returns the authorization URL that the frontend opens in a popup
+connectorRoutes.post(
+  "/:workspaceId/connectors/mcp-oauth/authorize",
+  authMiddleware,
+  zValidator("json", mcpOAuthAuthorizeSchema),
+  async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    const userId = c.get("userId");
+    const body = c.req.valid("json");
+
+    const err = await requireMember(workspaceId, userId);
+    if (err) return c.json({ error: err }, 403);
+
+    try {
+      const authorizationUrl = buildMcpOAuthUrl({
+        authorizationEndpoint: body.authorizationEndpoint,
+        tokenEndpoint: body.tokenEndpoint,
+        mcpServerUrl: body.mcpServerUrl,
+        scopes: body.scopes,
+        clientId: body.clientId,
+        userId,
+        workspaceId,
+        connectorId: body.connectorId,
+        connectorName: body.connectorName,
+      });
+
+      return c.json({ data: { authorizationUrl } });
+    } catch (err) {
+      return c.json({
+        error: `Failed to build OAuth URL: ${err instanceof Error ? err.message : String(err)}`,
+      }, 500);
+    }
+  },
+);
+
+// ─── MCP OAuth Callback (no auth middleware — browser redirect) ──────
+
+export const mcpOAuthCallbackRoute = new Hono();
+
+// GET /connectors/mcp-oauth/callback — OAuth redirect target
+mcpOAuthCallbackRoute.get("/connectors/mcp-oauth/callback", async (c) => {
+  const code = c.req.query("code");
+  const state = c.req.query("state");
+  const error = c.req.query("error");
+
+  const frontendUrl = process.env.FRONTEND_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
+  if (error) {
+    const errorDesc = c.req.query("error_description") ?? error;
+    return c.html(renderMcpOAuthResult({
+      success: false,
+      error: errorDesc,
+      frontendUrl,
+    }));
+  }
+
+  if (!code || !state) {
+    return c.html(renderMcpOAuthResult({
+      success: false,
+      error: "Missing authorization code or state",
+      frontendUrl,
+    }));
+  }
+
+  try {
+    // Decrypt state to get context
+    const stateData = decryptState(state);
+    if (stateData.type !== "mcp-oauth") {
+      throw new Error("Invalid state type");
+    }
+
+    const tokenEndpoint = stateData.tokenEndpoint as string;
+    const clientId = stateData.clientId as string | undefined;
+    const connectorId = stateData.connectorId as string | undefined;
+    const connectorName = stateData.connectorName as string | undefined;
+    const mcpServerUrl = stateData.mcpServerUrl as string;
+    const workspaceId = stateData.workspaceId as string;
+    const userId = stateData.userId as string;
+
+    // Retrieve PKCE code verifier
+    const codeVerifier = await getCodeVerifier(state);
+    if (!codeVerifier) {
+      throw new Error("PKCE code verifier expired or not found. Please try again.");
+    }
+
+    // Exchange code for token
+    const tokenResult = await exchangeCodeForToken(tokenEndpoint, code, codeVerifier, clientId);
+
+    // Store the token in the connector
+    if (connectorId) {
+      // Update existing connector with the new OAuth token
+      await connectors.updateConnector(connectorId, {
+        authType: "oauth2",
+        credentials: {
+          access_token: tokenResult.access_token,
+          refresh_token: tokenResult.refresh_token,
+          token_type: tokenResult.token_type,
+          expires_in: tokenResult.expires_in,
+          scope: tokenResult.scope,
+          obtained_at: Date.now(),
+        },
+      });
+    } else {
+      // Create a new connector with the OAuth token
+      await connectors.createConnector({
+        workspaceId,
+        createdBy: userId,
+        scope: "workspace",
+        name: connectorName ?? "MCP Server",
+        transportType: "streamable_http",
+        serverUrl: mcpServerUrl,
+        authType: "oauth2",
+        credentials: {
+          access_token: tokenResult.access_token,
+          refresh_token: tokenResult.refresh_token,
+          token_type: tokenResult.token_type,
+          expires_in: tokenResult.expires_in,
+          scope: tokenResult.scope,
+          obtained_at: Date.now(),
+        },
+      });
+    }
+
+    return c.html(renderMcpOAuthResult({
+      success: true,
+      frontendUrl,
+      connectorName: connectorName ?? "MCP Server",
+    }));
+  } catch (err) {
+    console.error("[MCP OAuth] Callback error:", err);
+    return c.html(renderMcpOAuthResult({
+      success: false,
+      error: err instanceof Error ? err.message : "OAuth callback failed",
+      frontendUrl,
+    }));
+  }
+});
+
+/** Render the OAuth callback result page (auto-closes popup) */
+function renderMcpOAuthResult(opts: {
+  success: boolean;
+  error?: string;
+  frontendUrl: string;
+  connectorName?: string;
+}): string {
+  const message = opts.success
+    ? `Connected to ${opts.connectorName ?? "MCP Server"} successfully!`
+    : `Connection failed: ${opts.error ?? "Unknown error"}`;
+
+  return `<!DOCTYPE html>
+<html>
+<head><title>MCP OAuth</title>
+<style>
+  body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0a0a0a; color: #e5e5e5; }
+  .card { text-align: center; padding: 2rem; max-width: 400px; }
+  .icon { font-size: 3rem; margin-bottom: 1rem; }
+  .msg { font-size: 1.1rem; margin-bottom: 0.5rem; }
+  .sub { font-size: 0.85rem; color: #888; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${opts.success ? "✅" : "❌"}</div>
+    <p class="msg">${message}</p>
+    <p class="sub">This window will close automatically.</p>
+  </div>
+  <script>
+    if (window.opener) {
+      window.opener.postMessage({
+        type: "doable:mcp-oauth-complete",
+        success: ${opts.success},
+        error: ${opts.error ? JSON.stringify(opts.error) : "null"},
+        connectorName: ${opts.connectorName ? JSON.stringify(opts.connectorName) : "null"}
+      }, "${opts.frontendUrl}");
+    }
+    setTimeout(() => window.close(), 2000);
+  </script>
+</body>
+</html>`;
+}
