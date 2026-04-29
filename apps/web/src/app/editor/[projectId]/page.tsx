@@ -2506,20 +2506,20 @@ export default function EditorPage() {
             // because the DB/history API doesn't persist them. Without this,
             // build cards (e.g. presentation builder) would unmount after
             // finalizeStream → loadFromApi, preventing BUILD_DECK from firing.
-            const mcpMap = new Map<string, ChatMsg["mcpResources"]>();
-            const artMap = new Map<string, ChatMsg["artifacts"]>();
+            const mcpMap: Record<string, ChatMsg["mcpResources"]> = {};
+            const artMap: Record<string, ChatMsg["artifacts"]> = {};
             for (const m of prev) {
               if (m.mcpResources && Object.keys(m.mcpResources).length > 0) {
-                mcpMap.set(m.id, m.mcpResources);
+                mcpMap[m.id] = m.mcpResources;
               }
               if (m.artifacts && m.artifacts.length > 0) {
-                artMap.set(m.id, m.artifacts);
+                artMap[m.id] = m.artifacts;
               }
             }
             return apiMessages.map((m) => ({
               ...m,
-              ...(mcpMap.has(m.id) ? { mcpResources: mcpMap.get(m.id) } : {}),
-              ...(artMap.has(m.id) && (!m.artifacts || m.artifacts.length === 0) ? { artifacts: artMap.get(m.id) } : {}),
+              ...(mcpMap[m.id] ? { mcpResources: mcpMap[m.id] } : {}),
+              ...(artMap[m.id] && (!m.artifacts || m.artifacts.length === 0) ? { artifacts: artMap[m.id] } : {}),
             }));
           });
           // Also update suggestions from the last assistant message
