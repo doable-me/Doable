@@ -38,7 +38,7 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     const customAction = customActions[params.integrationId]?.[params.actionName];
     if (customAction) {
       xr.phase("credential_lookup");
-      const connection = await credentialVault.get(params.userId, params.integrationId, params.workspaceId);
+      const connection = await credentialVault.get(params.userId, params.integrationId, params.workspaceId, params.projectId);
       const auth = connection ? resolveAuth(def.authType, connection.credentials) : undefined;
 
       console.log(`[Integration] RUN custom ${params.integrationId}/${params.actionName} props=${JSON.stringify(params.props).slice(0, 300)}`);
@@ -79,7 +79,7 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
 
     // 3. Load credentials
     xr.phase("credential_lookup");
-    const connection = await credentialVault.get(params.userId, params.integrationId, params.workspaceId);
+    const connection = await credentialVault.get(params.userId, params.integrationId, params.workspaceId, params.projectId);
 
     let auth: unknown = undefined;
     if (def.authType !== "none") {
@@ -92,7 +92,7 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
       await ensureTokenFresh(connection.id, connection.auth_type);
 
       xr.phase("credential_refetch");
-      const freshConnection = await credentialVault.get(params.userId, params.integrationId, params.workspaceId);
+      const freshConnection = await credentialVault.get(params.userId, params.integrationId, params.workspaceId, params.projectId);
       auth = resolveAuth(def.authType, freshConnection?.credentials);
     }
 

@@ -149,10 +149,25 @@ export function resolveAuth(authType: string, credentials: unknown): unknown {
       const creds = credentials as OAuth2TokenData;
       return { access_token: creds.access_token, ...(creds.data ?? {}) };
     }
-    case "secret_text":
-      return typeof credentials === "string"
-        ? credentials
-        : (credentials as any)?.secret_text ?? (credentials as any)?.apiKey ?? (credentials as any)?.token ?? (credentials as any)?.auth ?? credentials;
+    case "secret_text": {
+      // Activepieces pieces always access auth.secret_text, so we must
+      // return { secret_text: "the_value" } regardless of how the
+      // credential was stored (apiKey, token, auth, or raw string).
+      let rawValue: string | undefined;
+      if (typeof credentials === "string") {
+        rawValue = credentials;
+      } else {
+        rawValue =
+          (credentials as any)?.secret_text ??
+          (credentials as any)?.apiKey ??
+          (credentials as any)?.token ??
+          (credentials as any)?.auth;
+      }
+      if (rawValue !== undefined) {
+        return { secret_text: rawValue };
+      }
+      return credentials;
+    }
     case "custom_auth":
       return { ...(credentials as Record<string, unknown>), props: credentials };
     case "basic_auth":

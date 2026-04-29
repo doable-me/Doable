@@ -41,7 +41,7 @@ export const credentialVault = {
   /**
    * Get and decrypt credentials for an integration
    */
-  async get(userId: string, integrationId: string, workspaceId: string): Promise<DecryptedConnection | null> {
+  async get(userId: string, integrationId: string, workspaceId: string, projectId?: string): Promise<DecryptedConnection | null> {
     const [row] = await sql`
       SELECT ic.*,
              pgp_sym_decrypt(ic.credentials_encrypted, ${ENCRYPTION_KEY}) as credentials_decrypted
@@ -49,9 +49,15 @@ export const credentialVault = {
       WHERE ic.integration_id = ${integrationId}
         AND ic.workspace_id = ${workspaceId}
         AND ic.status = 'active'
-        AND (ic.user_id = ${userId} OR ic.scope = 'workspace')
+        AND (
+          ic.user_id = ${userId}
+          OR ic.scope = 'workspace'
+          ${projectId ? sql`OR (ic.scope = 'project' AND ic.project_id = ${projectId})` : sql``}
+        )
       ORDER BY
-        CASE WHEN ic.user_id = ${userId} THEN 0 ELSE 1 END,
+        CASE WHEN ic.user_id = ${userId} THEN 0
+             WHEN ic.scope = 'project' THEN 1
+             ELSE 2 END,
         ic.updated_at DESC
       LIMIT 1
     `;
