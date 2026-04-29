@@ -221,8 +221,8 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           let msg: string;
           if (realSilence < 15_000) msg = state.friendlyLastTool ? `Working on ${state.friendlyLastTool}\u2026` : "Thinking\u2026";
           else if (realSilence < 30_000) msg = state.friendlyLastTool ? `Still working on ${state.friendlyLastTool}\u2026` : "Still thinking\u2026";
-          else if (realSilence < 60_000) msg = "Working on a complex step \u2014 hold on\u2026";
-          else msg = "This one's taking a while \u2014 still going\u2026";
+          else if (realSilence < 60_000) msg = state.friendlyLastTool ? `Still working on ${state.friendlyLastTool}\u2026` : "Generating content \u2014 complex requests take a moment\u2026";
+          else msg = state.friendlyLastTool ? `Finishing up ${state.friendlyLastTool}\u2026` : "Almost there \u2014 crafting something detailed\u2026";
           try {
             await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "thinking", message: msg } }) });
             state.lastSseEmitAt = Date.now();

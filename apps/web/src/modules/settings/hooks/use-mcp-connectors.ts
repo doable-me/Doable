@@ -114,8 +114,13 @@ export const TRANSPORT_LABELS: Record<
 > = {
   streamable_http: { label: "HTTP (Streamable)", description: "Connect to an HTTP-based MCP server with streaming support" },
   http_sse: { label: "Server-Sent Events (SSE)", description: "Connect via HTTP with Server-Sent Events" },
-  stdio: { label: "Local Process (stdio)", description: "Run a local command and communicate via stdin/stdout" },
+  // stdio kept for display of existing builtin connectors but hidden from the
+  // "add" form — user-created stdio connectors are blocked server-side.
+  stdio: { label: "Built-in App", description: "Server-managed local process" },
 };
+
+/** Transport types available for user-created connectors (excludes stdio). */
+export const USER_TRANSPORT_TYPES = ["streamable_http", "http_sse"] as const;
 
 // ─── Hook ───────────────────────────────────────────────────
 

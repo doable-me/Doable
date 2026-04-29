@@ -98,6 +98,9 @@ export function friendlyToolMessage(
     if (pretty) return `Cleaning up ${pretty}`;
     return `Running ${toolName}`;
   }
+  // Presentation tools
+  if (lower === "create_presentation") return "Setting up your presentation";
+  if (lower === "build_deck") return "Rendering your slide deck";
   // Final fallback: show the raw tool name so the user at least sees what's happening
   return `Running ${toolName}`;
 }

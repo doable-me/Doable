@@ -218,9 +218,18 @@ function buildDeckPrompt(opts) {
     `  7. "📊 Translating to PowerPoint spec…"`,
     `  8. "🚀 Rendering — one moment"   → then the tool call.`,
     ``,
-    `Absolutely do NOT write "Let me think about…", "Here's my plan:",`,
-    `markdown headings, outline bullets, or any analysis. Just the status`,
-    `lines. The point is continuous visible motion in the chat.`,
+    `CRITICAL: Your ONLY visible output must be the 8 status lines above,`,
+    `nothing else. Then the build_deck tool call. Then one closing sentence.`,
+    ``,
+    `FORBIDDEN visible output — the user must NEVER see any of these:`,
+    `• "Let me think about…", "Here's my plan:", "I need to…", "Now I need…"`,
+    `• Internal reasoning, analysis, planning, color/font brainstorming`,
+    `• Bullet lists of your approach or decision-making`,
+    `• Code blocks, markdown headings, or explanations`,
+    `• Phrases like "Let me narrate…", "I'll create…", "For this topic…"`,
+    `All internal planning (palette choices, font decisions, slide layouts,`,
+    `content research) MUST happen silently. The user only sees the emoji`,
+    `status lines streaming one by one. Nothing else.`,
     ``,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `CREATIVE DIRECTION — zero constraints, zero templates.`,
@@ -799,13 +808,11 @@ function autoBuildCardHtml({ topic, buildPrompt }) {
   let count = 0;
   let done = false;
   const seen = new Set();
-  function tick() {
-    if (done) return;
+  const timerInterval = setInterval(() => {
+    if (done) { clearInterval(timerInterval); return; }
     const s = ((performance.now() - t0) / 1000).toFixed(1);
     timerEl.textContent = s + 's';
-    requestAnimationFrame(tick);
-  }
-  tick();
+  }, 200);
   function addStatus(text) {
     if (!text || typeof text !== 'string') return;
     const trimmed = text.trim();

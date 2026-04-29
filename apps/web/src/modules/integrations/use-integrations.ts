@@ -48,7 +48,9 @@ export interface CreateIntegrationPayload {
 export const TRANSPORT_LABELS: Record<CustomIntegration["transport_type"], { friendly: string; technical: string }> = {
   streamable_http: { friendly: "Web service", technical: "HTTP streaming" },
   http_sse: { friendly: "Web service", technical: "HTTP SSE" },
-  stdio: { friendly: "Local app", technical: "stdio" },
+  // stdio kept for display of existing builtin connectors but hidden from the
+  // "add" form — user-created stdio connectors are blocked server-side.
+  stdio: { friendly: "Built-in app", technical: "managed" },
 };
 
 export const SCOPE_LABELS: Record<CustomIntegration["scope"], string> = {

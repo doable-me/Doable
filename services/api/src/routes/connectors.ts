@@ -149,8 +149,11 @@ connectorRoutes.post(
     if (body.transportType !== "stdio" && !body.serverUrl) {
       return c.json({ error: "serverUrl is required for HTTP transports" }, 400);
     }
-    if (body.transportType === "stdio" && !body.serverCommand) {
-      return c.json({ error: "serverCommand is required for stdio transport" }, 400);
+    // SECURITY: stdio connectors spawn arbitrary processes on the server.
+    // Only server-provisioned builtins (via ensureBuiltinConnectorsForWorkspace)
+    // may use stdio transport. User-created connectors are limited to HTTP.
+    if (body.transportType === "stdio") {
+      return c.json({ error: "stdio transport is not available for user-created connectors. Use an HTTP-based transport instead." }, 403);
     }
 
     const row = await connectors.createConnector({
@@ -219,8 +222,8 @@ const updateConnectorSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(1000).optional(),
   serverUrl: z.string().url().optional(),
-  serverCommand: z.string().optional(),
-  serverArgs: z.array(z.string()).optional(),
+  // serverCommand and serverArgs intentionally excluded — stdio connectors
+  // are server-provisioned only and their commands must not be user-editable.
   authType: z.enum(["none", "api_key", "oauth2", "bearer_token"]).optional(),
   status: z.enum(["active", "inactive"]).optional(),
   credentials: z.record(z.string(), z.unknown()).optional(),

@@ -48,6 +48,13 @@ process.on("uncaughtException", (err: NodeJS.ErrnoException) => {
     console.warn(`[api] swallowed async socket error: ${err.code} — ${err.message}`);
     return;
   }
+  // Spawn errors from MCP connectors (e.g. bad command path, missing binary)
+  // should never kill the API. They are logged and surfaced to the user via
+  // connector status, not as fatal crashes.
+  if (err.code === "ENOENT" && err.syscall?.startsWith("spawn")) {
+    console.error(`[api] swallowed spawn ENOENT (bad MCP command?): ${err.message} — path: ${err.path}`);
+    return;
+  }
   // Any other uncaught exception is a real bug — rethrow so the process
   // crashes fast and tsx watch spawns a fresh one.
   console.error("[api] FATAL uncaught exception:", err);

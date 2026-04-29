@@ -24,15 +24,47 @@ export class StdioTransport implements McpTransport {
   async connect(): Promise<void> {
     const { spawn } = await import("node:child_process");
 
-    this.process = spawn(this.command, this.args, {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...this.env },
-      shell: process.platform === "win32",
-    });
-
     // Track early exit so we can fail fast instead of waiting for 30s timeout
     let earlyExitCode: number | null | undefined = undefined;
     let stderrChunks: string[] = [];
+    let spawnError: Error | null = null;
+
+    try {
+      // SECURITY: Do NOT inherit process.env — it contains DB passwords,
+      // encryption keys, and API secrets. Only pass the minimal env needed
+      // for the child process to run, plus any explicit serverEnv.
+      const safeEnv: Record<string, string> = {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        NODE_ENV: process.env.NODE_ENV ?? "production",
+        ...(process.env.LANG ? { LANG: process.env.LANG } : {}),
+        ...(process.env.TERM ? { TERM: process.env.TERM } : {}),
+        ...this.env,
+      };
+      this.process = spawn(this.command, this.args, {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: safeEnv,
+        shell: false,
+      });
+    } catch (err) {
+      throw new Error(
+        `Failed to spawn MCP stdio process: ${err instanceof Error ? err.message : String(err)} (command: ${this.command})`,
+      );
+    }
+
+    // Catch spawn 'error' events (e.g. ENOENT for missing executables).
+    // Without this handler the error bubbles up as an uncaught exception
+    // and kills the entire API process.
+    this.process.on("error", (err) => {
+      spawnError = err;
+      console.error(`[MCP:stdio:${this.command}] spawn error:`, err.message);
+      this.connected = false;
+      for (const [, pending] of this.pendingRequests) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error(`MCP process spawn error: ${err.message}`));
+      }
+      this.pendingRequests.clear();
+    });
 
     this.process.stdout!.on("data", (data: Buffer) => {
       this.buffer += data.toString();
@@ -60,6 +92,14 @@ export class StdioTransport implements McpTransport {
     // immediately (bad command, missing module), we fail fast instead of
     // letting the subsequent initialize() hang for 30s.
     await new Promise<void>((resolve) => setTimeout(resolve, 150));
+
+    // Check for spawn errors (ENOENT, EACCES, etc.)
+    if (spawnError) {
+      this.process = null;
+      throw new Error(
+        `MCP stdio process failed to start: ${(spawnError as Error).message} (command: ${this.command})`,
+      );
+    }
 
     if (earlyExitCode !== undefined) {
       const stderr = stderrChunks.join("").slice(0, 500);

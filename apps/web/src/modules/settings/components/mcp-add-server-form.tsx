@@ -7,7 +7,6 @@ import {
   Loader2,
   X,
   AlertCircle,
-  Terminal,
   Radio,
   Globe,
   Search,
@@ -301,20 +300,23 @@ export function AddServerForm({
         {/* Transport type first — determines the URL vs command flow */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">Transport Type</label>
-          <div className="grid grid-cols-3 gap-2">
-            {(Object.entries(TRANSPORT_LABELS) as [McpConnector["transport_type"], { label: string; description: string }][]).map(([key, val]) => (
+          <div className="grid grid-cols-2 gap-2">
+            {(["streamable_http", "http_sse"] as const).map((key) => {
+              const val = TRANSPORT_LABELS[key];
+              return (
               <button
                 key={key}
                 onClick={() => { setTransportType(key); setDiscoveryResult(null); }}
                 className={cn("rounded-lg border p-3 text-left transition-colors", transportType === key ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:bg-muted/50")}
               >
                 <div className="flex items-center gap-1.5 mb-1">
-                  {key === "stdio" ? <Terminal className="h-3.5 w-3.5" /> : key === "http_sse" ? <Radio className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}
+                  {key === "http_sse" ? <Radio className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}
                   <span className="text-xs font-medium">{val.label}</span>
                 </div>
                 <p className="text-[10px] text-muted-foreground leading-tight">{val.description}</p>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 

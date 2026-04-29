@@ -20,6 +20,27 @@ import { ConfigGuard } from "dovault";
 
 const configGuard = new ConfigGuard();
 
+/**
+ * Normalize a file path — if the AI passes an absolute path that starts with
+ * the project directory, strip the prefix to make it relative. Also strips
+ * leading './' for consistency.
+ */
+function normalizePath(projectId: string, filePath: string): string {
+  let p = filePath;
+  const projectRoot = getProjectPath(projectId);
+  // Strip absolute project prefix (handles both / and \ separators)
+  const normalizedRoot = projectRoot.replace(/\\/g, "/");
+  const normalizedPath = p.replace(/\\/g, "/");
+  if (normalizedPath.startsWith(normalizedRoot + "/")) {
+    p = normalizedPath.slice(normalizedRoot.length + 1);
+  } else if (normalizedPath.startsWith(normalizedRoot)) {
+    p = normalizedPath.slice(normalizedRoot.length);
+  }
+  // Strip leading ./ or /
+  p = p.replace(/^\.\//, "").replace(/^\//, "");
+  return p || filePath;
+}
+
 type ToolEventHandler = (toolName: string, status: "start" | "end", args: Record<string, unknown>) => void;
 const toolEventHandlers = new Map<string, ToolEventHandler>();
 
@@ -36,17 +57,19 @@ function emitToolEvent(projectId: string, toolName: string, status: "start" | "e
 export function createDoableTools(projectId: string, userId?: string): Tool[] {
   return ([
     defineTool("create_file", {
-      description: "Create a new file in the project with the given content. Creates parent directories as needed.",
+      description: "Create or overwrite a file in the project with the given content. Creates parent directories as needed. Use relative paths (e.g. 'index.html', 'src/App.tsx').",
+      overridesBuiltInTool: true,
       parameters: {
         type: "object" as const,
         properties: {
-          path: { type: "string" as const, description: "Relative path from the project root (e.g. 'src/components/Button.tsx')" },
+          path: { type: "string" as const, description: "Relative path from the project root (e.g. 'src/components/Button.tsx'). Do NOT use absolute paths." },
           content: { type: "string" as const, description: "The full file content to write" },
         },
         required: ["path", "content"] as const,
       },
       handler: async (args: { path: string; content: string }) => {
-        const { path: filePath, content } = args;
+        const filePath = normalizePath(projectId, args.path);
+        const { content } = args;
         if (configGuard.isLocked(filePath)) {
           return { success: false, error: `Cannot create ${filePath} — server-side config files are locked by dovault for security.` };
         }
@@ -59,52 +82,54 @@ export function createDoableTools(projectId: string, userId?: string): Tool[] {
           success: true,
           path: filePath,
           size: Buffer.byteLength(content, "utf-8"),
-          message: alreadyExists ? `Overwrote existing file ${filePath} (use edit_file to modify existing files)` : `Created ${filePath}`,
+          message: alreadyExists ? `Overwrote existing file ${filePath}` : `Created ${filePath}`,
           overwritten: alreadyExists,
         };
       },
     }),
 
     defineTool("edit_file", {
-      description: "Replace the entire content of an existing file. Read the file first, then write the complete updated content.",
+      description: "Replace the entire content of an existing file. Read the file first, then write the complete updated content. Use relative paths (e.g. 'index.html').",
       parameters: {
         type: "object" as const,
         properties: {
-          path: { type: "string" as const, description: "Relative path from the project root" },
+          path: { type: "string" as const, description: "Relative path from the project root. Do NOT use absolute paths." },
           content: { type: "string" as const, description: "The complete new file content" },
         },
         required: ["path", "content"] as const,
       },
       handler: async (args: { path: string; content: string }) => {
-        const { path, content } = args;
-        if (configGuard.isLocked(path)) {
-          return { success: false, error: `Cannot edit ${path} — server-side config files are locked by dovault for security.` };
+        const filePath = normalizePath(projectId, args.path);
+        const { content } = args;
+        if (configGuard.isLocked(filePath)) {
+          return { success: false, error: `Cannot edit ${filePath} — server-side config files are locked by dovault for security.` };
         }
-        emitToolEvent(projectId, "edit_file", "start", { path });
-        await writeFile(projectId, path, content);
-        emitToolEvent(projectId, "edit_file", "end", { path });
-        return { success: true, path, size: Buffer.byteLength(content, "utf-8"), message: `Updated ${path}` };
+        emitToolEvent(projectId, "edit_file", "start", { path: filePath });
+        await writeFile(projectId, filePath, content);
+        emitToolEvent(projectId, "edit_file", "end", { path: filePath });
+        return { success: true, path: filePath, size: Buffer.byteLength(content, "utf-8"), message: `Updated ${filePath}` };
       },
     }),
 
     defineTool("read_file", {
-      description: "Read the contents of a file in the project. Returns the full file content.",
+      description: "Read the contents of a file in the project. Returns the full file content. Use relative paths (e.g. 'index.html').",
       parameters: {
         type: "object" as const,
         properties: {
-          path: { type: "string" as const, description: "Relative path from the project root" },
+          path: { type: "string" as const, description: "Relative path from the project root. Do NOT use absolute paths." },
         },
         required: ["path"] as const,
       },
       handler: async (args: { path: string }) => {
-        emitToolEvent(projectId, "read_file", "start", { path: args.path });
+        const filePath = normalizePath(projectId, args.path);
+        emitToolEvent(projectId, "read_file", "start", { path: filePath });
         try {
-          const content = await readFile(projectId, args.path);
-          emitToolEvent(projectId, "read_file", "end", { path: args.path });
-          return { success: true, path: args.path, content, lines: content.split("\n").length };
+          const content = await readFile(projectId, filePath);
+          emitToolEvent(projectId, "read_file", "end", { path: filePath });
+          return { success: true, path: filePath, content, lines: content.split("\n").length };
         } catch (err) {
-          emitToolEvent(projectId, "read_file", "end", { path: args.path });
-          return { success: false, error: err instanceof Error ? err.message : `File not found: ${args.path}` };
+          emitToolEvent(projectId, "read_file", "end", { path: filePath });
+          return { success: false, error: err instanceof Error ? err.message : `File not found: ${filePath}` };
         }
       },
     }),

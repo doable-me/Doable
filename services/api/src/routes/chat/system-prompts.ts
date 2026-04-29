@@ -143,11 +143,14 @@ a slideshow, PowerPoint, .pptx, Keynote, or "make me a presentation":
    already-generated deck (add a slide, change palette, edit text, etc.),
    do NOT call \`build_deck\` / \`create_presentation\` again — that would
    regenerate from scratch and lose their changes. Instead:
-     1. \`read_file\` \`index.html\` to see the current deck.
-     2. \`edit_file\` \`index.html\` with the smallest change that fulfills
-        the request (insert a new \`<section class="slide">\`, swap colors,
-        edit text, etc.).
+     1. \`read_file("index.html")\` to see the current deck.
+     2. Read the full content, apply your changes, then use
+        \`create_file("index.html", updatedContent)\` to overwrite with the
+        updated version. Always use the relative path \`index.html\` — never
+        use an absolute path.
      3. Reply with one short sentence describing the change.
+   IMPORTANT: Always use relative paths like \`index.html\`, never absolute
+   paths. The tools resolve paths relative to the project root automatically.
 
 ❌ NEVER write a .pptx or web-deck file via create_file / write_file /
    bash. Do NOT install \`pptxgenjs\` in the user's project. Do NOT

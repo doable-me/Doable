@@ -228,7 +228,11 @@ export class CopilotEngine {
     if (!engine || !session) return Promise.reject(new Error(`Session ${sessionId} not found`));
 
     const INITIAL_TIMEOUT_MS = 120_000;
-    const EVENT_TIMEOUT_MS = 120_000;
+    // The model may silently generate large tool-call arguments (e.g. a
+    // full HTML deck for build_deck) without emitting SDK events.  The gap
+    // between the last streaming delta and tool.execution_start can exceed
+    // 2 min, so allow 5 min between events once the model has started.
+    const EVENT_TIMEOUT_MS = 300_000; // 5 min
     // During tool execution (MCP calls, file writes, etc.) the model waits
     // for the tool result which can take minutes for heavy operations like
     // presentation rendering.  Use a much longer timeout while a tool is

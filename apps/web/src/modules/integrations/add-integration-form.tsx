@@ -197,9 +197,6 @@ export function AddIntegrationForm({
                 <option value="http_sse">
                   Web service (HTTP SSE)
                 </option>
-                <option value="stdio">
-                  Local app (stdio)
-                </option>
               </select>
             </div>
 
