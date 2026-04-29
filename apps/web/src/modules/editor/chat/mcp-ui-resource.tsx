@@ -203,6 +203,7 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
           ?? (payload.text as string | undefined)
           ?? (payload.message as string | undefined);
         const displayText = payload.displayText as string | undefined;
+        console.log(`[McpUiResource][Trace] prompt message received (${text?.length ?? 0} chars, display="${displayText?.slice(0, 50)}")`);
         if (text && onPrompt) onPrompt(text, displayText);
         return;
       }
@@ -233,9 +234,13 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
   // active — a prompt injected during streaming is silently dropped and
   // the auto-build flow stalls forever.
   const handleIframeLoad = useCallback(() => {
-    if (isStreaming) return; // will be fired by the isStreaming-gated effect below
+    if (isStreaming) {
+      console.log("[McpUiResource][Trace] handleIframeLoad skipped — isStreaming=true");
+      return; // will be fired by the isStreaming-gated effect below
+    }
     const target = iframeRef.current?.contentWindow;
     if (!target) return;
+    console.log("[McpUiResource][Trace] handleIframeLoad → posting host-ready");
     try {
       target.postMessage({ type: "host-ready" }, "*");
     } catch {
@@ -250,7 +255,11 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
   // harmless.
   useEffect(() => {
     if (!html) return;
-    if (isStreaming) return; // wait for idle
+    if (isStreaming) {
+      console.log("[McpUiResource][Trace] idle-effect skipped — isStreaming=true");
+      return; // wait for idle
+    }
+    console.log("[McpUiResource][Trace] idle-effect firing — isStreaming=false, scheduling host-ready retries");
     let cancelled = false;
     const send = () => {
       const target = iframeRef.current?.contentWindow;

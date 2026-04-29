@@ -2617,10 +2617,21 @@ export default function EditorPage() {
               }
             }, 1500);
           }
-          // Fetch AI-powered suggestions after stream-resume/polling finalization
-          setAiSuggestions(FALLBACK_SUGGESTIONS);
+          // Fetch AI-powered suggestions after stream-resume/polling finalization.
+          // Skip if the last assistant message has a build card — BUILD_DECK
+          // will auto-fire and start a new streaming turn.
           setMessages((prev) => {
             const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
+            const hasBuildCard = lastAssistant?.mcpResources &&
+              Object.values(lastAssistant.mcpResources).some(
+                (r) => r && typeof r === "object" && "html" in r && (r as Record<string, unknown>).html,
+              );
+            if (hasBuildCard) {
+              console.log("[Chat] Stream-resume finalizeStream: skipping suggestions — MCP build card present");
+              setLiveStatus("Preparing to build your presentation…");
+              return prev;
+            }
+            setAiSuggestions(FALLBACK_SUGGESTIONS);
             const lastUser = [...prev].reverse().find((m) => m.role === "user");
             if (
               lastAssistant?.content &&
@@ -2912,6 +2923,16 @@ export default function EditorPage() {
               setAiSuggestions(FALLBACK_SUGGESTIONS);
               setMessages((prev) => {
                 const lastAssistant = prev.find((m) => m.id === assistantId);
+                const hasBuildCard = lastAssistant?.mcpResources &&
+                  Object.values(lastAssistant.mcpResources).some(
+                    (r) => r && typeof r === "object" && "html" in r && (r as Record<string, unknown>).html,
+                  );
+                if (hasBuildCard) {
+                  console.log("[Chat] Bridge onDone: skipping suggestions — MCP build card present");
+                  setAiSuggestions([]); // undo fallback set above
+                  setLiveStatus("Preparing to build your presentation…");
+                  return prev;
+                }
                 if (
                   lastAssistant?.content &&
                   suggestedForRef.current !== assistantId
@@ -3261,7 +3282,12 @@ export default function EditorPage() {
   const sendMessage = useCallback(
     (text: string, msgAttachments?: Attachment[], modeOverride?: ChatMode, displayOverride?: string) => {
       const trimmed = text.trim();
-      if (!trimmed || isStreaming) return;
+      if (!trimmed || isStreaming) {
+        if (isStreaming) console.log(`[Chat][Trace] sendMessage blocked — isStreaming=true (${trimmed.slice(0, 50)}…)`);
+        return;
+      }
+      const isBuildDeckTurn = trimmed.trimStart().startsWith("BUILD_DECK");
+      console.log(`[Chat][Trace] sendMessage start (${isBuildDeckTurn ? "BUILD_DECK" : "user"}, ${trimmed.length} chars)`);
 
       // Add user message (the visible bubble may use a shorter label than
       // what's sent to the LLM, e.g. for MCP auto-continue where the full
@@ -3293,7 +3319,7 @@ export default function EditorPage() {
       });
       setInputValue("");
       setIsStreaming(true);
-      setLiveStatus("Understanding your request...");
+      setLiveStatus(isBuildDeckTurn ? "Designing your presentation slides…" : "Understanding your request...");
 
       // Abort any previous stream
       abortRef.current?.abort();
@@ -3338,6 +3364,7 @@ export default function EditorPage() {
         },
         // onDone
         () => {
+          console.log(`[Chat][Trace] onDone fired (${isBuildDeckTurn ? "BUILD_DECK" : "user"} turn, assistantId=${assistantId})`);
           // Flush any remaining buffered chunks before marking done
           if (rafIdRef.current !== null) {
             cancelAnimationFrame(rafIdRef.current);
@@ -3392,11 +3419,22 @@ export default function EditorPage() {
             }
           }, 1500);
 
-          // Fetch AI-powered suggestions based on what was just built
-          setAiSuggestions(FALLBACK_SUGGESTIONS); // Show fallback immediately
-          // Read current assistant content from state via updater
+          // Fetch AI-powered suggestions based on what was just built.
+          // BUT if this turn produced an MCP build card (e.g. presentation
+          // builder), a BUILD_DECK follow-up is about to fire automatically
+          // — suppress suggestions to avoid a brief "done" flash.
           setMessages((prev) => {
             const lastAssistant = prev.find((m) => m.id === assistantId);
+            const hasBuildCard = lastAssistant?.mcpResources &&
+              Object.values(lastAssistant.mcpResources).some(
+                (r) => r && typeof r === "object" && "html" in r && (r as Record<string, unknown>).html,
+              );
+            if (hasBuildCard) {
+              console.log("[Chat] Skipping suggestions — MCP build card will auto-fire BUILD_DECK");
+              setLiveStatus("Preparing to build your presentation…");
+              return prev;
+            }
+            setAiSuggestions(FALLBACK_SUGGESTIONS);
             if (
               lastAssistant?.content &&
               suggestedForRef.current !== assistantId
@@ -3408,7 +3446,6 @@ export default function EditorPage() {
                 lastAssistant.content,
               ).then((s) => {
                 setAiSuggestions(s);
-                // Also persist suggestions on the assistant message
                 if (s.length > 0) {
                   setMessages((prev2) =>
                     prev2.map((m) =>
@@ -5165,6 +5202,7 @@ export default function EditorPage() {
                                       return;
                                     }
                                   }
+                                  console.log(`[MCP][Trace] onPrompt → sendMessage (${isBuildDeck ? "BUILD_DECK" : "other"}, ${text.length} chars)`);
                                   sendMessage(text, undefined, undefined, displayText);
                                 }}
                               />

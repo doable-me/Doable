@@ -214,12 +214,20 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
         const keepAlive = setInterval(async () => {
           try { await stream.writeSSE({ data: JSON.stringify({ type: "keep_alive" }) }); } catch {}
         }, 10_000);
+        const isBuildDeckTurn = content.trimStart().startsWith("BUILD_DECK");
         const softHeartbeat = setInterval(async () => {
           const sseSilence = Date.now() - state.lastSseEmitAt;
           if (sseSilence < 3_000) return;
           const realSilence = Date.now() - state.lastRealEventAt;
           let msg: string;
-          if (realSilence < 15_000) msg = state.friendlyLastTool ? `Working on ${state.friendlyLastTool}\u2026` : "Thinking\u2026";
+          if (isBuildDeckTurn) {
+            // Presentation-specific status messages for long BUILD_DECK generation
+            if (realSilence < 15_000) msg = "Designing slide layouts\u2026";
+            else if (realSilence < 45_000) msg = "Crafting slide content and styling\u2026";
+            else if (realSilence < 120_000) msg = "Building detailed presentation \u2014 this may take a couple of minutes\u2026";
+            else if (realSilence < 240_000) msg = "Finishing up your presentation \u2014 creating interactive slides\u2026";
+            else msg = "Almost done \u2014 finalizing your presentation deck\u2026";
+          } else if (realSilence < 15_000) msg = state.friendlyLastTool ? `Working on ${state.friendlyLastTool}\u2026` : "Thinking\u2026";
           else if (realSilence < 30_000) msg = state.friendlyLastTool ? `Still working on ${state.friendlyLastTool}\u2026` : "Still thinking\u2026";
           else if (realSilence < 60_000) msg = state.friendlyLastTool ? `Still working on ${state.friendlyLastTool}\u2026` : "Generating content \u2014 complex requests take a moment\u2026";
           else msg = state.friendlyLastTool ? `Finishing up ${state.friendlyLastTool}\u2026` : "Almost there \u2014 crafting something detailed\u2026";
