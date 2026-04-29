@@ -2593,6 +2593,30 @@ export default function EditorPage() {
               }
             }, 1500);
           }
+          // Fetch AI-powered suggestions after stream-resume/polling finalization
+          setAiSuggestions(FALLBACK_SUGGESTIONS);
+          setMessages((prev) => {
+            const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
+            const lastUser = [...prev].reverse().find((m) => m.role === "user");
+            if (
+              lastAssistant?.content &&
+              lastUser?.content &&
+              suggestedForRef.current !== lastAssistant.id
+            ) {
+              suggestedForRef.current = lastAssistant.id;
+              fetchAISuggestions(resolvedProjectId, lastUser.content, lastAssistant.content).then((s) => {
+                setAiSuggestions(s);
+                if (s.length > 0) {
+                  setMessages((prev2) =>
+                    prev2.map((m) =>
+                      m.id === lastAssistant.id ? { ...m, suggestions: s } : m
+                    )
+                  );
+                }
+              });
+            }
+            return prev;
+          });
         };
 
         // ── Polling fallback (kept for when stream-resume isn't available
