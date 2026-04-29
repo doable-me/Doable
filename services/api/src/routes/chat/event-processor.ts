@@ -196,24 +196,15 @@ function routeSseEvent(
 
   // ── Helper: flush leading-text buffer as thinking ──
   // Models like MiniMax output untagged reasoning text before tool calls.
-  // We buffer leading text and reclassify it as thinking when a tool_call
-  // confirms the model was reasoning, not responding to the user.
+  // The buffer has already been emitted as "thinking" SSE events. When a
+  // tool_call confirms the text was reasoning, we just mark the buffer
+  // as flushed so subsequent text goes through normally as content.
   const flushLeadingBufferAsThinking = () => {
     if (!state.leadingTextBuffer) return;
-    const buffered = state.leadingTextBuffer;
+    const len = state.leadingTextBuffer.length;
     state.leadingTextBuffer = "";
     state.leadingTextFlushed = true;
-    // Move content from assistantContent to assistantThinking
-    if (state.assistantContent.startsWith(buffered)) {
-      state.assistantContent = state.assistantContent.slice(buffered.length);
-    }
-    state.assistantThinking += buffered;
-    state.traceCollector?.onThinkingDelta(buffered);
-    console.log(`[Chat][${projectId.slice(0, 8)}] Reclassified ${buffered.length} chars of leading text as thinking`);
-    broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: stripServerPaths(buffered), messageId, isThinking: true }, userId).catch(() => {});
-    stream.writeSSE({ data: JSON.stringify({ type: "thinking_reclassify", data: stripServerPaths(buffered) }) }).catch(() => {});
-    state.lastSseEmitAt = Date.now();
-    state.sseFrameCount++;
+    console.log(`[Chat][${projectId.slice(0, 8)}] Confirmed ${len} chars of leading text as thinking (tool_call received)`);
   };
 
   if (sseData.type === "tool_result") {
@@ -261,21 +252,34 @@ function routeSseEvent(
         // ── Leading-text buffer: hold back text before any tool call ──
         // Models that don't use <think> tags (e.g. MiniMax) emit reasoning
         // as plain text before calling a tool. We buffer this text and
-        // reclassify it as thinking if a tool_call arrives.
+        // emit it directly as "thinking" so the frontend never shows it
+        // as main content. If no tool call arrives after 1500 chars,
+        // we flush the buffer as regular text (false positive).
         if (!state.leadingTextFlushed && !state.hadToolCalls) {
           state.leadingTextBuffer += chunk.content;
-          state.assistantContent += chunk.content;
-          // Emit as text_delta so the frontend shows SOMEthing (it will
-          // be reclassified if a tool call follows). Also flush to DB.
-          if (state.assistantMessageId && state.assistantContent.length - state.lastFlushLen > 500) {
-            state.lastFlushLen = state.assistantContent.length;
-            sql`UPDATE ai_messages SET content = ${state.assistantContent} WHERE id = ${state.assistantMessageId}`.catch(() => {});
-          }
-          broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: chunk.content, messageId, isThinking: false }, userId).catch(() => {});
-          state.traceCollector?.onTextDelta(chunk.content);
-          stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }).catch(() => {});
+          // Emit as thinking immediately — keeps the user informed
+          // without polluting the main chat content.
+          state.assistantThinking += chunk.content;
+          state.traceCollector?.onThinkingDelta(chunk.content);
+          broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: stripServerPaths(chunk.content), messageId, isThinking: true }, userId).catch(() => {});
+          stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
           state.lastSseEmitAt = Date.now();
           state.sseFrameCount++;
+          // Safety valve: if we've buffered 1500+ chars with no tool call,
+          // assume it's not reasoning — re-emit as text content.
+          if (state.leadingTextBuffer.length > 1500) {
+            const buffered = state.leadingTextBuffer;
+            state.leadingTextBuffer = "";
+            state.leadingTextFlushed = true;
+            // Move from thinking back to content
+            state.assistantThinking = state.assistantThinking.slice(0, state.assistantThinking.length - buffered.length);
+            state.assistantContent += buffered;
+            console.log(`[Chat][${projectId.slice(0, 8)}] Leading text buffer overflow (${buffered.length} chars) — flushing as content`);
+            broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: buffered, messageId, isThinking: false }, userId).catch(() => {});
+            stream.writeSSE({ data: JSON.stringify({ type: "thinking_to_text", data: buffered }) }).catch(() => {});
+            state.lastSseEmitAt = Date.now();
+            state.sseFrameCount++;
+          }
           continue;
         }
         state.assistantContent += chunk.content;

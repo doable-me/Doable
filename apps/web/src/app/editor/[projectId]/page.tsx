@@ -717,13 +717,13 @@ async function streamChat(
             }
           }
 
-          // Handle thinking_reclassify: server detected that previously-emitted
-          // text_delta was actually untagged reasoning (model output text before
-          // a tool call). Move it from content to thinkingContent.
-          if (parsed.type === "thinking_reclassify" && onReclassify) {
-            const reclassifiedText = typeof parsed.data === "string" ? parsed.data : "";
-            if (reclassifiedText) {
-              onReclassify(reclassifiedText);
+          // Handle thinking_to_text: server's leading-text buffer overflowed
+          // (>1500 chars with no tool call) — the text was emitted as thinking
+          // but is actually content. Move it from thinking to content.
+          if (parsed.type === "thinking_to_text") {
+            const text = typeof parsed.data === "string" ? parsed.data : "";
+            if (text && onReclassify) {
+              onReclassify(text);
             }
           }
 
@@ -962,7 +962,7 @@ function processOneSSEPayload(
       if (thinkingContent) cb.onThinking(thinkingContent);
     }
 
-    if (parsed.type === "thinking_reclassify" && cb.onReclassify) {
+    if (parsed.type === "thinking_to_text" && cb.onReclassify) {
       const reclassifiedText = typeof parsed.data === "string" ? parsed.data : "";
       if (reclassifiedText) cb.onReclassify(reclassifiedText);
     }
@@ -3603,20 +3603,19 @@ export default function EditorPage() {
         // displayContent — persist short label in chat history when provided
         // (keeps raw MCP skill instructions out of the stored transcript).
         displayOverride,
-        // onReclassify — server detected untagged reasoning, move from content to thinking
+        // onReclassify — server's thinking_to_text: text was emitted as
+        // thinking but turned out to be content (buffer overflow, no tool call)
         (reclassifiedText: string) => {
-          console.log(`[Chat][Trace] Reclassifying ${reclassifiedText.length} chars from content→thinking`);
+          console.log(`[Chat][Trace] thinking_to_text: ${reclassifiedText.length} chars from thinking→content`);
           setMessages((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
-              // Remove the reclassified text from the beginning of content
-              const newContent = m.content.startsWith(reclassifiedText)
-                ? m.content.slice(reclassifiedText.length)
-                : m.content.replace(reclassifiedText, "");
+              // Remove from thinkingContent, add to content
+              const newThinking = (m.thinkingContent || "").replace(reclassifiedText, "");
               return {
                 ...m,
-                content: newContent.trimStart(),
-                thinkingContent: (m.thinkingContent || "") + reclassifiedText,
+                content: reclassifiedText + m.content,
+                thinkingContent: newThinking,
               };
             })
           );
