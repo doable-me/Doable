@@ -151,8 +151,15 @@ function handleAssistantMessageCatchUp(
   if (!content) return;
   const sanitizedContent = sanitizeText(content);
   const deltasSoFar = state.assistantContent.slice(state.msgIdDeltaStart);
-  if (sanitizedContent.length > deltasSoFar.length) {
-    const missing = sanitizedContent.slice(deltasSoFar.length);
+  // Account for text we classified as thinking via the leading-text buffer.
+  // The SDK's assistant.message includes ALL text (reasoning + content), but
+  // our delta handler split it into assistantContent and assistantThinking.
+  // Without this, the catch-up would see thinking text as "missing" and
+  // re-emit it as text_delta, leaking reasoning into the chat.
+  const totalProcessed = deltasSoFar.length + state.assistantThinking.length;
+  if (sanitizedContent.length > totalProcessed) {
+    const missing = sanitizedContent.slice(totalProcessed);
+    console.log(`[Chat][${projectId.slice(0, 8)}] catch-up: msg=${sanitizedContent.length} processed=${totalProcessed} (content=${deltasSoFar.length} thinking=${state.assistantThinking.length}) missing=${missing.length}`);
     let visibleText = "";
     for (const chunk of channelRouter.process(missing)) {
       if (!chunk.content) continue;
@@ -167,8 +174,10 @@ function handleAssistantMessageCatchUp(
         stream.writeSSE({ data: JSON.stringify({ type: "tool_delta", data: chunk.content }) }).catch(() => {});
       }
     }
-    state.assistantContent = state.assistantContent.slice(0, state.msgIdDeltaStart) + visibleText;
-  } else if (!deltasSoFar && !state.assistantContent) {
+    if (visibleText) {
+      state.assistantContent = state.assistantContent.slice(0, state.msgIdDeltaStart) + deltasSoFar + visibleText;
+    }
+  } else if (!totalProcessed && !state.assistantContent) {
     let visibleText = "";
     for (const chunk of channelRouter.process(sanitizedContent)) {
       if (!chunk.content) continue;
