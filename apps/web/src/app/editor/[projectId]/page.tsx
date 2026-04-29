@@ -407,6 +407,7 @@ async function streamChat(
   onMcpUiResource?: (resource: McpUiResource) => void,
   onArtifactReady?: (artifact: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }) => void,
   displayContent?: string,
+  onReclassify?: (text: string) => void,
 ) {
   let currentToken = getStoredTokens().accessToken;
 
@@ -716,6 +717,16 @@ async function streamChat(
             }
           }
 
+          // Handle thinking_reclassify: server detected that previously-emitted
+          // text_delta was actually untagged reasoning (model output text before
+          // a tool call). Move it from content to thinkingContent.
+          if (parsed.type === "thinking_reclassify" && onReclassify) {
+            const reclassifiedText = typeof parsed.data === "string" ? parsed.data : "";
+            if (reclassifiedText) {
+              onReclassify(reclassifiedText);
+            }
+          }
+
           // Handle status events from auto-fix system
           if (parsed.type === "status" && onStatusChange) {
             const d = parsed.data as Record<string, unknown> | undefined;
@@ -814,6 +825,7 @@ interface BridgeCallbacks {
   onProvisionSupabase?: (req: { name: string; reason: string }) => void;
   onMcpUiResource?: (resource: McpUiResource) => void;
   onArtifactReady?: (artifact: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }) => void;
+  onReclassify?: (text: string) => void;
 }
 
 function processOneSSEPayload(
@@ -948,6 +960,11 @@ function processOneSSEPayload(
     if (parsed.type === "thinking" && cb.onThinking) {
       const thinkingContent = typeof parsed.data === "string" ? parsed.data : "";
       if (thinkingContent) cb.onThinking(thinkingContent);
+    }
+
+    if (parsed.type === "thinking_reclassify" && cb.onReclassify) {
+      const reclassifiedText = typeof parsed.data === "string" ? parsed.data : "";
+      if (reclassifiedText) cb.onReclassify(reclassifiedText);
     }
 
     if (parsed.type === "status" && cb.onStatusChange) {
@@ -2938,12 +2955,17 @@ export default function EditorPage() {
                   suggestedForRef.current !== assistantId
                 ) {
                   suggestedForRef.current = assistantId;
-                  fetchAISuggestions(resolvedProjectId, trimmed, lastAssistant.content).then((s) => {
-                    setAiSuggestions(s);
-                    if (s.length > 0) {
-                      setMessages((prev2) => prev2.map((m) => m.id === assistantId ? { ...m, suggestions: s } : m));
-                    }
-                  });
+                  const bridgeSuggestionPrompt = trimmed.startsWith("BUILD_DECK")
+                    ? ""
+                    : trimmed;
+                  if (bridgeSuggestionPrompt) {
+                    fetchAISuggestions(resolvedProjectId, bridgeSuggestionPrompt, lastAssistant.content).then((s) => {
+                      setAiSuggestions(s);
+                      if (s.length > 0) {
+                        setMessages((prev2) => prev2.map((m) => m.id === assistantId ? { ...m, suggestions: s } : m));
+                      }
+                    });
+                  }
                 }
                 return prev;
               });
@@ -3423,6 +3445,8 @@ export default function EditorPage() {
           // BUT if this turn produced an MCP build card (e.g. presentation
           // builder), a BUILD_DECK follow-up is about to fire automatically
           // — suppress suggestions to avoid a brief "done" flash.
+          // Also skip suggestions for BUILD_DECK turns — use original user
+          // prompt from message history instead of the raw BUILD_DECK text.
           setMessages((prev) => {
             const lastAssistant = prev.find((m) => m.id === assistantId);
             const hasBuildCard = lastAssistant?.mcpResources &&
@@ -3440,9 +3464,19 @@ export default function EditorPage() {
               suggestedForRef.current !== assistantId
             ) {
               suggestedForRef.current = assistantId;
+              // For BUILD_DECK turns, use the original user prompt from
+              // message history instead of the BUILD_DECK text (which is
+              // a 5000+ char instruction blob, not a user query).
+              const suggestionPrompt = isBuildDeckTurn
+                ? (prev.filter((m) => m.role === "user" && !m.content.startsWith("BUILD_DECK")).pop()?.content ?? "")
+                : trimmed;
+              if (!suggestionPrompt) {
+                console.log("[Chat] Skipping suggestions — no original user prompt found for BUILD_DECK turn");
+                return prev;
+              }
               fetchAISuggestions(
                 resolvedProjectId,
-                trimmed,
+                suggestionPrompt,
                 lastAssistant.content,
               ).then((s) => {
                 setAiSuggestions(s);
@@ -3569,6 +3603,24 @@ export default function EditorPage() {
         // displayContent — persist short label in chat history when provided
         // (keeps raw MCP skill instructions out of the stored transcript).
         displayOverride,
+        // onReclassify — server detected untagged reasoning, move from content to thinking
+        (reclassifiedText: string) => {
+          console.log(`[Chat][Trace] Reclassifying ${reclassifiedText.length} chars from content→thinking`);
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== assistantId) return m;
+              // Remove the reclassified text from the beginning of content
+              const newContent = m.content.startsWith(reclassifiedText)
+                ? m.content.slice(reclassifiedText.length)
+                : m.content.replace(reclassifiedText, "");
+              return {
+                ...m,
+                content: newContent.trimStart(),
+                thinkingContent: (m.thinkingContent || "") + reclassifiedText,
+              };
+            })
+          );
+        },
       );
     },
     [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, handleToolStarted, loadFileTree, selectedFile, loadFileContent, previewUrl, selectedModelId, selectedProviderId, selectedCopilotAccountId]

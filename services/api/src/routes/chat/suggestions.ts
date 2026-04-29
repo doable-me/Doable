@@ -131,15 +131,20 @@ export function registerSuggestionsRoute(app: Hono<AuthEnv>) {
         // Avoid starting SDK sessions when neither GitHub auth nor a custom provider is configured.
         const runnableConfigs = configs.filter((cfg) => cfg.provider || cfg.githubToken);
         if (runnableConfigs.length === 0) {
+          console.warn(`[Suggestions][${projectId.slice(0, 8)}] No runnable configs (no provider or GitHub token)`);
           return c.json({ data: [] });
         }
 
-        const suggestionSystemPrompt = `You generate short, contextual next-step suggestion chips for an AI app builder. Given the user's last prompt and the AI's response, return exactly 4 suggestions as a JSON array of strings. Each suggestion should be 2-6 words, actionable, and relevant to what was just built. Do NOT include generic suggestions. Focus on what the user would logically want to do next with THIS specific app. Return ONLY the JSON array, no other text.`;
+        const suggestionSystemPrompt = `You generate short, contextual next-step suggestion chips for an AI app builder. Given the user's last prompt and the AI's response, return exactly 4 suggestions as a JSON array of strings. Each suggestion should be 2-6 words, actionable, and relevant to what was just built. Do NOT include generic suggestions. Focus on what the user would logically want to do next with THIS specific app. Return ONLY the JSON array, no other text. Do NOT wrap in markdown code fences.`;
         const suggestionUserMessage = `User asked: "${userPrompt.slice(0, 200)}"\n\nAI built: "${lastAssistantMessage.slice(0, 500)}"\n\nReturn 4 contextual next-step suggestions as a JSON array:`;
+
+        console.log(`[Suggestions][${projectId.slice(0, 8)}] Starting — ${runnableConfigs.length} config(s): ${runnableConfigs.map(c => `${c.label}(${c.model})`).join(", ")}`);
+        const suggestStartMs = Date.now();
 
         const manager = getCopilotManager();
 
         for (const config of runnableConfigs) {
+          const configStartMs = Date.now();
           try {
             const suggestions = await manager.withAutoRetry("suggestions", config.githubToken, async (engine) => {
               const sessionId = await engine.createSession({
@@ -153,13 +158,20 @@ export function registerSuggestionsRoute(app: Hono<AuthEnv>) {
               engine.disconnectSession(sessionId).catch(() => {});
               const resultData = result?.data as Record<string, unknown> | undefined;
               const content = typeof resultData?.content === "string" ? resultData.content : "";
-              const jsonMatch = content.match(/\[[\s\S]*?\]/);
-              if (!jsonMatch) return null;
+              console.log(`[Suggestions][${projectId.slice(0, 8)}] Raw response (${config.label}, ${Date.now() - configStartMs}ms): "${content.slice(0, 300)}"`);
+              // Strip <think>...</think> and other reasoning tags before JSON extraction
+              const stripped = content.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<rationale>[\s\S]*?<\/rationale>/gi, "").trim();
+              const jsonMatch = stripped.match(/\[[\s\S]*?\]/);
+              if (!jsonMatch) {
+                console.warn(`[Suggestions][${projectId.slice(0, 8)}] No JSON array found in response (${config.label})`);
+                return null;
+              }
               const parsed = JSON.parse(jsonMatch[0]) as string[];
               return parsed.filter((s): s is string => typeof s === "string").slice(0, 5);
             });
 
             if (suggestions && suggestions.length > 0) {
+              console.log(`[Suggestions][${projectId.slice(0, 8)}] Success (${config.label}, ${Date.now() - suggestStartMs}ms): ${JSON.stringify(suggestions)}`);
               const userId = c.get("userId")!;
               try {
                 const [dbSession] = await sql`SELECT id FROM ai_sessions WHERE project_id = ${projectId} AND user_id = ${userId} ORDER BY created_at DESC LIMIT 1`;

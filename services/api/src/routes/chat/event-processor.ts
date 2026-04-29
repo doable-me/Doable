@@ -194,6 +194,28 @@ function routeSseEvent(
 ) {
   state.lastRealEventAt = Date.now();
 
+  // ── Helper: flush leading-text buffer as thinking ──
+  // Models like MiniMax output untagged reasoning text before tool calls.
+  // We buffer leading text and reclassify it as thinking when a tool_call
+  // confirms the model was reasoning, not responding to the user.
+  const flushLeadingBufferAsThinking = () => {
+    if (!state.leadingTextBuffer) return;
+    const buffered = state.leadingTextBuffer;
+    state.leadingTextBuffer = "";
+    state.leadingTextFlushed = true;
+    // Move content from assistantContent to assistantThinking
+    if (state.assistantContent.startsWith(buffered)) {
+      state.assistantContent = state.assistantContent.slice(buffered.length);
+    }
+    state.assistantThinking += buffered;
+    state.traceCollector?.onThinkingDelta(buffered);
+    console.log(`[Chat][${projectId.slice(0, 8)}] Reclassified ${buffered.length} chars of leading text as thinking`);
+    broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: stripServerPaths(buffered), messageId, isThinking: true }, userId).catch(() => {});
+    stream.writeSSE({ data: JSON.stringify({ type: "thinking_reclassify", data: stripServerPaths(buffered) }) }).catch(() => {});
+    state.lastSseEmitAt = Date.now();
+    state.sseFrameCount++;
+  };
+
   if (sseData.type === "tool_result") {
     state.hadToolCalls = true;
     const resultData = sseData.data as Record<string, unknown>;
@@ -236,6 +258,26 @@ function routeSseEvent(
     for (const chunk of channelRouter.process(rawDelta)) {
       if (!chunk.content) continue;
       if (chunk.type === "text") {
+        // ── Leading-text buffer: hold back text before any tool call ──
+        // Models that don't use <think> tags (e.g. MiniMax) emit reasoning
+        // as plain text before calling a tool. We buffer this text and
+        // reclassify it as thinking if a tool_call arrives.
+        if (!state.leadingTextFlushed && !state.hadToolCalls) {
+          state.leadingTextBuffer += chunk.content;
+          state.assistantContent += chunk.content;
+          // Emit as text_delta so the frontend shows SOMEthing (it will
+          // be reclassified if a tool call follows). Also flush to DB.
+          if (state.assistantMessageId && state.assistantContent.length - state.lastFlushLen > 500) {
+            state.lastFlushLen = state.assistantContent.length;
+            sql`UPDATE ai_messages SET content = ${state.assistantContent} WHERE id = ${state.assistantMessageId}`.catch(() => {});
+          }
+          broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: chunk.content, messageId, isThinking: false }, userId).catch(() => {});
+          state.traceCollector?.onTextDelta(chunk.content);
+          stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }).catch(() => {});
+          state.lastSseEmitAt = Date.now();
+          state.sseFrameCount++;
+          continue;
+        }
         state.assistantContent += chunk.content;
         if (state.assistantMessageId && state.assistantContent.length - state.lastFlushLen > 500) {
           state.lastFlushLen = state.assistantContent.length;
@@ -271,6 +313,12 @@ function routeSseEvent(
     state.sseFrameCount++;
   } else {
     state.traceCollector?.onSseEmit(sseData.type, sseData.data);
+    // ── Tool call trigger: reclassify leading text as thinking ──
+    // When the model calls a tool, any text it emitted BEFORE the tool call
+    // was reasoning, not user-facing content. Flush it as thinking.
+    if (sseData.type === "tool_call" && state.leadingTextBuffer && !state.leadingTextFlushed) {
+      flushLeadingBufferAsThinking();
+    }
     if (sseData.type === "tool_call" || sseData.type === "tool_result") {
       broadcastToRoom(projectId, { type: "ai:tool-event", messageId, event: sseData.type, data: (sseData.data ?? {}) as Record<string, unknown> }, userId).catch(() => {});
     }

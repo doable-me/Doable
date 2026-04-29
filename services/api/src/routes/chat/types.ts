@@ -35,6 +35,10 @@ export interface ChatStreamState {
   awaitingMcpWidget: boolean;
   /** Artifacts produced by a tool, keyed by toolName, awaiting attachment to the next tool_result for that tool. */
   pendingArtifacts: Map<string, Array<{ url: string; fileName: string; mimeType: string; sizeBytes: number }>>;
+  /** Buffer for detecting untagged reasoning at the start of model output. */
+  leadingTextBuffer: string;
+  /** Whether the leading-text reasoning check has completed (tool call seen or clear text emitted). */
+  leadingTextFlushed: boolean;
 }
 
 /** Resolved AI configuration passed to stream phases. */
@@ -94,5 +98,7 @@ export function createInitialState(): ChatStreamState {
     deferredError: undefined,
     awaitingMcpWidget: false,
     pendingArtifacts: new Map(),
+    leadingTextBuffer: "",
+    leadingTextFlushed: false,
   };
 }
