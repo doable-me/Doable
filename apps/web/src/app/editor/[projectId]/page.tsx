@@ -2501,7 +2501,27 @@ export default function EditorPage() {
                 senderInfo,
               };
             });
-          setMessages(apiMessages);
+          setMessages((prev) => {
+            // Preserve mcpResources and artifacts from live-streamed messages
+            // because the DB/history API doesn't persist them. Without this,
+            // build cards (e.g. presentation builder) would unmount after
+            // finalizeStream → loadFromApi, preventing BUILD_DECK from firing.
+            const mcpMap = new Map<string, ChatMsg["mcpResources"]>();
+            const artMap = new Map<string, ChatMsg["artifacts"]>();
+            for (const m of prev) {
+              if (m.mcpResources && Object.keys(m.mcpResources).length > 0) {
+                mcpMap.set(m.id, m.mcpResources);
+              }
+              if (m.artifacts && m.artifacts.length > 0) {
+                artMap.set(m.id, m.artifacts);
+              }
+            }
+            return apiMessages.map((m) => ({
+              ...m,
+              ...(mcpMap.has(m.id) ? { mcpResources: mcpMap.get(m.id) } : {}),
+              ...(artMap.has(m.id) && (!m.artifacts || m.artifacts.length === 0) ? { artifacts: artMap.get(m.id) } : {}),
+            }));
+          });
           // Also update suggestions from the last assistant message
           const lastAssistant = [...apiMessages].reverse().find(m => m.role === "assistant");
           if (lastAssistant?.suggestions && lastAssistant.suggestions.length > 0) {
@@ -2576,6 +2596,11 @@ export default function EditorPage() {
         // Helper: reset UI once the generation is known to be done, regardless
         // of which path (stream-resume or polling) discovered that.
         const finalizeStream = async () => {
+          // IMPORTANT: flip isStreaming BEFORE loadFromApi so McpUiResourceCard
+          // effects can fire host-ready immediately after messages merge. If we
+          // set it after, the build card's host-ready gate (`if (isStreaming) return`)
+          // prevents the BUILD_DECK prompt from being injected in time.
+          setIsStreaming(false);
           try { await loadFromApi(); } catch { /* best-effort */ }
           loadFileTree();
           if (selectedFile) {
@@ -2583,7 +2608,6 @@ export default function EditorPage() {
             loadFileContent(selectedFile);
           }
           setLiveStatus("");
-          setIsStreaming(false);
           setIsFirstGeneration(false);
           setHasActiveToolCalls(false);
           if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {

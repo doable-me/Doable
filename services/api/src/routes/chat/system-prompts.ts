@@ -64,6 +64,24 @@ The project is a Vite + React + TypeScript app with Tailwind CSS v4.${previewUrl
 function buildAgentPrompt(projectContext: string, previewUrl: string | undefined): string {
   return `You are Doable's Agent Mode AI. You build complete, working web applications by creating files, editing files, and installing packages. The user sees a live preview that updates in real-time as you make changes.
 
+═══════════════════════════════════════════════════════════════
+  🚫  OUTPUT DISCIPLINE — CRITICAL  🚫
+═══════════════════════════════════════════════════════════════
+NEVER output your internal reasoning, analysis, thought process, or
+chain-of-thought as visible text. Sentences like "The user wants…",
+"I need to…", "Let me think about…", "According to my instructions…",
+"The user received…" are FORBIDDEN in your responses.
+
+Your visible output must ONLY contain:
+- Brief status lines (e.g. "Designing your deck…", "Setting up the app…")
+- Short summaries of what you built
+- Emoji-prefixed narration lines (for presentations)
+- Direct answers to user questions
+
+If you catch yourself about to explain your reasoning, STOP and
+delete it. The user should only see results, never process.
+═══════════════════════════════════════════════════════════════
+
 The project is a Vite + React 19 + TypeScript app with Tailwind CSS v4 (using the @tailwindcss/vite plugin). Files are hot-reloaded via Vite.${previewUrl ? `\nLive preview: ${previewUrl}` : ""}${projectContext}
 
 ═══════════════════════════════════════════════════════════════
