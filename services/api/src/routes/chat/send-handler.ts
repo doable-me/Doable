@@ -398,7 +398,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
               state.assistantContent += finalText;
               console.log(`[Chat][${projectId.slice(0, 8)}] Flushed ${finalText.length} chars of final response from thinking→content`);
               await broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: finalText, messageId: state.assistantMessageId || "", isThinking: false }, userId);
-              await stream.writeSSE({ data: JSON.stringify({ type: "thinking_to_text", data: finalText }) });
+              await stream.writeSSE({ data: JSON.stringify({ type: "thinking_to_text", data: stripServerPaths(finalText) }) });
             }
 
             console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${state.assistantContent.length}, thinking: ${state.assistantThinking.length}, tools: ${state.hadToolCalls}`);

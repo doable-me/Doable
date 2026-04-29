@@ -266,6 +266,9 @@ function routeSseEvent(
           // without polluting the main chat content.
           state.assistantThinking += chunk.content;
           state.traceCollector?.onThinkingDelta(chunk.content);
+          if (state.leadingTextBuffer.length <= 20) {
+            console.log(`[Chat][${projectId.slice(0, 8)}] Buffer start: "${chunk.content.slice(0, 60)}…" (buf=${state.leadingTextBuffer.length})`);
+          }
           broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: stripServerPaths(chunk.content), messageId, isThinking: true }, userId).catch(() => {});
           stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
           state.lastSseEmitAt = Date.now();
