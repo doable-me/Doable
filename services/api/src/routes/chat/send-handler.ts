@@ -381,6 +381,26 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
                 await stream.writeSSE({ data: JSON.stringify({ type: "tool_delta", data: chunk.content }) });
               }
             }
+
+            // ── Flush leading-text buffer at stream end ──
+            // If there's still text in the leading buffer (emitted as "thinking"
+            // SSE events), it's the model's final response after the last tool.
+            // Convert it from thinking to content so the frontend displays it
+            // as the actual response, not hidden in the thinking section.
+            if (state.leadingTextBuffer && state.hadToolCalls) {
+              const finalText = state.leadingTextBuffer;
+              state.leadingTextBuffer = "";
+              state.leadingTextFlushed = true;
+              // Move from thinking to content
+              if (state.assistantThinking.endsWith(finalText)) {
+                state.assistantThinking = state.assistantThinking.slice(0, -finalText.length);
+              }
+              state.assistantContent += finalText;
+              console.log(`[Chat][${projectId.slice(0, 8)}] Flushed ${finalText.length} chars of final response from thinking→content`);
+              await broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: finalText, messageId: state.assistantMessageId || "", isThinking: false }, userId);
+              await stream.writeSSE({ data: JSON.stringify({ type: "thinking_to_text", data: finalText }) });
+            }
+
             console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${state.assistantContent.length}, thinking: ${state.assistantThinking.length}, tools: ${state.hadToolCalls}`);
 
             // Save pre-recovery content length to detect if auto-continue added anything

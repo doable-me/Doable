@@ -3603,18 +3603,23 @@ export default function EditorPage() {
         // displayContent — persist short label in chat history when provided
         // (keeps raw MCP skill instructions out of the stored transcript).
         displayOverride,
-        // onReclassify — server's thinking_to_text: text was emitted as
-        // thinking but turned out to be content (buffer overflow, no tool call)
+        // onReclassify — server's thinking_to_text: text was initially emitted
+        // as thinking but should be displayed as content (final response after
+        // last tool call, or safety valve overflow).
         (reclassifiedText: string) => {
           console.log(`[Chat][Trace] thinking_to_text: ${reclassifiedText.length} chars from thinking→content`);
           setMessages((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
-              // Remove from thinkingContent, add to content
-              const newThinking = (m.thinkingContent || "").replace(reclassifiedText, "");
+              // Remove from thinkingContent, append to content
+              const tc = m.thinkingContent || "";
+              const idx = tc.lastIndexOf(reclassifiedText);
+              const newThinking = idx >= 0
+                ? tc.slice(0, idx) + tc.slice(idx + reclassifiedText.length)
+                : tc;
               return {
                 ...m,
-                content: reclassifiedText + m.content,
+                content: m.content + reclassifiedText,
                 thinkingContent: newThinking,
               };
             })

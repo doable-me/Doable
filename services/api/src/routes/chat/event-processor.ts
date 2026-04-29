@@ -194,13 +194,13 @@ function routeSseEvent(
 ) {
   state.lastRealEventAt = Date.now();
 
-  // ── Helper: flush leading-text buffer as thinking ──
+  // ── Helper: confirm leading-text buffer as thinking ──
   // Models like MiniMax output untagged reasoning text before tool calls.
   // The buffer has already been emitted as "thinking" SSE events. When a
-  // tool_call confirms the text was reasoning, we just mark the buffer
-  // as flushed so subsequent text goes through normally as content.
+  // tool_call confirms the text was reasoning, we mark it flushed.
+  // After a tool_result, we RESET the buffer to capture inter-tool reasoning too.
   const flushLeadingBufferAsThinking = () => {
-    if (!state.leadingTextBuffer) return;
+    if (!state.leadingTextBuffer) { state.leadingTextFlushed = true; return; }
     const len = state.leadingTextBuffer.length;
     state.leadingTextBuffer = "";
     state.leadingTextFlushed = true;
@@ -242,6 +242,10 @@ function routeSseEvent(
     }
     state.lastToolName = undefined;
     state.friendlyLastTool = undefined;
+    // Reset leading-text buffer after tool_result so inter-tool reasoning
+    // (text between tool_result and next tool_call) is also captured as thinking.
+    state.leadingTextFlushed = false;
+    state.leadingTextBuffer = "";
   }
 
   if (sseData.type === "text_delta") {
@@ -253,9 +257,10 @@ function routeSseEvent(
         // Models that don't use <think> tags (e.g. MiniMax) emit reasoning
         // as plain text before calling a tool. We buffer this text and
         // emit it directly as "thinking" so the frontend never shows it
-        // as main content. If no tool call arrives after 1500 chars,
-        // we flush the buffer as regular text (false positive).
-        if (!state.leadingTextFlushed && !state.hadToolCalls) {
+        // as main content. The buffer resets after each tool_result so
+        // inter-tool reasoning is also captured. If no tool call arrives
+        // after 8000 chars, we flush the buffer as regular text.
+        if (!state.leadingTextFlushed) {
           state.leadingTextBuffer += chunk.content;
           // Emit as thinking immediately — keeps the user informed
           // without polluting the main chat content.
@@ -265,9 +270,9 @@ function routeSseEvent(
           stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
           state.lastSseEmitAt = Date.now();
           state.sseFrameCount++;
-          // Safety valve: if we've buffered 1500+ chars with no tool call,
+          // Safety valve: if we've buffered 8000+ chars with no tool call,
           // assume it's not reasoning — re-emit as text content.
-          if (state.leadingTextBuffer.length > 1500) {
+          if (state.leadingTextBuffer.length > 8000) {
             const buffered = state.leadingTextBuffer;
             state.leadingTextBuffer = "";
             state.leadingTextFlushed = true;
