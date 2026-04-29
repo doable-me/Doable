@@ -2650,13 +2650,15 @@ export default function EditorPage() {
             }
             setAiSuggestions(FALLBACK_SUGGESTIONS);
             const lastUser = [...prev].reverse().find((m) => m.role === "user");
+            const resumeAssistantHasOutput = lastAssistant?.content || lastAssistant?.thinkingContent;
             if (
-              lastAssistant?.content &&
+              resumeAssistantHasOutput &&
               lastUser?.content &&
               suggestedForRef.current !== lastAssistant.id
             ) {
               suggestedForRef.current = lastAssistant.id;
-              fetchAISuggestions(resolvedProjectId, lastUser.content, lastAssistant.content).then((s) => {
+              const resumeSuggestionContext = lastAssistant.content || "AI used tools to complete the task.";
+              fetchAISuggestions(resolvedProjectId, lastUser.content, resumeSuggestionContext).then((s) => {
                 setAiSuggestions(s);
                 if (s.length > 0) {
                   setMessages((prev2) =>
@@ -2950,8 +2952,9 @@ export default function EditorPage() {
                   setLiveStatus("Preparing to build your presentation…");
                   return prev;
                 }
+                const bridgeAssistantHasOutput = lastAssistant?.content || lastAssistant?.thinkingContent;
                 if (
-                  lastAssistant?.content &&
+                  bridgeAssistantHasOutput &&
                   suggestedForRef.current !== assistantId
                 ) {
                   suggestedForRef.current = assistantId;
@@ -2959,7 +2962,8 @@ export default function EditorPage() {
                     ? ""
                     : trimmed;
                   if (bridgeSuggestionPrompt) {
-                    fetchAISuggestions(resolvedProjectId, bridgeSuggestionPrompt, lastAssistant.content).then((s) => {
+                    const bridgeSuggestionContext = lastAssistant.content || "AI used tools to complete the task.";
+                    fetchAISuggestions(resolvedProjectId, bridgeSuggestionPrompt, bridgeSuggestionContext).then((s) => {
                       setAiSuggestions(s);
                       if (s.length > 0) {
                         setMessages((prev2) => prev2.map((m) => m.id === assistantId ? { ...m, suggestions: s } : m));
@@ -3459,8 +3463,9 @@ export default function EditorPage() {
               return prev;
             }
             setAiSuggestions(FALLBACK_SUGGESTIONS);
+            const assistantHasOutput = lastAssistant?.content || lastAssistant?.thinkingContent;
             if (
-              lastAssistant?.content &&
+              assistantHasOutput &&
               suggestedForRef.current !== assistantId
             ) {
               suggestedForRef.current = assistantId;
@@ -3474,10 +3479,14 @@ export default function EditorPage() {
                 console.log("[Chat] Skipping suggestions — no original user prompt found for BUILD_DECK turn");
                 return prev;
               }
+              // Use content for suggestions, falling back to a summary if
+              // content is empty (e.g. models that output untagged reasoning
+              // where all post-tool text stays classified as thinking).
+              const suggestionContext = lastAssistant.content || "AI used tools to complete the task.";
               fetchAISuggestions(
                 resolvedProjectId,
                 suggestionPrompt,
-                lastAssistant.content,
+                suggestionContext,
               ).then((s) => {
                 setAiSuggestions(s);
                 if (s.length > 0) {
