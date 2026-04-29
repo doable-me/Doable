@@ -368,6 +368,7 @@ const mcpOAuthAuthorizeSchema = z.object({
   mcpServerUrl: z.string().url(),
   scopes: z.array(z.string()).optional(),
   clientId: z.string().optional(),
+  registrationEndpoint: z.string().url().optional(),
   connectorId: z.string().uuid().optional(),
   connectorName: z.string().optional(),
 });
@@ -387,12 +388,13 @@ connectorRoutes.post(
     if (err) return c.json({ error: err }, 403);
 
     try {
-      const authorizationUrl = buildMcpOAuthUrl({
+      const authorizationUrl = await buildMcpOAuthUrl({
         authorizationEndpoint: body.authorizationEndpoint,
         tokenEndpoint: body.tokenEndpoint,
         mcpServerUrl: body.mcpServerUrl,
         scopes: body.scopes,
         clientId: body.clientId,
+        registrationEndpoint: body.registrationEndpoint,
         userId,
         workspaceId,
         connectorId: body.connectorId,

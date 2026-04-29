@@ -82,6 +82,8 @@ export interface McpOAuthAuthorizeParams {
   scopes?: string[];
   /** OAuth client ID (if the user provides one, or from dynamic registration) */
   clientId?: string;
+  /** Dynamic Client Registration endpoint (RFC 7591) */
+  registrationEndpoint?: string;
   /** Doable context */
   userId: string;
   workspaceId: string;
@@ -91,7 +93,86 @@ export interface McpOAuthAuthorizeParams {
   connectorName?: string;
 }
 
-export function buildMcpOAuthUrl(params: McpOAuthAuthorizeParams): string {
+// ─── Dynamic Client Registration (RFC 7591) ──────────────
+
+/** Cached client registrations: registrationEndpoint → { clientId, clientSecret } */
+const registrationCache = new Map<string, { clientId: string; clientSecret?: string; expiresAt?: number }>();
+
+interface ClientRegistrationResult {
+  client_id: string;
+  client_secret?: string;
+  client_id_issued_at?: number;
+  client_secret_expires_at?: number;
+}
+
+/**
+ * Register Doable as an OAuth client with the MCP server's authorization server.
+ * Per MCP spec, servers SHOULD support RFC 7591 Dynamic Client Registration.
+ *
+ * Results are cached per registration endpoint to avoid re-registering.
+ */
+async function registerClient(
+  registrationEndpoint: string,
+  redirectUri: string,
+): Promise<{ clientId: string; clientSecret?: string }> {
+  // Check cache first
+  const cached = registrationCache.get(registrationEndpoint);
+  if (cached && (!cached.expiresAt || cached.expiresAt > Date.now())) {
+    console.log(`[MCP:OAuth] Using cached client registration for ${registrationEndpoint}`);
+    return { clientId: cached.clientId, clientSecret: cached.clientSecret };
+  }
+
+  console.log(`[MCP:OAuth] Registering client at ${registrationEndpoint}`);
+
+  const response = await fetch(registrationEndpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      client_name: "Doable",
+      redirect_uris: [redirectUri],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none", // Public client (PKCE only)
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Dynamic client registration failed (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json() as ClientRegistrationResult;
+  if (!data.client_id) {
+    throw new Error("Client registration response missing client_id");
+  }
+
+  console.log(`[MCP:OAuth] Registered client: ${data.client_id}`);
+
+  // Cache the registration
+  registrationCache.set(registrationEndpoint, {
+    clientId: data.client_id,
+    clientSecret: data.client_secret,
+    expiresAt: data.client_secret_expires_at
+      ? data.client_secret_expires_at * 1000 // Convert to ms
+      : undefined,
+  });
+
+  return { clientId: data.client_id, clientSecret: data.client_secret };
+}
+
+// ─── Build Authorization URL (with auto-registration) ────
+
+export async function buildMcpOAuthUrl(params: McpOAuthAuthorizeParams): Promise<string> {
+  let clientId = params.clientId;
+
+  // If no client ID provided and registration endpoint is available, register dynamically
+  if (!clientId && params.registrationEndpoint) {
+    const reg = await registerClient(params.registrationEndpoint, MCP_OAUTH_REDIRECT_URI);
+    clientId = reg.clientId;
+  }
+
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
 
@@ -104,7 +185,7 @@ export function buildMcpOAuthUrl(params: McpOAuthAuthorizeParams): string {
     connectorName: params.connectorName,
     mcpServerUrl: params.mcpServerUrl,
     tokenEndpoint: params.tokenEndpoint,
-    clientId: params.clientId,
+    clientId,
     ts: Date.now(),
   });
 
@@ -114,8 +195,8 @@ export function buildMcpOAuthUrl(params: McpOAuthAuthorizeParams): string {
   // Build the authorization URL
   const authUrl = new URL(params.authorizationEndpoint);
   authUrl.searchParams.set("response_type", "code");
-  if (params.clientId) {
-    authUrl.searchParams.set("client_id", params.clientId);
+  if (clientId) {
+    authUrl.searchParams.set("client_id", clientId);
   }
   authUrl.searchParams.set("redirect_uri", MCP_OAUTH_REDIRECT_URI);
   authUrl.searchParams.set("state", state);

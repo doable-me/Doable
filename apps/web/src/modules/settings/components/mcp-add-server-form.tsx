@@ -42,6 +42,7 @@ export function AddServerForm({
     mcpServerUrl: string;
     scopes?: string[];
     clientId?: string;
+    registrationEndpoint?: string;
     connectorId?: string;
     connectorName?: string;
   }) => Promise<string>;
@@ -184,6 +185,7 @@ export function AddServerForm({
         mcpServerUrl: discoveryResult?.mcpEndpointUrl ?? serverUrl,
         scopes: oauthMeta.scopesSupported,
         clientId: oauthClientId || undefined,
+        registrationEndpoint: oauthMeta.registrationEndpoint,
         connectorName: name || discoveryResult?.name || undefined,
       });
 

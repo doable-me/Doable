@@ -59,6 +59,8 @@ export interface OAuthMetadata {
   grantTypesSupported?: string[];
   /** Whether PKCE is required/supported */
   codeChallengeMethodsSupported?: string[];
+  /** Dynamic Client Registration endpoint (RFC 7591) */
+  registrationEndpoint?: string;
   /** URL of the Protected Resource Metadata document */
   resourceMetadataUrl?: string;
   /** The MCP server's resource identifier (for RFC 8707 resource param) */
@@ -484,6 +486,9 @@ async function extractOAuthMetadataFrom401(response: Response, endpointUrl: stri
           }
           if (Array.isArray(asMeta.code_challenge_methods_supported)) {
             meta.codeChallengeMethodsSupported = asMeta.code_challenge_methods_supported as string[];
+          }
+          if (typeof asMeta.registration_endpoint === "string") {
+            meta.registrationEndpoint = asMeta.registration_endpoint as string;
           }
           console.log(`[MCP:Discovery] AS metadata found at ${asMetaUrl}`);
           break; // Got what we need

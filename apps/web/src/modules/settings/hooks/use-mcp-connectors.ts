@@ -43,6 +43,7 @@ export interface OAuthMetadata {
   scopesSupported?: string[];
   grantTypesSupported?: string[];
   codeChallengeMethodsSupported?: string[];
+  registrationEndpoint?: string;
   resourceMetadataUrl?: string;
   resource?: string;
 }
@@ -212,6 +213,7 @@ export function useMcpConnectors(workspaceId: string) {
       mcpServerUrl: string;
       scopes?: string[];
       clientId?: string;
+      registrationEndpoint?: string;
       connectorId?: string;
       connectorName?: string;
     }): Promise<string> => {
