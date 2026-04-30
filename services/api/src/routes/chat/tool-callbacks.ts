@@ -42,6 +42,9 @@ function offloadDataUris(
   resourceUri?: string,
 ): { html: string; artifacts: ArtifactRef[] } {
   const artifacts: ArtifactRef[] = [];
+  if (projectId && resourceUri) {
+    console.error(`[tool-callbacks] offloadDataUris entry project=${projectId} resourceUri=${resourceUri} htmlLen=${html?.length ?? 0}`);
+  }
   if (!html || html.length < 16 * 1024) return { html, artifacts };
   // Dedup identical data URIs (same mime + same base64 body). The
   // unified deck card references the HTML data URI in BOTH the "Open"
@@ -108,9 +111,10 @@ function offloadDataUris(
   };
   const persistIndex = (text: string, primaryExt: string) => {
     if (!projectId) return;
+    console.error(`[tool-callbacks] persistIndex called: project=${projectId} ext=${primaryExt} bytes=${text.length} resourceUri=${resourceUri}`);
     writeProjectFile(projectId, "index.html", text).then(
-      () => { dlog(`wrote viewer to projects/${projectId}/index.html (${text.length}B)`); },
-      (err) => { dlog(`writeProjectFile index.html failed: ${(err as Error).message}`); },
+      () => { console.error(`[tool-callbacks] wrote viewer to projects/${projectId}/index.html (${text.length}B)`); },
+      (err) => { console.error(`[tool-callbacks] writeProjectFile index.html failed: ${(err as Error).message}`); },
     );
     setProjectPath(primaryExt, "index.html");
   };
