@@ -693,7 +693,19 @@ async function streamChat(
           if (parsed.type === "mcp_ui_resource") {
             const d = parsed.data as Record<string, unknown> | undefined;
             const r = d?.resource as { uri?: string; mimeType?: string; text?: string; blob?: string } | undefined;
+            console.log("[MCP][SSE] mcp_ui_resource received", {
+              hasCallback: !!onMcpUiResource,
+              hasData: !!d,
+              toolCallId: d?.toolCallId,
+              toolCallIdType: typeof d?.toolCallId,
+              hasResource: !!r,
+              uri: r?.uri?.slice(0, 80),
+              mimeType: r?.mimeType,
+              textLen: r?.text?.length,
+              conditionResult: !!(onMcpUiResource && d && typeof d.toolCallId === "string" && r?.uri && r?.mimeType),
+            });
             if (onMcpUiResource && d && typeof d.toolCallId === "string" && r?.uri && r?.mimeType) {
+              console.log("[MCP][SSE] ✓ Calling onMcpUiResource callback");
               onMcpUiResource({
                 toolCallId: d.toolCallId as string,
                 connectorId: (d.connectorId as string) ?? "",
@@ -3587,13 +3599,20 @@ export default function EditorPage() {
         },
         // onMcpUiResource — MCP-Apps UI resource (sandboxed iframe)
         (resource) => {
-          setMessages((prev) =>
-            prev.map((m) =>
+          console.log("[MCP][sendMessage] onMcpUiResource called", {
+            toolCallId: resource.toolCallId,
+            uri: resource.resource?.uri?.slice(0, 80),
+            assistantId,
+          });
+          setMessages((prev) => {
+            const target = prev.find((m) => m.id === assistantId);
+            console.log("[MCP][sendMessage] setMessages — target found:", !!target, "assistantId:", assistantId);
+            return prev.map((m) =>
               m.id === assistantId
                 ? { ...m, mcpResources: { ...(m.mcpResources ?? {}), [resource.toolCallId]: resource } }
                 : m
-            )
-          );
+            );
+          });
         },
         // onArtifactReady — small dedicated download notification
         (artifact) => {
