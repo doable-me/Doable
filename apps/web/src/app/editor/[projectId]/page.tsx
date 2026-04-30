@@ -5268,7 +5268,11 @@ export default function EditorPage() {
                               // instead of a static spinner.
                               const laterAssistants = messages.slice(msgIdx + 1).filter((m) => m.role === "assistant");
                               const currentAndLater = [msg, ...laterAssistants].filter((m) => m.role === "assistant");
-                              const rawContent = currentAndLater.map((m) => m.content ?? "").join("\n");
+                              // Include both content AND thinking — narration lines
+                              // from the BUILD_DECK turn get classified as thinking
+                              // (they precede the build_deck tool call) but we still
+                              // want them to stream as progress in the auto-build card.
+                              const rawContent = currentAndLater.map((m) => [m.content ?? "", m.thinkingContent ?? ""].filter(Boolean).join("\n")).join("\n");
                               const statusLines = rawContent
                                 .split(/\n+/)
                                 .map((l) => l.trim().replace(/^["'"']+/, "").replace(/["'"']+$/, ""))
