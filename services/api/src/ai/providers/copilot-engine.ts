@@ -107,6 +107,9 @@ export class CopilotEngine {
       sessionConfig: {
         ...(config.provider ? { provider: config.provider } : {}),
         ...(config.tools ? { tools: config.tools } : {}),
+        ...(config.skillDirectories && config.skillDirectories.length > 0
+          ? { skillDirectories: config.skillDirectories }
+          : {}),
         ...(config.systemPrompt
           ? { systemMessage: { mode: "replace" as const, content: config.systemPrompt } }
           : {}),
@@ -159,6 +162,9 @@ export class CopilotEngine {
       onPermissionRequest: config?.onPermissionRequest,
       sessionConfig: {
         ...(config?.tools ? { tools: config.tools } : {}),
+        ...(config?.skillDirectories && config.skillDirectories.length > 0
+          ? { skillDirectories: config.skillDirectories }
+          : {}),
         ...(config?.toolProgress ? {
           hooks: {
             onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
@@ -185,6 +191,9 @@ export class CopilotEngine {
       streaming: true,
       workingDirectory: config?.workingDirectory,
       ...(config?.tools ? { tools: config.tools } : {}),
+      ...(config?.skillDirectories && config.skillDirectories.length > 0
+        ? { skillDirectories: config.skillDirectories }
+        : {}),
     });
     if (config?.onEvent && engine.copilotSession) {
       (engine.copilotSession as any).on(config.onEvent);

@@ -95,6 +95,7 @@ export async function resolveSession(
   toolProgress: any,
   traceCollector: TraceCollector | null,
   stream: import("hono/streaming").SSEStreamingApi,
+  skillDirectories: string[] | undefined,
 ): Promise<string> {
   let sessionId = projectSessions.get(sessionKey);
   if (sessionId) return sessionId;
@@ -122,6 +123,7 @@ export async function resolveSession(
             toolProgress,
             workingDirectory: projectPath,
             onPermissionRequest: createPermissionHandler(userId, projectPath),
+            skillDirectories,
           });
         });
         projectSessions.set(sessionKey, sessionId!);
@@ -148,6 +150,7 @@ export async function resolveSession(
         tools: sessionTools,
         toolProgress,
         onPermissionRequest: createPermissionHandler(userId, projectPath),
+        skillDirectories,
       });
     });
     projectSessions.set(sessionKey, sessionId!);
@@ -205,6 +208,7 @@ export async function recreateSession(
   traceCollector: TraceCollector | null,
   workspaceId: string | undefined,
   dbSessionId: string | undefined,
+  skillDirectories: string[] | undefined,
 ) {
   const manager = getCopilotManager();
   const currentEngine = await manager.getEngine(projectId, resolvedGithubToken);
@@ -214,6 +218,7 @@ export async function recreateSession(
     projectId, userId, model: resolvedModel, provider: resolvedProvider,
     workingDirectory: projectPath, systemPrompt, tools: recreationTools,
     toolProgress, onPermissionRequest: createPermissionHandler(userId, projectPath),
+    skillDirectories,
   });
   projectSessions.set(sessionKey, sessionId);
   projectSessionModes.set(sessionKey, mode);

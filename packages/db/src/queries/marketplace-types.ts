@@ -101,7 +101,7 @@ export interface EnvironmentBundle {
     icon: string;
     color: string;
   };
-  skills: { name: string; content: string; scope: string }[];
+  skills: { name: string; content: string; scope: string; description?: string }[];
   rules: { name: string; content: string; filePatterns: string[] }[];
   instructions: { filename: string; content: string }[];
   // Knowledge and connectors are referenced by name (not ID) for portability

@@ -21,6 +21,7 @@ import { creditQueries } from "@doable/db/queries/credits";
 import { getProjectPath } from "../../projects/file-manager.js";
 import { resolveAiEngine } from "../../ai/engine-resolver.js";
 import { buildProjectContextForMode, parseSkillInvocations } from "../../ai/context-builder.js";
+import { materializeSkillsForSession } from "../../ai/skills-materializer.js";
 import { processAttachments } from "../../ai/attachments.js";
 import { ChannelTokenRouter } from "../../ai/sse-mapper.js";
 import { stripServerPaths } from "../../ai/tool-messages.js";
@@ -312,7 +313,20 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
           const toolProgress = createToolProgressCallbacks(stream, state, state.traceCollector, recordAssistantToolCall, projectId);
           const modeChanged = checkAndEvictOnModeChange(sessionKey, mode, state.traceCollector);
-          let sessionId = await resolveSession(projectId, userId, sessionKey, mode, modeChanged, resolvedModel, resolvedProvider, resolvedGithubToken, projectPath, systemPrompt, sessionTools, toolProgress, state.traceCollector, stream);
+
+          // Materialize DB skills to disk for SDK skillDirectories. Best-effort:
+          // if this fails, we still proceed without skills rather than blocking chat.
+          let skillDirectories: string[] | undefined;
+          if (workspaceId) {
+            try {
+              const mat = await materializeSkillsForSession({ workspaceId, projectId, userId });
+              skillDirectories = mat.skillDirectories.length > 0 ? mat.skillDirectories : undefined;
+            } catch (err) {
+              console.warn(`[Chat][${projectId.slice(0, 8)}] Skills materialization failed:`, err instanceof Error ? err.message : err);
+            }
+          }
+
+          let sessionId = await resolveSession(projectId, userId, sessionKey, mode, modeChanged, resolvedModel, resolvedProvider, resolvedGithubToken, projectPath, systemPrompt, sessionTools, toolProgress, state.traceCollector, stream, skillDirectories);
           const dbSessionId = await persistSessionToDb(projectId, userId, mode, sessionId);
           if (state.usageCollector && dbSessionId) state.usageCollector.setSessionId(dbSessionId);
 
@@ -369,7 +383,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
                 console.log(`[Chat] Session/engine lost for ${projectId}: ${msg.slice(0, 80)}`);
                 state.traceCollector?.onSessionEvict(sessionId!, `session_lost:${msg.slice(0, 80)}`);
                 stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "reconnecting", message: "Reconnecting to AI..." } }) }).catch(() => {});
-                const recreated = await recreateSession(projectId, userId, sessionKey, mode, resolvedModel, resolvedProvider, resolvedGithubToken, projectPath, systemPrompt, toolProgress, state.traceCollector, workspaceId, dbSessionId);
+                const recreated = await recreateSession(projectId, userId, sessionKey, mode, resolvedModel, resolvedProvider, resolvedGithubToken, projectPath, systemPrompt, toolProgress, state.traceCollector, workspaceId, dbSessionId, skillDirectories);
                 sessionId = recreated.sessionId;
                 currentEngine = recreated.engine;
                 await currentEngine.sendMessage(sessionId, augmentedContent, fileAttachments.length > 0 ? fileAttachments : undefined, processEvent);

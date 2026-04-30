@@ -25,6 +25,21 @@ export interface SkillManifestRow {
   auto_invoke: boolean;
 }
 
+/** Companion file row (multi-file skill folder support). SKILL.md lives in context_skills.skill_content. */
+export interface ContextSkillFileRow {
+  id: string;
+  skill_id: string;
+  file_path: string;
+  content: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/** Skill row + its companion files, used for materialization. */
+export interface SkillWithFiles extends ContextSkillRow {
+  files: ContextSkillFileRow[];
+}
+
 export interface ContextRuleRow {
   id: string;
   scope: "workspace" | "project" | "user";
@@ -250,6 +265,88 @@ export function skillsQueries(sql: postgres.Sql) {
         SELECT * FROM context_skills
         WHERE id = ANY(${ids})
       `;
+    },
+
+    // ── Companion file CRUD (multi-file skill folder support) ──
+    async listSkillFiles(skillId: string): Promise<ContextSkillFileRow[]> {
+      return sql<ContextSkillFileRow[]>`
+        SELECT * FROM context_skill_files
+        WHERE skill_id = ${skillId}
+        ORDER BY file_path
+      `;
+    },
+
+    async getSkillFile(skillId: string, filePath: string): Promise<ContextSkillFileRow | null> {
+      const [row] = await sql<ContextSkillFileRow[]>`
+        SELECT * FROM context_skill_files
+        WHERE skill_id = ${skillId} AND file_path = ${filePath}
+      `;
+      return row ?? null;
+    },
+
+    async upsertSkillFile(params: {
+      skillId: string;
+      filePath: string;
+      content: string;
+    }): Promise<ContextSkillFileRow> {
+      const [row] = await sql<ContextSkillFileRow[]>`
+        INSERT INTO context_skill_files (skill_id, file_path, content)
+        VALUES (${params.skillId}, ${params.filePath}, ${params.content})
+        ON CONFLICT (skill_id, file_path)
+        DO UPDATE SET content = EXCLUDED.content, updated_at = now()
+        RETURNING *
+      `;
+      return row!;
+    },
+
+    async deleteSkillFile(skillId: string, filePath: string): Promise<boolean> {
+      const result = await sql`
+        DELETE FROM context_skill_files
+        WHERE skill_id = ${skillId} AND file_path = ${filePath}
+      `;
+      return result.count > 0;
+    },
+
+    /**
+     * Load every visible skill (and its companion files) for a session
+     * scope tuple. Used by the materializer to write skill folders to disk
+     * before passing skillDirectories to the Copilot SDK.
+     *
+     * Visibility rules:
+     *   - workspace-scoped skills: always visible to any member
+     *   - project-scoped skills: only when matching projectId
+     *   - user-scoped skills: only when matching userId
+     */
+    async listSkillsForSession(
+      workspaceId: string,
+      projectId: string | null,
+      userId: string | null,
+    ): Promise<SkillWithFiles[]> {
+      const skills = await sql<ContextSkillRow[]>`
+        SELECT * FROM context_skills
+        WHERE workspace_id = ${workspaceId}
+          AND (
+            scope = 'workspace'
+            OR (scope = 'project' AND project_id = ${projectId})
+            OR (scope = 'user' AND user_id = ${userId})
+          )
+        ORDER BY scope, skill_name
+      `;
+      if (skills.length === 0) return [];
+
+      const ids = skills.map((s) => s.id);
+      const files = await sql<ContextSkillFileRow[]>`
+        SELECT * FROM context_skill_files
+        WHERE skill_id = ANY(${ids})
+        ORDER BY file_path
+      `;
+      const filesBySkill = new Map<string, ContextSkillFileRow[]>();
+      for (const f of files) {
+        const arr = filesBySkill.get(f.skill_id) ?? [];
+        arr.push(f);
+        filesBySkill.set(f.skill_id, arr);
+      }
+      return skills.map((s) => ({ ...s, files: filesBySkill.get(s.id) ?? [] }));
     },
   };
 }

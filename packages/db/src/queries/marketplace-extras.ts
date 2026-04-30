@@ -123,6 +123,7 @@ export function marketplaceExtraQueries(sql: postgres.Sql) {
           name: s.skill_name,
           content: s.skill_content,
           scope: s.scope ?? "workspace",
+          description: (s as { description?: string }).description ?? "",
         })),
         rules: env.rules.map((r) => ({
           name: r.rule_name,
@@ -166,6 +167,7 @@ export function marketplaceExtraQueries(sql: postgres.Sql) {
           workspaceId,
           scope: "workspace",
           skillName: skill.name,
+          description: skill.description ?? "",
           skillContent: skill.content,
         });
         await envDb.addSkillRef(env.id, created.id);

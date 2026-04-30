@@ -63,4 +63,11 @@ export interface CopilotSessionConfig {
   onEvent?: (event: SessionEvent) => void;
   /** Tool progress callbacks — separate RPC channel from event stream */
   toolProgress?: ToolProgressCallback;
+  /**
+   * Absolute paths to directories containing SDK-style skill folders
+   * (each subfolder = one skill with SKILL.md). Forwarded directly to the
+   * Copilot SDK as `skillDirectories`. Built per-session by the skills
+   * materializer from the workspace/project/user-scoped DB rows.
+   */
+  skillDirectories?: string[];
 }

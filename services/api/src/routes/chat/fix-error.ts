@@ -17,6 +17,7 @@ import { mapEventToSSE } from "../../ai/sse-mapper.js";
 import { detectPreviewError } from "../../ai/preview-errors.js";
 import { scheduleThumbnailCapture } from "../../ai/thumbnail.js";
 import { createPermissionHandler } from "../../ai/docore-bridge.js";
+import { materializeSkillsForSession } from "../../ai/skills-materializer.js";
 import type { AuthEnv } from "../../middleware/auth.js";
 import { projectSessions } from "./session-state.js";
 
@@ -55,8 +56,21 @@ export function registerFixErrorRoute(app: Hono<AuthEnv>) {
             const tools = await createAllTools(projectId, undefined, userId);
             const sessionTools = tools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
             const projectPath = getProjectPath(projectId);
+
+            // Resolve workspace + materialize skills (best-effort).
+            let skillDirectories: string[] | undefined;
+            try {
+              const [proj] = await sql<{ workspace_id: string }[]>`SELECT workspace_id FROM projects WHERE id = ${projectId}`;
+              if (proj?.workspace_id) {
+                const mat = await materializeSkillsForSession({ workspaceId: proj.workspace_id, projectId, userId });
+                skillDirectories = mat.skillDirectories.length > 0 ? mat.skillDirectories : undefined;
+              }
+            } catch (err) {
+              console.warn(`[Chat] fix-error skill materialization failed:`, err instanceof Error ? err.message : err);
+            }
+
             sessionId = await manager.withAutoRetry(projectId, aiConfig.githubToken, async (eng) => {
-              return eng.resumeSession(dbRow.copilot_session_id, { tools: sessionTools, onPermissionRequest: createPermissionHandler(userId, projectPath) });
+              return eng.resumeSession(dbRow.copilot_session_id, { tools: sessionTools, onPermissionRequest: createPermissionHandler(userId, projectPath), skillDirectories });
             });
             if (sessionId) {
               projectSessions.set(projectId, sessionId);

@@ -142,64 +142,21 @@ export async function buildProjectContextForMode(
         }
       }
 
-      // ── Progressive skill loading ──
-      // 1. Load skill manifest (names + descriptions, no full content)
-      const manifest = await skillsDb.listSkillManifest(workspaceId, projectId);
-      console.log(`[Skills] Manifest loaded: ${manifest.length} skills for workspace ${workspaceId?.slice(0, 8)}`);
-      
-      // 2. Determine which skills to fully load
-      const invokedNames = new Set(options?.invokedSkillNames ?? []);
-      const userMsg = options?.userMessage?.toLowerCase() ?? "";
-      
-      const skillIdsToLoad: string[] = [];
-      const manifestEntries: string[] = [];
-      
-      for (const skill of manifest) {
-        const isExplicitlyInvoked = invokedNames.has(skill.skill_name);
-        const isAutoMatched = skill.auto_invoke && userMsg && matchSkillToPrompt(skill.skill_name, skill.description, userMsg);
-        
-        if (isExplicitlyInvoked || isAutoMatched) {
-          console.log(`[Skills] Loading skill "${skill.skill_name}" (invoked=${isExplicitlyInvoked}, autoMatched=${isAutoMatched})`);
-          skillIdsToLoad.push(skill.id);
-        } else {
-          // Include in manifest so AI knows it exists
-          manifestEntries.push(`  - /${skill.skill_name}: ${skill.description || "(no description)"}`);
-        }
-      }
-      
-      // 3. Load full content for matched/invoked skills
-      const loadedSkills = await skillsDb.getSkillsByIds(skillIdsToLoad);
-      
-      // Also check environment skills that aren't in DB (from marketplace bundles)
-      if (environment) {
-        for (const envSkill of environment.skills) {
-          const isEnvInvoked = invokedNames.has(envSkill.skill_name);
-          if (isEnvInvoked) {
-            // Only inject env skills that were explicitly invoked
-            loadedSkills.push(envSkill as any);
-          } else {
-            manifestEntries.push(`  - /${envSkill.skill_name}`);
-          }
-        }
-      }
-      
-      // 4. Build the output
-      if (loadedSkills.length > 0 || manifestEntries.length > 0) {
-        let skillBlock = "\n\n<skills>";
-        
-        if (loadedSkills.length > 0) {
-          skillBlock += `\n<!-- Active skills (loaded for this request) -->`;
-          for (const s of loadedSkills) {
-            skillBlock += `\n<skill name="${s.skill_name}" status="active">\n${s.skill_content}\n</skill>`;
-          }
-        }
-        
-        if (manifestEntries.length > 0) {
-          skillBlock += `\n<!-- Available skills (user can invoke with /skill-name) -->\n<available-skills>\n${manifestEntries.join("\n")}\n</available-skills>`;
-        }
-        
-        skillBlock += "\n</skills>";
-        context += skillBlock;
+      // ── Skills ──
+      // Skills are now delivered to the model via the SDK's native
+      // `skillDirectories` mechanism (materialized to disk by
+      // skills-materializer.ts and passed into the SDK session). The SDK
+      // discovers each skill's SKILL.md frontmatter and surfaces it natively
+      // — no manual <skill> injection needed here. This also means skills
+      // work correctly on session resume (the previous string-injection path
+      // didn't, since resume() doesn't re-pass systemPrompt).
+      //
+      // Environment-bundle skills that bypass context_skills (transient
+      // env.skills) are still surfaced so the model knows they exist.
+      void options; // invokedSkillNames / userMessage no longer used here
+      if (environment && environment.skills.length > 0) {
+        const envSkillEntries = environment.skills.map((s) => `  - /${s.skill_name}`);
+        context += `\n\n<environment-skills>\n${envSkillEntries.join("\n")}\n</environment-skills>`;
       }
 
       if (envRules.length > 0) {

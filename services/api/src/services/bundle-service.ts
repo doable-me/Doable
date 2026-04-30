@@ -131,6 +131,7 @@ export const bundleService = {
         workspaceId,
         scope: "workspace",
         skillName: skill.name,
+        description: skill.description ?? "",
         skillContent: skill.content,
       });
       await envs.addSkillRef(env.id, created.id);
