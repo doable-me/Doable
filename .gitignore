@@ -61,6 +61,15 @@ npm-debug.log*
 
 # Testing
 coverage/
+tools/integration-test-report.json
+
+# Internal docs (not for public distribution)
+internaldocs/
+
+# Debug / scratch files
+test-sendandwait.*
+collab-issue-research.md
+copilot-concurrency-plan.md
 
 # Reports / diagnostics
 report.*.json

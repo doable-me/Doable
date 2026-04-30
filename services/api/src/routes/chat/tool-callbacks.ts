@@ -175,6 +175,7 @@ export function createToolProgressCallbacks(
       }
     },
     onToolEnd: async (toolName: string, rawEndArgs: unknown, result: unknown) => {
+      dlog(`onToolEnd ${toolName} pendingUiResources=${pendingUiResources.length}`);
       const _argsObj = (rawEndArgs && typeof rawEndArgs === "object" ? rawEndArgs : {}) as Record<string, unknown>;
       const _args = (_argsObj as { arguments?: Record<string, unknown> }).arguments ?? _argsObj;
       state.hadToolCalls = true;
@@ -305,11 +306,6 @@ export function createToolProgressCallbacks(
       }
       {
         // Drain MCP-Apps UI resources queued by tool-bridge during this call.
-        // The host emits each as a `mcp_ui_resource` SSE event; the web client
-        // renders them in a sandboxed iframe via @mcp-ui/client's
-        // <UIResourceRenderer />. The toolCallId is sourced from the Copilot
-        // SDK event context (toolName here) so the iframe can be associated
-        // back to the assistant message.
         while (pendingUiResources.length > 0) {
           const item = pendingUiResources.shift();
           if (!item) break;
@@ -353,7 +349,7 @@ export function createToolProgressCallbacks(
               resource: safeResource,
             },
           });
-          dlog(`mcp_ui_resource EMITTING SSE uri=${item.resource.uri} bytes=${sseData.length}`);
+          dlog(`mcp_ui_resource SSE emit uri=${item.resource.uri} bytes=${sseData.length}`);
           state.awaitingMcpWidget = true;
           try {
             await stream.writeSSE({ data: sseData });

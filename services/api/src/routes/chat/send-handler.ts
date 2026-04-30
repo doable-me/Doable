@@ -469,6 +469,10 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           } finally {
             unsubToolEvents();
             releaseTracker();
+            // Stop heartbeat messages immediately — post-processing (auto-fix,
+            // version, memory) can take seconds and we don't want the frontend
+            // to show stale "Building detailed presentation…" status.
+            clearInterval(softHeartbeat);
             console.log(`[Chat] AI streaming complete for ${projectId}, starting post-processing...`);
           }
 

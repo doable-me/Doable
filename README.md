@@ -60,6 +60,22 @@ Browsers will show a certificate warning for the self-signed cert. Accept it, or
 
 > **Security:** In all modes, application services bind to `127.0.0.1` only. Only nginx accepts external connections.
 
+## Quick Start (Docker)
+
+The fastest way to try Doable — no Node.js or PostgreSQL install needed:
+
+```bash
+git clone https://github.com/nicekid1/doable.git
+cd doable
+docker compose up --build
+```
+
+Open [http://localhost:3000](http://localhost:3000) once everything is up.
+
+> **Note:** AI features require an API key. Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the `api` service environment inside `docker-compose.yml`, or configure the GitHub Copilot SDK (see [AI Configuration](#ai-configuration)).
+
+To stop everything: `docker compose down` (add `-v` to also remove database data).
+
 ## Architecture
 
 Monorepo managed with [pnpm](https://pnpm.io) workspaces and [Turborepo](https://turbo.build).
@@ -133,7 +149,10 @@ pnpm dev:ws      # ws://localhost:4001
 | **API** | 4000 | Hono REST API (auth, projects, AI chat, billing) |
 | **WS** | 4001 | WebSocket server for real-time collaboration |
 | **PostgreSQL** | 5432 | Database (pgvector/pgcrypto/pg_trgm) |
+<<<<<<< Updated upstream
 | **Redis** | 6379 | Optional — shared rate limiting & sessions (for multi-instance) |
+=======
+>>>>>>> Stashed changes
 
 ## AI Configuration
 
@@ -151,7 +170,10 @@ These are not required to run Doable but enable additional features:
 
 | Feature | Variables | Purpose |
 |---------|-----------|---------|
+<<<<<<< Updated upstream
 | Redis | `REDIS_URL` | Shared rate limiting & sessions (multi-instance) |
+=======
+>>>>>>> Stashed changes
 | GitHub OAuth | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Login with GitHub |
 | Google OAuth | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Login with Google |
 | Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Billing & subscriptions |
@@ -170,6 +192,7 @@ See `.env.example` for all available options and `.env.integrations.example` for
 | `pnpm lint` | Run linting |
 | `pnpm format` | Format code with Prettier |
 
+<<<<<<< Updated upstream
 ## Security
 
 - **Secrets**: Never commit real secrets. Use `docker/.env` (gitignored) for Docker deployments and `.env` for local dev. Generate secrets with `openssl rand -hex 32`.
@@ -216,6 +239,8 @@ This handles: Node.js 22, pnpm, PostgreSQL 16, Caddy, Cloudflare Tunnel, firewal
 
 See `docker/.env.example` for all Docker variables and `.env.example` for local development variables.
 
+=======
+>>>>>>> Stashed changes
 ## Contributing
 
 1. Fork the repo and create a feature branch

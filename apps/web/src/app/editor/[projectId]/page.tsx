@@ -178,7 +178,6 @@ interface ChatMsg {
   timestamp: string;
   isStreaming?: boolean;
   isError?: boolean;
-  hidden?: boolean;  // Synthetic messages (e.g. BUILD_DECK auto-fire) hidden from UI
   toolActions?: ToolAction[];
   feedbackGiven?: "up" | "down" | null;
   suggestions?: string[];  // AI-generated next-step suggestions
@@ -188,6 +187,7 @@ interface ChatMsg {
   liveStatus?: string;
   mcpResources?: Record<string, McpUiResource>;
   artifacts?: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }[];
+  hidden?: boolean;
 }
 
 type TaskCardTab = "details" | "preview";
@@ -2491,9 +2491,7 @@ export default function EditorPage() {
               const thinkingContent = m.thinking_content || thinkingFromContent.trim() || undefined;
 
               // Hide synthetic BUILD_DECK user messages from the chat UI
-              const isBuildDeckMsg = m.role === "user" && (m.content || "").trimStart().startsWith("BUILD_DECK");
-              // Also hide the short display label variant
-              const isDesigningMsg = m.role === "user" && /^\u{1F3A8}\s*Designing a /u.test(displayContent);
+              const isHiddenMsg = m.role === "user" && /^\u{1F3A8}\s*Designing\s/u.test(displayContent);
 
               return {
                 id: m.id,
@@ -2504,7 +2502,7 @@ export default function EditorPage() {
                   minute: "2-digit",
                 }),
                 isStreaming: false,
-                ...(isBuildDeckMsg || isDesigningMsg ? { hidden: true } : {}),
+                ...(isHiddenMsg ? { hidden: true } : {}),
                 thinkingContent,
                 toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
                   ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => {
@@ -2537,7 +2535,8 @@ export default function EditorPage() {
             // Two matching strategies:
             //   1. By message ID (works when client-side ID == DB ID).
             //   2. By assistant-message position (fallback when client-side
-            //      crypto.randomUUID() differs from the DB-assigned UUID).
+            //      crypto.randomUUID() differs from the DB-assigned UUID —
+            //      common for just-streamed messages).
             const mcpMap: Record<string, ChatMsg["mcpResources"]> = {};
             const artMap: Record<string, ChatMsg["artifacts"]> = {};
             for (const m of prev) {
@@ -2548,12 +2547,13 @@ export default function EditorPage() {
                 artMap[m.id] = m.artifacts;
               }
             }
-            // Position-based fallback: collect by assistant index
+            // Position-based fallback: collect mcpResources/artifacts by
+            // assistant-message index in the previous state.
             const prevAssistants = prev.filter((m) => m.role === "assistant");
-            const mcpByIdx = prevAssistants.map((m) =>
+            const mcpByIdx: (ChatMsg["mcpResources"] | undefined)[] = prevAssistants.map((m) =>
               m.mcpResources && Object.keys(m.mcpResources).length > 0 ? m.mcpResources : undefined,
             );
-            const artByIdx = prevAssistants.map((m) =>
+            const artByIdx: (ChatMsg["artifacts"] | undefined)[] = prevAssistants.map((m) =>
               m.artifacts && m.artifacts.length > 0 ? m.artifacts : undefined,
             );
             let assistantIdx = 0;
@@ -2561,8 +2561,13 @@ export default function EditorPage() {
               let mcp = mcpMap[m.id];
               let art = artMap[m.id];
               if (m.role === "assistant") {
-                if (!mcp && assistantIdx < mcpByIdx.length) mcp = mcpByIdx[assistantIdx];
-                if (!art && assistantIdx < artByIdx.length) art = artByIdx[assistantIdx];
+                // Fallback to positional match when IDs differ
+                if (!mcp && assistantIdx < mcpByIdx.length) {
+                  mcp = mcpByIdx[assistantIdx];
+                }
+                if (!art && assistantIdx < artByIdx.length) {
+                  art = artByIdx[assistantIdx];
+                }
                 assistantIdx++;
               }
               return {
@@ -2675,7 +2680,12 @@ export default function EditorPage() {
           // will auto-fire and start a new streaming turn.
           setMessages((prev) => {
             const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
-            const hasBuildCard = lastAssistant?.mcpResources &&
+            // Only suppress suggestions if the MCP card will auto-fire a
+            // BUILD_DECK follow-up. If the last user msg was the BUILD_DECK
+            // prompt (hidden), this is the final deck — don't suppress.
+            const lastUser = [...prev].reverse().find((m) => m.role === "user");
+            const wasBuildDeck = lastUser?.hidden || /^\u{1F3A8}\s*Designing\s/u.test(lastUser?.content ?? "");
+            const hasBuildCard = !wasBuildDeck && lastAssistant?.mcpResources &&
               Object.values(lastAssistant.mcpResources).some(
                 (r) => r && typeof r === "object" && "html" in r && (r as Record<string, unknown>).html,
               );
@@ -2685,7 +2695,6 @@ export default function EditorPage() {
               return prev;
             }
             setAiSuggestions(FALLBACK_SUGGESTIONS);
-            const lastUser = [...prev].reverse().find((m) => m.role === "user");
             const resumeAssistantHasOutput = lastAssistant?.content || lastAssistant?.thinkingContent;
             if (
               resumeAssistantHasOutput &&
@@ -3354,8 +3363,6 @@ export default function EditorPage() {
       // Add user message (the visible bubble may use a shorter label than
       // what's sent to the LLM, e.g. for MCP auto-continue where the full
       // skill instructions would otherwise flood the chat).
-      // BUILD_DECK turns are synthetic prompts auto-fired by the MCP card —
-      // hide the user bubble so the chat looks like a single continuous flow.
       const userMsg: ChatMsg = {
         id: Date.now().toString(),
         role: "user",
@@ -3492,7 +3499,11 @@ export default function EditorPage() {
           // prompt from message history instead of the raw BUILD_DECK text.
           setMessages((prev) => {
             const lastAssistant = prev.find((m) => m.id === assistantId);
-            const hasBuildCard = lastAssistant?.mcpResources &&
+            // Only suppress suggestions if the MCP card will auto-fire a
+            // BUILD_DECK follow-up. This is Turn 1 (create_presentation)
+            // only — the BUILD_DECK turn itself also returns an MCP card
+            // (the final deck viewer) but should NOT re-trigger.
+            const hasBuildCard = !isBuildDeckTurn && lastAssistant?.mcpResources &&
               Object.values(lastAssistant.mcpResources).some(
                 (r) => r && typeof r === "object" && "html" in r && (r as Record<string, unknown>).html,
               );
@@ -4937,7 +4948,6 @@ export default function EditorPage() {
               )}
 
               {messages.map((msg, msgIdx) => {
-                // Synthetic messages (BUILD_DECK auto-fire) are hidden from the UI
                 if (msg.hidden) return null;
                 return (
                 <div key={msg.id} className="group">
