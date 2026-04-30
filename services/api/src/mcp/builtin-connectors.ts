@@ -58,6 +58,34 @@ export const BUILTIN_MCP_APPS: BuiltinMcpApp[] = [
       + "mcp-servers/presentation-builder for the source as a developer reference.",
     entrypoint: path.join(MCP_SERVERS_DIR, "presentation-builder", "index.mjs"),
   },
+  {
+    id: "spreadsheet-builder@1",
+    name: "Spreadsheet Builder",
+    description:
+      "Built-in MCP App. Creates editable Excel (.xlsx) workbooks plus CSV exports from a "
+      + "topic, with formulas, formatting, and a live in-chat table preview. Standards-"
+      + "compliant MCP App (mcpui.dev) — see mcp-servers/spreadsheet-builder.",
+    entrypoint: path.join(MCP_SERVERS_DIR, "spreadsheet-builder", "index.mjs"),
+  },
+  {
+    id: "markdown-builder@1",
+    name: "Markdown Builder",
+    description:
+      "Built-in MCP App. Creates polished Markdown documents with frontmatter, tables, "
+      + "and a live rendered HTML preview, plus .md and .html downloads. Standards-"
+      + "compliant MCP App (mcpui.dev) — see mcp-servers/markdown-builder.",
+    entrypoint: path.join(MCP_SERVERS_DIR, "markdown-builder", "index.mjs"),
+  },
+  {
+    id: "pdf-builder@1",
+    name: "PDF Builder",
+    description:
+      "Built-in MCP App. Creates print-ready PDF documents from a topic by generating a "
+      + "single-file HTML and rendering it via headless Chrome. Returns .pdf and .html "
+      + "downloads with a live preview. Standards-compliant MCP App (mcpui.dev) — see "
+      + "mcp-servers/pdf-builder.",
+    entrypoint: path.join(MCP_SERVERS_DIR, "pdf-builder", "index.mjs"),
+  },
 ];
 
 const connectors = connectorQueries(sql);
