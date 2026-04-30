@@ -566,6 +566,22 @@ function pickerHtml({ topic, slideCount, audience, tone, htmlPrompt, pptxPrompt 
   .status.on { display: flex; }
   .spin { width: 14px; height: 14px; border: 2px solid #c7d2fe; border-top-color: #6366f1; border-radius: 50%; animation: sp 0.7s linear infinite; flex: none; }
   @keyframes sp { to { transform: rotate(360deg); } }
+
+  /* Dark mode — matches Doable's dark theme */
+  html[data-theme="dark"] body { color: #f2f2f2; }
+  html[data-theme="dark"] .card { background: #0f0f12; border-color: #27272a; color: #f2f2f2; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  html[data-theme="dark"] h2 { color: #f2f2f2; }
+  html[data-theme="dark"] p.sub { color: #a1a1aa; }
+  html[data-theme="dark"] p.sub strong { color: #f2f2f2; }
+  html[data-theme="dark"] button.opt { background: #18181b; border-color: #27272a; color: #f2f2f2; }
+  html[data-theme="dark"] button.opt:hover { border-color: #6366f1; background: #1e1b4b; }
+  html[data-theme="dark"] .opt .ttl { color: #f2f2f2; }
+  html[data-theme="dark"] .opt .desc { color: #a1a1aa; }
+  html[data-theme="dark"] .footer { color: #52525b; }
+  html[data-theme="dark"] .footer button.quick { color: #a1a1aa; }
+  html[data-theme="dark"] .footer button.quick:hover { color: #f2f2f2; }
+  html[data-theme="dark"] .status { color: #c4b5fd; background: #1e1b4b; border-color: #3730a3; }
+  html[data-theme="dark"] .spin { border-color: #3730a3; border-top-color: #a78bfa; }
 </style></head>
 <body>
 <div class="card">
@@ -651,6 +667,12 @@ function downloadHtml({ fileName, mimeType, base64, sizeBytes, summary }) {
   .meta { font-size: 12px; color: #475569; }
   a.dl { all: unset; cursor: pointer; padding: 8px 14px; border-radius: 8px; background: #0284c7; color: #ffffff; font-weight: 600; font-size: 13px; transition: background .15s; }
   a.dl:hover { background: #0369a1; }
+
+  /* Dark mode — matches Doable's dark theme */
+  html[data-theme="dark"] body { color: #f2f2f2; }
+  html[data-theme="dark"] .card { background: #0f0f12; border-color: #27272a; color: #f2f2f2; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  html[data-theme="dark"] .ttl { color: #f2f2f2; }
+  html[data-theme="dark"] .meta { color: #a1a1aa; }
 </style></head>
 <body>
 <div class="card">
@@ -697,6 +719,15 @@ function webSlidesPreviewHtml({ deckHtml, fileName, base64, sizeBytes, summary }
   .stage { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0f172a; }
   .stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
   .hint { padding: 8px 14px; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; background: #f8fafc; }
+
+  /* Dark mode — matches Doable's dark theme */
+  html[data-theme="dark"] .wrap { background: #0f0f12; border-color: #27272a; color: #f2f2f2; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  html[data-theme="dark"] .bar { background: #18181b; border-bottom-color: #27272a; }
+  html[data-theme="dark"] .bar .ttl { color: #f2f2f2; }
+  html[data-theme="dark"] .bar .sub { color: #a1a1aa; }
+  html[data-theme="dark"] .bar a.open, html[data-theme="dark"] .bar button.fs { background: #27272a; color: #f2f2f2; }
+  html[data-theme="dark"] .bar a.open:hover, html[data-theme="dark"] .bar button.fs:hover { background: #3f3f46; }
+  html[data-theme="dark"] .hint { color: #71717a; border-top-color: #27272a; background: #18181b; }
 </style></head>
 <body>
 <div class="wrap">
