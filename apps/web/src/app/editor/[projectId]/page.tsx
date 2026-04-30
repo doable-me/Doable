@@ -2680,7 +2680,12 @@ export default function EditorPage() {
           // will auto-fire and start a new streaming turn.
           setMessages((prev) => {
             const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
-            const hasBuildCard = lastAssistant?.mcpResources &&
+            // Only suppress suggestions if the MCP card will auto-fire a
+            // BUILD_DECK follow-up. If the last user msg was the BUILD_DECK
+            // prompt (hidden), this is the final deck — don't suppress.
+            const lastUser = [...prev].reverse().find((m) => m.role === "user");
+            const wasBuildDeck = lastUser?.hidden || /^\u{1F3A8}\s*Designing\s/u.test(lastUser?.content ?? "");
+            const hasBuildCard = !wasBuildDeck && lastAssistant?.mcpResources &&
               Object.values(lastAssistant.mcpResources).some(
                 (r) => r && typeof r === "object" && "html" in r && (r as Record<string, unknown>).html,
               );
@@ -2690,7 +2695,6 @@ export default function EditorPage() {
               return prev;
             }
             setAiSuggestions(FALLBACK_SUGGESTIONS);
-            const lastUser = [...prev].reverse().find((m) => m.role === "user");
             const resumeAssistantHasOutput = lastAssistant?.content || lastAssistant?.thinkingContent;
             if (
               resumeAssistantHasOutput &&
@@ -3495,7 +3499,11 @@ export default function EditorPage() {
           // prompt from message history instead of the raw BUILD_DECK text.
           setMessages((prev) => {
             const lastAssistant = prev.find((m) => m.id === assistantId);
-            const hasBuildCard = lastAssistant?.mcpResources &&
+            // Only suppress suggestions if the MCP card will auto-fire a
+            // BUILD_DECK follow-up. This is Turn 1 (create_presentation)
+            // only — the BUILD_DECK turn itself also returns an MCP card
+            // (the final deck viewer) but should NOT re-trigger.
+            const hasBuildCard = !isBuildDeckTurn && lastAssistant?.mcpResources &&
               Object.values(lastAssistant.mcpResources).some(
                 (r) => r && typeof r === "object" && "html" in r && (r as Record<string, unknown>).html,
               );
