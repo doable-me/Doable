@@ -60,16 +60,14 @@ export function initBrowserTracing(): void {
 
   provider.register();
 
-  // Auto-instrument fetch. Propagate trace context to same-origin and
-  // known internal hosts; never to arbitrary cross-origin URLs.
+  // Auto-instrument fetch. Only propagate trace context to same-origin
+  // requests. Cross-origin requests (e.g. to the API on a different
+  // subdomain) must NOT get traceparent headers — the API CORS config
+  // doesn't allow them, and adding them causes preflight failures.
   registerInstrumentations({
     instrumentations: [
       new FetchInstrumentation({
-        propagateTraceHeaderCorsUrls: [
-          /^https?:\/\/127\.0\.0\.1(:\d+)?\//,
-          /^https?:\/\/localhost(:\d+)?\//,
-          /^https?:\/\/[^/]+\.doable\.me\//,
-        ],
+        propagateTraceHeaderCorsUrls: [],
       }),
     ],
   });
