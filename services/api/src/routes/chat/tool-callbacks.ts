@@ -39,6 +39,7 @@ type ArtifactRef = {
 function offloadDataUris(
   html: string,
   projectId?: string,
+  resourceUri?: string,
 ): { html: string; artifacts: ArtifactRef[] } {
   const artifacts: ArtifactRef[] = [];
   if (!html || html.length < 16 * 1024) return { html, artifacts };
@@ -57,18 +58,35 @@ function offloadDataUris(
         const bytes = Buffer.from(b64, "base64");
         const ext =
           mime.includes("presentationml") ? "pptx" :
+          mime.includes("spreadsheetml") ? "xlsx" :
+          mime.includes("text/csv") ? "csv" :
+          mime.includes("text/markdown") ? "md" :
           mime.includes("html") ? "html" :
           mime.includes("pdf") ? "pdf" :
           mime.includes("png") ? "png" :
           "bin";
-        const fileName = `presentation-${Date.now()}.${ext}`;
+        const baseByExt: Record<string, string> = {
+          pptx: "presentation",
+          xlsx: "spreadsheet",
+          csv: "spreadsheet",
+          md: "document",
+          pdf: "document",
+          html: "document",
+          png: "image",
+        };
+        const base = baseByExt[ext] || "artifact";
+        const fileName = `${base}-${Date.now()}.${ext}`;
         const id = storeArtifact({ bytes, mimeType: mime, fileName });
         const url = `${ARTIFACT_PUBLIC_URL.replace(/\/$/, "")}/artifacts/${id}.${ext}`;
         const ref: ArtifactRef = { url, fileName, mimeType: mime, sizeBytes: bytes.length };
 
         // Persist HTML decks into the project tree so the live preview
         // serves them directly (refresh-safe, thumbnailable, editable).
-        if (projectId && ext === "html") {
+        // Only do this for presentation-builder decks — other built-in
+        // MCP apps (markdown / pdf / spreadsheet) emit HTML purely as a
+        // download artifact and must NOT overwrite the project preview.
+        const isDeck = !resourceUri || resourceUri.includes("presentation-builder");
+        if (projectId && ext === "html" && isDeck) {
           const text = bytes.toString("utf-8");
           writeProjectFile(projectId, "index.html", text).then(
             () => { dlog(`wrote deck to projects/${projectId}/index.html (${text.length}B)`); },
@@ -194,9 +212,9 @@ export function createToolProgressCallbacks(
       // dropping `mcp_ui_resource` or `artifact_ready` SSE events.
       const collectedArtifacts: ArtifactRef[] = [];
       for (const item of pendingUiResources) {
-        const r = item.resource as unknown as Record<string, unknown> & { text?: string };
+        const r = item.resource as unknown as Record<string, unknown> & { text?: string; uri?: string };
         if (typeof r?.text === "string" && r.text.length > 16 * 1024) {
-          const { html: rewritten, artifacts: arts } = offloadDataUris(r.text, projectId);
+          const { html: rewritten, artifacts: arts } = offloadDataUris(r.text, projectId, typeof r.uri === "string" ? r.uri : undefined);
           if (arts.length > 0) {
             collectedArtifacts.push(...arts);
             (item.resource as unknown as Record<string, unknown>).text = rewritten;
@@ -317,9 +335,9 @@ export function createToolProgressCallbacks(
           // mcp_ui_resource iframe path can still be flaky).
           let artifacts: ArtifactRef[] = [];
           const safeResource = (() => {
-            const r = item.resource as Record<string, unknown> & { text?: string };
+            const r = item.resource as Record<string, unknown> & { text?: string; uri?: string };
             if (typeof r?.text === "string" && r.text.length > 16 * 1024) {
-              const { html: rewritten, artifacts: arts } = offloadDataUris(r.text, projectId);
+              const { html: rewritten, artifacts: arts } = offloadDataUris(r.text, projectId, typeof r.uri === "string" ? r.uri : undefined);
               artifacts = arts;
               if (rewritten !== r.text) {
                 return { ...r, text: rewritten };
