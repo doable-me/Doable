@@ -56,7 +56,7 @@ function offloadDataUris(
   const bytesByExt = new Map<string, Buffer>();
   const urlByExt = new Map<string, string>();
   const out = html.replace(
-    /data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=]{500,})/g,
+    /data:([a-zA-Z0-9.+/-]+(?:;[^,;]+)*);base64,([A-Za-z0-9+/=]{500,})/g,
     (_match, mime: string, b64: string) => {
       const key = `${mime}|${b64.length}|${b64.slice(0, 32)}|${b64.slice(-32)}`;
       const existing = byKey.get(key);
