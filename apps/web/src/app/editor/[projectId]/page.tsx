@@ -1957,6 +1957,34 @@ export default function EditorPage() {
     }
   }, [resolvedProjectId]);
 
+  // ─── Sync Doable theme into preview iframe ──────────────────
+  // Watches host <html>.dark and posts {type:"doable-theme"} to the
+  // preview iframe so the bridge inside it can toggle <html class="dark">
+  // and run its dark-shim. Also responds to the iframe's
+  // "doable-theme-ready" handshake by re-pushing the current theme.
+  useEffect(() => {
+    function pushTheme() {
+      const t = document.documentElement.classList.contains("dark") ? "dark" : "light";
+      try {
+        iframeRef.current?.contentWindow?.postMessage(
+          { type: "doable-theme", theme: t },
+          "*",
+        );
+      } catch { /* ignore */ }
+    }
+    function handleReady(e: MessageEvent) {
+      if (e?.data?.type === "doable-theme-ready") pushTheme();
+    }
+    pushTheme();
+    window.addEventListener("message", handleReady);
+    const obs = new MutationObserver(pushTheme);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => {
+      window.removeEventListener("message", handleReady);
+      obs.disconnect();
+    };
+  }, []);
+
   // ─── Fetch workspace_id from project ──────────────────────
   useEffect(() => {
     if (!resolvedProjectId) return;
