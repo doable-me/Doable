@@ -6,11 +6,12 @@ import {
 } from "../projects/file-manager.js";
 import { contextManager } from "../context/manager.js";
 import { buildContextPrompt } from "../context/injector.js";
-import { environmentQueries, marketplaceQueries } from "@doable/db";
+import { environmentQueries, marketplaceQueries, skillsQueries } from "@doable/db";
 
 const ctxManager = contextManager(sql);
 const envDb = environmentQueries(sql);
 const mktDb = marketplaceQueries(sql);
+const skillsDb = skillsQueries(sql);
 
 export async function buildProjectContext(projectId: string): Promise<string> {
   let context = "";
@@ -123,6 +124,26 @@ export async function buildProjectContextForMode(
         skills = items.skills;
         rules = items.rules;
         // No instructions for virtual default
+      }
+
+      // Also include project-scoped skills & rules (always, regardless of environment)
+      if (projectId) {
+        const [projSkills, projRules] = await Promise.all([
+          skillsDb.listProjectScopedSkills(workspaceId, projectId),
+          skillsDb.listProjectScopedRules(workspaceId, projectId),
+        ]);
+        const existingSkillIds = new Set(skills.map((s) => "id" in s ? (s as { id: string }).id : s.skill_name));
+        for (const ps of projSkills) {
+          if (!existingSkillIds.has(ps.id)) {
+            skills.push(ps);
+          }
+        }
+        const existingRuleIds = new Set(rules.map((r) => "id" in r ? (r as { id: string }).id : r.rule_name));
+        for (const pr of projRules) {
+          if (!existingRuleIds.has(pr.id)) {
+            rules.push(pr);
+          }
+        }
       }
 
       if (skills.length > 0) {

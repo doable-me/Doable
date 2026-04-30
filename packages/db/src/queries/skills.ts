@@ -164,5 +164,24 @@ export function skillsQueries(sql: postgres.Sql) {
       const result = await sql`DELETE FROM context_rules WHERE id = ${id}`;
       return result.count > 0;
     },
+
+    // ── Project-scoped queries (for context injection) ──
+    async listProjectScopedSkills(workspaceId: string, projectId: string) {
+      return sql<ContextSkillRow[]>`
+        SELECT * FROM context_skills
+        WHERE workspace_id = ${workspaceId}
+          AND scope = 'project' AND project_id = ${projectId}
+        ORDER BY skill_name
+      `;
+    },
+
+    async listProjectScopedRules(workspaceId: string, projectId: string) {
+      return sql<ContextRuleRow[]>`
+        SELECT * FROM context_rules
+        WHERE workspace_id = ${workspaceId}
+          AND scope = 'project' AND project_id = ${projectId}
+        ORDER BY rule_name
+      `;
+    },
   };
 }
