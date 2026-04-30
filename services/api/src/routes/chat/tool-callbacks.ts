@@ -142,9 +142,30 @@ function offloadDataUris(
   return { html: out, artifacts };
 }
 
-/** Project-preview HTML for PDFs — uses native browser <embed>. */
+/** Project-preview HTML for PDFs — renders pages via PDF.js (works inside a sandboxed iframe, unlike <embed>). */
 function buildPdfViewerHtml(pdfUrl: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Document preview</title><style>html,body{margin:0;padding:0;height:100%;background:#1a1a1a;color:#eaeaea;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}.bar{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#0f0f12;border-bottom:1px solid #27272a}.bar a{color:#60a5fa;text-decoration:none;font-weight:600;font-size:13px}.bar a:hover{text-decoration:underline}embed,iframe{width:100%;height:calc(100vh - 41px);border:0;display:block;background:#222}</style></head><body><div class="bar"><span>📄 Document preview</span><a href="${pdfUrl}" download>⬇ Download PDF</a></div><embed src="${pdfUrl}" type="application/pdf"/></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Document preview</title><script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script><style>html,body{margin:0;padding:0;min-height:100%;background:#1a1a1a;color:#eaeaea;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}.bar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#0f0f12;border-bottom:1px solid #27272a;position:sticky;top:0;z-index:10}.bar a{color:#fff;background:#dc2626;padding:8px 14px;border-radius:6px;text-decoration:none;font-weight:600;font-size:13px}.bar a:hover{background:#b91c1c}.pages{display:flex;flex-direction:column;align-items:center;gap:14px;padding:14px}.pages canvas{max-width:100%;height:auto;background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.4)}.msg{padding:30px 16px;text-align:center;color:#a1a1aa;font-size:14px}.err{color:#f87171}@media (prefers-color-scheme:light){html,body{background:#f1f5f9;color:#0f172a}.bar{background:#fff;border-bottom-color:#e2e8f0;color:#0f172a}}</style></head><body><div class="bar"><span>📄 PDF preview</span><a href="${pdfUrl}" download>⬇ Download PDF</a></div><div id="pages" class="pages"><div class="msg">Loading PDF…</div></div><script>
+(async () => {
+  const wrap = document.getElementById("pages");
+  try {
+    if (!window.pdfjsLib) throw new Error("pdf.js failed to load");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+    const doc = await pdfjsLib.getDocument({ url: ${JSON.stringify(pdfUrl)} }).promise;
+    wrap.innerHTML = "";
+    const max = Math.min(doc.numPages, 30);
+    for (let i = 1; i <= max; i++) {
+      const page = await doc.getPage(i);
+      const vp = page.getViewport({ scale: 1.5 });
+      const canvas = document.createElement("canvas");
+      canvas.width = vp.width; canvas.height = vp.height;
+      wrap.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+    }
+  } catch (e) {
+    wrap.innerHTML = '<div class="msg err">Failed to render PDF inline: ' + (e && e.message || e) + '<br><br>Use the Download PDF button above to open the file directly.</div>';
+  }
+})();
+</script></body></html>`;
 }
 
 /** Project-preview HTML for spreadsheets — renders the workbook with SheetJS. */
