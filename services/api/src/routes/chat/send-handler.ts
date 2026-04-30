@@ -396,12 +396,19 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
                 const buffered = state.leadingTextBuffer;
                 state.leadingTextBuffer = "";
                 state.leadingTextFlushed = true;
-                // Move from thinking back to content
-                state.assistantThinking = state.assistantThinking.slice(0, state.assistantThinking.length - buffered.length);
-                state.assistantContent += buffered;
-                console.log(`[Chat][${projectId.slice(0, 8)}] Flushing ${bufLen} chars as content (no tools, no prior content)`);
-                broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: buffered, messageId, isThinking: false }, userId).catch(() => {});
-                await stream.writeSSE({ data: JSON.stringify({ type: "thinking_to_text", data: buffered }) });
+                // Strip any <think>...</think> blocks that the channel router
+                // didn't catch during streaming (token boundary issue)
+                const visibleContent = buffered.replace(/<think>[\s\S]*?<\/think>\s*/gi, "").trim();
+                if (visibleContent) {
+                  // Move buffer from thinking to content (only the visible portion)
+                  state.assistantThinking = state.assistantThinking.slice(0, state.assistantThinking.length - buffered.length);
+                  state.assistantContent += visibleContent;
+                  console.log(`[Chat][${projectId.slice(0, 8)}] Flushing ${visibleContent.length} chars as content (stripped from ${bufLen} buffer, no tools)`);
+                  broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: visibleContent, messageId, isThinking: false }, userId).catch(() => {});
+                  await stream.writeSSE({ data: JSON.stringify({ type: "thinking_to_text", data: visibleContent }) });
+                } else {
+                  console.log(`[Chat][${projectId.slice(0, 8)}] Keeping ${bufLen} chars as thinking (all thinking, no visible content)`);
+                }
               } else {
                 state.leadingTextBuffer = "";
                 state.leadingTextFlushed = true;
