@@ -228,8 +228,8 @@ async function startSSEFetch(
       return;
     }
 
-    const reader = res.body?.getReader();
-    if (!reader) {
+    const body = res.body;
+    if (!body) {
       if (currentBridge && currentBridge.projectId === projectId) {
         currentBridge.error = "No response stream received.";
         notifyStatus("error", currentBridge.error);
@@ -237,19 +237,28 @@ async function startSSEFetch(
       return;
     }
 
-    // Store the reader — if the bridge hasn't been consumed yet, we pre-read
-    // and buffer events. Once consumed, the editor takes the reader directly.
+    // Tee the stream: one branch for the bridge pre-read (dashboard status
+    // overlay) and one pristine branch for the editor. This eliminates the
+    // race condition where the bridge loop's pending reader.read() consumes
+    // a chunk that the editor never sees (causing the stream to hang if
+    // [DONE] is in that lost chunk).
+    const [bridgeStream, editorStream] = body.tee();
+    const bridgeReader = bridgeStream.getReader();
+    const editorReader = editorStream.getReader();
+
     if (currentBridge && currentBridge.projectId === projectId) {
-      currentBridge.reader = reader;
+      // Give the editor its OWN reader — it will see ALL data from the start.
+      currentBridge.reader = editorReader;
       notifyStatus("streaming", "AI is responding…");
     }
 
-    // Pre-read until consumed or stream ends
+    // Pre-read from the BRIDGE reader for dashboard status updates only.
+    // The editor reader is untouched and will replay everything.
     const decoder = new TextDecoder();
     let buffer = "";
 
     while (currentBridge && currentBridge.projectId === projectId && !currentBridge.consumed) {
-      const { done, value } = await reader.read();
+      const { done, value } = await bridgeReader.read();
       if (done) {
         currentBridge.isDone = true;
         notifyStatus("done", "Done");
@@ -283,17 +292,17 @@ async function startSSEFetch(
 
         if (payload === "[DONE]") {
           currentBridge.isDone = true;
-          currentBridge.events.push({ raw: payload });
           notifyStatus("done", "Done");
+          // Cancel the bridge reader — editor reader has everything.
+          bridgeReader.cancel().catch(() => {});
           return;
         }
-
-        currentBridge.events.push({ raw: payload });
       }
-
-      // Persist partial buffer so the editor can continue parsing
-      currentBridge.sseBuffer = buffer;
     }
+
+    // Bridge was consumed — cancel the bridge pre-read branch.
+    // The editor's tee'd reader continues independently.
+    bridgeReader.cancel().catch(() => {});
   } catch (err: unknown) {
     if (abortController.signal.aborted) return;
     if (currentBridge && currentBridge.projectId === projectId) {

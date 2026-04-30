@@ -1010,9 +1010,9 @@ function processOneSSEPayload(
 }
 
 async function resumeBridgeStream(
-  bufferedEvents: BridgeSSEEvent[],
+  _bufferedEvents: BridgeSSEEvent[],
   reader: ReadableStreamDefaultReader<Uint8Array> | null,
-  sseBuffer: string,
+  _sseBuffer: string,
   isDone: boolean,
   error: string | undefined,
   signal: AbortSignal,
@@ -1026,23 +1026,19 @@ async function resumeBridgeStream(
     return;
   }
 
-  // 1. Replay buffered events
-  for (const evt of bufferedEvents) {
-    if (signal.aborted) return;
-    const done = processOneSSEPayload(evt.raw, cb, pendingToolNames);
-    if (done) return;
-  }
+  // The reader is a tee'd branch of the original SSE stream. It contains
+  // ALL data from the beginning — no need to replay buffered events
+  // (they would be duplicates since tee() branches are independent).
 
-  // 2. If stream already ended, we're done
+  // If stream already ended before the editor consumed, we're done
   if (isDone || !reader) {
     cb.onDone();
     return;
   }
 
-  // 3. Continue reading from the live stream
+  // Read everything from the tee'd reader
   const decoder = new TextDecoder();
-  let buffer = sseBuffer;
-  let lastDataAt = Date.now();
+  let buffer = "";
   const STALE_MS = 75_000;
 
   try {
@@ -1066,7 +1062,6 @@ async function resumeBridgeStream(
         break;
       }
 
-      lastDataAt = Date.now();
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
