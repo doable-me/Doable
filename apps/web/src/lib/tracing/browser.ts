@@ -46,7 +46,7 @@ export function initBrowserTracing(): void {
   const provider = new WebTracerProvider({ resource });
 
   const exporter = new OTLPTraceExporter({
-    url: "/api/otlp/v1/traces",
+    url: `${window.location.origin}/api/otlp/v1/traces`,
   });
 
   provider.addSpanProcessor(
