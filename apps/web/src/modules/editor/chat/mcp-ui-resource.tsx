@@ -112,11 +112,19 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
 
   // Inject theme info into the iframe HTML so MCP cards can adapt their
   // styles to dark/light mode.
-  const themeListenerScript = `<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="theme"&&e.data.payload){document.documentElement.setAttribute("data-theme",e.data.payload.theme)}});<\/script>`;
-  // Ensure the <html> element itself is transparent so no white canvas
-  // bleeds through body padding. Without this, the browser's default
-  // white root-element background is visible behind MCP app cards.
-  const themeResetStyle = `<style>html{background:transparent}</style>`;
+  const themeListenerScript = `<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="theme"&&e.data.payload){document.documentElement.setAttribute("data-theme",e.data.payload.theme);document.documentElement.style.colorScheme=e.data.payload.theme;}});<\/script>`;
+  // Ensure no white canvas leaks through. Two failure modes to defeat:
+  //   1. Default `color-scheme: light` makes the iframe's *user-agent
+  //      canvas* (the area behind a transparent <html>) render WHITE in
+  //      Chromium, even when html/body explicitly say `background:
+  //      transparent`. Setting color-scheme on <html> is the only way to
+  //      flip the canvas to dark for transparent iframes.
+  //   2. Many MCP-app HTML payloads set `body { padding: 10px 0 }` so a
+  //      transparent body strip is visible above/below their card,
+  //      revealing the canvas. Force margin/padding to zero with
+  //      !important — apps that need internal whitespace should put it on
+  //      their own .card wrappers.
+  const themeResetStyle = `<style>:root{color-scheme:${isDark ? "dark" : "light"};}html,body{background:transparent !important;margin:0 !important;}html{padding:0 !important;}body{padding:0 !important;}</style>`;
   const themedHtml = html
     ? (() => {
         let h = html.replace(/<html(?=[>\s])/i, `<html data-theme="${isDark ? "dark" : "light"}"`);
