@@ -84,9 +84,13 @@ CREATE TABLE IF NOT EXISTS tracing_overrides (
   revoked_at   timestamptz
 );
 
+-- Note: the predicate intentionally omits `expires_at > now()` because
+-- `now()` is STABLE (not IMMUTABLE) and Postgres rejects it in partial
+-- index predicates. Callers should add `AND expires_at > now()` to the
+-- WHERE clause at query time; the index still narrows to non-revoked rows.
 CREATE INDEX IF NOT EXISTS idx_tracing_overrides_active
   ON tracing_overrides (scope, scope_value)
-  WHERE revoked_at IS NULL AND expires_at > now();
+  WHERE revoked_at IS NULL;
 
 -- ─── tracing_audit_log: every level change recorded ───────────────────
 CREATE TABLE IF NOT EXISTS tracing_audit_log (
