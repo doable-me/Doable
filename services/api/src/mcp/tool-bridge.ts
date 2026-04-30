@@ -158,6 +158,8 @@ export function createMcpTools(
           // sandboxed iframe. The text portion of the result still goes to the
           // LLM verbatim (the server is responsible for instructing the model
           // to wait/stop/etc inside that text).
+          const contentTypes = (result.content ?? []).map((it: Record<string, unknown>) => `${it.type}${it.type === "resource" ? `:uri=${(it as { resource?: { uri?: string } }).resource?.uri?.slice(0, 60) ?? "NONE"}` : ""}`);
+          dlog(`handler: scanning ${(result.content ?? []).length} items for UI resources — types=[${contentTypes.join(", ")}]`);
           for (const item of result.content ?? []) {
             if (item.type !== "resource") continue;
             const r = (item as { resource?: { uri?: string } }).resource;
