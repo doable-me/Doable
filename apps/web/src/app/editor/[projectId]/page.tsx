@@ -693,19 +693,7 @@ async function streamChat(
           if (parsed.type === "mcp_ui_resource") {
             const d = parsed.data as Record<string, unknown> | undefined;
             const r = d?.resource as { uri?: string; mimeType?: string; text?: string; blob?: string } | undefined;
-            console.log("[MCP][SSE] mcp_ui_resource received", {
-              hasCallback: !!onMcpUiResource,
-              hasData: !!d,
-              toolCallId: d?.toolCallId,
-              toolCallIdType: typeof d?.toolCallId,
-              hasResource: !!r,
-              uri: r?.uri?.slice(0, 80),
-              mimeType: r?.mimeType,
-              textLen: r?.text?.length,
-              conditionResult: !!(onMcpUiResource && d && typeof d.toolCallId === "string" && r?.uri && r?.mimeType),
-            });
             if (onMcpUiResource && d && typeof d.toolCallId === "string" && r?.uri && r?.mimeType) {
-              console.log("[MCP][SSE] ✓ Calling onMcpUiResource callback");
               onMcpUiResource({
                 toolCallId: d.toolCallId as string,
                 connectorId: (d.connectorId as string) ?? "",
@@ -2453,6 +2441,9 @@ export default function EditorPage() {
       }
       try {
         const json = await apiFetch<{ data: any[] }>(`/projects/${resolvedProjectId}/chat/history`);
+        // Re-check after await: sendMessage may have started while fetch
+        // was in flight. Replacing state now would wipe mcpResources.
+        if (localStreamActiveRef.current) return;
         if (Array.isArray(json.data) && json.data.length > 0) {
           const currentUserId = authUser?.id;
           const apiMessages: ChatMsg[] = json.data
@@ -2535,6 +2526,12 @@ export default function EditorPage() {
             // because the DB/history API doesn't persist them. Without this,
             // build cards (e.g. presentation builder) would unmount after
             // finalizeStream → loadFromApi, preventing BUILD_DECK from firing.
+            //
+            // Two matching strategies:
+            //   1. By message ID (works when client-side ID == DB ID).
+            //   2. By assistant-message position (fallback when client-side
+            //      crypto.randomUUID() differs from the DB-assigned UUID —
+            //      common for just-streamed messages).
             const mcpMap: Record<string, ChatMsg["mcpResources"]> = {};
             const artMap: Record<string, ChatMsg["artifacts"]> = {};
             for (const m of prev) {
@@ -2545,11 +2542,35 @@ export default function EditorPage() {
                 artMap[m.id] = m.artifacts;
               }
             }
-            return apiMessages.map((m) => ({
-              ...m,
-              ...(mcpMap[m.id] ? { mcpResources: mcpMap[m.id] } : {}),
-              ...(artMap[m.id] && (!m.artifacts || m.artifacts.length === 0) ? { artifacts: artMap[m.id] } : {}),
-            }));
+            // Position-based fallback: collect mcpResources/artifacts by
+            // assistant-message index in the previous state.
+            const prevAssistants = prev.filter((m) => m.role === "assistant");
+            const mcpByIdx: (ChatMsg["mcpResources"] | undefined)[] = prevAssistants.map((m) =>
+              m.mcpResources && Object.keys(m.mcpResources).length > 0 ? m.mcpResources : undefined,
+            );
+            const artByIdx: (ChatMsg["artifacts"] | undefined)[] = prevAssistants.map((m) =>
+              m.artifacts && m.artifacts.length > 0 ? m.artifacts : undefined,
+            );
+            let assistantIdx = 0;
+            return apiMessages.map((m) => {
+              let mcp = mcpMap[m.id];
+              let art = artMap[m.id];
+              if (m.role === "assistant") {
+                // Fallback to positional match when IDs differ
+                if (!mcp && assistantIdx < mcpByIdx.length) {
+                  mcp = mcpByIdx[assistantIdx];
+                }
+                if (!art && assistantIdx < artByIdx.length) {
+                  art = artByIdx[assistantIdx];
+                }
+                assistantIdx++;
+              }
+              return {
+                ...m,
+                ...(mcp ? { mcpResources: mcp } : {}),
+                ...(art && (!m.artifacts || m.artifacts.length === 0) ? { artifacts: art } : {}),
+              };
+            });
           });
           // Also update suggestions from the last assistant message
           const lastAssistant = [...apiMessages].reverse().find(m => m.role === "assistant");
@@ -2604,7 +2625,10 @@ export default function EditorPage() {
           apiFetch<{ active: boolean; mode?: string }>(`/projects/${resolvedProjectId}/ai-status`).catch(() => null),
         ]);
         const isActive = (chatStatusRes?.streaming === true) || (aiStatusRes?.active === true);
-        if (!isActive) return;
+        // Don't enter stream-resume when sendMessage is already handling
+        // the stream — the two paths racing causes loadFromApi to overwrite
+        // in-flight mcpResources.
+        if (!isActive || localStreamActiveRef.current) return;
 
         setLiveStatus("AI is still working on your project...");
         setIsStreaming(true);
@@ -3599,20 +3623,13 @@ export default function EditorPage() {
         },
         // onMcpUiResource — MCP-Apps UI resource (sandboxed iframe)
         (resource) => {
-          console.log("[MCP][sendMessage] onMcpUiResource called", {
-            toolCallId: resource.toolCallId,
-            uri: resource.resource?.uri?.slice(0, 80),
-            assistantId,
-          });
-          setMessages((prev) => {
-            const target = prev.find((m) => m.id === assistantId);
-            console.log("[MCP][sendMessage] setMessages — target found:", !!target, "assistantId:", assistantId);
-            return prev.map((m) =>
+          setMessages((prev) =>
+            prev.map((m) =>
               m.id === assistantId
                 ? { ...m, mcpResources: { ...(m.mcpResources ?? {}), [resource.toolCallId]: resource } }
                 : m
-            );
-          });
+            )
+          );
         },
         // onArtifactReady — small dedicated download notification
         (artifact) => {

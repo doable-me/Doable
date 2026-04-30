@@ -175,7 +175,7 @@ export function createToolProgressCallbacks(
       }
     },
     onToolEnd: async (toolName: string, rawEndArgs: unknown, result: unknown) => {
-      console.log(`[ToolCallbacks] onToolEnd CALLED for '${toolName}' — pendingUiResources=${pendingUiResources.length}`);
+      dlog(`onToolEnd ${toolName} pendingUiResources=${pendingUiResources.length}`);
       const _argsObj = (rawEndArgs && typeof rawEndArgs === "object" ? rawEndArgs : {}) as Record<string, unknown>;
       const _args = (_argsObj as { arguments?: Record<string, unknown> }).arguments ?? _argsObj;
       state.hadToolCalls = true;
@@ -306,11 +306,9 @@ export function createToolProgressCallbacks(
       }
       {
         // Drain MCP-Apps UI resources queued by tool-bridge during this call.
-        console.log(`[ToolCallbacks] DRAIN check: pendingUiResources=${pendingUiResources.length}`);
         while (pendingUiResources.length > 0) {
           const item = pendingUiResources.shift();
           if (!item) break;
-          console.log(`[ToolCallbacks] DRAINING item: uri=${item.resource?.uri?.slice(0, 80)}`);
           const emittedToolCallId = `tc_${toolName}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
           // Off-load any oversize base64 data: URIs inside the rawHtml so the
           // resulting SSE event stays small enough to flow through Cloudflare
@@ -351,13 +349,13 @@ export function createToolProgressCallbacks(
               resource: safeResource,
             },
           });
-          console.log(`[ToolCallbacks] mcp_ui_resource EMITTING SSE uri=${item.resource.uri} bytes=${sseData.length}`);
+          dlog(`mcp_ui_resource SSE emit uri=${item.resource.uri} bytes=${sseData.length}`);
           state.awaitingMcpWidget = true;
           try {
             await stream.writeSSE({ data: sseData });
-            console.log(`[ToolCallbacks] mcp_ui_resource SSE write OK`);
+            dlog(`mcp_ui_resource SSE write OK`);
           } catch (e) {
-            console.log(`[ToolCallbacks] mcp_ui_resource SSE write FAILED: ${(e as Error).message}`);
+            dlog(`mcp_ui_resource SSE write FAILED: ${(e as Error).message}`);
           }
         }
       }
