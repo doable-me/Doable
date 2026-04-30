@@ -16,14 +16,58 @@ export const VISUAL_EDIT_BRIDGE_INLINE = `
   // on iframe load and whenever the user toggles theme. Mirror it onto the
   // preview's <html> so Tailwind \`dark:\` classes resolve correctly and the
   // user-agent canvas color matches.
+  var __doableTheme = null; // "dark" | "light" once parent has told us
+  var __mqlListeners = []; // { mql, listener }
+
+  // Patch window.matchMedia so any code reading "prefers-color-scheme" sees
+  // Doable's theme rather than the OS preference. This rescues legacy
+  // scaffolds that embed the OS query in inline styles or one-shot reads.
+  try {
+    var origMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = function(query) {
+      var mql = origMatchMedia(query);
+      if (typeof query === "string" && /prefers-color-scheme\\s*:\\s*(dark|light)/i.test(query)) {
+        var wants = /dark/i.test(query) ? "dark" : "light";
+        var compute = function() { return __doableTheme ? __doableTheme === wants : mql.matches; };
+        var lastValue = compute();
+        Object.defineProperty(mql, "matches", { configurable: true, get: compute });
+        var origAdd = mql.addEventListener.bind(mql);
+        var origRem = mql.removeEventListener.bind(mql);
+        mql.addEventListener = function(type, cb) {
+          if (type === "change") __mqlListeners.push({ mql: mql, cb: cb, wants: wants, last: lastValue });
+          else origAdd(type, cb);
+        };
+        mql.removeEventListener = function(type, cb) {
+          if (type === "change") {
+            __mqlListeners = __mqlListeners.filter(function(x) { return !(x.mql === mql && x.cb === cb); });
+          } else origRem(type, cb);
+        };
+      }
+      return mql;
+    };
+  } catch (e) { /* ignore */ }
+
+  function fireMatchMediaChanges() {
+    for (var i = 0; i < __mqlListeners.length; i++) {
+      var entry = __mqlListeners[i];
+      var newVal = __doableTheme === entry.wants;
+      if (newVal !== entry.last) {
+        entry.last = newVal;
+        try { entry.cb({ matches: newVal, media: entry.mql.media }); } catch (e) { /* ignore */ }
+      }
+    }
+  }
+
   function applyDoableTheme(theme) {
     var t = theme === "dark" ? "dark" : "light";
+    __doableTheme = t;
     var root = document.documentElement;
     if (t === "dark") root.classList.add("dark");
     else root.classList.remove("dark");
     root.setAttribute("data-theme", t);
     try { root.style.colorScheme = t; } catch (e) {}
     ensureDarkShim();
+    fireMatchMediaChanges();
   }
 
   // Tailwind v4 defaults the \`dark:\` variant to \`@media (prefers-color-scheme: dark)\`.
