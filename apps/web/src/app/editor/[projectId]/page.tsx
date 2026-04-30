@@ -5200,9 +5200,16 @@ export default function EditorPage() {
                             )}
                             
                             {/* Live Streaming Glowing Orb - visible while streaming, and
-                                afterwards as a summary when there are tool actions */}
+                                afterwards as a summary when there are tool actions.
+                                NOTE: bg uses `bg-card/70 backdrop-blur-md` (not
+                                `bg-foreground/30`) so this card adapts to the
+                                active theme — `--foreground` is white in dark
+                                mode, which produced an ugly translucent-white
+                                overlay during presentation creation. `--card`
+                                is a slightly elevated panel color that reads
+                                as a subtle lift in both dark + light modes. */}
                             {!msg.isError && (msg.isStreaming || (msg.toolActions && msg.toolActions.length > 0)) && (
-                              <div className="relative mt-4 mb-4 overflow-hidden rounded-2xl border border-border bg-foreground/30 p-5 shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm ml-auto mr-auto">
+                              <div data-testid="streaming-orb-card" className="relative mt-4 mb-4 overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-md p-5 shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm ml-auto mr-auto">
                                 <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-brand-600/10 to-transparent pointer-events-none" />
                                 <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-500/20 blur-[60px] pointer-events-none rounded-full" />
                                 
@@ -5217,7 +5224,7 @@ export default function EditorPage() {
                                       <Check className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
                                     )}
                                   </div>
-                                  <h3 className="mt-4 mb-3 text-sm font-semibold text-white tracking-wide">
+                                  <h3 className="mt-4 mb-3 text-sm font-semibold text-foreground tracking-wide">
                                     {msg.isStreaming
                                       ? (liveStatus || "Building...")
                                       : `${msg.toolActions?.length ?? 0} ${((msg.toolActions?.length ?? 0) === 1) ? "change" : "changes"} applied`}
