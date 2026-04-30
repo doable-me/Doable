@@ -64,10 +64,22 @@ export function initBrowserTracing(): void {
   // requests. Cross-origin requests (e.g. to the API on a different
   // subdomain) must NOT get traceparent headers — the API CORS config
   // doesn't allow them, and adding them causes preflight failures.
+  //
+  // ignoreUrls: skip long-running SSE endpoints. FetchInstrumentation
+  // calls response.clone() twice and drains one clone in a recursive
+  // read loop to detect end-of-stream; the second clone is never read,
+  // so its internal queue accumulates every byte for the lifetime of
+  // the stream. For multi-minute chat streams this caused memory growth
+  // and backpressure-induced chunk delivery delays in the consumer.
   registerInstrumentations({
     instrumentations: [
       new FetchInstrumentation({
         propagateTraceHeaderCorsUrls: [],
+        ignoreUrls: [
+          /\/projects\/[^/]+\/chat$/,
+          /\/projects\/[^/]+\/chat\/fix-error$/,
+          /\/projects\/[^/]+\/plan\/(approve|abandon)$/,
+        ],
       }),
     ],
   });

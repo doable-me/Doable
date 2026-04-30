@@ -1042,13 +1042,31 @@ async function resumeBridgeStream(
   // 3. Continue reading from the live stream
   const decoder = new TextDecoder();
   let buffer = sseBuffer;
+  let lastDataAt = Date.now();
+  const STALE_MS = 75_000;
 
   try {
     while (true) {
       if (signal.aborted) return;
-      const { done, value } = await reader.read();
-      if (done) break;
 
+      // Race reader.read() against a stale-stream timeout so we don't
+      // hang forever if the SSE connection silently drops (e.g. bridge
+      // fetch aborted during navigation, Cloudflare buffering issues).
+      const readPromise = reader.read();
+      const timeoutPromise = new Promise<{ done: true; value: undefined }>((resolve) => {
+        const id = window.setTimeout(() => resolve({ done: true, value: undefined }), STALE_MS);
+        readPromise.then(() => window.clearTimeout(id), () => window.clearTimeout(id));
+      });
+      const { done, value } = await Promise.race([readPromise, timeoutPromise]);
+      if (done) {
+        if (!value) {
+          // Timeout or stream closed without [DONE]
+          console.warn("[Chat] Bridge stream stale/closed — forcing onDone");
+        }
+        break;
+      }
+
+      lastDataAt = Date.now();
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
