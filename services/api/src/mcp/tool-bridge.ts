@@ -159,17 +159,18 @@ export function createMcpTools(
           // LLM verbatim (the server is responsible for instructing the model
           // to wait/stop/etc inside that text).
           const contentTypes = (result.content ?? []).map((it: Record<string, unknown>) => `${it.type}${it.type === "resource" ? `:uri=${(it as { resource?: { uri?: string } }).resource?.uri?.slice(0, 60) ?? "NONE"}` : ""}`);
-          dlog(`handler: scanning ${(result.content ?? []).length} items for UI resources — types=[${contentTypes.join(", ")}]`);
+          console.log(`[MCP:${connectorName}] SCAN ${tool.name}: ${(result.content ?? []).length} items — types=[${contentTypes.join(", ")}]`);
           for (const item of result.content ?? []) {
             if (item.type !== "resource") continue;
             const r = (item as { resource?: { uri?: string } }).resource;
+            console.log(`[MCP:${connectorName}] RESOURCE found: uri=${r?.uri?.slice(0, 80) ?? "NONE"} startsWithUi=${r?.uri?.startsWith("ui://") ?? false}`);
             if (!r?.uri || !r.uri.startsWith("ui://")) continue;
             pendingUiResources.push({
               connectorId,
               toolName: tool.name,
               resource: r as PendingUiResource["resource"],
             });
-            dlog(`handler: queued UI resource uri=${r.uri} (queueLen=${pendingUiResources.length})`);
+            console.log(`[MCP:${connectorName}] QUEUED UI resource uri=${r.uri} (queueLen=${pendingUiResources.length})`);
           }
           return {
             success: true,
