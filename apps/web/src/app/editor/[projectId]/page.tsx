@@ -1151,43 +1151,75 @@ async function consumeStreamResume(
   let buffer = "";
   const pendingToolNames: string[] = [];
 
-  while (true) {
-    if (signal.aborted) throw new DOMException("aborted", "AbortError");
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith("data: ")) continue;
-      const payload = trimmed.slice(6);
-      if (payload === "[DONE]") return "complete";
-      // Peek at envelope: track seq + intercept terminal events BEFORE
-      // delegating to the shared live-stream handler (which doesn't know
-      // about resume-specific framing).
-      try {
-        const parsed = JSON.parse(payload) as {
-          type?: string;
-          seq?: number;
-          data?: unknown;
-        };
-        if (typeof parsed.seq === "number" && parsed.seq > lastSeqRef.current) {
-          lastSeqRef.current = parsed.seq;
+  // Watchdog: independent timer that cancels the reader if no data
+  // arrives for too long, preventing indefinite hangs on dropped connections.
+  const FIRST_CHUNK_TIMEOUT = 15_000;
+  const STALE_CHUNK_TIMEOUT = 45_000;
+  let lastChunkTime = Date.now();
+  let receivedAnyData = false;
+  let watchdogFired = false;
+  const watchdogId =
+    typeof window !== "undefined"
+      ? window.setInterval(() => {
+          const elapsed = Date.now() - lastChunkTime;
+          const timeout = receivedAnyData ? STALE_CHUNK_TIMEOUT : FIRST_CHUNK_TIMEOUT;
+          if (elapsed > timeout && !watchdogFired) {
+            watchdogFired = true;
+            console.warn(`[StreamResume] Watchdog: no data for ${elapsed}ms — canceling reader`);
+            try { reader.cancel("stream-resume-watchdog-stale"); } catch { /* ignore */ }
+          }
+        }, 2_000)
+      : undefined;
+
+  try {
+    while (true) {
+      if (signal.aborted || watchdogFired) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      receivedAnyData = true;
+      lastChunkTime = Date.now();
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+        const payload = trimmed.slice(6);
+        if (payload === "[DONE]") {
+          if (watchdogId !== undefined) window.clearInterval(watchdogId);
+          return "complete";
         }
-        if (
-          parsed.type === "complete" ||
-          parsed.type === "already_complete" ||
-          parsed.type === "no_buffer" ||
-          parsed.type === "resume_timeout"
-        ) {
-          return parsed.type as StreamResumeTerminal;
+        // Peek at envelope: track seq + intercept terminal events BEFORE
+        // delegating to the shared live-stream handler (which doesn't know
+        // about resume-specific framing).
+        try {
+          const parsed = JSON.parse(payload) as {
+            type?: string;
+            seq?: number;
+            data?: unknown;
+          };
+          if (typeof parsed.seq === "number" && parsed.seq > lastSeqRef.current) {
+            lastSeqRef.current = parsed.seq;
+          }
+          if (
+            parsed.type === "complete" ||
+            parsed.type === "already_complete" ||
+            parsed.type === "no_buffer" ||
+            parsed.type === "resume_timeout"
+          ) {
+            if (watchdogId !== undefined) window.clearInterval(watchdogId);
+            return parsed.type as StreamResumeTerminal;
+          }
+        } catch {
+          // Malformed JSON — fall through; processOneSSEPayload logs and skips.
         }
-      } catch {
-        // Malformed JSON — fall through; processOneSSEPayload logs and skips.
+        processOneSSEPayload(payload, cb, pendingToolNames);
       }
-      processOneSSEPayload(payload, cb, pendingToolNames);
     }
+  } finally {
+    if (watchdogId !== undefined) window.clearInterval(watchdogId);
   }
   // Server closed the connection without a terminal event. Treat as
   // complete so the caller reloads history and clears the spinner.
