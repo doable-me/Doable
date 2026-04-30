@@ -187,6 +187,7 @@ interface ChatMsg {
   liveStatus?: string;
   mcpResources?: Record<string, McpUiResource>;
   artifacts?: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }[];
+  hidden?: boolean;
 }
 
 type TaskCardTab = "details" | "preview";
@@ -2489,6 +2490,9 @@ export default function EditorPage() {
               displayContent = displayContent.replace(/<\/?answer>/gi, "").trim();
               const thinkingContent = m.thinking_content || thinkingFromContent.trim() || undefined;
 
+              // Hide synthetic BUILD_DECK user messages from the chat UI
+              const isHiddenMsg = m.role === "user" && /^\u{1F3A8}\s*Designing\s/u.test(displayContent);
+
               return {
                 id: m.id,
                 role: m.role as "user" | "assistant",
@@ -2498,6 +2502,7 @@ export default function EditorPage() {
                   minute: "2-digit",
                 }),
                 isStreaming: false,
+                ...(isHiddenMsg ? { hidden: true } : {}),
                 thinkingContent,
                 toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
                   ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => {
@@ -3359,6 +3364,7 @@ export default function EditorPage() {
         role: "user",
         content: (displayOverride ?? trimmed).trim(),
         timestamp: nowTimestamp(),
+        ...(isBuildDeckTurn ? { hidden: true } : {}),
         ...(msgAttachments?.length ? { attachments: msgAttachments.map((a) => ({ type: a.mimeType || (a as any).type || "application/octet-stream", data: a.data, name: a.name, preview: a.preview, fileType: a.type })) } : {}),
       };
 
@@ -4933,7 +4939,9 @@ export default function EditorPage() {
                 </div>
               )}
 
-              {messages.map((msg, msgIdx) => (
+              {messages.map((msg, msgIdx) => {
+                if (msg.hidden) return null;
+                return (
                 <div key={msg.id} className="group">
                   {msg.role === "user" ? (
                     msg.senderInfo?.isRemote ? (
@@ -5371,7 +5379,7 @@ export default function EditorPage() {
                     </div>
                   )}
                 </div>
-              ))}
+              ); })}
 
               {/* Plan Mode V2: Clarification questions */}
               {planPhase === "clarifying" && pendingQuestions && (
