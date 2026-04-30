@@ -261,6 +261,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           text:
             "Build card shown. It will inject a BUILD_MARKDOWN prompt back as a new user turn. "
             + "Reply with ONE short sentence like \"Drafting your document…\" and STOP. "
+            + "DO NOT call write_file, create_file, edit_file, str_replace, or any other tool — "
+            + "the next user turn will arrive automatically. "
             + "Wait for the BUILD_MARKDOWN prompt to arrive, then narrate progress and call "
             + "build_markdown once.",
         },

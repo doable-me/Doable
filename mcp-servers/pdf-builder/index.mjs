@@ -256,6 +256,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           text:
             "Build card shown. It will inject a BUILD_PDF prompt back as a new user turn. "
             + "Reply with ONE short sentence like \"Designing your PDF…\" and STOP. "
+            + "DO NOT call write_file, create_file, edit_file, str_replace, or any "
+            + "other tool — the next user turn will arrive automatically. "
             + "Wait for the BUILD_PDF prompt, then narrate progress and call build_pdf once.",
         },
       ],

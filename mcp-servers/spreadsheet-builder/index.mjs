@@ -491,6 +491,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           text:
             "Build card shown. It will inject a BUILD_SPREADSHEET prompt back as a new user turn. "
             + "Reply with ONE short sentence like \"Designing your spreadsheet…\" and STOP. "
+            + "DO NOT call write_file, create_file, edit_file, str_replace, or any other tool — "
+            + "the next user turn will arrive automatically. "
             + "Wait for the BUILD_SPREADSHEET prompt, then narrate progress and call build_spreadsheet once.",
         },
       ],
