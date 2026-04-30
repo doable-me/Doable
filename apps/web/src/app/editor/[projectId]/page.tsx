@@ -1042,28 +1042,38 @@ async function resumeBridgeStream(
   // Read everything from the reader
   const decoder = new TextDecoder();
   let buffer = "";
-  const STALE_MS = 75_000;
+
+  // Watchdog: independent setInterval that cancels the reader if no data
+  // arrives for too long. This is more reliable than Promise.race with
+  // setTimeout inside a Promise constructor, which can silently hang in
+  // some environments (e.g. Turbopack HMR, SPA navigation).
+  const FIRST_CHUNK_TIMEOUT = 10_000; // 10s to receive ANYTHING
+  const STALE_CHUNK_TIMEOUT = 30_000; // 30s gap between chunks
+  let lastChunkTime = Date.now();
+  let receivedAnyData = false;
+  let watchdogFired = false;
+  const watchdogId = window.setInterval(() => {
+    const elapsed = Date.now() - lastChunkTime;
+    const timeout = receivedAnyData ? STALE_CHUNK_TIMEOUT : FIRST_CHUNK_TIMEOUT;
+    if (elapsed > timeout && !watchdogFired) {
+      watchdogFired = true;
+      console.warn(`[Bridge] Watchdog: no data for ${elapsed}ms (receivedAny=${receivedAnyData}) — canceling reader`);
+      try { reader.cancel("bridge-watchdog-stale"); } catch { /* ignore */ }
+    }
+  }, 2_000);
 
   try {
     while (true) {
-      if (signal.aborted) return;
+      if (signal.aborted || watchdogFired) break;
 
-      // Race reader.read() against a stale-stream timeout so we don't
-      // hang forever if the SSE connection silently drops (e.g. bridge
-      // fetch aborted during navigation, Cloudflare buffering issues).
-      const readPromise = reader.read();
-      const timeoutPromise = new Promise<{ done: true; value: undefined }>((resolve) => {
-        const id = window.setTimeout(() => resolve({ done: true, value: undefined }), STALE_MS);
-        readPromise.then(() => window.clearTimeout(id), () => window.clearTimeout(id));
-      });
-      const { done, value } = await Promise.race([readPromise, timeoutPromise]);
+      const { done, value } = await reader.read();
       if (done) {
-        if (!value) {
-          // Timeout or stream closed without [DONE]
-          console.warn("[Chat] Bridge stream stale/closed — forcing onDone");
-        }
+        console.log(`[Bridge] reader.read() done, receivedAny=${receivedAnyData}, watchdog=${watchdogFired}`);
         break;
       }
+
+      receivedAnyData = true;
+      lastChunkTime = Date.now();
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
@@ -1074,25 +1084,25 @@ async function resumeBridgeStream(
         if (!trimmed || !trimmed.startsWith("data: ")) continue;
         const payload = trimmed.slice(6);
         const finished = processOneSSEPayload(payload, cb, pendingToolNames);
-        if (finished) return;
+        if (finished) {
+          window.clearInterval(watchdogId);
+          return;
+        }
       }
     }
   } catch (e) {
     console.error("[Bridge] Read error:", e);
     if (signal.aborted) {
       console.log("[Bridge] Signal aborted, returning silently");
+      window.clearInterval(watchdogId);
       return;
     }
-    // The bridge fetch was likely killed during SPA navigation. Instead
-    // of showing a dead error, call onDone — the editor's "detect active
-    // generation" effect will reconnect via stream-resume and recover
-    // the completed (or still-running) response from the API.
-    console.warn("[Bridge] Connection lost — falling back to stream-resume recovery");
-    cb.onDone();
-    return;
+    console.warn("[Bridge] Connection lost — falling back to recovery");
+  } finally {
+    window.clearInterval(watchdogId);
   }
 
-  console.log("[Bridge] Stream completed normally, calling onDone");
+  console.log(`[Bridge] Stream ended — calling onDone (watchdog=${watchdogFired}, receivedAny=${receivedAnyData})`);
   cb.onDone();
 }
 
