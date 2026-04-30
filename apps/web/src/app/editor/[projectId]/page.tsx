@@ -1083,7 +1083,12 @@ async function resumeBridgeStream(
       console.log("[Bridge] Signal aborted, returning silently");
       return;
     }
-    cb.onError("Connection interrupted — the server may have restarted. Please send your message again.");
+    // The bridge fetch was likely killed during SPA navigation. Instead
+    // of showing a dead error, call onDone — the editor's "detect active
+    // generation" effect will reconnect via stream-resume and recover
+    // the completed (or still-running) response from the API.
+    console.warn("[Bridge] Connection lost — falling back to stream-resume recovery");
+    cb.onDone();
     return;
   }
 
@@ -2982,18 +2987,19 @@ export default function EditorPage() {
                   )
                 );
               }
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, isStreaming: false, toolActions: m.toolActions?.map((a) => a.status === "running" ? { ...a, status: "completed" as const } : a) }
-                    : m
-                )
-              );
+              // IMPORTANT: flip isStreaming BEFORE loadFromApi so McpUiResourceCard
+              // can fire host-ready (sendMessage early-returns during streaming).
               setIsStreaming(false);
               setLiveStatus("");
               setIsFirstGeneration(false);
               setHasActiveToolCalls(false);
               localStreamActiveRef.current = false;
+
+              // The bridge fetch can be killed during SPA navigation. When
+              // this happens, onDone fires from the stale-stream timeout but
+              // we missed most of the SSE events. Reload the full message
+              // history from the API so the user sees the completed response.
+              loadFromApi();
               loadFileTree();
               if (selectedFile) {
                 delete fileContentsCache.current[selectedFile];
