@@ -1811,7 +1811,7 @@ export default function EditorPage() {
   const [keystrokeSignal, setKeystrokeSignal] = useState(0);
 
   // Skill manifest for / picker button
-  const { manifest: skillManifest } = useSkillManifest(workspaceId ?? undefined, projectId);
+  const { manifest: skillManifest } = useSkillManifest(workspaceId ?? undefined, resolvedProjectId);
 
   // Voice input & image attachments
   const speechRecognition = useSpeechRecognition((transcript: string) => {
