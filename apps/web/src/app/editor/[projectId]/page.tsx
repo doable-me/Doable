@@ -178,6 +178,7 @@ interface ChatMsg {
   timestamp: string;
   isStreaming?: boolean;
   isError?: boolean;
+  hidden?: boolean;  // Synthetic messages (e.g. BUILD_DECK auto-fire) hidden from UI
   toolActions?: ToolAction[];
   feedbackGiven?: "up" | "down" | null;
   suggestions?: string[];  // AI-generated next-step suggestions
@@ -2441,6 +2442,9 @@ export default function EditorPage() {
       }
       try {
         const json = await apiFetch<{ data: any[] }>(`/projects/${resolvedProjectId}/chat/history`);
+        // Re-check after await: sendMessage may have started while fetch
+        // was in flight. Replacing state now would wipe mcpResources.
+        if (localStreamActiveRef.current) return;
         if (Array.isArray(json.data) && json.data.length > 0) {
           const currentUserId = authUser?.id;
           const apiMessages: ChatMsg[] = json.data
@@ -2486,6 +2490,11 @@ export default function EditorPage() {
               displayContent = displayContent.replace(/<\/?answer>/gi, "").trim();
               const thinkingContent = m.thinking_content || thinkingFromContent.trim() || undefined;
 
+              // Hide synthetic BUILD_DECK user messages from the chat UI
+              const isBuildDeckMsg = m.role === "user" && (m.content || "").trimStart().startsWith("BUILD_DECK");
+              // Also hide the short display label variant
+              const isDesigningMsg = m.role === "user" && /^\u{1F3A8}\s*Designing a /u.test(displayContent);
+
               return {
                 id: m.id,
                 role: m.role as "user" | "assistant",
@@ -2495,6 +2504,7 @@ export default function EditorPage() {
                   minute: "2-digit",
                 }),
                 isStreaming: false,
+                ...(isBuildDeckMsg || isDesigningMsg ? { hidden: true } : {}),
                 thinkingContent,
                 toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
                   ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => {
@@ -2523,6 +2533,11 @@ export default function EditorPage() {
             // because the DB/history API doesn't persist them. Without this,
             // build cards (e.g. presentation builder) would unmount after
             // finalizeStream → loadFromApi, preventing BUILD_DECK from firing.
+            //
+            // Two matching strategies:
+            //   1. By message ID (works when client-side ID == DB ID).
+            //   2. By assistant-message position (fallback when client-side
+            //      crypto.randomUUID() differs from the DB-assigned UUID).
             const mcpMap: Record<string, ChatMsg["mcpResources"]> = {};
             const artMap: Record<string, ChatMsg["artifacts"]> = {};
             for (const m of prev) {
@@ -2533,11 +2548,29 @@ export default function EditorPage() {
                 artMap[m.id] = m.artifacts;
               }
             }
-            return apiMessages.map((m) => ({
-              ...m,
-              ...(mcpMap[m.id] ? { mcpResources: mcpMap[m.id] } : {}),
-              ...(artMap[m.id] && (!m.artifacts || m.artifacts.length === 0) ? { artifacts: artMap[m.id] } : {}),
-            }));
+            // Position-based fallback: collect by assistant index
+            const prevAssistants = prev.filter((m) => m.role === "assistant");
+            const mcpByIdx = prevAssistants.map((m) =>
+              m.mcpResources && Object.keys(m.mcpResources).length > 0 ? m.mcpResources : undefined,
+            );
+            const artByIdx = prevAssistants.map((m) =>
+              m.artifacts && m.artifacts.length > 0 ? m.artifacts : undefined,
+            );
+            let assistantIdx = 0;
+            return apiMessages.map((m) => {
+              let mcp = mcpMap[m.id];
+              let art = artMap[m.id];
+              if (m.role === "assistant") {
+                if (!mcp && assistantIdx < mcpByIdx.length) mcp = mcpByIdx[assistantIdx];
+                if (!art && assistantIdx < artByIdx.length) art = artByIdx[assistantIdx];
+                assistantIdx++;
+              }
+              return {
+                ...m,
+                ...(mcp ? { mcpResources: mcp } : {}),
+                ...(art && (!m.artifacts || m.artifacts.length === 0) ? { artifacts: art } : {}),
+              };
+            });
           });
           // Also update suggestions from the last assistant message
           const lastAssistant = [...apiMessages].reverse().find(m => m.role === "assistant");
@@ -2592,7 +2625,10 @@ export default function EditorPage() {
           apiFetch<{ active: boolean; mode?: string }>(`/projects/${resolvedProjectId}/ai-status`).catch(() => null),
         ]);
         const isActive = (chatStatusRes?.streaming === true) || (aiStatusRes?.active === true);
-        if (!isActive) return;
+        // Don't enter stream-resume when sendMessage is already handling
+        // the stream — the two paths racing causes loadFromApi to overwrite
+        // in-flight mcpResources.
+        if (!isActive || localStreamActiveRef.current) return;
 
         setLiveStatus("AI is still working on your project...");
         setIsStreaming(true);
@@ -3318,11 +3354,14 @@ export default function EditorPage() {
       // Add user message (the visible bubble may use a shorter label than
       // what's sent to the LLM, e.g. for MCP auto-continue where the full
       // skill instructions would otherwise flood the chat).
+      // BUILD_DECK turns are synthetic prompts auto-fired by the MCP card —
+      // hide the user bubble so the chat looks like a single continuous flow.
       const userMsg: ChatMsg = {
         id: Date.now().toString(),
         role: "user",
         content: (displayOverride ?? trimmed).trim(),
         timestamp: nowTimestamp(),
+        ...(isBuildDeckTurn ? { hidden: true } : {}),
         ...(msgAttachments?.length ? { attachments: msgAttachments.map((a) => ({ type: a.mimeType || (a as any).type || "application/octet-stream", data: a.data, name: a.name, preview: a.preview, fileType: a.type })) } : {}),
       };
 
@@ -4897,7 +4936,10 @@ export default function EditorPage() {
                 </div>
               )}
 
-              {messages.map((msg, msgIdx) => (
+              {messages.map((msg, msgIdx) => {
+                // Synthetic messages (BUILD_DECK auto-fire) are hidden from the UI
+                if (msg.hidden) return null;
+                return (
                 <div key={msg.id} className="group">
                   {msg.role === "user" ? (
                     msg.senderInfo?.isRemote ? (
@@ -5335,7 +5377,7 @@ export default function EditorPage() {
                     </div>
                   )}
                 </div>
-              ))}
+              ); })}
 
               {/* Plan Mode V2: Clarification questions */}
               {planPhase === "clarifying" && pendingQuestions && (
