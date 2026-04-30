@@ -175,6 +175,7 @@ export function createToolProgressCallbacks(
       }
     },
     onToolEnd: async (toolName: string, rawEndArgs: unknown, result: unknown) => {
+      console.log(`[ToolCallbacks] onToolEnd CALLED for '${toolName}' — pendingUiResources=${pendingUiResources.length}`);
       const _argsObj = (rawEndArgs && typeof rawEndArgs === "object" ? rawEndArgs : {}) as Record<string, unknown>;
       const _args = (_argsObj as { arguments?: Record<string, unknown> }).arguments ?? _argsObj;
       state.hadToolCalls = true;
