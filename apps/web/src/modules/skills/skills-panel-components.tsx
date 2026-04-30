@@ -36,23 +36,26 @@ export function InlineCreateForm({
 }: {
   label: string;
   placeholder: string;
-  onSubmit: (name: string, content: string, scope: ScopeType) => void;
+  onSubmit: (name: string, content: string, scope: ScopeType, description?: string, autoInvoke?: boolean) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
   const [scope, setScope] = useState<ScopeType>("workspace");
+  const [autoInvoke, setAutoInvoke] = useState(true);
   const [saving, setSaving] = useState(false);
+  const isSkill = label === "Skill";
 
   const handleSubmit = useCallback(async () => {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      onSubmit(name.trim(), content, scope);
+      onSubmit(name.trim(), content, scope, isSkill ? description : undefined, isSkill ? autoInvoke : undefined);
     } finally {
       setSaving(false);
     }
-  }, [name, content, scope, onSubmit]);
+  }, [name, description, content, scope, autoInvoke, isSkill, onSubmit]);
 
   return (
     <div className="border rounded-md bg-muted/30">
@@ -92,6 +95,34 @@ export function InlineCreateForm({
             <option value="user">User</option>
           </select>
         </div>
+        {isSkill && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">
+                Description <span className="text-muted-foreground/50">(when to use this skill)</span>
+              </label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Use when building React components with accessibility..."
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 placeholder:text-muted-foreground"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="auto-invoke-create"
+                checked={autoInvoke}
+                onChange={(e) => setAutoInvoke(e.target.checked)}
+                className="rounded border-input"
+              />
+              <label htmlFor="auto-invoke-create" className="text-xs text-muted-foreground">
+                Auto-invoke when prompt matches
+              </label>
+            </div>
+          </>
+        )}
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">
             Content
@@ -143,12 +174,16 @@ export function SkillCard({
   type: "skill" | "rule";
   expanded: boolean;
   onToggle: () => void;
-  onUpdate: (content: string) => void;
+  onUpdate: (content: string, description?: string, autoInvoke?: boolean) => void;
   onDelete: () => void;
 }) {
   const itemName = type === "skill" ? (item as Skill).skill_name : (item as Rule).rule_name;
   const itemContent = type === "skill" ? (item as Skill).skill_content : (item as Rule).content;
+  const itemDescription = type === "skill" ? (item as Skill).description ?? "" : "";
+  const itemAutoInvoke = type === "skill" ? (item as Skill).auto_invoke ?? true : true;
   const [editContent, setEditContent] = useState(itemContent);
+  const [editDescription, setEditDescription] = useState(itemDescription);
+  const [editAutoInvoke, setEditAutoInvoke] = useState(itemAutoInvoke);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -156,12 +191,12 @@ export function SkillCard({
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      onUpdate(editContent);
+      onUpdate(editContent, type === "skill" ? editDescription : undefined, type === "skill" ? editAutoInvoke : undefined);
       setDirty(false);
     } finally {
       setSaving(false);
     }
-  }, [editContent, onUpdate]);
+  }, [editContent, editDescription, editAutoInvoke, type, onUpdate]);
 
   const handleDelete = useCallback(() => {
     if (!confirmDelete) {
@@ -175,9 +210,9 @@ export function SkillCard({
   const handleContentChange = useCallback(
     (value: string) => {
       setEditContent(value);
-      setDirty(value !== itemContent);
+      setDirty(value !== itemContent || editDescription !== itemDescription || editAutoInvoke !== itemAutoInvoke);
     },
-    [itemContent]
+    [itemContent, itemDescription, itemAutoInvoke, editDescription, editAutoInvoke]
   );
 
   const Icon = type === "skill" ? Lightbulb : Shield;
@@ -198,11 +233,18 @@ export function SkillCard({
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{itemName}</p>
           <p className="text-xs text-muted-foreground truncate">
-            {itemContent
-              ? `${itemContent.length} chars`
-              : "Empty -- click to edit"}
+            {type === "skill" && itemDescription
+              ? itemDescription
+              : itemContent
+                ? `${itemContent.length} chars`
+                : "Empty -- click to edit"}
           </p>
         </div>
+        {type === "skill" && !itemAutoInvoke && (
+          <Badge variant="outline" className="text-[10px] shrink-0 mr-1">
+            manual
+          </Badge>
+        )}
         <Badge
           variant={SCOPE_VARIANTS[item.scope]}
           className="text-[10px] shrink-0"
@@ -214,7 +256,41 @@ export function SkillCard({
       {/* Expanded editor */}
       {expanded && (
         <div className="border-t bg-muted/20">
-          <div className="p-3">
+          <div className="p-3 space-y-3">
+            {type === "skill" && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    Description
+                  </label>
+                  <input
+                    type="text"
+                    value={editDescription}
+                    onChange={(e) => {
+                      setEditDescription(e.target.value);
+                      setDirty(editContent !== itemContent || e.target.value !== itemDescription || editAutoInvoke !== itemAutoInvoke);
+                    }}
+                    placeholder="When to use this skill..."
+                    className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 placeholder:text-muted-foreground"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`auto-invoke-${item.id}`}
+                    checked={editAutoInvoke}
+                    onChange={(e) => {
+                      setEditAutoInvoke(e.target.checked);
+                      setDirty(editContent !== itemContent || editDescription !== itemDescription || e.target.checked !== itemAutoInvoke);
+                    }}
+                    className="rounded border-input"
+                  />
+                  <label htmlFor={`auto-invoke-${item.id}`} className="text-xs text-muted-foreground">
+                    Auto-invoke when prompt matches
+                  </label>
+                </div>
+              </>
+            )}
             <textarea
               value={editContent}
               onChange={(e) => handleContentChange(e.target.value)}

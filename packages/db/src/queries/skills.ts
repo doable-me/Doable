@@ -9,9 +9,20 @@ export interface ContextSkillRow {
   project_id: string | null;
   user_id: string | null;
   skill_name: string;
+  description: string;
   skill_content: string;
+  auto_invoke: boolean;
   created_at: Date;
   updated_at: Date;
+}
+
+/** Lightweight manifest for progressive loading (no full content) */
+export interface SkillManifestRow {
+  id: string;
+  skill_name: string;
+  description: string;
+  scope: "workspace" | "project" | "user";
+  auto_invoke: boolean;
 }
 
 export interface ContextRuleRow {
@@ -68,21 +79,27 @@ export function skillsQueries(sql: postgres.Sql) {
       workspaceId: string;
       scope: string;
       skillName: string;
+      description: string;
       skillContent: string;
+      autoInvoke?: boolean;
       projectId?: string;
       userId?: string;
     }) {
       const [row] = await sql<ContextSkillRow[]>`
-        INSERT INTO context_skills (workspace_id, scope, skill_name, skill_content, project_id, user_id)
-        VALUES (${params.workspaceId}, ${params.scope}, ${params.skillName}, ${params.skillContent}, ${params.projectId ?? null}, ${params.userId ?? null})
+        INSERT INTO context_skills (workspace_id, scope, skill_name, description, skill_content, auto_invoke, project_id, user_id)
+        VALUES (${params.workspaceId}, ${params.scope}, ${params.skillName}, ${params.description}, ${params.skillContent}, ${params.autoInvoke ?? true}, ${params.projectId ?? null}, ${params.userId ?? null})
         RETURNING *
       `;
       return row!;
     },
 
-    async updateSkill(id: string, skillContent: string) {
+    async updateSkill(id: string, updates: { skillContent?: string; description?: string; autoInvoke?: boolean }) {
       const [row] = await sql<ContextSkillRow[]>`
-        UPDATE context_skills SET skill_content = ${skillContent}, updated_at = now()
+        UPDATE context_skills SET
+          skill_content = COALESCE(${updates.skillContent ?? null}, skill_content),
+          description = COALESCE(${updates.description ?? null}, description),
+          auto_invoke = COALESCE(${updates.autoInvoke ?? null}, auto_invoke),
+          updated_at = now()
         WHERE id = ${id}
         RETURNING *
       `;
@@ -181,6 +198,57 @@ export function skillsQueries(sql: postgres.Sql) {
         WHERE workspace_id = ${workspaceId}
           AND scope = 'project' AND project_id = ${projectId}
         ORDER BY rule_name
+      `;
+    },
+
+    // ── Skill manifest (progressive loading — names + descriptions only) ──
+    async listSkillManifest(workspaceId: string, projectId?: string): Promise<SkillManifestRow[]> {
+      if (projectId) {
+        return sql<SkillManifestRow[]>`
+          SELECT id, skill_name, description, scope, auto_invoke
+          FROM context_skills
+          WHERE workspace_id = ${workspaceId}
+            AND (project_id IS NULL OR project_id = ${projectId})
+          ORDER BY scope, skill_name
+        `;
+      }
+      return sql<SkillManifestRow[]>`
+        SELECT id, skill_name, description, scope, auto_invoke
+        FROM context_skills
+        WHERE workspace_id = ${workspaceId}
+        ORDER BY scope, skill_name
+      `;
+    },
+
+    // ── Load full skill content by name (for /skill-name invocation) ──
+    async getSkillByName(workspaceId: string, skillName: string, projectId?: string): Promise<ContextSkillRow | null> {
+      if (projectId) {
+        const [row] = await sql<ContextSkillRow[]>`
+          SELECT * FROM context_skills
+          WHERE workspace_id = ${workspaceId}
+            AND skill_name = ${skillName}
+            AND (project_id IS NULL OR project_id = ${projectId})
+          ORDER BY CASE scope WHEN 'project' THEN 0 WHEN 'workspace' THEN 1 ELSE 2 END
+          LIMIT 1
+        `;
+        return row ?? null;
+      }
+      const [row] = await sql<ContextSkillRow[]>`
+        SELECT * FROM context_skills
+        WHERE workspace_id = ${workspaceId}
+          AND skill_name = ${skillName}
+        ORDER BY CASE scope WHEN 'project' THEN 0 WHEN 'workspace' THEN 1 ELSE 2 END
+        LIMIT 1
+      `;
+      return row ?? null;
+    },
+
+    // ── Load multiple skills by IDs (for auto-invoked skills) ──
+    async getSkillsByIds(ids: string[]): Promise<ContextSkillRow[]> {
+      if (ids.length === 0) return [];
+      return sql<ContextSkillRow[]>`
+        SELECT * FROM context_skills
+        WHERE id = ANY(${ids})
       `;
     },
   };

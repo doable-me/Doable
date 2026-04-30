@@ -62,12 +62,25 @@ export async function buildProjectContext(projectId: string): Promise<string> {
 /**
  * Build project context with mode-specific injection.
  * Uses the context injector to select the right files per mode.
+ * 
+ * Skills use progressive loading:
+ *  1. A manifest of skill names + descriptions is always included
+ *  2. Full skill content is loaded only for:
+ *     - Explicitly invoked skills (via /skill-name in user message)
+ *     - Auto-invoked skills whose description matches the user's prompt
+ *  3. Rules are always fully injected (they're guidelines, not skills)
  */
 export async function buildProjectContextForMode(
   projectId: string,
   mode: "agent" | "plan" | "chat" | "visual-edit",
   workspaceId?: string,
   userId?: string,
+  options?: {
+    /** Skill names explicitly invoked via /skill-name */
+    invokedSkillNames?: string[];
+    /** The user's message, used for auto-matching skills */
+    userMessage?: string;
+  },
 ): Promise<string> {
   let context = "";
 
@@ -98,59 +111,97 @@ export async function buildProjectContextForMode(
     console.warn("[Chat] Failed to load .doable/ context files:", err);
   }
 
-  // ── Skills, Rules, Knowledge & Instructions from effective environment ──
+  // ── Skills (progressive loading), Rules, Knowledge & Instructions ──
   if (workspaceId) {
     try {
       // Resolve: project env > workspace default env > all workspace items
       const { environment, source } = await mktDb.resolveEffectiveEnvironment(
         workspaceId,
-        // projectId is always available in this function
         projectId,
       );
 
-      let skills: { skill_name: string; skill_content: string }[] = [];
-      let rules: { rule_name: string; content: string }[] = [];
+      let envRules: { rule_name: string; content: string }[] = [];
       let instructions: { filename: string; content: string }[] = [];
 
       if (environment) {
-        // Custom environment (from project or workspace level)
-        skills = environment.skills;
-        rules = environment.rules;
-        // Knowledge is already loaded via resolveEffectiveContext above (multi-scope merged)
+        envRules = environment.rules;
         instructions = environment.instructions;
       } else {
-        // No custom default — use all workspace-level skills & rules
         const items = await envDb.getDefaultItems(workspaceId);
-        skills = items.skills;
-        rules = items.rules;
-        // No instructions for virtual default
+        envRules = items.rules;
       }
 
-      // Also include project-scoped skills & rules (always, regardless of environment)
+      // Also include project-scoped rules (always, regardless of environment)
       if (projectId) {
-        const [projSkills, projRules] = await Promise.all([
-          skillsDb.listProjectScopedSkills(workspaceId, projectId),
-          skillsDb.listProjectScopedRules(workspaceId, projectId),
-        ]);
-        const existingSkillIds = new Set(skills.map((s) => "id" in s ? (s as { id: string }).id : s.skill_name));
-        for (const ps of projSkills) {
-          if (!existingSkillIds.has(ps.id)) {
-            skills.push(ps);
-          }
-        }
-        const existingRuleIds = new Set(rules.map((r) => "id" in r ? (r as { id: string }).id : r.rule_name));
+        const projRules = await skillsDb.listProjectScopedRules(workspaceId, projectId);
+        const existingRuleIds = new Set(envRules.map((r) => "id" in r ? (r as { id: string }).id : r.rule_name));
         for (const pr of projRules) {
           if (!existingRuleIds.has(pr.id)) {
-            rules.push(pr);
+            envRules.push(pr);
           }
         }
       }
 
-      if (skills.length > 0) {
-        context += `\n\n<skills>\n${skills.map((s) => `<skill name="${s.skill_name}">\n${s.skill_content}\n</skill>`).join("\n")}\n</skills>`;
+      // ── Progressive skill loading ──
+      // 1. Load skill manifest (names + descriptions, no full content)
+      const manifest = await skillsDb.listSkillManifest(workspaceId, projectId);
+      
+      // 2. Determine which skills to fully load
+      const invokedNames = new Set(options?.invokedSkillNames ?? []);
+      const userMsg = options?.userMessage?.toLowerCase() ?? "";
+      
+      const skillIdsToLoad: string[] = [];
+      const manifestEntries: string[] = [];
+      
+      for (const skill of manifest) {
+        const isExplicitlyInvoked = invokedNames.has(skill.skill_name);
+        const isAutoMatched = skill.auto_invoke && userMsg && matchSkillToPrompt(skill.skill_name, skill.description, userMsg);
+        
+        if (isExplicitlyInvoked || isAutoMatched) {
+          skillIdsToLoad.push(skill.id);
+        } else {
+          // Include in manifest so AI knows it exists
+          manifestEntries.push(`  - /${skill.skill_name}: ${skill.description || "(no description)"}`);
+        }
       }
-      if (rules.length > 0) {
-        context += `\n\n<rules>\n${rules.map((r) => `<rule name="${r.rule_name}">\n${r.content}\n</rule>`).join("\n")}\n</rules>`;
+      
+      // 3. Load full content for matched/invoked skills
+      const loadedSkills = await skillsDb.getSkillsByIds(skillIdsToLoad);
+      
+      // Also check environment skills that aren't in DB (from marketplace bundles)
+      if (environment) {
+        for (const envSkill of environment.skills) {
+          const isEnvInvoked = invokedNames.has(envSkill.skill_name);
+          if (isEnvInvoked) {
+            // Only inject env skills that were explicitly invoked
+            loadedSkills.push(envSkill as any);
+          } else {
+            manifestEntries.push(`  - /${envSkill.skill_name}`);
+          }
+        }
+      }
+      
+      // 4. Build the output
+      if (loadedSkills.length > 0 || manifestEntries.length > 0) {
+        let skillBlock = "\n\n<skills>";
+        
+        if (loadedSkills.length > 0) {
+          skillBlock += `\n<!-- Active skills (loaded for this request) -->`;
+          for (const s of loadedSkills) {
+            skillBlock += `\n<skill name="${s.skill_name}" status="active">\n${s.skill_content}\n</skill>`;
+          }
+        }
+        
+        if (manifestEntries.length > 0) {
+          skillBlock += `\n<!-- Available skills (user can invoke with /skill-name) -->\n<available-skills>\n${manifestEntries.join("\n")}\n</available-skills>`;
+        }
+        
+        skillBlock += "\n</skills>";
+        context += skillBlock;
+      }
+
+      if (envRules.length > 0) {
+        context += `\n\n<rules>\n${envRules.map((r) => `<rule name="${r.rule_name}">\n${r.content}\n</rule>`).join("\n")}\n</rules>`;
       }
       if (instructions.length > 0) {
         context += `\n\n<environment-instructions>\n${instructions.map((i) => `<instruction file="${i.filename}">\n${i.content}\n</instruction>`).join("\n")}\n</environment-instructions>`;
@@ -203,4 +254,45 @@ export async function buildProjectContextForMode(
   } catch {
     return context;
   }
+}
+
+/**
+ * Parse /skill-name invocations from a user message.
+ * Returns { invokedSkillNames, cleanMessage } where cleanMessage has the /xxx prefix removed.
+ */
+export function parseSkillInvocations(message: string): { invokedSkillNames: string[]; cleanMessage: string } {
+  const skillPattern = /^\/([a-zA-Z0-9_-]+)\s*/;
+  const match = message.match(skillPattern);
+  if (match) {
+    return {
+      invokedSkillNames: [match[1]!],
+      cleanMessage: message.slice(match[0].length),
+    };
+  }
+  return { invokedSkillNames: [], cleanMessage: message };
+}
+
+/**
+ * Simple keyword-based skill matching.
+ * Returns true if the user's prompt appears relevant to the skill,
+ * based on matching words from the skill name and description.
+ */
+function matchSkillToPrompt(skillName: string, description: string, prompt: string): boolean {
+  // Tokenize skill name (e.g. "react-component-builder" → ["react", "component", "builder"])
+  const nameTokens = skillName.toLowerCase().split(/[-_\s]+/).filter(t => t.length > 2);
+  
+  // Tokenize description
+  const descTokens = (description || "").toLowerCase()
+    .split(/\W+/)
+    .filter(t => t.length > 3); // skip short/common words
+  
+  // Count how many tokens appear in the prompt
+  const allTokens = [...new Set([...nameTokens, ...descTokens])];
+  if (allTokens.length === 0) return false;
+  
+  const matchCount = allTokens.filter(t => prompt.includes(t)).length;
+  
+  // Require at least 2 matching tokens, or 1 if the skill name is a single-word match
+  if (nameTokens.length === 1 && prompt.includes(nameTokens[0]!)) return true;
+  return matchCount >= 2;
 }

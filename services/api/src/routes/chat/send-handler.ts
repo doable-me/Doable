@@ -20,7 +20,7 @@ import { createTraceCollector, type TraceCollector } from "../../ai/trace-collec
 import { creditQueries } from "@doable/db/queries/credits";
 import { getProjectPath } from "../../projects/file-manager.js";
 import { resolveAiEngine } from "../../ai/engine-resolver.js";
-import { buildProjectContextForMode } from "../../ai/context-builder.js";
+import { buildProjectContextForMode, parseSkillInvocations } from "../../ai/context-builder.js";
 import { processAttachments } from "../../ai/attachments.js";
 import { ChannelTokenRouter } from "../../ai/sse-mapper.js";
 import { stripServerPaths } from "../../ai/tool-messages.js";
@@ -289,8 +289,18 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           }
 
           console.log(`[Chat][${projectId.slice(0, 8)}] Building context + tools...`);
+          // Parse /skill-name invocations from user message
+          const { invokedSkillNames, cleanMessage } = parseSkillInvocations(content);
+          if (invokedSkillNames.length > 0) {
+            console.log(`[Chat][${projectId.slice(0, 8)}] Skill invocation: ${invokedSkillNames.join(", ")}`);
+            // Strip the /skill prefix from the message sent to AI
+            augmentedContent = cleanMessage + (augmentedContent !== content ? augmentedContent.slice(content.length) : "");
+          }
           const [projectContext, allTools] = await Promise.all([
-            buildProjectContextForMode(projectId, mode, workspaceId, userId),
+            buildProjectContextForMode(projectId, mode, workspaceId, userId, {
+              invokedSkillNames,
+              userMessage: content,
+            }),
             createAllTools(projectId, workspaceId, userId),
           ]);
           const systemPrompt = buildSystemPrompt(mode, projectId, projectContext);

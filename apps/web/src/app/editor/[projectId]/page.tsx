@@ -122,6 +122,7 @@ import { ClarificationFlow, PlanCard, PlanProgress } from "@/modules/editor/chat
 import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
 import { useEditorStore, type McpUiResource } from "@/modules/editor/hooks/use-editor-store";
 import { McpUiResourceCard } from "@/modules/editor/chat/mcp-ui-resource";
+import { useSkillManifest, SlashAutocomplete } from "@/modules/skills/slash-autocomplete";
 
 // ─── Dynamically import Monaco (browser-only) ───────────────
 const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
@@ -1808,6 +1809,10 @@ export default function EditorPage() {
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [keystrokeSignal, setKeystrokeSignal] = useState(0);
+  const showSlashAutocomplete = inputValue.startsWith("/") && !isStreaming;
+
+  // Skill manifest for slash command autocomplete
+  const { manifest: skillManifest } = useSkillManifest(workspaceId ?? undefined, projectId);
 
   // Voice input & image attachments
   const speechRecognition = useSpeechRecognition((transcript: string) => {
@@ -5721,6 +5726,14 @@ export default function EditorPage() {
                       onChange={fileAttachments.handleFileChange}
                     />
 
+                    {/* Slash command autocomplete */}
+                    <SlashAutocomplete
+                      inputValue={inputValue}
+                      manifest={skillManifest}
+                      onSelect={(name) => setInputValue(`/${name} `)}
+                      visible={showSlashAutocomplete}
+                    />
+
                     <textarea
                       value={inputValue}
                       onChange={(e) => {
@@ -5728,13 +5741,26 @@ export default function EditorPage() {
                         setKeystrokeSignal((s) => s + 1);
                       }}
                       onKeyDown={(e) => {
+                        // Handle slash autocomplete navigation
+                        if (showSlashAutocomplete && skillManifest.length > 0) {
+                          if (e.key === "Escape") {
+                            setInputValue("");
+                            e.preventDefault();
+                            return;
+                          }
+                          if (e.key === "Tab") {
+                            // Let Tab select from autocomplete
+                            e.preventDefault();
+                            return;
+                          }
+                        }
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
                           handleSend();
                         }
                       }}
                       onPaste={fileAttachments.handlePaste}
-                      placeholder={inputValue.length > 0 ? "" : "Ask Doable..."}
+                      placeholder={inputValue.length > 0 ? "" : "Ask Doable... (type / for skills)"}
                       rows={1}
                       disabled={isStreaming}
                       className="w-full max-h-[40vh] min-h-[48px] resize-none bg-transparent px-4 py-3.5 text-[14px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:opacity-50"

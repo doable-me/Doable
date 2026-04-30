@@ -96,8 +96,8 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
   const [rulesSectionOpen, setRulesSectionOpen] = useState(true);
 
   const handleCreateSkill = useCallback(
-    (name: string, content: string, scope: ScopeType) => {
-      void createSkill({ skillName: name, skillContent: content, scope, projectId }).then(() =>
+    (name: string, content: string, scope: ScopeType, description?: string, autoInvoke?: boolean) => {
+      void createSkill({ skillName: name, description: description ?? "", skillContent: content, autoInvoke: autoInvoke ?? true, scope, projectId }).then(() =>
         setShowSkillForm(false)
       );
     },
@@ -105,7 +105,7 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
   );
 
   const handleCreateRule = useCallback(
-    (name: string, content: string, scope: ScopeType) => {
+    (name: string, content: string, scope: ScopeType, _desc?: string, _auto?: boolean) => {
       void createRule({ ruleName: name, content, filePatterns: [], scope, projectId }).then(() =>
         setShowRuleForm(false)
       );
@@ -186,8 +186,8 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
                       prev === skill.id ? null : skill.id
                     )
                   }
-                  onUpdate={(content) =>
-                    void updateSkill(skill.id, content)
+                  onUpdate={(content, description, autoInvoke) =>
+                    void updateSkill(skill.id, { skillContent: content, description, autoInvoke })
                   }
                   onDelete={() => void deleteSkill(skill.id)}
                 />

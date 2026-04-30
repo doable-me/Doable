@@ -8,7 +8,9 @@ import { apiFetch } from "@/lib/api";
 export interface Skill {
   id: string;
   skill_name: string;
+  description: string;
   skill_content: string;
+  auto_invoke: boolean;
   scope: "workspace" | "project" | "user";
   project_id?: string;
   created_at: string;
@@ -61,7 +63,7 @@ export function useSkills(workspaceId: string, projectId?: string) {
   }, [refresh]);
 
   const createSkill = useCallback(
-    async (payload: { skillName: string; skillContent: string; scope: string; projectId?: string }) => {
+    async (payload: { skillName: string; description: string; skillContent: string; autoInvoke?: boolean; scope: string; projectId?: string }) => {
       await apiFetch(`/workspaces/${workspaceId}/skills`, {
         method: "POST",
         body: JSON.stringify(payload),
@@ -72,10 +74,10 @@ export function useSkills(workspaceId: string, projectId?: string) {
   );
 
   const updateSkill = useCallback(
-    async (skillId: string, skillContent: string) => {
+    async (skillId: string, updates: { skillContent?: string; description?: string; autoInvoke?: boolean }) => {
       await apiFetch(`/workspaces/${workspaceId}/skills/${skillId}`, {
         method: "PUT",
-        body: JSON.stringify({ skillContent }),
+        body: JSON.stringify(updates),
       });
       await refresh();
     },

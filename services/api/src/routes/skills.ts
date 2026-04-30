@@ -36,10 +36,25 @@ skillsRoutes.get("/:workspaceId/skills", async (c) => {
   return c.json({ data });
 });
 
+// GET /:workspaceId/skills/manifest — lightweight list for autocomplete
+skillsRoutes.get("/:workspaceId/skills/manifest", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const userId = c.get("userId");
+  const projectId = c.req.query("projectId");
+
+  const err = await requireMember(workspaceId, userId);
+  if (err) return c.json({ error: err }, 403);
+
+  const data = await skills.listSkillManifest(workspaceId, projectId ?? undefined);
+  return c.json({ data });
+});
+
 const createSkillSchema = z.object({
   scope: z.enum(["workspace", "project", "user"]),
   skillName: z.string().min(1).max(200),
+  description: z.string().max(500).default(""),
   skillContent: z.string().min(1),
+  autoInvoke: z.boolean().default(true),
   projectId: z.string().uuid().optional(),
   userId: z.string().uuid().optional(),
 });
@@ -60,7 +75,9 @@ skillsRoutes.post(
       workspaceId,
       scope: body.scope,
       skillName: body.skillName,
+      description: body.description,
       skillContent: body.skillContent,
+      autoInvoke: body.autoInvoke,
       projectId: body.projectId,
       userId: body.userId,
     });
@@ -70,7 +87,9 @@ skillsRoutes.post(
 );
 
 const updateSkillSchema = z.object({
-  skillContent: z.string().min(1),
+  skillContent: z.string().min(1).optional(),
+  description: z.string().max(500).optional(),
+  autoInvoke: z.boolean().optional(),
 });
 
 // PUT /:workspaceId/skills/:id
@@ -81,12 +100,16 @@ skillsRoutes.put(
     const workspaceId = c.req.param("workspaceId");
     const skillId = c.req.param("id");
     const userId = c.get("userId");
-    const { skillContent } = c.req.valid("json");
+    const body = c.req.valid("json");
 
     const err = await requireMember(workspaceId, userId);
     if (err) return c.json({ error: err }, 403);
 
-    const row = await skills.updateSkill(skillId, skillContent);
+    const row = await skills.updateSkill(skillId, {
+      skillContent: body.skillContent,
+      description: body.description,
+      autoInvoke: body.autoInvoke,
+    });
     if (!row) return c.json({ error: "Skill not found" }, 404);
 
     return c.json({ data: row });
