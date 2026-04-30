@@ -48,6 +48,10 @@ function offloadDataUris(
   // link and the "Download .html" link; without dedup each match would
   // store a separate artifact and surface as two download rows.
   const byKey = new Map<string, string>(); // key → public url
+  // First-seen bytes per ext, used by the viewer-builder below to
+  // craft a project-preview page that lives at projects/<id>/index.html.
+  const bytesByExt = new Map<string, Buffer>();
+  const urlByExt = new Map<string, string>();
   const out = html.replace(
     /data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=]{8000,})/g,
     (_match, mime: string, b64: string) => {
@@ -80,20 +84,8 @@ function offloadDataUris(
         const url = `${ARTIFACT_PUBLIC_URL.replace(/\/$/, "")}/artifacts/${id}.${ext}`;
         const ref: ArtifactRef = { url, fileName, mimeType: mime, sizeBytes: bytes.length };
 
-        // Persist HTML decks into the project tree so the live preview
-        // serves them directly (refresh-safe, thumbnailable, editable).
-        // Only do this for presentation-builder decks — other built-in
-        // MCP apps (markdown / pdf / spreadsheet) emit HTML purely as a
-        // download artifact and must NOT overwrite the project preview.
-        const isDeck = !resourceUri || resourceUri.includes("presentation-builder");
-        if (projectId && ext === "html" && isDeck) {
-          const text = bytes.toString("utf-8");
-          writeProjectFile(projectId, "index.html", text).then(
-            () => { dlog(`wrote deck to projects/${projectId}/index.html (${text.length}B)`); },
-            (err) => { dlog(`writeProjectFile index.html failed: ${(err as Error).message}`); },
-          );
-          ref.projectPath = "index.html";
-        }
+        if (!bytesByExt.has(ext)) bytesByExt.set(ext, bytes);
+        if (!urlByExt.has(ext)) urlByExt.set(ext, url);
 
         artifacts.push(ref);
         byKey.set(key, url);
@@ -103,7 +95,59 @@ function offloadDataUris(
       }
     },
   );
+
+  // Persist a project-preview page (`projects/<id>/index.html`) so the
+  // right-side App Preview iframe shows the generated document. Each
+  // built-in builder gets a viewer tuned to its document type. We
+  // record the projectPath on the *first* matching artifact so the
+  // editor's "file changed" refresh picks it up the same way it does
+  // for create_file results.
+  const setProjectPath = (ext: string, path: string) => {
+    const a = artifacts.find((x) => x.fileName.endsWith(`.${ext}`));
+    if (a) a.projectPath = path;
+  };
+  const persistIndex = (text: string, primaryExt: string) => {
+    if (!projectId) return;
+    writeProjectFile(projectId, "index.html", text).then(
+      () => { dlog(`wrote viewer to projects/${projectId}/index.html (${text.length}B)`); },
+      (err) => { dlog(`writeProjectFile index.html failed: ${(err as Error).message}`); },
+    );
+    setProjectPath(primaryExt, "index.html");
+  };
+
+  if (projectId && resourceUri) {
+    if (resourceUri.includes("presentation-builder")) {
+      // Presentation deck: the html download IS the preview.
+      const htmlBytes = bytesByExt.get("html");
+      if (htmlBytes) persistIndex(htmlBytes.toString("utf-8"), "html");
+    } else if (resourceUri.includes("pdf-builder/build")) {
+      const pdfUrl = urlByExt.get("pdf");
+      if (pdfUrl) persistIndex(buildPdfViewerHtml(pdfUrl), "pdf");
+    } else if (resourceUri.includes("markdown-builder/build")) {
+      // Rendered .html download is a standalone styled document — use it directly.
+      const htmlBytes = bytesByExt.get("html");
+      if (htmlBytes) persistIndex(htmlBytes.toString("utf-8"), "md");
+    } else if (resourceUri.includes("spreadsheet-builder/build")) {
+      const xlsxUrl = urlByExt.get("xlsx");
+      const csvUrl = urlByExt.get("csv");
+      if (xlsxUrl) persistIndex(buildSpreadsheetViewerHtml({ xlsxUrl, csvUrl }), "xlsx");
+    }
+  }
+
   return { html: out, artifacts };
+}
+
+/** Project-preview HTML for PDFs — uses native browser <embed>. */
+function buildPdfViewerHtml(pdfUrl: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Document preview</title><style>html,body{margin:0;padding:0;height:100%;background:#1a1a1a;color:#eaeaea;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}.bar{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#0f0f12;border-bottom:1px solid #27272a}.bar a{color:#60a5fa;text-decoration:none;font-weight:600;font-size:13px}.bar a:hover{text-decoration:underline}embed,iframe{width:100%;height:calc(100vh - 41px);border:0;display:block;background:#222}</style></head><body><div class="bar"><span>📄 Document preview</span><a href="${pdfUrl}" download>⬇ Download PDF</a></div><embed src="${pdfUrl}" type="application/pdf"/></body></html>`;
+}
+
+/** Project-preview HTML for spreadsheets — renders the workbook with SheetJS. */
+function buildSpreadsheetViewerHtml({ xlsxUrl, csvUrl }: { xlsxUrl: string; csvUrl?: string }): string {
+  const csvLink = csvUrl
+    ? `<a href="${csvUrl}" download style="margin-left:12px">⬇ CSV</a>`
+    : "";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Spreadsheet preview</title><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><style>html,body{margin:0;padding:0;background:#fff;color:#0f172a;font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}.bar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#059669;color:#fff;position:sticky;top:0;z-index:10}.bar a{color:#fff;text-decoration:none;font-weight:600}.bar a:hover{text-decoration:underline}.tabs{display:flex;gap:2px;padding:0 16px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;overflow-x:auto}.tabs button{padding:8px 14px;border:0;background:transparent;color:#475569;font:inherit;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}.tabs button.active{color:#059669;border-bottom-color:#059669}.wrap{padding:14px 16px;overflow:auto;max-height:calc(100vh - 96px)}table{border-collapse:collapse;font-size:12px;background:#fff}th,td{border:1px solid #e2e8f0;padding:6px 10px;text-align:left;vertical-align:top;max-width:280px;overflow:hidden;text-overflow:ellipsis}th{background:#0f172a;color:#fff;font-weight:600;position:sticky;top:0}tr:nth-child(even) td{background:#f8fafc}.loading,.err{padding:30px 16px;color:#64748b;font-size:14px}.err{color:#dc2626}@media (prefers-color-scheme:dark){html,body{background:#0f0f12;color:#e4e4e7}.tabs{background:#18181b;border-bottom-color:#27272a}.tabs button{color:#a1a1aa}th{background:#18181b}td{border-color:#27272a}tr:nth-child(even) td{background:#18181b}}</style></head><body><div class="bar"><span>📊 Spreadsheet preview</span><span><a href="${xlsxUrl}" download>⬇ XLSX</a>${csvLink}</span></div><div id="tabs" class="tabs"></div><div id="wrap" class="wrap"><div class="loading">Loading workbook…</div></div><script>(async()=>{const tabsEl=document.getElementById("tabs"),wrapEl=document.getElementById("wrap");try{const r=await fetch(${JSON.stringify(xlsxUrl)});if(!r.ok)throw new Error("HTTP "+r.status);const buf=await r.arrayBuffer();const wb=XLSX.read(buf,{type:"array"});const names=wb.SheetNames;function render(name){const ws=wb.Sheets[name];const html=XLSX.utils.sheet_to_html(ws,{editable:false});wrapEl.innerHTML=html.replace(/<table[^>]*>/,'<table>');for(const b of tabsEl.querySelectorAll("button"))b.classList.toggle("active",b.dataset.n===name)}for(const n of names){const b=document.createElement("button");b.textContent=n;b.dataset.n=n;b.onclick=()=>render(n);tabsEl.appendChild(b)}render(names[0])}catch(e){wrapEl.innerHTML='<div class="err">Failed to render workbook: '+(e&&e.message||e)+'<br><br>Use the XLSX download button above to open in Excel/Numbers/Sheets.</div>'}})();</script></body></html>`;
 }
 
 function dlog(msg: string) {
