@@ -387,11 +387,26 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
             // build cards, MCP UI resources) provide all the visible UI the
             // user needs. Converting the buffer to content leaks internal
             // reasoning (BUG-119: MiniMax emits untagged reasoning as text).
+            // However, if no tool calls occurred AND no content was emitted,
+            // the buffer is the actual response (e.g. simple chat greeting).
             if (state.leadingTextBuffer) {
               const bufLen = state.leadingTextBuffer.length;
-              state.leadingTextBuffer = "";
-              state.leadingTextFlushed = true;
-              console.log(`[Chat][${projectId.slice(0, 8)}] Keeping ${bufLen} chars as thinking (stream end, hadTools=${state.hadToolCalls})`);
+              if (!state.hadToolCalls && state.assistantContent.length === 0) {
+                // No tool calls, no content — this IS the response, not reasoning
+                const buffered = state.leadingTextBuffer;
+                state.leadingTextBuffer = "";
+                state.leadingTextFlushed = true;
+                // Move from thinking back to content
+                state.assistantThinking = state.assistantThinking.slice(0, state.assistantThinking.length - buffered.length);
+                state.assistantContent += buffered;
+                console.log(`[Chat][${projectId.slice(0, 8)}] Flushing ${bufLen} chars as content (no tools, no prior content)`);
+                broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: buffered, messageId, isThinking: false }, userId).catch(() => {});
+                await stream.writeSSE({ data: JSON.stringify({ type: "thinking_to_text", data: buffered }) });
+              } else {
+                state.leadingTextBuffer = "";
+                state.leadingTextFlushed = true;
+                console.log(`[Chat][${projectId.slice(0, 8)}] Keeping ${bufLen} chars as thinking (stream end, hadTools=${state.hadToolCalls})`);
+              }
             }
 
             console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${state.assistantContent.length}, thinking: ${state.assistantThinking.length}, tools: ${state.hadToolCalls}`);
