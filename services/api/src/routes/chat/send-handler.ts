@@ -382,19 +382,31 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
               }
             }
 
-            // ── Leading-text buffer at stream end ──
-            // For models that don't use <think> tags (e.g. MiniMax), any text
-            // remaining in the buffer after the last tool_result is a mix of
-            // untagged reasoning and a short user-facing response. We keep it
-            // ALL as thinking to prevent reasoning text from leaking into the
-            // chat content. The tool results (file changes, build cards, etc.)
-            // already provide the primary UI for what was accomplished.
-            // The safety-valve in event-processor.ts (>8000 chars with no tool
-            // call) still converts buffered text to content for non-tool turns.
-            if (state.leadingTextBuffer) {
-              console.log(`[Chat][${projectId.slice(0, 8)}] Keeping ${state.leadingTextBuffer.length} chars of post-tool text as thinking (not flushing to content)`);
+            // ── Flush leading-text buffer at stream end ──
+            // After each tool_result the buffer resets, so anything still in
+            // the buffer is text the model emitted AFTER the last tool — this
+            // is the user-facing response (e.g. "Designing your deck…").
+            // Convert it from thinking to content so the user sees it.
+            // Pre-tool reasoning was already confirmed as thinking when the
+            // tool_call arrived, so it won't be touched here.
+            if (state.leadingTextBuffer && state.hadToolCalls) {
+              const finalText = state.leadingTextBuffer;
               state.leadingTextBuffer = "";
               state.leadingTextFlushed = true;
+              // Move from thinking to content
+              if (state.assistantThinking.endsWith(finalText)) {
+                state.assistantThinking = state.assistantThinking.slice(0, -finalText.length);
+              }
+              state.assistantContent += finalText;
+              console.log(`[Chat][${projectId.slice(0, 8)}] Flushed ${finalText.length} chars of final response from thinking→content`);
+              await broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: finalText, messageId: state.assistantMessageId || "", isThinking: false }, userId);
+              await stream.writeSSE({ data: JSON.stringify({ type: "thinking_to_text", data: stripServerPaths(finalText) }) });
+            } else if (state.leadingTextBuffer) {
+              // No tool calls — buffer is just regular text, flush as content
+              const text = state.leadingTextBuffer;
+              state.leadingTextBuffer = "";
+              state.leadingTextFlushed = true;
+              console.log(`[Chat][${projectId.slice(0, 8)}] Keeping ${text.length} chars as thinking (no tool calls)`);
             }
 
             console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${state.assistantContent.length}, thinking: ${state.assistantThinking.length}, tools: ${state.hadToolCalls}`);
