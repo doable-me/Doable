@@ -128,10 +128,20 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
   const themedHtml = html
     ? (() => {
         let h = html.replace(/<html(?=[>\s])/i, `<html data-theme="${isDark ? "dark" : "light"}"`);
-        // Inject theme reset + listener script — prefer before </body>, fallback to end
+        // Inject theme reset + listener script — prefer before the LAST
+        // `</body>`, fallback to end. Using `lastIndexOf` avoids
+        // corrupting MCP cards whose own scripts contain a literal
+        // `</body>` substring inside JSON-encoded build prompts (e.g.
+        // markdown/spreadsheet/pdf builders include print-ready HTML
+        // skeleton text in their auto-build prompt). A naive
+        // `replace("</body>", …)` matched the first occurrence inside
+        // the script string, which split the script in half and caused
+        // the auto-build card to freeze with the build prompt leaking
+        // into the iframe body.
         const injectSnippet = themeResetStyle + themeListenerScript;
-        if (h.includes("</body>")) {
-          h = h.replace("</body>", injectSnippet + "</body>");
+        const lastBody = h.lastIndexOf("</body>");
+        if (lastBody !== -1) {
+          h = h.slice(0, lastBody) + injectSnippet + h.slice(lastBody);
         } else {
           h += injectSnippet;
         }
