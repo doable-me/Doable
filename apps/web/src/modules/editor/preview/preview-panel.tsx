@@ -36,11 +36,39 @@ export function PreviewPanel() {
       } else if (e.data.type === "doable-hmr-update") {
         lastHmrUpdateRef.current = Date.now();
         hmrConnectedRef.current = true;
+      } else if (e.data.type === "doable-theme-ready") {
+        // Iframe just loaded its bridge — push current theme.
+        const t = document.documentElement.classList.contains("dark") ? "dark" : "light";
+        try {
+          iframeRef.current?.contentWindow?.postMessage(
+            { type: "doable-theme", theme: t },
+            "*",
+          );
+        } catch { /* ignore */ }
       }
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, []);
+  }, [iframeRef]);
+
+  // ─── Sync Doable theme into preview iframe ─────────────────
+  // Watch host <html>.dark and push every change to the iframe so
+  // Tailwind dark: classes inside the user's project re-resolve live.
+  useEffect(() => {
+    function pushTheme() {
+      const t = document.documentElement.classList.contains("dark") ? "dark" : "light";
+      try {
+        iframeRef.current?.contentWindow?.postMessage(
+          { type: "doable-theme", theme: t },
+          "*",
+        );
+      } catch { /* ignore */ }
+    }
+    pushTheme();
+    const obs = new MutationObserver(pushTheme);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, [iframeRef, previewUrl]);
 
   // Reset HMR state when iframe reloads (e.g. new project, manual refresh)
   const onLoadWithHmrReset = useCallback(() => {

@@ -259,16 +259,7 @@ export default function App() {
   }, []);
 
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{
-        background:
-          typeof window !== "undefined" &&
-          window.matchMedia("(prefers-color-scheme: light)").matches
-            ? "linear-gradient(145deg, #fafaf9 0%, #f5f5f4 50%, #ffffff 100%)"
-            : "linear-gradient(145deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%)",
-      }}
-    >
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-neutral-50 via-stone-100 to-white dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-950">
       <div className="text-center space-y-6">
         <div className="flex justify-center">
           <DoableLogo className="w-16 h-16 drop-shadow-lg" />
@@ -284,7 +275,7 @@ export default function App() {
             {phrases[phraseIndex]}
           </p>
         </div>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">
           Your project is ready — start chatting to build
         </p>
         <div className="flex justify-center pt-2">
@@ -313,6 +304,10 @@ export default function App() {
 `,
 
     "src/index.css": `@import "tailwindcss";
+
+/* Class-based dark mode — Doable's editor toggles \`<html class="dark">\`
+   and the preview bridge mirrors that into this iframe. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-sans: "Inter", system-ui, sans-serif;
@@ -361,6 +356,28 @@ export default function App() {
   --destructive-foreground: 0 0% 98%;
   --ring: 0 0% 3.9%;
   --radius: 0.5rem;
+}
+
+.dark {
+  --background: 0 0% 3.9%;
+  --foreground: 0 0% 98%;
+  --muted: 0 0% 14.9%;
+  --muted-foreground: 0 0% 63.9%;
+  --popover: 0 0% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --card: 0 0% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --border: 0 0% 14.9%;
+  --input: 0 0% 14.9%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 14.9%;
+  --secondary-foreground: 0 0% 98%;
+  --accent: 0 0% 14.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --ring: 0 0% 83.1%;
 }
 
 * {

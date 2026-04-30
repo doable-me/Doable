@@ -11,6 +11,28 @@ export const VISUAL_EDIT_BRIDGE_INLINE = `
   if (window.__visualEditBridge) return;
   window.__visualEditBridge = true;
 
+  // ─── Doable theme sync ──────────────────────────────────────
+  // Parent (Doable editor) posts {type:"doable-theme", theme:"dark"|"light"}
+  // on iframe load and whenever the user toggles theme. Mirror it onto the
+  // preview's <html> so Tailwind \`dark:\` classes resolve correctly and the
+  // user-agent canvas color matches.
+  function applyDoableTheme(theme) {
+    var t = theme === "dark" ? "dark" : "light";
+    var root = document.documentElement;
+    if (t === "dark") root.classList.add("dark");
+    else root.classList.remove("dark");
+    root.setAttribute("data-theme", t);
+    try { root.style.colorScheme = t; } catch (e) {}
+  }
+  window.addEventListener("message", function(e) {
+    if (!e.data || e.data.type !== "doable-theme") return;
+    applyDoableTheme(e.data.theme);
+  });
+  // Tell parent we're ready to receive a theme so it can push the current one.
+  try {
+    window.parent.postMessage({ type: "doable-theme-ready" }, "*");
+  } catch (e) {}
+
   var selectionEnabled = false;
   var selectedElement = null;
   var hoveredElement = null;
