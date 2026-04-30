@@ -10,6 +10,8 @@ import {
   persistTraceStreaming,
   persistTraceFinal,
 } from "./trace-infra.js";
+import { SpanKind, SpanStatusCode, type Span } from "@opentelemetry/api";
+import { getTracer } from "../tracing/instrumentation.js";
 
 // ─── Factory ───────────────────────────────────────────────
 
@@ -25,6 +27,28 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
   let sdkEventCount = 0;
   let flushInterval: ReturnType<typeof setInterval> | null = null;
   let lastFlushedEventCount = 0;
+
+  // ── OTel root span for this chat turn ──
+  // When TRACING_LEVEL=off this becomes a non-recording no-op and the
+  // ids resolve to the all-zero context — harmless to record.
+  const otelTracer = getTracer("doable-api/ai-chat");
+  const otelTurnSpan: Span = otelTracer.startSpan("ai.chat.turn", {
+    kind: SpanKind.INTERNAL,
+    attributes: {
+      "ai.project_id": ctx.projectId,
+      "ai.user_id": ctx.userId,
+      "ai.workspace_id": ctx.workspaceId,
+      "ai.session_id": ctx.sessionId ?? undefined,
+      "ai.message_id": ctx.messageId ?? undefined,
+      "ai.provider": ctx.provider ?? undefined,
+      "ai.model": ctx.model ?? undefined,
+    },
+  });
+  const otelSpanCtx = otelTurnSpan.spanContext();
+  // Stash on the collector context so persist functions can read them.
+  // (otel ids are 32/16 hex chars; "0".repeat(32) means no real trace.)
+  const otelTraceId = otelSpanCtx.traceId === "0".repeat(32) ? null : otelSpanCtx.traceId;
+  const otelRootSpanId = otelSpanCtx.spanId === "0".repeat(16) ? null : otelSpanCtx.spanId;
 
   const activeTools = new Map<string, { name: string; startedAt: number }>();
   let toolSeq = 0;
@@ -48,6 +72,8 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
         responseChars,
         durationMs: Date.now() - turnStartedAt,
         model: ctx.model ?? null,
+        otelTraceId,
+        otelRootSpanId,
       });
       if (!traceId && result) traceId = result;
       console.log(`[TraceCollector] Periodic flush — ${traceId ? "updated" : "inserted"} trace ${traceId?.slice(0, 8)} (${events.length} events)`);
@@ -211,13 +237,31 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
         estimatedCostUsd: usage?.estimatedCostUsd ?? null,
         model: usage?.model ?? ctx.model ?? null,
         status, errorMessage: errorMessages,
+        otelTraceId,
+        otelRootSpanId,
       });
 
       if (result) traceId = result;
       console.log(`[TraceCollector] Trace ${traceId?.slice(0, 8)} saved — ${events.length} events, ${durationMs}ms, ${toolCallCount} tools, status=${status}`);
+
+      // Finalize OTel span with summary attributes + status.
+      otelTurnSpan.setAttribute("ai.duration_ms", durationMs);
+      otelTurnSpan.setAttribute("ai.tool_call_count", toolCallCount);
+      otelTurnSpan.setAttribute("ai.event_count", events.length);
+      otelTurnSpan.setAttribute("ai.status", status);
+      if (status === "error") {
+        otelTurnSpan.setStatus({ code: SpanStatusCode.ERROR, message: errorMessages ?? undefined });
+      } else {
+        otelTurnSpan.setStatus({ code: SpanStatusCode.OK });
+      }
+      otelTurnSpan.end();
+
       return traceId;
     } catch (err) {
       console.warn("[TraceCollector] Failed to persist trace:", err instanceof Error ? err.message : err);
+      otelTurnSpan.recordException(err as Error);
+      otelTurnSpan.setStatus({ code: SpanStatusCode.ERROR });
+      otelTurnSpan.end();
       return null;
     }
   }
@@ -237,7 +281,12 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
   function destroy(): void {
     if (flushInterval) { clearInterval(flushInterval); flushInterval = null; }
     removeActiveTrace(ctx.projectId);
+    // Don't double-end if complete() already finalized.
+    try { otelTurnSpan.end(); } catch { /* idempotent */ }
   }
+
+  /** OTel correlation ids for this chat turn — read-only. */
+  function getOtelIds() { return { traceId: otelTraceId, spanId: otelRootSpanId }; }
 
   function pushRaw(type: string, data: unknown): void { push(type, data); }
 
@@ -259,6 +308,7 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     complete, getEvents, getTraceId, getSummary, destroy,
     onSessionCreate, onSessionResume, onSessionResumeFailed,
     onSessionEvict, onSessionModeSwitch, onSessionDisconnect,
+    getOtelIds,
   };
 
   registerActiveTrace(ctx.projectId, collector);

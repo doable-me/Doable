@@ -1,3 +1,9 @@
+// Tracing must initialize BEFORE any other instrumented module so the OTel
+// SDK can register its global providers and the kill-switch (TRACING_LEVEL=off)
+// can short-circuit with zero overhead.
+import { initTracing } from "./tracing/instrumentation.js";
+initTracing({ serviceName: "doable-api" });
+
 import { serve } from "@hono/node-server";
 import { initDocore, shutdownDocore } from "./ai/docore-bridge.js";
 import { initEmailService, stopEmailService } from "./lib/email/index.js";
@@ -22,6 +28,8 @@ import { getConnectorManager } from "./mcp/connector-manager.js";
 import { getCopilotManager } from "./ai/providers/copilot-manager.js";
 import { getOAuthRedirectUri } from "./integrations/oauth2.js";
 import { mountRoutes } from "./routes.js";
+import { tracingMiddleware } from "./tracing/middleware.js";
+import { startTracingRetention } from "./tracing/retention.js";
 
 // ─── Visual Edit Bridge Script ───────────────────────────────
 // This script is loaded by preview iframes at /visual-edit-bridge.js
@@ -110,6 +118,12 @@ const apiRateLimiter = rateLimiter({
 });
 
 // ─── Global Middleware ──────────────────────────────────────
+// Tracing first — establishes request_id + trace context that every other
+// middleware and route handler will inherit via AsyncLocalStorage. When
+// TRACING_LEVEL=off, the inner `getTracer()` returns the API-level no-op
+// tracer so this is effectively free.
+app.use("*", tracingMiddleware);
+
 // Custom logger that suppresses high-frequency polling endpoints
 const QUIET_PATHS = ["/admin/copilot-sessions", "/analytics/track"];
 app.use("*", async (c, next) => {
@@ -284,6 +298,10 @@ void backfillBuiltinConnectors();
 // Refresh the featured-listings/discover materialised views every 5 min.
 // Cheap (sub-second on small datasets) and avoids stale featured strips.
 startMarketplaceFeaturedRefresher({ intervalMs: 5 * 60 * 1000 });
+
+// Daily retention sweep for spans/trace_logs/traces. No-op when no
+// data exists yet (e.g. before migration 053 applied).
+startTracingRetention();
 
 const server = serve({
   fetch: app.fetch,
