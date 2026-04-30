@@ -23,11 +23,71 @@ export const VISUAL_EDIT_BRIDGE_INLINE = `
     else root.classList.remove("dark");
     root.setAttribute("data-theme", t);
     try { root.style.colorScheme = t; } catch (e) {}
+    ensureDarkShim();
   }
+
+  // Tailwind v4 defaults the \`dark:\` variant to \`@media (prefers-color-scheme: dark)\`.
+  // For projects that don't include \`@custom-variant dark\` in their CSS, the
+  // \`<html class="dark">\` toggle wouldn't activate any styles. Shim that by
+  // mirroring all \`prefers-color-scheme: dark\` media rules under \`.dark\` selector
+  // scope. Idempotent — runs once and re-runs when stylesheets change.
+  var darkShimAppliedFor = 0; // sheet count last processed
+  function ensureDarkShim() {
+    try {
+      var sheets = Array.from(document.styleSheets || []);
+      if (sheets.length === darkShimAppliedFor && document.getElementById("__doable-dark-shim")) {
+        return;
+      }
+      var pieces = [];
+      for (var i = 0; i < sheets.length; i++) {
+        var sheet = sheets[i];
+        var rules;
+        try { rules = sheet.cssRules; } catch (e) { continue; }
+        if (!rules) continue;
+        for (var j = 0; j < rules.length; j++) {
+          var r = rules[j];
+          if (r.type !== 4 /* CSSMediaRule */) continue;
+          if (!/prefers-color-scheme\\s*:\\s*dark/i.test(r.media.mediaText)) continue;
+          for (var k = 0; k < r.cssRules.length; k++) {
+            var inner = r.cssRules[k];
+            if (!inner.cssText) continue;
+            // Prefix each selector with \`.dark \` (and also a self-match for html.dark)
+            var prefixed = inner.cssText.replace(/^([^{]+)\\{/, function(_, sel) {
+              var parts = sel.split(",").map(function(s) {
+                s = s.trim();
+                if (!s) return s;
+                // For :root or html selectors, replace with .dark itself
+                if (/^(:root|html)\\b/.test(s)) return s.replace(/^(:root|html)/, ".dark");
+                return ".dark " + s;
+              });
+              return parts.join(", ") + " {";
+            });
+            pieces.push(prefixed);
+          }
+        }
+      }
+      var existing = document.getElementById("__doable-dark-shim");
+      if (existing) existing.remove();
+      if (pieces.length) {
+        var style = document.createElement("style");
+        style.id = "__doable-dark-shim";
+        style.textContent = pieces.join("\\n");
+        document.head.appendChild(style);
+      }
+      darkShimAppliedFor = sheets.length;
+    } catch (e) { /* ignore */ }
+  }
+
   window.addEventListener("message", function(e) {
     if (!e.data || e.data.type !== "doable-theme") return;
     applyDoableTheme(e.data.theme);
   });
+  // Run shim setup on load (after stylesheets finish loading) and periodically
+  // for HMR-added stylesheets.
+  if (document.readyState === "complete") setTimeout(ensureDarkShim, 50);
+  else window.addEventListener("load", function() { setTimeout(ensureDarkShim, 50); });
+  // Re-scan periodically — Vite HMR adds stylesheets dynamically.
+  setInterval(ensureDarkShim, 1500);
   // Tell parent we're ready to receive a theme so it can push the current one.
   try {
     window.parent.postMessage({ type: "doable-theme-ready" }, "*");
