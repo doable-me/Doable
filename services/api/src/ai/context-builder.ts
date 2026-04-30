@@ -145,6 +145,7 @@ export async function buildProjectContextForMode(
       // ── Progressive skill loading ──
       // 1. Load skill manifest (names + descriptions, no full content)
       const manifest = await skillsDb.listSkillManifest(workspaceId, projectId);
+      console.log(`[Skills] Manifest loaded: ${manifest.length} skills for workspace ${workspaceId?.slice(0, 8)}`);
       
       // 2. Determine which skills to fully load
       const invokedNames = new Set(options?.invokedSkillNames ?? []);
@@ -158,6 +159,7 @@ export async function buildProjectContextForMode(
         const isAutoMatched = skill.auto_invoke && userMsg && matchSkillToPrompt(skill.skill_name, skill.description, userMsg);
         
         if (isExplicitlyInvoked || isAutoMatched) {
+          console.log(`[Skills] Loading skill "${skill.skill_name}" (invoked=${isExplicitlyInvoked}, autoMatched=${isAutoMatched})`);
           skillIdsToLoad.push(skill.id);
         } else {
           // Include in manifest so AI knows it exists
