@@ -113,14 +113,19 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
   // Inject theme info into the iframe HTML so MCP cards can adapt their
   // styles to dark/light mode.
   const themeListenerScript = `<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="theme"&&e.data.payload){document.documentElement.setAttribute("data-theme",e.data.payload.theme)}});<\/script>`;
+  // Ensure the <html> element itself is transparent so no white canvas
+  // bleeds through body padding. Without this, the browser's default
+  // white root-element background is visible behind MCP app cards.
+  const themeResetStyle = `<style>html{background:transparent}</style>`;
   const themedHtml = html
     ? (() => {
         let h = html.replace(/<html(?=[>\s])/i, `<html data-theme="${isDark ? "dark" : "light"}"`);
-        // Inject theme listener script — prefer before </body>, fallback to end
+        // Inject theme reset + listener script — prefer before </body>, fallback to end
+        const injectSnippet = themeResetStyle + themeListenerScript;
         if (h.includes("</body>")) {
-          h = h.replace("</body>", themeListenerScript + "</body>");
+          h = h.replace("</body>", injectSnippet + "</body>");
         } else {
-          h += themeListenerScript;
+          h += injectSnippet;
         }
         return h;
       })()

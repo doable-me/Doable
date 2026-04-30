@@ -702,7 +702,8 @@ function webSlidesPreviewHtml({ deckHtml, fileName, base64, sizeBytes, summary }
   return `<!doctype html>
 <html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  * { box-sizing: border-box; }
+  *, html { box-sizing: border-box; }
+  html { background: transparent; }
   body { margin: 0; font: 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 12px 0; background: transparent; }
   .wrap { color: #0f172a; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
   .bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
@@ -776,7 +777,8 @@ function autoBuildCardHtml({ topic, buildPrompt }) {
   return `<!doctype html>
 <html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  * { box-sizing: border-box; }
+  *, html { box-sizing: border-box; }
+  html { background: transparent; }
   body { margin: 0; font: 13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 10px 0; background: transparent; color: #0f172a; }
   .card { background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border: 1px solid #c4b5fd; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(99,102,241,.12); }
   .hdr { display: flex; gap: 12px; align-items: center; }
@@ -929,7 +931,8 @@ function unifiedDeckCardHtml({ deckHtml, htmlBase64, htmlFileName, htmlSizeBytes
   return `<!doctype html>
 <html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  * { box-sizing: border-box; }
+  *, html { box-sizing: border-box; }
+  html { background: transparent; }
   body { margin: 0; font: 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 12px 0; background: transparent; }
   .wrap { color: #0f172a; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
   .bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; flex-wrap: wrap; }
