@@ -120,6 +120,7 @@ function offloadDataUris(
   };
 
   if (projectId && resourceUri) {
+    console.error(`[tool-callbacks] offloadDataUris post-extract project=${projectId} resourceUri=${resourceUri} artifacts=${artifacts.length} extsByBytes=${[...bytesByExt.keys()].join(",")} urlExts=${[...urlByExt.keys()].join(",")}`);
     if (resourceUri.includes("presentation-builder")) {
       // Presentation deck: the html download IS the preview.
       const htmlBytes = bytesByExt.get("html");
