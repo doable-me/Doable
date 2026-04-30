@@ -2468,9 +2468,10 @@ export default function EditorPage() {
     }
   }, [messages, resolvedProjectId]);
 
-  // Load chat history from API (database-backed) on mount
-  useEffect(() => {
-    const loadFromApi = async () => {
+  // Load chat history from API (database-backed).
+  // Extracted as useCallback so both the mount effect and the bridge
+  // onDone handler can call it.
+  const loadFromApi = useCallback(async () => {
       // While a local stream is active, history rows lag behind token streaming.
       // Replacing chat state here would make the chat panel appear frozen.
       if (localStreamActiveRef.current) {
@@ -2622,7 +2623,10 @@ export default function EditorPage() {
       } catch {
         // API load failed — localStorage fallback already loaded
       }
-    };
+  }, [resolvedProjectId, authUser?.id]);
+
+  // Load chat history + restore plan + detect active generation on mount
+  useEffect(() => {
     loadFromApi();
 
     // Restore active plan state on mount (e.g., after refresh). Only
