@@ -18,12 +18,22 @@ const READ_TOOLS = new Set(["read_file", "list_files", "search_files", "read", "
  * connector-prefixed names (mcp_<connector>_<tool>) are covered too.
  */
 const PRODUCTIVE_TOOL_SUFFIXES = [
+  // presentation-builder
   "build_deck",
   "render_deck",
   "render_pptx",
   "render_web_slides",
   "build_presentation",
   "create_presentation",
+  // markdown-builder
+  "build_markdown",
+  "create_markdown",
+  // spreadsheet-builder
+  "build_spreadsheet",
+  "create_spreadsheet",
+  // pdf-builder
+  "build_pdf",
+  "create_pdf",
 ];
 function isProductiveToolName(name: string | undefined): boolean {
   if (!name) return false;
