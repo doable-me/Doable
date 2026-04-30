@@ -306,14 +306,11 @@ export function createToolProgressCallbacks(
       }
       {
         // Drain MCP-Apps UI resources queued by tool-bridge during this call.
-        // The host emits each as a `mcp_ui_resource` SSE event; the web client
-        // renders them in a sandboxed iframe via @mcp-ui/client's
-        // <UIResourceRenderer />. The toolCallId is sourced from the Copilot
-        // SDK event context (toolName here) so the iframe can be associated
-        // back to the assistant message.
+        console.log(`[ToolCallbacks] DRAIN check: pendingUiResources=${pendingUiResources.length}`);
         while (pendingUiResources.length > 0) {
           const item = pendingUiResources.shift();
           if (!item) break;
+          console.log(`[ToolCallbacks] DRAINING item: uri=${item.resource?.uri?.slice(0, 80)}`);
           const emittedToolCallId = `tc_${toolName}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
           // Off-load any oversize base64 data: URIs inside the rawHtml so the
           // resulting SSE event stays small enough to flow through Cloudflare
@@ -354,13 +351,13 @@ export function createToolProgressCallbacks(
               resource: safeResource,
             },
           });
-          dlog(`mcp_ui_resource EMITTING SSE uri=${item.resource.uri} bytes=${sseData.length}`);
+          console.log(`[ToolCallbacks] mcp_ui_resource EMITTING SSE uri=${item.resource.uri} bytes=${sseData.length}`);
           state.awaitingMcpWidget = true;
           try {
             await stream.writeSSE({ data: sseData });
-            dlog(`mcp_ui_resource SSE write OK`);
+            console.log(`[ToolCallbacks] mcp_ui_resource SSE write OK`);
           } catch (e) {
-            dlog(`mcp_ui_resource SSE write FAILED: ${(e as Error).message}`);
+            console.log(`[ToolCallbacks] mcp_ui_resource SSE write FAILED: ${(e as Error).message}`);
           }
         }
       }
