@@ -107,6 +107,7 @@ export async function buildProjectContextForMode(
         // projectId is always available in this function
         projectId,
       );
+      console.log(`[Chat][Skills] resolveEffectiveEnvironment: source=${source}, hasEnv=${!!environment}`);
 
       let skills: { skill_name: string; skill_content: string }[] = [];
       let rules: { rule_name: string; content: string }[] = [];
@@ -128,10 +129,12 @@ export async function buildProjectContextForMode(
 
       // Also include project-scoped skills & rules (always, regardless of environment)
       if (projectId) {
+        console.log(`[Chat][Skills] Merging project skills: wid=${workspaceId?.slice(0,8)}, pid=${projectId?.slice(0,8)}`);
         const [projSkills, projRules] = await Promise.all([
           skillsDb.listProjectScopedSkills(workspaceId, projectId),
           skillsDb.listProjectScopedRules(workspaceId, projectId),
         ]);
+        console.log(`[Chat][Skills] projSkills=${projSkills.length}, projRules=${projRules.length}, envSkills=${skills.length}`);
         const existingSkillIds = new Set(skills.map((s) => "id" in s ? (s as { id: string }).id : s.skill_name));
         for (const ps of projSkills) {
           if (!existingSkillIds.has(ps.id)) {
@@ -146,6 +149,7 @@ export async function buildProjectContextForMode(
         }
       }
 
+      console.log(`[Chat][Skills] Final: skills=${skills.length}, rules=${rules.length}`);
       if (skills.length > 0) {
         context += `\n\n<skills>\n${skills.map((s) => `<skill name="${s.skill_name}">\n${s.skill_content}\n</skill>`).join("\n")}\n</skills>`;
       }
