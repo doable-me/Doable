@@ -14,6 +14,8 @@ import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { sql } from "../db/index.js";
+import { SpanStatusCode } from "@opentelemetry/api";
+import { getTracer } from "../tracing/instrumentation.js";
 
 // Puppeteer evaluate callbacks run in the browser context where `document` exists.
 // Declare it here since the API tsconfig does not include the DOM lib.

@@ -9,6 +9,9 @@ import {
   NodeTracerProvider,
 } from "@opentelemetry/sdk-trace-node";
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
+import { registerInstrumentations } from "@opentelemetry/instrumentation";
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
+import { UndiciInstrumentation } from "@opentelemetry/instrumentation-undici";
 import { DoableSampler } from "./sampler.js";
 import { PostgresSpanExporter } from "./pg-exporter.js";
 import {
@@ -57,6 +60,16 @@ export function initTracing(opts: InitOptions = {}): void {
   provider.addSpanProcessor(redacting);
 
   provider.register();
+
+  // Auto-instrument outgoing HTTP/fetch. Hono middleware handles incoming —
+  // ignore it here to avoid duplicate request spans. UndiciInstrumentation
+  // captures global fetch (Node 18+) used by integrations + provider bridges.
+  registerInstrumentations({
+    instrumentations: [
+      new HttpInstrumentation({ ignoreIncomingRequestHook: () => true }),
+      new UndiciInstrumentation(),
+    ],
+  });
 
   // Kick off cache loader; subsequent samplers will pick up overrides.
   refreshOverrideCaches().catch(() => {});

@@ -4,6 +4,8 @@
 
 import type { JsonRpcRequest, JsonRpcResponse, JsonRpcNotification } from "./types.js";
 import type { McpTransport } from "./transport-http.js";
+import { SpanKind, SpanStatusCode, type Span } from "@opentelemetry/api";
+import { getTracer } from "../tracing/instrumentation.js";
 
 export class StdioTransport implements McpTransport {
   private connected = false;
@@ -14,6 +16,9 @@ export class StdioTransport implements McpTransport {
     timer: ReturnType<typeof setTimeout>;
   }>();
   private buffer = "";
+  // Long-running OTel span covering the lifetime of the spawned MCP process.
+  // Per-frame send/recv spans are children of this. End on disconnect/exit.
+  private connectorSpan: Span | null = null;
 
   constructor(
     private command: string,
@@ -21,8 +26,27 @@ export class StdioTransport implements McpTransport {
     private env?: Record<string, string>,
   ) {}
 
+  private get tracer() {
+    return getTracer("doable-api/mcp-stdio");
+  }
+
+  private commandBasename(): string {
+    return (this.command.split(/[\\/]/).pop() ?? this.command).slice(0, 80);
+  }
+
   async connect(): Promise<void> {
     const { spawn } = await import("node:child_process");
+
+    // Open the long-running connector span. Stays open for the process
+    // lifetime; ended in disconnect() / on exit / on spawn error.
+    this.connectorSpan = this.tracer.startSpan("mcp.connector", {
+      kind: SpanKind.CLIENT,
+      attributes: {
+        "mcp.transport": "stdio",
+        "mcp.command": this.commandBasename(),
+        "mcp.args.count": this.args.length,
+      },
+    });
 
     // Track early exit so we can fail fast instead of waiting for 30s timeout
     let earlyExitCode: number | null | undefined = undefined;
@@ -59,6 +83,10 @@ export class StdioTransport implements McpTransport {
       spawnError = err;
       console.error(`[MCP:stdio:${this.command}] spawn error:`, err.message);
       this.connected = false;
+      this.connectorSpan?.recordException(err);
+      this.connectorSpan?.setStatus({ code: SpanStatusCode.ERROR, message: err.message.slice(0, 200) });
+      this.connectorSpan?.end();
+      this.connectorSpan = null;
       for (const [, pending] of this.pendingRequests) {
         clearTimeout(pending.timer);
         pending.reject(new Error(`MCP process spawn error: ${err.message}`));
@@ -75,11 +103,20 @@ export class StdioTransport implements McpTransport {
       const text = data.toString();
       stderrChunks.push(text);
       console.error(`[MCP:stdio:${this.command}]`, text);
+      this.connectorSpan?.addEvent("stderr", { line: text.slice(0, 200) });
     });
 
     this.process.on("exit", (code) => {
       earlyExitCode = code;
       this.connected = false;
+      this.connectorSpan?.addEvent("exit", { "process.exit_code": code ?? -1 });
+      if (code !== 0 && code !== null) {
+        this.connectorSpan?.setStatus({ code: SpanStatusCode.ERROR, message: `exit code ${code}` });
+      } else {
+        this.connectorSpan?.setStatus({ code: SpanStatusCode.OK });
+      }
+      this.connectorSpan?.end();
+      this.connectorSpan = null;
       // Reject all pending requests
       for (const [, pending] of this.pendingRequests) {
         clearTimeout(pending.timer);
@@ -117,6 +154,12 @@ export class StdioTransport implements McpTransport {
       this.process = null;
     }
     this.connected = false;
+    if (this.connectorSpan) {
+      this.connectorSpan.addEvent("disconnect");
+      this.connectorSpan.setStatus({ code: SpanStatusCode.OK });
+      this.connectorSpan.end();
+      this.connectorSpan = null;
+    }
     for (const [, pending] of this.pendingRequests) {
       clearTimeout(pending.timer);
       pending.reject(new Error("Transport disconnected"));
@@ -129,27 +172,55 @@ export class StdioTransport implements McpTransport {
       throw new Error("Transport not connected");
     }
 
-    return new Promise((resolve, reject) => {
+    // Per-request OTel span — short-lived around the actual JSON-RPC roundtrip.
+    const sendSpan = this.tracer.startSpan("mcp.send", {
+      kind: SpanKind.CLIENT,
+      attributes: {
+        "mcp.method": request.method,
+        "mcp.id": String(request.id),
+      },
+    });
+    const sendStartedAt = Date.now();
+
+    return new Promise<JsonRpcResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(request.id);
+        sendSpan.setAttribute("mcp.duration_ms", Date.now() - sendStartedAt);
+        sendSpan.setStatus({ code: SpanStatusCode.ERROR, message: "timeout" });
+        sendSpan.end();
         reject(new Error(`MCP request timed out after 120s: ${request.method}`));
       }, 120_000);
 
       this.pendingRequests.set(request.id, {
         resolve: (resp: JsonRpcResponse) => {
           const respStr = JSON.stringify(resp);
-          console.log(`[MCP:stdio:${this.command}] ── RESPONSE (${Date.now() - sendTime}ms) ──\n  ${respStr.slice(0, 2000)}${respStr.length > 2000 ? `... [${respStr.length}c]` : ""}`);
+          const durationMs = Date.now() - sendTime;
+          console.log(`[MCP:stdio:${this.command}] ── RESPONSE (${durationMs}ms) ──\n  ${respStr.slice(0, 2000)}${respStr.length > 2000 ? `... [${respStr.length}c]` : ""}`);
           if (resp.error) {
             console.error(`[MCP:stdio:${this.command}] ── ERROR ── code=${resp.error.code} message=${resp.error.message} data=${JSON.stringify(resp.error.data ?? null).slice(0, 500)}`);
+            sendSpan.setAttribute("mcp.error.code", resp.error.code);
+            sendSpan.setStatus({ code: SpanStatusCode.ERROR, message: String(resp.error.message).slice(0, 200) });
+          } else {
+            sendSpan.setStatus({ code: SpanStatusCode.OK });
           }
+          sendSpan.setAttribute("mcp.duration_ms", durationMs);
+          sendSpan.setAttribute("mcp.response.bytes", respStr.length);
+          sendSpan.end();
           resolve(resp);
         },
-        reject,
+        reject: (err: Error) => {
+          sendSpan.recordException(err);
+          sendSpan.setAttribute("mcp.duration_ms", Date.now() - sendStartedAt);
+          sendSpan.setStatus({ code: SpanStatusCode.ERROR, message: err.message.slice(0, 200) });
+          sendSpan.end();
+          reject(err);
+        },
         timer,
       });
 
       const message = JSON.stringify(request) + "\n";
       const sendTime = Date.now();
+      sendSpan.setAttribute("mcp.request.bytes", message.length);
       console.log(`[MCP:stdio:${this.command}] ── REQUEST ──\n  ${message.slice(0, 2000)}${message.length > 2000 ? `... [${message.length}c]` : ""}`);
       this.process!.stdin!.write(message);
     });
@@ -158,7 +229,23 @@ export class StdioTransport implements McpTransport {
   async sendNotification(notification: JsonRpcNotification): Promise<void> {
     if (!this.connected || !this.process?.stdin) return;
     const message = JSON.stringify(notification) + "\n";
-    this.process.stdin.write(message);
+    const span = this.tracer.startSpan("mcp.notify", {
+      kind: SpanKind.CLIENT,
+      attributes: {
+        "mcp.method": notification.method,
+        "mcp.request.bytes": message.length,
+      },
+    });
+    try {
+      this.process.stdin.write(message);
+      span.setStatus({ code: SpanStatusCode.OK });
+    } catch (err) {
+      span.recordException(err as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR });
+      throw err;
+    } finally {
+      span.end();
+    }
   }
 
   isConnected(): boolean {
@@ -174,14 +261,28 @@ export class StdioTransport implements McpTransport {
       if (!trimmed) continue;
       try {
         const response = JSON.parse(trimmed) as JsonRpcResponse;
+        // Note: the per-frame correlation lives on the mcp.send span via
+        // pending.resolve. This recv span captures unmatched/notification
+        // frames so even server-initiated messages are visible.
         if (response.id !== undefined && this.pendingRequests.has(response.id)) {
           const pending = this.pendingRequests.get(response.id)!;
           clearTimeout(pending.timer);
           this.pendingRequests.delete(response.id);
           pending.resolve(response);
+        } else {
+          // Unsolicited frame (notification, log, server-push)
+          this.connectorSpan?.addEvent("recv_unsolicited", {
+            "mcp.frame.bytes": trimmed.length,
+            "mcp.id": response.id !== undefined ? String(response.id) : "(none)",
+          });
         }
-      } catch {
-        // Non-JSON output, ignore
+      } catch (err) {
+        // Non-JSON output — record on the connector span instead of dropping silently.
+        this.connectorSpan?.addEvent("parse_error", {
+          "mcp.frame.bytes": trimmed.length,
+          "mcp.frame.snippet": trimmed.slice(0, 200),
+          "error.message": (err as Error).message.slice(0, 200),
+        });
       }
     }
   }

@@ -10,8 +10,152 @@ import {
   persistTraceStreaming,
   persistTraceFinal,
 } from "./trace-infra.js";
-import { SpanKind, SpanStatusCode, type Span } from "@opentelemetry/api";
+import { SpanKind, SpanStatusCode, type Span, type Attributes } from "@opentelemetry/api";
 import { getTracer } from "../tracing/instrumentation.js";
+import { scrubSecrets } from "../tracing/secret-patterns.js";
+
+// Map a chat_traces event type + payload to OTel-conventional attributes.
+// Returns null to skip emitting the event (high-volume noise types).
+function eventToOtelAttrs(type: string, data: unknown): Attributes | null {
+  const d = data as Record<string, unknown> | null;
+  if (!d) return {};
+  switch (type) {
+    case "text_delta":
+    case "thinking_delta":
+      return null;
+    case "sdk_event": {
+      const sdkType = d.sdk_type as string | undefined;
+      if (sdkType === "assistant.message_delta" || sdkType === "assistant.reasoning_delta" || sdkType === "assistant.streaming_delta") return null;
+      return { "ai.sdk.type": sdkType ?? "unknown", "ai.sdk.seq": Number(d.seq ?? 0) };
+    }
+    case "mcp_call":
+      return {
+        "mcp.connector": String(d.connector ?? ""),
+        "mcp.tool": String(d.tool ?? ""),
+        "mcp.args.size": JSON.stringify(d.args ?? {}).length,
+      };
+    case "mcp_result": {
+      const resp = d.response as { contentLength?: number; isError?: boolean } | undefined;
+      return {
+        "mcp.connector": String(d.connector ?? ""),
+        "mcp.tool": String(d.mcpTool ?? ""),
+        "mcp.duration_ms": Number(d.durationMs ?? 0),
+        "mcp.result.is_error": Boolean(resp?.isError),
+        "mcp.result.content_count": Number(resp?.contentLength ?? 0),
+      };
+    }
+    case "mcp_error":
+      return {
+        "mcp.connector": String(d.connector ?? ""),
+        "mcp.tool": String(d.tool ?? ""),
+        "mcp.duration_ms": Number(d.durationMs ?? 0),
+        "mcp.error.code": Number(d.errorCode ?? 0),
+        "mcp.error.message": scrubSecrets(String(d.error ?? "")).slice(0, 500),
+      };
+    case "tool_start":
+      return { "ai.tool.name": String(d.name ?? ""), "ai.tool.seq": Number(d.tool_seq ?? 0) };
+    case "tool_end":
+      return {
+        "ai.tool.name": String(d.name ?? ""),
+        "ai.tool.duration_ms": Number(d.duration_ms ?? 0),
+        "ai.tool.success": Boolean(d.success),
+      };
+    case "integration_start":
+      return { "integration.id": String(d.integrationId ?? ""), "integration.action": String(d.actionName ?? "") };
+    case "integration_end":
+      return {
+        "integration.id": String(d.integrationId ?? ""),
+        "integration.action": String(d.actionName ?? ""),
+        "integration.duration_ms": Number(d.durationMs ?? 0),
+        "integration.http_calls": Number(d.httpCallCount ?? 0),
+      };
+    case "integration_error":
+      return {
+        "integration.id": String(d.integrationId ?? ""),
+        "integration.action": String(d.actionName ?? ""),
+        "integration.duration_ms": Number(d.durationMs ?? 0),
+        "error.message": scrubSecrets(String(d.error ?? "")).slice(0, 500),
+      };
+    case "integration_http":
+      return {
+        "http.method": String(d.method ?? ""),
+        "http.url": scrubSecrets(String(d.url ?? "")).slice(0, 500),
+        "http.status_code": Number(d.statusCode ?? 0),
+        "http.duration_ms": Number(d.durationMs ?? 0),
+      };
+    case "integration_http_error":
+      return {
+        "http.method": String(d.method ?? ""),
+        "http.url": scrubSecrets(String(d.url ?? "")).slice(0, 500),
+        "http.duration_ms": Number(d.durationMs ?? 0),
+        "error.message": scrubSecrets(String(d.error ?? "")).slice(0, 500),
+      };
+    case "auto_continue":
+      return { "ai.auto_continue.count": Number(d.count ?? 0), "ai.auto_continue.reason": String(d.reason ?? "") };
+    case "tool_manifest":
+      return {
+        "ai.tool_manifest.count": Number(d.filteredToolCount ?? 0),
+        "ai.tool_manifest.mode": String(d.mode ?? ""),
+        "ai.tool_manifest.mcp_count": Number(d.mcpToolCount ?? 0),
+        "ai.tool_manifest.integration_count": Number(d.integrationToolCount ?? 0),
+        "ai.tool_manifest.builtin_count": Number(d.builtinToolCount ?? 0),
+      };
+    case "config_resolved":
+      return {
+        "ai.model": String(d.model ?? ""),
+        "ai.model.source": String(d.modelSource ?? ""),
+        "ai.provider": String(d.provider ?? ""),
+        "ai.provider.source": String(d.providerSource ?? ""),
+      };
+    case "provider_resolved":
+      return {
+        "ai.provider.type": String(d.type ?? ""),
+        "ai.provider.has_key": Boolean(d.hasApiKey),
+        "ai.provider.source": String(d.source ?? ""),
+      };
+    case "user_message":
+      return { "ai.message.length": Number(d.length ?? 0) };
+    case "request_start":
+      return {
+        "ai.request.content_length": Number(d.contentLength ?? 0),
+        "ai.request.mode": String(d.mode ?? ""),
+        "ai.request.has_attachments": Boolean(d.hasAttachments),
+      };
+    case "stream_start":
+      return { "ai.stream.elapsed_ms": Number(d.elapsed_since_request_ms ?? 0) };
+    case "stream_end":
+      return {
+        "ai.stream.reason": String(d.reason ?? ""),
+        "ai.stream.frames": Number(d.totalSseFrames ?? 0),
+        "ai.stream.duration_ms": Number(d.stream_duration_ms ?? 0),
+      };
+    case "client_disconnect":
+      return { "ai.client.elapsed_ms": Number(d.elapsed_ms ?? 0) };
+    case "session_create":
+    case "session_resume":
+    case "session_resume_failed":
+    case "session_evict":
+    case "session_mode_switch":
+    case "session_disconnect": {
+      const action = type.replace("session_", "");
+      const sid = d.sessionId as string | undefined;
+      return { "ai.session.action": action, "ai.session.id": sid ? sid.slice(0, 8) : "" };
+    }
+    case "sse_emit": {
+      const sseType = d.sse_type as string | undefined;
+      if (sseType === "text_delta" || sseType === "keep_alive" || sseType === "thinking") return null;
+      return { "sse.type": sseType ?? "unknown" };
+    }
+    case "error":
+      return {
+        "error.category": String(d.category ?? ""),
+        "error.message": scrubSecrets(String(d.message ?? "")).slice(0, 500),
+        "error.context": String(d.context ?? "").slice(0, 200),
+      };
+    default:
+      return {};
+  }
+}
 
 // ─── Factory ───────────────────────────────────────────────
 
@@ -98,6 +242,20 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     events.push(event);
     broadcastTraceEvent(ctx.projectId, event);
     logTraceEvent(ctx.projectId.slice(0, 8), event.elapsed_ms, type, data);
+
+    // Bridge to OTel: emit a span event on the ai.chat.turn span so MCP /
+    // tool / integration / error visibility lands in the new spans table
+    // without needing per-event spans.
+    const attrs = eventToOtelAttrs(type, data);
+    if (attrs !== null) {
+      try {
+        otelTurnSpan.addEvent(type, attrs);
+        if (type === "error") {
+          const d = data as { message?: string };
+          otelTurnSpan.recordException(new Error(d?.message ?? "unknown"));
+        }
+      } catch { /* tracing never blocks app */ }
+    }
   }
 
   function recordUserMessage(prompt: string): void {
