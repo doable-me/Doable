@@ -1043,32 +1043,35 @@ async function resumeBridgeStream(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  // Watchdog: independent setInterval that cancels the reader if no data
-  // arrives for too long. This is more reliable than Promise.race with
-  // setTimeout inside a Promise constructor, which can silently hang in
-  // some environments (e.g. Turbopack HMR, SPA navigation).
+  // Watchdog: rejects a shared Promise after inactivity so Promise.race
+  // with reader.read() unblocks. reader.cancel() alone does NOT reliably
+  // unblock a hung read in Chromium after a fetch is killed by navigation.
   const FIRST_CHUNK_TIMEOUT = 10_000; // 10s to receive ANYTHING
   const STALE_CHUNK_TIMEOUT = 30_000; // 30s gap between chunks
   let lastChunkTime = Date.now();
   let receivedAnyData = false;
-  let watchdogFired = false;
+  let watchdogReject: ((e: Error) => void) | null = null;
+  const watchdogPromise = new Promise<ReadableStreamReadResult<Uint8Array>>((_resolve, reject) => {
+    watchdogReject = reject;
+  });
   const watchdogId = window.setInterval(() => {
     const elapsed = Date.now() - lastChunkTime;
     const timeout = receivedAnyData ? STALE_CHUNK_TIMEOUT : FIRST_CHUNK_TIMEOUT;
-    if (elapsed > timeout && !watchdogFired) {
-      watchdogFired = true;
-      console.warn(`[Bridge] Watchdog: no data for ${elapsed}ms (receivedAny=${receivedAnyData}) — canceling reader`);
-      try { reader.cancel("bridge-watchdog-stale"); } catch { /* ignore */ }
+    if (elapsed > timeout && watchdogReject) {
+      console.warn(`[Bridge] Watchdog: no data for ${elapsed}ms (receivedAny=${receivedAnyData}) — forcing rejection`);
+      const fn = watchdogReject;
+      watchdogReject = null; // prevent double-fire
+      fn(new Error("bridge-watchdog-timeout"));
     }
   }, 2_000);
 
   try {
     while (true) {
-      if (signal.aborted || watchdogFired) break;
+      if (signal.aborted) break;
 
-      const { done, value } = await reader.read();
+      const { done, value } = await Promise.race([reader.read(), watchdogPromise]);
       if (done) {
-        console.log(`[Bridge] reader.read() done, receivedAny=${receivedAnyData}, watchdog=${watchdogFired}`);
+        console.log(`[Bridge] reader.read() done, receivedAny=${receivedAnyData}`);
         break;
       }
 
@@ -1091,18 +1094,21 @@ async function resumeBridgeStream(
       }
     }
   } catch (e) {
-    console.error("[Bridge] Read error:", e);
+    if (e instanceof Error && e.message === "bridge-watchdog-timeout") {
+      console.warn("[Bridge] Watchdog timeout — falling back to recovery");
+    } else {
+      console.error("[Bridge] Read error:", e);
+    }
     if (signal.aborted) {
       console.log("[Bridge] Signal aborted, returning silently");
       window.clearInterval(watchdogId);
       return;
     }
-    console.warn("[Bridge] Connection lost — falling back to recovery");
   } finally {
     window.clearInterval(watchdogId);
   }
 
-  console.log(`[Bridge] Stream ended — calling onDone (watchdog=${watchdogFired}, receivedAny=${receivedAnyData})`);
+  console.log(`[Bridge] Stream ended — calling onDone (receivedAny=${receivedAnyData})`);
   cb.onDone();
 }
 
@@ -1151,30 +1157,35 @@ async function consumeStreamResume(
   let buffer = "";
   const pendingToolNames: string[] = [];
 
-  // Watchdog: independent timer that cancels the reader if no data
-  // arrives for too long, preventing indefinite hangs on dropped connections.
+  // Watchdog: rejects a shared Promise after inactivity so Promise.race
+  // with reader.read() unblocks. reader.cancel() alone does NOT reliably
+  // unblock a hung read in Chromium after a fetch connection is killed.
   const FIRST_CHUNK_TIMEOUT = 15_000;
   const STALE_CHUNK_TIMEOUT = 45_000;
   let lastChunkTime = Date.now();
   let receivedAnyData = false;
-  let watchdogFired = false;
+  let watchdogReject: ((e: Error) => void) | null = null;
+  const watchdogPromise = new Promise<ReadableStreamReadResult<Uint8Array>>((_resolve, reject) => {
+    watchdogReject = reject;
+  });
   const watchdogId =
     typeof window !== "undefined"
       ? window.setInterval(() => {
           const elapsed = Date.now() - lastChunkTime;
           const timeout = receivedAnyData ? STALE_CHUNK_TIMEOUT : FIRST_CHUNK_TIMEOUT;
-          if (elapsed > timeout && !watchdogFired) {
-            watchdogFired = true;
-            console.warn(`[StreamResume] Watchdog: no data for ${elapsed}ms — canceling reader`);
-            try { reader.cancel("stream-resume-watchdog-stale"); } catch { /* ignore */ }
+          if (elapsed > timeout && watchdogReject) {
+            console.warn(`[StreamResume] Watchdog: no data for ${elapsed}ms — forcing rejection`);
+            const fn = watchdogReject;
+            watchdogReject = null;
+            fn(new Error("stream-resume-watchdog-timeout"));
           }
         }, 2_000)
       : undefined;
 
   try {
     while (true) {
-      if (signal.aborted || watchdogFired) break;
-      const { done, value } = await reader.read();
+      if (signal.aborted) throw new DOMException("aborted", "AbortError");
+      const { done, value } = await Promise.race([reader.read(), watchdogPromise]);
       if (done) break;
 
       receivedAnyData = true;
@@ -1217,6 +1228,14 @@ async function consumeStreamResume(
         }
         processOneSSEPayload(payload, cb, pendingToolNames);
       }
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message === "stream-resume-watchdog-timeout") {
+      console.warn("[StreamResume] Watchdog timeout — treating as complete");
+    } else if (e instanceof DOMException && e.name === "AbortError") {
+      throw e; // re-throw user-initiated abort
+    } else {
+      throw e; // re-throw unexpected errors
     }
   } finally {
     if (watchdogId !== undefined) window.clearInterval(watchdogId);
