@@ -90,10 +90,8 @@ export function SkillPickerButton({ manifest, onSelect, disabled }: SkillPickerB
     <div ref={containerRef} className="relative shrink-0">
       {/* / button */}
       <button
-        onClick={() => {
-          if (manifest.length > 0) setOpen((v) => !v);
-        }}
-        disabled={disabled || manifest.length === 0}
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
         className={cn(
           "flex h-7 w-7 items-center justify-center rounded-full border transition-all duration-200",
           open
@@ -101,7 +99,7 @@ export function SkillPickerButton({ manifest, onSelect, disabled }: SkillPickerB
             : "border-border bg-accent text-muted-foreground hover:bg-accent hover:text-foreground",
           "disabled:opacity-40 disabled:cursor-not-allowed"
         )}
-        title={manifest.length > 0 ? "Use a skill" : "No skills available"}
+        title="Skills"
       >
         <Slash className="h-3.5 w-3.5" />
       </button>
