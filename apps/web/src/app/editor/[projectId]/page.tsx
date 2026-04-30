@@ -1022,21 +1022,24 @@ async function resumeBridgeStream(
 
   // If bridge had an error, surface it immediately
   if (error) {
+    console.log("[Bridge] Error from bridge:", error);
     cb.onError(error);
     return;
   }
 
-  // The reader is a tee'd branch of the original SSE stream. It contains
-  // ALL data from the beginning — no need to replay buffered events
-  // (they would be duplicates since tee() branches are independent).
+  // The bridge reader is the original response reader — no pre-reading,
+  // no tee(). The editor reads everything from scratch.
 
   // If stream already ended before the editor consumed, we're done
   if (isDone || !reader) {
+    console.log("[Bridge] Stream already done or no reader, calling onDone");
     cb.onDone();
     return;
   }
 
-  // Read everything from the tee'd reader
+  console.log("[Bridge] Starting to read from bridge reader");
+
+  // Read everything from the reader
   const decoder = new TextDecoder();
   let buffer = "";
   const STALE_MS = 75_000;
@@ -1074,12 +1077,17 @@ async function resumeBridgeStream(
         if (finished) return;
       }
     }
-  } catch {
-    if (signal.aborted) return;
+  } catch (e) {
+    console.error("[Bridge] Read error:", e);
+    if (signal.aborted) {
+      console.log("[Bridge] Signal aborted, returning silently");
+      return;
+    }
     cb.onError("Connection interrupted — the server may have restarted. Please send your message again.");
     return;
   }
 
+  console.log("[Bridge] Stream completed normally, calling onDone");
   cb.onDone();
 }
 
@@ -2926,6 +2934,7 @@ export default function EditorPage() {
         localStreamActiveRef.current = true;
 
         // Resume the in-flight stream with the standard callback set
+        console.log(`[Bridge] Consuming bridge: isDone=${bridge.isDone} error=${bridge.error} reader=${!!bridge.reader} events=${bridge.events.length} aborted=${controller.signal.aborted}`);
         resumeBridgeStream(
           bridge.events,
           bridge.reader,

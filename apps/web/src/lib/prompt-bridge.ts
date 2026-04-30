@@ -237,72 +237,19 @@ async function startSSEFetch(
       return;
     }
 
-    // Tee the stream: one branch for the bridge pre-read (dashboard status
-    // overlay) and one pristine branch for the editor. This eliminates the
-    // race condition where the bridge loop's pending reader.read() consumes
-    // a chunk that the editor never sees (causing the stream to hang if
-    // [DONE] is in that lost chunk).
-    const [bridgeStream, editorStream] = body.tee();
-    const bridgeReader = bridgeStream.getReader();
-    const editorReader = editorStream.getReader();
+    const reader = body.getReader();
 
     if (currentBridge && currentBridge.projectId === projectId) {
-      // Give the editor its OWN reader — it will see ALL data from the start.
-      currentBridge.reader = editorReader;
+      currentBridge.reader = reader;
       notifyStatus("streaming", "AI is responding…");
     }
 
-    // Pre-read from the BRIDGE reader for dashboard status updates only.
-    // The editor reader is untouched and will replay everything.
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (currentBridge && currentBridge.projectId === projectId && !currentBridge.consumed) {
-      const { done, value } = await bridgeReader.read();
-      if (done) {
-        currentBridge.isDone = true;
-        notifyStatus("done", "Done");
-        return;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data: ")) continue;
-
-        const payload = trimmed.slice(6);
-
-        // Track status changes for the dashboard overlay
-        if (payload !== "[DONE]") {
-          try {
-            const parsed = JSON.parse(payload);
-            if (parsed.type === "status" && parsed.data?.message) {
-              notifyStatus("streaming", parsed.data.message);
-            } else if (parsed.type === "thinking" && typeof parsed.data === "string") {
-              notifyStatus("streaming", parsed.data || "Thinking…");
-            } else if (parsed.type === "tool_call") {
-              const name = parsed.data?.friendlyMessage || parsed.data?.name || "Working…";
-              notifyStatus("streaming", typeof name === "string" ? name : "Working…");
-            }
-          } catch { /* not JSON — skip */ }
-        }
-
-        if (payload === "[DONE]") {
-          currentBridge.isDone = true;
-          notifyStatus("done", "Done");
-          // Cancel the bridge reader — editor reader has everything.
-          bridgeReader.cancel().catch(() => {});
-          return;
-        }
-      }
-    }
-
-    // Bridge was consumed — cancel the bridge pre-read branch.
-    // The editor's tee'd reader continues independently.
-    bridgeReader.cancel().catch(() => {});
+    // We intentionally do NOT pre-read from the reader here. Pre-reading
+    // caused a race condition: the bridge loop's pending reader.read()
+    // could consume chunks (including [DONE]) that the editor never saw,
+    // causing the stream to hang indefinitely. The dashboard overlay
+    // shows "AI is responding…" which is sufficient — the editor takes
+    // full ownership of the reader on consumeBridge() and reads everything.
   } catch (err: unknown) {
     if (abortController.signal.aborted) return;
     if (currentBridge && currentBridge.projectId === projectId) {
