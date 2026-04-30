@@ -1,11 +1,24 @@
+// Tracing must initialize BEFORE any other instrumented module so the OTel
+// SDK can register its global providers and the kill-switch (TRACING_LEVEL=off)
+// can short-circuit with zero overhead.
+import { initTracing, getTracer } from "./tracing/instrumentation.js";
+initTracing({ serviceName: "doable-ws" });
+
 import { createServer, type IncomingMessage } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { jwtVerify } from "jose";
+import { context as otelContext, trace as otelTrace, SpanStatusCode, type Span } from "@opentelemetry/api";
 import { RoomManager } from "./rooms/room-manager.js";
 import { type WsClientMessage, type WsServerMessage, type PresenceUser, userColor } from "./rooms/room.js";
 import { createMessageHandler, send, type ClientState } from "./message-handler.js";
 
 import { randomBytes } from "node:crypto";
+
+const tracer = getTracer("doable-ws");
+
+// Per-connection long-running span store. WeakMap so we don't leak refs when
+// a socket is GC'd without a clean close (it shouldn't happen, but be safe).
+const connectionSpans = new WeakMap<WebSocket, Span>();
 
 const PORT = parseInt(process.env.WS_PORT ?? "4001", 10);
 const HOST = process.env.WS_HOST ?? "127.0.0.1";
@@ -89,20 +102,31 @@ const server = createServer(async (req, res) => {
     }
 
     const body = await readBody(req);
-    try {
-      const { projectId, message, excludeUserId } = JSON.parse(body) as { projectId: string; message: WsServerMessage; excludeUserId?: string };
-      const room = rooms.get(projectId);
-      const msgType = (message as any)?.type ?? "unknown";
-      console.log(`[ws] broadcast projectId=${projectId} type=${msgType} roomSize=${room?.size ?? 0} exclude=${excludeUserId ?? "none"}`);
-      if (room) {
-        room.broadcast(message, excludeUserId);
+    await tracer.startActiveSpan("ws.internal.broadcast", async (span) => {
+      try {
+        const { projectId, message, excludeUserId } = JSON.parse(body) as { projectId: string; message: WsServerMessage; excludeUserId?: string };
+        const room = rooms.get(projectId);
+        const msgType = (message as any)?.type ?? "unknown";
+        const roomSize = room?.size ?? 0;
+        span.setAttribute("ws.broadcast.type", msgType);
+        span.setAttribute("project_id", projectId);
+        span.setAttribute("ws.room.size", roomSize);
+        if (excludeUserId) span.setAttribute("ws.broadcast.exclude_user_id", excludeUserId);
+        console.log(`[ws] broadcast projectId=${projectId} type=${msgType} roomSize=${roomSize} exclude=${excludeUserId ?? "none"}`);
+        if (room) {
+          room.broadcast(message, excludeUserId);
+        }
+        res.writeHead(200);
+        res.end("ok");
+      } catch (err) {
+        span.recordException(err as Error);
+        span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+        res.writeHead(400);
+        res.end("Invalid JSON");
+      } finally {
+        span.end();
       }
-      res.writeHead(200);
-      res.end("ok");
-    } catch {
-      res.writeHead(400);
-      res.end("Invalid JSON");
-    }
+    });
     return;
   }
 
@@ -200,17 +224,36 @@ const server = createServer(async (req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
+  // Long-running span for the lifetime of the WebSocket connection.
+  // Per-message child spans use this as their parent so a single trace
+  // captures the full session.
+  const connSpan = tracer.startSpan("ws.connection", {
+    attributes: {
+      "ws.url": req.url ?? "",
+      "ws.remote_addr": req.socket.remoteAddress ?? "",
+    },
+  });
+  connectionSpans.set(ws, connSpan);
+
   // Extract token from query string
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   const token = url.searchParams.get("token");
 
   if (!token) {
+    connSpan.setAttribute("ws.close_reason", "missing_token");
+    connSpan.setStatus({ code: SpanStatusCode.ERROR, message: "Missing token" });
+    connSpan.end();
+    connectionSpans.delete(ws);
     ws.close(4001, "Missing token");
     return;
   }
 
   const payload = await verifyToken(token);
   if (!payload) {
+    connSpan.setAttribute("ws.close_reason", "invalid_token");
+    connSpan.setStatus({ code: SpanStatusCode.ERROR, message: "Invalid token" });
+    connSpan.end();
+    connectionSpans.delete(ws);
     ws.close(4002, "Invalid token");
     return;
   }
@@ -222,19 +265,26 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
   };
   clients.set(ws, state);
 
+  connSpan.setAttribute("user_id", state.userId);
+  if (state.displayName) connSpan.setAttribute("ws.display_name", state.displayName);
+
   // Send connected acknowledgment
   send(ws, { type: "connected", userId: payload.sub, resumeToken: "" });
 
   ws.on("message", (raw) => {
-    try {
-      const msg = JSON.parse(raw.toString()) as WsClientMessage;
-      handleMessage(ws, state, msg);
-    } catch {
-      send(ws, { type: "error", code: "PARSE_ERROR", message: "Invalid JSON" });
-    }
+    // Run message handling inside the connection span's context so any
+    // child spans created in message-handler.ts hang off this trace.
+    otelContext.with(otelTrace.setSpan(otelContext.active(), connSpan), () => {
+      try {
+        const msg = JSON.parse(raw.toString()) as WsClientMessage;
+        handleMessage(ws, state, msg);
+      } catch {
+        send(ws, { type: "error", code: "PARSE_ERROR", message: "Invalid JSON" });
+      }
+    });
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code, reasonBuf) => {
     // Leave room if in one
     if (state.projectId) {
       const room = rooms.get(state.projectId);
@@ -248,11 +298,28 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
     }
     clients.delete(ws);
     lastCursorMove.delete(state.userId);
+
+    const span = connectionSpans.get(ws);
+    if (span) {
+      span.setAttribute("ws.close_code", code);
+      const reason = reasonBuf?.toString();
+      if (reason) span.setAttribute("ws.close_reason", reason);
+      span.end();
+      connectionSpans.delete(ws);
+    }
   });
 
-  ws.on("error", () => {
+  ws.on("error", (err) => {
     clients.delete(ws);
     lastCursorMove.delete(state.userId);
+
+    const span = connectionSpans.get(ws);
+    if (span) {
+      span.recordException(err);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+      span.end();
+      connectionSpans.delete(ws);
+    }
   });
 });
 

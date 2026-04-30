@@ -1,6 +1,10 @@
 import { WebSocket } from "ws";
+import { SpanStatusCode, type Span } from "@opentelemetry/api";
 import type { RoomManager } from "./rooms/room-manager.js";
 import { type WsClientMessage, type WsServerMessage, type PresenceUser, userColor } from "./rooms/room.js";
+import { getTracer } from "./tracing/instrumentation.js";
+
+const tracer = getTracer("doable-ws");
 
 export interface ClientState {
   userId: string;
@@ -23,6 +27,29 @@ export function createMessageHandler(deps: {
   const { rooms, INTERNAL_SECRET, lastCursorMove, CURSOR_MOVE_MIN_INTERVAL_MS } = deps;
 
   return function handleMessage(ws: WebSocket, state: ClientState, msg: WsClientMessage): void {
+    // Per-message child span. Synchronous branches end the span when this
+    // function returns; async branches (e.g. yjs:sync-request) return
+    // `true` to take over ending the span from their own callback.
+    const span = tracer.startSpan(`ws.recv.${msg.type}`, {
+      attributes: {
+        "user_id": state.userId,
+        "project_id": state.projectId ?? "",
+        "ws.message.type": msg.type,
+      },
+    });
+    let asyncOwnsSpan = false;
+    try {
+      asyncOwnsSpan = handleMessageInner(ws, state, msg, span);
+    } catch (err) {
+      span.recordException(err as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+      span.end();
+      throw err;
+    }
+    if (!asyncOwnsSpan) span.end();
+  };
+
+  function handleMessageInner(ws: WebSocket, state: ClientState, msg: WsClientMessage, span: Span): boolean {
   switch (msg.type) {
     case "room:join": {
       console.log(`[ws] room:join userId=${state.userId} displayName=${state.displayName} projectId=${msg.projectId}`);
@@ -167,13 +194,21 @@ export function createMessageHandler(deps: {
         const room = rooms.get(state.projectId);
         if (room) {
           if (msg.filePath) {
+            span.setAttribute("yjs.file_path", msg.filePath);
             // Per-file sync: load file into CRDT and return state
-            room.getYjsFileState(msg.filePath).then((stateUpdate) => {
+            const filePath = msg.filePath;
+            room.getYjsFileState(filePath).then((stateUpdate) => {
               const encoded = Buffer.from(stateUpdate).toString("base64");
-              send(ws, { type: "yjs:sync-response", data: encoded, filePath: msg.filePath });
+              send(ws, { type: "yjs:sync-response", data: encoded, filePath });
+              span.end();
             }).catch((err) => {
-              console.error(`[ws] Yjs file sync error for ${msg.filePath}:`, err);
+              // Previously silently logged — now also surfaced as a span error.
+              console.error(`[ws] Yjs file sync error for ${filePath}:`, err);
+              span.recordException(err as Error);
+              span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+              span.end();
             });
+            return true; // async branch owns span lifecycle
           } else {
             // Full doc sync (backward compatible)
             const stateUpdate = room.getYjsState();
@@ -189,14 +224,23 @@ export function createMessageHandler(deps: {
       if (state.projectId) {
         const room = rooms.get(state.projectId);
         if (room) {
-          // Decode and apply to server doc
-          const update = Buffer.from(msg.data, "base64");
-          room.applyYjsUpdate(new Uint8Array(update));
-          // Broadcast to all other room members
-          room.broadcast(
-            { type: "yjs:update", userId: state.userId, data: msg.data, filePath: msg.filePath },
-            state.userId,
-          );
+          if (msg.filePath) span.setAttribute("yjs.file_path", msg.filePath);
+          try {
+            // Decode and apply to server doc
+            const update = Buffer.from(msg.data, "base64");
+            room.applyYjsUpdate(new Uint8Array(update));
+            // Broadcast to all other room members
+            room.broadcast(
+              { type: "yjs:update", userId: state.userId, data: msg.data, filePath: msg.filePath },
+              state.userId,
+            );
+          } catch (err) {
+            // Previously this path could throw and bubble up uncaught — record
+            // it on the span so we can see Yjs apply failures in the trace UI.
+            console.error(`[ws] Yjs apply error:`, err);
+            span.recordException(err as Error);
+            span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+          }
         }
       }
       break;
@@ -377,5 +421,6 @@ export function createMessageHandler(deps: {
       break;
     }
   }
-}
+  return false;
+  }
 }

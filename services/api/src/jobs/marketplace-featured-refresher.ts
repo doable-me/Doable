@@ -25,16 +25,28 @@ export function startMarketplaceFeaturedRefresher(opts: { intervalMs: number }):
   if (timer) return;
 
   const tick = async () => {
-    try {
-      // Run both in parallel — they're independent views.
-      await Promise.all([
-        featured.refreshMarketplaceFeatured(),
-        featured.refreshDiscoverFeatured(),
-      ]);
-    } catch (err) {
-      // Don't log every minute on a broken DB — just warn once per failure.
-      console.warn("[marketplace-featured] refresh failed:", err instanceof Error ? err.message : err);
-    }
+    const { getTracer } = await import("../tracing/instrumentation.js");
+    const { SpanStatusCode } = await import("@opentelemetry/api");
+    const tracer = getTracer("doable-api/jobs");
+    await tracer.startActiveSpan("bg.marketplace_featured_refresh", async (span) => {
+      const t0 = Date.now();
+      try {
+        // Run both in parallel — they're independent views.
+        await Promise.all([
+          featured.refreshMarketplaceFeatured(),
+          featured.refreshDiscoverFeatured(),
+        ]);
+        span.setAttribute("bg.duration_ms", Date.now() - t0);
+        span.setStatus({ code: SpanStatusCode.OK });
+      } catch (err) {
+        span.recordException(err as Error);
+        span.setStatus({ code: SpanStatusCode.ERROR });
+        // Don't log every minute on a broken DB — just warn once per failure.
+        console.warn("[marketplace-featured] refresh failed:", err instanceof Error ? err.message : err);
+      } finally {
+        span.end();
+      }
+    });
   };
 
   // Kick off async, no top-level await — startup must not block.

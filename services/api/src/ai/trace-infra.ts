@@ -220,6 +220,9 @@ export interface TraceStreamingRow {
   responseChars: number;
   durationMs: number;
   model: string | null;
+  /** OTel correlation — populated by trace-factory when an OTel span is active. */
+  otelTraceId?: string | null;
+  otelRootSpanId?: string | null;
 }
 
 /** Insert or update a streaming trace row (used by periodicFlush) */
@@ -235,7 +238,8 @@ export async function persistTraceStreaming(
         tool_call_count, auto_continue_count,
         thinking_chars, response_chars,
         model, events, status,
-        provider, provider_label
+        provider, provider_label,
+        otel_trace_id, otel_root_span_id
       ) VALUES (
         ${row.ctx.projectId}, ${row.ctx.sessionId ?? null}, ${row.ctx.messageId ?? null},
         ${row.ctx.userId}, ${row.ctx.workspaceId},
@@ -244,7 +248,8 @@ export async function persistTraceStreaming(
         ${row.thinkingChars}, ${row.responseChars},
         ${row.model},
         ${row.eventsJson}, ${"streaming"},
-        ${row.ctx.provider ?? null}, ${row.ctx.providerLabel ?? null}
+        ${row.ctx.provider ?? null}, ${row.ctx.providerLabel ?? null},
+        ${row.otelTraceId ?? null}, ${row.otelRootSpanId ?? null}
       ) RETURNING id
     `;
     return r?.id ?? null;
@@ -256,7 +261,9 @@ export async function persistTraceStreaming(
           auto_continue_count = ${row.autoContinueCount},
           thinking_chars = ${row.thinkingChars},
           response_chars = ${row.responseChars},
-          duration_ms = ${row.durationMs}
+          duration_ms = ${row.durationMs},
+          otel_trace_id = COALESCE(otel_trace_id, ${row.otelTraceId ?? null}),
+          otel_root_span_id = COALESCE(otel_root_span_id, ${row.otelRootSpanId ?? null})
       WHERE id = ${traceId}::uuid
     `;
     return traceId;
@@ -300,7 +307,9 @@ export async function persistTraceFinal(
         model = ${row.model},
         events = ${row.eventsJson}::jsonb,
         status = ${row.status},
-        error_message = ${row.errorMessage}
+        error_message = ${row.errorMessage},
+        otel_trace_id = COALESCE(otel_trace_id, ${row.otelTraceId ?? null}),
+        otel_root_span_id = COALESCE(otel_root_span_id, ${row.otelRootSpanId ?? null})
       WHERE id = ${traceId}::uuid
     `;
     return traceId;
@@ -314,7 +323,8 @@ export async function persistTraceFinal(
         prompt_tokens, completion_tokens, thinking_tokens, total_tokens,
         estimated_cost_usd, model,
         events, status, error_message,
-        provider, provider_label
+        provider, provider_label,
+        otel_trace_id, otel_root_span_id
       ) VALUES (
         ${row.ctx.projectId}, ${row.ctx.sessionId ?? null}, ${row.ctx.messageId ?? null},
         ${row.ctx.userId}, ${row.ctx.workspaceId},
@@ -326,7 +336,8 @@ export async function persistTraceFinal(
         ${row.thinkingTokens}, ${row.totalTokens},
         ${row.estimatedCostUsd}, ${row.model},
         ${row.eventsJson}, ${row.status}, ${row.errorMessage},
-        ${row.ctx.provider ?? null}, ${row.ctx.providerLabel ?? null}
+        ${row.ctx.provider ?? null}, ${row.ctx.providerLabel ?? null},
+        ${row.otelTraceId ?? null}, ${row.otelRootSpanId ?? null}
       ) RETURNING id
     `;
     return r?.id ?? null;

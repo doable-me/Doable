@@ -35,7 +35,6 @@ Thumbs.db
 
 # Claude Code
 .claude/
-<<<<<<< Updated upstream
 CLAUDE.md
 
 # Internal dev utility scripts (contain local paths / credentials)
@@ -48,12 +47,6 @@ packages/db/_users.mjs
 /data/
 /sites/
 .doable-data/
-=======
-
-# Data (user-created projects, published sites, thumbnails)
-/data/
-/sites/
->>>>>>> Stashed changes
 services/api/projects/
 services/api/thumbnails/
 services/api/services/
@@ -68,14 +61,6 @@ npm-debug.log*
 
 # Testing
 coverage/
-<<<<<<< Updated upstream
-
-# Reports / diagnostics
-report.*.json
-
-# Private sync script (Gitea mirror)
-sync-codehub.ps1
-=======
 tools/integration-test-report.json
 
 # Internal docs (not for public distribution)
@@ -86,6 +71,8 @@ test-sendandwait.*
 collab-issue-research.md
 copilot-concurrency-plan.md
 
-# Reports
+# Reports / diagnostics
 report.*.json
->>>>>>> Stashed changes
+
+# Private sync script (Gitea mirror)
+sync-codehub.ps1

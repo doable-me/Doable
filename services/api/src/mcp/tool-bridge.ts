@@ -5,6 +5,8 @@ import type { McpConnectorConfig } from "./types.js";
 import { getActiveTrace } from "../ai/trace-collector.js";
 import { xray } from "../integrations/xray.js";
 import { fetchCtx, createTracedFetch, type HttpTraceEntry } from "../integrations/runner.js";
+import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
+import { getTracer } from "../tracing/instrumentation.js";
 
 function dlog(msg: string) {
   if (!process.env.MCP_DEBUG) return;
@@ -73,6 +75,19 @@ export function createMcpTools(
           return { success: false, error: `Connector ${connectorName} not found` };
         }
 
+        // OTel mcp.call span — parented to the active ai.chat.turn span,
+        // so the new spans table sees this call alongside HTTP/DB spans.
+        const otelTracer = getTracer("doable-api/mcp");
+        const mcpSpan = otelTracer.startSpan("mcp.call", {
+          kind: SpanKind.CLIENT,
+          attributes: {
+            "mcp.connector.id": connectorId,
+            "mcp.connector.name": connectorName,
+            "mcp.tool.name": tool.name,
+            "mcp.args.size": JSON.stringify(args ?? {}).length,
+          },
+        });
+
         // Start X-Ray tracking for this MCP call
         const xr = xray.start({
           kind: "mcp",
@@ -137,6 +152,9 @@ export function createMcpTools(
               rawContent: result.content,
             });
             xr.end("error", errorText);
+            mcpSpan.setAttribute("mcp.duration_ms", mcpDurationMs);
+            mcpSpan.setStatus({ code: SpanStatusCode.ERROR, message: errorText.slice(0, 200) });
+            mcpSpan.end();
             return {
               success: false,
               error: errorText,
@@ -152,22 +170,29 @@ export function createMcpTools(
           }
 
           xr.end("success");
+          mcpSpan.setAttribute("mcp.duration_ms", mcpDurationMs);
+          mcpSpan.setAttribute("mcp.result.content_count", result.content?.length ?? 0);
+          mcpSpan.setStatus({ code: SpanStatusCode.OK });
+          mcpSpan.end();
           const textResult = formatMcpContent(result.content);
           // MCP-Apps standard: scan content for `{type:'resource', resource:{uri:'ui://…'}}`
           // and queue them for the SSE emitter. The host renders these in a
           // sandboxed iframe. The text portion of the result still goes to the
           // LLM verbatim (the server is responsible for instructing the model
           // to wait/stop/etc inside that text).
+          const contentTypes = (result.content ?? []).map((it: Record<string, unknown>) => `${it.type}${it.type === "resource" ? `:uri=${(it as { resource?: { uri?: string } }).resource?.uri?.slice(0, 60) ?? "NONE"}` : ""}`);
+          console.log(`[MCP:${connectorName}] SCAN ${tool.name}: ${(result.content ?? []).length} items — types=[${contentTypes.join(", ")}]`);
           for (const item of result.content ?? []) {
             if (item.type !== "resource") continue;
             const r = (item as { resource?: { uri?: string } }).resource;
+            console.log(`[MCP:${connectorName}] RESOURCE item found: uri=${r?.uri?.slice(0, 80) ?? "NONE"} startsWithUi=${r?.uri?.startsWith("ui://") ?? false}`);
             if (!r?.uri || !r.uri.startsWith("ui://")) continue;
             pendingUiResources.push({
               connectorId,
               toolName: tool.name,
               resource: r as PendingUiResource["resource"],
             });
-            dlog(`QUEUED UI resource uri=${r.uri} (queueLen=${pendingUiResources.length})`);
+            console.log(`[MCP:${connectorName}] QUEUED UI resource uri=${r.uri} (queueLen=${pendingUiResources.length})`);
           }
           return {
             success: true,
@@ -200,6 +225,11 @@ export function createMcpTools(
           });
 
           xr.end("error", errMsg);
+          mcpSpan.recordException(err as Error);
+          mcpSpan.setAttribute("mcp.duration_ms", mcpDurationMs);
+          if (mcpErrorCode != null) mcpSpan.setAttribute("mcp.error.code", mcpErrorCode);
+          mcpSpan.setStatus({ code: SpanStatusCode.ERROR, message: errMsg.slice(0, 200) });
+          mcpSpan.end();
 
           return {
             success: false,
