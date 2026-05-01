@@ -31,6 +31,8 @@ export function PreviewPanel() {
   useEffect(() => {
     function handleMessage(e: MessageEvent) {
       if (!e.data || typeof e.data !== "object") return;
+      // Only accept messages from our preview iframe
+      if (iframeRef.current && e.source !== iframeRef.current.contentWindow) return;
       if (e.data.type === "doable-hmr-connected") {
         hmrConnectedRef.current = true;
       } else if (e.data.type === "doable-hmr-update") {
@@ -288,7 +290,7 @@ export function PreviewPanel() {
             onLoad={onLoadWithHmrReset}
             onError={handleError}
             className="h-full w-full border-0"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-fullscreen"
+            sandbox="allow-scripts allow-forms allow-popups allow-modals allow-fullscreen"
             title="Project preview"
           />
         </div>

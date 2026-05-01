@@ -372,7 +372,7 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
       <iframe
         ref={iframeRef}
         title={`mcp-app:${resource.toolName}`}
-        sandbox="allow-scripts allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
+        sandbox="allow-scripts allow-forms allow-downloads allow-popups"
         srcDoc={themedHtml}
         onLoad={handleIframeLoad}
         style={{

@@ -1973,6 +1973,8 @@ export default function EditorPage() {
       } catch { /* ignore */ }
     }
     function handleReady(e: MessageEvent) {
+      // Only accept theme-ready from our preview iframe
+      if (iframeRef.current && e.source !== iframeRef.current.contentWindow) return;
       if (e?.data?.type === "doable-theme-ready") pushTheme();
     }
     pushTheme();
@@ -2346,6 +2348,8 @@ export default function EditorPage() {
   useEffect(() => {
     const handlePreviewMessage = (event: MessageEvent) => {
       if (!event.data || typeof event.data !== "object") return;
+      // Only accept messages from our preview iframe
+      if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
 
       // Handle preview error reports
       if (event.data.type === "doable-preview-error") {
@@ -6182,7 +6186,7 @@ export default function EditorPage() {
                     src={previewUrl}
                     className="h-full w-full border-0"
                     title="App Preview"
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                    sandbox="allow-scripts allow-forms allow-popups allow-modals"
                   />
                   {/* Building overlay — covers preview during scaffold setup,
                       first generation, or any active AI building with tool calls.

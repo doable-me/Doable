@@ -107,6 +107,24 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
     responseHeaders.delete("etag");
     responseHeaders.delete("last-modified");
 
+    // CSP: restrict preview content from reaching back to the app's API or
+    // navigating the top frame. connect-src is permissive (user code may
+    // fetch external APIs), but frame-ancestors prevents re-framing attacks.
+    responseHeaders.set(
+      "Content-Security-Policy",
+      [
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://esm.sh",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+        "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
+        "img-src * data: blob:",
+        "connect-src *",
+        "media-src * data: blob:",
+        "frame-ancestors *",
+        "object-src 'none'",
+      ].join("; "),
+    );
+
     // Inject scripts into HTML responses
     const contentType = resp.headers.get("content-type") ?? "";
     if (contentType.includes("text/html")) {

@@ -35,6 +35,10 @@ export const RETRY_HTML = `<!doctype html>
 /**
  * Storage namespacing script — prefixes every localStorage/sessionStorage key
  * with __<projectId>__ so state does not leak across project previews.
+ * When the iframe has an opaque origin (sandbox without allow-same-origin),
+ * real Storage throws SecurityError — in that case we install an in-memory
+ * polyfill so user code that calls localStorage/sessionStorage still works
+ * (data just won't persist across reloads, which is fine for dev previews).
  * Must run BEFORE any user scripts.
  */
 export function getStorageNamespaceSnippet(projectId: string): string {
@@ -42,42 +46,64 @@ export function getStorageNamespaceSnippet(projectId: string): string {
 (function() {
   try {
     var PREFIX = ${JSON.stringify(`__${projectId}__`)};
-    var proto = Storage.prototype;
-    var origGet = proto.getItem;
-    var origSet = proto.setItem;
-    var origRemove = proto.removeItem;
-    var origKey = proto.key;
-    var lengthDesc = Object.getOwnPropertyDescriptor(proto, 'length');
-    var origLengthGet = lengthDesc && lengthDesc.get;
 
-    function collectKeys(storage) {
-      var keys = [];
-      var total = origLengthGet ? origLengthGet.call(storage) : 0;
-      for (var i = 0; i < total; i++) {
-        var k = origKey.call(storage, i);
-        if (k !== null && k.indexOf(PREFIX) === 0) keys.push(k);
+    // Detect whether real Storage is accessible (opaque-origin iframes throw)
+    var storageAvailable = false;
+    try { window.localStorage.length; storageAvailable = true; } catch(e) {}
+
+    if (storageAvailable) {
+      // Real storage is available — namespace keys per-project
+      var proto = Storage.prototype;
+      var origGet = proto.getItem;
+      var origSet = proto.setItem;
+      var origRemove = proto.removeItem;
+      var origKey = proto.key;
+      var lengthDesc = Object.getOwnPropertyDescriptor(proto, 'length');
+      var origLengthGet = lengthDesc && lengthDesc.get;
+
+      function collectKeys(storage) {
+        var keys = [];
+        var total = origLengthGet ? origLengthGet.call(storage) : 0;
+        for (var i = 0; i < total; i++) {
+          var k = origKey.call(storage, i);
+          if (k !== null && k.indexOf(PREFIX) === 0) keys.push(k);
+        }
+        return keys;
       }
-      return keys;
-    }
 
-    proto.getItem = function(k) { return origGet.call(this, PREFIX + k); };
-    proto.setItem = function(k, v) { return origSet.call(this, PREFIX + k, v); };
-    proto.removeItem = function(k) { return origRemove.call(this, PREFIX + k); };
-    proto.key = function(index) {
-      var keys = collectKeys(this);
-      if (index < 0 || index >= keys.length) return null;
-      return keys[index].slice(PREFIX.length);
-    };
-    proto.clear = function() {
-      var keys = collectKeys(this);
-      for (var i = 0; i < keys.length; i++) origRemove.call(this, keys[i]);
-    };
-    if (origLengthGet) {
-      Object.defineProperty(proto, 'length', {
-        configurable: true,
-        enumerable: true,
-        get: function() { return collectKeys(this).length; }
-      });
+      proto.getItem = function(k) { return origGet.call(this, PREFIX + k); };
+      proto.setItem = function(k, v) { return origSet.call(this, PREFIX + k, v); };
+      proto.removeItem = function(k) { return origRemove.call(this, PREFIX + k); };
+      proto.key = function(index) {
+        var keys = collectKeys(this);
+        if (index < 0 || index >= keys.length) return null;
+        return keys[index].slice(PREFIX.length);
+      };
+      proto.clear = function() {
+        var keys = collectKeys(this);
+        for (var i = 0; i < keys.length; i++) origRemove.call(this, keys[i]);
+      };
+      if (origLengthGet) {
+        Object.defineProperty(proto, 'length', {
+          configurable: true,
+          enumerable: true,
+          get: function() { return collectKeys(this).length; }
+        });
+      }
+    } else {
+      // Opaque origin — provide in-memory Storage polyfill so user code
+      // calling localStorage/sessionStorage does not throw SecurityError.
+      function MemStorage() { this._data = {}; }
+      MemStorage.prototype.getItem = function(k) { return Object.prototype.hasOwnProperty.call(this._data, k) ? this._data[k] : null; };
+      MemStorage.prototype.setItem = function(k, v) { this._data[k] = String(v); };
+      MemStorage.prototype.removeItem = function(k) { delete this._data[k]; };
+      MemStorage.prototype.clear = function() { this._data = {}; };
+      MemStorage.prototype.key = function(i) { var keys = Object.keys(this._data); return i >= 0 && i < keys.length ? keys[i] : null; };
+      Object.defineProperty(MemStorage.prototype, 'length', { get: function() { return Object.keys(this._data).length; } });
+      var memLocal = new MemStorage();
+      var memSession = new MemStorage();
+      try { Object.defineProperty(window, 'localStorage', { configurable: true, get: function() { return memLocal; } }); } catch(e) {}
+      try { Object.defineProperty(window, 'sessionStorage', { configurable: true, get: function() { return memSession; } }); } catch(e) {}
     }
   } catch (e) { /* swallow — never break the preview because of namespacing */ }
 })();
