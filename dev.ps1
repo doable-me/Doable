@@ -39,14 +39,17 @@ if ($LASTEXITCODE -eq 0) {
     exit 0
 }
 
+# Node v24 requires this for pnpm junction symlinks to resolve correctly
+$NodeOpts = "set NODE_OPTIONS=--experimental-specifier-resolution=node"
+
 # Create session with the API window first (detached)
-psmux new-session -s $SessionName -n api -d -- cmd /K "cd /d $ProjectRoot && pnpm dev:api"
+psmux new-session -s $SessionName -n api -d -- cmd /K "cd /d $ProjectRoot && $NodeOpts && pnpm dev:api"
 
 # Add web window
-psmux neww -t $SessionName -n web -d -- cmd /K "cd /d $ProjectRoot && pnpm dev:web"
+psmux neww -t $SessionName -n web -d -- cmd /K "cd /d $ProjectRoot && $NodeOpts && pnpm dev:web"
 
 # Add ws window
-psmux neww -t $SessionName -n ws -d -- cmd /K "cd /d $ProjectRoot && pnpm dev:ws"
+psmux neww -t $SessionName -n ws -d -- cmd /K "cd /d $ProjectRoot && $NodeOpts && pnpm dev:ws"
 
 Write-Host ""
 Write-Host "Doable dev session started!" -ForegroundColor Green
