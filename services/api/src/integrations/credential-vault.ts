@@ -75,6 +75,8 @@ export const credentialVault = {
    */
   async getEffective(workspaceId: string, projectId?: string, userId?: string): Promise<IntegrationConnection[]> {
     // Returns connections that apply: workspace-scope + project-scope (if projectId) + user-scope (if userId)
+    // Order: integration_id groups → scope DESC (project > user > workspace) → updated_at DESC
+    // so the vault-bridge dedup picks the most recently updated connection per integration.
     const rows = await sql`
       SELECT * FROM integration_connections
       WHERE workspace_id = ${workspaceId}
@@ -84,7 +86,7 @@ export const credentialVault = {
           ${projectId ? sql`OR (scope = 'project' AND project_id = ${projectId})` : sql``}
           ${userId ? sql`OR (scope = 'user' AND user_id = ${userId})` : sql``}
         )
-      ORDER BY integration_id, scope DESC
+      ORDER BY integration_id, scope DESC, updated_at DESC
     `;
     return rows as unknown as IntegrationConnection[];
   },
