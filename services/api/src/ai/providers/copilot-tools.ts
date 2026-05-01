@@ -54,7 +54,14 @@ function emitToolEvent(projectId: string, toolName: string, status: "start" | "e
   if (handler) handler(toolName, status, args);
 }
 
-export function createDoableTools(projectId: string, userId?: string, workspaceId?: string): Tool[] {
+export interface DoableToolOptions {
+  userId?: string;
+  workspaceId?: string;
+  hasSupabase?: boolean;
+}
+
+export function createDoableTools(projectId: string, userId?: string, workspaceId?: string, options?: DoableToolOptions): Tool[] {
+  const hasSupabase = options?.hasSupabase ?? false;
   return ([
     defineTool("create_file", {
       description: "Create or overwrite a file in the project with the given content. Creates parent directories as needed. Use relative paths (e.g. 'index.html', 'src/App.tsx').",
@@ -311,7 +318,7 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
       },
     }),
 
-    defineTool("run_supabase_migration", {
+    ...(hasSupabase ? [defineTool("run_supabase_migration", {
       description: "Execute SQL against the user's connected Supabase database. Use this to CREATE TABLES, add columns, create indexes, or set up RLS policies BEFORE writing application code that depends on those tables. Always use IF NOT EXISTS to make migrations idempotent.",
       parameters: {
         type: "object" as const,
@@ -355,7 +362,7 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
           return { success: false, error: msg };
         }
       },
-    }),
+    })] : []),
 
     defineTool("request_integration", {
       description: "Request a third-party service the user has not connected. Call this INSTEAD of asking users to paste API keys.",

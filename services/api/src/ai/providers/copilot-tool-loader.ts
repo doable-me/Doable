@@ -26,7 +26,23 @@ export async function createAllTools(
   workspaceId?: string,
   userId?: string,
 ): Promise<Tool[]> {
-  const builtinTools = createDoableTools(projectId, userId, workspaceId);
+  // Quick check: does this workspace have Supabase connected?
+  let hasSupabase = false;
+  if (workspaceId) {
+    try {
+      const { sql } = await import("../../db/index.js");
+      const [row] = await sql`
+        SELECT 1 FROM integration_connections
+        WHERE workspace_id = ${workspaceId}
+          AND integration_id = 'supabase-mgmt'
+          AND status = 'active'
+        LIMIT 1
+      `;
+      hasSupabase = !!row;
+    } catch {}
+  }
+
+  const builtinTools = createDoableTools(projectId, userId, workspaceId, { hasSupabase });
   if (!workspaceId) return builtinTools;
 
   let connectorFilter: string[] | undefined;
