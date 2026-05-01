@@ -22,6 +22,8 @@ import {
 } from "../ai/project-files.js";
 import { blankTemplate } from "../templates/definitions/blank.js";
 import { initRepo } from "../git/init.js";
+import { defaultRegistry } from "../frameworks/registry.js";
+import { FrameworkAdapterError } from "../frameworks/types.js";
 
 // Re-export for convenience
 export {
@@ -84,20 +86,28 @@ async function doCreateProject(
 
   await ensureProjectDir(projectId);
 
+  // Resolve framework adapter for required/critical-file lists.
+  // TODO Phase 2: thread frameworkId from the projects row (projects.framework_id)
+  // when the integration-with-DB PR lands. For Phase 1 every project is vite-react,
+  // so hardcoding here preserves byte-identical behavior — the vite-react adapter
+  // declares the same ["index.html","package.json"] list this code used previously.
+  const frameworkId = "vite-react";
+  const adapter = defaultRegistry.getAdapter(frameworkId);
+
   let files: Array<[string, string]>;
 
   if (templateFiles && Object.keys(templateFiles).length > 0) {
-    // Use template files — but ensure they contain required entries
-    const required = ["index.html", "package.json"];
-    const templateKeys = Object.keys(templateFiles);
-    const missingRequired = required.filter((r) => !templateKeys.includes(r));
-    if (missingRequired.length > 0) {
-      console.warn(
-        `[FileManager] Template is missing required files [${missingRequired.join(", ")}] — ` +
-        `falling back to default scaffold to prevent blank preview`,
-      );
-      // Fall back to default scaffold instead of using the incomplete template
-      templateFiles = undefined;
+    // Use template files — but ensure they contain required entries.
+    // Per PRD 02 §4.4 and PRD 07a §7.3, an incomplete template is now a hard
+    // error (FrameworkAdapterError code "missing-required-files") rather than
+    // a silent fall-back; callers must supply a complete template or omit it.
+    for (const required of adapter.defaults.requiredFiles) {
+      if (!templateFiles[required]) {
+        throw new FrameworkAdapterError(
+          "missing-required-files",
+          `template missing required file: ${required}`,
+        );
+      }
     }
   }
 
@@ -122,19 +132,16 @@ async function doCreateProject(
   }
 
   // Validate that critical scaffold files exist on disk.
-  // Without these, Vite will show a blank/default page.
-  const criticalFiles = ["index.html", "package.json"];
-  const missingCritical: string[] = [];
-  for (const cf of criticalFiles) {
-    if (!existsSync(projectPath + "/" + cf)) {
-      missingCritical.push(cf);
+  // Without these, the dev server would show a blank/default page. The list
+  // comes from the framework adapter (vite-react: ["index.html","package.json"]).
+  for (const critical of adapter.defaults.criticalFiles) {
+    if (!existsSync(path.join(projectPath, critical))) {
+      throw new FrameworkAdapterError(
+        "missing-required-files",
+        `scaffold missing critical file: ${critical} in ${projectPath} ` +
+          `(created files: [${createdFiles.join(", ")}])`,
+      );
     }
-  }
-  if (missingCritical.length > 0) {
-    throw new Error(
-      `Scaffold validation failed: missing critical files [${missingCritical.join(", ")}] in ${projectPath}. ` +
-      `This would cause a blank preview. Created files: [${createdFiles.join(", ")}]`,
-    );
   }
 
   // Run pnpm install

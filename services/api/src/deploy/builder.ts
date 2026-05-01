@@ -3,6 +3,13 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 
+import { sql } from "../db/index.js";
+import { projectQueries } from "@doable/db/queries/projects";
+import { defaultRegistry } from "../frameworks/registry.js";
+import { createBuildContext } from "../frameworks/context.js";
+
+const projects = projectQueries(sql);
+
 const BUILD_TIMEOUT_MS = 120_000;
 
 export interface BuildResult {
@@ -58,8 +65,6 @@ export async function runBuild(
     };
   }
 
-  const outputDir = path.join(projectDir, "dist");
-
   // Resolve user-defined env vars if projectId provided. When `opts.userId` is
   // also provided, vault-backed integration credentials are merged in
   // automatically; user `env_vars` always win on key collision.
@@ -78,21 +83,52 @@ export async function runBuild(
     }
   }
 
+  // Resolve the framework adapter from the project's framework_id. Legacy
+  // callers without a projectId fall through to the vite-react adapter so
+  // they retain today's behavior.
+  let frameworkId = "vite-react";
+  if (opts?.projectId) {
+    const project = await projects.findById(opts.projectId);
+    if (!project) throw new Error(`Project ${opts.projectId} not found`);
+    frameworkId = (project as { framework_id?: string }).framework_id ?? "vite-react";
+  }
+  const adapter = defaultRegistry.getAdapter(frameworkId);
+
+  // Normalize basePath to today's behavior: only forward when non-"/"; ensure
+  // trailing slash matches what Vite expects. The adapter encodes the
+  // "skip --base when basePath === '/'" rule, so we pass "/" as the default.
+  let ctxBasePath = "/";
+  if (opts?.basePath && opts.basePath !== "/") {
+    ctxBasePath = opts.basePath.endsWith("/") ? opts.basePath : `${opts.basePath}/`;
+  }
+
+  // BuildContext.target is "preview" | "production" — coerce "development"
+  // (allowed by runBuild's signature) to "production" since this is a build.
+  const ctxTarget: "preview" | "production" =
+    opts?.target === "preview" ? "preview" : "production";
+
+  const buildCtx = createBuildContext({
+    projectId: opts?.projectId ?? "<unknown>",
+    projectPath: projectDir,
+    basePath: ctxBasePath,
+    target: ctxTarget,
+    env: { ...userEnvVars },
+    userId: opts?.userId,
+  });
+  const spec = adapter.build(buildCtx);
+
+  const outputDir = path.join(projectDir, spec.outputDir);
+
   return new Promise<BuildResult>((resolve) => {
     const chunks: string[] = [];
 
-    const viteArgs = ["vite", "build", "--outDir", "dist"];
-    if (opts?.basePath && opts.basePath !== "/") {
-      const base = opts.basePath.endsWith("/") ? opts.basePath : `${opts.basePath}/`;
-      viteArgs.push(`--base=${base}`);
-    }
-    const proc = spawn("npx", viteArgs, {
-      cwd: projectDir,
+    const proc = spawn(spec.command, spec.args, {
+      cwd: spec.cwd,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
-        ...userEnvVars,
+        ...spec.env,
         NODE_ENV: "production",
       },
     });

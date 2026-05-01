@@ -2,10 +2,14 @@
  * Dev server start and initialization logic.
  */
 
-import path from "node:path";
+import type { ChildProcess } from "node:child_process";
 import { getProjectPath } from "../ai/project-files.js";
 import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
 import { spawnJailedVite } from "./vite-jail.js";
+import { sql } from "../db/index.js";
+import { defaultRegistry } from "../frameworks/registry.js";
+import { createDevContext } from "../frameworks/context.js";
+import type { ReadinessSignal } from "../frameworks/types.js";
 import {
   type DevServerInstance,
   type StartDevServerOptions,
@@ -59,20 +63,81 @@ export async function startDevServer(
 }
 
 /**
- * Internal: actually spawns the Vite process. Called only from startDevServer
- * after the in-flight guard.
+ * Wait for a spawned dev/serve process to signal readiness.
+ *
+ * Phase 1 implements `log-substring` only — http-probe and custom kinds throw
+ * `not implemented` so they can be wired up later without changing call sites.
+ * Rejects on timeout; the caller decides whether to treat that as a fatal
+ * error or a benign "process is still alive, assume ready" fallback.
+ */
+async function awaitReadiness(
+  child: ChildProcess,
+  signal: ReadinessSignal,
+  timeoutMs: number,
+): Promise<void> {
+  if (signal.kind === "log-substring") {
+    const patterns = signal.patterns;
+    return new Promise<void>((resolve, reject) => {
+      let done = false;
+      const onData = (data: Buffer): void => {
+        if (done) return;
+        const text = data.toString();
+        if (patterns.some((p) => text.includes(p))) {
+          done = true;
+          finish();
+          resolve();
+        }
+      };
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        finish();
+        reject(new Error(`readiness-timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+      const finish = (): void => {
+        clearTimeout(timer);
+        child.stdout?.off("data", onData);
+        child.stderr?.off("data", onData);
+      };
+      child.stdout?.on("data", onData);
+      child.stderr?.on("data", onData);
+    });
+  }
+  if (signal.kind === "http-probe") {
+    throw new Error("readiness signal 'http-probe' is not implemented in v1");
+  }
+  if (signal.kind === "custom") {
+    throw new Error("readiness signal 'custom' is not implemented in v1");
+  }
+  throw new Error(
+    `Unknown readiness signal kind: ${(signal as { kind: string }).kind}`,
+  );
+}
+
+/**
+ * Internal: actually spawns the dev server. Called only from startDevServer
+ * after the in-flight guard. Framework-agnostic — looks up the project's
+ * framework adapter and asks it for the spawn spec.
  */
 async function doStartDevServer(
   projectId: string,
   opts?: StartDevServerOptions,
 ): Promise<{ url: string; port: number }> {
+  // Resolve the project's framework adapter ONCE per startDevServer call.
+  // Defaults to 'vite-react' via the DB column default for legacy rows.
+  const [project] = await sql<{ framework_id: string }[]>`
+    SELECT framework_id FROM projects WHERE id = ${projectId}
+  `;
+  if (!project) throw new Error(`Project ${projectId} not found`);
+  const adapter = defaultRegistry.getAdapter(project.framework_id);
+
   const port = await allocatePort();
   const projectPath = getProjectPath(projectId);
   // Internal URL for the reverse proxy to forward to (always localhost)
   const url = `http://localhost:${port}`;
 
   console.log(
-    `[DevServer] Starting Vite dev server for project ${projectId} on port ${port}`,
+    `[DevServer] Starting ${adapter.id} dev server for project ${projectId} on port ${port}`,
   );
   console.log(`[DevServer]   Directory: ${projectPath}`);
 
@@ -85,21 +150,18 @@ async function doStartDevServer(
     rejectReady = reject;
   });
 
-  // Ensure the source annotations Vite plugin is installed for visual editing
+  // Ensure the source annotations Vite plugin is installed for visual editing.
+  // (Idempotent; adapter.scaffold also installs it on project create.)
   try {
     ensureSourceAnnotationsPlugin(projectPath);
   } catch (err) {
     console.warn("[DevServer] Failed to inject source annotations plugin:", err);
   }
 
-  // Tell Vite to use the proxy prefix as its base path so all generated
-  // asset URLs (/@vite/client, /src/main.tsx, etc.) include the prefix.
-  // This makes the reverse proxy transparent — no HTML rewriting needed.
+  // Tell the dev server to use the proxy prefix as its base path so all
+  // generated asset URLs include the prefix. This makes the reverse proxy
+  // transparent — no HTML rewriting needed.
   const base = `/preview/${projectId}/`;
-
-  // Invoke Vite directly via Node instead of relying on .bin shims,
-  // which may not be created by npm install on Node 24+/Windows.
-  const viteEntry = path.join(projectPath, "node_modules", "vite", "bin", "vite.js");
 
   // Resolve env vars for the dev server. When `opts.userId` is provided, this
   // also pulls vault-backed integration credentials (Phase 1C of the
@@ -119,16 +181,25 @@ async function doStartDevServer(
     console.warn("[DevServer] Failed to resolve env vars:", err);
   }
 
+  // Ask the framework adapter for the spawn-shape. The adapter is a pure
+  // spec builder — it does NOT spawn. We hand the spec to spawnJailedVite,
+  // which still owns the dovault/jail wiring.
+  const devCtx = createDevContext({
+    projectId,
+    projectPath,
+    basePath: base,
+    host: DEV_SERVER_HOST,
+    port,
+    env: { ...userEnvVars },
+    userId: opts?.userId,
+  });
+  const spec = adapter.dev(devCtx);
+
   const jailed = await spawnJailedVite({
-    execPath: process.execPath,
-    args: [viteEntry, "--host", DEV_SERVER_HOST, "--port", String(port), "--strictPort", "--base", base],
-    cwd: projectPath,
-    env: {
-      ...process.env,
-      ...userEnvVars,
-      FORCE_COLOR: "0",
-      BROWSER: "none",
-    },
+    execPath: spec.command,
+    args: spec.args,
+    cwd: spec.cwd,
+    env: spec.env,
     projectId,
     stdio: "pipe",
   });
@@ -146,10 +217,11 @@ async function doStartDevServer(
 
   servers.set(projectId, instance);
 
-  // Listen for "ready" signal from Vite
+  // Buffer combined stdout+stderr for diagnostic messages on early exit.
+  // Readiness detection lives in awaitReadiness() against spec.readinessSignal.
   let outputBuffer = "";
 
-  const markReady = () => {
+  const markReady = (): void => {
     if (settled) return;
     settled = true;
     instance.ready = true;
@@ -157,7 +229,7 @@ async function doStartDevServer(
     resolveReady!();
   };
 
-  const markFailed = (err: Error) => {
+  const markFailed = (err: Error): void => {
     if (settled) return;
     settled = true;
     cleanup(projectId);
@@ -165,22 +237,11 @@ async function doStartDevServer(
   };
 
   child.stdout?.on("data", (data: Buffer) => {
-    const text = data.toString();
-    outputBuffer += text;
-
-    // Vite prints the local URL when ready
-    if (!settled && (text.includes("Local:") || text.includes("ready in"))) {
-      markReady();
-    }
+    outputBuffer += data.toString();
   });
 
   child.stderr?.on("data", (data: Buffer) => {
-    const text = data.toString();
-    outputBuffer += text;
-    // Vite sometimes outputs to stderr too
-    if (!settled && (text.includes("Local:") || text.includes("ready in"))) {
-      markReady();
-    }
+    outputBuffer += data.toString();
   });
 
   child.on("error", (err) => {
@@ -206,39 +267,36 @@ async function doStartDevServer(
     }
   });
 
-  // Timeout: if Vite doesn't signal ready in STARTUP_TIMEOUT_MS,
-  // check if the process is still alive before assuming ready.
-  const startupTimeout = setTimeout(() => {
-    if (settled) return;
-
-    if (child.exitCode !== null) {
-      // Process already exited — don't assume ready
-      markFailed(
-        new Error(
-          `Dev server process exited (code ${child.exitCode}) without signaling ready.\nOutput: ${outputBuffer.slice(-500)}`,
-        ),
-      );
-    } else {
-      // Process is still alive but hasn't printed the expected output.
-      // This can happen if the Vite output format changed. Assume ready.
-      console.log(
-        `[DevServer] Project ${projectId} startup timeout — process is alive, assuming ready at ${url}`,
-      );
-      markReady();
-    }
-  }, STARTUP_TIMEOUT_MS);
-
-  // Clean up timeout when settled
-  readyPromise
-    .then(() => clearTimeout(startupTimeout))
-    .catch(() => clearTimeout(startupTimeout));
+  // Drive readiness via the adapter's spec. On timeout, fall back to the
+  // legacy "process-still-alive ⇒ assume ready" behavior so a changed log
+  // format never bricks dev-server starts (the HTTP health check below
+  // catches genuinely broken servers).
+  const readinessTimeoutMs =
+    adapter.defaults.devReadinessTimeoutMs ?? STARTUP_TIMEOUT_MS;
+  awaitReadiness(child, spec.readinessSignal, readinessTimeoutMs)
+    .then(() => markReady())
+    .catch(() => {
+      if (settled) return;
+      if (child.exitCode !== null) {
+        markFailed(
+          new Error(
+            `Dev server process exited (code ${child.exitCode}) without signaling ready.\nOutput: ${outputBuffer.slice(-500)}`,
+          ),
+        );
+      } else {
+        console.log(
+          `[DevServer] Project ${projectId} startup timeout — process is alive, assuming ready at ${url}`,
+        );
+        markReady();
+      }
+    });
 
   await readyPromise;
 
   // Health check: verify the server actually responds to HTTP before
-  // declaring it ready. Vite may print "ready in" before it can serve
-  // requests (e.g. during dependency optimization).
-  const healthUrl = `http://localhost:${port}/preview/${projectId}/`;
+  // declaring it ready. The dev server may print "ready in" before it can
+  // serve requests (e.g. during dependency optimization).
+  const healthUrl = spec.healthUrl;
   const maxHealthChecks = 10;
   let healthy = false;
   for (let i = 0; i < maxHealthChecks; i++) {
