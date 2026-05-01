@@ -26,7 +26,7 @@ export async function createAllTools(
   workspaceId?: string,
   userId?: string,
 ): Promise<Tool[]> {
-  const builtinTools = createDoableTools(projectId, userId);
+  const builtinTools = createDoableTools(projectId, userId, workspaceId);
   if (!workspaceId) return builtinTools;
 
   let connectorFilter: string[] | undefined;

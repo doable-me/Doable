@@ -54,7 +54,7 @@ function emitToolEvent(projectId: string, toolName: string, status: "start" | "e
   if (handler) handler(toolName, status, args);
 }
 
-export function createDoableTools(projectId: string, userId?: string): Tool[] {
+export function createDoableTools(projectId: string, userId?: string, workspaceId?: string): Tool[] {
   return ([
     defineTool("create_file", {
       description: "Create or overwrite a file in the project with the given content. Creates parent directories as needed. Use relative paths (e.g. 'index.html', 'src/App.tsx').",
@@ -308,6 +308,52 @@ export function createDoableTools(projectId: string, userId?: string): Tool[] {
         };
         emitToolEvent(projectId, "provision_supabase", "end", { name: args.name ?? "" });
         return result;
+      },
+    }),
+
+    defineTool("run_supabase_migration", {
+      description: "Execute SQL against the user's connected Supabase database. Use this to CREATE TABLES, add columns, create indexes, or set up RLS policies BEFORE writing application code that depends on those tables. Always use IF NOT EXISTS to make migrations idempotent.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          sql: { type: "string" as const, description: "The SQL to execute (CREATE TABLE, ALTER TABLE, CREATE POLICY, etc.)" },
+        },
+        required: ["sql"] as const,
+      },
+      handler: async (args: { sql: string }) => {
+        emitToolEvent(projectId, "run_supabase_migration", "start", { sql: args.sql.slice(0, 100) });
+        try {
+          if (!workspaceId) {
+            return { success: false, error: "No workspace context — cannot resolve Supabase credentials." };
+          }
+          const { runMigration } = await import("../../integrations/supabase/migrate.js");
+          const { credentialVault } = await import("../../integrations/credential-vault.js");
+
+          // Get the mgmt OAuth token (needed for Management API DDL)
+          const mgmtConn = await credentialVault.get(userId ?? "", "supabase-mgmt", workspaceId, projectId);
+          const accessToken = (mgmtConn?.credentials as Record<string, unknown> | null)?.access_token as string | undefined;
+          if (!accessToken) {
+            return { success: false, error: "No Supabase management token found. User must connect Supabase first." };
+          }
+
+          // Get project ref from supabase data connection
+          const dataConn = await credentialVault.get(userId ?? "", "supabase", workspaceId, projectId);
+          const projectRef = (dataConn?.metadata as Record<string, unknown> | null)?.projectRef as string | undefined;
+          if (!projectRef) {
+            return { success: false, error: "No Supabase project ref found. User must connect a Supabase project first." };
+          }
+
+          const result = await runMigration({ accessToken, projectRef, sql: args.sql });
+          emitToolEvent(projectId, "run_supabase_migration", "end", { ok: result.ok });
+          if (!result.ok) {
+            return { success: false, error: `Migration failed: ${result.error}` };
+          }
+          return { success: true, message: "Migration executed successfully.", rows: result.rows };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          emitToolEvent(projectId, "run_supabase_migration", "end", { error: msg });
+          return { success: false, error: msg };
+        }
       },
     }),
 

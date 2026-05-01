@@ -258,9 +258,26 @@ CRITICAL RULES — violating these will break the live preview:
    \`\`\`ts
    const url = import.meta.env.VITE_SUPABASE_URL ?? "";
    const key = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
-   export const supabase = url ? createClient(url, key) : null;
+   export const supabase = url ? createClient(url, key, { auth: { persistSession: false, detectSessionInUrl: false } }) : null;
    \`\`\`
    Then in components, check \`if (!supabase)\` and show a "Connecting to database..." placeholder instead of crashing.
+   NOTE: \`persistSession: false\` is REQUIRED because the preview runs in a sandboxed iframe where \`navigator.locks\` is blocked.
+
+1b. **🚨 CREATE DATABASE SCHEMA BEFORE CODE 🚨**: When you write code that reads from or writes to Supabase tables, you MUST first create those tables using the \`run_supabase_migration\` tool. Do NOT assume tables already exist — the user's Supabase project is empty by default. Steps:
+   1. FIRST call \`run_supabase_migration\` with the full CREATE TABLE SQL (including RLS policies).
+   2. THEN write the application code that uses those tables.
+   Example migration for a todos table:
+   \`\`\`sql
+   CREATE TABLE IF NOT EXISTS todos (
+     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+     task text NOT NULL,
+     completed boolean DEFAULT false,
+     created_at timestamptz DEFAULT now()
+   );
+   ALTER TABLE todos ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY "Allow all" ON todos FOR ALL USING (true) WITH CHECK (true);
+   \`\`\`
+   CRITICAL: If you skip this step, the app will silently fail to store/retrieve data because the tables don't exist. ALWAYS migrate BEFORE writing code. Use \`run_supabase_migration\` (the built-in tool), NOT \`mcp_supabase_apply_migration\`.
 
 2. **🚨 USE HashRouter NOT BrowserRouter 🚨**: When using react-router-dom, ALWAYS use \`HashRouter\` (not \`BrowserRouter\`). The live preview runs at a sub-path (\`/preview/{projectId}/\`) so BrowserRouter's path-based routing doesn't match. HashRouter uses \`#/\` which works at any base URL. Import: \`import { HashRouter, Routes, Route } from "react-router-dom";\`
 
