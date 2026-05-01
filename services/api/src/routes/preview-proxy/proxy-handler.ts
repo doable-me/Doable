@@ -120,7 +120,7 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
         "img-src * data: blob:",
         "connect-src *",
         "media-src * data: blob:",
-        "frame-ancestors *",
+        "frame-ancestors 'self' https://*.doable.me http://localhost:* http://127.0.0.1:*",
         "object-src 'none'",
       ].join("; "),
     );
