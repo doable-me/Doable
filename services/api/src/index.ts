@@ -4,6 +4,12 @@
 import { initTracing } from "./tracing/instrumentation.js";
 initTracing({ serviceName: "doable-api" });
 
+// Register framework adapters into the process-wide registry BEFORE any
+// module that resolves a framework by id is imported (project create, dev
+// start, build, AI file tools). Idempotent.
+import { initFrameworks } from "./frameworks/init.js";
+initFrameworks();
+
 import { serve } from "@hono/node-server";
 import { initDocore, shutdownDocore } from "./ai/docore-bridge.js";
 import { initEmailService, stopEmailService } from "./lib/email/index.js";
