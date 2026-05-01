@@ -238,9 +238,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       displayText: `📄 Designing a PDF document about "${topic}"…`,
       buildPrompt: buildPdfPrompt(opts),
       accent: {
-        lightBg1: "#fef2f2", lightBg2: "#fee2e2", lightBorder: "#fca5a5",
-        lightTitle: "#b91c1c", lightSub: "#dc2626",
-        spinTrack: "#fecaca", spinHead: "#dc2626", scrollLight: "#fca5a5",
+        lightBg1: "#faf8ff", lightBg2: "#f3f0ff", lightBorder: "#c4b5fd",
+        lightTitle: "#6d28d9", lightSub: "#7c3aed",
+        spinTrack: "#c4b5fd", spinHead: "#7c3aed", scrollLight: "#c4b5fd",
       },
     });
     const ui = createUIResource({
@@ -316,7 +316,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           sizeBytes: htmlBuf.length,
         },
       ],
-      accent: { primary: "#dc2626", primaryHover: "#b91c1c", secondary: "#0284c7", secondaryHover: "#0369a1" },
+      accent: { primary: "#6d28d9", primaryHover: "#5b21b6", secondary: "#6d28d9", secondaryHover: "#5b21b6" },
     });
 
     const ui = createUIResource({

@@ -178,35 +178,35 @@ function buildPreviewHtml(markdownContent, title) {
 <style>
   *, html { box-sizing: border-box; }
   html { background: transparent; }
-  body { margin: 0; padding: 24px 32px; font: 15px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color: #0f172a; background: #ffffff; max-width: 820px; margin-left: auto; margin-right: auto; }
-  h1, h2, h3, h4, h5, h6 { color: #0f172a; line-height: 1.25; margin: 1.6em 0 0.6em 0; font-weight: 600; }
-  h1 { font-size: 2em; border-bottom: 1px solid #e2e8f0; padding-bottom: .35em; margin-top: 0; }
-  h2 { font-size: 1.5em; border-bottom: 1px solid #e2e8f0; padding-bottom: .25em; }
+  body { margin: 0; padding: 24px 32px; font: 15px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color: #1a1a2e; background: #ffffff; max-width: 820px; margin-left: auto; margin-right: auto; overflow: hidden; }
+  h1, h2, h3, h4, h5, h6 { color: #1a1a2e; line-height: 1.25; margin: 1.6em 0 0.6em 0; font-weight: 600; }
+  h1 { font-size: 2em; border-bottom: 1px solid #f0f0f5; padding-bottom: .35em; margin-top: 0; }
+  h2 { font-size: 1.5em; border-bottom: 1px solid #f0f0f5; padding-bottom: .25em; }
   h3 { font-size: 1.2em; }
   p { margin: 0 0 1em 0; }
-  a { color: #0284c7; text-decoration: underline; text-decoration-color: rgba(2,132,199,.4); }
-  a:hover { text-decoration-color: #0284c7; }
-  code { font: 13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background: #f1f5f9; padding: .15em .4em; border-radius: 4px; }
-  pre { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; overflow: auto; }
+  a { color: #6d28d9; text-decoration: underline; text-decoration-color: rgba(109,40,217,.4); }
+  a:hover { text-decoration-color: #6d28d9; }
+  code { font: 13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background: #f3f0ff; padding: .15em .4em; border-radius: 4px; }
+  pre { background: #faf8ff; border: 1px solid #f0f0f5; border-radius: 8px; padding: 14px 16px; overflow: auto; }
   pre code { background: transparent; padding: 0; }
-  blockquote { border-left: 3px solid #cbd5e1; margin: 1em 0; padding: .25em 1em; color: #475569; background: #f8fafc; border-radius: 0 6px 6px 0; }
+  blockquote { border-left: 3px solid #c4b5fd; margin: 1em 0; padding: .25em 1em; color: #4b5563; background: #faf8ff; border-radius: 0 6px 6px 0; }
   ul, ol { padding-left: 1.4em; margin: 0 0 1em 0; }
   li { margin: .25em 0; }
   table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: .95em; }
-  th, td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
-  th { background: #f8fafc; font-weight: 600; }
-  hr { border: 0; border-top: 1px solid #e2e8f0; margin: 2em 0; }
+  th, td { border: 1px solid #f0f0f5; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  hr { border: 0; border-top: 1px solid #f0f0f5; margin: 2em 0; }
   img { max-width: 100%; border-radius: 6px; }
-  /* Dark theme — host injects html[data-theme="dark"] */
-  html[data-theme="dark"] body { background: #0f0f12; color: #e4e4e7; }
+  /* Dark theme */
+  html[data-theme="dark"] body { background: #111113; color: #e4e4e7; }
   html[data-theme="dark"] h1, html[data-theme="dark"] h2, html[data-theme="dark"] h3,
-  html[data-theme="dark"] h4, html[data-theme="dark"] h5, html[data-theme="dark"] h6 { color: #fafafa; }
+  html[data-theme="dark"] h4, html[data-theme="dark"] h5, html[data-theme="dark"] h6 { color: #f4f4f5; }
   html[data-theme="dark"] h1, html[data-theme="dark"] h2 { border-bottom-color: #27272a; }
-  html[data-theme="dark"] a { color: #60a5fa; text-decoration-color: rgba(96,165,250,.4); }
-  html[data-theme="dark"] a:hover { text-decoration-color: #60a5fa; }
-  html[data-theme="dark"] code { background: #1f1f23; }
+  html[data-theme="dark"] a { color: #a78bfa; text-decoration-color: rgba(167,139,250,.4); }
+  html[data-theme="dark"] a:hover { text-decoration-color: #a78bfa; }
+  html[data-theme="dark"] code { background: #1e1b4b; }
   html[data-theme="dark"] pre { background: #18181b; border-color: #27272a; }
-  html[data-theme="dark"] blockquote { border-left-color: #3f3f46; background: #18181b; color: #a1a1aa; }
+  html[data-theme="dark"] blockquote { border-left-color: #4c1d95; background: #18181b; color: #a1a1aa; }
   html[data-theme="dark"] th, html[data-theme="dark"] td { border-color: #27272a; }
   html[data-theme="dark"] th { background: #18181b; }
   html[data-theme="dark"] hr { border-top-color: #27272a; }
@@ -243,9 +243,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       displayText: `📝 Writing a markdown document about "${topic}"…`,
       buildPrompt: buildMarkdownPrompt(opts),
       accent: {
-        lightBg1: "#ecfeff", lightBg2: "#cffafe", lightBorder: "#67e8f9",
-        lightTitle: "#0e7490", lightSub: "#0891b2",
-        spinTrack: "#a5f3fc", spinHead: "#0891b2", scrollLight: "#67e8f9",
+        lightBg1: "#faf8ff", lightBg2: "#f3f0ff", lightBorder: "#c4b5fd",
+        lightTitle: "#6d28d9", lightSub: "#7c3aed",
+        spinTrack: "#c4b5fd", spinHead: "#7c3aed", scrollLight: "#c4b5fd",
       },
     });
     const ui = createUIResource({
@@ -315,7 +315,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           sizeBytes: htmlBytes.length,
         },
       ],
-      accent: { primary: "#0891b2", primaryHover: "#0e7490", secondary: "#6366f1", secondaryHover: "#4f46e5" },
+      accent: { primary: "#6d28d9", primaryHover: "#5b21b6", secondary: "#6d28d9", secondaryHover: "#5b21b6" },
     });
 
     const ui = createUIResource({

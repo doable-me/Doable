@@ -339,11 +339,12 @@ function csvEscape(s) {
 // HTML preview of the first sheet (rendered inside the iframe)
 // ─────────────────────────────────────────────────────────────────────────
 function buildPreviewHtml({ topic, sheets, totalRowsSecondary = 0 }) {
+  const MAX_PREVIEW_ROWS = 12;
   const tabsHtml = sheets
     .map((sh, i) => `<button class="tab${i === 0 ? " active" : ""}" data-idx="${i}">${escapeHtml(sh.name)}</button>`)
     .join("");
   const tablesHtml = sheets
-    .map((sh, i) => `<div class="tbl-wrap${i === 0 ? " active" : ""}" data-idx="${i}">${renderSheetTable(sh)}</div>`)
+    .map((sh, i) => `<div class="tbl-wrap${i === 0 ? " active" : ""}" data-idx="${i}">${renderSheetTable(sh, MAX_PREVIEW_ROWS)}</div>`)
     .join("");
 
   return `<!doctype html>
@@ -352,37 +353,40 @@ function buildPreviewHtml({ topic, sheets, totalRowsSecondary = 0 }) {
 <style>
   *, html { box-sizing: border-box; }
   html { background: transparent; }
-  body { margin: 0; padding: 0; font: 13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color: #0f172a; background: #ffffff; }
-  .head { padding: 12px 16px 8px; border-bottom: 1px solid #e2e8f0; }
-  .ttl { font-weight: 600; font-size: 14px; color: #0f172a; }
-  .sub { font-size: 11px; color: #64748b; margin-top: 2px; }
-  .tabs { display: flex; gap: 4px; padding: 8px 12px 0; flex-wrap: wrap; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
-  .tab { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 6px 6px 0 0; font-size: 12px; font-weight: 500; color: #64748b; border: 1px solid transparent; border-bottom: none; }
-  .tab:hover { background: #ffffff; color: #0f172a; }
-  .tab.active { background: #ffffff; color: #0f172a; border-color: #e2e8f0; }
-  .tbl-wrap { display: none; padding: 8px 16px 16px; max-height: 460px; overflow: auto; }
+  body { margin: 0; padding: 0; font: 11px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color: #1a1a2e; background: #ffffff; overflow: hidden; }
+  .head { padding: 10px 14px 6px; border-bottom: 1px solid #f0f0f5; }
+  .ttl { font-weight: 600; font-size: 12px; color: #1a1a2e; }
+  .sub { font-size: 10px; color: #6b7280; margin-top: 1px; }
+  .tabs { display: flex; gap: 2px; padding: 6px 10px 0; flex-wrap: wrap; border-bottom: 1px solid #f0f0f5; background: #fafafa; }
+  .tab { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px 6px 0 0; font-size: 10px; font-weight: 500; color: #6b7280; border: 1px solid transparent; border-bottom: none; }
+  .tab:hover { background: #ffffff; color: #1a1a2e; }
+  .tab.active { background: #ffffff; color: #1a1a2e; border-color: #f0f0f5; font-weight: 600; }
+  .tbl-wrap { display: none; padding: 0; overflow: hidden; }
   .tbl-wrap.active { display: block; }
-  table { border-collapse: collapse; width: 100%; font-size: 12px; }
-  th, td { border: 1px solid #e2e8f0; padding: 6px 10px; text-align: left; vertical-align: top; }
-  th { background: #1f2937; color: #ffffff; font-weight: 600; position: sticky; top: 0; z-index: 1; }
-  tr.alt td { background: #f8fafc; }
-  tr.totals td { background: #f1f5f9; font-weight: 600; border-top: 2px solid #94a3b8; }
+  table { border-collapse: collapse; width: 100%; font-size: 10px; }
+  th, td { border: 1px solid #f0f0f5; padding: 4px 8px; text-align: left; vertical-align: top; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+  th { background: #6d28d9; color: #ffffff; font-weight: 600; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; }
+  tr.alt td { background: #faf8ff; }
+  tr.totals td { background: #f3f0ff; font-weight: 600; border-top: 2px solid #c4b5fd; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  td.formula { color: #6366f1; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 11px; }
+  td.formula { color: #7c3aed; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 9px; }
+  .more-indicator { padding: 6px 14px; text-align: center; font-size: 10px; color: #9ca3af; font-style: italic; background: #fafafa; border-top: 1px solid #f0f0f5; }
+
   /* dark */
-  html[data-theme="dark"] body { background: #0f0f12; color: #e4e4e7; }
+  html[data-theme="dark"] body { background: #111113; color: #e4e4e7; }
   html[data-theme="dark"] .head { border-bottom-color: #27272a; }
-  html[data-theme="dark"] .ttl { color: #fafafa; }
+  html[data-theme="dark"] .ttl { color: #f4f4f5; }
   html[data-theme="dark"] .sub { color: #a1a1aa; }
   html[data-theme="dark"] .tabs { background: #18181b; border-bottom-color: #27272a; }
   html[data-theme="dark"] .tab { color: #a1a1aa; }
-  html[data-theme="dark"] .tab:hover { background: #0f0f12; color: #fafafa; }
-  html[data-theme="dark"] .tab.active { background: #0f0f12; color: #fafafa; border-color: #27272a; }
+  html[data-theme="dark"] .tab:hover { background: #111113; color: #f4f4f5; }
+  html[data-theme="dark"] .tab.active { background: #111113; color: #f4f4f5; border-color: #27272a; }
   html[data-theme="dark"] th, html[data-theme="dark"] td { border-color: #27272a; }
-  html[data-theme="dark"] th { background: #111827; }
+  html[data-theme="dark"] th { background: #7c3aed; color: #ffffff; }
   html[data-theme="dark"] tr.alt td { background: #18181b; }
-  html[data-theme="dark"] tr.totals td { background: #1f1f23; border-top-color: #52525b; }
+  html[data-theme="dark"] tr.totals td { background: #1e1b4b; border-top-color: #4c1d95; }
   html[data-theme="dark"] td.formula { color: #a78bfa; }
+  html[data-theme="dark"] .more-indicator { background: #18181b; border-top-color: #27272a; color: #71717a; }
 </style></head>
 <body>
 <div class="head">
@@ -403,12 +407,13 @@ ${tablesHtml}
 </body></html>`;
 }
 
-function renderSheetTable(sheet) {
+function renderSheetTable(sheet, maxRows = 200) {
   const cols = sheet.columns || [];
   const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
+  const visibleRows = rows.slice(0, maxRows);
   const head = `<thead><tr>${cols.map((c) => `<th>${escapeHtml(c.header)}</th>`).join("")}</tr></thead>`;
   const numFormats = new Set(["number", "currency", "percent"]);
-  const bodyRows = rows.slice(0, 200).map((r, i) => {
+  const bodyRows = visibleRows.map((r, i) => {
     const tds = cols.map((c) => {
       const v = r?.[c.key];
       const isFormula = typeof v === "string" && v.startsWith("=");
@@ -444,8 +449,8 @@ function renderSheetTable(sheet) {
     }).join("");
     totalsRow = `<tr class="totals">${tds}</tr>`;
   }
-  const more = rows.length > 200 ? `<tr><td colspan="${cols.length}" style="text-align:center;color:#94a3b8;font-style:italic;">… ${rows.length - 200} more rows in the .xlsx</td></tr>` : "";
-  return `<table>${head}<tbody>${bodyRows.join("")}${totalsRow}${more}</tbody></table>`;
+  const more = rows.length > maxRows ? `<div class="more-indicator">… and ${rows.length - maxRows} more rows in the download</div>` : "";
+  return `<table>${head}<tbody>${bodyRows.join("")}${totalsRow}</tbody></table>${more}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -473,9 +478,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       displayText: `📊 Designing a spreadsheet about "${topic}"…`,
       buildPrompt: buildSpreadsheetPrompt(opts),
       accent: {
-        lightBg1: "#ecfdf5", lightBg2: "#d1fae5", lightBorder: "#6ee7b7",
-        lightTitle: "#047857", lightSub: "#059669",
-        spinTrack: "#a7f3d0", spinHead: "#059669", scrollLight: "#6ee7b7",
+        lightBg1: "#faf8ff", lightBg2: "#f3f0ff", lightBorder: "#c4b5fd",
+        lightTitle: "#6d28d9", lightSub: "#7c3aed",
+        spinTrack: "#c4b5fd", spinHead: "#7c3aed", scrollLight: "#c4b5fd",
       },
     });
     const ui = createUIResource({
@@ -553,7 +558,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           sizeBytes: csvBuf.length,
         },
       ],
-      accent: { primary: "#059669", primaryHover: "#047857", secondary: "#6366f1", secondaryHover: "#4f46e5" },
+      accent: { primary: "#6d28d9", primaryHover: "#5b21b6", secondary: "#6d28d9", secondaryHover: "#5b21b6" },
     });
 
     const ui = createUIResource({

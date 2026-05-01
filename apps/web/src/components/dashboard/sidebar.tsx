@@ -223,8 +223,11 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
   const planDefault = workspacePlan === "free" ? 5 : workspacePlan === "pro" ? 50 : 200;
   const dailyTotal = credits?.dailyTotal ?? planDefault;
   const creditsRemaining = Math.max(0, credits?.dailyRemaining ?? planDefault);
+  const creditsUsed = dailyTotal - creditsRemaining;
   const isUnlimited = dailyTotal >= 2_000_000_000;
-  const creditsPercent = isUnlimited ? 100 : dailyTotal > 0 ? (creditsRemaining / dailyTotal) * 100 : 0;
+  const creditsUsedPercent = isUnlimited ? 0 : dailyTotal > 0 ? (creditsUsed / dailyTotal) * 100 : 0;
+  const maxProjects = workspacePlan === "free" ? 3 : workspacePlan === "pro" ? 25 : workspacePlan === "business" ? 100 : Infinity;
+  const projectsAtLimit = maxProjects !== Infinity && totalProjects >= maxProjects;
   const folderTree = buildFolderTree(folders);
 
   return (
@@ -260,10 +263,18 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
               <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => router.push("/workspace-settings")}><Settings className="mr-2 h-4 w-4" />Workspace settings</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <div className="space-y-1">
-            <div className="flex items-center justify-between text-[11px]"><span className="text-muted-foreground">Credits today</span><span className="text-muted-foreground">{isUnlimited ? "Unlimited" : `${creditsRemaining} left`}</span></div>
-            {!isUnlimited && (
-              <div className="h-1.5 w-full rounded-full bg-muted"><div className="h-1.5 rounded-full bg-gradient-to-r from-brand-600 to-brand-500 transition-all" style={{ width: `${Math.min(creditsPercent, 100)}%` }} /></div>
+          <div className="space-y-2">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px]"><span className="text-muted-foreground">Credits today</span><span className="text-muted-foreground">{isUnlimited ? "Unlimited" : `${creditsUsed} / ${dailyTotal} used`}</span></div>
+              {!isUnlimited && (
+                <div className="h-1.5 w-full rounded-full bg-muted"><div className={`h-1.5 rounded-full transition-all ${creditsUsedPercent >= 80 ? "bg-gradient-to-r from-orange-500 to-red-500" : "bg-gradient-to-r from-brand-600 to-brand-500"}`} style={{ width: `${Math.min(creditsUsedPercent, 100)}%` }} /></div>
+              )}
+            </div>
+            {maxProjects !== Infinity && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]"><span className="text-muted-foreground">Projects</span><span className={`text-muted-foreground ${projectsAtLimit ? "text-orange-400" : ""}`}>{totalProjects} / {maxProjects}{projectsAtLimit ? " (limit)" : ""}</span></div>
+                <div className="h-1.5 w-full rounded-full bg-muted"><div className={`h-1.5 rounded-full transition-all ${projectsAtLimit ? "bg-gradient-to-r from-orange-500 to-red-500" : "bg-gradient-to-r from-brand-600 to-brand-500"}`} style={{ width: `${Math.min((totalProjects / maxProjects) * 100, 100)}%` }} /></div>
+              </div>
             )}
           </div>
         </div>

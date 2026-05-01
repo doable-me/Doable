@@ -64,13 +64,13 @@ export function autoBuildCardHtml({
   accent = {},
 }) {
   const a = {
-    lightBg1: accent.lightBg1 || "#f5f3ff",
-    lightBg2: accent.lightBg2 || "#ede9fe",
+    lightBg1: accent.lightBg1 || "#faf8ff",
+    lightBg2: accent.lightBg2 || "#f3f0ff",
     lightBorder: accent.lightBorder || "#c4b5fd",
-    lightTitle: accent.lightTitle || "#4338ca",
-    lightSub: accent.lightSub || "#6366f1",
-    spinTrack: accent.spinTrack || "#c7d2fe",
-    spinHead: accent.spinHead || "#6366f1",
+    lightTitle: accent.lightTitle || "#6d28d9",
+    lightSub: accent.lightSub || "#7c3aed",
+    spinTrack: accent.spinTrack || "#c4b5fd",
+    spinHead: accent.spinHead || "#7c3aed",
     scrollLight: accent.scrollLight || "#c4b5fd",
   };
   const buildPromptJson = JSON.stringify(String(buildPrompt));
@@ -80,8 +80,8 @@ export function autoBuildCardHtml({
 <style>
   *, html { box-sizing: border-box; }
   html { background: transparent; }
-  body { margin: 0; font: 13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 10px 0; background: transparent; color: #0f172a; }
-  .card { background: linear-gradient(135deg, ${a.lightBg1} 0%, ${a.lightBg2} 100%); border: 1px solid ${a.lightBorder}; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(99,102,241,.12); }
+  body { margin: 0; font: 13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 10px 0; background: transparent; color: #1a1a2e; }
+  .card { background: linear-gradient(135deg, ${a.lightBg1} 0%, ${a.lightBg2} 100%); border: 1px solid ${a.lightBorder}; border-radius: 14px; padding: 14px 18px; box-shadow: 0 2px 8px rgba(109,40,217,.08); }
   .hdr { display: flex; gap: 12px; align-items: center; }
   .spin { width: 18px; height: 18px; border: 2.5px solid ${a.spinTrack}; border-top-color: ${a.spinHead}; border-radius: 50%; animation: sp 0.8s linear infinite; flex: none; }
   .spin.done { border-top-color: #10b981; animation: none; background: #10b981; border-color: #10b981; position: relative; }
@@ -100,12 +100,12 @@ export function autoBuildCardHtml({
   .log::-webkit-scrollbar-track { background: transparent; }
   .log::-webkit-scrollbar-thumb { background: ${a.scrollLight}; border-radius: 3px; }
 
-  /* Dark mode — matches Doable's --card / --border / --foreground tokens. */
-  html[data-theme="dark"] body { color: #f2f2f2; }
-  html[data-theme="dark"] .card { background: #0f0f12; border-color: #27272a; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
-  html[data-theme="dark"] .ttl { color: #f2f2f2; }
+  /* Dark mode */
+  html[data-theme="dark"] body { color: #f4f4f5; }
+  html[data-theme="dark"] .card { background: #111113; border-color: #27272a; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+  html[data-theme="dark"] .ttl { color: #f4f4f5; }
   html[data-theme="dark"] .sub { color: #a1a1aa; }
-  html[data-theme="dark"] .spin { border-color: #3f3f46; border-top-color: #a1a1aa; }
+  html[data-theme="dark"] .spin { border-color: #3f3f46; border-top-color: #a78bfa; }
   html[data-theme="dark"] .log { border-top-color: #27272a; }
   html[data-theme="dark"] .line { color: #e4e4e7; }
   html[data-theme="dark"] .line.stale { color: #71717a; }
@@ -213,27 +213,27 @@ export function previewDownloadCardHtml({
   accent = {},
 }) {
   const a = {
-    primary: accent.primary || "#0284c7",
-    primaryHover: accent.primaryHover || "#0369a1",
-    secondary: accent.secondary || "#d97706",
-    secondaryHover: accent.secondaryHover || "#b45309",
+    primary: accent.primary || "#6d28d9",
+    primaryHover: accent.primaryHover || "#5b21b6",
+    secondary: accent.secondary || "#6d28d9",
+    secondaryHover: accent.secondaryHover || "#5b21b6",
   };
   const downloadButtons = downloads
     .map((d, i) => {
       const href = `data:${d.mimeType};base64,${d.base64}`;
-      const sizeKb = d.sizeBytes != null ? `${(d.sizeBytes / 1024).toFixed(1)} KB` : "";
+      const sizeKb = d.sizeBytes != null ? ` · ${(d.sizeBytes / 1024).toFixed(1)} KB` : "";
       const cls = i === 0 ? "dl primary" : "dl secondary";
-      return `<a class="${cls}" download="${escapeHtml(d.fileName)}" href="${href}" title="${sizeKb}">${escapeHtml(d.label)}</a>`;
+      return `<a class="${cls}" download="${escapeHtml(d.fileName)}" href="${href}">${escapeHtml(d.label)}${sizeKb}</a>`;
     })
     .join("");
 
   let stage = "";
   if (previewKind === "iframe-html") {
     const srcdoc = String(previewHtml).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-    stage = `<div class="stage iframe-stage"><iframe class="preview" title="preview" sandbox="allow-scripts" srcdoc="${srcdoc}"></iframe></div>`;
+    stage = `<div class="stage iframe-stage"><iframe class="preview" title="preview" sandbox="allow-scripts" srcdoc="${srcdoc}"></iframe><div class="fade-overlay"></div></div>`;
   } else if (previewKind === "iframe-srcdoc-bare") {
     const srcdoc = String(previewHtml).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-    stage = `<div class="stage stage-bare"><iframe class="preview-bare" title="preview" sandbox="allow-scripts" srcdoc="${srcdoc}"></iframe></div>`;
+    stage = `<div class="stage stage-bare"><iframe class="preview-bare" title="preview" sandbox="allow-scripts" srcdoc="${srcdoc}"></iframe><div class="fade-overlay"></div></div>`;
   } else {
     stage = `<div class="stage html-stage">${previewHtml || ""}</div>`;
   }
@@ -244,38 +244,55 @@ export function previewDownloadCardHtml({
   *, html { box-sizing: border-box; }
   html { background: transparent; }
   body { margin: 0; font: 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding: 12px 0; background: transparent; }
-  .wrap { color: #0f172a; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
-  .bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; flex-wrap: wrap; }
-  .bar .ico { font-size: 18px; }
-  .bar .meta { flex: 1; min-width: 180px; }
-  .bar .ttl { font-weight: 600; color: #0f172a; word-break: break-word; }
-  .bar .sub { font-size: 11px; color: #475569; }
-  .bar .btns { display: flex; gap: 6px; flex-wrap: wrap; }
-  .bar a, .bar button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: 12px; transition: background .15s; display: inline-block; }
-  .bar a.dl.primary { background: ${a.primary}; color: #ffffff; }
-  .bar a.dl.primary:hover { background: ${a.primaryHover}; }
-  .bar a.dl.secondary { background: ${a.secondary}; color: #ffffff; }
-  .bar a.dl.secondary:hover { background: ${a.secondaryHover}; }
-  .bar button.fs { background: #e2e8f0; color: #0f172a; }
-  .bar button.fs:hover { background: #cbd5e1; }
-  .stage { position: relative; width: 100%; background: #ffffff; }
-  .iframe-stage { aspect-ratio: 16 / 11; background: #f1f5f9; }
-  .iframe-stage iframe.preview { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
-  .stage-bare { padding: 0; min-height: 240px; }
-  .stage-bare iframe.preview-bare { width: 100%; min-height: 360px; border: 0; display: block; background: #ffffff; }
-  .html-stage { padding: 14px 16px; max-height: 520px; overflow: auto; background: #ffffff; }
-  .hint { padding: 8px 14px; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; background: #f8fafc; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .wrap { color: #1a1a2e; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.03); }
 
-  /* Dark mode */
-  html[data-theme="dark"] .wrap { background: #0f0f12; border-color: #27272a; color: #f2f2f2; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  /* Header bar */
+  .bar { display: flex; gap: 12px; align-items: center; padding: 14px 18px; border-bottom: 1px solid #f0f0f5; background: #fafafa; }
+  .bar .ico { font-size: 22px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; background: #f3f0ff; border-radius: 10px; flex-shrink: 0; }
+  .bar .meta { flex: 1; min-width: 0; }
+  .bar .ttl { font-weight: 600; font-size: 14px; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar .sub { font-size: 12px; color: #6b7280; margin-top: 2px; }
+
+  /* Buttons row — below the header on its own line */
+  .actions { display: flex; gap: 8px; padding: 12px 18px; border-bottom: 1px solid #f0f0f5; align-items: center; flex-wrap: wrap; }
+  .actions a, .actions button { all: unset; cursor: pointer; padding: 7px 14px; border-radius: 8px; font-weight: 500; font-size: 12px; transition: all .15s ease; display: inline-flex; align-items: center; gap: 5px; }
+  .actions a.dl.primary { background: ${a.primary}; color: #ffffff; }
+  .actions a.dl.primary:hover { background: ${a.primaryHover}; transform: translateY(-1px); box-shadow: 0 2px 6px rgba(109,40,217,.25); }
+  .actions a.dl.secondary { background: transparent; color: ${a.secondary}; border: 1.5px solid ${a.secondary}; }
+  .actions a.dl.secondary:hover { background: ${a.secondaryHover}; color: #ffffff; transform: translateY(-1px); }
+  .actions button.fs { background: #f3f4f6; color: #4b5563; border: 1px solid #e5e7eb; }
+  .actions button.fs:hover { background: #e5e7eb; color: #1f2937; }
+  .actions .spacer { flex: 1; }
+
+  /* Preview stage — bird's eye glance, no scrollbars */
+  .stage { position: relative; width: 100%; overflow: hidden; }
+  .iframe-stage { height: 220px; background: #f9fafb; }
+  .iframe-stage iframe.preview { position: absolute; top: 0; left: 0; width: 100%; height: 400px; border: 0; display: block; pointer-events: none; }
+  .stage-bare { height: 200px; }
+  .stage-bare iframe.preview-bare { width: 100%; height: 380px; border: 0; display: block; pointer-events: none; }
+  .html-stage { padding: 14px 18px; max-height: 240px; overflow: hidden; background: #ffffff; }
+  .fade-overlay { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: linear-gradient(to bottom, transparent, #ffffff); pointer-events: none; }
+
+  /* Footer hint */
+  .hint { padding: 10px 18px; font-size: 11px; color: #9ca3af; border-top: 1px solid #f0f0f5; background: #fafafa; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+  /* ─── Dark mode ─── */
+  html[data-theme="dark"] .wrap { background: #111113; border-color: #27272a; color: #f4f4f5; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
   html[data-theme="dark"] .bar { background: #18181b; border-bottom-color: #27272a; }
-  html[data-theme="dark"] .bar .ttl { color: #f2f2f2; }
+  html[data-theme="dark"] .bar .ico { background: #1e1b4b; }
+  html[data-theme="dark"] .bar .ttl { color: #f4f4f5; }
   html[data-theme="dark"] .bar .sub { color: #a1a1aa; }
-  html[data-theme="dark"] .bar button.fs { background: #27272a; color: #f2f2f2; }
-  html[data-theme="dark"] .bar button.fs:hover { background: #3f3f46; }
+  html[data-theme="dark"] .actions { border-bottom-color: #27272a; }
+  html[data-theme="dark"] .actions a.dl.primary { background: #7c3aed; }
+  html[data-theme="dark"] .actions a.dl.primary:hover { background: #8b5cf6; box-shadow: 0 2px 6px rgba(139,92,246,.3); }
+  html[data-theme="dark"] .actions a.dl.secondary { color: #a78bfa; border-color: #a78bfa; background: transparent; }
+  html[data-theme="dark"] .actions a.dl.secondary:hover { background: #7c3aed; color: #ffffff; border-color: #7c3aed; }
+  html[data-theme="dark"] .actions button.fs { background: #27272a; color: #d4d4d8; border-color: #3f3f46; }
+  html[data-theme="dark"] .actions button.fs:hover { background: #3f3f46; color: #f4f4f5; }
   html[data-theme="dark"] .iframe-stage { background: #18181b; }
   html[data-theme="dark"] .stage-bare iframe.preview-bare { background: #18181b; }
-  html[data-theme="dark"] .html-stage { background: #18181b; color: #f2f2f2; }
+  html[data-theme="dark"] .html-stage { background: #18181b; color: #f4f4f5; }
+  html[data-theme="dark"] .fade-overlay { background: linear-gradient(to bottom, transparent, #111113); }
   html[data-theme="dark"] .hint { color: #71717a; border-top-color: #27272a; background: #18181b; }
 </style></head>
 <body>
@@ -286,10 +303,11 @@ export function previewDownloadCardHtml({
       <div class="ttl">${escapeHtml(title)}</div>
       <div class="sub">${escapeHtml(subtitle)}</div>
     </div>
-    <div class="btns">
-      ${previewKind === "iframe-html" ? `<button class="fs" id="fs" type="button">⛶ Fullscreen</button>` : ""}
-      ${downloadButtons}
-    </div>
+  </div>
+  <div class="actions">
+    ${downloadButtons}
+    <span class="spacer"></span>
+    ${previewKind === "iframe-html" ? `<button class="fs" id="fs" type="button">⛶ Fullscreen</button>` : ""}
   </div>
   ${stage}
   ${hint ? `<div class="hint"><span>${escapeHtml(hint)}</span></div>` : ""}

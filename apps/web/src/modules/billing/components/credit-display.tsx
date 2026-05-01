@@ -47,7 +47,8 @@ function CreditBar({
   color: string;
 }) {
   const unlimited = isUnlimited(total);
-  const percentage = unlimited ? 100 : total > 0 ? Math.min((remaining / total) * 100, 100) : 0;
+  const used = total - remaining;
+  const percentage = unlimited ? 0 : total > 0 ? Math.min((used / total) * 100, 100) : 0;
   const isLow = !unlimited && remaining <= Math.ceil(total * 0.2);
 
   return (
@@ -55,12 +56,12 @@ function CreditBar({
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium text-foreground">{label}</span>
         <span className={cn("tabular-nums text-muted-foreground", isLow && "text-orange-400")}>
-          {unlimited ? "Unlimited" : `${remaining} / ${total} remaining`}
+          {unlimited ? "Unlimited" : `${used} / ${total} used`}
         </span>
       </div>
       <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className={cn("h-full rounded-full transition-all duration-500", color)}
+          className={cn("h-full rounded-full transition-all duration-500", isLow ? "bg-gradient-to-r from-orange-500 to-red-500" : color)}
           style={{ width: `${percentage}%` }}
         />
       </div>
