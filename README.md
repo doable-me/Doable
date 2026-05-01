@@ -1,10 +1,57 @@
-# Doable
+<p align="center">
+  <img src="apps/web/public/logo.svg" alt="Doable" width="80" />
+</p>
 
-Dream it. Do it. Done. Tell AI what you want to do and Doable gets it done.
+<h1 align="center">Doable</h1>
 
-## Quick Start (Docker)
+<p align="center">
+  <strong>Dream it. Do it. Done.</strong><br/>
+  The open-source AI app builder — describe what you want, and Doable builds it.
+</p>
 
-The fastest way to try Doable — no Node.js or PostgreSQL install needed:
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
+  <a href="https://github.com/doable-me/doable/stargazers"><img src="https://img.shields.io/github/stars/doable-me/doable?style=social" alt="GitHub Stars" /></a>
+  <a href="https://discord.gg/doable"><img src="https://img.shields.io/discord/placeholder?label=Discord&logo=discord&color=5865F2" alt="Discord" /></a>
+  <a href="https://doable.me"><img src="https://img.shields.io/badge/Try_it-doable.me-orange" alt="Live Demo" /></a>
+</p>
+
+---
+
+## Why Doable?
+
+Most AI coding tools generate code — but leave you to wire it all up yourself. Doable is a **complete platform** where you describe an idea and get a working, deployed app. No terminal. No config files. No boilerplate.
+
+| Without Doable | With Doable |
+|----------------|-------------|
+| Juggle 5 tools to scaffold a project | Describe it in one message |
+| Manually set up databases | AI provisions Supabase in one click |
+| Wire up auth, APIs, hosting yourself | Everything connected out of the box |
+| Export code and figure out deployment | Publish to a live URL instantly |
+| Limited to one AI model | 60+ providers — use any model you want |
+
+**Doable is for creators, designers, founders, and teams** — not just developers. If you can describe it, Doable can build it.
+
+---
+
+## Features
+
+- **AI-Powered Development** — Describe what you want in natural language. The AI writes code, fixes bugs, and iterates with you.
+- **60+ AI Providers** — Anthropic Claude, OpenAI, Google Gemini, Groq, Mistral, DeepSeek, local models via Ollama/LM Studio, and [many more](#supported-ai-providers).
+- **Real-time Collaboration** — Multiple people can edit the same project simultaneously (Yjs CRDT).
+- **Visual Edit** — Click any element on the live preview and describe changes visually.
+- **File Builders** — Generate presentations (PPTX), spreadsheets (XLSX), PDFs, and Markdown directly from chat.
+- **One-Click Supabase** — AI provisions a database, runs migrations, deploys edge functions — zero config.
+- **50+ Integrations** — Connect Slack, Notion, GitHub, Stripe, Linear, and more. The AI uses them as tools.
+- **Instant Publishing** — Deploy to a live `*.doable.me` URL with one click. Custom domains supported.
+- **MCP Compatible** — Extensible via [Model Context Protocol](https://modelcontextprotocol.io) servers.
+- **Self-Hostable** — MIT licensed. Run it on your own infrastructure with full control.
+
+---
+
+## Quick Start
+
+### Docker (recommended)
 
 ```bash
 git clone https://github.com/doable-me/doable.git
@@ -12,174 +59,136 @@ cd doable
 ./docker/setup.sh
 ```
 
-When prompted, press Enter for localhost. Open <https://localhost> (accept the self-signed cert warning).
+Open <https://localhost> and accept the self-signed cert. Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in `docker/.env` for AI features.
 
-> See [`docker/README.md`](docker/README.md) for full Docker documentation: one-liner deploys, configuration, operations, and troubleshooting.
+> See [`docker/README.md`](docker/README.md) for full Docker docs including one-liner deploys with SSL.
 
-> **Note:** AI features require an API key. Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in `docker/.env`, or configure the GitHub Copilot SDK (see [AI Configuration](#ai-configuration)).
-
-To stop everything: `docker compose -f docker/docker-compose.yml down` (add `-v` to also remove database data).
-
-### Deploy with a Domain (one-liner)
-
-To deploy on a server with a custom domain, nginx reverse proxy, and automatic SSL:
+### Deploy with a domain
 
 ```bash
-# One-liner: generates secrets, configures nginx, obtains Let's Encrypt SSL, builds & starts
-DOMAIN=app.example.com ./docker/setup.sh
-
-# Or with email for SSL cert notifications:
 DOMAIN=app.example.com EMAIL=you@example.com ./docker/setup.sh
 ```
 
-This script:
-1. Generates `docker/.env` with random secrets and domain-aware URLs
-2. Installs and configures **nginx** as a reverse proxy (ports 80/443 → internal services)
-3. Obtains a free **Let's Encrypt** SSL certificate via certbot
-4. Builds and starts all Docker containers
-5. Configures UFW firewall (only ports 22, 80, 443 open)
+Handles secrets, nginx, Let's Encrypt SSL, Docker build, and firewall — all in one command.
 
-**Behind Cloudflare or another proxy?** Use `--skip-ssl` to configure nginx with a self-signed certificate instead of Let's Encrypt:
-```bash
-DOMAIN=app.example.com ./docker/setup.sh --skip-ssl
-```
-
-### Deploy on a Private Network (no domain)
-
-For LAN / air-gapped / private network deployments without a domain name — uses self-signed SSL:
+### Local development
 
 ```bash
-# Private network — use your server's LAN IP:
-HOST=192.168.1.50 ./docker/setup.sh
-
-# Localhost only — self-signed SSL on 127.0.0.1:
-./docker/setup.sh
+pnpm install
+cp .env.example .env        # Configure your secrets + AI key
+pnpm db:migrate
+pnpm dev                    # Web :3000 | API :4000 | WS :4001
 ```
 
-Browsers will show a certificate warning for the self-signed cert. Accept it, or import `/etc/ssl/doable/cert.pem` into your OS/browser trust store.
+**Windows:** `.\dev.ps1` launches all services in a psmux session.
 
-> **Security:** In all modes, application services bind to `127.0.0.1` only. Only nginx accepts external connections.
+**Prerequisites:** Node.js 22+, pnpm 9+, PostgreSQL 16+ (or `docker compose up postgres`)
 
-## Quick Start (Docker)
+---
 
-The fastest way to try Doable — no Node.js or PostgreSQL install needed:
+## Supported AI Providers
 
-```bash
-git clone https://github.com/nicekid1/doable.git
-cd doable
-docker compose up --build
-```
+Doable works with virtually any AI provider. Bring your own API key:
 
-Open [http://localhost:3000](http://localhost:3000) once everything is up.
+| Category | Providers |
+|----------|-----------|
+| **Major Cloud** | Anthropic (Claude), OpenAI, Google Gemini, Azure OpenAI, AWS Bedrock, Vertex AI |
+| **GitHub Copilot** | Full Copilot SDK integration — use your Copilot subscription directly |
+| **Specialized** | Groq, Mistral, Cohere, xAI (Grok), DeepSeek, Perplexity, SambaNova |
+| **Aggregators** | OpenRouter (200+ models), Together AI, Fireworks AI, DeepInfra, Unify AI |
+| **Regional** | Moonshot, DashScope, Zhipu, Baidu Qianfan, Volcengine, MiniMax, StepFun, 01.AI, Hunyuan |
+| **Infrastructure** | NVIDIA NIM, Cloudflare Workers AI, Nebius, Scaleway |
+| **Local/Self-Hosted** | Ollama, LM Studio, vLLM, llama.cpp, Jan, LocalAI, GPT4All, and 15+ more |
 
-> **Note:** AI features require an API key. Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the `api` service environment inside `docker-compose.yml`, or configure the GitHub Copilot SDK (see [AI Configuration](#ai-configuration)).
+Any OpenAI-compatible endpoint works. Set `OPENAI_BASE_URL` and you're done.
 
-To stop everything: `docker compose down` (add `-v` to also remove database data).
+---
 
 ## Architecture
 
-Monorepo managed with [pnpm](https://pnpm.io) workspaces and [Turborepo](https://turbo.build).
+Monorepo managed with [pnpm](https://pnpm.io) workspaces + [Turborepo](https://turbo.build).
 
 ```
-apps/
-  web/          Next.js 15 frontend (React 19, Tailwind 4, Monaco Editor)
-services/
-  api/          Hono REST API (auth, projects, AI chat, billing)
-  ws/           WebSocket server (Yjs CRDT real-time collaboration)
-packages/
-  db/           Database queries & types
-  shared/       Shared types & utilities
-  docore/       AI agent engine (wraps GitHub Copilot SDK)
-  dovault/      Runtime sandbox for generated code
+apps/web/             Next.js 15 (React 19, Tailwind 4, Monaco Editor)
+services/api/         Hono REST API (auth, projects, AI chat, billing)
+services/ws/          WebSocket server (Yjs CRDT collaboration)
+packages/db/          Database queries & migrations
+packages/shared/      Shared types, AI provider catalog, utilities
+packages/docore/      AI agent engine
+packages/dovault/     Runtime sandbox for generated code
+mcp-servers/          File builders (PPTX, XLSX, PDF, Markdown)
 ```
 
-## Local Development Setup
+| Service | Port | Stack |
+|---------|------|-------|
+| **Web** | 3000 | Next.js 15, Turbopack, React 19 |
+| **API** | 4000 | Hono, Node.js, Copilot SDK, Puppeteer |
+| **WS** | 4001 | Hono, ws, Yjs CRDT |
+| **DB** | 5432 | PostgreSQL 16 (pgvector, pgcrypto, pg_trgm) |
 
-### Prerequisites
+---
 
-- Node.js 22+ (20+ minimum)
-- pnpm 9+
-- PostgreSQL 16+ with extensions: `pgvector`, `pgcrypto`, `pg_trgm`
-- [psmux](https://github.com/marlocarlo/psmux) (optional, Windows terminal multiplexer)
+## What You Can Build
 
-> **Tip:** Use the Docker Compose PostgreSQL service instead of installing PostgreSQL locally:
-> ```bash
-> docker compose up postgres
-> ```
+- **Web apps** — Landing pages, dashboards, SaaS products
+- **Database-backed apps** — Task managers, CRMs, admin panels (one-click Supabase)
+- **Documents** — Pitch decks (PPTX), reports (PDF), spreadsheets (XLSX), technical docs (MD)
+- **Internal tools** — Forms, data viewers, workflow automations
+- **Prototypes** — Ship an MVP in minutes, not weeks
 
-### Install & Run
+---
+
+## Integrations
+
+Connect services and the AI uses them as tools automatically:
+
+| Category | Examples |
+|----------|----------|
+| **Developer Tools** | GitHub, GitLab, Linear, Jira, Sentry, Vercel, Netlify |
+| **Communication** | Slack, Discord, Telegram, Microsoft Teams |
+| **Productivity** | Notion, Google Workspace, Airtable, Asana, Trello |
+| **Finance** | Stripe, PayPal, Shopify, QuickBooks |
+| **Database** | Supabase (first-class, one-click provisioning) |
+| **AI/ML** | OpenAI, Replicate, Hugging Face |
+
+---
+
+## Security
+
+- All services bind to `127.0.0.1` only — no public ports exposed
+- Credentials encrypted at rest with `ENCRYPTION_KEY`
+- Non-root containers in Docker mode
+- Sandboxed code execution via `dovault`
+- Row-level security for multi-tenant isolation
+- See [SECURITY.md](SECURITY.md) for vulnerability reporting
+
+---
+
+## Production Deployment
+
+### Docker + nginx (recommended)
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Copy environment file and configure
-cp .env.example .env
-# Edit .env — at minimum set JWT_SECRET to a random string
-
-# Run database migrations
-pnpm db:migrate
-
-# Start all services
-pnpm dev
+DOMAIN=app.example.com EMAIL=admin@example.com ./docker/setup.sh
 ```
 
-### Quick start (Windows)
-
-```powershell
-.\dev.ps1
-```
-
-Launches a psmux session with all three services. Use `.\dev.ps1 -Kill` to stop.
-
-### Manual start
+### Bare-metal
 
 ```bash
-pnpm dev         # All services via Turborepo
-pnpm dev:web     # http://localhost:3000
-pnpm dev:api     # http://localhost:4000
-pnpm dev:ws      # ws://localhost:4001
+./setup-server.sh
 ```
 
-## Services
+Installs Node.js 22, pnpm, PostgreSQL 16, Caddy, Cloudflare Tunnel, UFW firewall, fail2ban, and systemd services on a fresh Ubuntu server.
 
-| Service | Port | Description |
-|---------|------|-------------|
-| **Web** | 3000 | Next.js frontend with Turbopack |
-| **API** | 4000 | Hono REST API (auth, projects, AI chat, billing) |
-| **WS** | 4001 | WebSocket server for real-time collaboration |
-| **PostgreSQL** | 5432 | Database (pgvector/pgcrypto/pg_trgm) |
-<<<<<<< Updated upstream
-| **Redis** | 6379 | Optional — shared rate limiting & sessions (for multi-instance) |
-=======
->>>>>>> Stashed changes
+### Private network / air-gapped
 
-## AI Configuration
+```bash
+HOST=192.168.1.50 ./docker/setup.sh
+```
 
-Doable supports multiple AI backends. Set one of these in your `.env`:
+Uses self-signed SSL. All services stay on `127.0.0.1`.
 
-| Provider | Environment Variable |
-|----------|---------------------|
-| Anthropic (Claude) | `ANTHROPIC_API_KEY` |
-| OpenAI | `OPENAI_API_KEY` |
-| GitHub Copilot SDK | `COPILOT_CLI_PATH` or `COPILOT_CLI_URL` |
-
-## Optional Integrations
-
-These are not required to run Doable but enable additional features:
-
-| Feature | Variables | Purpose |
-|---------|-----------|---------|
-<<<<<<< Updated upstream
-| Redis | `REDIS_URL` | Shared rate limiting & sessions (multi-instance) |
-=======
->>>>>>> Stashed changes
-| GitHub OAuth | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Login with GitHub |
-| Google OAuth | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Login with Google |
-| Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Billing & subscriptions |
-| S3 Storage | `S3_BUCKET`, `S3_ACCESS_KEY`, etc. | File uploads |
-
-See `.env.example` for all available options and `.env.integrations.example` for OAuth provider setup.
+---
 
 ## Scripts
 
@@ -192,62 +201,32 @@ See `.env.example` for all available options and `.env.integrations.example` for
 | `pnpm lint` | Run linting |
 | `pnpm format` | Format code with Prettier |
 
-<<<<<<< Updated upstream
-## Security
+---
 
-- **Secrets**: Never commit real secrets. Use `docker/.env` (gitignored) for Docker deployments and `.env` for local dev. Generate secrets with `openssl rand -hex 32`.
-- **Required secrets** (Docker will refuse to start without these): `JWT_SECRET`, `ENCRYPTION_KEY`, `INTERNAL_SECRET`.
-- **Network binding**: All Docker services bind to `127.0.0.1` only — no ports are exposed to the public internet. Only nginx accepts external connections. This applies in ALL deployment modes (domain, private network, localhost).
-- **Non-root containers**: API, WS, Web, and Migrate containers run as the unprivileged `node` user.
-- **Database**: PostgreSQL is only accessible within the Docker network and via `127.0.0.1:5432` on the host.
-
-## Production Deployment
-
-### Docker + nginx (recommended)
-
-```bash
-# On a fresh Ubuntu 22.04+ server with Docker installed:
-git clone https://github.com/doable-me/doable.git
-cd doable
-
-# Public domain with Let's Encrypt:
-DOMAIN=app.example.com EMAIL=admin@example.com ./docker/setup.sh
-
-# Or private network with self-signed SSL:
-HOST=192.168.1.50 ./docker/setup.sh
-```
-
-This runs the automated setup: secret generation, nginx reverse proxy, SSL (Let's Encrypt or self-signed), Docker build, and starts all services.
-
-### Bare-metal (setup-server.sh)
-
-For a non-Docker deployment on a fresh Ubuntu server:
-
-```bash
-./setup-server.sh
-```
-
-This handles: Node.js 22, pnpm, PostgreSQL 16, Caddy, Cloudflare Tunnel, firewall (UFW deny-all + allow SSH), fail2ban, systemd services, and secure secret generation.
-
-**Key production requirements:**
-- Set unique, strong values for `JWT_SECRET`, `ENCRYPTION_KEY`, and `INTERNAL_SECRET`
-- Configure `CORS_ORIGINS`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_APP_URL` to match your domain
-- Use a reverse proxy (nginx via `setup.sh`, or Caddy, Traefik, etc.) — never expose application ports directly
-- Verify with `ss -tlnp` that no service binds to `0.0.0.0` (except SSH)
-
-### Environment Variables Reference
-
-See `docker/.env.example` for all Docker variables and `.env.example` for local development variables.
-
-=======
->>>>>>> Stashed changes
 ## Contributing
 
-1. Fork the repo and create a feature branch
-2. Run `pnpm install` and `pnpm dev` to verify the setup works
-3. Make your changes and ensure `pnpm type-check` passes
-4. Submit a pull request
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+```bash
+# Fork, clone, then:
+pnpm install && pnpm dev
+```
+
+- [Contributing Guide](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+
+---
+
+## Community
+
+- [Discord](https://discord.gg/doable) — Chat with the team and community
+- [GitHub Issues](https://github.com/doable-me/doable/issues) — Bug reports and feature requests
+- [GitHub Discussions](https://github.com/doable-me/doable/discussions) — Questions and ideas
+- [Documentation](https://docs.doable.me) — Full docs
+
+---
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — use it however you want.
