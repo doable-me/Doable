@@ -35,7 +35,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://avatars.githubusercontent.com https://lh3.googleusercontent.com http://localhost:* http://127.0.0.1:* https://*.doable.me",
-              "connect-src 'self' https://*.doable.me ws://localhost:* wss://localhost:* ws://127.0.0.1:* wss://127.0.0.1:* http://localhost:* http://127.0.0.1:*",
+              "connect-src 'self' https://*.doable.me wss://*.doable.me ws://localhost:* wss://localhost:* ws://127.0.0.1:* wss://127.0.0.1:* http://localhost:* http://127.0.0.1:*",
               "frame-src 'self' http://localhost:* http://127.0.0.1:* https://*.doable.me",
               "frame-ancestors 'self'",
               "object-src 'none'",
