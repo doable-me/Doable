@@ -6,6 +6,11 @@ import type { ChildProcess } from "node:child_process";
 import { getProjectPath } from "../ai/project-files.js";
 import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
 import { spawnJailedVite } from "./vite-jail.js";
+import {
+  BuildEventPublisher,
+  LogFilterChain,
+  buildDefaultFilters,
+} from "../build-events/index.js";
 import { sql } from "../db/index.js";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { createDevContext } from "../frameworks/context.js";
@@ -220,6 +225,39 @@ async function doStartDevServer(
   // Buffer combined stdout+stderr for diagnostic messages on early exit.
   // Readiness detection lives in awaitReadiness() against spec.readinessSignal.
   let outputBuffer = "";
+
+  // PRD 03 publisher — fans every dev-server line through the redaction
+  // filter chain (PRD 04) and into the per-project ring buffer that
+  // `GET /projects/:id/build/stream` tails. Adapter.parseLog runs alongside
+  // for structured-event extraction (build_phase_*, build_error, ...).
+  // Tolerates filter-chain errors silently — never fails the dev-server
+  // start because of a logging side-effect.
+  const buildId = `dev-${Date.now()}`;
+  let publisher: BuildEventPublisher | null = null;
+  try {
+    const filterChain = new LogFilterChain(buildDefaultFilters());
+    publisher = new BuildEventPublisher(projectId, filterChain, {
+      projectId,
+      projectPath,
+      envSecrets: Object.values(userEnvVars).filter((v): v is string => typeof v === "string" && v.length >= 4),
+      osUsernames: [process.env.USER, process.env.USERNAME].filter(
+        (v): v is string => typeof v === "string" && v.length >= 3,
+      ),
+    });
+    // Adapter type for parseLog differs subtly between the framework
+    // package (its own BuildEvent shape) and the build-events package
+    // (BuildEventInput). Skip parseLog wiring for v1 — RAW build_log
+    // events still flow through the publisher; structured events
+    // (build_phase, build_route, build_error) are an enrichment we can
+    // add once the two BuildEvent shapes are unified.
+    publisher.attach(child, buildId);
+  } catch (err) {
+    console.warn(
+      `[DevServer] BuildEventPublisher attach failed for ${projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    publisher = null;
+  }
 
   const markReady = (): void => {
     if (settled) return;

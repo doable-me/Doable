@@ -17,6 +17,7 @@ import { projectFileRoutes } from "./routes/project-files.js";
 import { previewRoutes } from "./routes/preview-proxy.js";
 import { connectorProxyRoutes } from "./routes/connector-proxy.js";
 import { runtimeRoutes } from "./routes/runtime.js";
+import { buildStreamRoutes } from "./routes/build-stream.js";
 import { thumbnailRoutes } from "./routes/thumbnails.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { aiSettingsRoutes } from "./routes/ai-settings.js";
@@ -58,6 +59,8 @@ app.route("/", previewRoutes);
 app.route("/", connectorProxyRoutes);
 // Per-project runtime status / restart / logs (PRD 06 §4)
 app.route("/", runtimeRoutes);
+// Per-project build-event SSE stream (PRD 03 §4.3)
+app.route("/", buildStreamRoutes);
 // Project file routes (no auth — filesystem-backed, powers live preview)
 app.route("/", projectFileRoutes);
 // Direct save — AST-based visual edit saves (no AI, no auth — filesystem-backed)
