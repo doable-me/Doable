@@ -32,6 +32,7 @@ import type {
   ScaffoldContext,
   ServeContext,
 } from "../context.js";
+import { ensureNextjsBabelPlugin } from "../../projects/nextjs-babel-config.js";
 
 // ─── Constants ───────────────────────────────────────────
 
@@ -112,7 +113,11 @@ export const nextjsAppAdapter: FrameworkAdapter = {
     "supports-base-path",
     "html-injection-supported",
     "requires-long-lived-process",
-    // visual-edit-supported deliberately ABSENT; no SWC plugin yet (PRD 02 §10.1).
+    // Visual-edit is enabled via a Babel plugin dropped in by scaffold().
+    // Trade-off: adding .babelrc.json switches Next.js from SWC (Rust-native,
+    // fast) to Babel (JS-native, slower) for the project. Users may delete
+    // .babelrc.json to revert to SWC at the cost of losing click-to-edit.
+    "visual-edit-supported",
   ]),
 
   defaults: {
@@ -133,6 +138,11 @@ export const nextjsAppAdapter: FrameworkAdapter = {
 
   async scaffold(ctx: ScaffoldContext): Promise<ScaffoldResult> {
     const filesWritten = await writeAllFiles(ctx.templateFiles, ctx.projectPath);
+    // Install the visual-edit Babel plugin. Drops a CommonJS plugin under
+    // .doable/ and writes .babelrc.json at the project root. NOTE: this
+    // switches Next.js from SWC to Babel for this project — slower compile
+    // times in exchange for click-to-edit support in the visual editor.
+    await ensureNextjsBabelPlugin(ctx.projectPath);
     return { filesWritten };
   },
 

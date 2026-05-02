@@ -34,6 +34,8 @@ import type {
   ScaffoldContext,
 } from "../context.js";
 
+import { ensureSourceAnnotationsPlugin } from "../../projects/vite-plugin-source-annotations.js";
+
 // ─── Constants ───────────────────────────────────────────
 
 const INSTALL_TIMEOUT_MS = 240_000;
@@ -112,6 +114,7 @@ export const astroAdapter: FrameworkAdapter = {
     "static-spa",
     "hmr-supported",
     "html-injection-supported",
+    "visual-edit-supported",
     "supports-base-path",
     "build-emits-static-only",
     // No ssr-node by default — Astro SSR mode would be a separate adapter
@@ -134,6 +137,7 @@ export const astroAdapter: FrameworkAdapter = {
 
   async scaffold(ctx: ScaffoldContext): Promise<ScaffoldResult> {
     const filesWritten = await writeAllFiles(ctx.templateFiles, ctx.projectPath);
+    await ensureSourceAnnotationsPlugin(ctx.projectPath);
     return { filesWritten };
   },
 

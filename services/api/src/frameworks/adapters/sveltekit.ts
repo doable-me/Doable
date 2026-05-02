@@ -33,6 +33,8 @@ import type {
   ServeContext,
 } from "../context.js";
 
+import { ensureSourceAnnotationsPlugin } from "../../projects/vite-plugin-source-annotations.js";
+
 // ─── Constants ───────────────────────────────────────────
 
 const INSTALL_TIMEOUT_MS = 240_000;
@@ -111,6 +113,7 @@ export const sveltekitAdapter: FrameworkAdapter = {
     "hmr-supported",
     "supports-base-path",
     "html-injection-supported",
+    "visual-edit-supported",
     "requires-long-lived-process",
     "static-export",
   ]),
@@ -131,6 +134,7 @@ export const sveltekitAdapter: FrameworkAdapter = {
 
   async scaffold(ctx: ScaffoldContext): Promise<ScaffoldResult> {
     const filesWritten = await writeAllFiles(ctx.templateFiles, ctx.projectPath);
+    await ensureSourceAnnotationsPlugin(ctx.projectPath);
     return { filesWritten };
   },
 

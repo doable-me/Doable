@@ -34,6 +34,8 @@ import type {
   ServeContext,
 } from "../context.js";
 
+import { ensureSourceAnnotationsPlugin } from "../../projects/vite-plugin-source-annotations.js";
+
 // ─── Constants ───────────────────────────────────────────
 
 const INSTALL_TIMEOUT_MS = 240_000;
@@ -112,6 +114,7 @@ export const nuxtAdapter: FrameworkAdapter = {
     "hmr-supported",
     "supports-base-path",
     "html-injection-supported",
+    "visual-edit-supported",
     "requires-long-lived-process",
     // Nuxt can ALSO produce a static site via the nitro `static` preset.
     "static-export",
@@ -129,6 +132,7 @@ export const nuxtAdapter: FrameworkAdapter = {
 
   async scaffold(ctx: ScaffoldContext): Promise<ScaffoldResult> {
     const filesWritten = await writeAllFiles(ctx.templateFiles, ctx.projectPath);
+    await ensureSourceAnnotationsPlugin(ctx.projectPath);
     return { filesWritten };
   },
 
