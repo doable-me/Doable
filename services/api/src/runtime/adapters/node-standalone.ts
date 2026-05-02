@@ -156,8 +156,13 @@ function renderUnitOverride(ctx: RuntimeContext, egressHosts: string[] = []): st
   // so the standalone server can serve static assets in production.
   // Entry priority: server.js (Next.js) → index.mjs (Nuxt nitro) → index.js (SvelteKit adapter-node, Hono node-build) → entry.mjs (Astro SSR). Default to server.js when none exist (legacy).
   const entry = resolveStandaloneEntry(`${ctx.projectDir}/dist-server`);
+  // The empty `ExecStart=` resets the template's inherited ExecStart so
+  // systemd accepts our per-project override. Without it, the drop-in
+  // fails with "Service has more than one ExecStart= setting" because
+  // template + drop-in both declare one (Type=simple only allows one).
   return `[Service]
 WorkingDirectory=${ctx.projectDir}/dist-server
+ExecStart=
 ExecStart=/usr/bin/node ${ctx.projectDir}/dist-server/${entry}
 MemoryMax=512M
 CPUQuota=50%

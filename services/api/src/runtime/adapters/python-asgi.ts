@@ -130,8 +130,12 @@ function renderUnitOverride(
   const extraAllows = egressHosts
     .map((host) => `IPAddressAllow=${host}`)
     .join("\n");
+  // Empty `ExecStart=` resets the template's inherited ExecStart so the
+  // drop-in's override is accepted. Type=simple units only allow one
+  // ExecStart total, so without this systemd refuses to load the unit.
   return `[Service]
 WorkingDirectory=${ctx.projectDir}/dist-server
+ExecStart=
 ExecStart=${execStart}
 MemoryMax=512M
 CPUQuota=50%
