@@ -168,6 +168,9 @@ if ! command -v cloudflared &>/dev/null; then
   apt-get update -qq && apt-get install -y cloudflared
 fi
 
+# Bring all installed packages to current security patches
+DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+
 systemctl enable postgresql fail2ban
 systemctl start postgresql fail2ban
 
@@ -428,6 +431,17 @@ RESEND_API_KEY=
 # Set these additional vars only if using Google Mail API for sending email:
 GOOGLE_REFRESH_TOKEN=
 GOOGLE_EMAIL_USER=
+
+# ─── Per-published-app hardening (Wave 27-30) ───────────────
+# Controls jailing across build (next build), dev-server (vite dev),
+# and production systemd unit. Values: full | relaxed | off.
+DOABLE_HARDENING=full
+
+# ─── Build-time outbound proxy (Wave 29) ────────────────────
+# Routes every build (npm install, pip install, etc.) through Squid
+# with the allow-list at /etc/squid/conf.d/doable-allowlist.conf.
+# Comment out to disable build-time proxying.
+BUILD_HTTP_PROXY=http://127.0.0.1:3128
 ENVEOF
 
 # Next.js needs NEXT_PUBLIC_* in its own directory
@@ -719,6 +733,14 @@ systemctl daemon-reload
 systemctl enable doable.service doable-watchdog.timer cloudflared doable-apps.target 2>/dev/null
 
 ok "Systemd services created and enabled (app + watchdog timer + tunnel + per-app template)"
+
+# ─── Step 12.5: Build-time outbound proxy (Wave 29-30) ───────
+info "Step 12.5/13: Installing Squid build-time HTTP proxy..."
+if [ -x "${INSTALL_DIR}/scripts/setup-build-proxy.sh" ] || [ -f "${INSTALL_DIR}/scripts/setup-build-proxy.sh" ]; then
+  bash "${INSTALL_DIR}/scripts/setup-build-proxy.sh" || warn "setup-build-proxy.sh failed — BUILD_HTTP_PROXY won't work until you fix Squid manually"
+else
+  warn "scripts/setup-build-proxy.sh not found in repo — skipping Squid install"
+fi
 
 # ─── Step 13: Start everything ────────────────────────────────
 info "Step 13/13: Starting services..."

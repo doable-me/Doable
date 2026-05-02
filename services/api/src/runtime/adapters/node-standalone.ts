@@ -254,8 +254,38 @@ ExecStart=/usr/bin/node ${ctx.projectDir}/dist-server/${entry}`;
     // cgroup caps remain so the app still can't OOM the host. The
     // template's inherited User= (root or whatever it defaults to)
     // applies, which is the documented trade-off of this debug mode.
+    //
+    // Wave 30: the template doable-app@.service ships with the full
+    // hardening directives baked in. systemd merges template + drop-in,
+    // so simply OMITTING the strict settings here lets the template's
+    // strict ones still apply. To make `off` actually mean off we must
+    // explicitly emit the inverse / reset values for every directive
+    // the template sets, so they override the inherited ones.
     return `[Service]
 ${execBlock}
+NoNewPrivileges=no
+ProtectSystem=no
+PrivateTmp=no
+PrivateUsers=no
+PrivateDevices=no
+ProtectKernelTunables=no
+ProtectKernelModules=no
+ProtectKernelLogs=no
+ProtectControlGroups=no
+ProtectClock=no
+ProtectHostname=no
+ProtectProc=default
+ProcSubset=all
+RestrictNamespaces=no
+RestrictRealtime=no
+LockPersonality=no
+RestrictSUIDSGID=no
+RemoveIPC=no
+ReadWritePaths=
+SystemCallFilter=
+RestrictAddressFamilies=
+IPAddressDeny=
+IPAddressAllow=
 ${cgroupBlock}
 `;
   }
@@ -276,9 +306,38 @@ ${extraAllows}${extraAllows ? "\n" : ""}`;
   if (level !== "full") {
     // `relaxed` — base + cgroups, skip the heavy isolation. The
     // template's inherited User= applies (no per-project UID).
+    //
+    // Wave 30: like the `off` branch, we must explicitly clear the
+    // template's strict directives that `relaxed` doesn't want. Without
+    // these resets the template's PrivateUsers/ProtectKernel*/
+    // SystemCallFilter/ProtectProc/etc. would still apply via the
+    // template+drop-in merge, defeating the point of "relaxed".
+    // baseBlock's positive settings (NoNewPrivileges=yes,
+    // ProtectSystem=strict, narrowed ReadWritePaths, PrivateTmp=yes,
+    // IPAddressDeny+localhost) are independent keys from the clears
+    // below, so order doesn't matter for systemd — emit baseBlock
+    // first for readability, then the inverse-clears, then cgroups.
+    const relaxedClears = `PrivateUsers=no
+PrivateDevices=no
+ProtectKernelTunables=no
+ProtectKernelModules=no
+ProtectKernelLogs=no
+ProtectControlGroups=no
+ProtectClock=no
+ProtectHostname=no
+ProtectProc=default
+ProcSubset=all
+RestrictNamespaces=no
+RestrictRealtime=no
+LockPersonality=no
+RestrictSUIDSGID=no
+RemoveIPC=no
+SystemCallFilter=
+RestrictAddressFamilies=
+`;
     return `[Service]
 ${execBlock}
-${baseBlock}${cgroupBlock}
+${baseBlock}${relaxedClears}${cgroupBlock}
 `;
   }
 
