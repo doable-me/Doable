@@ -5,6 +5,7 @@ import { ecommerceStoreTemplate } from "./definitions/ecommerce-store.js";
 import { blogTemplate } from "./definitions/blog.js";
 import { portfolioTemplate } from "./definitions/portfolio.js";
 import { todoAppTemplate } from "./definitions/todo-app.js";
+import { nextjsBlankTemplate } from "./definitions/nextjs-blank.js";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ const BUILT_IN_TEMPLATES = new Map<string, TemplateDefinition>([
   [blogTemplate.id, blogTemplate],
   [portfolioTemplate.id, portfolioTemplate],
   [todoAppTemplate.id, todoAppTemplate],
+  [nextjsBlankTemplate.id, nextjsBlankTemplate],
 ]);
 
 /**
