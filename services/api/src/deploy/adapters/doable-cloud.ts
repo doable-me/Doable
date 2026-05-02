@@ -1,5 +1,5 @@
 import { mkdir, cp, rm, readdir, stat } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
@@ -234,13 +234,21 @@ export class DoableCloudAdapter implements DeployAdapter {
         await rm(distServer, { recursive: true, force: true });
         await mkdir(distServer, { recursive: true });
         await cp(honoDist, distServer, { recursive: true });
-        // Hono needs node_modules at runtime — symlinked or copied alongside.
-        const projectNodeModules = path.join(PROJECTS_ROOT, projectId, "node_modules");
-        if (existsSync(projectNodeModules)) {
-          await cp(projectNodeModules, path.join(distServer, "node_modules"), {
-            recursive: true,
-          });
+
+        // Production node_modules — seed package.json + lockfile then
+        // `npm install --production` inside dist-server. Drops devDependencies
+        // (typescript, tsx, @types/*) so the deployed bundle is much smaller
+        // than copying the full project node_modules tree.
+        const projectPkg = path.join(PROJECTS_ROOT, projectId, "package.json");
+        const projectLock = path.join(PROJECTS_ROOT, projectId, "package-lock.json");
+        if (existsSync(projectPkg)) {
+          await cp(projectPkg, path.join(distServer, "package.json"));
         }
+        if (existsSync(projectLock)) {
+          await cp(projectLock, path.join(distServer, "package-lock.json"));
+        }
+        installNodeProductionDeps(distServer, projectId);
+
         console.log(
           `[doable-cloud] Staged Hono node-build layout at ${distServer} ` +
             `for project ${projectId}`
@@ -266,6 +274,10 @@ export class DoableCloudAdapter implements DeployAdapter {
           recursive: true,
           filter: pythonExclude,
         });
+        // python-asgi runtime expects ${distServer}/.venv/bin/uvicorn (or
+        // /usr/bin/python3 fallback). Materialise the venv + install deps
+        // here so the systemd unit can ExecStart cleanly.
+        setupPythonVenv(distServer, projectId);
         console.log(
           `[doable-cloud] Staged FastAPI source layout at ${distServer} ` +
             `for project ${projectId}`
@@ -288,6 +300,10 @@ export class DoableCloudAdapter implements DeployAdapter {
             recursive: true,
           });
         }
+        // python-asgi runtime expects ${distServer}/.venv/bin/gunicorn.
+        // Same setup as FastAPI — pip install requirements (including
+        // gunicorn if listed) inside the staged venv.
+        setupPythonVenv(distServer, projectId);
         console.log(
           `[doable-cloud] Staged Django source layout at ${distServer} ` +
             `for project ${projectId}`
@@ -507,3 +523,98 @@ const STOP_WORDS = new Set([
   "basic",
   "new",
 ]);
+
+/**
+ * Materialise a Python venv inside ${distServer}/.venv/ and pip-install
+ * the project's requirements.txt into it. The python-asgi runtime adapter
+ * then ExecStarts ${distServer}/.venv/bin/python (or .venv/Scripts/python.exe
+ * on Windows) so gunicorn/uvicorn from requirements.txt are on PATH.
+ *
+ * Best-effort: warns and returns on any failure rather than throwing,
+ * because the deploy pipeline can still succeed at the file-staging step
+ * even if dependencies fail (the user gets a "started but unhealthy"
+ * runtime instead of a hard failure that loses the staged tree).
+ */
+function setupPythonVenv(distServer: string, projectId: string): void {
+  const isWindows = process.platform === "win32";
+  const venvDir = path.join(distServer, ".venv");
+  const venvPip = isWindows
+    ? path.join(venvDir, "Scripts", "pip.exe")
+    : path.join(venvDir, "bin", "pip");
+
+  const createVenv = spawnSync("python3", ["-m", "venv", venvDir], {
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 60_000,
+  });
+  if (createVenv.status !== 0) {
+    console.warn(
+      `[doable-cloud] python venv create failed for ${projectId}: ` +
+        (createVenv.stderr?.toString() ??
+          createVenv.error?.message ??
+          "unknown — is python3 on PATH?")
+    );
+    return;
+  }
+
+  const requirements = path.join(distServer, "requirements.txt");
+  if (!existsSync(requirements)) return;
+
+  const pipInstall = spawnSync(
+    venvPip,
+    [
+      "install",
+      "-r",
+      requirements,
+      "--quiet",
+      "--disable-pip-version-check",
+      "--no-cache-dir",
+    ],
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 240_000,
+    }
+  );
+  if (pipInstall.status !== 0) {
+    console.warn(
+      `[doable-cloud] pip install failed for ${projectId}: ` +
+        (pipInstall.stderr?.toString() ??
+          pipInstall.error?.message ??
+          "unknown")
+    );
+  }
+}
+
+/**
+ * Run `npm install --production` (a.k.a. `--omit=dev`) inside dist-server/
+ * to install the runtime-only dependencies. Required for Hono and any
+ * future Node-family framework that ships JavaScript needing
+ * resolved-from-disk node_modules at runtime.
+ *
+ * Same best-effort policy as setupPythonVenv: warn on failure, don't throw.
+ */
+function installNodeProductionDeps(distServer: string, projectId: string): void {
+  if (!existsSync(path.join(distServer, "package.json"))) return;
+  const result = spawnSync(
+    "npm",
+    [
+      "install",
+      "--production",
+      "--omit=dev",
+      "--legacy-peer-deps",
+      "--no-audit",
+      "--no-fund",
+    ],
+    {
+      cwd: distServer,
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: true,
+      timeout: 240_000,
+    }
+  );
+  if (result.status !== 0) {
+    console.warn(
+      `[doable-cloud] npm install --production failed for ${projectId}: ` +
+        (result.stderr?.toString() ?? result.error?.message ?? "unknown")
+    );
+  }
+}
