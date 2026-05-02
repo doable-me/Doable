@@ -167,9 +167,51 @@ COPY . /opt/doable
 # container restart but not removal). Production must use a named volume.
 VOLUME ["/var/lib/doable"]
 
-# Entrypoint: first-boot calls setup-server.sh, then execs /sbin/init.
+# Entrypoint: just exec's /sbin/init. Setup runs later via systemd one-shot.
 COPY docker/entrypoint-secure.sh /usr/local/bin/doable-entrypoint
 RUN chmod +x /usr/local/bin/doable-entrypoint
+
+# First-boot setup script — runs as systemd one-shot AFTER postgres is up.
+RUN printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'set -euo pipefail' \
+        'STATE_DIR=/var/lib/doable' \
+        'MARKER="${STATE_DIR}/.initialized"' \
+        'LOG_DIR="${STATE_DIR}/logs"' \
+        'mkdir -p "${LOG_DIR}"' \
+        'if [[ -f "${MARKER}" ]]; then' \
+        '    echo "[doable-init] already initialized — skipping"' \
+        '    exit 0' \
+        'fi' \
+        'echo "[doable-init] first boot — running setup-server.sh in CONTAINER_MODE=1"' \
+        'cd /opt/doable' \
+        'CONTAINER_MODE=1 INSTALL_DIR=/opt/doable DOABLE_STATE_DIR="${STATE_DIR}" \\' \
+        '    bash setup-server.sh 2>&1 | tee "${LOG_DIR}/setup-server.log"' \
+        ': > "${MARKER}"' \
+        'echo "[doable-init] first-boot setup complete"' \
+        > /usr/local/bin/doable-first-boot \
+    && chmod +x /usr/local/bin/doable-first-boot
+
+# systemd unit that runs the first-boot script after postgres is up.
+RUN printf '%s\n' \
+        '[Unit]' \
+        'Description=Doable first-boot setup (CONTAINER_MODE=1)' \
+        'After=postgresql.service network-online.target' \
+        'Wants=postgresql.service network-online.target' \
+        'Before=doable.service caddy.service' \
+        '' \
+        '[Service]' \
+        'Type=oneshot' \
+        'RemainAfterExit=yes' \
+        'ExecStart=/usr/local/bin/doable-first-boot' \
+        'StandardOutput=journal+console' \
+        'StandardError=journal+console' \
+        '' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /etc/systemd/system/doable-init.service \
+    && ln -sf /etc/systemd/system/doable-init.service \
+        /etc/systemd/system/multi-user.target.wants/doable-init.service
 
 # Ports: web (3000), api (4000), ws (4001). All bind 127.0.0.1 inside the
 # container per Doable's network policy; the docker -p flag maps them to the

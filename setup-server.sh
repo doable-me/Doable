@@ -140,6 +140,10 @@ info "Step 1/13: Installing system packages..."
 
 export DEBIAN_FRONTEND=noninteractive
 
+if [ "$CONTAINER_MODE" = "1" ]; then
+  ok "[CONTAINER_MODE] System packages already baked into image — skipping apt-get install."
+else
+
 # Node.js 20 LTS
 if ! command -v node &>/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 22 ]]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -208,6 +212,8 @@ systemctl enable postgresql fail2ban
 systemctl start postgresql fail2ban
 
 ok "Packages installed: node $(node -v), pnpm $(pnpm -v), psql $(psql --version | awk '{print $3}'), cloudflared $(cloudflared --version 2>&1 | awk '{print $3}')"
+
+fi  # end CONTAINER_MODE != 1 (Step 1 apt block)
 
 # ─── Wave 26: DynamicUser=yes replaces shared user ──────────
 # Wave 25 created a shared `doable-app` system user. Wave 26 dropped
