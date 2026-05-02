@@ -86,6 +86,23 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
     if (typeof v === "string") cleanEnv[k] = v;
   }
 
+  // Wave 29: route dev outbound HTTP through an operator-supplied proxy.
+  // Vite/dev runs `npm install` for new packages too, so it benefits from the
+  // same proxy as builder.ts. When BUILD_HTTP_PROXY is unset → no injection.
+  const proxy = process.env.BUILD_HTTP_PROXY;
+  if (proxy) {
+    console.log(`[vite-jail] routing outbound through ${proxy}`);
+    cleanEnv.HTTP_PROXY = proxy;
+    cleanEnv.HTTPS_PROXY = proxy;
+    cleanEnv.http_proxy = proxy;
+    cleanEnv.https_proxy = proxy;
+    cleanEnv.NO_PROXY = "127.0.0.1,localhost,::1";
+    cleanEnv.no_proxy = "127.0.0.1,localhost,::1";
+    cleanEnv.npm_config_proxy = proxy;
+    cleanEnv.npm_config_https_proxy = proxy;
+    cleanEnv.PIP_PROXY = proxy;
+  }
+
   // Raw-spawn helper — used both by the DOABLE_HARDENING=off short-circuit
   // and by the platform-incompatibility fallback below.
   const rawSpawnFallback = async (): Promise<JailedViteResult> => {

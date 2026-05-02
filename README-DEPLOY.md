@@ -323,17 +323,54 @@ own bundle without any user pre-existing on the host. Combined
 with the per-project `ReadWritePaths`, write access is still
 confined to the app's own bundle.
 
+### Build-time network allow-list (Wave 29)
+
+By default Doable builds get unrestricted outbound network access — `npm
+install`, `pip install`, `pnpm install` can reach any host on the
+internet. A malicious npm/pypi package can use a postinstall hook to
+phone home, exfiltrate env vars, or pivot.
+
+**Hardening:** route every build through an HTTP proxy that only allows
+known registries:
+
+```
+# In /root/doable/.env
+BUILD_HTTP_PROXY=http://127.0.0.1:3128
+```
+
+Doable injects standard proxy env vars into every build subprocess
+(`HTTP_PROXY`, `HTTPS_PROXY`, `npm_config_proxy`, `PIP_PROXY`, etc.).
+The proxy itself enforces the allow-list — Doable doesn't ship one;
+operators bring their own.
+
+**Quickstart with Squid:** Doable includes a companion script that
+installs Squid on Ubuntu with a sensible default allow-list (npmjs.org,
+pypi.org, github.com, raw.githubusercontent.com, fonts.googleapis.com,
+docker hub, ubuntu/debian repos):
+
+```
+sudo bash scripts/setup-build-proxy.sh
+# then add BUILD_HTTP_PROXY=http://127.0.0.1:3128 to .env and restart the API
+```
+
+The allow-list lives at `/etc/squid/conf.d/doable-allowlist.conf` —
+extend it for any internal registry your projects depend on, then
+`systemctl restart squid`. Tail the proxy decisions with
+`tail -f /var/log/squid/access.log`.
+
+**Why a proxy and not `IPAddressAllow=`?** Most package registries
+front their CDN through Cloudflare, Fastly, or AWS CloudFront — the
+IPs rotate per request and span huge ranges shared with the rest of
+the internet. Hostname-based filtering through an HTTP proxy is the
+only reliable way to block "everything except these specific
+registries."
+
+**Trade-off:** BYO-proxy model. Doable does not run the proxy itself;
+the operator picks Squid, mitmproxy, or an existing corporate proxy.
+The allow-list configuration lives outside Doable's deploy flow.
+
 ### Honest gaps still open
 
-- **Build-time network is currently unrestricted.** A compromised
-  package can reach arbitrary endpoints during `npm install` /
-  `pip install`. Tighten the build jail's egress to npm + PyPI
-  registry hostnames only is the next hardening pass.
-- **`npm install` / `pip install` still has full network access for
-  legitimate package fetches.** A malicious package can phone home
-  during install even with the runtime hardening above — the
-  dovault build jail isolates the *filesystem* writes, not the
-  outbound socket calls.
 - **Workloads needing exotic kernel surface will fail.** If a
   workload needs raw sockets / `AF_NETLINK` / `SCHED_FIFO` it will
   fail under the new `SystemCallFilter` /

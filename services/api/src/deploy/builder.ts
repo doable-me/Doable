@@ -204,6 +204,23 @@ export async function runBuild(
     ...spec.env,
     NODE_ENV: "production",
   });
+
+  // Wave 29: route build outbound HTTP through an operator-supplied proxy.
+  // When BUILD_HTTP_PROXY is unset, no env injection happens — current behavior preserved.
+  const proxy = process.env.BUILD_HTTP_PROXY;
+  if (proxy) {
+    console.log(`[builder] routing outbound through ${proxy}`);
+    safeEnv.HTTP_PROXY = proxy;
+    safeEnv.HTTPS_PROXY = proxy;
+    safeEnv.http_proxy = proxy;
+    safeEnv.https_proxy = proxy;
+    safeEnv.NO_PROXY = "127.0.0.1,localhost,::1";
+    safeEnv.no_proxy = "127.0.0.1,localhost,::1";
+    safeEnv.npm_config_proxy = proxy;
+    safeEnv.npm_config_https_proxy = proxy;
+    safeEnv.PIP_PROXY = proxy;
+  }
+
   // dovault.spawn wants Record<string, string>; strip undefineds.
   const cleanEnv: Record<string, string> = {};
   for (const [k, v] of Object.entries(safeEnv)) {
