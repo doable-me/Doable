@@ -9,6 +9,9 @@ dist/
 out/
 build/
 .turbo/
+# Source dir whose name happens to be "build" — exclude from the rule above.
+!apps/web/src/modules/editor/build/
+!apps/web/src/modules/editor/build/**
 
 # Python
 __pycache__/

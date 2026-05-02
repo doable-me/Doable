@@ -102,6 +102,44 @@ runtimeRoutes.post("/projects/:id/runtime/restart", async (c) => {
   return c.json({ ok: true });
 });
 
+runtimeRoutes.post("/projects/:id/runtime/egress", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) return c.json({ error: "Project not found" }, 404);
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json body" }, 400);
+  }
+
+  const hosts = (body as { hosts?: unknown })?.hosts;
+  if (!Array.isArray(hosts)) {
+    return c.json({ error: "hosts must be an array of strings" }, 400);
+  }
+
+  const HOST_REGEX = /^[a-zA-Z0-9.-]+$/;
+  for (const h of hosts) {
+    if (typeof h !== "string" || h.length === 0 || h.length > 255 || !HOST_REGEX.test(h)) {
+      return c.json({ error: `invalid host: ${String(h).slice(0, 64)}` }, 400);
+    }
+  }
+
+  const cleaned = hosts as string[];
+
+  await sql`
+    INSERT INTO project_runtime (project_id, framework_id, runtime_kind, egress_hosts, state)
+    VALUES (${id}, 'unknown', 'process', ${cleaned}, 'stopped')
+    ON CONFLICT (project_id) DO UPDATE
+    SET egress_hosts = EXCLUDED.egress_hosts, updated_at = now()
+  `;
+
+  return c.json({ ok: true });
+});
+
 runtimeRoutes.get("/projects/:id/runtime/logs", async (c) => {
   const id = c.req.param("id");
   const userId = c.get("userId");

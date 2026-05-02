@@ -205,11 +205,12 @@ export const fastapiAdapter: FrameworkAdapter = {
 
   parseLog(line: string) {
     // Uvicorn's standard log format: `LEVEL:     message` (5 spaces).
-    if (/^ERROR:\s/.test(line) || line.toLowerCase().includes("traceback")) {
-      return { level: "error" as const, message: line.trim() };
+    const lower = line.toLowerCase();
+    if (lower.includes("error") || lower.includes("traceback")) {
+      return { type: "build_error" as const, data: { message: line.trim() } };
     }
-    if (/^WARNING:\s/.test(line)) {
-      return { level: "warn" as const, message: line.trim() };
+    if (lower.includes("warning")) {
+      return { type: "build_warning" as const, data: { message: line.trim() } };
     }
     return null;
   },

@@ -262,8 +262,12 @@ export const viteReactAdapter: FrameworkAdapter = {
 
   // ── Optional: structured log parsing ─────────────────
   parseLog(line: string) {
-    if (line.includes("error")) {
-      return { level: "error" as const, message: line.trim() };
+    const lower = line.toLowerCase();
+    if (lower.includes("error")) {
+      return { type: "build_error" as const, data: { message: line.trim() } };
+    }
+    if (lower.includes("warning")) {
+      return { type: "build_warning" as const, data: { message: line.trim() } };
     }
     return null;
   },

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
+import { sql } from "../../db/index.js";
 import type {
   HealthStatus,
   RuntimeAdapter,
@@ -61,6 +62,19 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
         ? ctx.listen.path
         : `/run/doable/${slug}.sock`;
 
+    // Phase 5 §13.3: read per-project egress allow-list. Failure to load
+    // (e.g. column missing on an un-migrated host) defaults to an empty
+    // list, which still allows localhost via the static rule below.
+    let egressHosts: string[] = [];
+    try {
+      const rows = await sql<{ egress_hosts: string[] | null }[]>`
+        SELECT egress_hosts FROM project_runtime WHERE project_id = ${ctx.projectId}
+      `;
+      egressHosts = rows[0]?.egress_hosts ?? [];
+    } catch {
+      egressHosts = [];
+    }
+
     if (process.platform === "linux" && hasSystemctl()) {
       await mkdir(path.dirname(envPath), { recursive: true });
       await writeFile(envPath, renderEnvFile(this.env(ctx)), "utf-8");
@@ -69,7 +83,7 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
       await mkdir(dropInDir, { recursive: true });
       await writeFile(
         path.join(dropInDir, "override.conf"),
-        renderUnitOverride(ctx),
+        renderUnitOverride(ctx, egressHosts),
         "utf-8",
       );
 
@@ -130,9 +144,13 @@ function renderEnvFile(env: Record<string, string>): string {
   return lines.join("\n") + "\n";
 }
 
-function renderUnitOverride(ctx: RuntimeContext): string {
+function renderUnitOverride(ctx: RuntimeContext, egressHosts: string[] = []): string {
   // Per PRD 06 §A appendix. Drop-in extends the template unit with
-  // per-project execution + cgroup limits.
+  // per-project execution + cgroup limits. Phase 5 §13.3 adds the
+  // per-project egress allow-list on top of the implicit localhost rule.
+  const extraAllows = egressHosts
+    .map((host) => `IPAddressAllow=${host}`)
+    .join("\n");
   return `[Service]
 WorkingDirectory=${ctx.projectDir}
 ExecStart=/usr/bin/node ${ctx.projectDir}/.next/standalone/server.js
@@ -141,7 +159,7 @@ CPUQuota=50%
 TasksMax=256
 IPAddressDeny=any
 IPAddressAllow=localhost
-`;
+${extraAllows}${extraAllows ? "\n" : ""}`;
 }
 
 function hasSystemctl(): boolean {

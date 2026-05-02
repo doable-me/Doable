@@ -17,6 +17,8 @@
  * in-memory servers Map, etc.). See PRD §4.4.
  */
 
+import type { BuildEventInput } from "../build-events/types.js";
+
 // ─── Capability flags (PRD §3) ───────────────────────────
 
 /**
@@ -142,17 +144,6 @@ export interface ServeSpec {
   readinessSignal: ReadinessSignal;
 }
 
-export interface BuildEvent {
-  level: "info" | "warn" | "error";
-  phase?: "compile" | "bundle" | "type-check" | "asset" | "post";
-  message: string;
-  // Optional structured fields the UI can highlight.
-  file?: string;
-  line?: number;
-  column?: number;
-  stack?: string;
-}
-
 // ─── FrameworkPack (PRD §2) ──────────────────────────────
 
 /**
@@ -252,12 +243,12 @@ export interface FrameworkAdapter {
   // CALLED BY: RuntimeAdapter (PRD 04) when promoting a build to live.
   serve?(ctx: ServeContext): ServeSpec;
 
-  // Optional structured log parsing. Returns a BuildEvent for lines the
+  // Optional structured log parsing. Returns a BuildEventInput for lines the
   // framework emits in a recognizable format; returns null for anything
   // unrecognized so the caller can passthrough as raw.
   // DEFAULT IF ABSENT: caller treats every line as raw passthrough — see PRD §7.
   // CALLED BY: dev-server log publisher and build log publisher (PRD 05).
-  parseLog?(line: string): BuildEvent | null;
+  parseLog?(line: string): BuildEventInput | null;
 
   // Configs the AI write_file tool may NOT edit while the project is running.
   // (Edits at rest are still allowed — runtime hot-reload of build configs

@@ -177,6 +177,17 @@ export const djangoAdapter: FrameworkAdapter = {
     };
   },
 
+  parseLog(line: string) {
+    const lower = line.toLowerCase();
+    if (lower.includes("error")) {
+      return { type: "build_error" as const, data: { message: line.trim() } };
+    }
+    if (lower.includes("warning")) {
+      return { type: "build_warning" as const, data: { message: line.trim() } };
+    }
+    return null;
+  },
+
   lockedConfigFiles() {
     return this.defaults.lockedConfigFiles;
   },

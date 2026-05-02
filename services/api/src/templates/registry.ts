@@ -9,6 +9,9 @@ import { nextjsBlankTemplate } from "./definitions/nextjs-blank.js";
 import { nuxtBlankTemplate } from "./definitions/nuxt-blank.js";
 import { sveltekitBlankTemplate } from "./definitions/sveltekit-blank.js";
 import { astroBlankTemplate } from "./definitions/astro-blank.js";
+import { djangoBlankTemplate } from "./definitions/django-blank.js";
+import { fastapiBlankTemplate } from "./definitions/fastapi-blank.js";
+import { honoBlankTemplate } from "./definitions/hono-blank.js";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -58,6 +61,9 @@ const BUILT_IN_TEMPLATES = new Map<string, TemplateDefinition>([
   [nuxtBlankTemplate.id, nuxtBlankTemplate],
   [sveltekitBlankTemplate.id, sveltekitBlankTemplate],
   [astroBlankTemplate.id, astroBlankTemplate],
+  [djangoBlankTemplate.id, djangoBlankTemplate],
+  [fastapiBlankTemplate.id, fastapiBlankTemplate],
+  [honoBlankTemplate.id, honoBlankTemplate],
 ]);
 
 /**

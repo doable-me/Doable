@@ -244,13 +244,12 @@ async function doStartDevServer(
         (v): v is string => typeof v === "string" && v.length >= 3,
       ),
     });
-    // Adapter type for parseLog differs subtly between the framework
-    // package (its own BuildEvent shape) and the build-events package
-    // (BuildEventInput). Skip parseLog wiring for v1 — RAW build_log
-    // events still flow through the publisher; structured events
-    // (build_phase, build_route, build_error) are an enrichment we can
-    // add once the two BuildEvent shapes are unified.
-    publisher.attach(child, buildId);
+    // The framework package now imports BuildEventInput from the
+    // build-events package, so adapter.parseLog feeds directly into the
+    // publisher's structured-event path. RAW build_log events still flow
+    // for every line; parseLog is an enrichment that adds build_error /
+    // build_warning (and future build_phase / build_route) events.
+    publisher.attach(child, buildId, adapter);
   } catch (err) {
     console.warn(
       `[DevServer] BuildEventPublisher attach failed for ${projectId}:`,
