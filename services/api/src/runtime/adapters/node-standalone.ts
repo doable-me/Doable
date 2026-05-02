@@ -1,6 +1,7 @@
 import { mkdir, writeFile, chmod } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createConnection } from "node:net";
 import path from "node:path";
 
 import { sql } from "../../db/index.js";
@@ -38,7 +39,11 @@ import type {
 export const nodeStandaloneAdapter: RuntimeAdapter = {
   id: "node-standalone",
   kind: "process",
-  listenContract: "unix-socket",
+  /** Wave 21: switched from "unix-socket" to "tcp-port" — vanilla
+   *  Next.js/Nuxt/SvelteKit standalone listen on PORT and don't speak
+   *  systemd's LISTEN_FDS protocol. Apps now bind 127.0.0.1:PORT and
+   *  Caddy reverse_proxies to it. */
+  listenContract: "tcp-port",
   /** PRD 06 §3.2 — 30 minutes idle */
   idleTimeoutMs: 30 * 60_000,
 
@@ -57,10 +62,13 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
     const slug = ctx.projectSlug;
     const envPath = `/etc/doable/apps/${slug}.env`;
     const dropInDir = `/etc/systemd/system/doable-app@${slug}.service.d`;
-    const socketPath =
-      ctx.listen.kind === "unix-socket"
-        ? ctx.listen.path
-        : `/run/doable/${slug}.sock`;
+    // Wave 21: TCP-port mode is the only supported path. listen.kind
+    // should always be tcp-port from the pipeline. Construct the
+    // listenAddr the supervisor + healthCheck use.
+    const listenAddr =
+      ctx.listen.kind === "tcp-port"
+        ? `${ctx.listen.host}:${ctx.listen.port}`
+        : "127.0.0.1:0";
 
     // Phase 5 §13.3: read per-project egress allow-list. Failure to load
     // (e.g. column missing on an un-migrated host) defaults to an empty
@@ -88,7 +96,11 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
       );
 
       run("systemctl", ["daemon-reload"]);
-      run("systemctl", ["enable", "--now", `doable-app@${slug}.socket`]);
+      // Wave 21: enable + start the .service directly (no .socket activation).
+      // Socket activation never woke vanilla Next.js standalone (which only
+      // listens on PORT). Now we start the service and Caddy reverse_proxies
+      // to its 127.0.0.1:PORT bind.
+      run("systemctl", ["enable", "--now", `doable-app@${slug}.service`]);
     } else {
       // Non-systemd host (Windows / macOS / Alpine). Write the env file
       // anyway so a dev tool or test harness can read it, then return a
@@ -104,32 +116,61 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
     return {
       id: `doable-app@${slug}.service`,
       startedAt: new Date(),
-      listenAddr: socketPath,
-      listenContract: "unix-socket",
+      listenAddr,
+      listenContract: "tcp-port",
     };
   },
 
   async stop(handle: RuntimeHandle): Promise<void> {
     const slug = handle.id.replace(/^doable-app@|\.service$/g, "");
     if (process.platform === "linux" && hasSystemctl()) {
-      run("systemctl", ["stop", `doable-app@${slug}.socket`, `doable-app@${slug}.service`], {
+      run("systemctl", ["stop", `doable-app@${slug}.service`], {
         ignoreFailure: true,
       });
-      run("systemctl", ["disable", `doable-app@${slug}.socket`], { ignoreFailure: true });
+      run("systemctl", ["disable", `doable-app@${slug}.service`], { ignoreFailure: true });
     }
     // Best-effort env / drop-in cleanup. Failures are logged, not fatal,
     // because partial cleanup must not block the publish pipeline.
   },
 
   async healthCheck(handle: RuntimeHandle): Promise<HealthStatus> {
+    if (handle.listenContract === "tcp-port") {
+      // Wave 21: short TCP connect probe to confirm the bound port is
+      // accepting connections. systemctl is-active is a coarser check;
+      // this catches the case where the unit is "running" but the app
+      // hasn't bound its port yet (still in startup).
+      const [host, portStr] = handle.listenAddr.split(":");
+      const port = parseInt(portStr ?? "", 10);
+      if (!host || !Number.isFinite(port)) {
+        return { ok: false, reason: "bad-addr", detail: handle.listenAddr };
+      }
+      const ok = await tcpProbe(host, port, 1000);
+      return ok
+        ? { ok: true, uptimeMs: Date.now() - handle.startedAt.getTime() }
+        : { ok: false, reason: "no-port", detail: handle.listenAddr };
+    }
     if (handle.listenContract === "unix-socket") {
       return existsSync(handle.listenAddr)
         ? { ok: true, uptimeMs: Date.now() - handle.startedAt.getTime() }
         : { ok: false, reason: "no-socket", detail: handle.listenAddr };
     }
-    return { ok: false, reason: "unknown", detail: "tcp probe not implemented yet" };
+    return { ok: false, reason: "unknown", detail: "no probe for this contract" };
   },
 };
+
+function tcpProbe(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const socket = createConnection({ host, port });
+    const done = (ok: boolean) => {
+      try { socket.destroy(); } catch { /* ignore */ }
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+    socket.once("timeout", () => done(false));
+  });
+}
 
 // ─── Helpers ─────────────────────────────────────────────
 

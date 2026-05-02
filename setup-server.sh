@@ -648,10 +648,6 @@ WTEOF
 # /etc/systemd/system/doable-app@{slug}.service.d/override.conf at publish.
 
 mkdir -p /etc/doable/apps
-mkdir -p /run/doable
-chmod 0750 /run/doable
-# Use the caddy group so Caddy can connect to the unix sockets.
-chown :caddy /run/doable 2>/dev/null || true
 
 cat > /etc/systemd/system/doable-app@.service << APPSVCEOF
 [Unit]
@@ -664,7 +660,7 @@ StartLimitBurst=5
 [Service]
 Type=simple
 EnvironmentFile=-/etc/doable/apps/%i.env
-ExecStart=/bin/sh -c '/usr/bin/node "$WorkingDirectory/.next/standalone/server.js" || /usr/bin/node "$WorkingDirectory/index.js"'
+ExecStart=/usr/bin/node /data/projects/%i/dist-server/server.js
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=30
@@ -676,27 +672,10 @@ ProtectSystem=strict
 ReadWritePaths=/data/projects /data/sites
 PrivateTmp=yes
 PrivateDevices=yes
-RuntimeDirectory=doable
-RuntimeDirectoryMode=0750
 
 [Install]
 WantedBy=doable-apps.target
 APPSVCEOF
-
-cat > /etc/systemd/system/doable-app@.socket << APPSOCKEOF
-[Unit]
-Description=Doable user app socket %i
-PartOf=doable-apps.target
-
-[Socket]
-ListenStream=/run/doable/%i.sock
-SocketMode=0660
-SocketGroup=caddy
-Accept=no
-
-[Install]
-WantedBy=sockets.target
-APPSOCKEOF
 
 cat > /etc/systemd/system/doable-apps.target << APPTGTEOF
 [Unit]

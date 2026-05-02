@@ -1,6 +1,7 @@
 import { mkdir, writeFile, chmod, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createConnection } from "node:net";
 import path from "node:path";
 
 import { sql } from "../../db/index.js";
@@ -22,7 +23,9 @@ import type {
 export const pythonAsgiAdapter: RuntimeAdapter = {
   id: "python-asgi",
   kind: "process",
-  listenContract: "unix-socket",
+  /** Wave 21: switched from "unix-socket" to "tcp-port". gunicorn/uvicorn
+   *  bind 127.0.0.1:PORT and Caddy reverse_proxies to it. */
+  listenContract: "tcp-port",
   /** PRD 06 §3.2 — 30 minutes idle */
   idleTimeoutMs: 30 * 60_000,
 
@@ -41,10 +44,11 @@ export const pythonAsgiAdapter: RuntimeAdapter = {
     const slug = ctx.projectSlug;
     const envPath = `/etc/doable/apps/${slug}.env`;
     const dropInDir = `/etc/systemd/system/doable-app@${slug}.service.d`;
-    const socketPath =
-      ctx.listen.kind === "unix-socket"
-        ? ctx.listen.path
-        : `/run/doable/${slug}.sock`;
+    // Wave 21: TCP-port mode only. Construct host:port from ctx.listen.
+    const listenHost =
+      ctx.listen.kind === "tcp-port" ? ctx.listen.host : "127.0.0.1";
+    const listenPort = ctx.listen.kind === "tcp-port" ? ctx.listen.port : 0;
+    const listenAddr = `${listenHost}:${listenPort}`;
 
     let egressHosts: string[] = [];
     try {
@@ -62,7 +66,7 @@ export const pythonAsgiAdapter: RuntimeAdapter = {
       await chmod(envPath, 0o640);
 
       const distServerDir = `${ctx.projectDir}/dist-server`;
-      const execStart = await resolvePythonExecStart(distServerDir, slug);
+      const execStart = await resolvePythonExecStart(distServerDir, listenHost, listenPort);
 
       await mkdir(dropInDir, { recursive: true });
       await writeFile(
@@ -72,7 +76,8 @@ export const pythonAsgiAdapter: RuntimeAdapter = {
       );
 
       run("systemctl", ["daemon-reload"]);
-      run("systemctl", ["enable", "--now", `doable-app@${slug}.socket`]);
+      // Wave 21: enable + start the .service directly (no .socket).
+      run("systemctl", ["enable", "--now", `doable-app@${slug}.service`]);
     } else {
       try {
         await mkdir(path.dirname(envPath), { recursive: true });
@@ -85,30 +90,50 @@ export const pythonAsgiAdapter: RuntimeAdapter = {
     return {
       id: `doable-app@${slug}.service`,
       startedAt: new Date(),
-      listenAddr: socketPath,
-      listenContract: "unix-socket",
+      listenAddr,
+      listenContract: "tcp-port",
     };
   },
 
   async stop(handle: RuntimeHandle): Promise<void> {
     const slug = handle.id.replace(/^doable-app@|\.service$/g, "");
     if (process.platform === "linux" && hasSystemctl()) {
-      run("systemctl", ["stop", `doable-app@${slug}.socket`, `doable-app@${slug}.service`], {
+      run("systemctl", ["stop", `doable-app@${slug}.service`], {
         ignoreFailure: true,
       });
-      run("systemctl", ["disable", `doable-app@${slug}.socket`], { ignoreFailure: true });
+      run("systemctl", ["disable", `doable-app@${slug}.service`], { ignoreFailure: true });
     }
   },
 
   async healthCheck(handle: RuntimeHandle): Promise<HealthStatus> {
-    if (handle.listenContract === "unix-socket") {
-      return existsSync(handle.listenAddr)
+    if (handle.listenContract === "tcp-port") {
+      const [host, portStr] = handle.listenAddr.split(":");
+      const port = parseInt(portStr ?? "", 10);
+      if (!host || !Number.isFinite(port)) {
+        return { ok: false, reason: "bad-addr", detail: handle.listenAddr };
+      }
+      const ok = await tcpProbe(host, port, 1000);
+      return ok
         ? { ok: true, uptimeMs: Date.now() - handle.startedAt.getTime() }
-        : { ok: false, reason: "no-socket", detail: handle.listenAddr };
+        : { ok: false, reason: "no-port", detail: handle.listenAddr };
     }
-    return { ok: false, reason: "unknown", detail: "tcp probe not implemented yet" };
+    return { ok: false, reason: "unknown", detail: "no probe for this contract" };
   },
 };
+
+function tcpProbe(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const socket = createConnection({ host, port });
+    const done = (ok: boolean) => {
+      try { socket.destroy(); } catch { /* ignore */ }
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+    socket.once("timeout", () => done(false));
+  });
+}
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -147,33 +172,28 @@ ${extraAllows}${extraAllows ? "\n" : ""}`;
 
 async function resolvePythonExecStart(
   distServerDir: string,
-  slug: string,
+  host: string,
+  port: number,
 ): Promise<string> {
   // Pick the venv's interpreter when present so users get the project's
   // pinned dependencies; fall back to system python3 otherwise.
   const venvPython = `${distServerDir}/.venv/bin/python`;
   const pythonBin = existsSync(venvPython) ? venvPython : "/usr/bin/python3";
-  const sock = `/run/doable/${slug}.sock`;
 
-  // Django: manage.py at the top of dist-server/ + a sibling directory
-  // containing wsgi.py is the canonical layout. gunicorn binds the unix
-  // socket directly via --bind unix:/path.
+  // Django WSGI: gunicorn binds host:port directly.
   if (existsSync(`${distServerDir}/manage.py`)) {
     const projectModule = await findDjangoProjectModule(distServerDir);
     if (projectModule) {
-      return `${pythonBin} -m gunicorn --bind unix:${sock} --workers 2 ${projectModule}.wsgi:application`;
+      return `${pythonBin} -m gunicorn --bind ${host}:${port} --workers 2 ${projectModule}.wsgi:application`;
     }
-    // Fallback: runserver against a TCP port — not socket-activated, but
-    // keeps the unit alive while logging the project layout problem.
-    return `${pythonBin} manage.py runserver 127.0.0.1:8000`;
+    return `${pythonBin} manage.py runserver ${host}:${port}`;
   }
 
-  // FastAPI (and any uvicorn-friendly app): asgi.py preferred when both
-  // exist, else main:app. uvicorn supports --uds for unix socket binding.
+  // FastAPI / any ASGI: uvicorn binds host:port.
   if (existsSync(`${distServerDir}/asgi.py`)) {
-    return `${pythonBin} -m uvicorn asgi:application --uds ${sock}`;
+    return `${pythonBin} -m uvicorn asgi:application --host ${host} --port ${port}`;
   }
-  return `${pythonBin} -m uvicorn main:app --uds ${sock}`;
+  return `${pythonBin} -m uvicorn main:app --host ${host} --port ${port}`;
 }
 
 async function findDjangoProjectModule(distServerDir: string): Promise<string | null> {

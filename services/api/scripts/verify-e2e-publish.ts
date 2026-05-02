@@ -33,7 +33,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SLUG = `e2e-${Date.now().toString(36)}`;
 const PROJECTS_ROOT = process.env.PROJECTS_ROOT ?? "/data/projects";
 const PROJECT_DIR = path.join(PROJECTS_ROOT, SLUG);
-const SOCKET_PATH = `/run/doable/${SLUG}.sock`;
+// Wave 21: each test gets its own port. 39000-39999 reserved for e2e
+// tests so we don't collide with the prod allocator's 30000-39000 range.
+const TEST_PORT = 39000 + Math.floor(Math.random() * 1000);
 
 interface StepResult {
   name: string;
@@ -52,21 +54,15 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function probeSocket(socketPath: string): Promise<{ ok: boolean; body: string }> {
+function probeTcp(host: string, port: number): Promise<{ ok: boolean; body: string }> {
   return new Promise((resolve) => {
-    if (!existsSync(socketPath)) {
-      resolve({ ok: false, body: "socket-missing" });
-      return;
-    }
-    const sock = connect(socketPath);
+    const sock = connect({ host, port });
     let body = "";
     sock.setTimeout(3000);
     sock.on("connect", () => {
-      sock.write("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+      sock.write(`GET / HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`);
     });
-    sock.on("data", (d) => {
-      body += d.toString();
-    });
+    sock.on("data", (d) => { body += d.toString(); });
     sock.on("end", () => resolve({ ok: body.length > 0, body }));
     sock.on("error", (e) => resolve({ ok: false, body: e.message }));
     sock.on("timeout", () => {
@@ -91,27 +87,18 @@ async function main(): Promise<void> {
   const standaloneDir = path.join(PROJECT_DIR, ".next", "standalone");
   await mkdir(standaloneDir, { recursive: true });
   const synthServer = `
+// Wave 21: vanilla Next.js standalone listens on PORT — exactly what
+// the runtime adapter sets via the systemd EnvironmentFile.
 const http = require("node:http");
-const port = process.env.PORT;
+const port = parseInt(process.env.PORT ?? "3000", 10);
 const hostname = process.env.HOSTNAME ?? "127.0.0.1";
 const server = http.createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/plain" });
   res.end("e2e ok " + (process.env.DOABLE_PROJECT_SLUG ?? "no-slug") + "\\n");
 });
-const listenFds = parseInt(process.env.LISTEN_FDS ?? "0", 10);
-const isMyPid = !process.env.LISTEN_PID || parseInt(process.env.LISTEN_PID, 10) === process.pid;
-if (listenFds > 0 && isMyPid) {
-  // systemd socket activation — fd 3 is the inherited socket.
-  server.listen({ fd: 3 }, () => { console.log("listening on inherited fd 3"); });
-} else if (port) {
-  server.listen(parseInt(port, 10), hostname, () => {
-    console.log("listening on tcp", hostname, port);
-  });
-} else {
-  const sockPath = "/run/doable/" + (process.env.DOABLE_PROJECT_SLUG ?? "fallback") + ".sock";
-  try { require("node:fs").unlinkSync(sockPath); } catch {}
-  server.listen(sockPath, () => { console.log("listening on", sockPath); });
-}
+server.listen(port, hostname, () => {
+  console.log("listening on tcp", hostname, port);
+});
 `;
   await writeFile(path.join(standaloneDir, "server.js"), synthServer, "utf-8");
   step("fixture-create", true, `synthetic standalone at ${standaloneDir}`);
@@ -149,21 +136,22 @@ if (listenFds > 0 && isMyPid) {
     projectDir: PROJECT_DIR,
     framework: { id: "nextjs-app" },
     env: {},
-    listen: { kind: "unix-socket", path: SOCKET_PATH },
+    listen: { kind: "tcp-port", host: "127.0.0.1", port: TEST_PORT },
+    userId: null,
   });
   step("runtime-start", true, `handle.id=${handle.id}, addr=${handle.listenAddr}`);
 
-  // Step 4 — wait for socket then probe
+  // Step 4 — wait for the port then HTTP probe
   let probed = { ok: false, body: "no-attempt" };
   for (let i = 0; i < 20; i++) {
     await sleep(500);
-    if (existsSync(SOCKET_PATH)) break;
+    probed = await probeTcp("127.0.0.1", TEST_PORT);
+    if (probed.ok) break;
   }
-  probed = await probeSocket(SOCKET_PATH);
   step(
-    "socket-probe",
+    "tcp-probe",
     probed.ok && probed.body.includes("e2e ok"),
-    probed.ok ? `200 OK, body starts: ${probed.body.split("\\r\\n").pop()?.slice(0, 60)}` : `probe failed: ${probed.body.slice(0, 80)}`
+    probed.ok ? `200 OK, body line: ${probed.body.split("\\r\\n").filter(Boolean).pop()?.slice(0, 60)}` : `probe failed: ${probed.body.slice(0, 80)}`
   );
 
   // Step 5 — cgroup metrics check
@@ -185,9 +173,11 @@ if (listenFds > 0 && isMyPid) {
     r.stdout?.replace(/\n/g, " ").trim() ?? `error: ${r.stderr?.trim()}`
   );
 
-  // Step 7 — teardown
+  // Step 7 — teardown. Confirm port no longer accepts connections.
   await nodeStandaloneAdapter.stop(handle);
-  step("runtime-stop", !existsSync(SOCKET_PATH), existsSync(SOCKET_PATH) ? "socket still exists" : "socket cleared");
+  await sleep(500);
+  const postStop = await probeTcp("127.0.0.1", TEST_PORT);
+  step("runtime-stop", !postStop.ok, postStop.ok ? "port still accepting" : "port closed");
 
   // Cleanup project dir
   await rm(PROJECT_DIR, { recursive: true, force: true });

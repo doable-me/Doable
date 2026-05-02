@@ -14,6 +14,7 @@ import { defaultRegistry } from "../frameworks/registry.js";
 import { nodeStandaloneAdapter } from "../runtime/adapters/node-standalone.js";
 import { pythonAsgiAdapter } from "../runtime/adapters/python-asgi.js";
 import { staticFilesAdapter } from "../runtime/adapters/static-files.js";
+import { allocateProcessPort } from "../runtime/port-allocator.js";
 import { addProcessRoute, caddyAdminAvailable } from "../runtime/caddy-admin.js";
 import type { RuntimeAdapter, RuntimeContext } from "../runtime/types.js";
 
@@ -313,6 +314,17 @@ async function registerRuntimeForDeploy(input: RegisterRuntimeInput): Promise<vo
       ? nodeStandaloneAdapter
       : staticFilesAdapter;
 
+  // Wave 21: switched from systemd socket activation to TCP-port mode.
+  // Vanilla Next.js/Nuxt/SvelteKit standalone builds listen on PORT and
+  // don't speak LISTEN_FDS, so socket activation never woke the service.
+  // Now: allocate a stable per-project port, bind on 127.0.0.1:PORT,
+  // Caddy reverse_proxies the public hostname to it. Bound localhost-only
+  // so the port is not internet-reachable; firewall + Caddy enforce that.
+  let allocatedPort: { host: string; port: number; addr: string } | null = null;
+  if (isProcess) {
+    allocatedPort = await allocateProcessPort(input.projectId);
+  }
+
   const ctx: RuntimeContext = {
     projectId: input.projectId,
     projectSlug: input.projectSlug,
@@ -321,8 +333,8 @@ async function registerRuntimeForDeploy(input: RegisterRuntimeInput): Promise<vo
     projectDir: input.projectDir,
     framework: { id: input.frameworkId },
     env: {},
-    listen: isProcess
-      ? { kind: "unix-socket", path: `/run/doable/${input.projectSlug}.sock` }
+    listen: allocatedPort
+      ? { kind: "tcp-port", host: allocatedPort.host, port: allocatedPort.port }
       : { kind: "tcp-port", host: "127.0.0.1", port: 0 },
     userId: input.userId,
   };
@@ -330,13 +342,13 @@ async function registerRuntimeForDeploy(input: RegisterRuntimeInput): Promise<vo
   const handle = await runtime.start(ctx);
 
   // For process-kind, also insert a per-host Caddy route so traffic to
-  // the public hostname reverse-proxies to the unix socket. Skip silently
+  // the public hostname reverse-proxies to 127.0.0.1:PORT. Skip silently
   // when the admin API isn't reachable (dev environment, etc.).
-  if (isProcess && (await caddyAdminAvailable())) {
+  if (isProcess && allocatedPort && (await caddyAdminAvailable())) {
     await addProcessRoute({
       slug: input.projectSlug,
       hostname: input.publicHostname,
-      upstream: { kind: "unix-socket", path: handle.listenAddr },
+      upstream: { kind: "tcp-port", addr: allocatedPort.addr },
     });
   }
 
@@ -344,7 +356,7 @@ async function registerRuntimeForDeploy(input: RegisterRuntimeInput): Promise<vo
     projectId: input.projectId,
     frameworkId: input.frameworkId,
     runtimeKind: isProcess ? "process" : "static",
-    listenKind: isProcess ? "unix-socket" : null,
+    listenKind: isProcess ? "tcp-port" : null,
     listenAddr: isProcess ? handle.listenAddr : null,
     systemdUnit: isProcess ? handle.id : null,
   });
