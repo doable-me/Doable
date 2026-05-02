@@ -156,9 +156,11 @@ app.use(
   "*",
   cors({
     origin: (origin, c) => {
-      // Preview proxy routes: allow any origin (iframe embedding)
+      // Preview proxy routes: allow only doable.me subdomains and localhost (iframe embedding)
       if (c.req.path.startsWith("/preview/")) {
-        return origin;
+        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
+        if (/^https:\/\/([a-z0-9-]+\.)?doable\.me$/.test(origin)) return origin;
+        return "https://doable.me";
       }
 
       // Allow any localhost origin (any port) for development

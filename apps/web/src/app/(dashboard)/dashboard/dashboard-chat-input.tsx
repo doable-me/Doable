@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus,
   Mic,
@@ -216,7 +217,8 @@ function FrameworkPicker({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const selected = FRAMEWORK_OPTIONS.find((o) => o.id === (value ?? "")) ?? FRAMEWORK_OPTIONS[0];
   const Icon = selected.icon;
@@ -225,15 +227,28 @@ function FrameworkPicker({
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (
+        btnRef.current?.contains(e.target as Node) ||
+        menuRef.current?.contains(e.target as Node)
+      ) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
+  // Position the menu below the button
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    setPos({ top: rect.bottom + 6, left: rect.left });
+  }, [open]);
+
   return (
-    <div ref={ref} className="relative ml-1">
+    <div className="relative ml-1">
       <button
+        ref={btnRef}
         type="button"
         onClick={() => !disabled && setOpen((v) => !v)}
         className="flex items-center gap-1.5 rounded-full border border-border px-2.5 h-7 text-[11px] font-medium text-foreground/80 hover:text-foreground hover:bg-accent/50 transition-colors"
@@ -245,8 +260,12 @@ function FrameworkPicker({
         <ChevronDown className={`h-3 w-3 opacity-60 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
-      {open && (
-        <div className="absolute top-full left-0 mt-2 z-50 min-w-[180px] rounded-xl border border-border bg-popover p-1 shadow-xl animate-in fade-in slide-in-from-top-2 duration-150">
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[9999] min-w-[180px] rounded-xl border border-border bg-popover p-1 shadow-xl animate-in fade-in slide-in-from-top-2 duration-150"
+          style={{ top: pos.top, left: pos.left }}
+        >
           {FRAMEWORK_OPTIONS.map((opt) => {
             const OptIcon = opt.icon;
             const isSelected = opt.id === (value ?? "");
@@ -269,7 +288,8 @@ function FrameworkPicker({
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
