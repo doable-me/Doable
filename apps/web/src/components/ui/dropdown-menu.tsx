@@ -118,7 +118,7 @@ function DropdownMenuContent({
       ref={menuRef}
       data-dropdown-portal=""
       className={cn(
-        "fixed z-[9999] min-w-[8rem] rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md",
+        "fixed z-[9999] min-w-[10rem] rounded-xl border border-zinc-700/80 bg-zinc-900 p-1.5 text-zinc-100 shadow-xl shadow-black/40",
         className
       )}
       style={{ top: 0, left: 0, visibility: "hidden" }}
@@ -141,7 +141,7 @@ function DropdownMenuItem({
   return (
     <div
       className={cn(
-        "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground",
+        "relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-2 text-sm text-zinc-100 outline-none transition-colors hover:bg-zinc-800 hover:text-white",
         className
       )}
       onClick={(e) => {
@@ -160,7 +160,7 @@ function DropdownMenuSeparator({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("-mx-1 my-1 h-px bg-muted", className)} {...props} />;
+  return <div className={cn("-mx-1 my-1.5 h-px bg-zinc-700/60", className)} {...props} />;
 }
 
 function DropdownMenuLabel({

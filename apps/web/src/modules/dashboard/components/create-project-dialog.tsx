@@ -11,7 +11,20 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { FileCode, MessageSquare, LayoutTemplate, Loader2 } from "lucide-react";
+import {
+  FileCode,
+  MessageSquare,
+  LayoutTemplate,
+  Loader2,
+  Atom,
+  Globe,
+  Layers,
+  Wind,
+  Server,
+  Zap,
+  Hexagon,
+  Code2,
+} from "lucide-react";
 import { apiListTemplates, type ApiTemplate } from "@/lib/api";
 
 interface CreateProjectDialogProps {
@@ -30,14 +43,14 @@ interface CreateProjectDialogProps {
 type CreationMode = "blank" | "prompt" | "template";
 
 const FRAMEWORKS = [
-  { id: "vite-react", name: "React (Vite)", description: "Client-side SPA", category: "Frontend" },
-  { id: "nextjs-app", name: "Next.js", description: "Full-stack React", category: "Full-Stack" },
-  { id: "sveltekit", name: "SvelteKit", description: "Full-stack Svelte", category: "Full-Stack" },
-  { id: "nuxt", name: "Nuxt", description: "Full-stack Vue", category: "Full-Stack" },
-  { id: "astro", name: "Astro", description: "Content sites", category: "Frontend" },
-  { id: "hono", name: "Hono", description: "API server (Node.js)", category: "Backend" },
-  { id: "fastapi", name: "FastAPI", description: "API server (Python)", category: "Backend" },
-  { id: "django", name: "Django", description: "Full-stack Python", category: "Backend" },
+  { id: "vite-react", name: "React (Vite)", description: "Client-side SPA", category: "Frontend", icon: Atom, color: "text-cyan-400" },
+  { id: "nextjs-app", name: "Next.js", description: "Full-stack React", category: "Full-Stack", icon: Globe, color: "text-white" },
+  { id: "sveltekit", name: "SvelteKit", description: "Full-stack Svelte", category: "Full-Stack", icon: Hexagon, color: "text-orange-400" },
+  { id: "nuxt", name: "Nuxt", description: "Full-stack Vue", category: "Full-Stack", icon: Layers, color: "text-green-400" },
+  { id: "astro", name: "Astro", description: "Content sites", category: "Frontend", icon: Wind, color: "text-purple-400" },
+  { id: "hono", name: "Hono", description: "API server (Node.js)", category: "Backend", icon: Zap, color: "text-orange-300" },
+  { id: "fastapi", name: "FastAPI", description: "API server (Python)", category: "Backend", icon: Server, color: "text-emerald-400" },
+  { id: "django", name: "Django", description: "Full-stack Python", category: "Backend", icon: Code2, color: "text-green-300" },
 ] as const;
 
 function slugify(text: string): string {
@@ -138,32 +151,35 @@ export function CreateProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create project</DialogTitle>
+          <DialogTitle className="text-xl">Create a new project</DialogTitle>
           <DialogDescription>
             Start from scratch, describe what you want, or pick a template.
           </DialogDescription>
         </DialogHeader>
 
         {/* Mode Selector */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-3">
           {[
-            { key: "blank" as const, icon: FileCode, label: "Blank" },
-            { key: "prompt" as const, icon: MessageSquare, label: "From prompt" },
-            { key: "template" as const, icon: LayoutTemplate, label: "Template" },
-          ].map(({ key, icon: Icon, label }) => (
+            { key: "blank" as const, icon: FileCode, label: "Blank", desc: "Start fresh" },
+            { key: "prompt" as const, icon: MessageSquare, label: "From prompt", desc: "AI generates" },
+            { key: "template" as const, icon: LayoutTemplate, label: "Template", desc: "Pre-built" },
+          ].map(({ key, icon: Icon, label, desc }) => (
             <button
               key={key}
               onClick={() => setMode(key)}
-              className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs font-medium transition-colors ${
+              className={`flex flex-col items-center gap-2 rounded-xl border-2 p-4 text-center transition-all ${
                 mode === key
-                  ? "border-primary bg-primary/5 text-primary"
-                  : "border-border text-muted-foreground hover:border-primary/50"
+                  ? "border-blue-500 bg-blue-500/10 text-white shadow-lg shadow-blue-500/10"
+                  : "border-zinc-700/50 text-zinc-400 hover:border-zinc-600 hover:bg-zinc-800/50 hover:text-zinc-200"
               }`}
             >
-              <Icon className="h-5 w-5" />
-              {label}
+              <Icon className={`h-6 w-6 ${mode === key ? "text-blue-400" : ""}`} />
+              <div>
+                <div className="text-sm font-semibold">{label}</div>
+                <div className="text-[11px] text-zinc-500">{desc}</div>
+              </div>
             </button>
           ))}
         </div>
@@ -173,21 +189,33 @@ export function CreateProjectDialog({
           <div className="space-y-2">
             <label className="text-sm font-medium text-zinc-300">Framework</label>
             <div className="grid grid-cols-2 gap-2">
-              {FRAMEWORKS.map((fw) => (
-                <button
-                  key={fw.id}
-                  type="button"
-                  onClick={() => setSelectedFramework(fw.id)}
-                  className={`flex flex-col items-start rounded-lg border p-2.5 text-left text-sm transition-colors ${
-                    selectedFramework === fw.id
-                      ? "border-blue-500 bg-blue-500/10 text-white"
-                      : "border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800"
-                  }`}
-                >
-                  <span className="font-medium">{fw.name}</span>
-                  <span className="text-xs text-zinc-500">{fw.description}</span>
-                </button>
-              ))}
+              {FRAMEWORKS.map((fw) => {
+                const Icon = fw.icon;
+                return (
+                  <button
+                    key={fw.id}
+                    type="button"
+                    onClick={() => setSelectedFramework(fw.id)}
+                    className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
+                      selectedFramework === fw.id
+                        ? "border-blue-500 bg-blue-500/10 shadow-md shadow-blue-500/5"
+                        : "border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800/50"
+                    }`}
+                  >
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                      selectedFramework === fw.id ? "bg-blue-500/20" : "bg-zinc-800"
+                    }`}>
+                      <Icon className={`h-4.5 w-4.5 ${fw.color}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className={`text-sm font-medium ${
+                        selectedFramework === fw.id ? "text-white" : "text-zinc-200"
+                      }`}>{fw.name}</div>
+                      <div className="text-xs text-zinc-500">{fw.description}</div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
