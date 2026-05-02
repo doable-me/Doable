@@ -17,12 +17,11 @@ import { staticFilesAdapter } from "../runtime/adapters/static-files.js";
 import { allocateProcessPort } from "../runtime/port-allocator.js";
 import { addProcessRoute, caddyAdminAvailable } from "../runtime/caddy-admin.js";
 import type { RuntimeAdapter, RuntimeContext } from "../runtime/types.js";
+import { getProjectPath } from "../ai/project-files.js";
 
 const deployments = deploymentQueries(sql);
 const projects = projectQueries(sql);
 const workspaces = workspaceQueries(sql);
-
-const PROJECTS_ROOT = process.env.PROJECTS_ROOT ?? "/data/projects";
 
 // ─── Adapter Registry ──────────────────────────────────────
 const adapters: Record<string, DeployAdapter> = {
@@ -129,7 +128,7 @@ export async function runPipeline(
     onBuildLog?.("Starting build...\n");
 
     const buildStart = Date.now();
-    const projectDir = path.join(PROJECTS_ROOT, projectId);
+    const projectDir = getProjectPath(projectId);
     // Compute publish URL & base path BEFORE build so Vite emits assets
     // with the correct base href when path-based hosting is enabled.
     const publishLoc = computeSitePublishLocation(subdomain, environment);
@@ -191,7 +190,7 @@ export async function runPipeline(
         projectSlug: subdomain,
         workspaceSlug: workspace.slug,
         siteDir: path.join(process.env.SITES_DIR ?? "/data/sites", subdomain, environment === "preview" ? "test" : "live"),
-        projectDir: path.join(PROJECTS_ROOT, projectId),
+        projectDir: getProjectPath(projectId),
         frameworkId: (project as { framework_id?: string }).framework_id ?? "vite-react",
         userId,
         publicHostname: new URL(deployResult.url).hostname,
