@@ -36,6 +36,7 @@ import { supabaseProvisionRoutes } from "./routes/integrations/supabase/provisio
 import { skillsRoutes } from "./routes/skills.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { wsEnvVarRoutes, projEnvVarRoutes, envVarUtilRoutes } from "./routes/env-vars.js";
+import { workspaceLogFilterRoutes } from "./routes/workspace-log-filters.js";
 import { marketplaceRoutes } from "./routes/marketplace.js";
 import { marketplaceModerationRoutes } from "./routes/marketplace-moderation.js";
 import { teamChatRoutes } from "./routes/team-chat.js";
@@ -98,6 +99,7 @@ app.route("/", supabaseProvisionRoutes);
 app.route("/workspaces", skillsRoutes);
 app.route("/workspaces", environmentRoutes);
 app.route("/workspaces", wsEnvVarRoutes);
+app.route("/workspaces", workspaceLogFilterRoutes);
 app.route("/projects", projEnvVarRoutes);
 app.route("/env-vars", envVarUtilRoutes);
 app.route("/", marketplaceRoutes);
