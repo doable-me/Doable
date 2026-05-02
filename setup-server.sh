@@ -173,6 +173,21 @@ systemctl start postgresql fail2ban
 
 ok "Packages installed: node $(node -v), pnpm $(pnpm -v), psql $(psql --version | awk '{print $3}'), cloudflared $(cloudflared --version 2>&1 | awk '{print $3}')"
 
+# ─── Per-app runtime user (Wave 25 — drop root) ─────────────
+# Published user apps run under this unprivileged system user via the
+# doable-app@.service template (User=doable-app + ReadWritePaths scoped
+# to a single project's dist-server). The deploy pipeline chowns each
+# project's staged tree to doable-app:doable-app post-build so the
+# per-app systemd unit can read its own code at start. /data/projects
+# is mode 0750 root:doable-app so only the runtime user can list it.
+if ! id doable-app &>/dev/null; then
+  useradd --system --no-create-home --shell /usr/sbin/nologin doable-app
+  ok "Created doable-app system user"
+fi
+mkdir -p /data/projects /data/sites
+chown root:doable-app /data/projects
+chmod 0750 /data/projects
+
 # ─── Step 2: Firewall (UFW) ──────────────────────────────────
 info "Step 2/13: Configuring firewall (UFW)..."
 
@@ -659,6 +674,8 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
+User=doable-app
+Group=doable-app
 EnvironmentFile=-/etc/doable/apps/%i.env
 ExecStart=/usr/bin/node /data/projects/%i/dist-server/server.js
 Restart=on-failure

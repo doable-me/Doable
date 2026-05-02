@@ -1,7 +1,10 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
+
+import { createVault, Tracer as VaultTracer } from "dovault";
+import type { Vault } from "dovault";
 
 import { sql } from "../db/index.js";
 import { projectQueries } from "@doable/db/queries/projects";
@@ -15,10 +18,68 @@ import {
   loadWorkspaceFilters,
   type LogFilter,
 } from "../build-events/index.js";
+import { xray } from "../integrations/xray.js";
 
 const projects = projectQueries(sql);
 
 const BUILD_TIMEOUT_MS = 120_000;
+
+// ─── dovault wrapper for build-time spawns ───────────────
+//
+// Builds run user-controlled `next build` / `vite build` / `pip install`
+// (PRD Wave 25). A malicious npm `postinstall` hook can otherwise execute as
+// the API user; dovault wraps the spawn with cgroup resource limits + jail
+// path so a hostile build can't read or write outside the project directory.
+//
+// Network is intentionally NOT blocked — npm/pypi need outbound. TODO(Wave 26+):
+// add an allow-list (registry.npmjs.org, pypi.org, etc) once the dovault
+// network policy supports egress filtering.
+
+const BUILD_LIMITS = {
+  memoryMax: process.env.BUILD_MEMORY_MAX ?? "1G",
+  cpuQuota: process.env.BUILD_CPU_QUOTA ?? "100%",
+  tasksMax: parseInt(process.env.BUILD_TASKS_MAX ?? "512", 10),
+} as const;
+
+const buildVaultTracer = new VaultTracer((span) => {
+  xray.recordSpan({
+    source: "dovault",
+    id: span.id,
+    name: span.name,
+    parentId: span.parentId,
+    startedAt: span.startedAt,
+    endedAt: span.endedAt,
+    durationMs: span.durationMs,
+    status: span.status,
+    error: span.error,
+    attributes: span.attributes,
+  });
+});
+
+let buildVaultSingleton: Vault | null = null;
+
+function getBuildVault(): Vault {
+  if (!buildVaultSingleton) {
+    buildVaultSingleton = createVault({
+      resourceLimits: BUILD_LIMITS,
+      tracer: buildVaultTracer,
+      onAudit: (entry) => {
+        xray.recordVaultEvent({
+          timestamp:
+            typeof entry.timestamp === "string"
+              ? Date.parse(entry.timestamp)
+              : Date.now(),
+          type: `vault.${entry.kind}`,
+          data: entry.details,
+        });
+      },
+    });
+    console.log(
+      `[builder] Vault initialized (backend=${buildVaultSingleton.backend}, fullIsolation=${buildVaultSingleton.hasFullIsolation})`,
+    );
+  }
+  return buildVaultSingleton;
+}
 
 export interface BuildResult {
   success: boolean;
@@ -136,17 +197,56 @@ export async function runBuild(
 
   const outputDir = path.join(projectDir, spec.outputDir);
 
-  return new Promise<BuildResult>((resolve) => {
-    const chunks: string[] = [];
+  // Build the safe env once — used by both jailed and fallback paths.
+  const safeEnv = buildSafeEnv({
+    ...userEnvVars,
+    ...spec.env,
+    NODE_ENV: "production",
+  });
+  // dovault.spawn wants Record<string, string>; strip undefineds.
+  const cleanEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(safeEnv)) {
+    if (typeof v === "string") cleanEnv[k] = v;
+  }
 
-    const proc = spawn(spec.command, spec.args, {
+  // Try to spawn under dovault. Falls back to a raw spawn when dovault throws
+  // (e.g. unsupported platform / Permission Model unavailable) so builds
+  // still work — the fallback is logged so operators can see the gap.
+  let proc: ChildProcess;
+  try {
+    const vault = getBuildVault();
+    const jailed = await vault.spawn(spec.command, spec.args, {
+      cwd: spec.cwd,
+      jail: projectDir,
+      env: cleanEnv,
+      // dovault.spawn takes a scalar stdio mode; "pipe" still produces stdout/stderr
+      // streams which BuildEventPublisher / the local listeners below consume.
+      stdio: "pipe",
+      lockConfigs: false, // build configs (vite.config.ts, next.config.js) exist before build runs
+      blockChildProcess: false, // npm install / build tools spawn many legitimate children
+      blockOutboundNet: false, // npm registry, pypi need network — TODO(W26): allow-list hardening
+      resourceLimits: BUILD_LIMITS,
+    });
+    proc = jailed.process as ChildProcess;
+    xray.recordVaultEvent({
+      projectId: opts?.projectId,
+      type: "vault.spawn",
+      data: { pid: jailed.pid, limits: BUILD_LIMITS, command: spec.command, kind: "build" },
+    });
+  } catch (err) {
+    console.warn(
+      `[builder] vault.spawn failed, falling back to raw spawn: ${(err as Error).message}`,
+    );
+    proc = spawn(spec.command, spec.args, {
       cwd: spec.cwd,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: buildSafeEnv(
-        { ...userEnvVars, ...spec.env, NODE_ENV: "production" },
-      ),
+      env: safeEnv,
     });
+  }
+
+  return new Promise<BuildResult>((resolve) => {
+    const chunks: string[] = [];
 
     // PRD 03 publisher — fans every build line through the redaction filter
     // chain (PRD 04) and into the per-project ring buffer that
@@ -190,13 +290,15 @@ export async function runBuild(
       });
     }, BUILD_TIMEOUT_MS);
 
-    proc.stdout.on("data", (data: Buffer) => {
+    // stdio: "pipe" guarantees these are non-null; the `!` keeps TS happy now
+    // that `proc` is typed as a generic ChildProcess (whose streams are nullable).
+    proc.stdout!.on("data", (data: Buffer) => {
       const text = data.toString();
       chunks.push(text);
       onLog?.(text);
     });
 
-    proc.stderr.on("data", (data: Buffer) => {
+    proc.stderr!.on("data", (data: Buffer) => {
       const text = data.toString();
       chunks.push(text);
       onLog?.(text);

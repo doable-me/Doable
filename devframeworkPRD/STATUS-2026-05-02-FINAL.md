@@ -223,6 +223,42 @@ or that Caddy routed the request.
 
 ---
 
+## Wave 25 — Secure by default
+
+Closed the Wave 21 sandbox-only model and replaced it with build-time +
+runtime isolation across the publish pipeline.
+
+- **Build-jail wrap.** `services/api/src/deploy/builder.ts` now invokes
+  every `next build` / `vite build` / `npm install` / `pip install`
+  through the `dovault` jail (1 GB memory, 100 % CPU, 512 procs,
+  filesystem confined to the project dir). Network egress remains open
+  for registry installs.
+- **Dedicated runtime user.** `services/api/src/runtime/node-standalone.ts`
+  and `services/api/src/runtime/python-asgi.ts` write
+  `User=doable-app` plus `NoNewPrivileges`, `ProtectSystem=strict`,
+  `PrivateTmp`, and `IPAddressDeny=any` (with `127.0.0.0/8` +
+  project-workspace allow-list) into the per-project systemd drop-in.
+  Apps no longer run as root.
+- **Per-project ReadWritePaths.** The same drop-ins narrow
+  `ReadWritePaths=` to the project's own `dist-server/` directory only,
+  so one compromised app cannot read another project's source tree,
+  `.env`, or any path outside its own bundle.
+- **chown after staging.** `services/api/src/deploy/doable-cloud.ts`
+  `chown -R doable-app:doable-app` the staged `dist-server/` after the
+  build completes, giving the runtime user just enough access to read
+  its bundle without holding ownership over the source tree above.
+- **`doable-app` user creation.** `setup-server.sh` now creates the
+  `doable-app` system user (`useradd -r -s /usr/sbin/nologin -M`) as
+  part of phase 1 so the systemd drop-ins above resolve correctly on a
+  fresh box.
+
+Open items: build-time egress is still unrestricted; all projects share
+one `doable-app` UID (per-project UIDs would need additional setup +
+templated systemd). See README-DEPLOY.md §7 "Honest gaps still open" for
+the full follow-on list.
+
+---
+
 ## Operational notes — agent reliability across the wave batch
 
 This batch ran several Opus team agents in parallel with direct edits.

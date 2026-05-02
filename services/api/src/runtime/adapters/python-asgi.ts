@@ -160,6 +160,10 @@ function renderUnitOverride(
   // ExecStart total, so without this systemd refuses to load the unit.
   return `[Service]
 WorkingDirectory=${ctx.projectDir}/dist-server
+User=doable-app
+Group=doable-app
+ReadWritePaths=
+ReadWritePaths=${ctx.projectDir}/dist-server
 ExecStart=
 ExecStart=${execStart}
 MemoryMax=512M

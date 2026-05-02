@@ -209,6 +209,10 @@ function renderUnitOverride(ctx: RuntimeContext, egressHosts: string[] = []): st
   // template + drop-in both declare one (Type=simple only allows one).
   return `[Service]
 WorkingDirectory=${ctx.projectDir}/dist-server
+User=doable-app
+Group=doable-app
+ReadWritePaths=
+ReadWritePaths=${ctx.projectDir}/dist-server
 ExecStart=
 ExecStart=/usr/bin/node ${ctx.projectDir}/dist-server/${entry}
 MemoryMax=512M

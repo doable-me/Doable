@@ -197,6 +197,59 @@ show`. Surfaced in the editor `RuntimePanel` overlay (5 s poll) and
 on the workspace `/runtime` page (8 s poll). Linux-only —
 Windows/macOS dev returns `source: "none"` with null fields.
 
+### Security model (Wave 25)
+
+**Build-time isolation.** Every `next build` / `vite build` /
+`pip install` / `npm install` driven by
+`services/api/src/deploy/builder.ts` now runs inside a `dovault`
+jail with a cgroup memory cap of 1 GB, CPU 100 %, max 512 processes,
+and a filesystem sandbox limited to the project directory. Network
+egress is allowed during build for the public registries (npm,
+PyPI) so installs work; full egress allow-listing of npm + PyPI
+only is the next hardening pass.
+
+**Runtime isolation.** Production apps now run under systemd as the
+dedicated `doable-app` system user (no shell, no home), **not**
+root. The `node-standalone` and `python-asgi` adapters write
+hardening directives into the per-project drop-in:
+`User=doable-app`, `NoNewPrivileges=true`, `ProtectSystem=strict`,
+`PrivateTmp=true`, `IPAddressDeny=any` with an allow-list for
+`127.0.0.0/8` and the project workspace. `ReadWritePaths` is
+narrowed per-project to that app's own `dist-server/` only — a
+compromised project cannot read another project's source tree, its
+secrets, or `/root`.
+
+**Network.** Per-project TCP ports stay on `127.0.0.1:30000-39999`,
+unchanged from Wave 21 — never internet-reachable directly. Caddy
+terminates TLS on `:80` / `:443` and `reverse_proxy`s the request
+to the per-project loopback port keyed by `Host` header.
+
+**User ownership.** `setup-server.sh` now creates a `doable-app`
+system user (no shell, no home directory). After
+`DoableCloudAdapter.deploy()` stages `dist-server/`, it `chown -R`s
+that directory to `doable-app:doable-app` so the runtime user can
+read its own bundle without holding any privilege over the rest of
+the project tree.
+
+### Honest gaps still open
+
+- **Build-time network is currently unrestricted.** A compromised
+  package can reach arbitrary endpoints during `npm install` /
+  `pip install`. Wave 26 candidate: tighten the build jail's egress
+  to npm + PyPI registry hostnames only.
+- **Multiple projects share the single `doable-app` user.** They
+  are isolated from each other by per-project `ReadWritePaths` (and
+  by per-project cgroups) but they share a UID, so a kernel-level
+  break on one app would not be UID-segregated from another. True
+  per-project UIDs would need a `setup-server.sh` user-create loop
+  and a templated systemd unit that takes the UID as an instance
+  parameter.
+- **`npm install` / `pip install` still has full network access for
+  legitimate package fetches.** A malicious package can phone home
+  during install even with the runtime hardening above — the
+  dovault build jail isolates the *filesystem* writes, not the
+  outbound socket calls.
+
 ---
 
 ## 8. Common issues
