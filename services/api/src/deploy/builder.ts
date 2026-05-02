@@ -7,6 +7,11 @@ import { sql } from "../db/index.js";
 import { projectQueries } from "@doable/db/queries/projects";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { createBuildContext } from "../frameworks/context.js";
+import {
+  BuildEventPublisher,
+  LogFilterChain,
+  buildDefaultFilters,
+} from "../build-events/index.js";
 
 const projects = projectQueries(sql);
 
@@ -132,6 +137,32 @@ export async function runBuild(
         NODE_ENV: "production",
       },
     });
+
+    // PRD 03 publisher — fans every build line through the redaction filter
+    // chain (PRD 04) and into the per-project ring buffer that
+    // GET /projects/:id/build/stream tails. Best-effort: failure to attach
+    // the publisher logs and proceeds with the build unchanged.
+    if (opts?.projectId) {
+      try {
+        const filterChain = new LogFilterChain(buildDefaultFilters());
+        const publisher = new BuildEventPublisher(opts.projectId, filterChain, {
+          projectId: opts.projectId,
+          projectPath: projectDir,
+          envSecrets: Object.values(userEnvVars).filter(
+            (v): v is string => typeof v === "string" && v.length >= 4,
+          ),
+          osUsernames: [process.env.USER, process.env.USERNAME].filter(
+            (v): v is string => typeof v === "string" && v.length >= 3,
+          ),
+        });
+        publisher.attach(proc, `build-${Date.now()}`);
+      } catch (err) {
+        console.warn(
+          `[builder] BuildEventPublisher attach failed for ${opts.projectId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
 
     const timeout = setTimeout(() => {
       proc.kill("SIGTERM");

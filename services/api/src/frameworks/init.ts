@@ -10,6 +10,12 @@
 import {
   astroAdapter,
   astroPack,
+  djangoAdapter,
+  djangoPack,
+  fastapiAdapter,
+  fastapiPack,
+  honoAdapter,
+  honoPack,
   nextjsAppAdapter,
   nextjsAppPack,
   nuxtAdapter,
@@ -30,5 +36,8 @@ export function initFrameworks(): void {
   defaultRegistry.register(nuxtPack, nuxtAdapter);
   defaultRegistry.register(sveltekitPack, sveltekitAdapter);
   defaultRegistry.register(astroPack, astroAdapter);
+  defaultRegistry.register(djangoPack, djangoAdapter);
+  defaultRegistry.register(fastapiPack, fastapiAdapter);
+  defaultRegistry.register(honoPack, honoAdapter);
   initialized = true;
 }

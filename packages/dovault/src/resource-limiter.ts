@@ -10,6 +10,8 @@ import { BubblewrapBackend } from "./backends/bubblewrap.js";
 import { WindowsBackend } from "./backends/windows.js";
 import { PsrootBackend } from "./backends/psroot.js";
 import { SandboxExecBackend } from "./backends/sandbox-exec.js";
+import { AppleContainerBackend } from "./backends/apple-container.js";
+import { GvisorBackend } from "./backends/gvisor.js";
 import { WindowsHeapBackend } from "./backends/win-heap.js";
 import { DirectBackend } from "./backends/direct.js";
 
@@ -180,7 +182,9 @@ function detectBackend(preferred?: string): ResourceBackend {
     new BubblewrapBackend(),    // linux, prio 65  (fallback when systemd cgroup delegation absent)
     new WindowsBackend(),       // win32, prio 60  (Job Objects only; FS jail-less fallback)
     new SandboxExecBackend(),   // darwin, prio 50 (replaces direct.ts on macOS; was no isolation)
+    new AppleContainerBackend(),// darwin, prio 45 (opt-in; macOS 15+ Apple Silicon, DOVAULT_PROFILE=hardened)
     new WindowsHeapBackend(),   // win32, prio 40
+    new GvisorBackend(),        // linux, prio 40  (opt-in; DOVAULT_PROFILE=hardened or DOVAULT_BACKEND=gvisor)
     new DirectBackend(),        // any,    prio 0
   ];
 

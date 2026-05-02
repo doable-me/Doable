@@ -4,6 +4,9 @@ import { nextjsAppAdapter } from "./nextjs-app.js";
 import { nuxtAdapter } from "./nuxt.js";
 import { sveltekitAdapter } from "./sveltekit.js";
 import { astroAdapter } from "./astro.js";
+import { djangoAdapter } from "./django.js";
+import { fastapiAdapter } from "./fastapi.js";
+import { honoAdapter } from "./hono.js";
 
 /**
  * Per-adapter framework pack — pure derivation from the adapter's static
@@ -13,7 +16,7 @@ import { astroAdapter } from "./astro.js";
  * adapter file. Canonical pattern: each adapter file exports its `*Adapter`
  * constant; this barrel derives the matching `*Pack` alongside.
  */
-function packFromAdapter(adapter: typeof viteReactAdapter): FrameworkPack {
+function packFromAdapter(adapter: { id: string; family: FrameworkPack["family"]; displayName: string; capabilities: FrameworkPack["capabilities"]; defaults: FrameworkPack["defaults"] }): FrameworkPack {
   return {
     id: adapter.id,
     family: adapter.family,
@@ -28,6 +31,9 @@ export const nextjsAppPack: FrameworkPack = packFromAdapter(nextjsAppAdapter);
 export const nuxtPack: FrameworkPack = packFromAdapter(nuxtAdapter);
 export const sveltekitPack: FrameworkPack = packFromAdapter(sveltekitAdapter);
 export const astroPack: FrameworkPack = packFromAdapter(astroAdapter);
+export const djangoPack: FrameworkPack = packFromAdapter(djangoAdapter);
+export const fastapiPack: FrameworkPack = packFromAdapter(fastapiAdapter);
+export const honoPack: FrameworkPack = packFromAdapter(honoAdapter);
 
 export {
   viteReactAdapter,
@@ -35,4 +41,7 @@ export {
   nuxtAdapter,
   sveltekitAdapter,
   astroAdapter,
+  djangoAdapter,
+  fastapiAdapter,
+  honoAdapter,
 };
