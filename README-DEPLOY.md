@@ -472,3 +472,105 @@ The allow-list configuration lives outside Doable's deploy flow.
   if you edited the Next.js production bundle (which requires
   `pnpm --filter web build` followed by `systemctl restart
   doable.service`).
+
+---
+
+## 11. Secure Docker Install (Wave 30-D)
+
+The repo ships two Docker entry points. Pick based on what you actually
+want:
+
+| File                          | Purpose                                              | Secrets                                | Hardening                          | Use when                                    |
+|-------------------------------|------------------------------------------------------|----------------------------------------|------------------------------------|---------------------------------------------|
+| `docker-compose.yml`          | Lightweight 5-min local single-user demo             | Hardcoded weak defaults in YAML        | None — multi-container, no jail    | You want to poke at the UI for 5 minutes    |
+| `docker-compose.secure.yml`   | Full hardened install (Wave 30-D)                    | Random secrets generated on first boot | Same posture as bare-metal install | You're running this for real (single-host)  |
+
+`docker-compose.secure.yml` builds `docker/Dockerfile.secure` (an
+Ubuntu + systemd image) and runs the entire `setup-server.sh` flow on
+first boot inside the container — random `JWT_SECRET`,
+`ENCRYPTION_KEY`, `INTERNAL_SECRET`, per-project UID isolation under
+`DynamicUser=`, the dovault sandbox, and the build-time Squid proxy
+with the npm/PyPI allow-list. `DOABLE_HARDENING=full` is wired by
+default. In short: same security posture as a fresh
+`bash setup-server.sh` install on bare metal, just packaged as one
+container.
+
+### Quickstart
+
+```bash
+docker compose -f docker-compose.secure.yml up -d
+docker compose -f docker-compose.secure.yml logs -f doable
+```
+
+First boot is **~2-3 min** while secrets generate, Postgres
+initialises, deps install, and migrations run. Watch the logs for
+`All services running`. After that, the UI is at
+<http://127.0.0.1:3000>, API at <http://127.0.0.1:4000>, WS at
+<http://127.0.0.1:4001>. All three publish on `127.0.0.1` only — front
+the install with Cloudflare Tunnel (or your own reverse proxy) for
+external access.
+
+### Persistent state
+
+Everything that must survive a `docker compose down` lives in the
+named volume `doable_data` mounted at `/var/lib/doable` inside the
+container — Postgres data dir, the generated `.env`, project source
+trees, published `/data/sites/` static bundles, and thumbnails.
+
+Backup:
+
+```bash
+docker run --rm -v doable_data:/data -v $(pwd):/backup \
+  ubuntu tar czf /backup/doable-backup.tar.gz /data
+```
+
+Restore: stop the stack, `tar xzf` the archive into the volume, start
+the stack.
+
+### Why `--privileged`?
+
+Three of the security primitives in the bare-metal install need
+`CAP_SYS_ADMIN` and live cgroup delegation:
+
+- **systemd as PID 1** — runs the per-project
+  `doable-app@<slug>.service` units that carry the Wave 25-27
+  hardening directives.
+- **bubblewrap user namespaces** — `dovault.spawn` uses
+  `CLONE_NEWUSER` to put each build / dev-server / runtime in its own
+  user-namespace mapping.
+- **per-project cgroup delegation** — each app gets its own cgroup
+  with `MemoryMax`, `CPUQuota`, and `TasksMax`; systemd manages the
+  hierarchy via `/sys/fs/cgroup` mounted read-write.
+
+With `privileged: true` on, in-host security matches bare metal — same
+syscall filter, same UID isolation, same network deny-list. Docker's
+*outer* isolation (the container boundary itself) no longer adds
+defense-in-depth, since a privileged container is essentially as
+powerful as the host. The trade is portability: one named volume
+captures all state, so moving between hosts is `docker compose down`
+on the old box and `docker compose up -d` on the new one after
+restoring the volume.
+
+If you need real outer-layer isolation on top of Wave 25-27, run the
+secure install on a dedicated VM rather than alongside other
+workloads on a shared host.
+
+### Updating
+
+```bash
+docker compose -f docker-compose.secure.yml pull
+docker compose -f docker-compose.secure.yml up -d
+```
+
+The named volume is preserved across the restart. Migrations re-run
+automatically on next boot — `setup-server.sh` is idempotent so the
+first-boot path detects the existing `/var/lib/doable/.env` and skips
+the secret-generation phase, then runs `pnpm db:migrate` against the
+existing Postgres data dir.
+
+If you want to wipe and start fresh:
+
+```bash
+docker compose -f docker-compose.secure.yml down -v   # -v deletes the volume
+docker compose -f docker-compose.secure.yml up -d
+```

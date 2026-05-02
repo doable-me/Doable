@@ -12,6 +12,16 @@ ok()    { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
+# ─── Container mode (Wave 30-D) ────────────────────────────────
+# When running inside an Ubuntu Docker container with systemd PID 1,
+# host-only steps (UFW, swap, gh-auth, repo clone, Cloudflare Tunnel
+# auth, service start) are skipped. All hardening, secret generation,
+# DB setup, Caddy, and per-app systemd units still execute.
+CONTAINER_MODE="${CONTAINER_MODE:-0}"
+if [ "$CONTAINER_MODE" = "1" ]; then
+  info "Running in CONTAINER_MODE — host-only steps will be skipped."
+fi
+
 # ─── Pre-flight checks ─────────────────────────────────────────
 [[ $EUID -ne 0 ]] && err "This script must be run as root"
 [[ ! -f /etc/os-release ]] && err "Cannot detect OS"
@@ -185,50 +195,54 @@ mkdir -p /data/projects /data/sites
 chmod 0755 /data/projects /data/sites
 
 # ─── Step 2: Firewall (UFW) ──────────────────────────────────
-info "Step 2/13: Configuring firewall (UFW)..."
+if [ "$CONTAINER_MODE" != "1" ]; then
+  info "Step 2/13: Configuring firewall (UFW)..."
 
-# Install UFW if not present
-if ! command -v ufw &>/dev/null; then
-  apt-get install -y ufw
+  # Install UFW if not present
+  if ! command -v ufw &>/dev/null; then
+    apt-get install -y ufw
+  fi
+
+  # ── SAFETY: Allow SSH FIRST, before touching anything else ──
+  ufw allow 22/tcp comment "SSH - NEVER REMOVE"
+
+  # Set default policies: deny incoming, allow outgoing
+  ufw default deny incoming >/dev/null 2>&1
+  ufw default allow outgoing >/dev/null 2>&1
+
+  # NOTE: No application ports are opened — all access goes through Cloudflare Tunnel.
+  # Services bind to 127.0.0.1 only. Never expose 3000/4000/4001/8080 to the public.
+
+  # ── Safety verification before enabling UFW ──
+  # Verify SSH rule is actually in the ruleset before enabling
+  if ! ufw status | grep -qE "22/tcp.*ALLOW"; then
+    err "SAFETY ABORT: SSH rule not found in UFW rules. Refusing to enable firewall."
+  fi
+
+  # Verify we can still reach SSH from the current connection
+  # (If this script is running via SSH, the connection itself proves port 22 works)
+  if [[ -n "${SSH_CONNECTION:-}" ]]; then
+    info "Running via SSH — verifying SSH connectivity is maintained..."
+    SSH_CLIENT_IP=$(echo "$SSH_CONNECTION" | awk '{print $1}')
+    info "Connected from: ${SSH_CLIENT_IP}"
+  fi
+
+  # Enable UFW (--force skips the interactive prompt)
+  ufw --force enable
+
+  # ── Post-enable verification ──
+  if ! ufw status | grep -qE "22/tcp.*ALLOW"; then
+    # Emergency: disable UFW if SSH rule somehow vanished
+    warn "EMERGENCY: SSH rule missing after UFW enable — disabling firewall!"
+    ufw --force disable
+    err "Firewall disabled for safety. SSH rule was lost. Please investigate."
+  fi
+
+  ok "Firewall configured and enabled"
+  ufw status numbered | while IFS= read -r line; do echo "  $line"; done
+else
+  echo "[SKIP-CONTAINER] Step 2/13: UFW firewall (Docker host firewall handles ingress)"
 fi
-
-# ── SAFETY: Allow SSH FIRST, before touching anything else ──
-ufw allow 22/tcp comment "SSH - NEVER REMOVE"
-
-# Set default policies: deny incoming, allow outgoing
-ufw default deny incoming >/dev/null 2>&1
-ufw default allow outgoing >/dev/null 2>&1
-
-# NOTE: No application ports are opened — all access goes through Cloudflare Tunnel.
-# Services bind to 127.0.0.1 only. Never expose 3000/4000/4001/8080 to the public.
-
-# ── Safety verification before enabling UFW ──
-# Verify SSH rule is actually in the ruleset before enabling
-if ! ufw status | grep -qE "22/tcp.*ALLOW"; then
-  err "SAFETY ABORT: SSH rule not found in UFW rules. Refusing to enable firewall."
-fi
-
-# Verify we can still reach SSH from the current connection
-# (If this script is running via SSH, the connection itself proves port 22 works)
-if [[ -n "${SSH_CONNECTION:-}" ]]; then
-  info "Running via SSH — verifying SSH connectivity is maintained..."
-  SSH_CLIENT_IP=$(echo "$SSH_CONNECTION" | awk '{print $1}')
-  info "Connected from: ${SSH_CLIENT_IP}"
-fi
-
-# Enable UFW (--force skips the interactive prompt)
-ufw --force enable
-
-# ── Post-enable verification ──
-if ! ufw status | grep -qE "22/tcp.*ALLOW"; then
-  # Emergency: disable UFW if SSH rule somehow vanished
-  warn "EMERGENCY: SSH rule missing after UFW enable — disabling firewall!"
-  ufw --force disable
-  err "Firewall disabled for safety. SSH rule was lost. Please investigate."
-fi
-
-ok "Firewall configured and enabled"
-ufw status numbered | while IFS= read -r line; do echo "  $line"; done
 
 # ─── Step 3: Harden PostgreSQL & configure fail2ban ─────────────
 info "Step 3/13: Hardening services..."
@@ -264,19 +278,23 @@ systemctl restart fail2ban
 ok "fail2ban configured: SSH brute-force protection active"
 
 # ─── Step 4: Swap ──────────────────────────────────────────────
-info "Step 4/13: Configuring swap..."
+if [ "$CONTAINER_MODE" != "1" ]; then
+  info "Step 4/13: Configuring swap..."
 
-if ! swapon --show | grep -q '/swapfile'; then
-  TOTAL_RAM=$(free -m | awk '/^Mem:/{print $2}')
-  SWAP_SIZE=$(( TOTAL_RAM < 4096 ? 2 : 1 ))
-  fallocate -l ${SWAP_SIZE}G /swapfile
-  chmod 600 /swapfile
-  mkswap /swapfile
-  swapon /swapfile
-  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-  ok "Added ${SWAP_SIZE}GB swap"
+  if ! swapon --show | grep -q '/swapfile'; then
+    TOTAL_RAM=$(free -m | awk '/^Mem:/{print $2}')
+    SWAP_SIZE=$(( TOTAL_RAM < 4096 ? 2 : 1 ))
+    fallocate -l ${SWAP_SIZE}G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    ok "Added ${SWAP_SIZE}GB swap"
+  else
+    ok "Swap already configured"
+  fi
 else
-  ok "Swap already configured"
+  echo "[SKIP-CONTAINER] Step 4/13: swap (host kernel handles memory; container can't fallocate /swapfile)"
 fi
 
 # ─── Step 5: PostgreSQL setup ──────────────────────────────────
@@ -293,50 +311,70 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE doable TO doable;" &>
 ok "Database ready (user: doable, db: doable)"
 
 # ─── Step 6: GitHub CLI auth ──────────────────────────────────
-info "Step 6/13: GitHub authentication..."
+if [ "$CONTAINER_MODE" != "1" ]; then
+  info "Step 6/13: GitHub authentication..."
 
-if ! command -v gh &>/dev/null; then
-  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-    | tee /etc/apt/sources.list.d/github-cli.list
-  apt-get update -qq && apt-get install -y gh
-fi
-
-if ! gh auth status &>/dev/null; then
-  warn "You need to authenticate with GitHub to clone the repo."
-  echo "  Run: gh auth login"
-  echo "  Then re-run this script."
-  echo ""
-  read -rp "Authenticate now? [Y/n]: " GH_AUTH
-  if [[ "${GH_AUTH,,}" != "n" ]]; then
-    gh auth login
-  else
-    err "GitHub auth required to continue"
+  if ! command -v gh &>/dev/null; then
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      | tee /etc/apt/sources.list.d/github-cli.list
+    apt-get update -qq && apt-get install -y gh
   fi
-fi
 
-ok "GitHub CLI authenticated"
+  if ! gh auth status &>/dev/null; then
+    warn "You need to authenticate with GitHub to clone the repo."
+    echo "  Run: gh auth login"
+    echo "  Then re-run this script."
+    echo ""
+    read -rp "Authenticate now? [Y/n]: " GH_AUTH
+    if [[ "${GH_AUTH,,}" != "n" ]]; then
+      gh auth login
+    else
+      err "GitHub auth required to continue"
+    fi
+  fi
+
+  ok "GitHub CLI authenticated"
+else
+  echo "[SKIP-CONTAINER] Step 6/13: GitHub CLI auth (container ships repo via Docker COPY)"
+fi
 
 # ─── Step 7: Clone repo ───────────────────────────────────────
-info "Step 7/13: Cloning repository..."
-
 INSTALL_DIR="${INSTALL_DIR:-$HOME/doable}"
 
-if [[ -d "$INSTALL_DIR" ]]; then
-  warn "Directory $INSTALL_DIR already exists."
-  read -rp "Remove and re-clone? [y/N]: " RECLONE
-  if [[ "${RECLONE,,}" == "y" ]]; then
-    rm -rf "$INSTALL_DIR"
+if [ "$CONTAINER_MODE" != "1" ] && [ ! -f "$INSTALL_DIR/package.json" ]; then
+  info "Step 7/13: Cloning repository..."
+
+  if [[ -d "$INSTALL_DIR" ]]; then
+    warn "Directory $INSTALL_DIR already exists."
+    read -rp "Remove and re-clone? [y/N]: " RECLONE
+    if [[ "${RECLONE,,}" == "y" ]]; then
+      rm -rf "$INSTALL_DIR"
+      gh repo clone "$REPO" "$INSTALL_DIR"
+    fi
+  else
     gh repo clone "$REPO" "$INSTALL_DIR"
   fi
-else
-  gh repo clone "$REPO" "$INSTALL_DIR"
-fi
 
-ok "Repo cloned to $INSTALL_DIR"
+  ok "Repo cloned to $INSTALL_DIR"
+else
+  if [ "$CONTAINER_MODE" = "1" ]; then
+    echo "[SKIP-CONTAINER] Step 7/13: clone repo (Docker COPY already populated $INSTALL_DIR)"
+  else
+    info "Step 7/13: Repo already present at $INSTALL_DIR (package.json found) — skipping clone"
+  fi
+fi
 
 # ─── Step 8: Environment files ────────────────────────────────
 info "Step 8/13: Writing environment files..."
+
+# Idempotency: preserve existing .env across container restarts on persistent
+# volumes — re-generating would rotate JWT_SECRET/ENCRYPTION_KEY and invalidate
+# every active session + every encrypted credential row. Same logic protects
+# host re-runs.
+if [ -f "${INSTALL_DIR}/.env" ]; then
+  ok "Reusing existing .env at ${INSTALL_DIR}/.env (secrets preserved)"
+else
 
 cat > "${INSTALL_DIR}/.env" << ENVEOF
 # ─── Database ───────────────────────────────────────────────
@@ -451,7 +489,8 @@ NEXT_PUBLIC_WS_URL=wss://${WS_DOMAIN}
 NEXT_PUBLIC_APP_URL=https://${DOMAIN}
 WEBENVEOF
 
-ok "Environment files created (.env + apps/web/.env.local)"
+  ok "Environment files created (.env + apps/web/.env.local)"
+fi  # end .env idempotency guard
 
 # ─── Step 9: Install deps & migrate ──────────────────────────
 info "Step 9/13: Installing dependencies..."
@@ -490,20 +529,21 @@ cd "$INSTALL_DIR"
 ok "Next.js built"
 
 # ─── Step 10: Cloudflare Tunnel ───────────────────────────────
-info "Step 10/13: Setting up Cloudflare Tunnel..."
+if [ "$CONTAINER_MODE" != "1" ]; then
+  info "Step 10/13: Setting up Cloudflare Tunnel..."
 
-if [[ ! -f /root/.cloudflared/cert.pem ]]; then
-  warn "You need to authenticate with Cloudflare."
-  echo "  A browser URL will be shown — open it and authorize."
-  echo ""
-  cloudflared tunnel login
-fi
+  if [[ ! -f /root/.cloudflared/cert.pem ]]; then
+    warn "You need to authenticate with Cloudflare."
+    echo "  A browser URL will be shown — open it and authorize."
+    echo ""
+    cloudflared tunnel login
+  fi
 
-ok "Cloudflare authenticated"
+  ok "Cloudflare authenticated"
 
-# Create tunnel
-TUNNEL_NAME="doable-$(echo "$DOMAIN" | tr '.' '-')"
-EXISTING_TUNNEL=$(cloudflared tunnel list -o json 2>/dev/null | python3 -c "
+  # Create tunnel
+  TUNNEL_NAME="doable-$(echo "$DOMAIN" | tr '.' '-')"
+  EXISTING_TUNNEL=$(cloudflared tunnel list -o json 2>/dev/null | python3 -c "
 import sys, json
 tunnels = json.load(sys.stdin)
 for t in tunnels:
@@ -512,27 +552,27 @@ for t in tunnels:
         break
 " 2>/dev/null || true)
 
-if [[ -n "$EXISTING_TUNNEL" ]]; then
-  TUNNEL_ID="$EXISTING_TUNNEL"
-  ok "Using existing tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
-else
-  TUNNEL_OUTPUT=$(cloudflared tunnel create "$TUNNEL_NAME" 2>&1)
-  TUNNEL_ID=$(echo "$TUNNEL_OUTPUT" | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-  ok "Created tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
-fi
+  if [[ -n "$EXISTING_TUNNEL" ]]; then
+    TUNNEL_ID="$EXISTING_TUNNEL"
+    ok "Using existing tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
+  else
+    TUNNEL_OUTPUT=$(cloudflared tunnel create "$TUNNEL_NAME" 2>&1)
+    TUNNEL_ID=$(echo "$TUNNEL_OUTPUT" | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+    ok "Created tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
+  fi
 
-# DNS routes (including wildcard for published sites)
-for HOSTNAME in "$DOMAIN" "$API_DOMAIN" "$WS_DOMAIN" "*.${DOMAIN}"; do
-  cloudflared tunnel route dns "$TUNNEL_NAME" "$HOSTNAME" 2>&1 | grep -v "already exists" || true
-done
+  # DNS routes (including wildcard for published sites)
+  for HOSTNAME in "$DOMAIN" "$API_DOMAIN" "$WS_DOMAIN" "*.${DOMAIN}"; do
+    cloudflared tunnel route dns "$TUNNEL_NAME" "$HOSTNAME" 2>&1 | grep -v "already exists" || true
+  done
 
-ok "DNS routes configured for ${DOMAIN}, ${API_DOMAIN}, ${WS_DOMAIN}, *.${DOMAIN}"
+  ok "DNS routes configured for ${DOMAIN}, ${API_DOMAIN}, ${WS_DOMAIN}, *.${DOMAIN}"
 
-# Tunnel config
-CREDS_FILE=$(find /root/.cloudflared -name "${TUNNEL_ID}.json" 2>/dev/null | head -1)
-[[ -z "$CREDS_FILE" ]] && err "Tunnel credentials file not found"
+  # Tunnel config
+  CREDS_FILE=$(find /root/.cloudflared -name "${TUNNEL_ID}.json" 2>/dev/null | head -1)
+  [[ -z "$CREDS_FILE" ]] && err "Tunnel credentials file not found"
 
-cat > /root/.cloudflared/config.yml << CFGEOF
+  cat > /root/.cloudflared/config.yml << CFGEOF
 tunnel: ${TUNNEL_ID}
 credentials-file: ${CREDS_FILE}
 
@@ -556,7 +596,12 @@ ingress:
   - service: http_status:404
 CFGEOF
 
-ok "Tunnel config written"
+  ok "Tunnel config written"
+else
+  echo "[SKIP-CONTAINER] Step 10/13: Cloudflare Tunnel (host operator runs cloudflared on Docker host or via reverse proxy in front of container)"
+  TUNNEL_NAME="container-mode"
+  TUNNEL_ID="n/a"
+fi
 
 # ─── Step 11: Publish infrastructure (Caddy + sites) ─────────
 info "Step 11/13: Setting up publish infrastructure..."
@@ -745,25 +790,34 @@ fi
 # ─── Step 13: Start everything ────────────────────────────────
 info "Step 13/13: Starting services..."
 
-systemctl start cloudflared 2>/dev/null || systemctl restart cloudflared
-systemctl start doable.service
-systemctl start doable-watchdog.timer
+if [ "$CONTAINER_MODE" != "1" ]; then
+  systemctl start cloudflared 2>/dev/null || systemctl restart cloudflared
+  systemctl start doable.service
+  systemctl start doable-watchdog.timer
 
-# Wait for services to come up
-echo -n "  Waiting for services"
-for i in $(seq 1 20); do
-  echo -n "."
-  sleep 1
-  if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ 2>/dev/null | grep -q "200"; then
-    break
-  fi
-done
-echo ""
+  # Wait for services to come up
+  echo -n "  Waiting for services"
+  for i in $(seq 1 20); do
+    echo -n "."
+    sleep 1
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ 2>/dev/null | grep -q "200"; then
+      break
+    fi
+  done
+  echo ""
 
-# Final health check
-WEB_STATUS=$(timeout 30 curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ 2>/dev/null || echo "000")
-API_STATUS=$(timeout 10 curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/ 2>/dev/null || echo "000")
-CF_STATUS=$(timeout 15 curl -s -o /dev/null -w "%{http_code}" "https://${DOMAIN}/" 2>/dev/null || echo "000")
+  # Final health check
+  WEB_STATUS=$(timeout 30 curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ 2>/dev/null || echo "000")
+  API_STATUS=$(timeout 10 curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/ 2>/dev/null || echo "000")
+  CF_STATUS=$(timeout 15 curl -s -o /dev/null -w "%{http_code}" "https://${DOMAIN}/" 2>/dev/null || echo "000")
+else
+  echo "[SKIP-CONTAINER] Step 13/13: not starting services here — systemd PID 1 will start enabled units on container boot"
+  # Units enabled in Step 12 will fire on `systemctl start ...` from the entrypoint
+  # or automatically when the container's systemd reaches multi-user.target.
+  WEB_STATUS="container"
+  API_STATUS="container"
+  CF_STATUS="container"
+fi
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
