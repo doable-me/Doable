@@ -21,7 +21,6 @@ import { initDocore, shutdownDocore } from "./ai/docore-bridge.js";
 import { initEmailService, stopEmailService } from "./lib/email/index.js";
 import { backfillBuiltinConnectors } from "./mcp/builtin-connectors.js";
 import { startMarketplaceFeaturedRefresher } from "./jobs/marketplace-featured-refresher.js";
-import { request as httpRequest } from "node:http";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
@@ -29,12 +28,7 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { sql } from "./db/index.js";
-import {
-  getDevServerInternalUrlWhenReady,
-  isRunning,
-  startDevServer,
-} from "./projects/dev-server.js";
-import { ensureDependencies, isProjectScaffolded } from "./projects/file-manager.js";
+import { handleWebSocketUpgrade } from "./routes/preview-proxy/ws-proxy.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 import { getConnectorManager } from "./mcp/connector-manager.js";
 import { getCopilotManager } from "./ai/providers/copilot-manager.js";
@@ -357,85 +351,19 @@ sql`UPDATE chat_traces
     console.warn("[startup] chat_traces sweep failed:", err)
   );
 
-// ─── WebSocket Proxy for Vite HMR ─────────────────────────────
+// ─── WebSocket Proxy for Preview HMR ──────────────────────────
 // Proxies WebSocket upgrade requests on /preview/:projectId/...
-// to the project's Vite dev server so HMR works through any
-// reverse proxy (Cloudflare, nginx, etc.) without special config.
+// to the project's dev server so HMR works through any reverse
+// proxy (Cloudflare, nginx, etc.) without special config.
+// Covers Vite (/__vite_hmr), Next.js (/_next/webpack-hmr), and
+// any other framework whose HMR rides a WebSocket upgrade —
+// per devframeworkPRD/STATUS-2026-05-02.md gap #1.
 server.on("upgrade", (req, socket, head) => {
-  void (async () => {
-  const url = req.url ?? "";
-  const match = url.match(/^\/preview\/([^/]+)\//);
-  if (!match) {
-    socket.write('HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n');
+  if ((req.url ?? "").startsWith("/preview/")) {
+    handleWebSocketUpgrade(req, socket, head);
+  } else {
     socket.destroy();
-    return;
   }
-
-  const projectId = match[1];
-  // Match the HTTP preview proxy behavior: if a project is scaffolded, ensure
-  // deps/server are available before returning a WS upgrade failure.
-  if (!isRunning(projectId) && isProjectScaffolded(projectId)) {
-    try {
-      await ensureDependencies(projectId);
-      await startDevServer(projectId);
-    } catch {
-      // Fall through; we'll return 502 below if the server isn't ready.
-    }
-  }
-
-  const devUrl = await getDevServerInternalUrlWhenReady(projectId);
-  if (!devUrl) {
-    socket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-
-  // Parse the Vite dev server's host:port
-  const target = new URL(devUrl);
-
-  const proxyReq = httpRequest({
-    hostname: target.hostname,
-    port: target.port,
-    path: url,
-    method: "GET",
-    headers: req.headers,
-  });
-
-  proxyReq.on("upgrade", (_proxyRes, proxySocket, proxyHead) => {
-    // Send the 101 Switching Protocols response back to the client
-    socket.write(
-      "HTTP/1.1 101 Switching Protocols\r\n" +
-      "Upgrade: websocket\r\n" +
-      "Connection: Upgrade\r\n" +
-      `Sec-WebSocket-Accept: ${_proxyRes.headers["sec-websocket-accept"]}\r\n` +
-      (_proxyRes.headers["sec-websocket-protocol"]
-        ? `Sec-WebSocket-Protocol: ${_proxyRes.headers["sec-websocket-protocol"]}\r\n`
-        : "") +
-      "\r\n"
-    );
-
-    // Write any buffered data
-    if (proxyHead.length > 0) socket.write(proxyHead);
-    if (head.length > 0) proxySocket.write(head);
-
-    // Pipe bidirectionally
-    proxySocket.pipe(socket);
-    socket.pipe(proxySocket);
-
-    proxySocket.on("error", () => socket.destroy());
-    socket.on("error", () => proxySocket.destroy());
-  });
-
-  proxyReq.on("error", () => socket.destroy());
-  proxyReq.end();
-  })().catch(() => {
-    try {
-      socket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
-    } catch {
-      // Ignore write errors during shutdown/race conditions.
-    }
-    socket.destroy();
-  });
 });
 
 // ─── Graceful Shutdown ──────────────────────────────────────

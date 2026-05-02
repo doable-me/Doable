@@ -16,6 +16,14 @@ const SITES_DIR =
     ? path.join(process.cwd(), "data", "sites")
     : "/data/sites");
 
+/**
+ * Projects directory: where per-project source trees and runtime layouts
+ * live. Mirrors services/api/src/deploy/pipeline.ts so process-kind
+ * runtimes (Next.js standalone) can stage `dist-server/` next to the
+ * project source.
+ */
+const PROJECTS_ROOT = process.env.PROJECTS_ROOT ?? "/data/projects";
+
 const DOMAIN = process.env.DOABLE_DOMAIN ?? "doable.me";
 
 /**
@@ -111,6 +119,44 @@ export class DoableCloudAdapter implements DeployAdapter {
       const copiedFiles = await readdir(targetDir);
       if (copiedFiles.length === 0) {
         throw new Error("Copy completed but target directory is empty");
+      }
+
+      // Process-kind output (Next.js `output: "standalone"`): the
+      // standalone tree at .next/standalone/server.js is self-contained
+      // for code, but Next.js does NOT copy `.next/static/` or `public/`
+      // into it — see https://nextjs.org/docs/app/api-reference/next-config-js/output
+      // ("Automatically Copying Traced Files"). Stage the runtime layout
+      // at {projectDir}/dist-server/ so the node-standalone runtime
+      // adapter can point WorkingDirectory + ExecStart at it.
+      const standaloneDir = path.join(buildOutputDir, "standalone");
+      if (existsSync(path.join(standaloneDir, "server.js"))) {
+        const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
+        await rm(distServer, { recursive: true, force: true });
+        await mkdir(distServer, { recursive: true });
+        // Copy standalone tree as-is (package.json + node_modules +
+        // server.js + .next/server/ etc).
+        await cp(standaloneDir, distServer, { recursive: true });
+
+        // Copy static assets next to the standalone server.
+        const staticDir = path.join(buildOutputDir, "static");
+        if (existsSync(staticDir)) {
+          await cp(staticDir, path.join(distServer, ".next", "static"), {
+            recursive: true,
+          });
+        }
+
+        // Copy project public/ if present.
+        const publicDir = path.join(PROJECTS_ROOT, projectId, "public");
+        if (existsSync(publicDir)) {
+          await cp(publicDir, path.join(distServer, "public"), {
+            recursive: true,
+          });
+        }
+
+        console.log(
+          `[doable-cloud] Staged Next.js standalone layout at ${distServer} ` +
+            `for project ${projectId}`
+        );
       }
 
       // Collect file artifacts for tracking

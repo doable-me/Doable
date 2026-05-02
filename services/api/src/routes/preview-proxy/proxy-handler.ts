@@ -32,6 +32,102 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // framework_id changes (rare; documented in PRD 02 §6.5 convert-framework).
 const adapterCache = new Map<string, FrameworkAdapter>();
 
+/**
+ * One injection task: looks for a marker in the streamed body and inserts
+ * `snippet` either before or after the matched marker. `patterns` is a
+ * priority-ordered list of alternatives — the first matching pattern wins
+ * (so callers can express fallbacks like "before </head> OR before <body>").
+ */
+type InjectionTask = {
+  patterns: { regex: RegExp; insertBefore: boolean }[];
+  snippet: string;
+};
+
+/**
+ * Build a TransformStream that performs in-stream HTML injection without
+ * buffering the entire response body. For each task in order:
+ *
+ *   - Buffer chunks until ANY of the task's patterns matches, OR the
+ *     buffer exceeds 64KiB, OR the upstream stream ends.
+ *   - On match: emit (text-before-marker) + snippet, leave the rest in
+ *     the buffer, advance to the next task (the next task may match
+ *     against the same remaining buffer immediately).
+ *   - On overflow / EOF without match: best-effort fallback — emit the
+ *     buffered text followed by the snippet (so the snippet is never
+ *     silently dropped) and advance.
+ *
+ * Once all tasks complete, subsequent chunks pass through as raw bytes,
+ * preserving streaming SSR semantics.
+ */
+function makeInjectionStream(
+  tasks: InjectionTask[],
+): TransformStream<Uint8Array, Uint8Array> {
+  let taskIdx = 0;
+  let buffered = "";
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  const MAX_BUFFER = 64 * 1024;
+
+  function tryInject(
+    controller: TransformStreamDefaultController<Uint8Array>,
+    atEof: boolean,
+  ): void {
+    while (taskIdx < tasks.length) {
+      const task = tasks[taskIdx];
+      if (!task) break;
+      let matched: { idx: number; len: number; insertBefore: boolean } | null = null;
+      for (const { regex, insertBefore } of task.patterns) {
+        const m = buffered.match(regex);
+        if (m && typeof m.index === "number") {
+          matched = { idx: m.index, len: m[0].length, insertBefore };
+          break;
+        }
+      }
+      if (matched) {
+        const insertAt = matched.insertBefore ? matched.idx : matched.idx + matched.len;
+        const before = buffered.slice(0, insertAt);
+        const after = buffered.slice(insertAt);
+        controller.enqueue(encoder.encode(before + task.snippet));
+        buffered = after;
+        taskIdx++;
+        continue;
+      }
+      if (atEof || buffered.length >= MAX_BUFFER) {
+        // No marker found — append snippet at the end of what we have so
+        // far so it ships rather than being dropped silently.
+        controller.enqueue(encoder.encode(buffered + task.snippet));
+        buffered = "";
+        taskIdx++;
+        continue;
+      }
+      return;
+    }
+  }
+
+  return new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      if (taskIdx >= tasks.length) {
+        controller.enqueue(chunk);
+        return;
+      }
+      buffered += decoder.decode(chunk, { stream: true });
+      tryInject(controller, false);
+      if (taskIdx >= tasks.length && buffered.length > 0) {
+        controller.enqueue(encoder.encode(buffered));
+        buffered = "";
+      }
+    },
+    flush(controller) {
+      buffered += decoder.decode();
+      tryInject(controller, true);
+      if (buffered.length > 0) {
+        controller.enqueue(encoder.encode(buffered));
+        buffered = "";
+      }
+    },
+  });
+}
+
 async function getAdapterForProject(projectId: string): Promise<FrameworkAdapter> {
   const cached = adapterCache.get(projectId);
   if (cached) return cached;
@@ -146,54 +242,54 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       ].join("; "),
     );
 
-    // Inject scripts into HTML responses
+    // Inject scripts into HTML responses — STREAMING.
+    // Buffer only until we find the next injection marker, then flush and
+    // switch to pass-through. Preserves Next.js streaming SSR (RSC chunks).
     const contentType = resp.headers.get("content-type") ?? "";
-    if (contentType.includes("text/html")) {
-      const html = await resp.text();
-
+    if (contentType.includes("text/html") && resp.body) {
       const storageNamespaceSnippet = getStorageNamespaceSnippet(projectId);
-
       const headSnippet =
         `<meta name="doable-project-id" content="${projectId}">` +
         `<script>${getTrackingScript(publicApiUrl)}</script>`;
       const bodySnippet = `<script>${VISUAL_EDIT_BRIDGE_INLINE}</script>`;
 
-      let injected = html;
-
-      // Inject storage namespacing at the START of <head>
-      const headOpenMatch = injected.match(/<head(\s[^>]*)?>/i);
-      if (headOpenMatch && typeof headOpenMatch.index === "number") {
-        const insertAt = headOpenMatch.index + headOpenMatch[0].length;
-        injected =
-          injected.slice(0, insertAt) +
-          storageNamespaceSnippet +
-          injected.slice(insertAt);
-      } else if (injected.includes("<body")) {
-        injected = injected.replace(/<body/i, `${storageNamespaceSnippet}<body`);
-      } else {
-        injected = `${storageNamespaceSnippet}${injected}`;
-      }
-
-      // Connector-bridge SPA helper goes BEFORE error capture so the
-      // helper is available when user code first runs. Token arrives
-      // via postMessage from the editor host (PRD 10).
+      // Connector-bridge SPA helper goes BEFORE error capture so the helper
+      // is available when user code first runs. Token arrives via
+      // postMessage from the editor host (PRD 10).
       const headBundle = `${CONNECTOR_BRIDGE_SNIPPET}${ERROR_CAPTURE_SNIPPET}${headSnippet}`;
-      if (injected.includes("</head>")) {
-        injected = injected.replace("</head>", `${headBundle}</head>`);
-      } else if (injected.includes("<body")) {
-        injected = injected.replace(/<body/i, `${headBundle}<body`);
-      } else {
-        injected = `${headBundle}${injected}`;
-      }
-      if (injected.includes("</body>")) {
-        injected = injected.replace("</body>", `${bodySnippet}</body>`);
-      } else {
-        injected += bodySnippet;
-      }
+
+      const injectionStream = makeInjectionStream([
+        // 1. Storage namespacing — at the START of <head> (right after the
+        //    open tag) so it runs before any user scripts in <head>.
+        {
+          patterns: [
+            { regex: /<head(?:\s[^>]*)?>/i, insertBefore: false },
+            { regex: /<body[^>]*>/i, insertBefore: true },
+          ],
+          snippet: storageNamespaceSnippet,
+        },
+        // 2. Connector-bridge + error capture + tracker — at the END of
+        //    <head> (before </head>) so they sit after the page's own meta
+        //    but before <body>.
+        {
+          patterns: [
+            { regex: /<\/head>/i, insertBefore: true },
+            { regex: /<body[^>]*>/i, insertBefore: true },
+          ],
+          snippet: headBundle,
+        },
+        // 3. Visual-edit bridge — at the END of <body> (before </body>) so
+        //    the DOM has rendered before the bridge wires up.
+        {
+          patterns: [{ regex: /<\/body>/i, insertBefore: true }],
+          snippet: bodySnippet,
+        },
+      ]);
 
       responseHeaders.delete("content-length");
+      responseHeaders.delete("content-encoding");
       responseHeaders.set("content-type", "text/html; charset=utf-8");
-      return new Response(injected, {
+      return new Response(resp.body.pipeThrough(injectionStream), {
         status: resp.status,
         headers: responseHeaders,
       });

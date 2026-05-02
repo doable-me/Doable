@@ -215,12 +215,21 @@ export async function ensureDependencies(projectId: string): Promise<void> {
     `[FileManager] node_modules missing for project ${projectId} — running npm install`,
   );
 
-  // Resolve framework adapter for the install spawn shape. See createProject
-  // for the matching comment — vite-react's adapter.install() mirrors the
-  // legacy runPnpmInstall byte-for-byte (180s timeout, Windows taskkill-tree).
-  // TODO Phase 2: thread frameworkId from the projects row (projects.framework_id).
-  // Hardcoded vite-react for now matches the PR-D pattern in createProject.
-  const frameworkId = "vite-react";
+  // Resolve framework adapter for the install spawn shape. Reads
+  // projects.framework_id (column from migration 060); falls back to
+  // vite-react when the project row is missing or pre-migration. The
+  // adapter's install() encodes the per-framework install command
+  // (npm install --legacy-peer-deps for Node, pip install for Python).
+  let frameworkId = "vite-react";
+  try {
+    const { sql } = await import("../db/index.js");
+    const rows = await sql<{ framework_id: string }[]>`
+      SELECT framework_id FROM projects WHERE id = ${projectId}
+    `;
+    if (rows[0]?.framework_id) frameworkId = rows[0].framework_id;
+  } catch {
+    // DB unreachable or column missing — vite-react fallback is safe.
+  }
   const adapter = defaultRegistry.getAdapter(frameworkId);
   const ctx: FrameworkContext = {
     projectId,

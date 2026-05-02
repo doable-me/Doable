@@ -151,9 +151,12 @@ function renderUnitOverride(ctx: RuntimeContext, egressHosts: string[] = []): st
   const extraAllows = egressHosts
     .map((host) => `IPAddressAllow=${host}`)
     .join("\n");
+  // dist-server/ is the post-build runtime layout staged by
+  // doable-cloud.ts: standalone tree + .next/static + public/ co-located
+  // so the standalone server can serve static assets in production.
   return `[Service]
-WorkingDirectory=${ctx.projectDir}
-ExecStart=/usr/bin/node ${ctx.projectDir}/.next/standalone/server.js
+WorkingDirectory=${ctx.projectDir}/dist-server
+ExecStart=/usr/bin/node ${ctx.projectDir}/dist-server/server.js
 MemoryMax=512M
 CPUQuota=50%
 TasksMax=256
