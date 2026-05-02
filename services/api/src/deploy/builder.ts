@@ -19,6 +19,7 @@ import {
   type LogFilter,
 } from "../build-events/index.js";
 import { xray } from "../integrations/xray.js";
+import { shouldJail, getHardeningLevel } from "../runtime/hardening-level.js";
 
 const projects = projectQueries(sql);
 
@@ -209,40 +210,51 @@ export async function runBuild(
     if (typeof v === "string") cleanEnv[k] = v;
   }
 
-  // Try to spawn under dovault. Falls back to a raw spawn when dovault throws
-  // (e.g. unsupported platform / Permission Model unavailable) so builds
-  // still work — the fallback is logged so operators can see the gap.
-  let proc: ChildProcess;
-  try {
-    const vault = getBuildVault();
-    const jailed = await vault.spawn(spec.command, spec.args, {
-      cwd: spec.cwd,
-      jail: projectDir,
-      env: cleanEnv,
-      // dovault.spawn takes a scalar stdio mode; "pipe" still produces stdout/stderr
-      // streams which BuildEventPublisher / the local listeners below consume.
-      stdio: "pipe",
-      lockConfigs: false, // build configs (vite.config.ts, next.config.js) exist before build runs
-      blockChildProcess: false, // npm install / build tools spawn many legitimate children
-      blockOutboundNet: false, // npm registry, pypi need network — TODO(W26): allow-list hardening
-      resourceLimits: BUILD_LIMITS,
-    });
-    proc = jailed.process as ChildProcess;
-    xray.recordVaultEvent({
-      projectId: opts?.projectId,
-      type: "vault.spawn",
-      data: { pid: jailed.pid, limits: BUILD_LIMITS, command: spec.command, kind: "build" },
-    });
-  } catch (err) {
-    console.warn(
-      `[builder] vault.spawn failed, falling back to raw spawn: ${(err as Error).message}`,
-    );
-    proc = spawn(spec.command, spec.args, {
+  // Spawn under dovault by default; fall back to raw spawn when dovault
+  // throws (unsupported platform / Permission Model unavailable). Operators
+  // can also force the raw path with DOABLE_HARDENING=off so build,
+  // dev-server, and runtime layers relax in lockstep.
+  const rawSpawn = (): ChildProcess =>
+    spawn(spec.command, spec.args, {
       cwd: spec.cwd,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: safeEnv,
     });
+
+  let proc: ChildProcess;
+  if (!shouldJail()) {
+    console.log(
+      `[builder] DOABLE_HARDENING=${getHardeningLevel()} — skipping vault.spawn jail`,
+    );
+    proc = rawSpawn();
+  } else {
+    try {
+      const vault = getBuildVault();
+      const jailed = await vault.spawn(spec.command, spec.args, {
+        cwd: spec.cwd,
+        jail: projectDir,
+        env: cleanEnv,
+        // dovault.spawn takes a scalar stdio mode; "pipe" still produces stdout/stderr
+        // streams which BuildEventPublisher / the local listeners below consume.
+        stdio: "pipe",
+        lockConfigs: false, // build configs (vite.config.ts, next.config.js) exist before build runs
+        blockChildProcess: false, // npm install / build tools spawn many legitimate children
+        blockOutboundNet: false, // npm registry, pypi need network — TODO(W26): allow-list hardening
+        resourceLimits: BUILD_LIMITS,
+      });
+      proc = jailed.process as ChildProcess;
+      xray.recordVaultEvent({
+        projectId: opts?.projectId,
+        type: "vault.spawn",
+        data: { pid: jailed.pid, limits: BUILD_LIMITS, command: spec.command, kind: "build" },
+      });
+    } catch (err) {
+      console.warn(
+        `[builder] vault.spawn failed, falling back to raw spawn: ${(err as Error).message}`,
+      );
+      proc = rawSpawn();
+    }
   }
 
   return new Promise<BuildResult>((resolve) => {

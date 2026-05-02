@@ -10,6 +10,7 @@ import type { ChildProcess } from "node:child_process";
 import { createVault, Tracer as VaultTracer } from "dovault";
 import type { Vault, JailedProcess } from "dovault";
 import { xray } from "../integrations/xray.js";
+import { shouldJail, getHardeningLevel } from "../runtime/hardening-level.js";
 
 // ─── Resource limits (configurable via env) ──────────────
 
@@ -80,12 +81,40 @@ export interface JailedViteResult {
  * Falls back to raw spawn if dovault throws (e.g. Permission Model unsupported).
  */
 export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<JailedViteResult> {
-  const vault = getVault();
-
   const cleanEnv: Record<string, string> = {};
   for (const [k, v] of Object.entries(opts.env)) {
     if (typeof v === "string") cleanEnv[k] = v;
   }
+
+  // Raw-spawn helper — used both by the DOABLE_HARDENING=off short-circuit
+  // and by the platform-incompatibility fallback below.
+  const rawSpawnFallback = async (): Promise<JailedViteResult> => {
+    const { spawn } = await import("node:child_process");
+    // On Windows, bare commands like "npx" need shell:true to resolve .cmd extensions.
+    const needsShell = process.platform === "win32" && !opts.execPath.includes("/") && !opts.execPath.includes("\\");
+    const child = spawn(opts.execPath, opts.args, {
+      cwd: opts.cwd,
+      shell: needsShell,
+      stdio: opts.stdio ?? "pipe",
+      env: cleanEnv,
+    });
+    return {
+      process: child,
+      pid: child.pid ?? -1,
+      kill: () => { child.kill(); },
+    };
+  };
+
+  // DOABLE_HARDENING=off short-circuits jailing across build, dev-server,
+  // and runtime layers in lockstep (debug only).
+  if (!shouldJail()) {
+    console.log(
+      `[vite-jail] DOABLE_HARDENING=${getHardeningLevel()} — skipping vault.spawn jail`,
+    );
+    return rawSpawnFallback();
+  }
+
+  const vault = getVault();
 
   try {
     const jailed: JailedProcess = await vault.spawn(
@@ -121,20 +150,7 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
     // to raw spawn. The trace event still records the failure so operators
     // can see the gap.
     console.warn(`[vite-jail] vault.spawn failed, falling back to raw spawn: ${(err as Error).message}`);
-    const { spawn } = await import("node:child_process");
-    // On Windows, bare commands like "npx" need shell:true to resolve .cmd extensions.
-    const needsShell = process.platform === "win32" && !opts.execPath.includes("/") && !opts.execPath.includes("\\");
-    const child = spawn(opts.execPath, opts.args, {
-      cwd: opts.cwd,
-      shell: needsShell,
-      stdio: opts.stdio ?? "pipe",
-      env: cleanEnv,
-    });
-    return {
-      process: child,
-      pid: child.pid ?? -1,
-      kill: () => { child.kill(); },
-    };
+    return rawSpawnFallback();
   }
 }
 

@@ -135,12 +135,22 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
       });
       run("systemctl", ["disable", `doable-app@${slug}.service`], { ignoreFailure: true });
     }
+    // Wave 28: remove the per-project Linux user setupProjectUser created.
+    // Idempotent: userdel exit 6 = "user not found" — treat as success.
+    // Same slug→username mapping as setupProjectUser: doable-{slug}.slice(0,32).
+    const username = `doable-${slug}`.slice(0, 32);
+    const ud = spawnSync("userdel", [username], {
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30_000,
+    });
+    if (ud.status !== 0 && ud.status !== 6) {
+      console.warn(
+        `[node-standalone] userdel ${username} failed: ` +
+          (ud.stderr?.toString() ?? ud.error?.message ?? "unknown"),
+      );
+    }
     // Best-effort env / drop-in cleanup. Failures are logged, not fatal,
     // because partial cleanup must not block the publish pipeline.
-    // TODO(wave-27): full unpublish (separate codepath) should also
-    // `userdel doable-${slug}` and remove the user's home/state dir,
-    // since stop() can be invoked for a transient idle/restart and
-    // we don't want to drop the per-project UID on every cycle.
   },
 
   async healthCheck(handle: RuntimeHandle): Promise<HealthStatus> {
