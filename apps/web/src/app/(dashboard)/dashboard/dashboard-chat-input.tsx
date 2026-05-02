@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Plus,
   Mic,
@@ -10,21 +10,31 @@ import {
   Loader2,
   X,
   Layers,
+  Wand2,
+  Atom,
+  Globe,
+  Hexagon,
+  Wind,
+  Zap,
+  Server,
+  Code2,
+  ChevronDown,
+  type LucideIcon,
 } from "lucide-react";
 import type { ImageAttachment } from "@/hooks/use-image-attachments";
 import { useTypingPlaceholder } from "./dashboard-hooks";
 
-const FRAMEWORK_OPTIONS = [
-  { id: "", label: "Auto-detect framework" },
-  { id: "vite-react", label: "React (Vite)" },
-  { id: "nextjs-app", label: "Next.js" },
-  { id: "sveltekit", label: "SvelteKit" },
-  { id: "nuxt", label: "Nuxt" },
-  { id: "astro", label: "Astro" },
-  { id: "hono", label: "Hono" },
-  { id: "fastapi", label: "FastAPI" },
-  { id: "django", label: "Django" },
-] as const;
+const FRAMEWORK_OPTIONS: { id: string; label: string; icon: LucideIcon; color: string }[] = [
+  { id: "", label: "Auto-detect", icon: Wand2, color: "text-violet-400 dark:text-violet-400" },
+  { id: "vite-react", label: "React (Vite)", icon: Atom, color: "text-cyan-500 dark:text-cyan-400" },
+  { id: "nextjs-app", label: "Next.js", icon: Globe, color: "text-gray-800 dark:text-white" },
+  { id: "sveltekit", label: "SvelteKit", icon: Hexagon, color: "text-orange-500 dark:text-orange-400" },
+  { id: "nuxt", label: "Nuxt", icon: Layers, color: "text-green-600 dark:text-green-400" },
+  { id: "astro", label: "Astro", icon: Wind, color: "text-purple-500 dark:text-purple-400" },
+  { id: "hono", label: "Hono", icon: Zap, color: "text-orange-500 dark:text-orange-300" },
+  { id: "fastapi", label: "FastAPI", icon: Server, color: "text-emerald-600 dark:text-emerald-400" },
+  { id: "django", label: "Django", icon: Code2, color: "text-green-700 dark:text-green-300" },
+];
 
 export function ChatInput({
   value,
@@ -145,22 +155,11 @@ export function ChatInput({
             </div>
             {/* Framework picker — defaults to auto-detect (server picks
                 from prompt text, falls back to workspace admin default). */}
-            <div className="ml-1 flex items-center gap-1 rounded-full border border-border px-2 h-7 text-[11px] text-zinc-300 hover:text-white transition-colors">
-              <Layers className="h-3 w-3" />
-              <select
-                value={frameworkId ?? ""}
-                onChange={(e) => onFrameworkChange(e.target.value || null)}
-                className="bg-transparent focus:outline-none cursor-pointer text-[11px] text-zinc-200"
-                title="Pick framework explicitly, or let the server detect from your prompt"
-                disabled={isCreating}
-              >
-                {FRAMEWORK_OPTIONS.map((opt) => (
-                  <option key={opt.id} value={opt.id} className="bg-zinc-900 text-zinc-100">
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <FrameworkPicker
+              value={frameworkId}
+              onChange={onFrameworkChange}
+              disabled={isCreating}
+            />
           </div>
           <div className="flex items-center gap-1">
             {isMicSupported && (
@@ -199,6 +198,77 @@ export function ChatInput({
         <div className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground animate-in fade-in duration-200">
           <Loader2 className="h-3 w-3 animate-spin text-brand-400" />
           <span>{creatingStatus}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Custom Framework Picker (supports icons + dark/light mode) ─── */
+
+function FrameworkPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string | null;
+  onChange: (id: string | null) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const selected = FRAMEWORK_OPTIONS.find((o) => o.id === (value ?? "")) ?? FRAMEWORK_OPTIONS[0];
+  const Icon = selected.icon;
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative ml-1">
+      <button
+        type="button"
+        onClick={() => !disabled && setOpen((v) => !v)}
+        className="flex items-center gap-1.5 rounded-full border border-border px-2.5 h-7 text-[11px] font-medium text-foreground/80 hover:text-foreground hover:bg-accent/50 transition-colors"
+        title="Pick framework explicitly, or let the server detect from your prompt"
+        disabled={disabled}
+      >
+        <Icon className={`h-3.5 w-3.5 ${selected.color}`} />
+        <span>{selected.label}</span>
+        <ChevronDown className={`h-3 w-3 opacity-60 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full left-0 mb-2 z-50 min-w-[180px] rounded-xl border border-border bg-popover p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150">
+          {FRAMEWORK_OPTIONS.map((opt) => {
+            const OptIcon = opt.icon;
+            const isSelected = opt.id === (value ?? "");
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  onChange(opt.id || null);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
+                  isSelected
+                    ? "bg-accent text-accent-foreground font-medium"
+                    : "text-popover-foreground hover:bg-accent/60"
+                }`}
+              >
+                <OptIcon className={`h-3.5 w-3.5 shrink-0 ${opt.color}`} />
+                <span>{opt.label}</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
