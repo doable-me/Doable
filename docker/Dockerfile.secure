@@ -78,12 +78,35 @@ RUN install -d /usr/share/postgresql-common/pgdg \
     && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
         > /etc/apt/sources.list.d/pgdg.list
 
-# --- Caddy ---
-RUN curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
-        | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
-    && curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
-        | sed 's|^deb |deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] |' \
-        > /etc/apt/sources.list.d/caddy-stable.list
+# --- Caddy (binary install — bypasses cloudsmith repo URI parse issues on noble) ---
+RUN curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz" \
+        | tar -xz -C /usr/local/bin caddy \
+    && chmod +x /usr/local/bin/caddy \
+    && groupadd --system caddy \
+    && useradd --system --gid caddy --create-home --home-dir /var/lib/caddy --shell /usr/sbin/nologin --comment "Caddy web server" caddy \
+    && mkdir -p /etc/caddy \
+    && printf '%s\n' \
+        '[Unit]' \
+        'Description=Caddy' \
+        'Documentation=https://caddyserver.com/docs/' \
+        'After=network.target network-online.target' \
+        'Requires=network-online.target' \
+        '' \
+        '[Service]' \
+        'Type=notify' \
+        'User=caddy' \
+        'Group=caddy' \
+        'ExecStart=/usr/local/bin/caddy run --environ --config /etc/caddy/Caddyfile' \
+        'ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --force' \
+        'TimeoutStopSec=5s' \
+        'LimitNOFILE=1048576' \
+        'PrivateTmp=true' \
+        'ProtectSystem=full' \
+        'AmbientCapabilities=CAP_NET_BIND_SERVICE' \
+        '' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /etc/systemd/system/caddy.service
 
 # --- Cloudflared ---
 RUN curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
@@ -101,7 +124,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         postgresql-16 \
         postgresql-16-pgvector \
         postgresql-contrib-16 \
-        caddy \
         cloudflared \
         tmux \
         squid \
