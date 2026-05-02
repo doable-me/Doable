@@ -23,7 +23,7 @@ import { shouldJail, getHardeningLevel } from "../runtime/hardening-level.js";
 
 const projects = projectQueries(sql);
 
-const BUILD_TIMEOUT_MS = 120_000;
+const BUILD_TIMEOUT_MS = 600_000;
 
 // ─── dovault wrapper for build-time spawns ───────────────
 //
@@ -340,7 +340,16 @@ export async function runBuild(
 
       if (code === 0) {
         onLog?.(`\nBuild completed successfully in ${(durationMs / 1000).toFixed(1)}s\n`);
-        resolve({ success: true, outputDir, log, durationMs });
+        // Next.js `output: "export"` writes to `out/` instead of `.next`.
+        // Fall back to `out/` when the expected outputDir doesn't exist.
+        let resolvedOutputDir = outputDir;
+        if (!existsSync(outputDir)) {
+          const outDir = path.join(projectDir, "out");
+          if (existsSync(outDir)) {
+            resolvedOutputDir = outDir;
+          }
+        }
+        resolve({ success: true, outputDir: resolvedOutputDir, log, durationMs });
       } else {
         const error = `Build exited with code ${code}`;
         onLog?.(`\nERROR: ${error}\n`);

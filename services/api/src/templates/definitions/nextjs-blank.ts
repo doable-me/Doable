@@ -43,6 +43,7 @@ const PACKAGE_JSON = JSON.stringify(
 );
 
 const NEXT_CONFIG_TS = `import type { NextConfig } from "next";
+import path from "path";
 
 /**
  * Next.js config. Doable threads its preview base path via the
@@ -61,6 +62,8 @@ const nextConfig: NextConfig = {
   // Standalone output gives the production runtime a self-contained
   // server bundle the supervisor can launch via node .next/standalone/server.js.
   output: "standalone",
+  // Prevent file tracing from scanning parent directories (monorepo root).
+  outputFileTracingRoot: path.resolve(__dirname),
 };
 
 export default nextConfig;
