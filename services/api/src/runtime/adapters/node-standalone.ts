@@ -48,11 +48,17 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
   idleTimeoutMs: 30 * 60_000,
 
   env(ctx: RuntimeContext): Record<string, string> {
+    const host = ctx.listen.kind === "tcp-port" ? ctx.listen.host : "127.0.0.1";
+    const port = ctx.listen.kind === "tcp-port" ? String(ctx.listen.port) : "";
     return {
       ...ctx.env,
       NODE_ENV: "production",
-      PORT: ctx.listen.kind === "tcp-port" ? String(ctx.listen.port) : "",
-      HOSTNAME: ctx.listen.kind === "tcp-port" ? ctx.listen.host : "127.0.0.1",
+      // Frameworks vary in which env they read: Next.js uses HOSTNAME,
+      // Astro/@astrojs/node uses HOST, SvelteKit/adapter-node uses HOST too.
+      // Set both so the right framework finds the right value.
+      PORT: port,
+      HOSTNAME: host,
+      HOST: host,
       DOABLE_PROJECT_ID: ctx.projectId,
       DOABLE_PROJECT_SLUG: ctx.projectSlug,
     };

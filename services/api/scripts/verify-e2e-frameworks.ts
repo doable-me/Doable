@@ -284,7 +284,8 @@ const ASTRO_FIXTURE: FrameworkSpec = {
         private: true,
         type: "module",
         scripts: { build: "astro build" },
-        dependencies: { astro: "^4.16.0", "@astrojs/node": "^9.0.0" },
+        // @astrojs/node@9 requires astro@5; pin both to compatible majors.
+        dependencies: { astro: "^5.0.0", "@astrojs/node": "^9.0.0" },
       },
       null,
       2,
