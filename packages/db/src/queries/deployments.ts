@@ -108,7 +108,7 @@ export function deploymentQueries(sql: postgres.Sql) {
       const [row] = await sql<DeploymentRow[]>`
         SELECT * FROM deployments
         WHERE project_id = ${projectId}
-          AND status IN ('pending', 'building', 'deploying')
+          AND status IN ('queued', 'building', 'deploying')
           AND created_at > now() - interval '30 minutes'
         ORDER BY created_at DESC
         LIMIT 1

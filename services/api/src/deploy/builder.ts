@@ -340,14 +340,16 @@ export async function runBuild(
 
       if (code === 0) {
         onLog?.(`\nBuild completed successfully in ${(durationMs / 1000).toFixed(1)}s\n`);
-        // Next.js `output: "export"` writes to `out/` instead of `.next`.
-        // Fall back to `out/` when the expected outputDir doesn't exist.
+        // Next.js `output: "export"` writes deployable HTML to `out/` while
+        // `.next` always exists as intermediate build artifacts. Prefer `out/`
+        // when it exists since it contains the actual static site.
         let resolvedOutputDir = outputDir;
-        if (!existsSync(outputDir)) {
-          const outDir = path.join(projectDir, "out");
-          if (existsSync(outDir)) {
-            resolvedOutputDir = outDir;
-          }
+        const outDir = path.join(projectDir, "out");
+        if (existsSync(outDir)) {
+          resolvedOutputDir = outDir;
+        } else if (!existsSync(outputDir)) {
+          // Neither exists — shouldn't happen but guard against it
+          onLog?.(`WARN: Expected output at ${outputDir} not found\n`);
         }
         resolve({ success: true, outputDir: resolvedOutputDir, log, durationMs });
       } else {
