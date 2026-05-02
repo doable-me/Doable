@@ -255,25 +255,34 @@ export class DoableCloudAdapter implements DeployAdapter {
         );
       }
 
-      // FastAPI / Django: Python source IS the artifact. Copy the project
-      // source tree (excluding caches and build outputs) to dist-server/.
-      // The python-asgi runtime adapter detects the entry (manage.py vs
-      // main.py vs asgi.py) and dispatches uvicorn/gunicorn appropriately.
-      const pythonExclude = (src: string): boolean => {
-        const base = path.basename(src);
-        return !["node_modules", ".venv", "venv", "__pycache__", "dist-server", ".git", ".pytest_cache", "staticfiles"].includes(base);
-      };
+      // FastAPI / Django: Python source IS the artifact. We can't `cp` the
+      // project dir directly into projectDir/dist-server because Node's
+      // fs.cp refuses to copy a directory into a subdirectory of itself
+      // (EINVAL, even with a filter). So instead we read the project's
+      // top-level entries and copy each non-excluded one into dist-server.
+      const PYTHON_EXCLUDES = new Set([
+        "node_modules", ".venv", "venv", "__pycache__", "dist-server",
+        ".git", ".pytest_cache", "staticfiles",
+      ]);
+
+      async function stagePythonSource(distServer: string): Promise<void> {
+        await rm(distServer, { recursive: true, force: true });
+        await mkdir(distServer, { recursive: true });
+        const projectRoot = path.join(PROJECTS_ROOT, projectId);
+        const entries = await readdir(projectRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          if (PYTHON_EXCLUDES.has(entry.name)) continue;
+          const src = path.join(projectRoot, entry.name);
+          const dest = path.join(distServer, entry.name);
+          await cp(src, dest, { recursive: true });
+        }
+      }
 
       const fastapiMain = path.join(PROJECTS_ROOT, projectId, "main.py");
       const fastapiReqs = path.join(PROJECTS_ROOT, projectId, "requirements.txt");
       if (existsSync(fastapiMain) && existsSync(fastapiReqs)) {
         const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
-        await rm(distServer, { recursive: true, force: true });
-        await mkdir(distServer, { recursive: true });
-        await cp(path.join(PROJECTS_ROOT, projectId), distServer, {
-          recursive: true,
-          filter: pythonExclude,
-        });
+        await stagePythonSource(distServer);
         // python-asgi runtime expects ${distServer}/.venv/bin/uvicorn (or
         // /usr/bin/python3 fallback). Materialise the venv + install deps
         // here so the systemd unit can ExecStart cleanly.
@@ -287,12 +296,7 @@ export class DoableCloudAdapter implements DeployAdapter {
       const djangoManage = path.join(PROJECTS_ROOT, projectId, "manage.py");
       if (existsSync(djangoManage)) {
         const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
-        await rm(distServer, { recursive: true, force: true });
-        await mkdir(distServer, { recursive: true });
-        await cp(path.join(PROJECTS_ROOT, projectId), distServer, {
-          recursive: true,
-          filter: pythonExclude,
-        });
+        await stagePythonSource(distServer);
         // Also include collectstatic output if it exists.
         const staticDir = path.join(PROJECTS_ROOT, projectId, "staticfiles");
         if (existsSync(staticDir)) {

@@ -187,6 +187,10 @@ server.listen(port, hostname, () => {
   await runStaticSpaFlow();
 
   console.log("");
+  console.log("=== Phase C: python-asgi flow (FastAPI) ===");
+  await runFastApiFlow();
+
+  console.log("");
   const allOk = results.every((r) => r.ok);
   console.log(`=== ${allOk ? "ALL STEPS PASS" : "FAIL"} ===`);
   process.exit(allOk ? 0 : 1);
@@ -288,6 +292,108 @@ async function runStaticSpaFlow(): Promise<void> {
   if (staticHandle) await staticFilesAdapter.stop(staticHandle as never);
   await rm(projectDir, { recursive: true, force: true });
   await rm(path.join(SITES_DIR, slug), { recursive: true, force: true });
+}
+
+async function runFastApiFlow(): Promise<void> {
+  const slug = `e2e-fastapi-${Date.now().toString(36)}`;
+  const projectDir = path.join(PROJECTS_ROOT, slug);
+  const port = 39000 + Math.floor(Math.random() * 1000);
+
+  // Step 1 — synthetic FastAPI fixture: main.py + requirements.txt.
+  await mkdir(projectDir, { recursive: true });
+  await writeFile(
+    path.join(projectDir, "main.py"),
+    `from fastapi import FastAPI
+app = FastAPI()
+@app.get("/")
+def root():
+    return {"e2e": "ok", "slug": "${slug}"}
+`,
+    "utf-8",
+  );
+  await writeFile(
+    path.join(projectDir, "requirements.txt"),
+    `fastapi==0.115.0\nuvicorn==0.30.6\n`,
+    "utf-8",
+  );
+  step("py:fixture-create", true, `main.py + requirements.txt`);
+
+  // Step 2 — doable-cloud deploy. The FastAPI block in doable-cloud.ts
+  // detects main.py + requirements.txt, copies the project source to
+  // dist-server/, and calls setupPythonVenv() which creates .venv and
+  // pip-installs requirements (Wave 17).
+  process.env.PROJECTS_ROOT = PROJECTS_ROOT;
+  const { DoableCloudAdapter } = await import(
+    path.resolve(HERE, "../src/deploy/adapters/doable-cloud.js")
+  );
+  const adapter = new DoableCloudAdapter();
+  try {
+    await adapter.deploy({
+      projectId: slug,
+      projectSlug: slug,
+      workspaceSlug: "e2e",
+      subdomain: slug,
+      buildOutputDir: projectDir, // FastAPI has no build step; source IS the artifact
+      environment: "preview",
+    });
+  } catch (err) {
+    step("py:deploy-stage", false, err instanceof Error ? err.message : String(err));
+    return;
+  }
+  const stagedMain = path.join(projectDir, "dist-server", "main.py");
+  const venvUvicorn = path.join(projectDir, "dist-server", ".venv", "bin", "uvicorn");
+  const stagedOk = existsSync(stagedMain);
+  const venvOk = existsSync(venvUvicorn);
+  step(
+    "py:deploy-stage",
+    stagedOk && venvOk,
+    stagedOk && venvOk
+      ? `dist-server/main.py + .venv/bin/uvicorn present`
+      : `staged=${stagedOk} venv=${venvOk} (need both)`
+  );
+  if (!stagedOk || !venvOk) return;
+
+  // Step 3 — runtime adapter start
+  const { pythonAsgiAdapter } = await import(
+    path.resolve(HERE, "../src/runtime/adapters/python-asgi.js")
+  );
+  const handle = await pythonAsgiAdapter.start({
+    projectId: slug,
+    projectSlug: slug,
+    workspaceSlug: "e2e",
+    siteDir: path.join("/data/sites", slug),
+    projectDir,
+    framework: { id: "fastapi" },
+    env: {},
+    listen: { kind: "tcp-port", host: "127.0.0.1", port },
+    userId: null,
+  });
+  step("py:runtime-start", true, `id=${handle.id}, addr=${handle.listenAddr}`);
+
+  // Step 4 — wait for uvicorn to bind, then HTTP probe.
+  let probed = { ok: false, body: "no-attempt" };
+  for (let i = 0; i < 30; i++) {
+    await sleep(500);
+    probed = await probeTcp("127.0.0.1", port);
+    if (probed.ok) break;
+  }
+  step(
+    "py:tcp-probe",
+    probed.ok && probed.body.includes("e2e"),
+    probed.ok ? `200 OK, body line: ${probed.body.split("\\r\\n").filter(Boolean).pop()?.slice(0, 80)}` : `probe failed: ${probed.body.slice(0, 80)}`
+  );
+
+  // Step 5 — systemd state
+  const r = spawnSync("systemctl", ["show", `doable-app@${slug}.service`, "--property=ActiveState", "--property=ExecMainStatus", "--no-pager"], { encoding: "utf-8" });
+  step("py:systemd-show", r.status === 0, r.stdout?.replace(/\n/g, " ").trim() ?? `error: ${r.stderr?.trim()}`);
+
+  // Step 6 — teardown
+  await pythonAsgiAdapter.stop(handle);
+  await sleep(500);
+  const post = await probeTcp("127.0.0.1", port);
+  step("py:runtime-stop", !post.ok, post.ok ? "port still accepting" : "port closed");
+
+  await rm(projectDir, { recursive: true, force: true });
 }
 
 type CaddyProbeResult = "skipped" | { ok: true; body: string } | { ok: false; detail: string };
