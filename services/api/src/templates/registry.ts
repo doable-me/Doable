@@ -6,6 +6,9 @@ import { blogTemplate } from "./definitions/blog.js";
 import { portfolioTemplate } from "./definitions/portfolio.js";
 import { todoAppTemplate } from "./definitions/todo-app.js";
 import { nextjsBlankTemplate } from "./definitions/nextjs-blank.js";
+import { nuxtBlankTemplate } from "./definitions/nuxt-blank.js";
+import { sveltekitBlankTemplate } from "./definitions/sveltekit-blank.js";
+import { astroBlankTemplate } from "./definitions/astro-blank.js";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -52,6 +55,9 @@ const BUILT_IN_TEMPLATES = new Map<string, TemplateDefinition>([
   [portfolioTemplate.id, portfolioTemplate],
   [todoAppTemplate.id, todoAppTemplate],
   [nextjsBlankTemplate.id, nextjsBlankTemplate],
+  [nuxtBlankTemplate.id, nuxtBlankTemplate],
+  [sveltekitBlankTemplate.id, sveltekitBlankTemplate],
+  [astroBlankTemplate.id, astroBlankTemplate],
 ]);
 
 /**
