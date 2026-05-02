@@ -691,6 +691,7 @@ RestrictRealtime=yes
 LockPersonality=yes
 RestrictSUIDSGID=yes
 RemoveIPC=yes
+SystemCallFilter=~@clock @cpu-emulation @debug @module @mount @obsolete @raw-io @reboot @swap @privileged
 SystemCallArchitectures=native
 PrivateDevices=yes
 ProtectClock=yes

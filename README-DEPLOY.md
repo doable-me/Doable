@@ -260,6 +260,41 @@ categories:
   project cannot read another project's source tree, its secrets,
   or `/root`.
 
+### Configurable hardening level
+
+The full directive set above can interfere with hot-reload, debuggers,
+or unusual workloads in dev environments. Wave 27-C adds an env var
+`DOABLE_HARDENING={full|relaxed|off}` that selects how aggressive the
+per-project drop-in is. Set it on the API service (e.g. in `.env`) and
+restart `doable.service` — the next publish picks it up.
+
+`full` (default) — production. Emits every Wave 25-27 directive: the
+per-project `User=`/`Group=` UID, kernel isolation, namespace
+restriction, `SystemCallFilter` deny-list, `PrivateDevices`,
+`ProtectProc=invisible`, the lot. Use this in production. Set this
+explicitly even if it is the default so the intent is recorded.
+
+`relaxed` — dev. Emits only the universally-safe directives
+(`NoNewPrivileges`, `ProtectSystem=strict`, narrowed `ReadWritePaths`,
+`PrivateTmp`, plus `IPAddressDeny=any` with the loopback +
+per-project egress allow-list). Drops the per-project `User=`,
+`PrivateUsers=`, kernel/namespace restrictions, and the syscall
+filter. Use this on a dev box where `PrivateDevices` blocks a
+debugger socket, `ProtectKernelTunables` blocks a profiler, or the
+syscall filter rejects a workload that needs `clock_settime` or
+`AF_NETLINK`. Apps run as the template's default UID (no per-project
+isolation) but cannot escalate privileges or reach out beyond the
+allow-list.
+
+`off` — debug only. Emits no security directives at all — only the
+cgroup operational caps (`MemoryMax`, `CPUQuota`, `TasksMax`) so a
+runaway can't OOM the host. Equivalent to running the framework
+standalone with a process-tree limit. Use this only when chasing a
+specific systemd-induced failure (a strace shows a deny that you
+need to confirm came from the drop-in, etc.). Never set this in
+production — apps inherit the template's `User=` (root or whatever
+the template defines) and have no isolation from each other.
+
 **Network.** Per-project TCP ports stay on `127.0.0.1:30000-39999`,
 unchanged from Wave 21 — never internet-reachable directly. Caddy
 terminates TLS on `:80` / `:443` and `reverse_proxy`s the request

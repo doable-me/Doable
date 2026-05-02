@@ -137,6 +137,10 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
     }
     // Best-effort env / drop-in cleanup. Failures are logged, not fatal,
     // because partial cleanup must not block the publish pipeline.
+    // TODO(wave-27): full unpublish (separate codepath) should also
+    // `userdel doable-${slug}` and remove the user's home/state dir,
+    // since stop() can be invoked for a transient idle/restart and
+    // we don't want to drop the per-project UID on every cycle.
   },
 
   async healthCheck(handle: RuntimeHandle): Promise<HealthStatus> {
@@ -198,22 +202,82 @@ function renderUnitOverride(ctx: RuntimeContext, egressHosts: string[] = []): st
   const extraAllows = egressHosts
     .map((host) => `IPAddressAllow=${host}`)
     .join("\n");
+  // Wave 27: per-instance host UID. doable-cloud.ts setupProjectUser()
+  // creates `doable-{slug}` (truncated to Linux's 32-char username
+  // limit) at deploy time and chowns dist-server to it; we pin the
+  // systemd unit's User=/Group= to the same name so each published
+  // project runs under its own UID instead of the shared dynamic UID
+  // from Wave 26's DynamicUser=yes.
+  const username = `doable-${ctx.projectSlug}`.slice(0, 32);
   // dist-server/ is the post-build runtime layout staged by
   // doable-cloud.ts: standalone tree + .next/static + public/ co-located
   // so the standalone server can serve static assets in production.
   // Entry priority: server.js (Next.js) → index.mjs (Nuxt nitro) → index.js (SvelteKit adapter-node, Hono node-build) → entry.mjs (Astro SSR). Default to server.js when none exist (legacy).
   const entry = resolveStandaloneEntry(`${ctx.projectDir}/dist-server`);
+
+  // Wave 27-C: configurable hardening level for dev/test ergonomics.
+  //   full     — production: all Wave 25-27 directives (default)
+  //   relaxed  — dev: only universally-safe directives that don't
+  //              interfere with hot-reload, debuggers, or volume mounts
+  //   off      — debug only: no security directives, just the cgroup
+  //              caps so a runaway can't OOM the host
+  const level = (process.env.DOABLE_HARDENING ?? "full").toLowerCase();
+
+  // Cgroup operational caps — always emitted regardless of level. These
+  // are not security boundaries (a malicious app can still hit the limit
+  // and crash); they exist to keep one runaway from starving its
+  // neighbours.
+  const cgroupBlock = `MemoryMax=512M
+CPUQuota=50%
+TasksMax=256`;
+
   // The empty `ExecStart=` resets the template's inherited ExecStart so
   // systemd accepts our per-project override. Without it, the drop-in
   // fails with "Service has more than one ExecStart= setting" because
   // template + drop-in both declare one (Type=simple only allows one).
-  return `[Service]
-WorkingDirectory=${ctx.projectDir}/dist-server
-DynamicUser=yes
+  const execBlock = `WorkingDirectory=${ctx.projectDir}/dist-server
+ExecStart=
+ExecStart=/usr/bin/node ${ctx.projectDir}/dist-server/${entry}`;
+
+  if (level === "off") {
+    // No hardening at all — equivalent to running standalone. Only the
+    // cgroup caps remain so the app still can't OOM the host. The
+    // template's inherited User= (root or whatever it defaults to)
+    // applies, which is the documented trade-off of this debug mode.
+    return `[Service]
+${execBlock}
+${cgroupBlock}
+`;
+  }
+
+  // BASE block — emitted for both `relaxed` and `full`. Universally safe
+  // directives that don't break hot-reload, debuggers, or volume mounts:
+  // no-new-privs, read-only system, narrowed write paths, private /tmp,
+  // and the loopback-only egress firewall + per-project allow-list.
+  const baseBlock = `NoNewPrivileges=yes
+ProtectSystem=strict
 ReadWritePaths=
 ReadWritePaths=${ctx.projectDir}/dist-server
-ExecStart=
-ExecStart=/usr/bin/node ${ctx.projectDir}/dist-server/${entry}
+PrivateTmp=yes
+IPAddressDeny=any
+IPAddressAllow=localhost
+${extraAllows}${extraAllows ? "\n" : ""}`;
+
+  if (level !== "full") {
+    // `relaxed` — base + cgroups, skip the heavy isolation. The
+    // template's inherited User= applies (no per-project UID).
+    return `[Service]
+${execBlock}
+${baseBlock}${cgroupBlock}
+`;
+  }
+
+  // FULL extras — Wave 25-27 production hardening. Per-project User/Group
+  // (Wave 27-A), W27-B's SystemCallFilter deny-list, and the namespace,
+  // kernel, address-family, syscall, device, clock, and proc isolations
+  // from Wave 25-26.
+  const fullExtras = `User=${username}
+Group=${username}
 PrivateUsers=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
@@ -225,18 +289,19 @@ RestrictRealtime=yes
 LockPersonality=yes
 RestrictSUIDSGID=yes
 RemoveIPC=yes
+SystemCallFilter=~@clock @cpu-emulation @debug @module @mount @obsolete @raw-io @reboot @swap @privileged
 SystemCallArchitectures=native
 PrivateDevices=yes
 ProtectClock=yes
 ProtectHostname=yes
 ProtectProc=invisible
 ProcSubset=pid
-MemoryMax=512M
-CPUQuota=50%
-TasksMax=256
-IPAddressDeny=any
-IPAddressAllow=localhost
-${extraAllows}${extraAllows ? "\n" : ""}`;
+`;
+
+  return `[Service]
+${execBlock}
+${baseBlock}${fullExtras}${cgroupBlock}
+`;
 }
 
 function resolveStandaloneEntry(distServerDir: string): string {

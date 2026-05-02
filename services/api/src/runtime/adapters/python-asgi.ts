@@ -103,6 +103,10 @@ export const pythonAsgiAdapter: RuntimeAdapter = {
       });
       run("systemctl", ["disable", `doable-app@${slug}.service`], { ignoreFailure: true });
     }
+    // TODO(wave-27): full unpublish (separate codepath) should also
+    // `userdel doable-${slug}` and remove the user's home/state dir,
+    // since stop() can be invoked for a transient idle/restart and
+    // we don't want to drop the per-project UID on every cycle.
   },
 
   async healthCheck(handle: RuntimeHandle): Promise<HealthStatus> {
@@ -155,16 +159,72 @@ function renderUnitOverride(
   const extraAllows = egressHosts
     .map((host) => `IPAddressAllow=${host}`)
     .join("\n");
+  // Wave 27: per-instance host UID. doable-cloud.ts setupProjectUser()
+  // creates `doable-{slug}` (truncated to Linux's 32-char username
+  // limit) at deploy time and chowns dist-server to it; we pin the
+  // systemd unit's User=/Group= to the same name so each published
+  // project runs under its own UID instead of the shared dynamic UID
+  // from Wave 26's DynamicUser=yes.
+  const username = `doable-${ctx.projectSlug}`.slice(0, 32);
+
+  // Wave 27-C: configurable hardening level for dev/test ergonomics.
+  //   full     — production: all Wave 25-27 directives (default)
+  //   relaxed  — dev: only universally-safe directives that don't
+  //              interfere with hot-reload, debuggers, or volume mounts
+  //   off      — debug only: no security directives, just the cgroup
+  //              caps so a runaway can't OOM the host
+  const level = (process.env.DOABLE_HARDENING ?? "full").toLowerCase();
+
+  // Cgroup operational caps — always emitted regardless of level. These
+  // are not security boundaries; they exist to keep one runaway from
+  // starving its neighbours.
+  const cgroupBlock = `MemoryMax=512M
+CPUQuota=50%
+TasksMax=256`;
+
   // Empty `ExecStart=` resets the template's inherited ExecStart so the
   // drop-in's override is accepted. Type=simple units only allow one
   // ExecStart total, so without this systemd refuses to load the unit.
-  return `[Service]
-WorkingDirectory=${ctx.projectDir}/dist-server
-DynamicUser=yes
+  const execBlock = `WorkingDirectory=${ctx.projectDir}/dist-server
+ExecStart=
+ExecStart=${execStart}`;
+
+  if (level === "off") {
+    // No hardening at all — equivalent to running standalone. Only the
+    // cgroup caps remain so the app still can't OOM the host. The
+    // template's inherited User= applies, which is the documented
+    // trade-off of this debug mode.
+    return `[Service]
+${execBlock}
+${cgroupBlock}
+`;
+  }
+
+  // BASE block — emitted for both `relaxed` and `full`. Universally safe
+  // directives that don't break hot-reload, debuggers, or volume mounts.
+  const baseBlock = `NoNewPrivileges=yes
+ProtectSystem=strict
 ReadWritePaths=
 ReadWritePaths=${ctx.projectDir}/dist-server
-ExecStart=
-ExecStart=${execStart}
+PrivateTmp=yes
+IPAddressDeny=any
+IPAddressAllow=localhost
+${extraAllows}${extraAllows ? "\n" : ""}`;
+
+  if (level !== "full") {
+    // `relaxed` — base + cgroups, skip the heavy isolation.
+    return `[Service]
+${execBlock}
+${baseBlock}${cgroupBlock}
+`;
+  }
+
+  // FULL extras — Wave 25-27 production hardening: per-project User/Group
+  // (Wave 27-A), W27-B's SystemCallFilter deny-list, and the namespace,
+  // kernel, address-family, syscall, device, clock, and proc isolations
+  // from Wave 25-26.
+  const fullExtras = `User=${username}
+Group=${username}
 PrivateUsers=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
@@ -176,18 +236,19 @@ RestrictRealtime=yes
 LockPersonality=yes
 RestrictSUIDSGID=yes
 RemoveIPC=yes
+SystemCallFilter=~@clock @cpu-emulation @debug @module @mount @obsolete @raw-io @reboot @swap @privileged
 SystemCallArchitectures=native
 PrivateDevices=yes
 ProtectClock=yes
 ProtectHostname=yes
 ProtectProc=invisible
 ProcSubset=pid
-MemoryMax=512M
-CPUQuota=50%
-TasksMax=256
-IPAddressDeny=any
-IPAddressAllow=localhost
-${extraAllows}${extraAllows ? "\n" : ""}`;
+`;
+
+  return `[Service]
+${execBlock}
+${baseBlock}${fullExtras}${cgroupBlock}
+`;
 }
 
 async function resolvePythonExecStart(

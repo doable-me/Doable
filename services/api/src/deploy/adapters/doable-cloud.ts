@@ -153,7 +153,7 @@ export class DoableCloudAdapter implements DeployAdapter {
           });
         }
 
-        chmodDistServerWorldReadable(distServer, projectId);
+        setupProjectUser(distServer, input.projectSlug);
         console.log(
           `[doable-cloud] Staged Next.js standalone layout at ${distServer} ` +
             `for project ${projectId}`
@@ -179,7 +179,7 @@ export class DoableCloudAdapter implements DeployAdapter {
             recursive: true,
           });
         }
-        chmodDistServerWorldReadable(distServer, projectId);
+        setupProjectUser(distServer, input.projectSlug);
         console.log(
           `[doable-cloud] Staged Nuxt nitro layout at ${distServer} ` +
             `for project ${projectId}`
@@ -196,7 +196,7 @@ export class DoableCloudAdapter implements DeployAdapter {
         await rm(distServer, { recursive: true, force: true });
         await mkdir(distServer, { recursive: true });
         await cp(svelteBuild, distServer, { recursive: true });
-        chmodDistServerWorldReadable(distServer, projectId);
+        setupProjectUser(distServer, input.projectSlug);
         console.log(
           `[doable-cloud] Staged SvelteKit adapter-node layout at ${distServer} ` +
             `for project ${projectId}`
@@ -221,7 +221,7 @@ export class DoableCloudAdapter implements DeployAdapter {
             recursive: true,
           });
         }
-        chmodDistServerWorldReadable(distServer, projectId);
+        setupProjectUser(distServer, input.projectSlug);
         console.log(
           `[doable-cloud] Staged Astro SSR layout at ${distServer} ` +
             `for project ${projectId}`
@@ -253,7 +253,7 @@ export class DoableCloudAdapter implements DeployAdapter {
         }
         installNodeProductionDeps(distServer, projectId);
 
-        chmodDistServerWorldReadable(distServer, projectId);
+        setupProjectUser(distServer, input.projectSlug);
         console.log(
           `[doable-cloud] Staged Hono node-build layout at ${distServer} ` +
             `for project ${projectId}`
@@ -292,7 +292,7 @@ export class DoableCloudAdapter implements DeployAdapter {
         // /usr/bin/python3 fallback). Materialise the venv + install deps
         // here so the systemd unit can ExecStart cleanly.
         setupPythonVenv(distServer, projectId);
-        chmodDistServerWorldReadable(distServer, projectId);
+        setupProjectUser(distServer, input.projectSlug);
         console.log(
           `[doable-cloud] Staged FastAPI source layout at ${distServer} ` +
             `for project ${projectId}`
@@ -314,7 +314,7 @@ export class DoableCloudAdapter implements DeployAdapter {
         // Same setup as FastAPI — pip install requirements (including
         // gunicorn if listed) inside the staged venv.
         setupPythonVenv(distServer, projectId);
-        chmodDistServerWorldReadable(distServer, projectId);
+        setupProjectUser(distServer, input.projectSlug);
         console.log(
           `[doable-cloud] Staged Django source layout at ${distServer} ` +
             `for project ${projectId}`
@@ -631,36 +631,48 @@ function installNodeProductionDeps(distServer: string, projectId: string): void 
 }
 
 /**
- * Wave 26: with systemd DynamicUser=yes the per-app systemd unit runs
- * under a transient UID allocated at start time — we don't know it ahead
- * of time so we can't pre-chown the staged tree. Instead, make
- * dist-server world-readable (dirs 755, files 644) so any dynamic UID
- * can read its own code at start. The dynamic UID still gets exclusive
- * write via systemd's StateDirectory/PrivateTmp.
+ * Wave 27: per-project Linux user accounts. Each published project gets
+ * its own host UID (`doable-{slug}`) instead of the shared dynamic UID
+ * from systemd's DynamicUser=yes (Wave 26). With per-instance UIDs the
+ * runtime adapter can pin User=/Group= in the systemd drop-in, giving
+ * true filesystem-level isolation between published projects on the
+ * same host.
  *
- * `u+rwX,go+rX,go-w` is the canonical "make readable by all without
- * granting write" recipe — capital X applies +x only to dirs and to
- * files that are already executable, so it doesn't accidentally mark
- * data files executable.
+ * Behaviour:
+ *   1. Create `doable-{slug}` (truncated to Linux's 32-char username
+ *      limit) as a system account with no home and no login shell.
+ *      Idempotent — useradd exit 9 ("user already exists") is treated
+ *      as success.
+ *   2. chown -R the staged dist-server tree to that user so the
+ *      systemd unit can read + write it under its own UID/GID.
  *
  * Linux-only: dev hosts (Windows/macOS) skip silently. Best-effort:
  * warn on failure but don't throw — the deploy already succeeded at
  * the file-staging step, the start will fail loudly enough on its own.
  */
-function chmodDistServerWorldReadable(distServer: string, projectId: string): void {
+function setupProjectUser(distServer: string, projectSlug: string): void {
   if (process.platform !== "linux") return;
-  // DynamicUser=yes (Wave 26) means we can't pre-chown to a known UID.
-  // Make the staged tree readable by anyone instead — dirs 755, files 644.
-  // u+rwX,go+rX,go-w is the canonical "make readable by all without
-  // granting write" recipe.
-  const r = spawnSync("chmod", ["-R", "u+rwX,go+rX,go-w", distServer], {
+  const username = `doable-${projectSlug}`.slice(0, 32); // Linux limit
+  // Idempotent useradd: exit 9 means user already exists — treat as success.
+  const ua = spawnSync("useradd", ["--system", "--no-create-home", "--shell", "/usr/sbin/nologin", username], {
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 30_000,
   });
-  if (r.status !== 0) {
+  if (ua.status !== 0 && ua.status !== 9) {
     console.warn(
-      `[doable-cloud] chmod world-readable failed for ${projectId}: ` +
-        (r.stderr?.toString() ?? r.error?.message ?? "unknown"),
+      `[doable-cloud] useradd ${username} failed: ` +
+        (ua.stderr?.toString() ?? ua.error?.message ?? "unknown"),
+    );
+    return;
+  }
+  const co = spawnSync("chown", ["-R", `${username}:${username}`, distServer], {
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 30_000,
+  });
+  if (co.status !== 0) {
+    console.warn(
+      `[doable-cloud] chown ${username} ${distServer} failed: ` +
+        (co.stderr?.toString() ?? co.error?.message ?? "unknown"),
     );
   }
 }
