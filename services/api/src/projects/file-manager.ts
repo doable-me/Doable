@@ -6,7 +6,6 @@
  * live preview works — files written here are served by the Vite dev server.
  */
 
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { writeFile as fsWriteFile, mkdir as fsMkdir } from "node:fs/promises";
 import path from "node:path";
@@ -23,7 +22,7 @@ import {
 import { blankTemplate } from "../templates/definitions/blank.js";
 import { initRepo } from "../git/init.js";
 import { defaultRegistry } from "../frameworks/registry.js";
-import { FrameworkAdapterError } from "../frameworks/types.js";
+import { FrameworkAdapterError, type FrameworkContext } from "../frameworks/types.js";
 
 // Re-export for convenience
 export {
@@ -144,8 +143,21 @@ async function doCreateProject(
     }
   }
 
-  // Run pnpm install
-  const installOutput = await runPnpmInstall(projectPath);
+  // Run npm install via the framework adapter. The vite-react adapter
+  // mirrors the legacy runPnpmInstall spawn shape byte-for-byte: same
+  // `npm install --legacy-peer-deps` argv, shell:true, FORCE_COLOR=0,
+  // 180s timeout, Windows taskkill-tree on timeout. See
+  // services/api/src/frameworks/adapters/vite-react.ts:runNpmInstall.
+  // Adapter is reused from the requiredFiles/criticalFiles resolution above
+  // (PR-E rule: fetch adapter once per createProject call).
+  const installCtx: FrameworkContext = {
+    projectId,
+    projectPath,
+    basePath: "/",
+    env: {},
+  };
+  const installResult = await adapter.install(installCtx);
+  const installOutput = installResult.log;
 
   // Verify node_modules was actually created (npm install can "succeed"
   // with exit code 0 but not create node_modules in edge cases)
@@ -201,65 +213,21 @@ export async function ensureDependencies(projectId: string): Promise<void> {
   console.log(
     `[FileManager] node_modules missing for project ${projectId} — running npm install`,
   );
-  await runPnpmInstall(projectPath);
-}
 
-// ─── pnpm Install ────────────────────────────────────────
-
-function runPnpmInstall(cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // Use npm instead of pnpm to avoid workspace interference
-    // (pnpm in a monorepo would treat the project as a workspace member)
-    const child = spawn("npm", ["install", "--legacy-peer-deps"], {
-      cwd,
-      shell: true,
-      stdio: "pipe",
-      env: { ...process.env, FORCE_COLOR: "0" },
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout?.on("data", (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    child.stderr?.on("data", (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    child.on("error", (err) => {
-      reject(new Error(`Failed to run pnpm install: ${err.message}`));
-    });
-
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve(stdout + stderr);
-      } else {
-        reject(
-          new Error(`pnpm install exited with code ${code}:\n${stdout}\n${stderr}`),
-        );
-      }
-    });
-
-    // Timeout after 3 minutes
-    setTimeout(() => {
-      // On Windows, shell: true means child is cmd.exe; SIGTERM doesn't
-      // propagate. Use taskkill to kill the entire process tree.
-      if (process.platform === "win32" && child.pid) {
-        try {
-          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
-            stdio: "ignore",
-          });
-        } catch {
-          child.kill("SIGTERM");
-        }
-      } else {
-        child.kill("SIGTERM");
-      }
-      reject(new Error("npm install timed out after 3 minutes"));
-    }, 180_000);
-  });
+  // Resolve framework adapter for the install spawn shape. See createProject
+  // for the matching comment — vite-react's adapter.install() mirrors the
+  // legacy runPnpmInstall byte-for-byte (180s timeout, Windows taskkill-tree).
+  // TODO Phase 2: thread frameworkId from the projects row (projects.framework_id).
+  // Hardcoded vite-react for now matches the PR-D pattern in createProject.
+  const frameworkId = "vite-react";
+  const adapter = defaultRegistry.getAdapter(frameworkId);
+  const ctx: FrameworkContext = {
+    projectId,
+    projectPath,
+    basePath: "/",
+    env: {},
+  };
+  await adapter.install(ctx);
 }
 
 // ─── Errors ──────────────────────────────────────────────

@@ -3,6 +3,7 @@ import type { TemplateDefinition } from "./registry.js";
 import { getTemplate } from "./registry.js";
 import { contextManager } from "../context/manager.js";
 import { DEFAULT_CONTEXT_FILES } from "../context/defaults.js";
+import { defaultRegistry } from "../frameworks/registry.js";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -106,19 +107,60 @@ export function scaffolder(sql: postgres.Sql) {
     /**
      * Install dependencies for a scaffolded project.
      * Returns the command that should be run in the project's sandbox.
+     *
+     * Derived from the framework adapter's `family`. Templates today don't
+     * carry a `framework_id` on the in-memory `TemplateDefinition` type
+     * (it lives on the DB row); for built-in callers we default to
+     * "vite-react" — byte-identical to the previous hardcoded behavior.
      */
     getInstallCommand(templateId: string): string {
-      // All current templates use npm/pnpm
-      return "npm install";
+      return resolveInstallCommand(templateId);
     },
 
     /**
-     * Get the dev server start command for a template.
+     * Get the dev server start command for a template. Derived from the
+     * framework adapter's `family`. Defaults to "vite-react" for current
+     * templates — byte-identical to the previous hardcoded behavior.
      */
     getDevCommand(templateId: string): string {
-      return "npm run dev";
+      return resolveDevCommand(templateId);
     },
   };
+}
+
+// ─── Adapter-driven command resolution ──────────────────────
+
+/**
+ * Resolve a frameworkId from a templateId. Falls back to "vite-react"
+ * (the default for every built-in template today; matches the
+ * `templates.framework_id DEFAULT 'vite-react'` migration in 060).
+ */
+function resolveFrameworkId(templateId?: string): string {
+  if (!templateId) return "vite-react";
+  const template = getTemplate(templateId);
+  // `framework_id` is a DB column on `templates` (migration 060) but is
+  // not (yet) part of the in-memory TemplateDefinition shape. Read it
+  // defensively so we degrade gracefully when it's absent.
+  const fid = (template as { framework_id?: string } | undefined)?.framework_id;
+  return fid ?? "vite-react";
+}
+
+function resolveInstallCommand(templateId?: string): string {
+  const id = resolveFrameworkId(templateId);
+  const adapter = defaultRegistry.getAdapter(id);
+  if (adapter.family === "node") return "npm install";
+  if (adapter.family === "python") return "pip install -r requirements.txt";
+  if (adapter.family === "ruby") return "bundle install";
+  return "echo 'no install needed'";
+}
+
+function resolveDevCommand(templateId?: string): string {
+  const id = resolveFrameworkId(templateId);
+  const adapter = defaultRegistry.getAdapter(id);
+  if (adapter.family === "node") return "npm run dev";
+  if (adapter.family === "python") return "python manage.py runserver";
+  if (adapter.family === "ruby") return "bundle exec rails server";
+  return "echo 'no dev command'";
 }
 
 // ─── Internal Helpers ───────────────────────────────────────
