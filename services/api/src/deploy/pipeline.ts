@@ -12,6 +12,7 @@ import {
 } from "./adapters/doable-cloud.js";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { nodeStandaloneAdapter } from "../runtime/adapters/node-standalone.js";
+import { pythonAsgiAdapter } from "../runtime/adapters/python-asgi.js";
 import { staticFilesAdapter } from "../runtime/adapters/static-files.js";
 import { addProcessRoute, caddyAdminAvailable } from "../runtime/caddy-admin.js";
 import type { RuntimeAdapter, RuntimeContext } from "../runtime/types.js";
@@ -303,7 +304,14 @@ async function registerRuntimeForDeploy(input: RegisterRuntimeInput): Promise<vo
   }
 
   const isProcess = fwEntry.adapter.capabilities.has("requires-long-lived-process");
-  const runtime: RuntimeAdapter = isProcess ? nodeStandaloneAdapter : staticFilesAdapter;
+  const isPython = fwEntry.adapter.capabilities.has("ssr-python");
+  // Python frameworks (Django, FastAPI) take priority over the Node default
+  // because they need a uvicorn/gunicorn ExecStart, not `node`.
+  const runtime: RuntimeAdapter = isPython
+    ? pythonAsgiAdapter
+    : isProcess
+      ? nodeStandaloneAdapter
+      : staticFilesAdapter;
 
   const ctx: RuntimeContext = {
     projectId: input.projectId,

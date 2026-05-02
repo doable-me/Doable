@@ -33,6 +33,18 @@ export const fastapiPrompt: FrameworkPrompt = {
     "   - `routers/` — route modules by domain",
     "   - `models/` — Pydantic schemas + SQLAlchemy models",
     "   - `dependencies/` — shared deps (auth, db)",
+    "",
+    "2a. **CRITICAL: Client-side fetch URLs MUST be RELATIVE.**",
+    "   FastAPI is API-only by default, but if the user serves an HTML/JS client",
+    "   from this app (e.g. via `app.mount('/', StaticFiles(directory='static', html=True))`),",
+    "   any browser `fetch()` runs inside Doable's preview iframe at",
+    "   `/preview/<projectId>/`. Absolute paths starting with `/` hit Doable's",
+    "   API host (404), NOT your FastAPI server.",
+    "   Allowed patterns:",
+    "   - Relative path from the served HTML: `fetch(\"./api/items\")`.",
+    "   - Server-side: `request.url_for('route-name')` returns the full URL with the right host.",
+    "   - For SPAs that need an API base, expose it via a small `<script>window.API_BASE = './api';</script>` injected by the server.",
+    "   NEVER write `fetch(\"/api/items\")` in inline `<script>` blocks or static client JS — it WILL break in preview.",
   ].join("\n"),
 
   styling:

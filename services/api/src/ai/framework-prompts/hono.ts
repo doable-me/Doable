@@ -33,6 +33,17 @@ export const honoPrompt: FrameworkPrompt = {
     "   - `src/routes/` — route handlers grouped by domain",
     "   - `src/middleware/` — auth, cors, logging middleware",
     "   - `src/db/` — database client + queries",
+    "",
+    "2a. **CRITICAL: Client-side fetch URLs MUST be RELATIVE.**",
+    "   Hono is API-only by default, but if the user serves an HTML/JS client",
+    "   from this app (e.g. via `serveStatic({ root: './public' })`), any browser",
+    "   `fetch()` runs inside Doable's preview iframe at `/preview/<projectId>/`.",
+    "   Absolute paths starting with `/` resolve against Doable's API host (404),",
+    "   NOT against your Hono server.",
+    "   Allowed patterns:",
+    "   - Relative path from the served HTML: `fetch(\"./api/items\")`.",
+    "   - Server-side, the current absolute URL is `c.req.url` (full URL) or `new URL(c.req.url).pathname` for the path.",
+    "   NEVER write `fetch(\"/api/items\")` from inline `<script>` blocks or static client JS — it WILL break in preview.",
   ].join("\n"),
 
   styling:

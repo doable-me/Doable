@@ -224,6 +224,76 @@ export class DoableCloudAdapter implements DeployAdapter {
         );
       }
 
+      // Hono node-build output: tsc emits dist/index.js (and any dependent
+      // .js + .d.ts). Stage to dist-server/ so node-standalone ExecStarts at
+      // dist-server/index.js (auto-detected via Wave 13 priority list).
+      const honoDist = path.join(PROJECTS_ROOT, projectId, "dist");
+      const honoEntry = path.join(honoDist, "index.js");
+      if (existsSync(honoEntry)) {
+        const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
+        await rm(distServer, { recursive: true, force: true });
+        await mkdir(distServer, { recursive: true });
+        await cp(honoDist, distServer, { recursive: true });
+        // Hono needs node_modules at runtime — symlinked or copied alongside.
+        const projectNodeModules = path.join(PROJECTS_ROOT, projectId, "node_modules");
+        if (existsSync(projectNodeModules)) {
+          await cp(projectNodeModules, path.join(distServer, "node_modules"), {
+            recursive: true,
+          });
+        }
+        console.log(
+          `[doable-cloud] Staged Hono node-build layout at ${distServer} ` +
+            `for project ${projectId}`
+        );
+      }
+
+      // FastAPI / Django: Python source IS the artifact. Copy the project
+      // source tree (excluding caches and build outputs) to dist-server/.
+      // The python-asgi runtime adapter detects the entry (manage.py vs
+      // main.py vs asgi.py) and dispatches uvicorn/gunicorn appropriately.
+      const pythonExclude = (src: string): boolean => {
+        const base = path.basename(src);
+        return !["node_modules", ".venv", "venv", "__pycache__", "dist-server", ".git", ".pytest_cache", "staticfiles"].includes(base);
+      };
+
+      const fastapiMain = path.join(PROJECTS_ROOT, projectId, "main.py");
+      const fastapiReqs = path.join(PROJECTS_ROOT, projectId, "requirements.txt");
+      if (existsSync(fastapiMain) && existsSync(fastapiReqs)) {
+        const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
+        await rm(distServer, { recursive: true, force: true });
+        await mkdir(distServer, { recursive: true });
+        await cp(path.join(PROJECTS_ROOT, projectId), distServer, {
+          recursive: true,
+          filter: pythonExclude,
+        });
+        console.log(
+          `[doable-cloud] Staged FastAPI source layout at ${distServer} ` +
+            `for project ${projectId}`
+        );
+      }
+
+      const djangoManage = path.join(PROJECTS_ROOT, projectId, "manage.py");
+      if (existsSync(djangoManage)) {
+        const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
+        await rm(distServer, { recursive: true, force: true });
+        await mkdir(distServer, { recursive: true });
+        await cp(path.join(PROJECTS_ROOT, projectId), distServer, {
+          recursive: true,
+          filter: pythonExclude,
+        });
+        // Also include collectstatic output if it exists.
+        const staticDir = path.join(PROJECTS_ROOT, projectId, "staticfiles");
+        if (existsSync(staticDir)) {
+          await cp(staticDir, path.join(distServer, "staticfiles"), {
+            recursive: true,
+          });
+        }
+        console.log(
+          `[doable-cloud] Staged Django source layout at ${distServer} ` +
+            `for project ${projectId}`
+        );
+      }
+
       // Collect file artifacts for tracking
       const files = await collectFileInfo(targetDir, targetDir);
       const totalSize = files.reduce((sum, f) => sum + f.size, 0);
