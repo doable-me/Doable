@@ -1,0 +1,56 @@
+import type { FrameworkPrompt } from "./index.js";
+
+/**
+ * Vite + React framework prompt. Content is extracted VERBATIM from the
+ * existing services/api/src/routes/chat/system-prompts.ts agent prompt
+ * (lines 85, 253-264, 282, 306-319 plus the file-shape rules 7/10/11) so
+ * that switching system-prompts.ts to renderFrameworkPrompt("vite-react")
+ * preserves byte-identical AI behavior for the default scaffold.
+ */
+export const viteReactPrompt: FrameworkPrompt = {
+  systemIntro:
+    "The project is a Vite + React 19 + TypeScript app with Tailwind CSS v4 (using the @tailwindcss/vite plugin). Files are hot-reloaded via Vite.",
+
+  envConventions: [
+    "0. **🔌 USE CONNECTED INTEGRATIONS**: If a `<connected-integrations>` block appears above, the user has already connected those services. You MUST reference the listed env vars (via `import.meta.env.VITE_*` for client vars, `process.env.*` for server vars) and call the listed tools. NEVER ask the user to paste API keys, URLs, or tokens for any service in that block. If you need a service NOT in the block, call `request_integration` instead of asking for keys.",
+    "",
+    "0b. **🔌 SUPABASE NOT CONNECTED? PROVISION FIRST**: If the user asks to add Supabase / a database but there is NO `supabase` entry in the `<connected-integrations>` block above (or the block is absent), you MUST call the `provision_supabase` tool BEFORE writing any code. Do NOT assume Supabase is connected — check the block. Do NOT ask the user for credentials. The provision tool opens a dialog for the user to connect their Supabase project, then injects the env vars automatically. Only after provisioning should you write Supabase client code.",
+    "",
+    "1. **🚨 GUARD SUPABASE CLIENT 🚨**: When using `@supabase/supabase-js`, ALWAYS guard against missing env vars. The Supabase client THROWS if the URL is undefined — crashing the entire app with a white screen. Write it like this:",
+    "   ```ts",
+    "   const url = import.meta.env.VITE_SUPABASE_URL ?? \"\";",
+    "   const key = import.meta.env.VITE_SUPABASE_ANON_KEY ?? \"\";",
+    "   export const supabase = url ? createClient(url, key, { auth: { persistSession: false, detectSessionInUrl: false } }) : null;",
+    "   ```",
+    "   Then in components, check `if (!supabase)` and show a \"Connecting to database...\" placeholder instead of crashing.",
+    "   NOTE: `persistSession: false` is REQUIRED because the preview runs in a sandboxed iframe where `navigator.locks` is blocked.",
+  ].join("\n"),
+
+  routing:
+    "2. **🚨 USE HashRouter NOT BrowserRouter 🚨**: When using react-router-dom, ALWAYS use `HashRouter` (not `BrowserRouter`). The live preview runs at a sub-path (`/preview/{projectId}/`) so BrowserRouter's path-based routing doesn't match. HashRouter uses `#/` which works at any base URL. Import: `import { HashRouter, Routes, Route } from \"react-router-dom\";`",
+
+  styling: [
+    "6. **TAILWIND CSS v4** — This project uses Tailwind v4 which is very different from v3:",
+    "   - ALWAYS start index.css with: `@import \"tailwindcss\";` as the FIRST line",
+    "   - NEVER use `@tailwind base; @tailwind components; @tailwind utilities;` (that is v3 syntax, it will break)",
+    "   - NEVER use `@apply` in CSS — it is removed in Tailwind v4 by default. Use utility classes directly in JSX instead.",
+    "   - NEVER create a tailwind.config.ts or tailwind.config.js — it's not needed. Tailwind v4 auto-detects utility classes.",
+    "   - For custom theme values (colors, fonts, spacing), use the `@theme` directive in CSS:",
+    "     ```css",
+    "     @import \"tailwindcss\";",
+    "     @theme {",
+    "       --color-brand: #3b82f6;",
+    "       --font-heading: \"Inter\", sans-serif;",
+    "     }",
+    "     ```",
+    "   - Then use them as classes: `className=\"text-brand font-heading\"`",
+  ].join("\n"),
+
+  fileShape: [
+    "7. **DEFAULT EXPORT**: src/App.tsx must use `export default` since src/main.tsx imports it as a default import.",
+    "",
+    "10. **FILE EXTENSIONS**: Always use `.tsx` for files containing JSX/TSX markup. Use `.ts` for pure TypeScript files with no JSX. Never put JSX in a `.ts` file.",
+    "",
+    "11. **IMPORT TYPES**: Do not use `import type { X }` for values that are used at runtime (e.g., as a component, in a function call, or as a value). `import type` strips the import at compile time, causing runtime errors. Only use `import type` for values used exclusively in type annotations.",
+  ].join("\n"),
+};

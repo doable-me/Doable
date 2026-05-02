@@ -1,0 +1,245 @@
+/**
+ * Next.js (App Router) framework adapter.
+ *
+ * Per devframeworkPRD/02-framework-abstraction.md §8.2 and PRD 06's
+ * `process` runtime kind. Targets `output: "standalone"` so deploy can
+ * produce a self-contained server bundle for the runtime supervisor.
+ *
+ * Behaviour summary (consult `defaults` for static metadata):
+ *   - dev:   `next dev -H {host} -p {port}`         (long-lived)
+ *   - build: `next build`                            -> `.next/standalone/`
+ *   - serve: `next start -H {host} -p {port}`        (production runtime)
+ *
+ * NOT registered yet — wiring lives in `adapters/index.ts` + `init.ts`.
+ */
+
+import { spawn } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import type {
+  BuildSpec,
+  DevSpec,
+  FrameworkAdapter,
+  InstallResult,
+  ScaffoldResult,
+  ServeSpec,
+} from "../types.js";
+import type {
+  BuildContext,
+  DevContext,
+  FrameworkContext,
+  ScaffoldContext,
+  ServeContext,
+} from "../context.js";
+
+// ─── Constants ───────────────────────────────────────────
+
+const INSTALL_TIMEOUT_MS = 240_000;
+
+// ─── Helpers ─────────────────────────────────────────────
+
+function runNpmInstall(ctx: FrameworkContext): Promise<InstallResult> {
+  return new Promise<InstallResult>((resolve, reject) => {
+    const start = Date.now();
+    const child = spawn("npm", ["install", "--legacy-peer-deps"], {
+      cwd: ctx.projectPath,
+      shell: true,
+      stdio: "pipe",
+      env: { ...process.env, ...ctx.env, FORCE_COLOR: "0" },
+    });
+
+    let log = "";
+    child.stdout?.on("data", (d: Buffer) => { log += d.toString(); });
+    child.stderr?.on("data", (d: Buffer) => { log += d.toString(); });
+
+    const timer = setTimeout(() => {
+      try {
+        if (process.platform === "win32" && child.pid) {
+          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { shell: false });
+        } else {
+          child.kill("SIGTERM");
+        }
+      } catch { /* ignore */ }
+    }, INSTALL_TIMEOUT_MS);
+
+    if (ctx.signal) {
+      ctx.signal.addEventListener("abort", () => {
+        clearTimeout(timer);
+        try { child.kill("SIGTERM"); } catch { /* ignore */ }
+        reject(new Error("install aborted"));
+      });
+    }
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve({ durationMs: Date.now() - start, log });
+      } else {
+        reject(new Error(`npm install exited with code ${code}\n${log.slice(-2000)}`));
+      }
+    });
+  });
+}
+
+async function writeAllFiles(
+  templateFiles: Record<string, string>,
+  projectPath: string,
+): Promise<string[]> {
+  const written: string[] = [];
+  for (const [rel, content] of Object.entries(templateFiles)) {
+    const full = path.join(projectPath, rel);
+    await mkdir(path.dirname(full), { recursive: true });
+    await writeFile(full, content, "utf-8");
+    written.push(rel);
+  }
+  return written;
+}
+
+// ─── Adapter ─────────────────────────────────────────────
+
+export const nextjsAppAdapter: FrameworkAdapter = {
+  id: "nextjs-app",
+  family: "node",
+  displayName: "Next.js (App Router)",
+  capabilities: new Set([
+    "ssr-node",
+    "hmr-supported",
+    "supports-base-path",
+    "html-injection-supported",
+    "requires-long-lived-process",
+    // visual-edit-supported deliberately ABSENT; no SWC plugin yet (PRD 02 §10.1).
+  ]),
+
+  defaults: {
+    requiredFiles: ["package.json"],
+    criticalFiles: ["package.json", "next.config.ts"],
+    listIgnore: [".next", "out", "node_modules", ".git"],
+    lockedConfigFiles: [
+      "next.config.js",
+      "next.config.mjs",
+      "next.config.ts",
+      "postcss.config.js",
+      "postcss.config.mjs",
+    ],
+    fallbackTemplateId: "nextjs-blank",
+    devReadinessTimeoutMs: 120_000,
+    buildTimeoutMs: 240_000,
+  },
+
+  async scaffold(ctx: ScaffoldContext): Promise<ScaffoldResult> {
+    const filesWritten = await writeAllFiles(ctx.templateFiles, ctx.projectPath);
+    return { filesWritten };
+  },
+
+  install(ctx: FrameworkContext): Promise<InstallResult> {
+    return runNpmInstall(ctx);
+  },
+
+  dev(ctx: DevContext): DevSpec {
+    return {
+      command: "npx",
+      args: [
+        "next",
+        "dev",
+        "-H", ctx.host,
+        "-p", String(ctx.port),
+      ],
+      cwd: ctx.projectPath,
+      env: {
+        ...ctx.env,
+        FORCE_COLOR: "0",
+        // Next reads basePath from next.config; passing through env lets the
+        // template's next.config.ts pick it up if the user wires it that way.
+        DOABLE_BASE_PATH: ctx.basePath,
+      },
+      readinessSignal: {
+        kind: "log-substring",
+        patterns: ["Ready in", "started server on", "Local:"],
+      },
+      healthUrl: `http://${ctx.host}:${ctx.port}${ctx.basePath === "/" ? "/" : ctx.basePath}`,
+    };
+  },
+
+  build(ctx: BuildContext): BuildSpec {
+    return {
+      command: "npx",
+      args: ["next", "build"],
+      cwd: ctx.projectPath,
+      env: {
+        ...ctx.env,
+        NODE_ENV: "production",
+        NEXT_TELEMETRY_DISABLED: "1",
+      },
+      // Standalone mode produces a self-contained server bundle the
+      // production runtime supervisor (PRD 06) can serve via
+      // `node .next/standalone/server.js`.
+      outputDir: ".next",
+      timeoutMs: 240_000,
+    };
+  },
+
+  serve(ctx: ServeContext): ServeSpec {
+    // For projects built with output:"standalone" the canonical entry
+    // is .next/standalone/server.js; for the default mode it's `next start`.
+    // We default to `next start` and let production wiring (PRD 06)
+    // override when needed.
+    return {
+      command: "npx",
+      args: [
+        "next",
+        "start",
+        "-H", ctx.host,
+        "-p", String(ctx.port),
+      ],
+      cwd: ctx.projectPath,
+      env: { ...ctx.env, NODE_ENV: "production" },
+      port: ctx.port,
+      healthUrl: `http://${ctx.host}:${ctx.port}/`,
+      readinessSignal: {
+        kind: "log-substring",
+        patterns: ["started server on", "Ready in"],
+      },
+    };
+  },
+
+  parseLog(line: string) {
+    if (line.toLowerCase().includes("error")) {
+      return { level: "error" as const, message: line.trim() };
+    }
+    return null;
+  },
+
+  lockedConfigFiles() {
+    return this.defaults.lockedConfigFiles;
+  },
+
+  listIgnore() {
+    return this.defaults.listIgnore;
+  },
+
+  shouldReloadOnError({ path, status }) {
+    if (status !== 502 && status !== 504) return false;
+    // Next.js dev server briefly drops _next/static and _next/webpack-hmr
+    // during a recompile; reload on either.
+    return (
+      path.startsWith("/_next/static/") ||
+      path.startsWith("/_next/webpack-hmr") ||
+      path === "/_next/on-demand-entries-ping"
+    );
+  },
+
+  clearCacheBeforeRestart() {
+    return [".next/cache"];
+  },
+
+  redactInUI(text: string): string {
+    return text
+      .replace(/next\.config\.(ts|js|mjs)/g, "build settings")
+      .replace(/npx next/g, "build tool");
+  },
+};

@@ -1,0 +1,101 @@
+import type { FrameworkPrompt } from "./index.js";
+
+/**
+ * Next.js App Router framework prompt. NEW content (no parallel exists in
+ * the legacy system-prompts.ts). Used when a project's framework_id is
+ * "nextjs-app". Mirrors the section split of vite-react.ts so the same
+ * renderFrameworkPrompt() concatenation works.
+ */
+export const nextjsAppPrompt: FrameworkPrompt = {
+  systemIntro:
+    "The project is a Next.js 15 App Router + React 19 + TypeScript app with Tailwind CSS v4 (via @tailwindcss/postcss). This is App Router (not the legacy Pages Router) and not Vite. Files are hot-reloaded via the Next.js dev server. The dev server runs in the project sandbox and the live preview shows the running app.",
+
+  envConventions: [
+    "0. **🔌 USE CONNECTED INTEGRATIONS**: If a `<connected-integrations>` block appears above, the user has already connected those services. You MUST reference the listed env vars and call the listed tools. NEVER ask the user to paste API keys, URLs, or tokens for any service in that block. If you need a service NOT in the block, call `request_integration` instead of asking for keys.",
+    "",
+    "0a. **ENV VAR PREFIX RULES (Next.js)**:",
+    "   - Server-only secrets: read with `process.env.X` inside server components, server actions (`'use server'`), and route handlers (`app/api/*/route.ts`). NEVER expose these to the browser.",
+    "   - Browser-safe values: must be prefixed with `NEXT_PUBLIC_` (e.g. `process.env.NEXT_PUBLIC_SUPABASE_URL`). Only `NEXT_PUBLIC_*` vars are inlined into the client bundle.",
+    "   - NEVER put a service-role key, secret key, or password in a `NEXT_PUBLIC_*` var — it would ship to every visitor's browser.",
+    "   - Do NOT use `import.meta.env` — that is Vite syntax. Next.js uses `process.env`.",
+    "",
+    "0b. **🔌 SUPABASE NOT CONNECTED? PROVISION FIRST**: If the user asks to add Supabase / a database but there is NO `supabase` entry in the `<connected-integrations>` block above (or the block is absent), you MUST call the `provision_supabase` tool BEFORE writing any code. The provision tool injects `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and the `NEXT_PUBLIC_SUPABASE_*` mirrors automatically.",
+    "",
+    "1. **SUPABASE CLIENT PATTERNS (Next.js)**:",
+    "   - Server-side (route handler / server action / server component): use the service-role key for trusted operations.",
+    "     ```ts",
+    "     // app/api/todos/route.ts",
+    "     import { createClient } from \"@supabase/supabase-js\";",
+    "     const supabase = createClient(",
+    "       process.env.SUPABASE_URL!,",
+    "       process.env.SUPABASE_SERVICE_ROLE_KEY!,",
+    "     );",
+    "     export async function GET() {",
+    "       const { data, error } = await supabase.from(\"todos\").select(\"*\");",
+    "       if (error) return Response.json({ error: error.message }, { status: 500 });",
+    "       return Response.json(data);",
+    "     }",
+    "     ```",
+    "   - Client-side ('use client' components): use the anon key via `NEXT_PUBLIC_*`.",
+    "     ```ts",
+    "     const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? \"\";",
+    "     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? \"\";",
+    "     export const supabase = url ? createClient(url, key) : null;",
+    "     ```",
+    "     Components must check `if (!supabase)` and render a placeholder rather than crashing.",
+  ].join("\n"),
+
+  routing: [
+    "2. **APP ROUTER FILE-BASED ROUTING**: Routing is determined by folders inside `app/`. Do NOT install `react-router-dom`, do NOT use `HashRouter` or `BrowserRouter` — Next.js handles routing automatically.",
+    "   - `app/page.tsx` → `/`",
+    "   - `app/about/page.tsx` → `/about`",
+    "   - `app/blog/[slug]/page.tsx` → `/blog/:slug` (params arrive via the `params` prop)",
+    "   - `app/layout.tsx` is the root layout (must render `<html>` and `<body>`).",
+    "   - Nested `layout.tsx` files compose around their child pages.",
+    "   - Route handlers (replaces API routes): `app/api/<name>/route.ts` exporting `GET`, `POST`, etc.",
+    "   - Server actions: a function with the `\"use server\"` directive at the top of the file (or inline). Call them directly from client components — Next.js wires the RPC.",
+    "   - For client-side navigation, use `<Link href=\"/path\">` from `next/link` and `useRouter()` from `next/navigation`. Do NOT use `<a href>` for internal links.",
+    "   - The preview runs at the project's dev URL — Next.js handles base paths via `next.config.ts`. Do NOT manually prefix routes.",
+  ].join("\n"),
+
+  styling: [
+    "6. **TAILWIND CSS v4 (Next.js)** — Tailwind v4 is wired through `@tailwindcss/postcss`, NOT `@tailwindcss/vite`:",
+    "   - `app/globals.css` must start with `@import \"tailwindcss\";` as the FIRST line. Import it from `app/layout.tsx`.",
+    "   - NEVER use `@tailwind base; @tailwind components; @tailwind utilities;` (v3 syntax — broken in v4).",
+    "   - NEVER use `@apply` in CSS — it is removed by default in v4. Use utility classes directly in JSX.",
+    "   - NEVER create a `tailwind.config.ts` / `tailwind.config.js` — v4 auto-detects utility classes.",
+    "   - Custom theme values go in the `@theme` directive in `globals.css`:",
+    "     ```css",
+    "     @import \"tailwindcss\";",
+    "     @theme {",
+    "       --color-brand: #3b82f6;",
+    "       --font-heading: \"Inter\", sans-serif;",
+    "     }",
+    "     ```",
+    "   - Use them as classes: `className=\"text-brand font-heading\"`.",
+  ].join("\n"),
+
+  fileShape: [
+    "7. **SERVER VS CLIENT COMPONENTS**:",
+    "   - Files in `app/` are SERVER components by default — they can `await` data, read files, call any Node module, and use `process.env.SECRET_*` directly. They CANNOT use `useState`, `useEffect`, event handlers, or browser APIs.",
+    "   - Add `\"use client\"` as the FIRST line of a file to make it a client component. Use this for interactive UI (forms, hooks, browser APIs).",
+    "   - Push the `\"use client\"` boundary as deep as possible — keep layouts and data-fetching pages as server components.",
+    "",
+    "8. **ROUTE HANDLERS**: Files at `app/api/<name>/route.ts` export named HTTP-method functions:",
+    "   ```ts",
+    "   export async function GET(req: Request) { return Response.json({ ok: true }); }",
+    "   export async function POST(req: Request) { const body = await req.json(); /* ... */ }",
+    "   ```",
+    "   Use these for any server-side endpoint (webhooks, third-party API proxies, secret-bearing fetches).",
+    "",
+    "9. **SERVER ACTIONS**: A function with `\"use server\"` runs on the server and is callable from a client component. Use them for form submissions and mutations instead of writing a route handler when the call only happens from your own UI.",
+    "",
+    "10. **FILE EXTENSIONS**: Always use `.tsx` for files containing JSX. Use `.ts` for pure TypeScript files (route handlers without JSX, utilities). Never put JSX in a `.ts` file.",
+    "",
+    "11. **DEFAULT EXPORT**: `app/page.tsx` and `app/layout.tsx` MUST `export default` their component — Next.js looks up the default export. Route handlers use NAMED exports (`export async function GET`).",
+    "",
+    "12. **IMPORTING NODE MODULES**: Server components and route handlers can import any Node module (`fs`, `crypto`, `pg`, `@supabase/supabase-js` with the service-role key, etc.). Client components are restricted to browser-safe modules.",
+    "",
+    "13. **IMPORT TYPES**: Do not use `import type { X }` for values used at runtime (components, function calls, value uses). Only use `import type` for values used exclusively in type annotations.",
+  ].join("\n"),
+};

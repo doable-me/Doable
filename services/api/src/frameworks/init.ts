@@ -7,7 +7,12 @@
  * build, AI file tools, etc.). Idempotent — safe to call more than once.
  */
 
-import { viteReactAdapter, viteReactPack } from "./adapters/index.js";
+import {
+  nextjsAppAdapter,
+  nextjsAppPack,
+  viteReactAdapter,
+  viteReactPack,
+} from "./adapters/index.js";
 import { defaultRegistry } from "./registry.js";
 
 let initialized = false;
@@ -15,5 +20,6 @@ let initialized = false;
 export function initFrameworks(): void {
   if (initialized) return;
   defaultRegistry.register(viteReactPack, viteReactAdapter);
+  defaultRegistry.register(nextjsAppPack, nextjsAppAdapter);
   initialized = true;
 }

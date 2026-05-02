@@ -4,19 +4,40 @@
  */
 import { isProjectScaffolded, getProjectPath } from "../../projects/file-manager.js";
 import { getDevServerUrl } from "../../projects/dev-server.js";
+import { sql } from "../../db/index.js";
+import { renderFrameworkPrompt } from "../../ai/framework-prompts/index.js";
+
+/**
+ * Resolve framework_id for the project. Defaults to "vite-react" when the
+ * row is missing the column (legacy rows pre-migration 060) or the project
+ * itself can't be found. Cached for the request duration via a tiny per-call
+ * SQL — proxy hot path is unaffected because chat handler is not hot.
+ */
+async function resolveFrameworkId(projectId: string): Promise<string> {
+  try {
+    const rows = await sql<{ framework_id: string }[]>`
+      SELECT framework_id FROM projects WHERE id = ${projectId}
+    `;
+    return rows[0]?.framework_id ?? "vite-react";
+  } catch {
+    return "vite-react";
+  }
+}
 
 /** Build the system prompt for the given chat mode. */
-export function buildSystemPrompt(
+export async function buildSystemPrompt(
   mode: string,
   projectId: string,
   projectContext: string,
-): string {
+): Promise<string> {
   const previewUrl = getDevServerUrl(projectId) ?? undefined;
   const isScaffolded = isProjectScaffolded(projectId);
+  const frameworkId = await resolveFrameworkId(projectId);
+  const frameworkPrompt = renderFrameworkPrompt(frameworkId);
 
   if (mode === "plan") return buildPlanPrompt(projectContext, isScaffolded);
-  if (mode === "visual-edit") return buildVisualEditPrompt(previewUrl);
-  return buildAgentPrompt(projectContext, previewUrl);
+  if (mode === "visual-edit") return buildVisualEditPrompt(previewUrl, frameworkPrompt);
+  return buildAgentPrompt(projectContext, previewUrl, frameworkPrompt);
 }
 
 function buildPlanPrompt(projectContext: string, isScaffolded: boolean): string {
@@ -48,7 +69,7 @@ STEP 3 — PLAN:
 IMPORTANT: Do NOT write code. Do NOT create or edit files. Only analyze and plan. You MUST use the ask_clarification and create_plan tools — do not output plans as plain text.${projectContext}`;
 }
 
-function buildVisualEditPrompt(previewUrl: string | undefined): string {
+function buildVisualEditPrompt(previewUrl: string | undefined, frameworkPrompt: string): string {
   return `You are Doable's Visual Edit AI. You make precise, surgical edits to individual UI elements. The user has selected a specific element in the visual preview and wants you to modify it.
 
 RULES:
@@ -58,10 +79,10 @@ RULES:
 - Be fast and precise — modify only what's needed, nothing more.
 - Respond briefly: state what you changed in 1-2 sentences.
 
-The project is a Vite + React + TypeScript app with Tailwind CSS v4.${previewUrl ? `\nPreview: ${previewUrl}` : ""}`;
+${frameworkPrompt}${previewUrl ? `\nPreview: ${previewUrl}` : ""}`;
 }
 
-function buildAgentPrompt(projectContext: string, previewUrl: string | undefined): string {
+function buildAgentPrompt(projectContext: string, previewUrl: string | undefined, frameworkPrompt: string): string {
   return `You are Doable's Agent Mode AI. You build complete, working web applications by creating files, editing files, and installing packages. The user sees a live preview that updates in real-time as you make changes.
 
 ═══════════════════════════════════════════════════════════════
@@ -82,7 +103,7 @@ If you catch yourself about to explain your reasoning, STOP and
 delete it. The user should only see results, never process.
 ═══════════════════════════════════════════════════════════════
 
-The project is a Vite + React 19 + TypeScript app with Tailwind CSS v4 (using the @tailwindcss/vite plugin). Files are hot-reloaded via Vite.${previewUrl ? `\nLive preview: ${previewUrl}` : ""}${projectContext}
+${frameworkPrompt}${previewUrl ? `\nLive preview: ${previewUrl}` : ""}${projectContext}
 
 ═══════════════════════════════════════════════════════════════
   📊  PRESENTATIONS / SLIDE DECKS — STRICT POLICY  📊
