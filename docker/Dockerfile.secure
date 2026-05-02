@@ -185,8 +185,8 @@ RUN printf '%s\n' \
         'fi' \
         'echo "[doable-init] first boot — running setup-server.sh in CONTAINER_MODE=1"' \
         'cd /opt/doable' \
-        'CONTAINER_MODE=1 INSTALL_DIR=/opt/doable DOABLE_STATE_DIR="${STATE_DIR}" \\' \
-        '    bash setup-server.sh 2>&1 | tee "${LOG_DIR}/setup-server.log"' \
+        'export CONTAINER_MODE=1 INSTALL_DIR=/opt/doable DOABLE_STATE_DIR="${STATE_DIR}"' \
+        'bash setup-server.sh 2>&1 | tee "${LOG_DIR}/setup-server.log"' \
         ': > "${MARKER}"' \
         'echo "[doable-init] first-boot setup complete"' \
         > /usr/local/bin/doable-first-boot \
