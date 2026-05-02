@@ -635,13 +635,79 @@ AccuracySec=30
 WantedBy=timers.target
 WTEOF
 
+# ─── Per-app runtime template (PRD 06 / Phase 5) ──────────────
+# Socket-activated systemd template so 100s of published process-kind apps
+# (Next.js standalone, Nuxt, etc.) can sleep idle and wake on first request.
+# The supervisor (services/api/src/runtime/) writes per-app drop-ins under
+# /etc/systemd/system/doable-app@{slug}.service.d/override.conf at publish.
+
+mkdir -p /etc/doable/apps
+mkdir -p /run/doable
+chmod 0750 /run/doable
+# Use the caddy group so Caddy can connect to the unix sockets.
+chown :caddy /run/doable 2>/dev/null || true
+
+cat > /etc/systemd/system/doable-app@.service << APPSVCEOF
+[Unit]
+Description=Doable user app %i
+After=network-online.target
+PartOf=doable-apps.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/doable/apps/%i.env
+ExecStart=/bin/sh -c '/usr/bin/node "$WorkingDirectory/.next/standalone/server.js" || /usr/bin/node "$WorkingDirectory/index.js"'
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30
+TimeoutStopSec=15
+
+# Sandboxing — additive to dovault's per-spawn flags. Per PRD 06 §4.1.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/data/projects /data/sites
+PrivateTmp=yes
+PrivateDevices=yes
+RuntimeDirectory=doable
+RuntimeDirectoryMode=0750
+
+[Install]
+WantedBy=doable-apps.target
+APPSVCEOF
+
+cat > /etc/systemd/system/doable-app@.socket << APPSOCKEOF
+[Unit]
+Description=Doable user app socket %i
+PartOf=doable-apps.target
+
+[Socket]
+ListenStream=/run/doable/%i.sock
+SocketMode=0660
+SocketGroup=caddy
+Accept=no
+
+[Install]
+WantedBy=sockets.target
+APPSOCKEOF
+
+cat > /etc/systemd/system/doable-apps.target << APPTGTEOF
+[Unit]
+Description=All Doable per-app units
+StopWhenUnneeded=no
+
+[Install]
+WantedBy=multi-user.target
+APPTGTEOF
+
 # Cloudflared service
 cloudflared service install 2>/dev/null || true
 
 systemctl daemon-reload
-systemctl enable doable.service doable-watchdog.timer cloudflared 2>/dev/null
+systemctl enable doable.service doable-watchdog.timer cloudflared doable-apps.target 2>/dev/null
 
-ok "Systemd services created and enabled (app + watchdog timer + tunnel)"
+ok "Systemd services created and enabled (app + watchdog timer + tunnel + per-app template)"
 
 # ─── Step 13: Start everything ────────────────────────────────
 info "Step 13/13: Starting services..."

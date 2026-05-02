@@ -65,6 +65,18 @@ export function generateCaddyfile(customDomains: DomainMapping[]): string {
         header_regexp subdomain Host ^([a-z0-9][-a-z0-9]*)\\.${escapedDomain}$
     }
 
+    # PRD 10 — connector-bridge proxy. Static-kind generated apps reach
+    # connected integrations via fetch('/__doable/connector-proxy/...')
+    # same-origin. Caddy strips the /__doable prefix and proxies to the
+    # API which validates the project-scoped JWT and runs the action.
+    handle_path /__doable/connector-proxy/* {
+        reverse_proxy 127.0.0.1:${process.env.API_PORT ?? "4000"} {
+            header_up X-Forwarded-Proto https
+            header_up X-Forwarded-Host {http.request.host}
+        }
+        rewrite * /__doable/connector-proxy{path}
+    }
+
     handle @has_subdomain {
         root * ${SITES_DIR}/{re.subdomain.1}/live
         try_files {path} /index.html
