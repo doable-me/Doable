@@ -146,6 +146,12 @@ apt-get install -y \
   libxshmfence1 libnspr4 libnss3 libdrm2 libxkbcommon0 \
   fonts-liberation 2>/dev/null || true
 
+# Python deps for FastAPI/Django framework deploys. The Wave 17 Python
+# venv setup in services/api/src/deploy/adapters/doable-cloud.ts shells
+# out to `python3 -m venv` per published Python project; on Ubuntu that
+# fails without python3-venv installed (verified on a fresh 24.04 host).
+apt-get install -y python3-venv python3-pip 2>/dev/null || true
+
 # Caddy (static file server for published sites)
 if ! command -v caddy &>/dev/null; then
   apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
