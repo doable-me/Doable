@@ -160,12 +160,28 @@ function renderUnitOverride(
   // ExecStart total, so without this systemd refuses to load the unit.
   return `[Service]
 WorkingDirectory=${ctx.projectDir}/dist-server
-User=doable-app
-Group=doable-app
+DynamicUser=yes
 ReadWritePaths=
 ReadWritePaths=${ctx.projectDir}/dist-server
 ExecStart=
 ExecStart=${execStart}
+PrivateUsers=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=~user
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+PrivateDevices=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
 MemoryMax=512M
 CPUQuota=50%
 TasksMax=256

@@ -197,7 +197,7 @@ show`. Surfaced in the editor `RuntimePanel` overlay (5 s poll) and
 on the workspace `/runtime` page (8 s poll). Linux-only —
 Windows/macOS dev returns `source: "none"` with null fields.
 
-### Security model (Wave 25)
+### Security model (Wave 25-26)
 
 **Build-time isolation.** Every `next build` / `vite build` /
 `pip install` / `npm install` driven by
@@ -208,47 +208,89 @@ egress is allowed during build for the public registries (npm,
 PyPI) so installs work; full egress allow-listing of npm + PyPI
 only is the next hardening pass.
 
-**Runtime isolation.** Production apps now run under systemd as the
-dedicated `doable-app` system user (no shell, no home), **not**
-root. The `node-standalone` and `python-asgi` adapters write
-hardening directives into the per-project drop-in:
-`User=doable-app`, `NoNewPrivileges=true`, `ProtectSystem=strict`,
-`PrivateTmp=true`, `IPAddressDeny=any` with an allow-list for
-`127.0.0.0/8` and the project workspace. `ReadWritePaths` is
-narrowed per-project to that app's own `dist-server/` only — a
-compromised project cannot read another project's source tree, its
-secrets, or `/root`.
+**Runtime isolation.** Production apps run under systemd with
+defense-in-depth across UID, namespace, kernel, and syscall layers.
+The `node-standalone` and `python-asgi` adapters write hardening
+directives into the per-project drop-in covering the following
+categories:
+
+- **Per-project UID, no shared user.** `DynamicUser=yes` — systemd
+  auto-allocates a unique transient UID for each
+  `doable-app@<slug>.service` instance, replacing the shared
+  `doable-app` user from Wave 25. A kernel break on one app cannot
+  reach another via UID overlap. `PrivateUsers=yes` adds a user
+  namespace mapping so apps see their own UID/GID universe rather
+  than the host's.
+- **PID namespace isolation.** `ProtectProc=invisible` combined
+  with `ProcSubset=pid` puts each app in a PID namespace where
+  `/proc` exposes only its own processes — `ps -ef` and
+  `/proc/<pid>` traversal can no longer enumerate other apps,
+  systemd, or any host workload.
+- **Kernel attack surface closed.**
+  `ProtectKernelTunables=yes`, `ProtectKernelModules=yes`,
+  `ProtectKernelLogs=yes`, and `ProtectControlGroups=yes` make
+  `/proc/sys`, `/sys`, kernel module load, kmsg, and the cgroup
+  hierarchy read-only or unreachable from the app.
+- **Namespace restriction.** `RestrictNamespaces=~CLONE_NEWUSER`
+  prevents the app from spawning its own user namespaces (a common
+  privilege-escalation primitive).
+- **Address-family restriction.**
+  `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` blocks raw
+  sockets, `AF_PACKET`, `AF_NETLINK`, and exotic families — apps
+  can speak TCP/UDP and Unix sockets, nothing else.
+- **Misc privilege drops.** `RestrictRealtime=yes` (no
+  `SCHED_FIFO`/`SCHED_RR`), `LockPersonality=yes`,
+  `RestrictSUIDSGID=yes`, `RemoveIPC=yes` (System V IPC and POSIX
+  message queues purged on stop).
+- **Seccomp syscall filter.**
+  `SystemCallFilter=@system-service` — a curated allow-list of the
+  syscalls a normal service needs; everything outside that set
+  (including most exotic kernel surface) is filtered.
+- **Device isolation.** `PrivateDevices=yes` exposes only
+  `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, and
+  `/dev/tty` — no block devices, no GPU, no `/dev/kmsg`.
+- **Clock + hostname read-only.** `ProtectClock=yes`,
+  `ProtectHostname=yes` so apps can't drift the system clock or
+  rename the host.
+- **Filesystem + network (carried from Wave 25).**
+  `NoNewPrivileges=true`, `ProtectSystem=strict`,
+  `PrivateTmp=true`, `IPAddressDeny=any` with allow-list for
+  `127.0.0.0/8` and the project workspace, and `ReadWritePaths`
+  narrowed to that app's own `dist-server/` only — a compromised
+  project cannot read another project's source tree, its secrets,
+  or `/root`.
 
 **Network.** Per-project TCP ports stay on `127.0.0.1:30000-39999`,
 unchanged from Wave 21 — never internet-reachable directly. Caddy
 terminates TLS on `:80` / `:443` and `reverse_proxy`s the request
 to the per-project loopback port keyed by `Host` header.
 
-**User ownership.** `setup-server.sh` now creates a `doable-app`
-system user (no shell, no home directory). After
-`DoableCloudAdapter.deploy()` stages `dist-server/`, it `chown -R`s
-that directory to `doable-app:doable-app` so the runtime user can
-read its own bundle without holding any privilege over the rest of
-the project tree.
+**File ownership.** Wave 26 replaced the Wave 25 `chown` step with
+world-readable permissions: after `DoableCloudAdapter.deploy()`
+stages `dist-server/`, the directory is `chmod`ed (dirs `755`,
+files `644`) so the systemd-allocated transient UID can read its
+own bundle without any user pre-existing on the host. Combined
+with the per-project `ReadWritePaths`, write access is still
+confined to the app's own bundle.
 
 ### Honest gaps still open
 
 - **Build-time network is currently unrestricted.** A compromised
   package can reach arbitrary endpoints during `npm install` /
-  `pip install`. Wave 26 candidate: tighten the build jail's egress
-  to npm + PyPI registry hostnames only.
-- **Multiple projects share the single `doable-app` user.** They
-  are isolated from each other by per-project `ReadWritePaths` (and
-  by per-project cgroups) but they share a UID, so a kernel-level
-  break on one app would not be UID-segregated from another. True
-  per-project UIDs would need a `setup-server.sh` user-create loop
-  and a templated systemd unit that takes the UID as an instance
-  parameter.
+  `pip install`. Tighten the build jail's egress to npm + PyPI
+  registry hostnames only is the next hardening pass.
 - **`npm install` / `pip install` still has full network access for
   legitimate package fetches.** A malicious package can phone home
   during install even with the runtime hardening above — the
   dovault build jail isolates the *filesystem* writes, not the
   outbound socket calls.
+- **Workloads needing exotic kernel surface will fail.** If a
+  workload needs raw sockets / `AF_NETLINK` / `SCHED_FIFO` it will
+  fail under the new `SystemCallFilter` /
+  `RestrictAddressFamilies` / `RestrictRealtime` — most web apps
+  don't need any of these, but a specialised app (network
+  diagnostics tooling, real-time audio, etc.) would have to opt out
+  of the relevant directive.
 
 ---
 

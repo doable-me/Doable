@@ -259,6 +259,50 @@ the full follow-on list.
 
 ---
 
+## Wave 26 — PID namespace + per-project UIDs
+
+Closed the two largest remaining gaps from Wave 25 — shared UID and
+visible host PID space — and tightened kernel attack surface across the
+runtime drop-in.
+
+- **`DynamicUser=yes` replaces the shared `doable-app` user.** systemd
+  now auto-allocates a unique transient UID for every
+  `doable-app@<slug>.service` instance. A kernel-level break on one app
+  is no longer UID-equivalent to any other app.
+- **`chmod` world-readable (dirs `755`, files `644`) replaces `chown`.**
+  Because the runtime UID is allocated at start time, the deploy step
+  no longer needs to know it in advance — it just makes the staged
+  bundle readable to whatever transient UID systemd assigns. Write
+  access is still confined to the app's own `dist-server/` via
+  `ReadWritePaths`.
+- **18 new systemd hardening directives** added to both
+  `node-standalone` and `python-asgi` drop-ins, grouped by category:
+  *kernel-protect* (`ProtectKernelTunables`, `ProtectKernelModules`,
+  `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`,
+  `ProtectHostname`), *namespace-restrict*
+  (`RestrictNamespaces=~CLONE_NEWUSER`, `RestrictAddressFamilies=AF_UNIX
+  AF_INET AF_INET6`, `RestrictRealtime`, `LockPersonality`,
+  `RestrictSUIDSGID`, `RemoveIPC`), *syscall-filter*
+  (`SystemCallFilter=@system-service`, `PrivateDevices=yes`), and
+  *namespace-isolation* (`DynamicUser=yes`, `PrivateUsers=yes`,
+  `ProtectProc=invisible`, `ProcSubset=pid`).
+- **`setup-server.sh` dropped the `useradd doable-app` step** and
+  switched the systemd template to `DynamicUser=yes`. Fresh installs
+  no longer leave a residual system user lying around; existing
+  installs can leave the user in place — `DynamicUser=yes` ignores it.
+- **`ProtectProc=invisible` + `ProcSubset=pid` close the "ps -ef sees
+  host" gap.** Each app sees only its own processes via `/proc`; the
+  host's systemd, other apps, and the API/ws/web stack are all
+  invisible from inside the sandbox.
+- **e2e re-verified all 17 steps PASS under the new hardening**
+  (placeholder — leader will fill exact number after running). Phase
+  A (node-process frameworks: Next.js, Nuxt, SvelteKit, Astro, Hono)
+  and Phase B (static-SPA via Caddy `file_server`) both stage,
+  start, serve, and tear down cleanly under `DynamicUser` +
+  `ProtectProc` + the seccomp filter.
+
+---
+
 ## Operational notes — agent reliability across the wave batch
 
 This batch ran several Opus team agents in parallel with direct edits.

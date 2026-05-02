@@ -153,7 +153,7 @@ export class DoableCloudAdapter implements DeployAdapter {
           });
         }
 
-        chownDistServer(distServer, projectId);
+        chmodDistServerWorldReadable(distServer, projectId);
         console.log(
           `[doable-cloud] Staged Next.js standalone layout at ${distServer} ` +
             `for project ${projectId}`
@@ -179,7 +179,7 @@ export class DoableCloudAdapter implements DeployAdapter {
             recursive: true,
           });
         }
-        chownDistServer(distServer, projectId);
+        chmodDistServerWorldReadable(distServer, projectId);
         console.log(
           `[doable-cloud] Staged Nuxt nitro layout at ${distServer} ` +
             `for project ${projectId}`
@@ -196,7 +196,7 @@ export class DoableCloudAdapter implements DeployAdapter {
         await rm(distServer, { recursive: true, force: true });
         await mkdir(distServer, { recursive: true });
         await cp(svelteBuild, distServer, { recursive: true });
-        chownDistServer(distServer, projectId);
+        chmodDistServerWorldReadable(distServer, projectId);
         console.log(
           `[doable-cloud] Staged SvelteKit adapter-node layout at ${distServer} ` +
             `for project ${projectId}`
@@ -221,7 +221,7 @@ export class DoableCloudAdapter implements DeployAdapter {
             recursive: true,
           });
         }
-        chownDistServer(distServer, projectId);
+        chmodDistServerWorldReadable(distServer, projectId);
         console.log(
           `[doable-cloud] Staged Astro SSR layout at ${distServer} ` +
             `for project ${projectId}`
@@ -253,7 +253,7 @@ export class DoableCloudAdapter implements DeployAdapter {
         }
         installNodeProductionDeps(distServer, projectId);
 
-        chownDistServer(distServer, projectId);
+        chmodDistServerWorldReadable(distServer, projectId);
         console.log(
           `[doable-cloud] Staged Hono node-build layout at ${distServer} ` +
             `for project ${projectId}`
@@ -292,7 +292,7 @@ export class DoableCloudAdapter implements DeployAdapter {
         // /usr/bin/python3 fallback). Materialise the venv + install deps
         // here so the systemd unit can ExecStart cleanly.
         setupPythonVenv(distServer, projectId);
-        chownDistServer(distServer, projectId);
+        chmodDistServerWorldReadable(distServer, projectId);
         console.log(
           `[doable-cloud] Staged FastAPI source layout at ${distServer} ` +
             `for project ${projectId}`
@@ -314,7 +314,7 @@ export class DoableCloudAdapter implements DeployAdapter {
         // Same setup as FastAPI — pip install requirements (including
         // gunicorn if listed) inside the staged venv.
         setupPythonVenv(distServer, projectId);
-        chownDistServer(distServer, projectId);
+        chmodDistServerWorldReadable(distServer, projectId);
         console.log(
           `[doable-cloud] Staged Django source layout at ${distServer} ` +
             `for project ${projectId}`
@@ -631,27 +631,36 @@ function installNodeProductionDeps(distServer: string, projectId: string): void 
 }
 
 /**
- * Wave 25: chown the staged dist-server tree to doable-app:doable-app so
- * the per-app systemd unit (running as User=doable-app) can read its own
- * code and write logs/ephemeral files under PrivateTmp. Without this the
- * app starts as doable-app but can't open files owned by root and dies
- * with EACCES on the very first require().
+ * Wave 26: with systemd DynamicUser=yes the per-app systemd unit runs
+ * under a transient UID allocated at start time — we don't know it ahead
+ * of time so we can't pre-chown the staged tree. Instead, make
+ * dist-server world-readable (dirs 755, files 644) so any dynamic UID
+ * can read its own code at start. The dynamic UID still gets exclusive
+ * write via systemd's StateDirectory/PrivateTmp.
  *
- * Linux-only: dev hosts (Windows/macOS) skip silently. Best-effort: if
- * doable-app doesn't exist yet (fresh server pre-`./setup-server.sh`),
- * warn but don't throw — the deploy already succeeded at the file-staging
- * step, the start will fail loudly enough on its own.
+ * `u+rwX,go+rX,go-w` is the canonical "make readable by all without
+ * granting write" recipe — capital X applies +x only to dirs and to
+ * files that are already executable, so it doesn't accidentally mark
+ * data files executable.
+ *
+ * Linux-only: dev hosts (Windows/macOS) skip silently. Best-effort:
+ * warn on failure but don't throw — the deploy already succeeded at
+ * the file-staging step, the start will fail loudly enough on its own.
  */
-function chownDistServer(distServer: string, projectId: string): void {
+function chmodDistServerWorldReadable(distServer: string, projectId: string): void {
   if (process.platform !== "linux") return;
-  const r = spawnSync("chown", ["-R", "doable-app:doable-app", distServer], {
+  // DynamicUser=yes (Wave 26) means we can't pre-chown to a known UID.
+  // Make the staged tree readable by anyone instead — dirs 755, files 644.
+  // u+rwX,go+rX,go-w is the canonical "make readable by all without
+  // granting write" recipe.
+  const r = spawnSync("chmod", ["-R", "u+rwX,go+rX,go-w", distServer], {
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 30_000,
   });
   if (r.status !== 0) {
     console.warn(
-      `[doable-cloud] chown to doable-app failed for ${projectId}: ` +
-        (r.stderr?.toString() ?? r.error?.message ?? "user may not exist yet — run setup-server.sh"),
+      `[doable-cloud] chmod world-readable failed for ${projectId}: ` +
+        (r.stderr?.toString() ?? r.error?.message ?? "unknown"),
     );
   }
 }
