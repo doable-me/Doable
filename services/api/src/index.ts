@@ -13,8 +13,10 @@ initFrameworks();
 // Per-app runtime supervisor (Phase 5 — PRD 06 §4.4). Subscribes to
 // systemd journal so project_runtime.state reflects real unit health.
 // No-op on Windows/macOS dev hosts.
-import { startSupervisor } from "./runtime/supervisor.js";
+import { startSupervisor, startHealthCheckLoop, startIdleDetection } from "./runtime/supervisor.js";
 const _supervisor = startSupervisor();
+const _healthLoop = startHealthCheckLoop();
+const _idleDetector = startIdleDetection();
 
 import { serve } from "@hono/node-server";
 import { initDocore, shutdownDocore } from "./ai/docore-bridge.js";

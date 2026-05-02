@@ -20,6 +20,7 @@ import {
   FileAccessError,
 } from "../ai/project-files.js";
 import { blankTemplate } from "../templates/definitions/blank.js";
+import { getTemplate } from "../templates/registry.js";
 import { initRepo } from "../git/init.js";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { FrameworkAdapterError, type FrameworkContext } from "../frameworks/types.js";
@@ -115,9 +116,14 @@ async function doCreateProject(
     // Use template files (validated above)
     files = Object.entries(templateFiles);
   } else {
-    // Default blank scaffold — sourced from the blank template so they
-    // stay in sync automatically.
-    files = Object.entries(blankTemplate.codeFiles);
+    // Default blank scaffold — use the framework-specific blank template
+    // when available (e.g. nextjs-blank for nextjs-app), falling back to
+    // the generic vite-react blank template.
+    const fallbackId = adapter.defaults.fallbackTemplateId;
+    const frameworkBlank = fallbackId ? getTemplate(fallbackId) : undefined;
+    files = Object.entries(
+      frameworkBlank ? frameworkBlank.codeFiles : blankTemplate.codeFiles,
+    );
   }
 
   // Write files directly to disk — NOT through writeProjectFile which goes

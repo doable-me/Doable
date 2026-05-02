@@ -224,6 +224,13 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
     responseHeaders.delete("etag");
     responseHeaders.delete("last-modified");
 
+    // fetch() auto-decompresses gzip/br/deflate responses, so the body we
+    // receive is already uncompressed. Strip content-encoding so the browser
+    // doesn't try to decompress again (ERR_CONTENT_DECODING_FAILED).
+    responseHeaders.delete("content-encoding");
+    // content-length is now stale since the body is decompressed.
+    responseHeaders.delete("content-length");
+
     // CSP: restrict preview content from reaching back to the app's API or
     // navigating the top frame. connect-src is permissive (user code may
     // fetch external APIs), but frame-ancestors prevents re-framing attacks.
@@ -286,8 +293,6 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
         },
       ]);
 
-      responseHeaders.delete("content-length");
-      responseHeaders.delete("content-encoding");
       responseHeaders.set("content-type", "text/html; charset=utf-8");
       return new Response(resp.body.pipeThrough(injectionStream), {
         status: resp.status,

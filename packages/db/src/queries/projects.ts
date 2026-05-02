@@ -85,16 +85,18 @@ export function projectQueries(sql: postgres.Sql) {
       description?: string;
       templateId?: string;
       folderId?: string;
+      frameworkId?: string;
     }): Promise<ProjectRow> {
       const [project] = await sql<ProjectRow[]>`
-        INSERT INTO projects (workspace_id, name, slug, description, template_id, folder_id)
+        INSERT INTO projects (workspace_id, name, slug, description, template_id, folder_id, framework_id)
         VALUES (
           ${data.workspaceId},
           ${data.name},
           ${data.slug},
           ${data.description ?? null},
           ${data.templateId ?? null},
-          ${data.folderId ?? null}
+          ${data.folderId ?? null},
+          ${data.frameworkId ?? "vite-react"}
         )
         RETURNING *
       `;

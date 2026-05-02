@@ -51,9 +51,13 @@ scaffoldRoutes.post("/projects/:id/scaffold", async (c) => {
     let templateFiles: Record<string, string> | undefined;
     let scaffoldFrameworkId: string | undefined;
     try {
-      const [project] = await sql<{ template_id: string | null }[]>`
-        SELECT template_id FROM projects WHERE id = ${projectId}
+      const [project] = await sql<{ template_id: string | null; framework_id: string | null }[]>`
+        SELECT template_id, framework_id FROM projects WHERE id = ${projectId}
       `;
+      // Use the project's framework_id as default (set at creation time)
+      if (project?.framework_id) {
+        scaffoldFrameworkId = project.framework_id;
+      }
       if (project?.template_id) {
         const template = getTemplate(project.template_id);
         if (template) {

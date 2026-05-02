@@ -149,3 +149,175 @@ function hasSystemctl(): boolean {
     return false;
   }
 }
+
+// ─── Health Check Loop ─────────────────────────────────────
+
+const HEALTH_INTERVAL_MS = 30_000;  // 30s between checks
+const HEALTH_TIMEOUT_MS = 5_000;    // 5s per request
+const MAX_CONSECUTIVE_FAILURES = 3;
+
+interface HealthState {
+  consecutiveFailures: number;
+}
+
+const healthStates = new Map<string, HealthState>();
+
+export function startHealthCheckLoop(): { stop: () => void } {
+  if (process.platform !== "linux") {
+    return { stop: () => {} };
+  }
+
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  async function checkAll(): Promise<void> {
+    if (stopped) return;
+
+    let rows: { project_id: string; listen_addr: string | null; systemd_unit: string | null }[];
+    try {
+      rows = await sql<typeof rows>`
+        SELECT project_id, listen_addr, systemd_unit
+        FROM project_runtime
+        WHERE state = 'running' AND runtime_kind = 'process' AND listen_addr IS NOT NULL
+      `;
+    } catch {
+      scheduleNext();
+      return;
+    }
+
+    for (const row of rows) {
+      if (stopped) break;
+      if (!row.listen_addr) continue;
+
+      const healthUrl = row.listen_addr.startsWith("http")
+        ? row.listen_addr
+        : `http://${row.listen_addr}`;
+
+      let ok = false;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+        const resp = await fetch(healthUrl, { signal: controller.signal, method: "GET" });
+        clearTimeout(timeout);
+        ok = resp.status < 500;
+      } catch {
+        ok = false;
+      }
+
+      const state = healthStates.get(row.project_id) ?? { consecutiveFailures: 0 };
+
+      if (ok) {
+        state.consecutiveFailures = 0;
+        healthStates.set(row.project_id, state);
+      } else {
+        state.consecutiveFailures++;
+        healthStates.set(row.project_id, state);
+
+        if (state.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          console.warn(
+            `[runtime/health] ${row.project_id} failed ${state.consecutiveFailures} consecutive checks — marking failed`,
+          );
+          await sql`
+            UPDATE project_runtime
+            SET state = 'failed', fail_count = fail_count + 1, updated_at = now()
+            WHERE project_id = ${row.project_id} AND state = 'running'
+          `;
+          state.consecutiveFailures = 0;
+
+          // Attempt auto-restart if fail_count is under threshold
+          const [runtime] = await sql<{ fail_count: number; systemd_unit: string | null }[]>`
+            SELECT fail_count, systemd_unit FROM project_runtime WHERE project_id = ${row.project_id}
+          `;
+          if (runtime && runtime.fail_count <= 5 && runtime.systemd_unit) {
+            console.log(`[runtime/health] auto-restarting ${row.project_id} (fail_count=${runtime.fail_count})`);
+            spawnSync("systemctl", ["restart", runtime.systemd_unit], { stdio: "ignore" });
+            await sql`
+              UPDATE project_runtime
+              SET state = 'starting', last_started_at = now(), updated_at = now()
+              WHERE project_id = ${row.project_id}
+            `;
+          }
+        }
+      }
+    }
+
+    scheduleNext();
+  }
+
+  function scheduleNext(): void {
+    if (!stopped) {
+      timer = setTimeout(checkAll, HEALTH_INTERVAL_MS);
+    }
+  }
+
+  // Start after a short delay to let services boot
+  timer = setTimeout(checkAll, 10_000);
+
+  return {
+    stop: () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
+// ─── Idle Detection ────────────────────────────────────────
+
+const IDLE_CHECK_INTERVAL_MS = 60_000;  // Check every 60s
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+export function startIdleDetection(): { stop: () => void } {
+  if (process.platform !== "linux") {
+    return { stop: () => {} };
+  }
+
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  async function checkIdle(): Promise<void> {
+    if (stopped) return;
+
+    try {
+      // Find running process-kind apps that haven't been accessed recently
+      const idle = await sql<{ project_id: string; systemd_unit: string; last_active_at: Date | null }[]>`
+        SELECT project_id, systemd_unit, last_active_at
+        FROM project_runtime
+        WHERE state = 'running'
+          AND runtime_kind = 'process'
+          AND systemd_unit IS NOT NULL
+          AND (
+            last_active_at IS NULL
+            OR last_active_at < now() - interval '30 minutes'
+          )
+      `;
+
+      for (const row of idle) {
+        if (stopped) break;
+        console.log(
+          `[runtime/idle] stopping idle app ${row.project_id} (last_active: ${row.last_active_at?.toISOString() ?? "never"})`,
+        );
+        spawnSync("systemctl", ["stop", row.systemd_unit], { stdio: "ignore" });
+        await sql`
+          UPDATE project_runtime
+          SET state = 'stopped', updated_at = now()
+          WHERE project_id = ${row.project_id}
+        `;
+      }
+    } catch (err) {
+      console.warn("[runtime/idle] check failed:", err instanceof Error ? err.message : err);
+    }
+
+    if (!stopped) {
+      timer = setTimeout(checkIdle, IDLE_CHECK_INTERVAL_MS);
+    }
+  }
+
+  timer = setTimeout(checkIdle, 30_000); // first check after 30s
+
+  return {
+    stop: () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
+}

@@ -10,6 +10,7 @@
 
 import { fetchWithTimeout, MCP_HTTP_TIMEOUT_MS } from "./transport-http.js";
 import type { McpToolDefinition, McpServerCapabilities } from "./types.js";
+import { isPrivateUrl } from "./ssrf-guard.js";
 
 /** Discovery timeout — shorter than normal requests since this is pre-connection */
 const DISCOVERY_TIMEOUT_MS = 15_000;
@@ -111,6 +112,11 @@ export async function discoverMcpServer(inputUrl: string): Promise<DiscoveryResu
     url = new URL(inputUrl);
   } catch {
     return { success: false, method: "none", error: "Invalid URL" };
+  }
+
+  // SSRF protection: block private/internal IPs
+  if (isPrivateUrl(url)) {
+    return { success: false, method: "none", error: "URL targets a private or internal network address" };
   }
 
   // Phase 1: Try server card discovery

@@ -122,9 +122,11 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
     // can see the gap.
     console.warn(`[vite-jail] vault.spawn failed, falling back to raw spawn: ${(err as Error).message}`);
     const { spawn } = await import("node:child_process");
+    // On Windows, bare commands like "npx" need shell:true to resolve .cmd extensions.
+    const needsShell = process.platform === "win32" && !opts.execPath.includes("/") && !opts.execPath.includes("\\");
     const child = spawn(opts.execPath, opts.args, {
       cwd: opts.cwd,
-      shell: false,
+      shell: needsShell,
       stdio: opts.stdio ?? "pipe",
       env: cleanEnv,
     });

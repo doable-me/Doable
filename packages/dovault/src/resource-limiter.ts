@@ -73,6 +73,8 @@ export class ResourceLimiter {
       // a safe env (see services/api/src/projects/safe-env.ts).
       env: { ...options.env, ...wrapped.env },
       stdio: options.stdio ?? "pipe",
+      // On Windows, bare commands like "npx" need shell:true to resolve .cmd/.bat extensions.
+      shell: process.platform === "win32" && !wrapped.command.includes("/") && !wrapped.command.includes("\\"),
     });
   }
 

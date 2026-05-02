@@ -123,8 +123,11 @@ describe("Platform-conditional availability", () => {
   }
 
   if (isWin32) {
-    it("WindowsBackend on win32: available", () => {
-      assert.equal(new WindowsBackend().available(), true);
+    // WindowsBackend on win32: returns boolean — availability depends on
+    // PowerShell being on PATH and reachable; per PRD §9 we only assert the
+    // function doesn't throw and returns a boolean.
+    it("WindowsBackend on win32: returns boolean (depends on PowerShell)", () => {
+      assert.equal(typeof new WindowsBackend().available(), "boolean");
     });
     it("PsrootBackend on win32: returns boolean (depends on psroot.exe)", () => {
       assert.equal(typeof new PsrootBackend().available(), "boolean");

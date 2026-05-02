@@ -7,6 +7,7 @@ import { sql } from "../db/index.js";
 import { projectQueries } from "@doable/db/queries/projects";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { createBuildContext } from "../frameworks/context.js";
+import { buildSafeEnv } from "../projects/safe-env.js";
 import {
   BuildEventPublisher,
   LogFilterChain,
@@ -142,11 +143,9 @@ export async function runBuild(
       cwd: spec.cwd,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        ...spec.env,
-        NODE_ENV: "production",
-      },
+      env: buildSafeEnv(
+        { ...userEnvVars, ...spec.env, NODE_ENV: "production" },
+      ),
     });
 
     // PRD 03 publisher — fans every build line through the redaction filter

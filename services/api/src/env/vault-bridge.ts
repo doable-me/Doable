@@ -8,11 +8,12 @@
  *      safe to embed in the AI system prompt.
  *
  * Security guarantees enforced here:
- *   - `client.*` env var names MUST start with `VITE_` (otherwise they would
- *     not actually be exposed to the browser bundle, so the mapping is dropped
- *     with a warn log).
- *   - `server.*` env var names MUST NOT start with `VITE_` (otherwise they
- *     would leak server secrets into the browser bundle — dropped with warn).
+ *   - `client.*` env var names SHOULD use a recognized client prefix (VITE_,
+ *     NEXT_PUBLIC_, NUXT_PUBLIC_, PUBLIC_) but are emitted regardless since
+ *     the integration author declares them browser-safe via envKeyMap.client.
+ *   - `server.*` env var names MUST NOT use any client prefix (VITE_,
+ *     NEXT_PUBLIC_, NUXT_PUBLIC_, PUBLIC_) — they would leak server secrets
+ *     into the browser bundle and are dropped with a warn.
  *   - Credential VALUES are never logged. Only env var names + integration ids.
  *   - Credential VALUES are never returned outside of the `env` field.
  *
@@ -24,6 +25,13 @@
 
 import { credentialVault } from "../integrations/credential-vault.js";
 import { getIntegration } from "../integrations/registry/index.js";
+
+/** Known client-exposure prefixes across supported frameworks. */
+const CLIENT_PREFIXES = ["VITE_", "NEXT_PUBLIC_", "NUXT_PUBLIC_", "PUBLIC_"] as const;
+
+function hasClientPrefix(name: string): boolean {
+  return CLIENT_PREFIXES.some((p) => name.startsWith(p));
+}
 
 export interface IntegrationEnvManifest {
   /** Integration ID, e.g. "supabase" */
@@ -107,14 +115,15 @@ export async function resolveVaultEnv(
       }
 
       if (creds) {
-        // ── Client-side mappings (must start with VITE_) ──
+        // ── Client-side mappings (declared browser-safe by envKeyMap) ──
         if (def.envKeyMap.client) {
           for (const [fieldName, envVarName] of Object.entries(def.envKeyMap.client)) {
-            if (!envVarName.startsWith("VITE_")) {
+            if (!hasClientPrefix(envVarName)) {
+              // Warn but still emit — the integration author declared it client-safe.
+              // This handles edge cases like bare names in framework-less setups.
               console.warn(
-                `[vault-bridge] dropping client mapping ${envVarName} — must start with VITE_`,
+                `[vault-bridge] client mapping "${envVarName}" lacks a recognized client prefix (VITE_, NEXT_PUBLIC_, etc.) — emitting anyway`,
               );
-              continue;
             }
             const value = creds[fieldName];
             if (value === undefined || value === null || value === "") continue;
@@ -123,12 +132,12 @@ export async function resolveVaultEnv(
           }
         }
 
-        // ── Server-side mappings (must NOT start with VITE_) ──
+        // ── Server-side mappings (must NOT have any client prefix) ──
         if (def.envKeyMap.server) {
           for (const [fieldName, envVarName] of Object.entries(def.envKeyMap.server)) {
-            if (envVarName.startsWith("VITE_")) {
+            if (hasClientPrefix(envVarName)) {
               console.warn(
-                `[vault-bridge] dropping server mapping ${envVarName} — must NOT start with VITE_`,
+                `[vault-bridge] dropping server mapping "${envVarName}" — has client prefix, would leak to browser bundle`,
               );
               continue;
             }
