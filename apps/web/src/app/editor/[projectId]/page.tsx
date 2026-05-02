@@ -2345,6 +2345,57 @@ export default function EditorPage() {
   const autoFixInFlightRef = useRef(false);
   const lastAutoFixTimeRef = useRef(0);
 
+  // PRD 10 — connector-bridge JWT delivery to opaque-origin preview iframes.
+  // The SPA inside the iframe cannot read same-origin cookies (sandbox=
+  // "allow-scripts" without "allow-same-origin"), so it postMessages
+  // "doable:connector-proxy-ready" on load, and we reply with a 15-min
+  // JWT fetched from the project's auth-protected token endpoint.
+  useEffect(() => {
+    if (!rawProjectId || rawProjectId === "new") return;
+    const projectId = rawProjectId;
+    let token: string | null = null;
+    let inflight = false;
+
+    async function fetchToken(): Promise<string | null> {
+      if (token) return token;
+      if (inflight) return null;
+      inflight = true;
+      try {
+        const data = await apiFetch<{ token?: string }>(
+          `/projects/${projectId}/connector-proxy-token`,
+          { method: "POST" },
+        );
+        if (typeof data?.token === "string") {
+          token = data.token;
+          // Refresh 60s before the 15-min expiry.
+          setTimeout(() => { token = null; }, 14 * 60 * 1000);
+          return token;
+        }
+        return null;
+      } catch {
+        return null;
+      } finally {
+        inflight = false;
+      }
+    }
+
+    async function handleReady(ev: MessageEvent) {
+      if (!ev.data || typeof ev.data !== "object") return;
+      if (ev.data.type !== "doable:connector-proxy-ready") return;
+      if (iframeRef.current && ev.source !== iframeRef.current.contentWindow) return;
+      const t = await fetchToken();
+      if (t && iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(
+          { type: "doable:connector-proxy-token", token: t },
+          "*",
+        );
+      }
+    }
+
+    window.addEventListener("message", handleReady);
+    return () => window.removeEventListener("message", handleReady);
+  }, [rawProjectId]);
+
   useEffect(() => {
     const handlePreviewMessage = (event: MessageEvent) => {
       if (!event.data || typeof event.data !== "object") return;
