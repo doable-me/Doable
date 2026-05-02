@@ -6,7 +6,10 @@ import {
 import type { ResourceLimits, ExecResult } from "./types.js";
 import type { ResourceBackend } from "./backends/types.js";
 import { SystemdBackend } from "./backends/systemd.js";
+import { BubblewrapBackend } from "./backends/bubblewrap.js";
 import { WindowsBackend } from "./backends/windows.js";
+import { PsrootBackend } from "./backends/psroot.js";
+import { SandboxExecBackend } from "./backends/sandbox-exec.js";
 import { WindowsHeapBackend } from "./backends/win-heap.js";
 import { DirectBackend } from "./backends/direct.js";
 
@@ -172,10 +175,13 @@ export class ResourceLimiter {
  */
 function detectBackend(preferred?: string): ResourceBackend {
   const backends: ResourceBackend[] = [
-    new SystemdBackend(),
-    new WindowsBackend(),
-    new WindowsHeapBackend(),
-    new DirectBackend(),
+    new SystemdBackend(),       // linux, prio 80
+    new PsrootBackend(),        // win32, prio 70  (replaces WindowsBackend when psroot.exe is on PATH)
+    new BubblewrapBackend(),    // linux, prio 65  (fallback when systemd cgroup delegation absent)
+    new WindowsBackend(),       // win32, prio 60  (Job Objects only; FS jail-less fallback)
+    new SandboxExecBackend(),   // darwin, prio 50 (replaces direct.ts on macOS; was no isolation)
+    new WindowsHeapBackend(),   // win32, prio 40
+    new DirectBackend(),        // any,    prio 0
   ];
 
   // Explicit backend requested

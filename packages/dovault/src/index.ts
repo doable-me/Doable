@@ -36,7 +36,10 @@ export type { ResourceBackend } from "./backends/types.js";
 // Re-export backends for custom composition
 export { DirectBackend } from "./backends/direct.js";
 export { SystemdBackend } from "./backends/systemd.js";
+export { BubblewrapBackend } from "./backends/bubblewrap.js";
 export { WindowsBackend } from "./backends/windows.js";
+export { PsrootBackend } from "./backends/psroot.js";
+export { SandboxExecBackend } from "./backends/sandbox-exec.js";
 export { WindowsHeapBackend } from "./backends/win-heap.js";
 
 // ── Factory ──
