@@ -25,9 +25,9 @@ export function PreviewPanel() {
   const lastHmrUpdateRef = useRef(0);
 
   // ─── Listen for HMR signals from preview iframe ───────────
-  // The preview injects a script that detects Vite HMR WebSocket activity
+  // The preview injects a script that detects HMR WebSocket activity
   // and posts messages to the parent frame. When HMR is active, we skip
-  // full-page reloads and let Vite handle live updates automatically.
+  // full-page reloads and let the dev server handle live updates automatically.
   useEffect(() => {
     function handleMessage(e: MessageEvent) {
       if (!e.data || typeof e.data !== "object") return;
@@ -99,7 +99,7 @@ export function PreviewPanel() {
   }, [isStreaming, refresh]);
 
   // ─── Fallback refresh during streaming (only when HMR is not active) ─
-  // If HMR is connected, Vite pushes updates automatically — no polling needed.
+  // If HMR is connected, the dev server pushes updates automatically — no polling needed.
   // If HMR is NOT connected (first build, dev server just started), fall back
   // to refreshing on tool_result events so the user still sees progress.
   const toolResultVersion = useEditorStore((s) => s.toolResultVersion);

@@ -10,7 +10,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 export { Vault } from "./vault.js";
-export { ConfigGuard } from "./config-guard.js";
+export {
+  ConfigGuard,
+  CONFIG_TEMPLATE_SETS,
+  DEFAULT_FRAMEWORK_ID,
+  type ConfigTemplateSet,
+} from "./config-guard.js";
 export { ProcessJail } from "./process-jail.js";
 export { ResourceLimiter } from "./resource-limiter.js";
 

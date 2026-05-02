@@ -33,6 +33,66 @@ export const RETRY_HTML = `<!doctype html>
 </html>`;
 
 /**
+ * Connector-bridge SPA helper (PRD 10).
+ *
+ * Injected into preview HTML so a scaffolded static SPA can call the
+ * connector-proxy endpoint without manually plumbing a JWT. The editor
+ * host page postMessages a token after the iframe loads; this snippet
+ * stores it in memory and exposes `window.__doable.callConnector(...)`.
+ *
+ * The token has a 15-min lifetime — when the SPA's call returns 401
+ * (jwt-expired), the helper requests a fresh token via postMessage to
+ * `parent` and retries once.
+ *
+ * Must run BEFORE any user scripts so the SPA's first connector call
+ * after page load doesn't race the token arrival.
+ */
+export const CONNECTOR_BRIDGE_SNIPPET = `<script>
+(function() {
+  if (window.__doable && window.__doable.callConnector) return;
+  var token = null;
+  var pendingRequests = [];
+  function setToken(t) {
+    token = t;
+    var queue = pendingRequests; pendingRequests = [];
+    queue.forEach(function (resume) { resume(t); });
+  }
+  function awaitToken() {
+    return token ? Promise.resolve(token) : new Promise(function (resolve) { pendingRequests.push(resolve); });
+  }
+  window.addEventListener("message", function (ev) {
+    if (!ev.data || typeof ev.data !== "object") return;
+    if (ev.data.type === "doable:connector-proxy-token" && typeof ev.data.token === "string") {
+      setToken(ev.data.token);
+    }
+  });
+  // Tell the host we're ready to receive a token.
+  try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
+  async function callConnector(integration, action, props) {
+    var t = await awaitToken();
+    var doFetch = function (theToken) {
+      return fetch("/__doable/connector-proxy/" + encodeURIComponent(integration) + "/" + encodeURIComponent(action), {
+        method: "POST",
+        headers: { "content-type": "application/json", "authorization": "Bearer " + theToken },
+        body: JSON.stringify({ props: props || {} }),
+      });
+    };
+    var res = await doFetch(t);
+    if (res.status === 401) {
+      // token expired — clear and request a fresh one, then retry once
+      token = null;
+      try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
+      var t2 = await awaitToken();
+      res = await doFetch(t2);
+    }
+    return res.json();
+  }
+  window.__doable = window.__doable || {};
+  window.__doable.callConnector = callConnector;
+})();
+</script>`;
+
+/**
  * Storage namespacing script — prefixes every localStorage/sessionStorage key
  * with __<projectId>__ so state does not leak across project previews.
  * When the iframe has an opaque origin (sandbox without allow-same-origin),
@@ -195,7 +255,7 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
     var origWS = window.WebSocket;
     window.WebSocket = function(url, protocols) {
       var ws = protocols ? new origWS(url, protocols) : new origWS(url);
-      if (url && (url.includes('/__vite') || url.includes('ws') || url.includes(':' + location.port))) {
+      if (url && (url.includes('/__vite') || url.includes('/_next/webpack-hmr') || url.includes('ws') || url.includes(':' + location.port))) {
         hmrSocket = ws;
         ws.addEventListener('message', function(e) {
           try {

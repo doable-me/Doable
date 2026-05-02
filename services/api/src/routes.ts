@@ -16,6 +16,7 @@ import { githubRoutes } from "./routes/github.js";
 import { projectFileRoutes } from "./routes/project-files.js";
 import { previewRoutes } from "./routes/preview-proxy.js";
 import { connectorProxyRoutes } from "./routes/connector-proxy.js";
+import { runtimeRoutes } from "./routes/runtime.js";
 import { thumbnailRoutes } from "./routes/thumbnails.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { aiSettingsRoutes } from "./routes/ai-settings.js";
@@ -55,6 +56,8 @@ app.route("/", previewRoutes);
 // Lets static-kind generated apps reach connected integrations server-side
 // without ever holding the raw secret. JWT-protected, allowlist-gated, audited.
 app.route("/", connectorProxyRoutes);
+// Per-project runtime status / restart / logs (PRD 06 §4)
+app.route("/", runtimeRoutes);
 // Project file routes (no auth — filesystem-backed, powers live preview)
 app.route("/", projectFileRoutes);
 // Direct save — AST-based visual edit saves (no AI, no auth — filesystem-backed)

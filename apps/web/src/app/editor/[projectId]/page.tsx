@@ -6830,9 +6830,9 @@ export default function EditorPage() {
           setSupabaseProvisionRequest(null);
           if (done && resolvedProjectId) {
             // Restart the dev server so the vault-bridge re-resolves
-            // env vars (VITE_SUPABASE_URL etc.) from the newly-stored
-            // credential. Without this, the running Vite instance has
-            // the OLD .env and import.meta.env vars are undefined.
+            // env vars (e.g. VITE_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL)
+            // from the newly-stored credential. Without this, the running
+            // dev server has the OLD .env and the env vars are undefined.
             const token = getStoredTokens().accessToken;
             fetch(`${API_URL}/projects/${resolvedProjectId}/dev-server/restart`, {
               method: "POST",
@@ -6842,7 +6842,7 @@ export default function EditorPage() {
             // Nudge the AI to continue building with the new env vars
             setTimeout(() => {
               sendMessage(
-                "Supabase provisioning complete. The VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY env vars are now available — please continue with the feature you were building, using import.meta.env to read them.",
+                "Supabase provisioning complete. The Supabase URL and anon key env vars are now available — please continue with the feature you were building. Use the env-var prefix that matches the project's framework (VITE_* for Vite via import.meta.env, NEXT_PUBLIC_* for Next.js via process.env, etc.).",
               );
             }, 2000); // 2s delay so dev server has time to restart
           }

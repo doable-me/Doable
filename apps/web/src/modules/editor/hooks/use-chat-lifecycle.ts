@@ -303,6 +303,10 @@ export function useChatLifecycle(opts: {
       setSupabaseProvisionRequest(null);
       if (andContinue) {
         setTimeout(() => {
+          // Note: VITE_* prefix below is Vite-specific. On a Next.js project the
+          // equivalent client-exposed env vars use the NEXT_PUBLIC_* prefix
+          // (e.g. NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY).
+          // SUPABASE_SERVICE_ROLE_KEY stays server-side regardless of framework.
           sendMessage(
             "The new Supabase project is ready and the credentials are connected. Please continue building now — use VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the client code, and SUPABASE_SERVICE_ROLE_KEY only in server-side code.",
           );

@@ -167,7 +167,7 @@ export function ImportGitHubProjectDialog({
         `Then set it up so it runs correctly in the preview:`,
         `1. Read package.json and key config files to understand the framework and dependencies`,
         `2. Install any missing packages needed`,
-        `3. If it's not already a Vite project, adapt it so the preview works (add vite.config if needed, update entry points)`,
+        `3. If the project isn't already in a supported framework (Vite, Next.js, Nuxt, SvelteKit, Astro), adapt it so the preview works.`,
         `4. Make sure the app renders correctly in the preview`,
         `Keep all existing code and functionality intact — just make it runnable here.`,
       ].join("\n");

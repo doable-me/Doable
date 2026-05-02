@@ -303,7 +303,7 @@ export function useVisualEdit({ iframeRef, projectId, onSendMessage, onSaveCompl
       setPendingChanges([]);
       setPendingText(null);
 
-      // Vite HMR will auto-refresh, but force a refresh after a small delay as fallback
+      // HMR will auto-refresh, but force a refresh after a small delay as fallback
       const iframe = iframeRef.current;
       if (iframe) {
         setTimeout(() => { iframe.src = iframe.src; }, 1000);

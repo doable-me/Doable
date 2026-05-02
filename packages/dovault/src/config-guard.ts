@@ -1,14 +1,169 @@
 import { writeFile, unlink, access } from "node:fs/promises";
-import { join, resolve, basename } from "node:path";
+import { join, basename } from "node:path";
 import type { AuditEntry, ConfigGuardOptions, ConfigTemplate } from "./types.js";
 import type { Tracer } from "./tracer.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Safe config templates
+// Per-framework safe config template sets
 //
-// These are the ONLY files that run server-side when Vite starts.
-// Everything else (src/*.tsx, etc.) is transpiled and sent to the browser.
-// Each template is minimal, importing only known-safe packages.
+// Each entry maps a frameworkId to:
+//   - templates: canonical filename -> safe file content (will be written)
+//   - variants:  alternative filenames that could shadow a canonical
+//                (will be deleted before canonical is written)
+//
+// The "vite-react" entry preserves the historical default templates used by
+// ConfigGuard before per-framework support was added. Do not change those
+// literals without coordinating with services/api callers — see project_doable
+// network/security rules in CLAUDE.md.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface ConfigTemplateSet {
+  /** Canonical filename -> safe file content. */
+  templates: Record<string, string>;
+  /** Alternative filenames to delete (shadow-attack prevention). */
+  variants?: string[];
+}
+
+export const CONFIG_TEMPLATE_SETS: Record<string, ConfigTemplateSet> = {
+  "vite-react": {
+    templates: {
+      "vite.config.ts": `import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+});
+`,
+      "postcss.config.js": `export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+`,
+      "tailwind.config.ts": `/** @type {import('tailwindcss').Config} */
+export default {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: { extend: {} },
+  plugins: [],
+};
+`,
+    },
+    variants: [
+      "vite.config.js",
+      "vite.config.mjs",
+      "vite.config.cjs",
+      "postcss.config.mjs",
+      "postcss.config.cjs",
+      "postcss.config.ts",
+      ".postcssrc.js",
+      ".postcssrc.cjs",
+      ".postcssrc.mjs",
+      ".postcssrc",
+      "tailwind.config.js",
+      "tailwind.config.cjs",
+      "tailwind.config.mjs",
+    ],
+  },
+
+  "nextjs-app": {
+    templates: {
+      "next.config.ts": `import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  output: "standalone",
+};
+
+export default nextConfig;
+`,
+      "postcss.config.js": `export default {
+  plugins: {
+    "@tailwindcss/postcss": {},
+  },
+};
+`,
+    },
+    variants: [
+      "next.config.js",
+      "next.config.mjs",
+      "next.config.cjs",
+      "postcss.config.mjs",
+      "postcss.config.cjs",
+      "postcss.config.ts",
+      ".postcssrc.js",
+      ".postcssrc.cjs",
+      ".postcssrc.mjs",
+      ".postcssrc",
+    ],
+  },
+
+  nuxt: {
+    templates: {
+      "nuxt.config.ts": `export default defineNuxtConfig({});
+`,
+    },
+    variants: [
+      "nuxt.config.js",
+      "nuxt.config.mjs",
+      "nuxt.config.cjs",
+    ],
+  },
+
+  sveltekit: {
+    templates: {
+      "svelte.config.js": `import adapter from "@sveltejs/adapter-node";
+import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
+
+export default {
+  preprocess: vitePreprocess(),
+  kit: {
+    adapter: adapter(),
+  },
+};
+`,
+      "vite.config.ts": `import { defineConfig } from "vite";
+import { sveltekit } from "@sveltejs/kit/vite";
+
+export default defineConfig({
+  plugins: [sveltekit()],
+});
+`,
+    },
+    variants: [
+      "svelte.config.ts",
+      "svelte.config.mjs",
+      "svelte.config.cjs",
+      "vite.config.js",
+      "vite.config.mjs",
+      "vite.config.cjs",
+    ],
+  },
+
+  astro: {
+    templates: {
+      "astro.config.mjs": `import { defineConfig } from "astro/config";
+
+export default defineConfig({});
+`,
+    },
+    variants: [
+      "astro.config.js",
+      "astro.config.ts",
+      "astro.config.cjs",
+    ],
+  },
+};
+
+/** Default frameworkId when callers omit one — preserves historical behavior. */
+export const DEFAULT_FRAMEWORK_ID = "vite-react";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Legacy default templates
+//
+// Retained as the in-constructor default so that callers which never pass a
+// frameworkId continue to see byte-identical write/delete behavior. Built
+// from the "vite-react" template set above so we maintain a single source
+// of truth.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const DEFAULT_TEMPLATES: ConfigTemplate[] = [
@@ -19,13 +174,7 @@ const DEFAULT_TEMPLATES: ConfigTemplate[] = [
       "vite.config.mjs",
       "vite.config.cjs",
     ],
-    content: `import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-
-export default defineConfig({
-  plugins: [react()],
-});
-`,
+    content: CONFIG_TEMPLATE_SETS["vite-react"].templates["vite.config.ts"],
   },
   {
     canonical: "postcss.config.js",
@@ -38,13 +187,7 @@ export default defineConfig({
       ".postcssrc.mjs",
       ".postcssrc",
     ],
-    content: `export default {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
-};
-`,
+    content: CONFIG_TEMPLATE_SETS["vite-react"].templates["postcss.config.js"],
   },
   {
     canonical: "tailwind.config.ts",
@@ -53,13 +196,7 @@ export default defineConfig({
       "tailwind.config.cjs",
       "tailwind.config.mjs",
     ],
-    content: `/** @type {import('tailwindcss').Config} */
-export default {
-  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
-  theme: { extend: {} },
-  plugins: [],
-};
-`,
+    content: CONFIG_TEMPLATE_SETS["vite-react"].templates["tailwind.config.ts"],
   },
 ];
 
@@ -110,12 +247,23 @@ export class ConfigGuard {
    * Returns the list of files that were modified.
    *
    * Call this BEFORE spawning any process that loads these configs.
+   *
+   * @param projectPath - Absolute path of the project to lock.
+   * @param frameworkId - Optional framework template set (e.g. "nextjs-app").
+   *                      When omitted, the constructor-configured templates
+   *                      are used (vite-react + any custom overrides). When
+   *                      provided, the named CONFIG_TEMPLATE_SETS entry is
+   *                      used instead — extraLockedFiles still apply.
    */
-  async lock(projectPath: string): Promise<string[]> {
-    const span = this.tracer?.start("vault.config_lock", { projectPath });
+  async lock(projectPath: string, frameworkId?: string): Promise<string[]> {
+    const span = this.tracer?.start("vault.config_lock", { projectPath, frameworkId: frameworkId ?? null });
     const modified: string[] = [];
 
-    for (const template of this.templates) {
+    const templates = frameworkId
+      ? this.templatesForFramework(frameworkId)
+      : this.templates;
+
+    for (const template of templates) {
       for (const variant of template.variants) {
         const variantPath = join(projectPath, variant);
         try {
@@ -147,6 +295,44 @@ export class ConfigGuard {
 
     span?.end({ filesModified: modified.length, files: modified });
     return modified;
+  }
+
+  /**
+   * Build a ConfigTemplate[] for the given frameworkId.
+   *
+   * Merges the named CONFIG_TEMPLATE_SETS entry with any extraLockedFiles
+   * that the constructor was given. Variants from the set are split evenly
+   * across canonicals (each canonical also lists every variant) so the
+   * existing per-canonical delete loop keeps working without new branches.
+   */
+  private templatesForFramework(frameworkId: string): ConfigTemplate[] {
+    const set = CONFIG_TEMPLATE_SETS[frameworkId];
+    if (!set) {
+      throw new Error(
+        `Unknown frameworkId "${frameworkId}". Known: ${Object.keys(CONFIG_TEMPLATE_SETS).join(", ")}`,
+      );
+    }
+
+    const canonicals = Object.entries(set.templates);
+    const sharedVariants = set.variants ?? [];
+
+    const templates: ConfigTemplate[] = canonicals.map(([canonical, content], idx) => ({
+      canonical,
+      // Attach variants only to the first canonical so we don't try to
+      // unlink the same path multiple times.
+      variants: idx === 0 ? [...sharedVariants] : [],
+      content,
+    }));
+
+    // Carry over extraLockedFiles from the constructor (treated as locked
+    // with empty content — just prevents writes via isLocked()).
+    for (const t of this.templates) {
+      if (!t.content && !templates.some((x) => x.canonical === t.canonical)) {
+        templates.push({ canonical: t.canonical, variants: [], content: "" });
+      }
+    }
+
+    return templates;
   }
 
   /**

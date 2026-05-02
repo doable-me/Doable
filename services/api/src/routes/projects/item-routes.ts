@@ -11,6 +11,12 @@ import { getProjectPath } from "../../ai/project-files.js";
 import { getThumbnailPath } from "../../thumbnails/capture.js";
 import { stopDevServer } from "../../projects/dev-server.js";
 import { projects, workspacesQ, requireProjectAccess, isRoleAtLeast } from "./helpers.js";
+import { signProjectJwt } from "../../auth/project-jwt.js";
+
+const PROJECT_JWT_SECRET =
+  process.env.PROJECT_JWT_SECRET ??
+  process.env.JWT_SECRET ??
+  "DEVELOPMENT_PROJECT_JWT_SECRET_DO_NOT_USE_IN_PROD";
 
 const stars = starQueries(sql);
 const shareTracking = shareTrackingQueries(sql);
@@ -39,6 +45,33 @@ projectItemRoutes.post("/:id/view", async (c) => {
   }
 
   return c.json({ ok: true });
+});
+
+// ─── Connector-Proxy Token (PRD 10) ─────────────────────────
+// Issues a short-lived (15 min) JWT the editor can postMessage to a
+// scaffolded SPA running inside the preview iframe. The SPA uses it
+// as Authorization: Bearer when calling /__doable/connector-proxy/...
+// Auth via the standard user-session middleware on this routes group.
+projectItemRoutes.post("/:id/connector-proxy-token", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  const token = await signProjectJwt(
+    {
+      projectId: id,
+      workspaceId: access.project.workspace_id,
+      userId,
+      kind: "connector-proxy",
+    },
+    PROJECT_JWT_SECRET,
+  );
+
+  return c.json({ token, expiresIn: 15 * 60 });
 });
 
 // ─── Share Analytics ────────────────────────────────────────

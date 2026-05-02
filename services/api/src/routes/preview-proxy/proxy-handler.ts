@@ -15,6 +15,7 @@ import {
   RETRY_HTML,
   getStorageNamespaceSnippet,
   ERROR_CAPTURE_SNIPPET,
+  CONNECTOR_BRIDGE_SNIPPET,
 } from "./injected-scripts.js";
 
 const publicApiUrl =
@@ -173,12 +174,16 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
         injected = `${storageNamespaceSnippet}${injected}`;
       }
 
+      // Connector-bridge SPA helper goes BEFORE error capture so the
+      // helper is available when user code first runs. Token arrives
+      // via postMessage from the editor host (PRD 10).
+      const headBundle = `${CONNECTOR_BRIDGE_SNIPPET}${ERROR_CAPTURE_SNIPPET}${headSnippet}`;
       if (injected.includes("</head>")) {
-        injected = injected.replace("</head>", `${ERROR_CAPTURE_SNIPPET}${headSnippet}</head>`);
+        injected = injected.replace("</head>", `${headBundle}</head>`);
       } else if (injected.includes("<body")) {
-        injected = injected.replace(/<body/i, `${ERROR_CAPTURE_SNIPPET}${headSnippet}<body`);
+        injected = injected.replace(/<body/i, `${headBundle}<body`);
       } else {
-        injected = `${ERROR_CAPTURE_SNIPPET}${headSnippet}${injected}`;
+        injected = `${headBundle}${injected}`;
       }
       if (injected.includes("</body>")) {
         injected = injected.replace("</body>", `${bodySnippet}</body>`);

@@ -286,11 +286,19 @@ export class Vault {
   /**
    * Lock config files without spawning a process.
    * Useful for pre-locking before AI operations.
+   *
+   * @param projectPath - Absolute path of the project to lock.
+   * @param frameworkId - Optional framework template set
+   *                      (e.g. "vite-react", "nextjs-app", "nuxt",
+   *                       "sveltekit", "astro"). Defaults to the
+   *                      constructor-configured templates (vite-react +
+   *                      any custom overrides) so existing callers are
+   *                      unaffected.
    */
-  async lockConfigs(projectPath: string): Promise<string[]> {
-    const span = this.tracer.start("vault.lockConfigs", { projectPath });
+  async lockConfigs(projectPath: string, frameworkId?: string): Promise<string[]> {
+    const span = this.tracer.start("vault.lockConfigs", { projectPath, frameworkId: frameworkId ?? null });
     try {
-      const locked = await this.configGuard.lock(projectPath);
+      const locked = await this.configGuard.lock(projectPath, frameworkId);
       span.end({ filesLocked: locked.length, files: locked });
       return locked;
     } catch (err) {
