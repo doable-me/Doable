@@ -64,37 +64,58 @@ else
 fi
 
 # ─── Gather configuration ──────────────────────────────────────
-read -rp "Domain for Doable (e.g., doable.me): " DOMAIN
-[[ -z "$DOMAIN" ]] && err "Domain is required"
+if [ "$CONTAINER_MODE" = "1" ]; then
+  # Non-interactive: fall back to env-var defaults. Domain is `localhost`
+  # since the container has no Cloudflare Tunnel — host port-forwarding
+  # exposes the services. Empty OAuth/AI keys are fine; users add them
+  # later by editing /var/lib/doable/.env (mounted volume) and restarting.
+  DOMAIN="${DOMAIN:-localhost}"
+  API_SUB="${API_SUB:-api}"
+  WS_SUB="${WS_SUB:-ws}"
+  REPO="${REPO:-doable-me/doable}"
+  DB_PASS="${DB_PASS:-doable}"
+  GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
+  GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
+  GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:-}"
+  GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}"
+  ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+  OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+  STRIPE_SECRET_KEY="${STRIPE_SECRET_KEY:-}"
+  STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-}"
+  CONFIRM="y"
+else
+  read -rp "Domain for Doable (e.g., doable.me): " DOMAIN
+  [[ -z "$DOMAIN" ]] && err "Domain is required"
 
-read -rp "API subdomain [api]: " API_SUB
-API_SUB="${API_SUB:-api}"
+  read -rp "API subdomain [api]: " API_SUB
+  API_SUB="${API_SUB:-api}"
 
-read -rp "WebSocket subdomain [ws]: " WS_SUB
-WS_SUB="${WS_SUB:-ws}"
+  read -rp "WebSocket subdomain [ws]: " WS_SUB
+  WS_SUB="${WS_SUB:-ws}"
 
-read -rp "GitHub repo (owner/repo) [doable-me/doable]: " REPO
-REPO="${REPO:-doable-me/doable}"
+  read -rp "GitHub repo (owner/repo) [doable-me/doable]: " REPO
+  REPO="${REPO:-doable-me/doable}"
 
-read -rp "Database password [doable]: " DB_PASS
-DB_PASS="${DB_PASS:-doable}"
+  read -rp "Database password [doable]: " DB_PASS
+  DB_PASS="${DB_PASS:-doable}"
 
-echo ""
-echo "── Optional: OAuth credentials (press Enter to skip) ──"
-read -rp "Google Client ID: " GOOGLE_CLIENT_ID
-read -rp "Google Client Secret: " GOOGLE_CLIENT_SECRET
-read -rp "GitHub Client ID: " GITHUB_CLIENT_ID
-read -rp "GitHub Client Secret: " GITHUB_CLIENT_SECRET
+  echo ""
+  echo "── Optional: OAuth credentials (press Enter to skip) ──"
+  read -rp "Google Client ID: " GOOGLE_CLIENT_ID
+  read -rp "Google Client Secret: " GOOGLE_CLIENT_SECRET
+  read -rp "GitHub Client ID: " GITHUB_CLIENT_ID
+  read -rp "GitHub Client Secret: " GITHUB_CLIENT_SECRET
 
-echo ""
-echo "── Optional: AI API keys (press Enter to skip) ──"
-read -rp "Anthropic API Key: " ANTHROPIC_API_KEY
-read -rp "OpenAI API Key: " OPENAI_API_KEY
+  echo ""
+  echo "── Optional: AI API keys (press Enter to skip) ──"
+  read -rp "Anthropic API Key: " ANTHROPIC_API_KEY
+  read -rp "OpenAI API Key: " OPENAI_API_KEY
 
-echo ""
-echo "── Optional: Stripe (press Enter to skip) ──"
-read -rp "Stripe Secret Key: " STRIPE_SECRET_KEY
-read -rp "Stripe Webhook Secret: " STRIPE_WEBHOOK_SECRET
+  echo ""
+  echo "── Optional: Stripe (press Enter to skip) ──"
+  read -rp "Stripe Secret Key: " STRIPE_SECRET_KEY
+  read -rp "Stripe Webhook Secret: " STRIPE_WEBHOOK_SECRET
+fi
 
 API_DOMAIN="${API_SUB}.${DOMAIN}"
 WS_DOMAIN="${WS_SUB}.${DOMAIN}"
@@ -109,8 +130,10 @@ echo "  API:        https://${API_DOMAIN}"
 echo "  WebSocket:  wss://${WS_DOMAIN}"
 echo "  Repo:       ${REPO}"
 echo ""
-read -rp "Proceed? [Y/n]: " CONFIRM
-[[ "${CONFIRM,,}" == "n" ]] && exit 0
+if [ "$CONTAINER_MODE" != "1" ]; then
+  read -rp "Proceed? [Y/n]: " CONFIRM
+  [[ "${CONFIRM,,}" == "n" ]] && exit 0
+fi
 
 # ─── Step 1: System packages ───────────────────────────────────
 info "Step 1/13: Installing system packages..."
