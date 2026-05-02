@@ -15,6 +15,7 @@ import { versionRoutes } from "./routes/versions.js";
 import { githubRoutes } from "./routes/github.js";
 import { projectFileRoutes } from "./routes/project-files.js";
 import { previewRoutes } from "./routes/preview-proxy.js";
+import { connectorProxyRoutes } from "./routes/connector-proxy.js";
 import { thumbnailRoutes } from "./routes/thumbnails.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { aiSettingsRoutes } from "./routes/ai-settings.js";
@@ -50,6 +51,10 @@ app.route("/auth", authRoutes);
 // Preview reverse proxy — forwards /preview/:projectId/* to the Vite dev server.
 // Must be before other catch-all routes.
 app.route("/", previewRoutes);
+// Connector-bridge proxy — POST /__doable/connector-proxy/:integration/:action.
+// Lets static-kind generated apps reach connected integrations server-side
+// without ever holding the raw secret. JWT-protected, allowlist-gated, audited.
+app.route("/", connectorProxyRoutes);
 // Project file routes (no auth — filesystem-backed, powers live preview)
 app.route("/", projectFileRoutes);
 // Direct save — AST-based visual edit saves (no AI, no auth — filesystem-backed)
