@@ -8,8 +8,14 @@
  */
 
 import {
+  astroAdapter,
+  astroPack,
   nextjsAppAdapter,
   nextjsAppPack,
+  nuxtAdapter,
+  nuxtPack,
+  sveltekitAdapter,
+  sveltekitPack,
   viteReactAdapter,
   viteReactPack,
 } from "./adapters/index.js";
@@ -21,5 +27,8 @@ export function initFrameworks(): void {
   if (initialized) return;
   defaultRegistry.register(viteReactPack, viteReactAdapter);
   defaultRegistry.register(nextjsAppPack, nextjsAppAdapter);
+  defaultRegistry.register(nuxtPack, nuxtAdapter);
+  defaultRegistry.register(sveltekitPack, sveltekitAdapter);
+  defaultRegistry.register(astroPack, astroAdapter);
   initialized = true;
 }
