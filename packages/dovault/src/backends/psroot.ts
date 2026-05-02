@@ -1,7 +1,59 @@
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { ResourceBackend } from "./types.js";
 import type { ResourceLimits, WrapResult } from "../types.js";
+
+/**
+ * Cache the resolved psroot.exe path between calls so we don't re-run the
+ * filesystem checks on every wrapSpawn. Reset to undefined (not null) to
+ * force re-resolution; null means "checked, not found."
+ */
+let cachedPsrootPath: string | null | undefined = undefined;
+
+/**
+ * Resolve psroot.exe in priority order:
+ *   1. DOABLE_PSROOT_PATH env var (absolute path)
+ *   2. vendor/psroot/psroot.exe relative to repo root
+ *   3. system PATH (via `where psroot.exe`)
+ *
+ * Returns the absolute path to the binary, or null if not found.
+ * See vendor/psroot/README.md for binary provenance.
+ */
+function resolvePsrootPath(): string | null {
+  if (cachedPsrootPath !== undefined) return cachedPsrootPath;
+
+  const envOverride = process.env.DOABLE_PSROOT_PATH;
+  if (envOverride && existsSync(envOverride)) {
+    cachedPsrootPath = envOverride;
+    return envOverride;
+  }
+
+  // From packages/dovault/src/backends/psroot.ts climb to repo root.
+  // src/backends/psroot.ts -> src/backends -> src -> dovault -> packages -> repo
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const repoRoot = path.resolve(here, "..", "..", "..", "..", "..");
+    const vendored = path.join(repoRoot, "vendor", "psroot", "psroot.exe");
+    if (existsSync(vendored)) {
+      cachedPsrootPath = vendored;
+      return vendored;
+    }
+  } catch {
+    // import.meta.url may not be available in some bundlers — fall through.
+  }
+
+  try {
+    execSync("where psroot.exe", { stdio: "ignore" });
+    cachedPsrootPath = "psroot.exe"; // rely on PATH at spawn time
+    return "psroot.exe";
+  } catch {
+    cachedPsrootPath = null;
+    return null;
+  }
+}
 
 /**
  * Psroot — Windows AppContainer + Job Objects via the local Psroot CLI.
@@ -30,12 +82,7 @@ export class PsrootBackend implements ResourceBackend {
 
   available(): boolean {
     if (process.platform !== "win32") return false;
-    try {
-      execSync("where psroot.exe", { stdio: "ignore" });
-      return true;
-    } catch {
-      return false;
-    }
+    return resolvePsrootPath() !== null;
   }
 
   wrapSpawn(
@@ -53,7 +100,7 @@ export class PsrootBackend implements ResourceBackend {
       command,
       ...args,
     ];
-    return { command: "psroot.exe", args: psrootArgs };
+    return { command: resolvePsrootPath() ?? "psroot.exe", args: psrootArgs };
   }
 
   wrapExec(
@@ -74,7 +121,7 @@ export class PsrootBackend implements ResourceBackend {
       command,
       ...args,
     ];
-    return { command: "psroot.exe", args: psrootArgs };
+    return { command: resolvePsrootPath() ?? "psroot.exe", args: psrootArgs };
   }
 }
 

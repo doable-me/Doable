@@ -6898,7 +6898,7 @@ export default function EditorPage() {
             // Nudge the AI to continue building with the new env vars
             setTimeout(() => {
               sendMessage(
-                "Supabase provisioning complete. The Supabase URL and anon key env vars are now available — please continue with the feature you were building. Use the env-var prefix that matches the project's framework (VITE_* for Vite via import.meta.env, NEXT_PUBLIC_* for Next.js via process.env, etc.).",
+                "Supabase provisioning complete. The Supabase URL and anon key env vars are now available — please continue with the feature you were building, using the env-var conventions for this project's framework (see your env-var rules above).",
               );
             }, 2000); // 2s delay so dev server has time to restart
           }
