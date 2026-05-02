@@ -145,17 +145,17 @@ export function ChatInput({
             </div>
             {/* Framework picker — defaults to auto-detect (server picks
                 from prompt text, falls back to workspace admin default). */}
-            <div className="ml-1 flex items-center gap-1 rounded-full border border-border px-2 h-7 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+            <div className="ml-1 flex items-center gap-1 rounded-full border border-border px-2 h-7 text-[11px] text-zinc-300 hover:text-white transition-colors">
               <Layers className="h-3 w-3" />
               <select
                 value={frameworkId ?? ""}
                 onChange={(e) => onFrameworkChange(e.target.value || null)}
-                className="bg-transparent focus:outline-none cursor-pointer text-[11px]"
+                className="bg-transparent focus:outline-none cursor-pointer text-[11px] text-zinc-200"
                 title="Pick framework explicitly, or let the server detect from your prompt"
                 disabled={isCreating}
               >
                 {FRAMEWORK_OPTIONS.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
+                  <option key={opt.id} value={opt.id} className="bg-zinc-900 text-zinc-100">
                     {opt.label}
                   </option>
                 ))}
