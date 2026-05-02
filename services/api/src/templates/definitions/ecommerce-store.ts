@@ -11,6 +11,7 @@ export const ecommerceStoreTemplate: TemplateDefinition = {
   tags: ["react", "ecommerce", "store", "cart", "checkout", "products"],
   previewImageUrl: null,
   isOfficial: true,
+  framework_id: "vite-react",
 
   codeFiles: {
     "package.json": blankTemplate.codeFiles["package.json"]!,

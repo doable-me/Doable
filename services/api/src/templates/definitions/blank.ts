@@ -8,6 +8,7 @@ export const blankTemplate: TemplateDefinition = {
   tags: ["react", "vite", "tailwind", "typescript", "starter"],
   previewImageUrl: null,
   isOfficial: true,
+  framework_id: "vite-react",
 
   codeFiles: {
     "package.json": JSON.stringify(

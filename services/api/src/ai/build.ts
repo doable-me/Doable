@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { getProjectPath } from "./project-files.js";
+import { defaultRegistry } from "../frameworks/registry.js";
+import { createBuildContext, createDevContext } from "../frameworks/context.js";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -27,12 +29,26 @@ export async function build(projectId: string): Promise<BuildResult> {
   const cwd = getProjectPath(projectId);
   const startTime = Date.now();
 
+  // PRD 02 §10.2 flags this file as a parallel duplicate of deploy/builder.ts.
+  // Both paths now route through the same FrameworkAdapter so the eventual
+  // collapse is mechanical. For today every project is vite-react via the
+  // 'vite-react' default in migration 060; threading framework_id from the
+  // project row is a Phase 2 follow-up.
+  const adapter = defaultRegistry.getAdapter("vite-react");
+  const buildSpec = adapter.build(createBuildContext({
+    projectId,
+    projectPath: cwd,
+    basePath: "/",
+    target: "production",
+    env: {},
+  }));
+
   return new Promise<BuildResult>((resolve) => {
-    const child = spawn("npx", ["vite", "build"], {
-      cwd,
+    const child = spawn(buildSpec.command, buildSpec.args, {
+      cwd: buildSpec.cwd,
       shell: true,
       stdio: "pipe",
-      env: { ...process.env, FORCE_COLOR: "0" },
+      env: { ...process.env, ...buildSpec.env, FORCE_COLOR: "0" },
     });
 
     let stdout = "";
@@ -88,11 +104,25 @@ export async function startDev(
 
   const cwd = getProjectPath(projectId);
 
-  const child = spawn("npx", ["vite", "--port", String(port), "--host"], {
-    cwd,
+  // Same migration note as build() above. Hardcoded vite-react until Phase 2
+  // threads framework_id from the project row. Note: this AI dev path uses
+  // basePath "/" (different from preview-proxy's /preview/{id}/), so the
+  // adapter's spec args won't include --base, matching today's behaviour.
+  const adapter = defaultRegistry.getAdapter("vite-react");
+  const devSpec = adapter.dev(createDevContext({
+    projectId,
+    projectPath: cwd,
+    basePath: "/",
+    host: "127.0.0.1",
+    port,
+    env: {},
+  }));
+
+  const child = spawn(devSpec.command, devSpec.args, {
+    cwd: devSpec.cwd,
     shell: true,
     stdio: "pipe",
-    env: { ...process.env, FORCE_COLOR: "0" },
+    env: { ...process.env, ...devSpec.env, FORCE_COLOR: "0" },
   });
 
   const handle: DevServerHandle = {

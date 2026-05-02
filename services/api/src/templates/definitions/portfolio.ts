@@ -10,6 +10,7 @@ export const portfolioTemplate: TemplateDefinition = {
   tags: ["react", "portfolio", "personal", "projects", "skills", "contact"],
   previewImageUrl: null,
   isOfficial: true,
+  framework_id: "vite-react",
 
   codeFiles: {
     "package.json": blankTemplate.codeFiles["package.json"]!,

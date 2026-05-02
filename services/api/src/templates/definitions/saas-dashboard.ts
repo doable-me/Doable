@@ -9,6 +9,7 @@ export const saasDashboardTemplate: TemplateDefinition = {
   tags: ["react", "dashboard", "saas", "analytics", "sidebar", "b2b"],
   previewImageUrl: null,
   isOfficial: true,
+  framework_id: "vite-react",
 
   codeFiles: {
     // Inherit base config files from blank

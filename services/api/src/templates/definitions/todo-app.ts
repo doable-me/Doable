@@ -11,6 +11,7 @@ export const todoAppTemplate: TemplateDefinition = {
   tags: ["react", "todo", "productivity", "crud", "local-storage"],
   previewImageUrl: null,
   isOfficial: true,
+  framework_id: "vite-react",
 
   codeFiles: {
     "package.json": blankTemplate.codeFiles["package.json"]!,

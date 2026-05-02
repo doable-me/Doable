@@ -8,6 +8,9 @@ import {
 import { isProjectScaffolded, ensureDependencies } from "../../projects/file-manager.js";
 import { VISUAL_EDIT_BRIDGE_INLINE } from "../../visual-edit-bridge-inline.js";
 import { getTrackingScript } from "../../analytics/tracker.js";
+import { sql } from "../../db/index.js";
+import { defaultRegistry } from "../../frameworks/registry.js";
+import type { FrameworkAdapter } from "../../frameworks/types.js";
 import {
   RETRY_HTML,
   getStorageNamespaceSnippet,
@@ -22,6 +25,23 @@ const publicApiUrl =
 export const previewRoutes = new Hono();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Per-project adapter cache so the proxy hot path doesn't SQL on every hit.
+// Cached for the process lifetime; stale entries clear when a project's
+// framework_id changes (rare; documented in PRD 02 §6.5 convert-framework).
+const adapterCache = new Map<string, FrameworkAdapter>();
+
+async function getAdapterForProject(projectId: string): Promise<FrameworkAdapter> {
+  const cached = adapterCache.get(projectId);
+  if (cached) return cached;
+  const rows = await sql<{ framework_id: string }[]>`
+    SELECT framework_id FROM projects WHERE id = ${projectId}
+  `;
+  const frameworkId = rows[0]?.framework_id ?? "vite-react";
+  const adapter = defaultRegistry.getAdapter(frameworkId);
+  adapterCache.set(projectId, adapter);
+  return adapter;
+}
 
 /**
  * Proxy ALL requests under /preview/:projectId/* to the Vite dev server.
@@ -174,25 +194,29 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       });
     }
 
-    // Intercept 502 or 504 on .vite/deps ("Outdated Optimize Dep") — Vite
-    // returns 504 when a pre-bundled dep hash is stale after a server restart,
-    // and the proxy returns 502 when the dev server is unreachable during restart.
-    // Instead of forwarding the error (which breaks the app), return a small
-    // JS module that forces a full page reload so the browser fetches
-    // fresh module URLs from the rebuilt index.html.
-    if ((resp.status === 504 || resp.status === 502) && originalPath.includes(".vite/deps")) {
-      const reloadScript = `
-        // Stale Vite dep detected — reload the page to pick up fresh deps
-        if (typeof window !== "undefined") {
-          window.location.reload();
-        }
-      `;
-      responseHeaders.set("content-type", "application/javascript; charset=utf-8");
-      responseHeaders.delete("content-length");
-      return new Response(reloadScript, {
-        status: 200,
-        headers: responseHeaders,
-      });
+    // Framework-specific recovery on 502/504. The vite-react adapter recognises
+    // .vite/deps and /src/*.{tsx?,jsx?} paths — other adapters can opt in via
+    // their own `shouldReloadOnError` predicate. Pre-filter on status so the
+    // adapter lookup only runs on actual failures.
+    if (resp.status === 502 || resp.status === 504) {
+      const adapter = await getAdapterForProject(projectId);
+      if (adapter.shouldReloadOnError?.({
+        path: originalPath,
+        status: resp.status,
+        method: c.req.method,
+      })) {
+        const reloadScript = `
+          if (typeof window !== "undefined") {
+            window.location.reload();
+          }
+        `;
+        responseHeaders.set("content-type", "application/javascript; charset=utf-8");
+        responseHeaders.delete("content-length");
+        return new Response(reloadScript, {
+          status: 200,
+          headers: responseHeaders,
+        });
+      }
     }
 
     return new Response(resp.body, {
@@ -200,9 +224,15 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       headers: responseHeaders,
     });
   } catch (err) {
-    // If the fetch failed for a .vite/deps or source file request (dev server
-    // restarting), return a reload script instead of a hard 502.
-    if (originalPath.includes(".vite/deps") || originalPath.match(/\/src\/.*\.(tsx?|jsx?)$/)) {
+    // If the fetch itself failed (dev server restarting / not yet bound),
+    // ask the framework adapter whether this path is recoverable via a
+    // page reload. Treat as 502-equivalent for the predicate.
+    const adapter = await getAdapterForProject(projectId);
+    if (adapter.shouldReloadOnError?.({
+      path: originalPath,
+      status: 502,
+      method: c.req.method,
+    })) {
       const reloadScript = `
         if (typeof window !== "undefined") {
           window.location.reload();

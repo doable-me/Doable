@@ -11,6 +11,7 @@ export const blogTemplate: TemplateDefinition = {
   tags: ["react", "blog", "content", "articles", "comments", "categories"],
   previewImageUrl: null,
   isOfficial: true,
+  framework_id: "vite-react",
 
   codeFiles: {
     "package.json": blankTemplate.codeFiles["package.json"]!,

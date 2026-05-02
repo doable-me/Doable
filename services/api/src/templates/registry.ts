@@ -20,6 +20,12 @@ export interface TemplateDefinition {
   codeFiles: Record<string, string>;
   /** Context file overrides (filename -> content) */
   contextOverrides?: Record<string, string>;
+  /**
+   * Framework adapter id this template targets. Mirrors the
+   * `templates.framework_id` DB column added in migration 060. Drives
+   * scaffold/dev/build behaviour through `defaultRegistry.getAdapter()`.
+   */
+  framework_id: string;
 }
 
 export interface TemplateSummary {

@@ -9,6 +9,7 @@ export const landingPageTemplate: TemplateDefinition = {
   tags: ["react", "landing-page", "marketing", "hero", "pricing", "conversion"],
   previewImageUrl: null,
   isOfficial: true,
+  framework_id: "vite-react",
 
   codeFiles: {
     // Inherit config from blank
