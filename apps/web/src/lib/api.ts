@@ -40,6 +40,10 @@ export {
   apiRecordProjectView,
   apiListCollaborators,
   apiRemoveCollaborator,
+  type ApiInstanceMetrics,
+  type ApiWorkspaceInstance,
+  apiGetRuntimeMetrics,
+  apiListWorkspaceInstances,
 } from "./api-projects";
 
 export {

@@ -15,7 +15,9 @@ import { Hono } from "hono";
 import { spawnSync } from "node:child_process";
 import { sql } from "../db/index.js";
 import type { AuthEnv } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 import { requireProjectAccess } from "./projects/helpers.js";
+import { getInstanceMetrics } from "../runtime/metrics.js";
 
 export const runtimeRoutes = new Hono<AuthEnv>();
 
@@ -57,7 +59,36 @@ runtimeRoutes.get("/projects/:id/runtime", async (c) => {
     return c.json({ data: null });
   }
 
+  // Touch last_active_at so idle detection knows the user is engaged.
+  // Fire-and-forget — don't block the response.
+  if (rows[0].state === "running") {
+    sql`UPDATE project_runtime SET last_active_at = now() WHERE project_id = ${id}`.catch(() => {});
+  }
+
   return c.json({ data: rows[0] });
+});
+
+runtimeRoutes.get("/projects/:id/runtime/metrics", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) return c.json({ error: "Project not found" }, 404);
+
+  const rows = await sql<{ project_slug: string }[]>`
+    SELECT p.slug AS project_slug
+    FROM project_runtime pr
+    JOIN projects p ON p.id = pr.project_id
+    WHERE pr.project_id = ${id}
+  `;
+  const slug = rows[0]?.project_slug;
+  if (!slug) {
+    return c.json({
+      data: { state: "unknown", uptimeMs: null, memoryBytes: null, cpuPct: null, source: "none" },
+    });
+  }
+  const metrics = await getInstanceMetrics(slug);
+  return c.json({ data: metrics });
 });
 
 runtimeRoutes.post("/projects/:id/runtime/restart", async (c) => {
@@ -178,4 +209,65 @@ runtimeRoutes.get("/projects/:id/runtime/logs", async (c) => {
 
   const data = (r.stdout ?? "").split("\n").filter(Boolean);
   return c.json({ data });
+});
+
+// ─── Workspace-level runtime listing ──────────────────────
+// Mounted at /workspaces in routes.ts. Lists every project_runtime row
+// for the workspace with live per-instance metrics joined in.
+export const workspaceRuntimeRoutes = new Hono<AuthEnv>();
+workspaceRuntimeRoutes.use("*", authMiddleware);
+
+workspaceRuntimeRoutes.get("/:wid/runtime/instances", async (c) => {
+  const workspaceId = c.req.param("wid");
+  const userId = c.get("userId");
+
+  // Workspace membership check via the same workspace_members pattern
+  // used elsewhere — return 403 if the caller isn't a member.
+  const member = await sql<{ exists: boolean }[]>`
+    SELECT EXISTS(
+      SELECT 1 FROM workspace_members
+      WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+    ) AS exists
+  `;
+  if (!member[0]?.exists) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
+  }
+
+  const rows = await sql<{
+    project_id: string;
+    project_name: string;
+    project_slug: string;
+    state: string;
+    fail_count: number;
+    last_active_at: Date | null;
+  }[]>`
+    SELECT
+      p.id AS project_id,
+      p.name AS project_name,
+      p.slug AS project_slug,
+      pr.state,
+      pr.fail_count,
+      pr.last_active_at
+    FROM project_runtime pr
+    JOIN projects p ON p.id = pr.project_id
+    WHERE p.workspace_id = ${workspaceId}
+    ORDER BY p.name
+  `;
+
+  const enriched = await Promise.all(
+    rows.map(async (r) => {
+      const metrics = await getInstanceMetrics(r.project_slug);
+      return {
+        projectId: r.project_id,
+        projectName: r.project_name,
+        projectSlug: r.project_slug,
+        dbState: r.state,
+        failCount: r.fail_count,
+        lastActiveAt: r.last_active_at,
+        ...metrics,
+      };
+    })
+  );
+
+  return c.json({ data: enriched });
 });

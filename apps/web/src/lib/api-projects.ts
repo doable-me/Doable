@@ -70,6 +70,31 @@ export async function apiGetShareStats(projectId: string): Promise<{
   return apiFetch(`/projects/${projectId}/share-stats`);
 }
 
+export interface ApiInstanceMetrics {
+  state: "running" | "stopped" | "failed" | "unknown";
+  uptimeMs: number | null;
+  memoryBytes: number | null;
+  cpuPct: number | null;
+  source: "cgroup" | "ps" | "none";
+}
+
+export interface ApiWorkspaceInstance extends ApiInstanceMetrics {
+  projectId: string;
+  projectName: string;
+  projectSlug: string;
+  dbState: string;
+  failCount: number;
+  lastActiveAt: string | null;
+}
+
+export async function apiGetRuntimeMetrics(projectId: string): Promise<{ data: ApiInstanceMetrics }> {
+  return apiFetch(`/projects/${projectId}/runtime/metrics`);
+}
+
+export async function apiListWorkspaceInstances(workspaceId: string): Promise<{ data: ApiWorkspaceInstance[] }> {
+  return apiFetch(`/workspaces/${workspaceId}/runtime/instances`);
+}
+
 export async function apiCreateProject(data: {
   name: string;
   slug?: string;

@@ -16,7 +16,7 @@ import { githubRoutes } from "./routes/github.js";
 import { projectFileRoutes } from "./routes/project-files.js";
 import { previewRoutes } from "./routes/preview-proxy.js";
 import { connectorProxyRoutes } from "./routes/connector-proxy.js";
-import { runtimeRoutes } from "./routes/runtime.js";
+import { runtimeRoutes, workspaceRuntimeRoutes } from "./routes/runtime.js";
 import { buildStreamRoutes } from "./routes/build-stream.js";
 import { thumbnailRoutes } from "./routes/thumbnails.js";
 import { analyticsRoutes } from "./routes/analytics.js";
@@ -60,6 +60,7 @@ app.route("/", previewRoutes);
 app.route("/", connectorProxyRoutes);
 // Per-project runtime status / restart / logs (PRD 06 §4)
 app.route("/", runtimeRoutes);
+app.route("/workspaces", workspaceRuntimeRoutes);
 // Per-project build-event SSE stream (PRD 03 §4.3)
 app.route("/", buildStreamRoutes);
 // Project file routes (no auth — filesystem-backed, powers live preview)
