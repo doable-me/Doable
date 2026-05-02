@@ -72,10 +72,12 @@ export async function apiGetShareStats(projectId: string): Promise<{
 
 export async function apiCreateProject(data: {
   name: string;
+  slug?: string;
   description?: string;
   workspaceId?: string;
   prompt?: string;
   templateId?: string;
+  frameworkId?: string;
 }): Promise<{ data: ApiProject }> {
   return apiFetch("/projects", {
     method: "POST",

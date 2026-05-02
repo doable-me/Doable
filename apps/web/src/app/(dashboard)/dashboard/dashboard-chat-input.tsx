@@ -9,9 +9,22 @@ import {
   Target,
   Loader2,
   X,
+  Layers,
 } from "lucide-react";
 import type { ImageAttachment } from "@/hooks/use-image-attachments";
 import { useTypingPlaceholder } from "./dashboard-hooks";
+
+const FRAMEWORK_OPTIONS = [
+  { id: "", label: "Auto-detect framework" },
+  { id: "vite-react", label: "React (Vite)" },
+  { id: "nextjs-app", label: "Next.js" },
+  { id: "sveltekit", label: "SvelteKit" },
+  { id: "nuxt", label: "Nuxt" },
+  { id: "astro", label: "Astro" },
+  { id: "hono", label: "Hono" },
+  { id: "fastapi", label: "FastAPI" },
+  { id: "django", label: "Django" },
+] as const;
 
 export function ChatInput({
   value,
@@ -27,6 +40,8 @@ export function ChatInput({
   onToggleMic,
   startMode,
   onToggleMode,
+  frameworkId,
+  onFrameworkChange,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -41,6 +56,8 @@ export function ChatInput({
   onToggleMic: () => void;
   startMode: "agent" | "plan";
   onToggleMode: () => void;
+  frameworkId: string | null;
+  onFrameworkChange: (id: string | null) => void;
 }) {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -125,6 +142,24 @@ export function ChatInput({
                 <Hammer className="h-3 w-3" />
                 Work
               </button>
+            </div>
+            {/* Framework picker — defaults to auto-detect (server picks
+                from prompt text, falls back to workspace admin default). */}
+            <div className="ml-1 flex items-center gap-1 rounded-full border border-border px-2 h-7 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+              <Layers className="h-3 w-3" />
+              <select
+                value={frameworkId ?? ""}
+                onChange={(e) => onFrameworkChange(e.target.value || null)}
+                className="bg-transparent focus:outline-none cursor-pointer text-[11px]"
+                title="Pick framework explicitly, or let the server detect from your prompt"
+                disabled={isCreating}
+              >
+                {FRAMEWORK_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="flex items-center gap-1">

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Loader2, Search, Plus, GitBranch, AlertCircle, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import { ToastContainer } from "@/components/ui/toast-container";
 import { TemplateCard as NewTemplateCard } from "@/components/templates/template-card";
@@ -13,10 +14,13 @@ import { DashboardToolbar } from "./dashboard-toolbar";
 import { DashboardDialogs } from "./dashboard-dialogs";
 import { useDashboard } from "./use-dashboard";
 import { useMyShared } from "@/modules/discover/use-my-shared";
+import { CreateProjectDialog } from "@/modules/dashboard/components/create-project-dialog";
+import { apiCreateProject } from "@/lib/api";
 
 export default function DashboardPage() {
   const d = useDashboard();
   const shared = useMyShared();
+  const [createOpen, setCreateOpen] = useState(false);
 
   const SortIcon = ({ col }: { col: SortKey }) => {
     if (d.sortKey !== col) return <ArrowUpDown className="ml-1 h-3 w-3 opacity-30" />;
@@ -59,6 +63,8 @@ export default function DashboardPage() {
                 onToggleMic={d.speechRecognition.toggle}
                 startMode={d.startMode}
                 onToggleMode={() => d.setStartMode((prev) => (prev === "agent" ? "plan" : "agent"))}
+                frameworkId={d.frameworkId}
+                onFrameworkChange={d.setFrameworkId}
               />
               <input
                 ref={d.imageAttachments.fileInputRef}
@@ -109,6 +115,19 @@ export default function DashboardPage() {
             <button onClick={() => { d.setError(null); d.fetchProjects(); }} className="ml-auto underline hover:text-red-300">Retry</button>
           </div>
         )}
+
+        {/* New Project button — opens the dialog with all 8 frameworks
+            + template picker. Quick prompt entry above remains the
+            fastest path; this is for users who want explicit control. */}
+        <div className="mb-4 flex justify-end">
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-500 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New project
+          </button>
+        </div>
 
         {/* Toolbar */}
         <DashboardToolbar
@@ -330,6 +349,26 @@ export default function DashboardPage() {
       />
 
       <ToastContainer toasts={d.toasts} onDismiss={d.dismissToast} />
+
+      <CreateProjectDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreate={async (input) => {
+          const activeWsId = typeof window !== "undefined"
+            ? localStorage.getItem("doable_active_workspace_id") ?? undefined
+            : undefined;
+          const res = await apiCreateProject({
+            name: input.name,
+            slug: input.slug,
+            description: input.description,
+            prompt: input.prompt,
+            templateId: input.templateId,
+            frameworkId: input.frameworkId,
+            workspaceId: activeWsId,
+          });
+          d.router.push(`/editor/${res.data.id}`);
+        }}
+      />
     </div>
   );
 }

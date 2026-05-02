@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -27,12 +28,97 @@ import {
   Copy,
   Check,
   AlertTriangle,
+  Layers,
 } from "lucide-react";
 import type {
   ApiWorkspace,
   ApiWorkspaceMember,
   ApiWorkspaceInvite,
 } from "@/lib/api";
+import { apiGetAiDefaults, apiUpdateAiDefaults } from "@/lib/api";
+
+const FRAMEWORK_OPTIONS = [
+  { id: "", label: "No default (let users choose)" },
+  { id: "vite-react", label: "React (Vite)" },
+  { id: "nextjs-app", label: "Next.js" },
+  { id: "sveltekit", label: "SvelteKit" },
+  { id: "nuxt", label: "Nuxt" },
+  { id: "astro", label: "Astro" },
+  { id: "hono", label: "Hono" },
+  { id: "fastapi", label: "FastAPI" },
+  { id: "django", label: "Django" },
+] as const;
+
+function DefaultFrameworkSection({ workspaceId, isAdmin }: { workspaceId: string; isAdmin: boolean }) {
+  const [value, setValue] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGetAiDefaults(workspaceId)
+      .then((res) => {
+        if (cancelled) return;
+        const fw = (res.data as { default_framework_id?: string | null }).default_framework_id;
+        setValue(fw ?? "");
+      })
+      .catch(() => { /* fall back to empty */ })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [workspaceId]);
+
+  const handleSave = async (newValue: string) => {
+    setValue(newValue);
+    if (!isAdmin) return;
+    setSaving(true);
+    try {
+      await apiUpdateAiDefaults(workspaceId, {
+        // Cast through unknown — the API helper's typed shape predates
+        // default_framework_id; the server validates it via z.enum.
+        ...({ defaultFrameworkId: newValue || null } as unknown as Parameters<typeof apiUpdateAiDefaults>[1]),
+      });
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 2000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-6 mb-6">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-600/20">
+          <Layers className="h-5 w-5 text-violet-400" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Default framework</h2>
+          <p className="text-xs text-muted-foreground">
+            Used when a creator doesn&apos;t pick a framework and the prompt
+            doesn&apos;t clearly signal one. Defaults to React (Vite) when unset.
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <select
+          value={value}
+          onChange={(e) => handleSave(e.target.value)}
+          disabled={!isAdmin || loading || saving}
+          className="rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+        >
+          {FRAMEWORK_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>{opt.label}</option>
+          ))}
+        </select>
+        {(loading || saving) && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+        {savedAt && <Check className="h-4 w-4 text-green-400" />}
+        {!isAdmin && (
+          <span className="text-xs text-muted-foreground">Read-only — admin permission required.</span>
+        )}
+      </div>
+    </section>
+  );
+}
 
 // ─── Role display helpers ────────────────────────────────
 
@@ -138,6 +224,10 @@ export function GeneralTab({
           )}
         </div>
       </section>
+
+      {/* Default framework — admin-only setting that informs project create
+          when the user doesn't pick a framework explicitly. */}
+      <DefaultFrameworkSection workspaceId={workspace.id} isAdmin={isAdmin} />
 
       {/* Team Members */}
       <section className="rounded-xl border border-border bg-card p-6 mb-6">

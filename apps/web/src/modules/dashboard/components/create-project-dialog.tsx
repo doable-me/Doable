@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { FileCode, MessageSquare, LayoutTemplate, Loader2 } from "lucide-react";
+import { apiListTemplates, type ApiTemplate } from "@/lib/api";
 
 interface CreateProjectDialogProps {
   open: boolean;
@@ -22,17 +23,22 @@ interface CreateProjectDialogProps {
     description?: string;
     prompt?: string;
     templateId?: string;
+    frameworkId?: string;
   }) => Promise<void>;
 }
 
 type CreationMode = "blank" | "prompt" | "template";
 
-const TEMPLATES = [
-  { id: "next-starter", name: "Next.js Starter", category: "Web" },
-  { id: "react-dashboard", name: "React Dashboard", category: "Web" },
-  { id: "api-service", name: "API Service", category: "Backend" },
-  { id: "landing-page", name: "Landing Page", category: "Marketing" },
-];
+const FRAMEWORKS = [
+  { id: "vite-react", name: "React (Vite)", description: "Client-side SPA", category: "Frontend" },
+  { id: "nextjs-app", name: "Next.js", description: "Full-stack React", category: "Full-Stack" },
+  { id: "sveltekit", name: "SvelteKit", description: "Full-stack Svelte", category: "Full-Stack" },
+  { id: "nuxt", name: "Nuxt", description: "Full-stack Vue", category: "Full-Stack" },
+  { id: "astro", name: "Astro", description: "Content sites", category: "Frontend" },
+  { id: "hono", name: "Hono", description: "API server (Node.js)", category: "Backend" },
+  { id: "fastapi", name: "FastAPI", description: "API server (Python)", category: "Backend" },
+  { id: "django", name: "Django", description: "Full-stack Python", category: "Backend" },
+] as const;
 
 function slugify(text: string): string {
   return text
@@ -53,9 +59,27 @@ export function CreateProjectDialog({
   const [description, setDescription] = useState("");
   const [prompt, setPrompt] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [selectedFramework, setSelectedFramework] = useState<string>("vite-react");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [slugEdited, setSlugEdited] = useState(false);
+  const [templates, setTemplates] = useState<ApiTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+
+  // Fetch templates from the registry on first open. Filter out the empty
+  // "blank" template — the dialog's "Blank" mode covers that case directly.
+  useEffect(() => {
+    if (!open || templates.length > 0 || templatesLoading) return;
+    setTemplatesLoading(true);
+    apiListTemplates()
+      .then((res) => {
+        setTemplates(res.data.templates.filter((t) => t.id !== "blank"));
+      })
+      .catch(() => {
+        // Non-fatal — templates tab will just be empty.
+      })
+      .finally(() => setTemplatesLoading(false));
+  }, [open, templates.length, templatesLoading]);
 
   const handleNameChange = useCallback(
     (value: string) => {
@@ -74,6 +98,7 @@ export function CreateProjectDialog({
     setDescription("");
     setPrompt("");
     setSelectedTemplate(null);
+    setSelectedFramework("vite-react");
     setError(null);
     setSlugEdited(false);
   };
@@ -99,6 +124,8 @@ export function CreateProjectDialog({
         prompt: mode === "prompt" ? prompt.trim() || undefined : undefined,
         templateId:
           mode === "template" ? selectedTemplate ?? undefined : undefined,
+        frameworkId:
+          mode !== "template" ? selectedFramework : undefined,
       });
       reset();
       onOpenChange(false);
@@ -140,6 +167,30 @@ export function CreateProjectDialog({
             </button>
           ))}
         </div>
+
+        {/* Framework selector — shown for blank and prompt modes */}
+        {(mode === "blank" || mode === "prompt") && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-zinc-300">Framework</label>
+            <div className="grid grid-cols-2 gap-2">
+              {FRAMEWORKS.map((fw) => (
+                <button
+                  key={fw.id}
+                  type="button"
+                  onClick={() => setSelectedFramework(fw.id)}
+                  className={`flex flex-col items-start rounded-lg border p-2.5 text-left text-sm transition-colors ${
+                    selectedFramework === fw.id
+                      ? "border-blue-500 bg-blue-500/10 text-white"
+                      : "border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800"
+                  }`}
+                >
+                  <span className="font-medium">{fw.name}</span>
+                  <span className="text-xs text-zinc-500">{fw.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Form */}
         <div className="space-y-3">
@@ -197,24 +248,35 @@ export function CreateProjectDialog({
               <label className="mb-1 block text-sm font-medium">
                 Choose a template
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {TEMPLATES.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => setSelectedTemplate(t.id)}
-                    className={`rounded-lg border p-3 text-left text-sm transition-colors ${
-                      selectedTemplate === t.id
-                        ? "border-primary bg-primary/5"
-                        : "hover:border-primary/50"
-                    }`}
-                  >
-                    <span className="font-medium">{t.name}</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">
-                      {t.category}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              {templatesLoading ? (
+                <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">
+                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                  Loading templates…
+                </div>
+              ) : templates.length === 0 ? (
+                <div className="py-6 text-center text-xs text-muted-foreground">
+                  No templates available.
+                </div>
+              ) : (
+                <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto">
+                  {templates.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setSelectedTemplate(t.id)}
+                      className={`rounded-lg border p-3 text-left text-sm transition-colors ${
+                        selectedTemplate === t.id
+                          ? "border-primary bg-primary/5"
+                          : "hover:border-primary/50"
+                      }`}
+                    >
+                      <span className="font-medium">{t.name}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {t.category}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

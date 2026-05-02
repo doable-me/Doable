@@ -55,6 +55,9 @@ export function useDashboard() {
 
   // UI state
   const [prompt, setPrompt] = useState("");
+  // null = use server-side detection chain (prompt text → workspace admin
+  // default → vite-react). Picked explicitly via the ChatInput dropdown.
+  const [frameworkId, setFrameworkId] = useState<string | null>(null);
   const [startMode, setStartMode] = useState<"agent" | "plan">("agent");
   const [activeTab, setActiveTab] = useState<"recent" | "projects" | "templates">("recent");
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -248,6 +251,7 @@ export function useDashboard() {
         description: text.slice(0, 500),
         prompt: text.slice(0, 5000),
         workspaceId: activeWsId,
+        frameworkId: frameworkId ?? undefined,
       });
       const projectId = res.data.id;
       sessionStorage.setItem(`doable_initial_prompt_${projectId}`, JSON.stringify({ prompt: text, attachments: imageAttachments.attachments }));
@@ -365,7 +369,7 @@ export function useDashboard() {
     isLoading, isLoadingMore, isLoadingTemplates, isCreating, creatingStatus, error,
     totalProjects, totalRecent, hasMore,
     // UI state
-    prompt, setPrompt, startMode, setStartMode,
+    prompt, setPrompt, startMode, setStartMode, frameworkId, setFrameworkId,
     activeTab, setActiveTab, viewMode, setViewMode,
     searchQuery, setSearchQuery, statusFilter, setStatusFilter,
     starredFilter, setStarredFilter, sortKey, sortDir,
