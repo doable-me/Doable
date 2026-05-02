@@ -24,6 +24,7 @@ import { CollabAiSync } from "@/modules/collaboration/components/collab-ai-sync"
 import { useGitHub } from "@/modules/editor/hooks/use-github";
 import { GitHubConnectDialog } from "@/modules/editor/components/github-connect-dialog";
 import { GitHubButton } from "@/modules/editor/toolbar/github-button";
+import { RuntimePanel } from "@/modules/editor/components/runtime-panel";
 import { CollabChatTyping } from "@/modules/collaboration/components/collab-chat-typing";
 import { useAttachments, ACCEPTED_EXTENSIONS, type Attachment } from "@/hooks/use-attachments";
 import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/components/editor-model-selector";
@@ -6241,6 +6242,14 @@ export default function EditorPage() {
                     title="App Preview"
                     sandbox="allow-scripts allow-forms allow-popups allow-modals"
                   />
+                  {/* Runtime metrics overlay — bottom-right of preview pane.
+                      Reads from /projects/:id/runtime/metrics; degrades to
+                      "unavailable" copy on dev hosts (no systemd/cgroup). */}
+                  {resolvedProjectId && scaffoldStatus === "ready" && !isFirstGeneration && (
+                    <div className="pointer-events-auto absolute bottom-3 right-3 z-30 w-[280px] opacity-80 hover:opacity-100 transition-opacity">
+                      <RuntimePanel projectId={resolvedProjectId} />
+                    </div>
+                  )}
                   {/* Building overlay — covers preview during scaffold setup,
                       first generation, or any active AI building with tool calls.
                       Shows live status as the AI works. Disappears when generation ends. */}
