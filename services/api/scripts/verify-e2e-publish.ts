@@ -183,9 +183,189 @@ server.listen(port, hostname, () => {
   await rm(PROJECT_DIR, { recursive: true, force: true });
 
   console.log("");
+  console.log("=== Phase B: static-spa flow ===");
+  await runStaticSpaFlow();
+
+  console.log("");
   const allOk = results.every((r) => r.ok);
   console.log(`=== ${allOk ? "ALL STEPS PASS" : "FAIL"} ===`);
   process.exit(allOk ? 0 : 1);
+}
+
+async function runStaticSpaFlow(): Promise<void> {
+  const SITES_DIR = process.env.SITES_DIR ?? "/data/sites";
+  const slug = `e2e-static-${Date.now().toString(36)}`;
+  const projectDir = path.join(PROJECTS_ROOT, slug);
+  const buildOutputDir = path.join(projectDir, "dist");
+
+  // Step 1 — synthetic Vite-React-style static build: index.html +
+  // an asset under assets/.
+  await mkdir(path.join(buildOutputDir, "assets"), { recursive: true });
+  await writeFile(
+    path.join(buildOutputDir, "index.html"),
+    `<!doctype html><html><head><title>${slug}</title></head><body><div id="root">e2e static ok</div><script src="/assets/app.js"></script></body></html>`,
+    "utf-8",
+  );
+  await writeFile(
+    path.join(buildOutputDir, "assets", "app.js"),
+    `console.log("e2e static js");`,
+    "utf-8",
+  );
+  step("static:fixture-create", true, `dist/index.html + dist/assets/app.js`);
+
+  // Step 2 — doable-cloud deploy (no framework-specific staging branch
+  // matches a plain dist/index.html, so this exercises the base
+  // static-spa cp into /data/sites/{slug}/test/).
+  const { DoableCloudAdapter } = await import(
+    path.resolve(HERE, "../src/deploy/adapters/doable-cloud.js")
+  );
+  const adapter = new DoableCloudAdapter();
+  await adapter.deploy({
+    projectId: slug,
+    projectSlug: slug,
+    workspaceSlug: "e2e",
+    subdomain: slug,
+    buildOutputDir,
+    environment: "preview",
+  });
+  const stagedIndex = path.join(SITES_DIR, slug, "test", "index.html");
+  step(
+    "static:deploy-stage",
+    existsSync(stagedIndex),
+    existsSync(stagedIndex) ? `${stagedIndex} present` : `MISSING ${stagedIndex}`,
+  );
+
+  // Step 3 — staticFilesAdapter.start() should accept the populated dir.
+  const { staticFilesAdapter } = await import(
+    path.resolve(HERE, "../src/runtime/adapters/static-files.js")
+  );
+  let staticHandle: { id: string; listenAddr: string } | null = null;
+  try {
+    staticHandle = await staticFilesAdapter.start({
+      projectId: slug,
+      projectSlug: slug,
+      workspaceSlug: "e2e",
+      siteDir: path.join(SITES_DIR, slug, "test"),
+      projectDir,
+      framework: { id: "vite-react" },
+      env: {},
+      listen: { kind: "tcp-port", host: "127.0.0.1", port: 0 },
+      userId: null,
+    });
+    step("static:runtime-start", true, `id=${staticHandle.id}, dir=${staticHandle.listenAddr}`);
+  } catch (err) {
+    step("static:runtime-start", false, err instanceof Error ? err.message : String(err));
+  }
+
+  // Step 4 — healthCheck should report ok with non-zero uptime.
+  if (staticHandle) {
+    const health = await staticFilesAdapter.healthCheck({
+      id: staticHandle.id,
+      startedAt: new Date(Date.now() - 1500),
+      listenAddr: staticHandle.listenAddr,
+      listenContract: "tcp-port",
+    });
+    step(
+      "static:healthcheck",
+      health.ok,
+      health.ok ? `ok, uptimeMs=${health.uptimeMs}` : `${health.reason}: ${health.detail}`,
+    );
+  }
+
+  // Step 5 — Caddy file_server probe. Configure a temporary site block
+  // and probe via HTTP. Best-effort: if Caddy isn't running this step
+  // skips with a SKIP marker rather than failing the whole flow.
+  const caddyOk = await probeCaddyForStaticSite(slug, path.join(SITES_DIR, slug, "test"));
+  if (caddyOk === "skipped") {
+    step("static:caddy-probe", true, "SKIPPED — Caddy not reachable on this host");
+  } else if (caddyOk.ok) {
+    step("static:caddy-probe", true, `200 OK from Caddy: ${caddyOk.body.slice(0, 80)}`);
+  } else {
+    step("static:caddy-probe", false, `Caddy probe failed: ${caddyOk.detail}`);
+  }
+
+  // Cleanup
+  if (staticHandle) await staticFilesAdapter.stop(staticHandle as never);
+  await rm(projectDir, { recursive: true, force: true });
+  await rm(path.join(SITES_DIR, slug), { recursive: true, force: true });
+}
+
+type CaddyProbeResult = "skipped" | { ok: true; body: string } | { ok: false; detail: string };
+
+async function probeCaddyForStaticSite(
+  slug: string,
+  siteDir: string,
+): Promise<CaddyProbeResult> {
+  // Caddy admin API listens on 127.0.0.1:2019 by default. Try to add a
+  // temporary route that file_servers from siteDir, host-matched on a
+  // synthetic hostname we'll send via the Host header.
+  const hostname = `${slug}.local-e2e`;
+  const adminUrl = "http://127.0.0.1:2019";
+  try {
+    const ping = await fetch(`${adminUrl}/config/`, { method: "GET" });
+    if (!ping.ok) return "skipped";
+  } catch {
+    return "skipped";
+  }
+
+  // Build a minimal route. Caddy's auto_https is annoying for synthetic
+  // hostnames, so we use a single http/h2c server on 127.0.0.1:8080
+  // and route by Host header.
+  const probePort = 8081;
+  const route = {
+    "@id": `e2e-static-${slug}`,
+    match: [{ host: [hostname] }],
+    handle: [{ handler: "file_server", root: siteDir }],
+    terminal: true,
+  };
+
+  // Try to insert into srv0 if it exists, else create a server on probePort.
+  // Simpler: PUT a dedicated apps.http.servers.e2e_${slug} server.
+  const serverName = `e2e_${slug.replace(/-/g, "_")}`;
+  try {
+    const putRes = await fetch(`${adminUrl}/config/apps/http/servers/${serverName}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        listen: [`:${probePort}`],
+        routes: [route],
+        // Disable Caddy's automatic_https — synthetic e2e hostnames
+        // can't actually serve HTTPS (no DNS, no cert). Without this,
+        // Caddy wraps the listener in TLS and the plaintext probe
+        // returns "400 Bad Request — sent HTTP to HTTPS".
+        automatic_https: { disable: true },
+      }),
+    });
+    if (!putRes.ok) {
+      const text = await putRes.text().catch(() => "");
+      return { ok: false, detail: `caddy PUT server failed: ${putRes.status} ${text.slice(0, 120)}` };
+    }
+    await sleep(300);
+
+    // Probe — manual TCP since fetch doesn't let us spoof Host header
+    // easily across HTTP versions, and we need a Host header to match
+    // the route.
+    const body = await new Promise<string>((resolve, reject) => {
+      const sock = connect({ host: "127.0.0.1", port: probePort });
+      let buf = "";
+      sock.setTimeout(3000);
+      sock.on("connect", () => sock.write(`GET / HTTP/1.1\r\nHost: ${hostname}\r\nConnection: close\r\n\r\n`));
+      sock.on("data", (d) => { buf += d.toString(); });
+      sock.on("end", () => resolve(buf));
+      sock.on("error", reject);
+      sock.on("timeout", () => { sock.destroy(); reject(new Error("timeout")); });
+    });
+
+    // Cleanup the temporary server.
+    await fetch(`${adminUrl}/config/apps/http/servers/${serverName}`, { method: "DELETE" }).catch(() => {});
+
+    if (body.startsWith("HTTP/1.1 200") && body.includes("e2e static ok")) {
+      return { ok: true, body };
+    }
+    return { ok: false, detail: `unexpected body: ${body.slice(0, 200)}` };
+  } catch (err) {
+    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 main().catch((err) => {
