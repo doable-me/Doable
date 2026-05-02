@@ -61,10 +61,22 @@ aiSettingsConfigRoutes.get("/:workspaceId/ai-settings/defaults", async (c) => {
       enforced_provider_id: null,
       enforced_model: null,
       show_model_selector: false,
+      default_framework_id: null,
       updated_by: null,
     },
   });
 });
+
+const VALID_FRAMEWORK_IDS = [
+  "vite-react",
+  "nextjs-app",
+  "nuxt",
+  "sveltekit",
+  "astro",
+  "hono",
+  "fastapi",
+  "django",
+] as const;
 
 const updateDefaultsSchema = z.object({
   defaultSource: z.enum(["copilot", "custom"]).optional(),
@@ -82,6 +94,7 @@ const updateDefaultsSchema = z.object({
   enforcedProviderId: z.string().uuid().nullable().optional(),
   enforcedModel: z.string().max(100).nullable().optional(),
   showModelSelector: z.boolean().optional(),
+  defaultFrameworkId: z.enum(VALID_FRAMEWORK_IDS).nullable().optional(),
 });
 
 // PUT /workspaces/:workspaceId/ai-settings/defaults
@@ -113,6 +126,7 @@ aiSettingsConfigRoutes.put(
       enforcedProviderId: body.enforcedProviderId,
       enforcedModel: body.enforcedModel,
       showModelSelector: body.showModelSelector,
+      defaultFrameworkId: body.defaultFrameworkId,
       updatedBy: userId,
     });
 

@@ -61,6 +61,12 @@ export interface WorkspaceAiSettingsRow {
   enforced_provider_id: string | null;
   enforced_model: string | null;
   show_model_selector: boolean;
+  /**
+   * Workspace-wide default framework_id used when project create omits
+   * frameworkId AND prompt detection returned null. NULL → fall back to
+   * vite-react. Migration 065.
+   */
+  default_framework_id: string | null;
   updated_by: string | null;
   created_at: Date;
   updated_at: Date;

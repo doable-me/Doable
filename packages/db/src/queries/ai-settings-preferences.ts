@@ -38,6 +38,7 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
       enforcedProviderId?: string | null;
       enforcedModel?: string | null;
       showModelSelector?: boolean | null;
+      defaultFrameworkId?: string | null;
       updatedBy: string;
     }): Promise<WorkspaceAiSettingsRow> {
       // For each updatable field, distinguish "not provided" (undefined → keep
@@ -56,6 +57,7 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
       const keepSuggestionCopilotModel = data.suggestionCopilotModel === undefined;
       const keepSuggestionProvider = data.suggestionProviderId === undefined;
       const keepSuggestionProviderModel = data.suggestionProviderModel === undefined;
+      const keepDefaultFrameworkId = data.defaultFrameworkId === undefined;
 
       const [row] = await sql<WorkspaceAiSettingsRow[]>`
         INSERT INTO workspace_ai_settings (
@@ -65,7 +67,7 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
           suggestion_source, suggestion_copilot_account_id, suggestion_copilot_model,
           suggestion_provider_id, suggestion_provider_model,
           enforce_ai, enforced_copilot_account_id, enforced_provider_id,
-          enforced_model, show_model_selector, updated_by
+          enforced_model, show_model_selector, default_framework_id, updated_by
         ) VALUES (
           ${data.workspaceId},
           ${data.defaultSource ?? "copilot"},
@@ -83,6 +85,7 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
           ${data.enforcedProviderId ?? null},
           ${data.enforcedModel ?? null},
           ${data.showModelSelector ?? false},
+          ${data.defaultFrameworkId ?? null},
           ${data.updatedBy}
         )
         ON CONFLICT (workspace_id) DO UPDATE SET
@@ -121,6 +124,9 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
           enforced_provider_id = EXCLUDED.enforced_provider_id,
           enforced_model = EXCLUDED.enforced_model,
           show_model_selector = EXCLUDED.show_model_selector,
+          default_framework_id = ${keepDefaultFrameworkId
+            ? sql`workspace_ai_settings.default_framework_id`
+            : sql`${data.defaultFrameworkId ?? null}`},
           updated_by = ${data.updatedBy}
         RETURNING *
       `;

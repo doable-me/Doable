@@ -153,6 +153,7 @@ const createSchema = z.object({
   folderId: z.string().uuid().optional(),
   workspaceId: z.string().uuid().optional(),
   prompt: z.string().max(5000).optional(),
+  frameworkId: z.string().max(50).optional(),
 });
 
 function generateSlug(name: string): string {
@@ -180,7 +181,7 @@ projectListRoutes.post("/", async (c) => {
     );
   }
 
-  const { prompt, ...data } = parsed.data;
+  const { prompt, frameworkId: explicitFrameworkId, ...data } = parsed.data;
 
   // Resolve workspace — use provided or user's default (require member+ role)
   const workspaceId = await getUserWorkspaceIdWithMinRole(userId, "member", data.workspaceId);
@@ -189,6 +190,30 @@ projectListRoutes.post("/", async (c) => {
       return c.json({ error: "Access denied — requires member role or higher" }, 403);
     }
     return c.json({ error: "No workspace found. Please create a workspace first." }, 400);
+  }
+
+  // Framework resolution chain (only when caller didn't pick explicitly):
+  //   1. explicit frameworkId from request body — wins
+  //   2. heuristic detection from prompt text — "build me a Django app" → "django"
+  //   3. workspace admin default_framework_id — set in workspace settings
+  //   4. undefined → projects.create defaults to vite-react via DB column default
+  let frameworkId = explicitFrameworkId;
+  if (!frameworkId && prompt) {
+    const { detectFrameworkFromPrompt } = await import("../../projects/detect-framework.js");
+    const detected = detectFrameworkFromPrompt(prompt);
+    if (detected) frameworkId = detected;
+  }
+  if (!frameworkId) {
+    try {
+      const rows = await sql<{ default_framework_id: string | null }[]>`
+        SELECT default_framework_id FROM workspace_ai_settings
+        WHERE workspace_id = ${workspaceId}
+      `;
+      const wsDefault = rows[0]?.default_framework_id;
+      if (wsDefault) frameworkId = wsDefault;
+    } catch {
+      // Pre-migration host: column doesn't exist yet — fall through to DB default.
+    }
   }
 
   // Enforce plan project limit
@@ -219,6 +244,7 @@ projectListRoutes.post("/", async (c) => {
     templateId: data.templateId,
     folderId: data.folderId,
     workspaceId,
+    frameworkId,
   });
 
   return c.json({ data: project }, 201);
