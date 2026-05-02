@@ -55,7 +55,8 @@ const scaffoldingInFlight = new Map<string, Promise<ScaffoldResult>>();
  */
 export async function createProject(
   projectId: string,
-  templateFiles?: Record<string, string>
+  templateFiles?: Record<string, string>,
+  frameworkId?: string,
 ): Promise<ScaffoldResult> {
   // Deduplicate concurrent scaffold calls for the same project
   const inflight = scaffoldingInFlight.get(projectId);
@@ -63,7 +64,7 @@ export async function createProject(
     return inflight;
   }
 
-  const promise = doCreateProject(projectId, templateFiles);
+  const promise = doCreateProject(projectId, templateFiles, frameworkId);
   scaffoldingInFlight.set(projectId, promise);
   try {
     return await promise;
@@ -74,7 +75,8 @@ export async function createProject(
 
 async function doCreateProject(
   projectId: string,
-  templateFiles?: Record<string, string>
+  templateFiles?: Record<string, string>,
+  frameworkIdOverride?: string,
 ): Promise<ScaffoldResult> {
   const projectPath = getProjectPath(projectId);
 
@@ -86,11 +88,10 @@ async function doCreateProject(
   await ensureProjectDir(projectId);
 
   // Resolve framework adapter for required/critical-file lists.
-  // TODO Phase 2: thread frameworkId from the projects row (projects.framework_id)
-  // when the integration-with-DB PR lands. For Phase 1 every project is vite-react,
-  // so hardcoding here preserves byte-identical behavior — the vite-react adapter
-  // declares the same ["index.html","package.json"] list this code used previously.
-  const frameworkId = "vite-react";
+  // Caller (scaffold.ts) passes frameworkId from the template metadata when
+  // scaffolding from a template; vite-react is the default for legacy paths
+  // and blank scaffolds (every existing project today is vite-react).
+  const frameworkId = frameworkIdOverride ?? "vite-react";
   const adapter = defaultRegistry.getAdapter(frameworkId);
 
   let files: Array<[string, string]>;

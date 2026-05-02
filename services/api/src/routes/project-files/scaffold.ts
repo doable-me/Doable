@@ -49,6 +49,7 @@ scaffoldRoutes.post("/projects/:id/scaffold", async (c) => {
     // Also check the project_files table for pre-scaffolded files (written by
     // POST /templates/:id/use before the filesystem scaffold runs).
     let templateFiles: Record<string, string> | undefined;
+    let scaffoldFrameworkId: string | undefined;
     try {
       const [project] = await sql<{ template_id: string | null }[]>`
         SELECT template_id FROM projects WHERE id = ${projectId}
@@ -57,7 +58,16 @@ scaffoldRoutes.post("/projects/:id/scaffold", async (c) => {
         const template = getTemplate(project.template_id);
         if (template) {
           templateFiles = template.codeFiles;
-          console.log(`[Scaffold] Using template "${template.id}" for project ${projectId}`);
+          scaffoldFrameworkId = template.framework_id;
+          // Persist the framework choice on the project row so dev-server,
+          // build, proxy, and AI prompt all resolve the right adapter.
+          await sql`
+            UPDATE projects SET framework_id = ${template.framework_id}
+            WHERE id = ${projectId}
+          `;
+          console.log(
+            `[Scaffold] Using template "${template.id}" (framework=${template.framework_id}) for project ${projectId}`,
+          );
         }
       }
 
@@ -81,7 +91,7 @@ scaffoldRoutes.post("/projects/:id/scaffold", async (c) => {
       // DB lookup failed — fall back to blank scaffold
     }
 
-    const result = await createProject(projectId, templateFiles);
+    const result = await createProject(projectId, templateFiles, scaffoldFrameworkId);
 
     // Resolve userId early so vault-backed integration credentials get injected
     // into the Vite dev server (Phase 1C of integration↔AI chat bridge).
