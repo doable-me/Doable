@@ -154,15 +154,24 @@ function renderUnitOverride(ctx: RuntimeContext, egressHosts: string[] = []): st
   // dist-server/ is the post-build runtime layout staged by
   // doable-cloud.ts: standalone tree + .next/static + public/ co-located
   // so the standalone server can serve static assets in production.
+  // Entry priority: server.js (Next.js) → index.mjs (Nuxt nitro) → index.js (SvelteKit adapter-node, Hono node-build) → entry.mjs (Astro SSR). Default to server.js when none exist (legacy).
+  const entry = resolveStandaloneEntry(`${ctx.projectDir}/dist-server`);
   return `[Service]
 WorkingDirectory=${ctx.projectDir}/dist-server
-ExecStart=/usr/bin/node ${ctx.projectDir}/dist-server/server.js
+ExecStart=/usr/bin/node ${ctx.projectDir}/dist-server/${entry}
 MemoryMax=512M
 CPUQuota=50%
 TasksMax=256
 IPAddressDeny=any
 IPAddressAllow=localhost
 ${extraAllows}${extraAllows ? "\n" : ""}`;
+}
+
+function resolveStandaloneEntry(distServerDir: string): string {
+  for (const candidate of ["server.js", "index.mjs", "index.js", "entry.mjs"]) {
+    if (existsSync(`${distServerDir}/${candidate}`)) return candidate;
+  }
+  return "server.js";
 }
 
 function hasSystemctl(): boolean {

@@ -159,6 +159,71 @@ export class DoableCloudAdapter implements DeployAdapter {
         );
       }
 
+      // Nuxt nitro output (.output/server/index.mjs + .output/public/).
+      // The build adapter's outputDir is the project root for Nuxt; the
+      // canonical layout is .output/{server,public}. Stage to dist-server/
+      // so node-standalone can ExecStart at dist-server/index.mjs.
+      const nuxtOutput = path.join(PROJECTS_ROOT, projectId, ".output");
+      const nuxtServer = path.join(nuxtOutput, "server", "index.mjs");
+      if (existsSync(nuxtServer)) {
+        const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
+        await rm(distServer, { recursive: true, force: true });
+        await mkdir(distServer, { recursive: true });
+        await cp(path.join(nuxtOutput, "server"), distServer, {
+          recursive: true,
+        });
+        const nuxtPublic = path.join(nuxtOutput, "public");
+        if (existsSync(nuxtPublic)) {
+          await cp(nuxtPublic, path.join(distServer, "public"), {
+            recursive: true,
+          });
+        }
+        console.log(
+          `[doable-cloud] Staged Nuxt nitro layout at ${distServer} ` +
+            `for project ${projectId}`
+        );
+      }
+
+      // SvelteKit @sveltejs/adapter-node output (build/index.js +
+      // build/client/ + build/server/). The whole `build/` tree is
+      // self-contained — copy as-is.
+      const svelteBuild = path.join(PROJECTS_ROOT, projectId, "build");
+      const svelteEntry = path.join(svelteBuild, "index.js");
+      if (existsSync(svelteEntry)) {
+        const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
+        await rm(distServer, { recursive: true, force: true });
+        await mkdir(distServer, { recursive: true });
+        await cp(svelteBuild, distServer, { recursive: true });
+        console.log(
+          `[doable-cloud] Staged SvelteKit adapter-node layout at ${distServer} ` +
+            `for project ${projectId}`
+        );
+      }
+
+      // Astro SSR output (dist/server/entry.mjs + dist/client/). Static-only
+      // Astro builds (no SSR adapter) skip this branch — they fall through
+      // to the existing static-spa copy above.
+      const astroDist = path.join(PROJECTS_ROOT, projectId, "dist");
+      const astroEntry = path.join(astroDist, "server", "entry.mjs");
+      if (existsSync(astroEntry)) {
+        const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
+        await rm(distServer, { recursive: true, force: true });
+        await mkdir(distServer, { recursive: true });
+        await cp(path.join(astroDist, "server"), distServer, {
+          recursive: true,
+        });
+        const astroClient = path.join(astroDist, "client");
+        if (existsSync(astroClient)) {
+          await cp(astroClient, path.join(distServer, "client"), {
+            recursive: true,
+          });
+        }
+        console.log(
+          `[doable-cloud] Staged Astro SSR layout at ${distServer} ` +
+            `for project ${projectId}`
+        );
+      }
+
       // Collect file artifacts for tracking
       const files = await collectFileInfo(targetDir, targetDir);
       const totalSize = files.reduce((sum, f) => sum + f.size, 0);

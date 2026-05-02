@@ -13,10 +13,22 @@ export interface FrameworkPrompt {
 
 import { viteReactPrompt } from "./vite-react.js";
 import { nextjsAppPrompt } from "./nextjs-app.js";
+import { sveltekitPrompt } from "./sveltekit.js";
+import { nuxtPrompt } from "./nuxt.js";
+import { astroPrompt } from "./astro.js";
+import { honoPrompt } from "./hono.js";
+import { fastapiPrompt } from "./fastapi.js";
+import { djangoPrompt } from "./django.js";
 
 export const FRAMEWORK_PROMPTS: Record<string, FrameworkPrompt> = {
   "vite-react": viteReactPrompt,
   "nextjs-app": nextjsAppPrompt,
+  "sveltekit": sveltekitPrompt,
+  "nuxt": nuxtPrompt,
+  "astro": astroPrompt,
+  "hono": honoPrompt,
+  "fastapi": fastapiPrompt,
+  "django": djangoPrompt,
 };
 
 export function getFrameworkPrompt(frameworkId: string): FrameworkPrompt {
