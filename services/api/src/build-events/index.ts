@@ -36,3 +36,8 @@ export {
   type LogFilter,
   type FilterContext,
 } from "./filters/index.js";
+
+export {
+  loadWorkspaceFilters,
+  clearWorkspaceFilterCache,
+} from "./filters/workspace-filters.js";

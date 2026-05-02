@@ -11,6 +11,8 @@ import {
   BuildEventPublisher,
   LogFilterChain,
   buildDefaultFilters,
+  loadWorkspaceFilters,
+  type LogFilter,
 } from "../build-events/index.js";
 
 const projects = projectQueries(sql);
@@ -92,12 +94,21 @@ export async function runBuild(
   // callers without a projectId fall through to the vite-react adapter so
   // they retain today's behavior.
   let frameworkId = "vite-react";
+  let workspaceId = "";
   if (opts?.projectId) {
     const project = await projects.findById(opts.projectId);
     if (!project) throw new Error(`Project ${opts.projectId} not found`);
     frameworkId = (project as { framework_id?: string }).framework_id ?? "vite-react";
+    workspaceId = (project as { workspace_id?: string }).workspace_id ?? "";
   }
   const adapter = defaultRegistry.getAdapter(frameworkId);
+
+  // Pre-load workspace-supplied log filters (PRD 04 §4.2/§5). Layered
+  // AFTER the always-on baseline. Failure is non-fatal — empty array.
+  let wsFilters: LogFilter[] = [];
+  if (opts?.projectId) {
+    wsFilters = await loadWorkspaceFilters(workspaceId);
+  }
 
   // Normalize basePath to today's behavior: only forward when non-"/"; ensure
   // trailing slash matches what Vite expects. The adapter encodes the
@@ -144,7 +155,10 @@ export async function runBuild(
     // the publisher logs and proceeds with the build unchanged.
     if (opts?.projectId) {
       try {
-        const filterChain = new LogFilterChain(buildDefaultFilters());
+        const filterChain = new LogFilterChain([
+          ...buildDefaultFilters(),
+          ...wsFilters,
+        ]);
         const publisher = new BuildEventPublisher(opts.projectId, filterChain, {
           projectId: opts.projectId,
           projectPath: projectDir,

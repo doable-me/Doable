@@ -10,6 +10,7 @@ import {
   BuildEventPublisher,
   LogFilterChain,
   buildDefaultFilters,
+  loadWorkspaceFilters,
 } from "../build-events/index.js";
 import { sql } from "../db/index.js";
 import { defaultRegistry } from "../frameworks/registry.js";
@@ -235,7 +236,14 @@ async function doStartDevServer(
   const buildId = `dev-${Date.now()}`;
   let publisher: BuildEventPublisher | null = null;
   try {
-    const filterChain = new LogFilterChain(buildDefaultFilters());
+    const [proj2] = await sql<{ workspace_id: string }[]>`
+      SELECT workspace_id FROM projects WHERE id = ${projectId}
+    `;
+    const wsFilters = await loadWorkspaceFilters(proj2?.workspace_id ?? "");
+    const filterChain = new LogFilterChain([
+      ...buildDefaultFilters(),
+      ...wsFilters,
+    ]);
     publisher = new BuildEventPublisher(projectId, filterChain, {
       projectId,
       projectPath,
