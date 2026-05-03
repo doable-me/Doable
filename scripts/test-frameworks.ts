@@ -23,7 +23,11 @@ import os from "node:os";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import http from "node:http";
 import { defaultRegistry } from "../services/api/src/frameworks/registry.js";
+import { initFrameworks } from "../services/api/src/frameworks/init.js";
 import { getTemplate } from "../services/api/src/templates/registry.js";
+
+// Register all framework adapters before resolving any of them.
+initFrameworks();
 
 const FRAMEWORKS_TO_TEST = [
   { id: "vite-react",   templateId: "blank" },
