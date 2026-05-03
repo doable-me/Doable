@@ -220,7 +220,7 @@ function FrameworkPicker({
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const selected = FRAMEWORK_OPTIONS.find((o) => o.id === (value ?? "")) ?? FRAMEWORK_OPTIONS[0];
+  const selected = FRAMEWORK_OPTIONS.find((o) => o.id === (value ?? "")) ?? FRAMEWORK_OPTIONS[0]!;
   const Icon = selected.icon;
 
   // Close on outside click
