@@ -237,12 +237,14 @@ RUN printf '%s\n' \
         /etc/systemd/system/multi-user.target.wants/doable-pg-bind.service
 
 # systemd unit that runs the first-boot script after postgres is up.
+# NOTE: NO Before=caddy.service / Before=doable.service — setup-server.sh
+# itself invokes `systemctl restart caddy` and `systemctl start doable`
+# from inside this unit, which would deadlock against a Before= ordering.
 RUN printf '%s\n' \
         '[Unit]' \
         'Description=Doable first-boot setup (CONTAINER_MODE=1)' \
         'After=postgresql.service network-online.target' \
         'Wants=postgresql.service network-online.target' \
-        'Before=doable.service caddy.service' \
         '' \
         '[Service]' \
         'Type=oneshot' \
