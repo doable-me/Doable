@@ -112,3 +112,42 @@ export function cleanup(projectId: string): void {
     servers.delete(projectId);
   }
 }
+
+// ─── Admin snapshot ──────────────────────────────────────
+
+export interface DevServerSnapshotEntry {
+  projectId: string;
+  port: number;
+  pid: number | undefined;
+  url: string;
+  startedAt: string;
+  uptimeMs: number;
+  ready: boolean;
+  alive: boolean;
+}
+
+/**
+ * Serializable snapshot of every Vite dev-server currently tracked in
+ * the in-memory `servers` map. Used by the platform-admin
+ * /admin/dev-servers view to show editor sessions in flight.
+ *
+ * Note: `pid` may be undefined if the spawn already exited but the
+ * registry hasn't been cleaned up yet — use `alive` to filter.
+ */
+export function getDevServersSnapshot(): DevServerSnapshotEntry[] {
+  const now = Date.now();
+  const out: DevServerSnapshotEntry[] = [];
+  for (const inst of servers.values()) {
+    out.push({
+      projectId: inst.projectId,
+      port: inst.port,
+      pid: inst.process.pid,
+      url: inst.url,
+      startedAt: inst.startedAt.toISOString(),
+      uptimeMs: now - inst.startedAt.getTime(),
+      ready: inst.ready,
+      alive: inst.process.exitCode === null,
+    });
+  }
+  return out;
+}

@@ -9,12 +9,12 @@ import {
   Loader2,
   RefreshCw,
   RotateCw,
-  Cpu,
   HardDrive,
-  Clock,
   Server,
   AlertTriangle,
   CheckCircle2,
+  Network,
+  X,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { usePlatformAdmin } from "@/hooks/use-platform-admin";
@@ -110,6 +110,7 @@ export default function RuntimeAdminPage() {
   const [restarting, setRestarting] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<string>("all");
+  const [egressFor, setEgressFor] = useState<Instance | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -312,21 +313,32 @@ export default function RuntimeAdminPage() {
                 <td className="px-3 py-2 text-right font-mono">{fmtUptime(r.uptimeMs)}</td>
                 <td className="px-3 py-2 text-muted-foreground">{fmtAge(r.lastActiveAt)}</td>
                 <td className="px-3 py-2 text-right">
-                  {r.runtimeKind === "process" && (
+                  <div className="flex items-center justify-end gap-1">
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => restart(r.projectId)}
-                      disabled={restarting === r.projectId}
+                      onClick={() => setEgressFor(r)}
                       className="h-6 px-2 text-[10px]"
+                      title="Egress policy + recent build-proxy activity"
                     >
-                      {restarting === r.projectId ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        "Restart"
-                      )}
+                      <Network className="h-3 w-3" />
                     </Button>
-                  )}
+                    {r.runtimeKind === "process" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => restart(r.projectId)}
+                        disabled={restarting === r.projectId}
+                        className="h-6 px-2 text-[10px]"
+                      >
+                        {restarting === r.projectId ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          "Restart"
+                        )}
+                      </Button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -338,6 +350,8 @@ export default function RuntimeAdminPage() {
         Metrics source: systemd cgroups via <code>/sys/fs/cgroup/system.slice/doable-app@&lt;slug&gt;.service</code>.
         Sandbox user is the per-project Linux UID created by Wave 27 (<code>useradd doable-&lt;slug&gt;</code>).
       </div>
+
+      {egressFor && <EgressDrawer instance={egressFor} onClose={() => setEgressFor(null)} />}
     </div>
   );
 }
@@ -349,6 +363,155 @@ function SummaryCard({ icon, label, value }: { icon: React.ReactNode; label: str
         {icon} {label}
       </div>
       <div className="text-lg font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+interface EgressData {
+  projectSlug: string;
+  systemdUnit: string | null;
+  egressHosts: string[];
+  buildProxy: {
+    enabled: string | null;
+    recentEntries: { timestamp: string; action: string; method: string; url: string; bytes: number }[];
+    note: string | null;
+  };
+  egressDenials: {
+    recentEvents: string[];
+    note: string | null;
+  };
+}
+
+function EgressDrawer({ instance, onClose }: { instance: Instance; onClose: () => void }) {
+  const [data, setData] = useState<EgressData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    apiFetch<{ data: EgressData }>(`/admin/runtime/${instance.projectId}/egress`)
+      .then((r) => setData(r.data))
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load egress data"))
+      .finally(() => setLoading(false));
+  }, [instance.projectId]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex" role="dialog">
+      <div className="flex-1 bg-black/50" onClick={onClose} />
+      <div className="w-[640px] max-w-full bg-background border-l border-border overflow-y-auto p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="text-xs text-muted-foreground">Egress for</div>
+            <div className="text-base font-semibold">{instance.projectName}</div>
+            <div className="text-[11px] text-muted-foreground font-mono">{instance.projectSlug}</div>
+          </div>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        {loading && (
+          <div className="text-center py-8 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Loading egress data…
+          </div>
+        )}
+
+        {error && (
+          <div className="p-3 rounded-md border border-red-500/30 bg-red-500/10 text-sm text-red-300">
+            {error}
+          </div>
+        )}
+
+        {data && (
+          <div className="space-y-5">
+            {/* Allow-list */}
+            <section>
+              <h2 className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
+                Egress allow-list (systemd <code>IPAddressAllow</code>)
+              </h2>
+              {data.egressHosts.length === 0 ? (
+                <div className="text-sm text-muted-foreground p-3 rounded-md border border-border bg-muted/30">
+                  None configured. App can reach <code>localhost</code> only — all other outbound TCP is blocked by <code>IPAddressDeny=any</code>.
+                </div>
+              ) : (
+                <ul className="text-xs font-mono rounded-md border border-border divide-y divide-border">
+                  {data.egressHosts.map((h, i) => (
+                    <li key={i} className="px-3 py-1.5">{h}</li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {/* Build proxy */}
+            <section>
+              <h2 className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
+                Build-time proxy (Squid){" "}
+                <span className="text-[10px] normal-case text-muted-foreground">
+                  {data.buildProxy.enabled ? `→ ${data.buildProxy.enabled}` : "(disabled)"}
+                </span>
+              </h2>
+              {data.buildProxy.note && (
+                <div className="text-[11px] text-muted-foreground mb-2">{data.buildProxy.note}</div>
+              )}
+              {data.buildProxy.recentEntries.length === 0 ? (
+                <div className="text-sm text-muted-foreground p-3 rounded-md border border-border bg-muted/30">
+                  No recent build-proxy activity captured.
+                </div>
+              ) : (
+                <div className="rounded-md border border-border max-h-[300px] overflow-y-auto">
+                  <table className="w-full text-[11px] font-mono">
+                    <thead className="bg-muted/40 sticky top-0">
+                      <tr className="text-left text-muted-foreground">
+                        <th className="px-2 py-1">Time</th>
+                        <th className="px-2 py-1">Action</th>
+                        <th className="px-2 py-1">Method</th>
+                        <th className="px-2 py-1">URL</th>
+                        <th className="px-2 py-1 text-right">Bytes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.buildProxy.recentEntries.slice().reverse().map((e, i) => (
+                        <tr key={i} className="border-t border-border">
+                          <td className="px-2 py-1">{e.timestamp.slice(11, 19)}</td>
+                          <td className="px-2 py-1">{e.action}</td>
+                          <td className="px-2 py-1">{e.method}</td>
+                          <td className="px-2 py-1 truncate max-w-[280px]" title={e.url}>{e.url}</td>
+                          <td className="px-2 py-1 text-right">{e.bytes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            {/* Denials */}
+            <section>
+              <h2 className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
+                Recent egress denials (journal, last hour)
+              </h2>
+              {data.egressDenials.note && (
+                <div className="text-[11px] text-muted-foreground mb-2">{data.egressDenials.note}</div>
+              )}
+              {data.egressDenials.recentEvents.length === 0 ? (
+                <div className="text-sm text-muted-foreground p-3 rounded-md border border-border bg-muted/30">
+                  No deny events. (No outbound attempts blocked, or systemd's BPF firewall isn't logging at this level.)
+                </div>
+              ) : (
+                <pre className="text-[11px] font-mono rounded-md border border-border bg-black/40 p-2 max-h-[200px] overflow-auto">
+                  {data.egressDenials.recentEvents.join("\n")}
+                </pre>
+              )}
+            </section>
+
+            <div className="text-[11px] text-muted-foreground pt-2 border-t border-border">
+              Systemd unit: <code>{data.systemdUnit ?? "—"}</code>. Egress policy is
+              enforced at the cgroup level by systemd's <code>IPAddressDeny=any</code> +
+              per-project <code>IPAddressAllow=...</code>.
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

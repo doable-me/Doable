@@ -5,6 +5,10 @@ import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { getCopilotManager } from "../ai/providers/copilot-manager.js";
 import { getChatSessionsSnapshot } from "./chat/index.js";
 import { getInstanceMetrics } from "../runtime/metrics.js";
+import { getDevServersSnapshot } from "../projects/dev-server-core.js";
+import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 
 export const adminOpsRoutes = new Hono<AuthEnv>();
 
@@ -228,4 +232,176 @@ adminOpsRoutes.get("/runtime/instances", async (c) => {
   };
 
   return c.json({ data: { instances: enriched, summary } });
+});
+
+// ─── Dev-server instances (in-memory) ─────────────────────
+// Vite dev-servers run for the editor preview. They live in the
+// in-memory `servers` map (services/api/src/projects/dev-server-core.ts)
+// — not in project_runtime. This endpoint joins the snapshot with
+// project metadata for the admin view.
+adminOpsRoutes.get("/dev-servers", async (c) => {
+  const snap = getDevServersSnapshot();
+  if (snap.length === 0) {
+    return c.json({ data: { servers: [], summary: { total: 0, alive: 0, ready: 0 } } });
+  }
+
+  const ids = snap.map((s) => s.projectId);
+  const meta = await sql<{
+    project_id: string;
+    project_name: string;
+    project_slug: string;
+    workspace_name: string;
+    owner_email: string | null;
+    framework_id: string | null;
+  }[]>`
+    SELECT p.id AS project_id, p.name AS project_name, p.slug AS project_slug,
+           w.name AS workspace_name, u.email AS owner_email, p.framework_id
+    FROM projects p
+    JOIN workspaces w ON w.id = p.workspace_id
+    LEFT JOIN users u ON u.id = p.owner_id
+    WHERE p.id = ANY(${ids})
+  `;
+  const metaById = new Map(meta.map((m) => [m.project_id, m]));
+
+  // Per-pid memory probe via /proc — bounded, never throws. Linux only.
+  const enriched = await Promise.all(
+    snap.map(async (s) => {
+      let memoryBytes: number | null = null;
+      if (process.platform === "linux" && s.pid) {
+        try {
+          const status = await readFile(`/proc/${s.pid}/status`, "utf-8");
+          const m = /^VmRSS:\s+(\d+)\s+kB/m.exec(status);
+          if (m) memoryBytes = parseInt(m[1] ?? "0", 10) * 1024;
+        } catch {
+          /* process gone, ignore */
+        }
+      }
+      const m = metaById.get(s.projectId);
+      return {
+        ...s,
+        listenAddr: `127.0.0.1:${s.port}`,
+        memoryBytes,
+        projectName: m?.project_name ?? "(unknown — project deleted?)",
+        projectSlug: m?.project_slug ?? "—",
+        workspaceName: m?.workspace_name ?? "—",
+        ownerEmail: m?.owner_email ?? null,
+        frameworkId: m?.framework_id ?? "—",
+      };
+    })
+  );
+
+  const summary = {
+    total: enriched.length,
+    alive: enriched.filter((r) => r.alive).length,
+    ready: enriched.filter((r) => r.ready).length,
+    totalMemoryBytes: enriched.reduce((s, r) => s + (r.memoryBytes ?? 0), 0),
+  };
+
+  return c.json({ data: { servers: enriched, summary } });
+});
+
+// ─── Per-project egress policy + activity ─────────────────
+// Returns the project's egress allow-list (project_runtime.egress_hosts —
+// enforced at the systemd unit level via IPAddressAllow) plus recent
+// build-time outbound activity captured by Squid (the Wave 29 build proxy).
+adminOpsRoutes.get("/runtime/:id/egress", async (c) => {
+  const projectId = c.req.param("id");
+
+  const rows = await sql<{
+    project_slug: string;
+    egress_hosts: string[] | null;
+    systemd_unit: string | null;
+  }[]>`
+    SELECT p.slug AS project_slug, pr.egress_hosts, pr.systemd_unit
+    FROM project_runtime pr
+    JOIN projects p ON p.id = pr.project_id
+    WHERE pr.project_id = ${projectId}
+  `;
+  const row = rows[0];
+  if (!row) return c.json({ error: "no runtime row for project" }, 404);
+
+  // Squid access log (build-time proxy — Wave 29). Format:
+  //   timestamp.ms elapsed client action/code bytes method URL ...
+  // We want lines that mention this project's slug as the X-Doable-Project
+  // header (set by builder.ts) — newer Squid configs log it; if not, we
+  // just return all recent lines so the operator can grep manually.
+  const SQUID_LOG = "/var/log/squid/access.log";
+  let squidEntries: { timestamp: string; action: string; method: string; url: string; bytes: number }[] = [];
+  let squidNote: string | null = null;
+
+  if (process.platform === "linux" && existsSync(SQUID_LOG)) {
+    try {
+      // tail -c bounds memory — log can be GB-sized in production.
+      const t = spawnSync("tail", ["-c", "65536", SQUID_LOG], {
+        encoding: "utf-8", timeout: 3000,
+      });
+      const tail = t.stdout ?? "";
+      const lines = tail.split("\n").filter(Boolean).slice(-200);
+      for (const ln of lines) {
+        // Squid common log: 1714668000.123 234 10.0.0.5 TCP_MISS/200 1234 GET https://example.com/foo - HIER_DIRECT/1.2.3.4 text/html
+        const parts = ln.split(/\s+/);
+        if (parts.length < 7) continue;
+        const ts = parts[0] ? new Date(parseFloat(parts[0]) * 1000).toISOString() : "";
+        squidEntries.push({
+          timestamp: ts,
+          action: parts[3] ?? "",
+          method: parts[5] ?? "",
+          url: parts[6] ?? "",
+          bytes: parseInt(parts[4] ?? "0", 10),
+        });
+      }
+      // Project-specific filtering would need the X-Doable-Project header
+      // logged by Squid. For now we return everything — UI can filter.
+      squidNote = `last ${squidEntries.length} entries from Squid access log (build-time proxy, all projects)`;
+    } catch (e) {
+      squidNote = `failed to read Squid log: ${e instanceof Error ? e.message : "unknown"}`;
+    }
+  } else {
+    squidNote = "Squid access log not found (build-time proxy disabled, or running on non-Linux host)";
+  }
+
+  // Recent IPAddressDeny=any kernel events for this systemd unit. Filter
+  // journalctl by unit + match "BPF/firewall" lines — best-effort, format
+  // varies by systemd version.
+  let denyEvents: string[] = [];
+  let denyNote: string | null = null;
+  if (process.platform === "linux" && row.systemd_unit) {
+    try {
+      const r = spawnSync(
+        "journalctl",
+        ["-u", row.systemd_unit, "--since", "1 hour ago", "--no-pager", "-o", "short-iso", "-q"],
+        { encoding: "utf-8", timeout: 5000 },
+      );
+      if (r.status === 0) {
+        denyEvents = (r.stdout ?? "")
+          .split("\n")
+          .filter((l) => /denied|EPERM|EACCES|connection refused|outbound/i.test(l))
+          .slice(-50);
+        denyNote = `${denyEvents.length} potential egress-block lines in last hour`;
+      } else {
+        denyNote = `journalctl exited ${r.status}`;
+      }
+    } catch (e) {
+      denyNote = `failed to read journal: ${e instanceof Error ? e.message : "unknown"}`;
+    }
+  } else {
+    denyNote = "journalctl not available";
+  }
+
+  return c.json({
+    data: {
+      projectSlug: row.project_slug,
+      systemdUnit: row.systemd_unit,
+      egressHosts: row.egress_hosts ?? [],
+      buildProxy: {
+        enabled: process.env.BUILD_HTTP_PROXY ?? null,
+        recentEntries: squidEntries.slice(-100),
+        note: squidNote,
+      },
+      egressDenials: {
+        recentEvents: denyEvents,
+        note: denyNote,
+      },
+    },
+  });
 });
