@@ -19,7 +19,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { pythonBin } from "./python-bin.js";
+import { ensureVenv, venvPython } from "./python-bin.js";
 
 import type {
   BuildSpec,
@@ -46,8 +46,16 @@ const INSTALL_TIMEOUT_MS = 180_000;
 function runPipInstall(ctx: FrameworkContext): Promise<InstallResult> {
   return new Promise<InstallResult>((resolve, reject) => {
     const start = Date.now();
+    // PEP 668 (Debian/Ubuntu 22.04+) forbids system pip; install into a
+    // per-project venv. ensureVenv() creates .venv if missing.
+    try {
+      ensureVenv(ctx.projectPath);
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)));
+      return;
+    }
     const child = spawn(
-      pythonBin(),
+      venvPython(ctx.projectPath),
       ["-m", "pip", "install", "-r", "requirements.txt"],
       {
         cwd: ctx.projectPath,
@@ -141,7 +149,7 @@ export const djangoAdapter: FrameworkAdapter = {
 
   dev(ctx: DevContext): DevSpec {
     return {
-      command: pythonBin(),
+      command: venvPython(ctx.projectPath),
       args: ["manage.py", "runserver", `${ctx.host}:${ctx.port}`],
       cwd: ctx.projectPath,
       env: ctx.env,
@@ -155,7 +163,7 @@ export const djangoAdapter: FrameworkAdapter = {
 
   build(ctx: BuildContext): BuildSpec {
     return {
-      command: pythonBin(),
+      command: venvPython(ctx.projectPath),
       args: ["manage.py", "collectstatic", "--noinput"],
       cwd: ctx.projectPath,
       env: ctx.env,

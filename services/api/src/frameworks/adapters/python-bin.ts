@@ -14,6 +14,8 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
 
 let cached: string | null = null;
 
@@ -38,4 +40,43 @@ export function pythonBin(): string {
   // hardcoded "python" mystery.
   cached = "python3";
   return cached;
+}
+
+/**
+ * Path to the per-project venv's `python` binary. Returns the absolute
+ * path whether or not the venv exists yet — caller is responsible for
+ * creating it via `ensureVenv()` first.
+ *
+ * Returns the platform-correct interpreter location:
+ *   linux/macOS:  <projectPath>/.venv/bin/python
+ *   windows:      <projectPath>\.venv\Scripts\python.exe
+ */
+export function venvPython(projectPath: string): string {
+  if (process.platform === "win32") {
+    return path.join(projectPath, ".venv", "Scripts", "python.exe");
+  }
+  return path.join(projectPath, ".venv", "bin", "python");
+}
+
+/**
+ * Create a venv at <projectPath>/.venv if one doesn't exist.
+ * Required on Debian/Ubuntu 22.04+ where PEP 668 forbids system `pip install`.
+ *
+ * Returns true on success, throws on failure.
+ */
+export function ensureVenv(projectPath: string): boolean {
+  const venvDir = path.join(projectPath, ".venv");
+  if (existsSync(venvDir)) return true;
+
+  const r = spawnSync(pythonBin(), ["-m", "venv", venvDir], {
+    cwd: projectPath,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 30_000,
+  });
+  if (r.status !== 0) {
+    throw new Error(
+      `failed to create venv at ${venvDir}: ${(r.stderr?.toString() ?? "").slice(-500)}`,
+    );
+  }
+  return true;
 }

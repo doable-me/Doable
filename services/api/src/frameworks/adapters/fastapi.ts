@@ -17,7 +17,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { pythonBin } from "./python-bin.js";
+import { ensureVenv, venvPython } from "./python-bin.js";
 
 import type {
   BuildSpec,
@@ -48,7 +48,15 @@ function runPipInstall(ctx: FrameworkContext): Promise<InstallResult> {
     // active Python interpreter (venv vs system) — this is the form the
     // pip docs recommend for portable scripts. The supervisor exposes the
     // venv's `python` on PATH inside the sandboxed project workspace.
-    const child = spawn(pythonBin(), ["-m", "pip", "install", "-r", "requirements.txt"], {
+    // PEP 668 (Debian/Ubuntu 22.04+) forbids system pip; install into a
+    // per-project venv. ensureVenv() creates .venv if missing.
+    try {
+      ensureVenv(ctx.projectPath);
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)));
+      return;
+    }
+    const child = spawn(venvPython(ctx.projectPath), ["-m", "pip", "install", "-r", "requirements.txt"], {
       cwd: ctx.projectPath,
       shell: true,
       stdio: "pipe",
@@ -139,9 +147,13 @@ export const fastapiAdapter: FrameworkAdapter = {
   },
 
   dev(ctx: DevContext): DevSpec {
+    // Run uvicorn from the project venv so PEP 668 / system Python isn't
+    // touched. `python -m uvicorn ...` works whether uvicorn is installed
+    // as a script or just a library.
     return {
-      command: "uvicorn",
+      command: venvPython(ctx.projectPath),
       args: [
+        "-m", "uvicorn",
         "main:app",
         "--reload",
         "--host", ctx.host,
