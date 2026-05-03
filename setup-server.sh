@@ -852,11 +852,25 @@ if [ "$CONTAINER_MODE" != "1" ]; then
   API_STATUS=$(timeout 10 curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/ 2>/dev/null || echo "000")
   CF_STATUS=$(timeout 15 curl -s -o /dev/null -w "%{http_code}" "https://${DOMAIN}/" 2>/dev/null || echo "000")
 else
-  echo "[SKIP-CONTAINER] Step 13/13: not starting services here — systemd PID 1 will start enabled units on container boot"
-  # Units enabled in Step 12 will fire on `systemctl start ...` from the entrypoint
-  # or automatically when the container's systemd reaches multi-user.target.
-  WEB_STATUS="container"
-  API_STATUS="container"
+  # CONTAINER_MODE: systemd PID 1 is up and the unit files were just written
+  # in Step 12. Daemon-reload + start them now from inside doable-init.
+  systemctl daemon-reload
+  systemctl start squid 2>/dev/null || true
+  systemctl start doable.service 2>/dev/null || true
+  systemctl start doable-watchdog.timer 2>/dev/null || true
+
+  echo -n "  Waiting for services"
+  for i in $(seq 1 30); do
+    echo -n "."
+    sleep 1
+    if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4000/health 2>/dev/null | grep -q "200"; then
+      break
+    fi
+  done
+  echo ""
+
+  WEB_STATUS=$(timeout 5 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/ 2>/dev/null || echo "000")
+  API_STATUS=$(timeout 5 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4000/health 2>/dev/null || echo "000")
   CF_STATUS="container"
 fi
 
