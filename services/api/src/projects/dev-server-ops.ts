@@ -103,7 +103,7 @@ export function getDevServerInternalUrl(projectId: string): string | null {
     cleanup(projectId);
     return null;
   }
-  return `http://localhost:${instance.port}`;
+  return `http://127.0.0.1:${instance.port}`;
 }
 
 /**
@@ -145,7 +145,7 @@ export async function getDevServerInternalUrlWhenReady(
       return null;
     }
   }
-  return `http://localhost:${instance.port}`;
+  return `http://127.0.0.1:${instance.port}`;
 }
 
 /**

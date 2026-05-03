@@ -40,6 +40,7 @@ thumbnailRoutes.get("/:filename", async (c) => {
     // may be generated moments later by an in-flight capture.
     return c.body("Not found", 404, {
       "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*",
     });
   }
 
@@ -54,7 +55,9 @@ thumbnailRoutes.get("/:filename", async (c) => {
     const etag = `"thumb-${fileStat.mtimeMs.toString(36)}"`;
     const ifNoneMatch = c.req.header("if-none-match");
     if (ifNoneMatch === etag) {
-      return c.body(null, 304);
+      return c.body(null, 304, {
+        "Access-Control-Allow-Origin": "*",
+      });
     }
 
     return c.body(data, 200, {
@@ -62,6 +65,7 @@ thumbnailRoutes.get("/:filename", async (c) => {
       "Cache-Control": "public, max-age=30", // 30s cache — thumbnails update after each AI edit
       "ETag": etag,
       "Last-Modified": fileStat.mtime.toUTCString(),
+      "Access-Control-Allow-Origin": "*",
     });
   } catch {
     return c.notFound();

@@ -21,7 +21,7 @@ import { getInstanceMetrics } from "../runtime/metrics.js";
 
 export const runtimeRoutes = new Hono<AuthEnv>();
 
-runtimeRoutes.use("/*", authMiddleware);
+runtimeRoutes.use("/projects/*", authMiddleware);
 
 interface RuntimeRow {
   project_id: string;

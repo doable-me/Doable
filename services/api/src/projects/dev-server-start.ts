@@ -139,8 +139,9 @@ async function doStartDevServer(
 
   const port = await allocatePort();
   const projectPath = getProjectPath(projectId);
-  // Internal URL for the reverse proxy to forward to (always localhost)
-  const url = `http://localhost:${port}`;
+  // Internal URL for the reverse proxy to forward to (always 127.0.0.1 to
+  // avoid IPv6 resolution issues on Windows where localhost may hit ::1)
+  const url = `http://127.0.0.1:${port}`;
 
   console.log(
     `[DevServer] Starting ${adapter.id} dev server for project ${projectId} on port ${port}`,
