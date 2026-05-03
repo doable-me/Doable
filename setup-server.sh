@@ -292,7 +292,8 @@ else
 fi
 
 # ── fail2ban: configure SSH jail ──
-cat > /etc/fail2ban/jail.local << F2BEOF
+if [ "$CONTAINER_MODE" != "1" ]; then
+  cat > /etc/fail2ban/jail.local << F2BEOF
 [sshd]
 enabled = true
 port = ssh
@@ -303,8 +304,11 @@ bantime = 3600
 findtime = 600
 F2BEOF
 
-systemctl restart fail2ban
-ok "fail2ban configured: SSH brute-force protection active"
+  systemctl restart fail2ban
+  ok "fail2ban configured: SSH brute-force protection active"
+else
+  echo "[SKIP-CONTAINER] fail2ban: container has no sshd; Docker port binding to 127.0.0.1 prevents SSH ingress."
+fi
 
 # ─── Step 4: Swap ──────────────────────────────────────────────
 if [ "$CONTAINER_MODE" != "1" ]; then
