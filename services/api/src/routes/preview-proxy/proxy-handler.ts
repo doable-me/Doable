@@ -368,3 +368,69 @@ previewRoutes.all("/preview/:projectId", async (c) => {
   const projectId = c.req.param("projectId");
   return c.redirect(`/preview/${projectId}/`);
 });
+
+/**
+ * Vite dev-mode asset fallback proxy.
+ *
+ * Frameworks like Astro/SvelteKit emit HMR asset paths without the basePath
+ * prefix (e.g. /@vite/client, /@fs/..., /src/..., /node_modules/.vite/...).
+ * These requests land on the API with no /preview/:id/ prefix, so the main
+ * proxy route can't catch them.
+ *
+ * Strategy: extract the projectId from the Referer header (which will be
+ * /preview/:id/...) and forward the request to that project's dev server.
+ */
+const VITE_DEV_PATH_RE = /^\/((@vite|@fs|@id|__vite_ping|src|node_modules)\b.*)/;
+
+previewRoutes.all("/@vite/*", viteDevAssetFallback);
+previewRoutes.all("/@fs/*", viteDevAssetFallback);
+previewRoutes.all("/@id/*", viteDevAssetFallback);
+previewRoutes.all("/src/*", viteDevAssetFallback);
+previewRoutes.all("/node_modules/*", viteDevAssetFallback);
+previewRoutes.all("/__vite_ping", viteDevAssetFallback);
+
+async function viteDevAssetFallback(c: import("hono").Context) {
+  const referer = c.req.header("referer") ?? "";
+  const match = referer.match(/\/preview\/([0-9a-f-]{36})\//i);
+  if (!match?.[1]) return c.text("Not found", 404);
+
+  const projectId = match[1]!;
+  if (!UUID_RE.test(projectId)) return c.text("Not found", 404);
+
+  const devUrl = getDevServerInternalUrl(projectId);
+  if (!devUrl) return c.text("Not found", 404);
+
+  const originalPath = c.req.path;
+  const qsIndex = c.req.url.indexOf("?");
+  const queryString = qsIndex !== -1 ? c.req.url.slice(qsIndex + 1) : "";
+  const targetUrl = queryString ? `${devUrl}${originalPath}?${queryString}` : `${devUrl}${originalPath}`;
+
+  try {
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(c.req.header())) {
+      if (key.toLowerCase() !== "host" && value) {
+        headers.set(key, value);
+      }
+    }
+
+    const resp = await fetch(targetUrl, {
+      method: c.req.method,
+      headers,
+      body: c.req.method !== "GET" && c.req.method !== "HEAD" ? c.req.raw.body : undefined,
+    });
+
+    const responseHeaders = new Headers();
+    resp.headers.forEach((value, key) => {
+      if (!["transfer-encoding", "connection", "keep-alive"].includes(key.toLowerCase())) {
+        responseHeaders.set(key, value);
+      }
+    });
+    responseHeaders.set("Access-Control-Allow-Origin", "*");
+    responseHeaders.delete("content-encoding");
+    responseHeaders.delete("content-length");
+
+    return new Response(resp.body, { status: resp.status, headers: responseHeaders });
+  } catch {
+    return c.text("Bad gateway", 502);
+  }
+}

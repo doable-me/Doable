@@ -212,13 +212,26 @@ export function hasNodeModules(projectId: string): boolean {
  * cleaned up, or if npm install failed during initial scaffold.
  */
 export async function ensureDependencies(projectId: string): Promise<void> {
-  if (hasNodeModules(projectId)) return;
-
   const projectPath = getProjectPath(projectId);
-  if (!existsSync(projectPath + "/package.json")) return;
 
+  // Python projects: check for requirements.txt without package.json
+  const hasPkgJson = existsSync(projectPath + "/package.json");
+  const hasReqTxt = existsSync(projectPath + "/requirements.txt");
+
+  if (hasPkgJson) {
+    // Node project — skip if already installed
+    if (hasNodeModules(projectId)) return;
+  } else if (hasReqTxt) {
+    // Python project — skip if already installed (site-packages marker)
+    if (existsSync(projectPath + "/.venv") || existsSync(projectPath + "/__pypackages__")) return;
+  } else {
+    // No recognizable dependency file
+    return;
+  }
+
+  const family = hasPkgJson ? "node" : "python";
   console.log(
-    `[FileManager] node_modules missing for project ${projectId} — running npm install`,
+    `[FileManager] dependencies missing for ${family} project ${projectId} — running install`,
   );
 
   // Resolve framework adapter for the install spawn shape. Reads
@@ -226,7 +239,7 @@ export async function ensureDependencies(projectId: string): Promise<void> {
   // vite-react when the project row is missing or pre-migration. The
   // adapter's install() encodes the per-framework install command
   // (npm install --legacy-peer-deps for Node, pip install for Python).
-  let frameworkId = "vite-react";
+  let frameworkId = hasPkgJson ? "vite-react" : "django";
   try {
     const { sql } = await import("../db/index.js");
     const rows = await sql<{ framework_id: string }[]>`
@@ -234,7 +247,7 @@ export async function ensureDependencies(projectId: string): Promise<void> {
     `;
     if (rows[0]?.framework_id) frameworkId = rows[0].framework_id;
   } catch {
-    // DB unreachable or column missing — vite-react fallback is safe.
+    // DB unreachable or column missing — fallback is safe.
   }
   const adapter = defaultRegistry.getAdapter(frameworkId);
   const ctx: FrameworkContext = {
