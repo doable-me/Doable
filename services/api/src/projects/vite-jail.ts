@@ -82,6 +82,19 @@ export interface JailedViteResult {
  */
 export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<JailedViteResult> {
   const cleanEnv: Record<string, string> = {};
+
+  // Inherit a minimal allow-list of host env vars so the spawned process
+  // can actually execute. Without PATH, `npx`/`pnpm`/`node` can't be
+  // resolved and the process exits 127 — which is exactly the bug a
+  // freshly-created Next.js project hit ("next dev" → exit 127).
+  // We do NOT inherit anything secret-bearing (no DATABASE_URL, no
+  // JWT_SECRET, no API keys). The opts.env coming from the framework
+  // adapter still wins on conflict.
+  for (const k of ["PATH", "HOME", "USER", "LANG", "LC_ALL", "TZ", "TERM", "SHELL"]) {
+    const v = process.env[k];
+    if (v) cleanEnv[k] = v;
+  }
+
   for (const [k, v] of Object.entries(opts.env)) {
     if (typeof v === "string") cleanEnv[k] = v;
   }
