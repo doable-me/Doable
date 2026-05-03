@@ -300,6 +300,38 @@ adminOpsRoutes.get("/dev-servers", async (c) => {
   return c.json({ data: { servers: enriched, summary } });
 });
 
+// ─── Terminate a process-kind runtime (platform admin) ────
+adminOpsRoutes.post("/runtime/:id/stop", async (c) => {
+  const projectId = c.req.param("id");
+  const rows = await sql<{ systemd_unit: string | null; runtime_kind: string }[]>`
+    SELECT systemd_unit, runtime_kind FROM project_runtime WHERE project_id = ${projectId}
+  `;
+  const row = rows[0];
+  if (!row?.systemd_unit) return c.json({ error: "no runtime registered" }, 404);
+  if (row.runtime_kind !== "process") return c.json({ error: "static runtimes have no process to stop" }, 400);
+
+  if (process.platform !== "linux") {
+    return c.json({ ok: false, reason: "systemctl not available on this host" });
+  }
+  const r = spawnSync("systemctl", ["stop", row.systemd_unit], { stdio: "ignore" });
+  if (r.status !== 0) return c.json({ ok: false, reason: `systemctl stop exited ${r.status}` }, 500);
+
+  await sql`UPDATE project_runtime SET state = 'stopped', updated_at = now() WHERE project_id = ${projectId}`;
+  return c.json({ ok: true });
+});
+
+// ─── Kill a dev-server (platform admin) ───────────────────
+adminOpsRoutes.delete("/dev-servers/:projectId", async (c) => {
+  const projectId = c.req.param("projectId");
+  const { stopDevServer } = await import("../projects/dev-server.js");
+  try {
+    await stopDevServer(projectId);
+    return c.json({ ok: true, projectId });
+  } catch (e) {
+    return c.json({ ok: false, reason: e instanceof Error ? e.message : "kill failed" }, 500);
+  }
+});
+
 // ─── Per-project egress policy + activity ─────────────────
 // Returns the project's egress allow-list (project_runtime.egress_hosts —
 // enforced at the systemd unit level via IPAddressAllow) plus recent

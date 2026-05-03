@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Circle,
+  Square,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { usePlatformAdmin } from "@/hooks/use-platform-admin";
@@ -69,6 +70,20 @@ export default function DevServersAdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [killing, setKilling] = useState<string | null>(null);
+
+  const kill = async (projectId: string, projectName: string) => {
+    if (!confirm(`Kill dev server for "${projectName}"?\n\nThe Vite process will be terminated. The user can restart it from their editor.`)) return;
+    setKilling(projectId);
+    try {
+      await apiFetch(`/admin/dev-servers/${projectId}`, { method: "DELETE" });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Kill failed");
+    } finally {
+      setKilling(null);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -168,15 +183,16 @@ export default function DevServersAdminPage() {
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium text-right">Memory</th>
               <th className="px-3 py-2 font-medium text-right">Uptime</th>
+              <th className="px-3 py-2 font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {loading && servers.length === 0 ? (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Loading…
               </td></tr>
             ) : servers.length === 0 ? (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                 No dev servers running. Open a project in the editor to spawn one.
               </td></tr>
             ) : servers.map((s) => (
@@ -211,6 +227,22 @@ export default function DevServersAdminPage() {
                 </td>
                 <td className="px-3 py-2 text-right font-mono">{fmtBytes(s.memoryBytes)}</td>
                 <td className="px-3 py-2 text-right font-mono">{fmtUptime(s.uptimeMs)}</td>
+                <td className="px-3 py-2 text-right">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => kill(s.projectId, s.projectName)}
+                    disabled={killing === s.projectId || !s.alive}
+                    className="h-6 px-2 text-[10px] text-red-300 hover:bg-red-500/10 hover:text-red-200 border-red-500/30"
+                    title="Terminate this Vite process"
+                  >
+                    {killing === s.projectId ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Square className="h-3 w-3" />
+                    )}
+                  </Button>
+                </td>
               </tr>
             ))}
           </tbody>

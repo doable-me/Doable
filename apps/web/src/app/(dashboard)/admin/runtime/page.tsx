@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Network,
   X,
+  Square,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { usePlatformAdmin } from "@/hooks/use-platform-admin";
@@ -108,6 +109,7 @@ export default function RuntimeAdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [restarting, setRestarting] = useState<string | null>(null);
+  const [stopping, setStopping] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [egressFor, setEgressFor] = useState<Instance | null>(null);
@@ -147,6 +149,19 @@ export default function RuntimeAdminPage() {
       setError(e instanceof Error ? e.message : "Restart failed");
     } finally {
       setRestarting(null);
+    }
+  };
+
+  const stop = async (projectId: string, projectName: string) => {
+    if (!confirm(`Stop "${projectName}"?\n\nThe app's systemd unit will be terminated. The user can restart it from their editor.`)) return;
+    setStopping(projectId);
+    try {
+      await apiFetch(`/admin/runtime/${projectId}/stop`, { method: "POST" });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Stop failed");
+    } finally {
+      setStopping(null);
     }
   };
 
@@ -324,19 +339,36 @@ export default function RuntimeAdminPage() {
                       <Network className="h-3 w-3" />
                     </Button>
                     {r.runtimeKind === "process" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => restart(r.projectId)}
-                        disabled={restarting === r.projectId}
-                        className="h-6 px-2 text-[10px]"
-                      >
-                        {restarting === r.projectId ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          "Restart"
-                        )}
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => restart(r.projectId)}
+                          disabled={restarting === r.projectId || stopping === r.projectId}
+                          className="h-6 px-2 text-[10px]"
+                          title="systemctl restart"
+                        >
+                          {restarting === r.projectId ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <RotateCw className="h-3 w-3" />
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => stop(r.projectId, r.projectName)}
+                          disabled={stopping === r.projectId || restarting === r.projectId || r.state === "stopped"}
+                          className="h-6 px-2 text-[10px] text-red-300 hover:bg-red-500/10 hover:text-red-200 border-red-500/30"
+                          title="systemctl stop — terminate the running process"
+                        >
+                          {stopping === r.projectId ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Square className="h-3 w-3" />
+                          )}
+                        </Button>
+                      </>
                     )}
                   </div>
                 </td>
