@@ -4,6 +4,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { getCopilotManager } from "../ai/providers/copilot-manager.js";
 import { getChatSessionsSnapshot } from "./chat/index.js";
+import { getInstanceMetrics } from "../runtime/metrics.js";
 
 export const adminOpsRoutes = new Hono<AuthEnv>();
 
@@ -144,4 +145,87 @@ adminOpsRoutes.delete("/copilot-sessions", async (c) => {
   const count = manager.poolSize;
   await manager.stopAll();
   return c.json({ data: { terminated: count } });
+});
+
+// ─── Runtime instances (platform-wide) ─────────────────────
+// Cross-workspace listing of every project_runtime row joined with
+// project + workspace + owner + live cgroup metrics. Powers the
+// "Runtime" tab in /admin — answers "what's running, by whom, on
+// which port, using how much CPU/memory, since when".
+adminOpsRoutes.get("/runtime/instances", async (c) => {
+  const rows = await sql<{
+    project_id: string;
+    project_name: string;
+    project_slug: string;
+    workspace_id: string;
+    workspace_name: string;
+    owner_email: string | null;
+    framework_id: string;
+    runtime_kind: "static" | "process";
+    listen_kind: "unix-socket" | "tcp-port" | null;
+    listen_addr: string | null;
+    systemd_unit: string | null;
+    state: string;
+    fail_count: number;
+    last_active_at: Date | null;
+    last_started_at: Date | null;
+  }[]>`
+    SELECT
+      pr.project_id, p.name AS project_name, p.slug AS project_slug,
+      w.id AS workspace_id, w.name AS workspace_name,
+      u.email AS owner_email,
+      pr.framework_id, pr.runtime_kind, pr.listen_kind, pr.listen_addr,
+      pr.systemd_unit, pr.state, pr.fail_count,
+      pr.last_active_at, pr.last_started_at
+    FROM project_runtime pr
+    JOIN projects p ON p.id = pr.project_id
+    JOIN workspaces w ON w.id = p.workspace_id
+    LEFT JOIN users u ON u.id = p.owner_id
+    ORDER BY
+      CASE pr.state WHEN 'running' THEN 0 WHEN 'starting' THEN 1
+                    WHEN 'failed' THEN 2 ELSE 3 END,
+      pr.last_active_at DESC NULLS LAST
+  `;
+
+  // Fan out per-instance cgroup probes in parallel; each one is
+  // bounded (2s systemctl + ~200ms cpu sample) and never throws.
+  const enriched = await Promise.all(
+    rows.map(async (r) => {
+      const metrics = await getInstanceMetrics(r.project_slug);
+      // Sandbox user (Wave 27): per-project Linux uid created by
+      // setupProjectUser() in deploy/adapters/doable-cloud.ts. Slug
+      // is truncated to 32 chars to match the useradd Linux limit.
+      const sandboxUser = `doable-${r.project_slug}`.slice(0, 32);
+      return {
+        projectId: r.project_id,
+        projectName: r.project_name,
+        projectSlug: r.project_slug,
+        workspaceId: r.workspace_id,
+        workspaceName: r.workspace_name,
+        ownerEmail: r.owner_email,
+        frameworkId: r.framework_id,
+        runtimeKind: r.runtime_kind,
+        listenKind: r.listen_kind,
+        listenAddr: r.listen_addr,
+        systemdUnit: r.systemd_unit,
+        sandboxUser,
+        dbState: r.state,
+        failCount: r.fail_count,
+        lastActiveAt: r.last_active_at,
+        lastStartedAt: r.last_started_at,
+        ...metrics,
+      };
+    })
+  );
+
+  // Aggregate counters so the UI can show a quick summary card.
+  const summary = {
+    total: enriched.length,
+    running: enriched.filter((r) => r.state === "running").length,
+    failed: enriched.filter((r) => r.state === "failed").length,
+    stopped: enriched.filter((r) => r.state === "stopped").length,
+    totalMemoryBytes: enriched.reduce((s, r) => s + (r.memoryBytes ?? 0), 0),
+  };
+
+  return c.json({ data: { instances: enriched, summary } });
 });

@@ -236,6 +236,14 @@ export default function AdminPage() {
             <p className="text-sm text-muted-foreground">Manage platform features, users, AI tools, and access controls</p>
           </div>
           <Link
+            href="/admin/runtime"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+            title="Live process list — every running project, by user, port, framework, CPU, memory, uptime"
+          >
+            <Activity className="h-3.5 w-3.5 text-brand-400" />
+            Runtime
+          </Link>
+          <Link
             href="/admin/audit"
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
             title="Prompt & conversation audit (enterprise)"
