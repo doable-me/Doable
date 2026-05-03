@@ -17,6 +17,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pythonBin } from "./python-bin.js";
 
 import type {
   BuildSpec,
@@ -47,7 +48,7 @@ function runPipInstall(ctx: FrameworkContext): Promise<InstallResult> {
     // active Python interpreter (venv vs system) — this is the form the
     // pip docs recommend for portable scripts. The supervisor exposes the
     // venv's `python` on PATH inside the sandboxed project workspace.
-    const child = spawn("python", ["-m", "pip", "install", "-r", "requirements.txt"], {
+    const child = spawn(pythonBin(), ["-m", "pip", "install", "-r", "requirements.txt"], {
       cwd: ctx.projectPath,
       shell: true,
       stdio: "pipe",

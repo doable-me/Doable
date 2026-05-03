@@ -19,6 +19,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pythonBin } from "./python-bin.js";
 
 import type {
   BuildSpec,
@@ -46,7 +47,7 @@ function runPipInstall(ctx: FrameworkContext): Promise<InstallResult> {
   return new Promise<InstallResult>((resolve, reject) => {
     const start = Date.now();
     const child = spawn(
-      "python",
+      pythonBin(),
       ["-m", "pip", "install", "-r", "requirements.txt"],
       {
         cwd: ctx.projectPath,
@@ -140,7 +141,7 @@ export const djangoAdapter: FrameworkAdapter = {
 
   dev(ctx: DevContext): DevSpec {
     return {
-      command: "python",
+      command: pythonBin(),
       args: ["manage.py", "runserver", `${ctx.host}:${ctx.port}`],
       cwd: ctx.projectPath,
       env: ctx.env,
@@ -154,7 +155,7 @@ export const djangoAdapter: FrameworkAdapter = {
 
   build(ctx: BuildContext): BuildSpec {
     return {
-      command: "python",
+      command: pythonBin(),
       args: ["manage.py", "collectstatic", "--noinput"],
       cwd: ctx.projectPath,
       env: ctx.env,
