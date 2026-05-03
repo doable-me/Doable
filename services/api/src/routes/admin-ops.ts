@@ -191,7 +191,7 @@ adminOpsRoutes.delete("/copilot-sessions", async (c) => {
 // "Runtime" tab in /admin — answers "what's running, by whom, on
 // which port, using how much CPU/memory, since when".
 adminOpsRoutes.get("/runtime/instances", async (c) => {
-  const rows = await sql<{
+  let rows: {
     project_id: string;
     project_name: string;
     project_slug: string;
@@ -207,7 +207,9 @@ adminOpsRoutes.get("/runtime/instances", async (c) => {
     fail_count: number;
     last_active_at: Date | null;
     last_started_at: Date | null;
-  }[]>`
+  }[];
+  try {
+    rows = await sql<typeof rows>`
     SELECT
       pr.project_id, p.name AS project_name, p.slug AS project_slug,
       w.id AS workspace_id, w.name AS workspace_name,
@@ -224,6 +226,20 @@ adminOpsRoutes.get("/runtime/instances", async (c) => {
                     WHEN 'failed' THEN 2 ELSE 3 END,
       pr.last_active_at DESC NULLS LAST
   `;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "unknown";
+    // Common case on a freshly installed host where migrations haven't run.
+    if (/relation .* does not exist/i.test(msg)) {
+      return c.json({
+        data: {
+          instances: [],
+          summary: { total: 0, running: 0, failed: 0, stopped: 0, totalMemoryBytes: 0 },
+          warning: "project_runtime table not found — run `pnpm db:migrate` to enable runtime tracking.",
+        },
+      });
+    }
+    return c.json({ error: "runtime instances query failed", message: msg }, 500);
+  }
 
   // Fan out per-instance cgroup probes in parallel; each one is
   // bounded (2s systemctl + ~200ms cpu sample) and never throws.
