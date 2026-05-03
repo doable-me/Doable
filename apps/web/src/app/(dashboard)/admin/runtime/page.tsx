@@ -16,6 +16,9 @@ import {
   Network,
   X,
   Square,
+  FileText,
+  Shield,
+  Search,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { usePlatformAdmin } from "@/hooks/use-platform-admin";
@@ -113,6 +116,7 @@ export default function RuntimeAdminPage() {
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [egressFor, setEgressFor] = useState<Instance | null>(null);
+  const [logsFor, setLogsFor] = useState<Instance | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -332,6 +336,15 @@ export default function RuntimeAdminPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      onClick={() => setLogsFor(r)}
+                      className="h-6 px-2 text-[10px]"
+                      title="View systemd journal logs (secrets auto-redacted)"
+                    >
+                      <FileText className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={() => setEgressFor(r)}
                       className="h-6 px-2 text-[10px]"
                       title="Egress policy + recent build-proxy activity"
@@ -384,6 +397,7 @@ export default function RuntimeAdminPage() {
       </div>
 
       {egressFor && <EgressDrawer instance={egressFor} onClose={() => setEgressFor(null)} />}
+      {logsFor && <LogsDrawer instance={logsFor} onClose={() => setLogsFor(null)} />}
     </div>
   );
 }
@@ -541,6 +555,194 @@ function EgressDrawer({ instance, onClose }: { instance: Instance; onClose: () =
               enforced at the cgroup level by systemd's <code>IPAddressDeny=any</code> +
               per-project <code>IPAddressAllow=...</code>.
             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface LogsData {
+  lines: string[];
+  systemdUnit?: string;
+  totalLines?: number;
+  filteredLines?: number;
+  redacted?: boolean;
+  note?: string;
+}
+
+const LOG_LINE_RE = /^(\S+)\s+\S+\s+\S+\s+(.*)$/;
+
+function classifyLogLine(line: string): "error" | "warn" | "info" | "debug" {
+  const lower = line.toLowerCase();
+  if (/\b(error|err|fatal|panic|exception|failed|failure)\b/.test(lower)) return "error";
+  if (/\b(warn|warning|deprecated)\b/.test(lower)) return "warn";
+  if (/\bdebug\b/.test(lower)) return "debug";
+  return "info";
+}
+
+function LogsDrawer({ instance, onClose }: { instance: Instance; onClose: () => void }) {
+  const [data, setData] = useState<LogsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lines, setLines] = useState(200);
+  const [search, setSearch] = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ lines: String(lines) });
+      if (search) params.set("search", search);
+      const r = await apiFetch<{ data: LogsData }>(
+        `/admin/runtime/${instance.projectId}/logs?${params.toString()}`,
+      );
+      setData(r.data);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load logs");
+    } finally {
+      setLoading(false);
+    }
+  }, [instance.projectId, lines, search]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const t = setInterval(load, 5_000);
+    return () => clearInterval(t);
+  }, [autoRefresh, load]);
+
+  const copyAll = () => {
+    if (data?.lines) {
+      navigator.clipboard.writeText(data.lines.join("\n")).catch(() => {});
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex" role="dialog">
+      <div className="flex-1 bg-black/50" onClick={onClose} />
+      <div className="w-[800px] max-w-full bg-background border-l border-border flex flex-col">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-border flex items-start justify-between">
+          <div>
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <FileText className="h-3.5 w-3.5" />
+              Logs for
+            </div>
+            <div className="text-base font-semibold mt-0.5">{instance.projectName}</div>
+            <div className="text-[11px] text-muted-foreground font-mono">
+              {data?.systemdUnit ?? `doable-app@${instance.projectSlug}.service`}
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        {/* Redaction notice */}
+        {data?.redacted && (
+          <div className="px-5 py-2 bg-emerald-500/10 border-b border-emerald-500/20 text-[11px] text-emerald-300 flex items-center gap-1.5">
+            <Shield className="h-3 w-3" />
+            Secrets auto-redacted (passwords, JWTs, API keys, hex blobs, DB URLs). Every view is recorded in the admin audit log.
+          </div>
+        )}
+
+        {/* Toolbar */}
+        <div className="px-5 py-2 border-b border-border flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="h-3 w-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Filter lines…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && load()}
+              className="w-full pl-7 pr-2 py-1 text-xs rounded-md border border-border bg-background"
+            />
+          </div>
+          <select
+            value={lines}
+            onChange={(e) => setLines(parseInt(e.target.value, 10))}
+            className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+          >
+            <option value="100">Last 100</option>
+            <option value="200">Last 200</option>
+            <option value="500">Last 500</option>
+            <option value="1000">Last 1000</option>
+          </select>
+          <Button variant="outline" size="sm" onClick={load} disabled={loading} className="h-7 gap-1">
+            <RotateCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+            <span className="text-[10px]">Refresh</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAutoRefresh((v) => !v)}
+            className="h-7 gap-1"
+          >
+            <RefreshCw className={`h-3 w-3 ${autoRefresh ? "text-emerald-400" : "text-muted-foreground"}`} />
+            <span className="text-[10px]">{autoRefresh ? "Live" : "Off"}</span>
+          </Button>
+          <Button variant="outline" size="sm" onClick={copyAll} className="h-7" title="Copy all visible lines">
+            <span className="text-[10px]">Copy</span>
+          </Button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto bg-black/40 font-mono text-[11px]">
+          {error && (
+            <div className="m-3 p-3 rounded-md border border-red-500/30 bg-red-500/10 text-red-300 text-sm">
+              {error}
+            </div>
+          )}
+          {loading && !data && (
+            <div className="text-center py-12 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Loading logs…
+            </div>
+          )}
+          {data && data.lines.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground text-sm">
+              {data.note ?? "No log lines found."}
+            </div>
+          )}
+          {data && data.lines.length > 0 && (
+            <div>
+              {data.lines.map((line, i) => {
+                const level = classifyLogLine(line);
+                const colorCls =
+                  level === "error" ? "text-red-300" :
+                  level === "warn" ? "text-amber-300" :
+                  level === "debug" ? "text-zinc-500" :
+                  "text-zinc-200";
+                const m = LOG_LINE_RE.exec(line);
+                const ts = m?.[1] ?? "";
+                const msg = m?.[2] ?? line;
+                return (
+                  <div
+                    key={i}
+                    className={`px-4 py-0.5 leading-relaxed border-l-2 ${level === "error" ? "border-red-500/40 bg-red-500/5" : level === "warn" ? "border-amber-500/40 bg-amber-500/5" : "border-transparent"} hover:bg-muted/20`}
+                  >
+                    <span className="text-zinc-600 mr-2">{ts}</span>
+                    <span className={colorCls}>{msg}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {data && (
+          <div className="px-5 py-2 border-t border-border bg-muted/20 text-[11px] text-muted-foreground flex items-center justify-between">
+            <span>
+              {data.filteredLines ?? data.lines.length} lines
+              {data.totalLines && data.filteredLines !== data.totalLines && (
+                <span className="text-muted-foreground/70"> of {data.totalLines} fetched</span>
+              )}
+            </span>
+            <span>journalctl -u {data.systemdUnit ?? "…"}</span>
           </div>
         )}
       </div>

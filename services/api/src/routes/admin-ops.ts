@@ -9,6 +9,40 @@ import { getDevServersSnapshot } from "../projects/dev-server-core.js";
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { recordAdminAction } from "../admin/audit-log.js";
+
+// Secret-like patterns to redact from log output before returning to the
+// admin UI. We err on the side of redacting too much rather than too
+// little — admins can SSH for raw logs if they truly need them. Patterns
+// match the surrounding context so we don't blow away unrelated text.
+const REDACT_PATTERNS: { name: string; pattern: RegExp; replacement: string }[] = [
+  // Bearer / Basic / API auth headers
+  { name: "auth-header", pattern: /(authorization:\s*(?:bearer|basic)\s+)[a-z0-9._\-+/=]{8,}/gi, replacement: "$1[REDACTED]" },
+  // JWTs (3 base64 segments separated by dots, leading "ey")
+  { name: "jwt", pattern: /\bey[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}/g, replacement: "[JWT_REDACTED]" },
+  // password / pass / pwd in key=value form
+  { name: "password-kv", pattern: /\b(pass(?:word|wd)?|pwd)\s*[:=]\s*[^\s,;)"']+/gi, replacement: "$1=[REDACTED]" },
+  // api_key / apikey / secret / token / access_key / private_key
+  { name: "secret-kv", pattern: /\b(api[_-]?key|secret|token|access[_-]?key|private[_-]?key)\s*[:=]\s*[^\s,;)"']+/gi, replacement: "$1=[REDACTED]" },
+  // postgres / mysql / mongodb URLs with embedded creds
+  { name: "db-url", pattern: /\b((?:postgres|postgresql|mysql|mongodb(?:\+srv)?|redis):\/\/)([^:@\s]+:)([^@\s]+)(@)/gi, replacement: "$1$2[REDACTED]$4" },
+  // AWS access key IDs
+  { name: "aws-key", pattern: /\bAKIA[0-9A-Z]{16}\b/g, replacement: "[AWS_KEY_REDACTED]" },
+  // Long hex blobs (32+ chars) — catches generated secrets, hashes
+  { name: "long-hex", pattern: /\b[a-f0-9]{40,}\b/gi, replacement: "[HEX_REDACTED]" },
+  // Stripe-like sk_live_ / sk_test_
+  { name: "stripe", pattern: /\bsk_(?:live|test)_[a-zA-Z0-9]{16,}/g, replacement: "[STRIPE_KEY_REDACTED]" },
+  // GitHub PAT
+  { name: "github-pat", pattern: /\bghp_[a-zA-Z0-9]{30,}\b/g, replacement: "[GITHUB_PAT_REDACTED]" },
+];
+
+function redactSecrets(line: string): string {
+  let out = line;
+  for (const { pattern, replacement } of REDACT_PATTERNS) {
+    out = out.replace(pattern, replacement);
+  }
+  return out;
+}
 
 export const adminOpsRoutes = new Hono<AuthEnv>();
 
@@ -330,6 +364,74 @@ adminOpsRoutes.delete("/dev-servers/:projectId", async (c) => {
   } catch (e) {
     return c.json({ ok: false, reason: e instanceof Error ? e.message : "kill failed" }, 500);
   }
+});
+
+// ─── Per-project log viewer (platform admin) ──────────────
+// Tails systemd journal for the project's runtime unit. Output is
+// secret-redacted (REDACT_PATTERNS) before leaving the API. Every
+// view records an admin_audit_log entry — admins are accountable
+// for what they see. Lines capped at 1000 so a malicious input
+// can't make us shell out for an unbounded log read.
+adminOpsRoutes.get("/runtime/:id/logs", async (c) => {
+  const projectId = c.req.param("id");
+  const lines = Math.min(parseInt(c.req.query("lines") ?? "200", 10) || 200, 1000);
+  const search = c.req.query("search")?.slice(0, 200) ?? "";
+
+  const rows = await sql<{ systemd_unit: string | null; project_name: string }[]>`
+    SELECT pr.systemd_unit, p.name AS project_name
+    FROM project_runtime pr
+    JOIN projects p ON p.id = pr.project_id
+    WHERE pr.project_id = ${projectId}
+  `;
+  const row = rows[0];
+  if (!row?.systemd_unit) {
+    return c.json({ data: { lines: [], note: "no runtime registered for this project" } });
+  }
+
+  // Fire-and-forget audit entry — failures here must not block the read.
+  recordAdminAction(c, {
+    action: "view_project_logs",
+    resourceType: "project_runtime",
+    resourceId: projectId,
+    targetProjectId: projectId,
+    details: { systemdUnit: row.systemd_unit, lines, search: search || null },
+  }).catch(() => {});
+
+  if (process.platform !== "linux") {
+    return c.json({ data: { lines: [], note: "journalctl not available on this host" } });
+  }
+
+  const r = spawnSync(
+    "journalctl",
+    ["-u", row.systemd_unit, "-n", String(lines), "--no-pager", "-o", "short-iso"],
+    { encoding: "utf-8", timeout: 8000, maxBuffer: 8 * 1024 * 1024 },
+  );
+
+  if (r.status !== 0) {
+    return c.json({
+      data: {
+        lines: [],
+        note: `journalctl exited ${r.status}: ${(r.stderr ?? "").slice(0, 200)}`,
+      },
+    });
+  }
+
+  const raw = (r.stdout ?? "").split("\n").filter(Boolean);
+  const filtered = search
+    ? raw.filter((l) => l.toLowerCase().includes(search.toLowerCase()))
+    : raw;
+  const redacted = filtered.map(redactSecrets);
+
+  return c.json({
+    data: {
+      lines: redacted,
+      systemdUnit: row.systemd_unit,
+      totalLines: raw.length,
+      filteredLines: filtered.length,
+      redacted: true,
+      note: "Secrets auto-redacted (passwords, JWTs, API keys, hex blobs, DB URLs). SSH for raw logs.",
+    },
+  });
 });
 
 // ─── Per-project egress policy + activity ─────────────────
