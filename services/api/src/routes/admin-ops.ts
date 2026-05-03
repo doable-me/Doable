@@ -220,7 +220,7 @@ adminOpsRoutes.get("/runtime/instances", async (c) => {
     FROM project_runtime pr
     JOIN projects p ON p.id = pr.project_id
     JOIN workspaces w ON w.id = p.workspace_id
-    LEFT JOIN users u ON u.id = p.owner_id
+    LEFT JOIN users u ON u.id = w.owner_id
     ORDER BY
       CASE pr.state WHEN 'running' THEN 0 WHEN 'starting' THEN 1
                     WHEN 'failed' THEN 2 ELSE 3 END,
@@ -308,7 +308,7 @@ adminOpsRoutes.get("/dev-servers", async (c) => {
            w.name AS workspace_name, u.email AS owner_email, p.framework_id
     FROM projects p
     JOIN workspaces w ON w.id = p.workspace_id
-    LEFT JOIN users u ON u.id = p.owner_id
+    LEFT JOIN users u ON u.id = w.owner_id
     WHERE p.id = ANY(${ids})
   `;
   const metaById = new Map(meta.map((m) => [m.project_id, m]));
