@@ -28,6 +28,8 @@ const PACKAGE_JSON = JSON.stringify(
     },
     dependencies: {
       astro: "^4.0.0",
+      "@astrojs/tailwind": "^5.1.0",
+      tailwindcss: "^3.4.0",
     },
     devDependencies: {
       typescript: "^5.7.2",
@@ -38,9 +40,12 @@ const PACKAGE_JSON = JSON.stringify(
 );
 
 const ASTRO_CONFIG_MJS = `import { defineConfig } from "astro/config";
+import tailwind from "@astrojs/tailwind";
 
 // https://astro.build/config
-export default defineConfig({});
+export default defineConfig({
+  integrations: [tailwind()],
+});
 `;
 
 const TSCONFIG = JSON.stringify(
@@ -64,33 +69,96 @@ const { title = "Doable App" } = Astro.props;
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <title>{title}</title>
   </head>
-  <body>
+  <body class="font-[Inter,system-ui,sans-serif] antialiased bg-[var(--background)] text-[var(--foreground)]">
     <slot />
   </body>
 </html>
+
+<style is:global>
+  :root {
+    --background: #ffffff;
+    --foreground: #171717;
+  }
+  .dark {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+  @keyframes pulse-dot {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1.2); }
+  }
+</style>
 `;
 
 const PAGES_INDEX_ASTRO = `---
 import Layout from "../layouts/Layout.astro";
 ---
 
-<Layout title="Welcome to Astro">
-  <main style="padding: 2rem; font-family: system-ui, sans-serif;">
-    <h1 style="font-size: 2rem; font-weight: bold;">Welcome to Astro</h1>
-    <p style="margin-top: 1rem; opacity: 0.8;">
-      Edit <code>src/pages/index.astro</code> and the AI will build features
-      on top of this scaffold.
-    </p>
-    <p style="margin-top: 0.5rem; font-size: 0.875rem; opacity: 0.6;">
-      File-based routing lives under <code>src/pages/</code>. Use the
-      <code>PUBLIC_*</code> env prefix for browser-safe values. Add
-      integrations (React, Vue, Svelte, MDX) via <code>astro.config.mjs</code>
-      to enable islands.
-    </p>
-  </main>
+<Layout title="Doable App">
+  <div class="flex min-h-screen items-center justify-center bg-gradient-to-br from-neutral-50 via-stone-100 to-white dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-950">
+    <div class="text-center space-y-6">
+      <div class="flex justify-center">
+        <svg viewBox="0 0 40 40" fill="none" class="w-16 h-16 drop-shadow-lg">
+          <rect width="40" height="40" rx="10" fill="#F97316">
+            <animate attributeName="rx" values="10;14;10" dur="3s" repeatCount="indefinite" />
+          </rect>
+          <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="white" style="font-size: 22px; font-weight: 700; font-family: system-ui">D</text>
+        </svg>
+      </div>
+      <div class="space-y-2">
+        <h1 class="text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+          Doable
+        </h1>
+        <p class="text-lg text-[#F97316] font-medium" id="tagline">
+          Dream it. Build it.
+        </p>
+      </div>
+      <p class="text-sm text-neutral-500 dark:text-neutral-400">
+        Your project is ready \u2014 start chatting to build
+      </p>
+      <div class="flex justify-center pt-2">
+        <div class="flex gap-1.5">
+          <div class="w-1.5 h-1.5 rounded-full bg-[#F97316]" style="animation: pulse-dot 1.4s ease-in-out 0s infinite;"></div>
+          <div class="w-1.5 h-1.5 rounded-full bg-[#F97316]" style="animation: pulse-dot 1.4s ease-in-out 0.2s infinite;"></div>
+          <div class="w-1.5 h-1.5 rounded-full bg-[#F97316]" style="animation: pulse-dot 1.4s ease-in-out 0.4s infinite;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </Layout>
+
+<script>
+  const phrases = [
+    "Dream it. Build it.",
+    "Ideas become reality here.",
+    "Your canvas awaits.",
+    "Let's create something amazing.",
+    "From zero to wow.",
+  ];
+  let index = 0;
+  const el = document.getElementById("tagline");
+  if (el) {
+    setInterval(() => {
+      el.style.opacity = "0";
+      setTimeout(() => {
+        index = (index + 1) % phrases.length;
+        el.textContent = phrases[index];
+        el.style.opacity = "1";
+      }, 400);
+    }, 3500);
+  }
+</script>
+
+<style>
+  #tagline {
+    transition: opacity 400ms;
+  }
+</style>
 `;
 
 const GITIGNORE = `# Astro build artifacts

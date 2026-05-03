@@ -104,22 +104,33 @@ const POSTCSS_CONFIG = `module.exports = {
 
 const GLOBALS_CSS = `@import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@keyframes pulse-dot {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.2); }
 }
 `;
 
@@ -137,31 +148,93 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      </head>
       <body>{children}</body>
     </html>
   );
 }
 `;
 
-const APP_PAGE = `export default function Home() {
+const APP_PAGE = `"use client";
+
+import { useState, useEffect } from "react";
+
+const phrases = [
+  "Dream it. Build it.",
+  "Ideas become reality here.",
+  "Your canvas awaits.",
+  "Let's create something amazing.",
+  "From zero to wow.",
+];
+
+function DoableLogo({ className = "" }: { className?: string }) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <div className="max-w-2xl text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to your Next.js app</h1>
-        <p className="text-lg opacity-80 mb-8">
-          Edit <code className="bg-black/10 dark:bg-white/10 px-2 py-1 rounded">app/page.tsx</code>{" "}
-          and the AI will build features on top of this scaffold.
+    <svg viewBox="0 0 40 40" fill="none" className={className}>
+      <rect width="40" height="40" rx="10" className="fill-[#F97316]">
+        <animate attributeName="rx" values="10;14;10" dur="3s" repeatCount="indefinite" />
+      </rect>
+      <text x="50%" y="54%" dominantBaseline="middle" textAnchor="middle" className="fill-white" style={{ fontSize: "22px", fontWeight: 700, fontFamily: "system-ui" }}>
+        D
+      </text>
+    </svg>
+  );
+}
+
+export default function Home() {
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [opacity, setOpacity] = useState(1);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOpacity(0);
+      setTimeout(() => {
+        setPhraseIndex((i) => (i + 1) % phrases.length);
+        setOpacity(1);
+      }, 400);
+    }, 3500);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-neutral-50 via-stone-100 to-white dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-950">
+      <div className="text-center space-y-6">
+        <div className="flex justify-center">
+          <DoableLogo className="w-16 h-16 drop-shadow-lg" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+            Doable
+          </h1>
+          <p
+            className="text-lg text-[#F97316] font-medium transition-opacity duration-400"
+            style={{ opacity, transitionDuration: "400ms" }}
+          >
+            {phrases[phraseIndex]}
+          </p>
+        </div>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          Your project is ready — start chatting to build
         </p>
-        <p className="text-sm opacity-60">
-          Server components, server actions, and route handlers are all available.
-          Use <code className="bg-black/10 dark:bg-white/10 px-2 py-1 rounded">process.env.X</code>{" "}
-          for server-only secrets and{" "}
-          <code className="bg-black/10 dark:bg-white/10 px-2 py-1 rounded">NEXT_PUBLIC_*</code>{" "}
-          for browser-safe values.
-        </p>
+        <div className="flex justify-center pt-2">
+          <div className="flex gap-1.5">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="w-1.5 h-1.5 rounded-full bg-[#F97316]"
+                style={{
+                  animation: \`pulse-dot 1.4s ease-in-out \${i * 0.2}s infinite\`,
+                }}
+              />
+            ))}
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
 `;

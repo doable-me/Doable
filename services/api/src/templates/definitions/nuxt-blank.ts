@@ -29,6 +29,7 @@ const PACKAGE_JSON = JSON.stringify(
       vue: "^3.5.0",
     },
     devDependencies: {
+      "@nuxtjs/tailwindcss": "^6.12.0",
       typescript: "^5.7.2",
     },
   },
@@ -47,9 +48,16 @@ const NUXT_CONFIG_TS = `import { defineNuxtConfig } from "nuxt/config";
  */
 export default defineNuxtConfig({
   devtools: { enabled: true },
-  modules: [],
+  modules: ["@nuxtjs/tailwindcss"],
   app: {
     baseURL: process.env.DOABLE_BASE_PATH ?? "/",
+    head: {
+      link: [
+        { rel: "preconnect", href: "https://fonts.googleapis.com" },
+        { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" },
+        { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" },
+      ],
+    },
   },
 });
 `;
@@ -63,28 +71,96 @@ const TSCONFIG = JSON.stringify(
 );
 
 const APP_VUE = `<template>
-  <div class="p-8">
-    <h1 class="text-3xl">Welcome to Nuxt</h1>
+  <div>
     <NuxtPage />
   </div>
 </template>
+
+<style>
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+@keyframes pulse-dot {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.2); }
+}
+</style>
 `;
 
-const PAGES_INDEX_VUE = `<template>
-  <section class="mt-6 space-y-4">
-    <p class="text-lg opacity-80">
-      Edit <code>pages/index.vue</code> and the AI will build features on top
-      of this scaffold.
-    </p>
-    <p class="text-sm opacity-60">
-      File-based routing is enabled: drop a new file under
-      <code>pages/</code> to add a route. Server routes live under
-      <code>server/api/</code>.
-    </p>
-    <p>
-      <NuxtLink to="/about" class="underline">Visit /about</NuxtLink>
-    </p>
-  </section>
+const PAGES_INDEX_VUE = `<script setup lang="ts">
+const phrases = [
+  "Dream it. Build it.",
+  "Ideas become reality here.",
+  "Your canvas awaits.",
+  "Let's create something amazing.",
+  "From zero to wow.",
+];
+
+const phraseIndex = ref(0);
+const opacity = ref(1);
+
+let interval: ReturnType<typeof setInterval>;
+onMounted(() => {
+  interval = setInterval(() => {
+    opacity.value = 0;
+    setTimeout(() => {
+      phraseIndex.value = (phraseIndex.value + 1) % phrases.length;
+      opacity.value = 1;
+    }, 400);
+  }, 3500);
+});
+onUnmounted(() => clearInterval(interval));
+</script>
+
+<template>
+  <div class="flex min-h-screen items-center justify-center bg-gradient-to-br from-neutral-50 via-stone-100 to-white dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-950">
+    <div class="text-center space-y-6">
+      <div class="flex justify-center">
+        <svg viewBox="0 0 40 40" fill="none" class="w-16 h-16 drop-shadow-lg">
+          <rect width="40" height="40" rx="10" fill="#F97316">
+            <animate attributeName="rx" values="10;14;10" dur="3s" repeatCount="indefinite" />
+          </rect>
+          <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="white" style="font-size: 22px; font-weight: 700; font-family: system-ui">D</text>
+        </svg>
+      </div>
+      <div class="space-y-2">
+        <h1 class="text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+          Doable
+        </h1>
+        <p
+          class="text-lg text-[#F97316] font-medium transition-opacity"
+          :style="{ opacity, transitionDuration: '400ms' }"
+        >
+          {{ phrases[phraseIndex] }}
+        </p>
+      </div>
+      <p class="text-sm text-neutral-500 dark:text-neutral-400">
+        Your project is ready — start chatting to build
+      </p>
+      <div class="flex justify-center pt-2">
+        <div class="flex gap-1.5">
+          <div
+            v-for="i in 3"
+            :key="i"
+            class="w-1.5 h-1.5 rounded-full bg-[#F97316]"
+            :style="{ animation: \\\`pulse-dot 1.4s ease-in-out \${(i - 1) * 0.2}s infinite\\\` }"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 `;
 

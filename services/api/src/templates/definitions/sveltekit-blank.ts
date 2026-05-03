@@ -30,7 +30,9 @@ const PACKAGE_JSON = JSON.stringify(
     },
     devDependencies: {
       "@sveltejs/vite-plugin-svelte": "^3.0.0",
+      "@tailwindcss/vite": "^4.0.0",
       svelte: "^4.0.0",
+      tailwindcss: "^4.0.0",
       vite: "^5.0.0",
       typescript: "^5.7.2",
     },
@@ -54,10 +56,11 @@ export default config;
 `;
 
 const VITE_CONFIG_TS = `import { sveltekit } from "@sveltejs/kit/vite";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [tailwindcss(), sveltekit()],
 });
 `;
 
@@ -86,6 +89,9 @@ const APP_HTML = `<!doctype html>
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
@@ -94,26 +100,109 @@ const APP_HTML = `<!doctype html>
 </html>
 `;
 
-const ROOT_LAYOUT = `<slot />
+const APP_CSS = `@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@keyframes pulse-dot {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.2); }
+}
+`;
+
+const ROOT_LAYOUT = `<script>
+  import "../app.css";
+</script>
+
+<slot />
 `;
 
 const ROOT_PAGE = `<script lang="ts">
-  // Doable starter for SvelteKit. Edit src/routes/+page.svelte and the AI
-  // will build features on top of this scaffold.
+  import { onMount, onDestroy } from "svelte";
+
+  const phrases = [
+    "Dream it. Build it.",
+    "Ideas become reality here.",
+    "Your canvas awaits.",
+    "Let's create something amazing.",
+    "From zero to wow.",
+  ];
+
+  let phraseIndex = 0;
+  let opacity = 1;
+  let interval: ReturnType<typeof setInterval>;
+
+  onMount(() => {
+    interval = setInterval(() => {
+      opacity = 0;
+      setTimeout(() => {
+        phraseIndex = (phraseIndex + 1) % phrases.length;
+        opacity = 1;
+      }, 400);
+    }, 3500);
+  });
+
+  onDestroy(() => clearInterval(interval));
 </script>
 
-<main style="padding: 2rem; font-family: system-ui, sans-serif;">
-  <h1 style="font-size: 2rem; font-weight: bold;">Welcome to SvelteKit</h1>
-  <p style="margin-top: 1rem; opacity: 0.8;">
-    Edit <code>src/routes/+page.svelte</code> to get started.
-  </p>
-  <p style="margin-top: 0.5rem; font-size: 0.875rem; opacity: 0.6;">
-    File-based routing lives under <code>src/routes/</code>. Use
-    <code>+page.server.ts</code> for server-only load functions and form
-    actions. The <code>PUBLIC_*</code> env prefix exposes values to the
-    browser.
-  </p>
-</main>
+<div class="flex min-h-screen items-center justify-center bg-gradient-to-br from-neutral-50 via-stone-100 to-white dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-950">
+  <div class="text-center space-y-6">
+    <div class="flex justify-center">
+      <svg viewBox="0 0 40 40" fill="none" class="w-16 h-16 drop-shadow-lg">
+        <rect width="40" height="40" rx="10" fill="#F97316">
+          <animate attributeName="rx" values="10;14;10" dur="3s" repeatCount="indefinite" />
+        </rect>
+        <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="white" style="font-size: 22px; font-weight: 700; font-family: system-ui">D</text>
+      </svg>
+    </div>
+    <div class="space-y-2">
+      <h1 class="text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+        Doable
+      </h1>
+      <p
+        class="text-lg text-[#F97316] font-medium transition-opacity"
+        style="opacity: {opacity}; transition-duration: 400ms;"
+      >
+        {phrases[phraseIndex]}
+      </p>
+    </div>
+    <p class="text-sm text-neutral-500 dark:text-neutral-400">
+      Your project is ready — start chatting to build
+    </p>
+    <div class="flex justify-center pt-2">
+      <div class="flex gap-1.5">
+        {#each [0, 1, 2] as i}
+          <div
+            class="w-1.5 h-1.5 rounded-full bg-[#F97316]"
+            style="animation: pulse-dot 1.4s ease-in-out {i * 0.2}s infinite;"
+          />
+        {/each}
+      </div>
+    </div>
+  </div>
+</div>
 `;
 
 const GITIGNORE = `# SvelteKit build artifacts
@@ -154,6 +243,7 @@ export const sveltekitBlankTemplate: TemplateDefinition = {
     "vite.config.ts": VITE_CONFIG_TS,
     "tsconfig.json": TSCONFIG,
     "src/app.html": APP_HTML,
+    "src/app.css": APP_CSS,
     "src/routes/+layout.svelte": ROOT_LAYOUT,
     "src/routes/+page.svelte": ROOT_PAGE,
     ".gitignore": GITIGNORE,
