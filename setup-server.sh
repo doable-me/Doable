@@ -805,10 +805,18 @@ WantedBy=multi-user.target
 APPTGTEOF
 
 # Cloudflared service
-cloudflared service install 2>/dev/null || true
+if [ "$CONTAINER_MODE" != "1" ]; then
+  cloudflared service install 2>/dev/null || true
+fi
 
 systemctl daemon-reload
-systemctl enable doable.service doable-watchdog.timer cloudflared doable-apps.target 2>/dev/null
+if [ "$CONTAINER_MODE" = "1" ]; then
+  # Container mode: cloudflared is masked; doable-watchdog.timer requires
+  # cloudflared transitively in some setups — enable only what we have.
+  systemctl enable doable.service doable-watchdog.timer doable-apps.target 2>/dev/null || true
+else
+  systemctl enable doable.service doable-watchdog.timer cloudflared doable-apps.target 2>/dev/null
+fi
 
 ok "Systemd services created and enabled (app + watchdog timer + tunnel + per-app template)"
 
