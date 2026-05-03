@@ -19,6 +19,7 @@ const PACKAGE_JSON = JSON.stringify(
     name: "doable-sveltekit-project",
     version: "0.1.0",
     private: true,
+    type: "module",
     scripts: {
       dev: "vite dev",
       build: "vite build",

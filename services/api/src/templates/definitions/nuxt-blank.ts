@@ -155,7 +155,7 @@ onUnmounted(() => clearInterval(interval));
             v-for="i in 3"
             :key="i"
             class="w-1.5 h-1.5 rounded-full bg-[#F97316]"
-            :style="{ animation: \\\`pulse-dot 1.4s ease-in-out \${(i - 1) * 0.2}s infinite\\\` }"
+            :style="{ animation: 'pulse-dot 1.4s ease-in-out ' + ((i - 1) * 0.2) + 's infinite' }"
           />
         </div>
       </div>
