@@ -236,6 +236,14 @@ export default function AdminPage() {
             <p className="text-sm text-muted-foreground">Manage platform features, users, AI tools, and access controls</p>
           </div>
           <Link
+            href="/admin/projects"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+            title="All projects (drafts + published) with framework, owner, chat activity"
+          >
+            <Activity className="h-3.5 w-3.5 text-brand-400" />
+            Projects
+          </Link>
+          <Link
             href="/admin/runtime"
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
             title="Live process list — every running project, by user, port, framework, CPU, memory, uptime"
@@ -250,6 +258,14 @@ export default function AdminPage() {
           >
             <Activity className="h-3.5 w-3.5 text-brand-400" />
             Dev Servers
+          </Link>
+          <Link
+            href="/admin/chat"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+            title="All AI chat sessions (redacted, audit-logged) — for training & abuse review"
+          >
+            <Activity className="h-3.5 w-3.5 text-brand-400" />
+            Chat
           </Link>
           <Link
             href="/admin/audit"

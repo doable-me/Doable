@@ -382,6 +382,262 @@ adminOpsRoutes.delete("/dev-servers/:projectId", async (c) => {
   }
 });
 
+// ─── All projects (not just published runtime) ────────────
+// /admin/runtime only shows project_runtime rows (= published process apps).
+// Most projects on a typical install are drafts that have never been
+// published yet. This endpoint surfaces EVERY project with its current
+// state (draft / published), framework, owner, last activity — and joins
+// per-project metrics where a project_runtime row exists.
+adminOpsRoutes.get("/projects", async (c) => {
+  const search = c.req.query("search")?.slice(0, 100) ?? "";
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10) || 100, 500);
+  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
+
+  let rows: {
+    project_id: string;
+    project_name: string;
+    project_slug: string;
+    framework_id: string;
+    status: string;
+    visibility: string;
+    workspace_name: string;
+    owner_email: string | null;
+    runtime_state: string | null;
+    runtime_kind: string | null;
+    listen_addr: string | null;
+    sessions_count: number;
+    messages_count: number;
+    created_at: Date;
+    updated_at: Date;
+  }[];
+  try {
+    const searchPattern = `%${search}%`;
+    rows = await sql<typeof rows>`
+      SELECT
+        p.id AS project_id, p.name AS project_name, p.slug AS project_slug,
+        p.framework_id, p.status::text AS status, p.visibility::text AS visibility,
+        w.name AS workspace_name, u.email AS owner_email,
+        pr.state AS runtime_state, pr.runtime_kind AS runtime_kind, pr.listen_addr,
+        COALESCE(s.sessions_count, 0) AS sessions_count,
+        COALESCE(m.messages_count, 0) AS messages_count,
+        p.created_at, p.updated_at
+      FROM projects p
+      JOIN workspaces w ON w.id = p.workspace_id
+      LEFT JOIN users u ON u.id = w.owner_id
+      LEFT JOIN project_runtime pr ON pr.project_id = p.id
+      LEFT JOIN (
+        SELECT project_id, COUNT(*)::int AS sessions_count
+        FROM ai_sessions GROUP BY project_id
+      ) s ON s.project_id::uuid = p.id
+      LEFT JOIN (
+        SELECT s.project_id, COUNT(am.id)::int AS messages_count
+        FROM ai_sessions s
+        LEFT JOIN ai_messages am ON am.session_id = s.id
+        GROUP BY s.project_id
+      ) m ON m.project_id::uuid = p.id
+      WHERE p.deleted_at IS NULL
+        AND (
+          ${search} = '' OR
+          p.name ILIKE ${searchPattern} OR
+          p.slug ILIKE ${searchPattern} OR
+          w.name ILIKE ${searchPattern} OR
+          u.email ILIKE ${searchPattern} OR
+          p.framework_id ILIKE ${searchPattern}
+        )
+      ORDER BY p.updated_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+  } catch (e) {
+    return c.json({
+      error: "projects query failed",
+      message: e instanceof Error ? e.message : "unknown",
+    }, 500);
+  }
+
+  const totalRow = await sql<{ c: number }[]>`SELECT COUNT(*)::int AS c FROM projects WHERE deleted_at IS NULL`;
+  const total = totalRow[0]?.c ?? 0;
+
+  return c.json({
+    data: {
+      projects: rows.map((r) => ({
+        projectId: r.project_id,
+        projectName: r.project_name,
+        projectSlug: r.project_slug,
+        frameworkId: r.framework_id,
+        status: r.status,
+        visibility: r.visibility,
+        workspaceName: r.workspace_name,
+        ownerEmail: r.owner_email,
+        runtimeState: r.runtime_state,
+        runtimeKind: r.runtime_kind,
+        listenAddr: r.listen_addr,
+        sessionsCount: r.sessions_count,
+        messagesCount: r.messages_count,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        sandboxUser: `doable-${r.project_slug}`.slice(0, 32),
+      })),
+      total,
+      limit,
+      offset,
+    },
+  });
+});
+
+// ─── Chat sessions list (platform admin) ──────────────────
+adminOpsRoutes.get("/chat-sessions", async (c) => {
+  const search = c.req.query("search")?.slice(0, 100) ?? "";
+  const userEmail = c.req.query("userEmail")?.slice(0, 200) ?? "";
+  const projectId = c.req.query("projectId")?.slice(0, 100) ?? "";
+  const mode = c.req.query("mode")?.slice(0, 50) ?? "";
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10) || 50, 200);
+  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
+
+  recordAdminAction(c, {
+    action: "list_chat_sessions",
+    details: { search, userEmail, projectId, mode, limit, offset },
+  }).catch(() => {});
+
+  let rows: {
+    session_id: string;
+    user_id: string;
+    user_email: string | null;
+    project_id: string;
+    project_name: string | null;
+    project_slug: string | null;
+    mode: string;
+    copilot_session_id: string | null;
+    message_count: number;
+    last_message_at: Date | null;
+    created_at: Date;
+    updated_at: Date;
+  }[];
+
+  try {
+    const searchP = `%${search}%`;
+    rows = await sql<typeof rows>`
+      SELECT
+        s.id AS session_id, s.user_id, u.email AS user_email,
+        s.project_id, p.name AS project_name, p.slug AS project_slug,
+        s.mode::text AS mode, s.copilot_session_id,
+        COALESCE(mc.cnt, 0) AS message_count,
+        mc.last_at AS last_message_at,
+        s.created_at, s.updated_at
+      FROM ai_sessions s
+      LEFT JOIN users u ON u.id::text = s.user_id
+      LEFT JOIN projects p ON p.id::text = s.project_id
+      LEFT JOIN (
+        SELECT session_id, COUNT(*)::int AS cnt, MAX(created_at) AS last_at
+        FROM ai_messages GROUP BY session_id
+      ) mc ON mc.session_id = s.id
+      WHERE
+        (${search} = '' OR p.name ILIKE ${searchP} OR u.email ILIKE ${searchP})
+        AND (${userEmail} = '' OR u.email = ${userEmail})
+        AND (${projectId} = '' OR s.project_id = ${projectId})
+        AND (${mode} = '' OR s.mode::text = ${mode})
+      ORDER BY COALESCE(mc.last_at, s.created_at) DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+  } catch (e) {
+    return c.json({
+      error: "chat sessions query failed",
+      message: e instanceof Error ? e.message : "unknown",
+    }, 500);
+  }
+
+  const totalRow = await sql<{ c: number }[]>`SELECT COUNT(*)::int AS c FROM ai_sessions`;
+  return c.json({
+    data: {
+      sessions: rows.map((r) => ({
+        sessionId: r.session_id,
+        userId: r.user_id,
+        userEmail: r.user_email,
+        projectId: r.project_id,
+        projectName: r.project_name,
+        projectSlug: r.project_slug,
+        mode: r.mode,
+        copilotSessionId: r.copilot_session_id,
+        messageCount: r.message_count,
+        lastMessageAt: r.last_message_at,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
+      total: totalRow[0]?.c ?? 0,
+      limit, offset,
+    },
+  });
+});
+
+// ─── Chat session thread (platform admin, redacted) ───────
+adminOpsRoutes.get("/chat-sessions/:id/messages", async (c) => {
+  const sessionId = c.req.param("id");
+
+  const sessionRow = await sql<{
+    session_id: string; user_id: string; user_email: string | null;
+    project_id: string; project_name: string | null; project_slug: string | null;
+    mode: string; created_at: Date;
+  }[]>`
+    SELECT s.id AS session_id, s.user_id, u.email AS user_email,
+           s.project_id, p.name AS project_name, p.slug AS project_slug,
+           s.mode::text AS mode, s.created_at
+    FROM ai_sessions s
+    LEFT JOIN users u ON u.id::text = s.user_id
+    LEFT JOIN projects p ON p.id::text = s.project_id
+    WHERE s.id = ${sessionId}
+  `;
+  if (sessionRow.length === 0) return c.json({ error: "session not found" }, 404);
+  const session = sessionRow[0]!;
+
+  recordAdminAction(c, {
+    action: "view_chat_thread",
+    resourceType: "ai_session",
+    resourceId: sessionId,
+    targetProjectId: session.project_id,
+    details: { userId: session.user_id, mode: session.mode },
+  }).catch(() => {});
+
+  const messages = await sql<{
+    id: string; role: string; content: string | null;
+    tool_calls: unknown; thinking_content: string | null;
+    had_tool_calls: boolean; display_name: string | null;
+    created_at: Date;
+  }[]>`
+    SELECT id, role::text AS role, content, tool_calls, thinking_content,
+           had_tool_calls, display_name, created_at
+    FROM ai_messages
+    WHERE session_id = ${sessionId}
+    ORDER BY created_at ASC
+    LIMIT 5000
+  `;
+
+  return c.json({
+    data: {
+      session: {
+        sessionId: session.session_id,
+        userId: session.user_id,
+        userEmail: session.user_email,
+        projectId: session.project_id,
+        projectName: session.project_name,
+        projectSlug: session.project_slug,
+        mode: session.mode,
+        createdAt: session.created_at,
+      },
+      messages: messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content ? redactSecrets(m.content) : null,
+        toolCalls: m.tool_calls ? JSON.parse(redactSecrets(JSON.stringify(m.tool_calls))) : null,
+        thinkingContent: m.thinking_content ? redactSecrets(m.thinking_content) : null,
+        hadToolCalls: m.had_tool_calls,
+        displayName: m.display_name,
+        createdAt: m.created_at,
+      })),
+      redacted: true,
+      note: "Message content is auto-redacted (secrets, JWTs, API keys, hex blobs). Every view is in admin_audit_log.",
+    },
+  });
+});
+
 // ─── Per-project log viewer (platform admin) ──────────────
 // Tails systemd journal for the project's runtime unit. Output is
 // secret-redacted (REDACT_PATTERNS) before leaving the API. Every

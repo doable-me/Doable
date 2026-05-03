@@ -193,7 +193,13 @@ export default function DevServersAdminPage() {
               </td></tr>
             ) : servers.length === 0 ? (
               <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
-                No dev servers running. Open a project in the editor to spawn one.
+                <div className="space-y-2">
+                  <div>No active dev servers.</div>
+                  <div className="text-[11px]">
+                    Vite/Next dev servers spawn when a user opens the editor preview, and exit when the API restarts or the user idles out.
+                    To see ALL projects, open <Link href="/admin/projects" className="text-brand-400 hover:underline">Projects</Link>.
+                  </div>
+                </div>
               </td></tr>
             ) : servers.map((s) => (
               <tr key={s.projectId} className="border-b border-border last:border-b-0 hover:bg-muted/20">

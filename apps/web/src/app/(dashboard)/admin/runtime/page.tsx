@@ -304,7 +304,16 @@ export default function RuntimeAdminPage() {
               </td></tr>
             ) : filtered.length === 0 ? (
               <tr><td colSpan={11} className="px-3 py-8 text-center text-muted-foreground">
-                No instances match your filter.
+                {instances.length === 0 ? (
+                  <div className="space-y-2">
+                    <div>No published apps yet.</div>
+                    <div className="text-[11px]">
+                      Runtime rows appear here when a user clicks <em>Publish</em>. To see ALL projects (including drafts), open{" "}
+                      <Link href="/admin/projects" className="text-brand-400 hover:underline">Projects</Link>. To see active editor previews, open{" "}
+                      <Link href="/admin/dev-servers" className="text-brand-400 hover:underline">Dev Servers</Link>.
+                    </div>
+                  </div>
+                ) : "No instances match your filter."}
               </td></tr>
             ) : filtered.map((r) => (
               <tr key={r.projectId} className="border-b border-border last:border-b-0 hover:bg-muted/20">
