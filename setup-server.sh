@@ -186,8 +186,16 @@ apt-get install -y \
 # Python deps for FastAPI/Django framework deploys. The Wave 17 Python
 # venv setup in services/api/src/deploy/adapters/doable-cloud.ts shells
 # out to `python3 -m venv` per published Python project; on Ubuntu that
-# fails without python3-venv installed (verified on a fresh 24.04 host).
+# fails without python3-venv installed. On 24.04 the meta-package
+# python3-venv does NOT pull in python3.12-venv automatically — both
+# fastapi + django adapters then fail with "ensurepip is not available".
+# Install both: the meta-package AND the version-specific one matching
+# the active python3 minor version.
 apt-get install -y python3-venv python3-pip 2>/dev/null || true
+PYVER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "")
+if [ -n "$PYVER" ]; then
+  apt-get install -y "python${PYVER}-venv" 2>/dev/null || true
+fi
 
 # Caddy (static file server for published sites)
 if ! command -v caddy &>/dev/null; then
