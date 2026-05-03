@@ -409,6 +409,16 @@ if [ -f "${INSTALL_DIR}/.env" ]; then
   ok "Reusing existing .env at ${INSTALL_DIR}/.env (secrets preserved)"
 else
 
+# Bind addresses: bare-metal binds to 127.0.0.1 and Cloudflare Tunnel proxies
+# in. Inside a container, services must bind to 0.0.0.0 so Docker's port
+# forwarding can reach them — but `docker -p 127.0.0.1:HOST:CONTAINER`
+# already restricts host-side exposure to loopback, so net surface is the same.
+if [ "$CONTAINER_MODE" = "1" ]; then
+  BIND_HOST=0.0.0.0
+else
+  BIND_HOST=127.0.0.1
+fi
+
 cat > "${INSTALL_DIR}/.env" << ENVEOF
 # ─── Database ───────────────────────────────────────────────
 DATABASE_URL=postgres://doable:${DB_PASS}@localhost:5432/doable
@@ -426,14 +436,17 @@ INTERNAL_SECRET=${INTERNAL_SECRET}
 
 # ─── API Server ─────────────────────────────────────────────
 API_PORT=4000
-API_HOST=127.0.0.1
+API_HOST=${BIND_HOST}
 CORS_ORIGINS=https://${DOMAIN}
 
 # ─── WebSocket Server ──────────────────────────────────────
 WS_PORT=4001
-WS_HOST=127.0.0.1
+WS_HOST=${BIND_HOST}
 WS_INTERNAL_URL=http://127.0.0.1:${WS_PORT:-4001}
 API_URL=http://127.0.0.1:${API_PORT:-4000}
+
+# ─── Next.js Web bind (used by start.sh) ────────────────────
+WEB_HOSTNAME=${BIND_HOST}
 
 # ─── Next.js Frontend ──────────────────────────────────────
 NEXT_PUBLIC_API_URL=https://${API_DOMAIN}

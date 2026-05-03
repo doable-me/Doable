@@ -19,6 +19,13 @@ pnpm db:migrate || echo "⚠️  Migration failed (non-fatal, continuing...)"
 SESSION="doable"
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 
+# Detect Docker/container — bind 0.0.0.0 inside so docker -p forwarding works.
+# Bare-metal stays on 127.0.0.1 with Cloudflare Tunnel as the public ingress.
+if [ -f /.dockerenv ] || [ -f /run/.containerenv ] || grep -qa docker /proc/1/cgroup 2>/dev/null; then
+  : "${WEB_HOSTNAME:=0.0.0.0}"
+  export WEB_HOSTNAME
+fi
+
 # API — Hono server with tsx watch (hot reload)
 tmux new-session -d -s "$SESSION" -n "api" -c "$(pwd)"
 tmux send-keys -t "$SESSION:api" "pnpm dev:api" Enter
@@ -27,7 +34,7 @@ tmux send-keys -t "$SESSION:api" "pnpm dev:api" Enter
 # The `postbuild` script in apps/web/package.json copies .next/static and public/
 # into the standalone output automatically — no manual step required.
 tmux new-window -t "$SESSION" -n "web" -c "$(pwd)/apps/web"
-tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && pnpm --filter web build && PORT=3000 HOSTNAME=127.0.0.1 node .next/standalone/apps/web/server.js" Enter
+tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && pnpm --filter web build && PORT=3000 HOSTNAME=\${WEB_HOSTNAME:-127.0.0.1} node .next/standalone/apps/web/server.js" Enter
 
 # WS — WebSocket server with tsx watch
 tmux new-window -t "$SESSION" -n "ws" -c "$(pwd)"
