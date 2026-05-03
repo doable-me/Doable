@@ -153,6 +153,9 @@ export const nuxtAdapter: FrameworkAdapter = {
       env: {
         ...ctx.env,
         FORCE_COLOR: "0",
+        // Nuxt reads app.baseURL from nuxt.config; passing through env lets the
+        // template's nuxt.config.ts pick it up via process.env.DOABLE_BASE_PATH.
+        DOABLE_BASE_PATH: ctx.basePath,
       },
       readinessSignal: {
         kind: "log-substring",

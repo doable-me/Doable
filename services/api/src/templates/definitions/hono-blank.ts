@@ -144,6 +144,13 @@ const landingPage = html\`<!doctype html>
 
 app.get("/", (c) => c.html(landingPage));
 
+// Support Doable preview base path
+const basePath = process.env.DOABLE_BASE_PATH;
+if (basePath && basePath !== "/") {
+  app.get(basePath, (c) => c.html(landingPage));
+  app.get(basePath.replace(/\\/$/, ""), (c) => c.html(landingPage));
+}
+
 app.get("/health", (c) => c.json({ status: "ok" }));
 
 const port = Number(process.env.PORT ?? 3000);

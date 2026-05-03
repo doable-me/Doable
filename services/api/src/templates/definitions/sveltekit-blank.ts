@@ -50,6 +50,11 @@ const config = {
   preprocess: vitePreprocess(),
   kit: {
     adapter: adapter({ out: "build" }),
+    paths: {
+      base: process.env.DOABLE_BASE_PATH && process.env.DOABLE_BASE_PATH !== "/"
+        ? process.env.DOABLE_BASE_PATH.replace(/\\/$/, "")
+        : "",
+    },
   },
 };
 

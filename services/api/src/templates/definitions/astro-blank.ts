@@ -42,9 +42,14 @@ const PACKAGE_JSON = JSON.stringify(
 const ASTRO_CONFIG_MJS = `import { defineConfig } from "astro/config";
 import tailwind from "@astrojs/tailwind";
 
+const base = process.env.DOABLE_BASE_PATH && process.env.DOABLE_BASE_PATH !== "/"
+  ? process.env.DOABLE_BASE_PATH.replace(/\\/$/, "")
+  : undefined;
+
 // https://astro.build/config
 export default defineConfig({
   integrations: [tailwind()],
+  ...(base ? { base } : {}),
 });
 `;
 

@@ -143,6 +143,7 @@ export const honoAdapter: FrameworkAdapter = {
         PORT: String(ctx.port),
         HOST: ctx.host,
         FORCE_COLOR: "0",
+        DOABLE_BASE_PATH: ctx.basePath,
       },
       readinessSignal: {
         kind: "log-substring",
