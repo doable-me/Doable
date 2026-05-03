@@ -194,25 +194,27 @@ RUN printf '%s\n' \
         > /usr/local/bin/doable-first-boot \
     && chmod +x /usr/local/bin/doable-first-boot
 
-# PG data persistence: bind /var/lib/postgresql onto the named volume so
-# Postgres state survives `docker rm`. Runs Before=postgresql.service so
-# PG starts pointing at the persisted cluster.
+# PG data persistence: copy the apt-installed initial cluster onto the
+# named volume on first boot, then point postgresql.conf data_directory
+# at the persisted path. Avoids the symlink-vs-running-pg race.
+# Runs Before=postgresql.service so PG starts with the right data_directory.
 RUN printf '%s\n' \
         '#!/usr/bin/env bash' \
         'set -euo pipefail' \
-        'PG_LIVE=/var/lib/postgresql' \
-        'PG_PERSIST=/var/lib/doable/postgresql' \
-        'if [ ! -d "$PG_PERSIST" ]; then' \
+        'PERSIST=/var/lib/doable/postgresql' \
+        'INITIAL=/var/lib/postgresql' \
+        'PG_CONF=/etc/postgresql/16/main/postgresql.conf' \
+        'if [ ! -d "$PERSIST/16/main" ]; then' \
         '    echo "[doable-pg-bind] first run — copying initial PG cluster to volume"' \
-        '    mkdir -p /var/lib/doable' \
-        '    cp -a "$PG_LIVE" "$PG_PERSIST"' \
+        '    mkdir -p "$PERSIST"' \
+        '    cp -a "$INITIAL/." "$PERSIST/"' \
+        '    chown -R postgres:postgres "$PERSIST"' \
         'fi' \
-        'if [ ! -L "$PG_LIVE" ]; then' \
-        '    echo "[doable-pg-bind] replacing $PG_LIVE with symlink to $PG_PERSIST"' \
-        '    rm -rf "$PG_LIVE"' \
-        '    ln -sf "$PG_PERSIST" "$PG_LIVE"' \
+        'if ! grep -qE "^data_directory.*$PERSIST" "$PG_CONF" 2>/dev/null; then' \
+        '    echo "[doable-pg-bind] pointing data_directory at $PERSIST/16/main"' \
+        '    sed -i "s|^data_directory.*|data_directory = '"'"'$PERSIST/16/main'"'"'|" "$PG_CONF"' \
         'fi' \
-        'echo "[doable-pg-bind] OK"' \
+        'echo "[doable-pg-bind] OK — data_directory: $(grep ^data_directory $PG_CONF)"' \
         > /usr/local/bin/doable-pg-bind \
     && chmod +x /usr/local/bin/doable-pg-bind
 
