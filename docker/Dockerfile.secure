@@ -156,6 +156,8 @@ RUN systemctl mask \
         systemd-udev-trigger.service \
         getty.target \
         console-getty.service \
+        cloudflared.service \
+        ufw.service \
     || true
 
 # Ship the repo into the image so first-boot setup-server.sh has source to
@@ -191,6 +193,46 @@ RUN printf '%s\n' \
         'echo "[doable-init] first-boot setup complete"' \
         > /usr/local/bin/doable-first-boot \
     && chmod +x /usr/local/bin/doable-first-boot
+
+# PG data persistence: bind /var/lib/postgresql onto the named volume so
+# Postgres state survives `docker rm`. Runs Before=postgresql.service so
+# PG starts pointing at the persisted cluster.
+RUN printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'set -euo pipefail' \
+        'PG_LIVE=/var/lib/postgresql' \
+        'PG_PERSIST=/var/lib/doable/postgresql' \
+        'if [ ! -d "$PG_PERSIST" ]; then' \
+        '    echo "[doable-pg-bind] first run — copying initial PG cluster to volume"' \
+        '    mkdir -p /var/lib/doable' \
+        '    cp -a "$PG_LIVE" "$PG_PERSIST"' \
+        'fi' \
+        'if [ ! -L "$PG_LIVE" ]; then' \
+        '    echo "[doable-pg-bind] replacing $PG_LIVE with symlink to $PG_PERSIST"' \
+        '    rm -rf "$PG_LIVE"' \
+        '    ln -sf "$PG_PERSIST" "$PG_LIVE"' \
+        'fi' \
+        'echo "[doable-pg-bind] OK"' \
+        > /usr/local/bin/doable-pg-bind \
+    && chmod +x /usr/local/bin/doable-pg-bind
+
+RUN printf '%s\n' \
+        '[Unit]' \
+        'Description=Doable Postgres data persistence binding' \
+        'DefaultDependencies=no' \
+        'Before=postgresql.service' \
+        'After=local-fs.target' \
+        '' \
+        '[Service]' \
+        'Type=oneshot' \
+        'RemainAfterExit=yes' \
+        'ExecStart=/usr/local/bin/doable-pg-bind' \
+        '' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /etc/systemd/system/doable-pg-bind.service \
+    && ln -sf /etc/systemd/system/doable-pg-bind.service \
+        /etc/systemd/system/multi-user.target.wants/doable-pg-bind.service
 
 # systemd unit that runs the first-boot script after postgres is up.
 RUN printf '%s\n' \
