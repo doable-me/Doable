@@ -206,6 +206,11 @@ async function runFramework(spec: { id: string; templateId: string }, port: numb
       cwd: devSpec.cwd ?? tmpRoot,
       stdio: ["ignore", "pipe", "pipe"],
       shell: needsShell,
+      // detached:true puts the child in its own process group on POSIX so
+      // we can kill the WHOLE TREE later via process.kill(-pid, SIGKILL).
+      // Without this, framework grandchildren (next-server, uvicorn
+      // workers, vite plugins) reparent to PID 1 and hold ports.
+      detached: process.platform !== "win32",
       env: { ...process.env, ...(devSpec.env ?? {}) },
     });
     child.on("error", () => { /* swallow — handled below */ });
@@ -298,16 +303,25 @@ async function runFramework(spec: { id: string; templateId: string }, port: numb
       error: e instanceof Error ? e.message : String(e),
     };
   } finally {
-    if (child) {
-      try { child.kill("SIGKILL"); } catch { /* ignore */ }
-      // Also kill any descendant — uvicorn / next-server etc. spawn children
+    if (child && child.pid) {
+      // Kill the whole process group (negative pid). detached:true above
+      // ensures the framework's grandchildren are in this group too.
       try {
-        if (process.platform === "linux" && child.pid) {
-          spawn("pkill", ["-9", "-P", String(child.pid)], { stdio: "ignore" });
+        if (process.platform === "linux" || process.platform === "darwin") {
+          process.kill(-child.pid, "SIGKILL");
+        } else {
+          child.kill("SIGKILL");
         }
-      } catch { /* ignore */ }
+      } catch { /* ignore — process may already be dead */ }
     }
-    await new Promise((r) => setTimeout(r, 1000));
+    // Belt-and-suspenders: nuke anything that mentions OUR temp dir.
+    // Catches workers reparented to PID 1 between SIGKILL and now.
+    try {
+      if (process.platform === "linux") {
+        spawn("pkill", ["-9", "-f", `doable-real-${spec.id}-`], { stdio: "ignore" });
+      }
+    } catch { /* ignore */ }
+    await new Promise((r) => setTimeout(r, 1500));
     if (process.env.KEEP_TEMP !== "1") {
       try { await rm(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
     }
