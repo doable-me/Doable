@@ -110,9 +110,29 @@ async function waitForReady(port: number, child: ChildProcess, maxMs: number, re
   });
 }
 
-// Find the PID actually listening on a TCP port (Linux only).
-async function findListeningPid(port: number): Promise<{ pid: number | null; cmdline: string | null }> {
-  if (process.platform !== "linux") return { pid: null, cmdline: null };
+async function readCmdline(pid: number): Promise<string | null> {
+  try {
+    const buf = await readFile(`/proc/${pid}/cmdline`, "utf-8");
+    return buf.replace(/\0/g, " ").trim();
+  } catch { return null; }
+}
+
+async function readPpid(pid: number): Promise<number | null> {
+  try {
+    const status = await readFile(`/proc/${pid}/status`, "utf-8");
+    const m = /^PPid:\s+(\d+)/m.exec(status);
+    return m && m[1] ? parseInt(m[1], 10) : null;
+  } catch { return null; }
+}
+
+// Find the PID actually listening on a TCP port (Linux only). Walks the
+// process tree up to 4 ancestors so we catch the framework's parent
+// command, not e.g. uvicorn's multiprocessing-spawned worker. Returns
+// the cmdline of the FIRST ancestor whose cmdline is non-empty AND
+// matches one of the expected signatures (when provided), otherwise the
+// listening pid's own cmdline.
+async function findListeningPid(port: number, expectedSig: string[] = []): Promise<{ pid: number | null; cmdline: string | null; chainCmdlines: string[] }> {
+  if (process.platform !== "linux") return { pid: null, cmdline: null, chainCmdlines: [] };
   try {
     const ssOut = await new Promise<string>((resolve) => {
       const ss = spawn("ss", ["-tlnp", "-H"], { stdio: ["ignore", "pipe", "ignore"] });
@@ -121,18 +141,37 @@ async function findListeningPid(port: number): Promise<{ pid: number | null; cmd
       ss.on("exit", () => resolve(buf));
     });
     const lines = ssOut.split("\n").filter((l) => l.includes(`:${port} `));
-    if (lines.length === 0) return { pid: null, cmdline: null };
+    if (lines.length === 0) return { pid: null, cmdline: null, chainCmdlines: [] };
     const m = /pid=(\d+)/.exec(lines[0] ?? "");
-    if (!m || !m[1]) return { pid: null, cmdline: null };
-    const pid = parseInt(m[1], 10);
-    let cmdline: string | null = null;
-    try {
-      const buf = await readFile(`/proc/${pid}/cmdline`, "utf-8");
-      cmdline = buf.replace(/\0/g, " ").trim();
-    } catch { /* ignore */ }
-    return { pid, cmdline };
+    if (!m || !m[1]) return { pid: null, cmdline: null, chainCmdlines: [] };
+    const startPid = parseInt(m[1], 10);
+
+    // Walk up the process tree
+    const chain: { pid: number; cmdline: string }[] = [];
+    let cur: number | null = startPid;
+    for (let i = 0; i < 5 && cur && cur > 1; i++) {
+      const cl = await readCmdline(cur);
+      if (cl) chain.push({ pid: cur, cmdline: cl });
+      cur = await readPpid(cur);
+    }
+
+    // Pick the first ancestor that matches expected signatures (if given);
+    // otherwise return the listening pid's own cmdline.
+    if (expectedSig.length > 0) {
+      for (const node of chain) {
+        const lc = node.cmdline.toLowerCase();
+        if (expectedSig.some((s) => lc.includes(s.toLowerCase()))) {
+          return { pid: node.pid, cmdline: node.cmdline, chainCmdlines: chain.map((c) => c.cmdline) };
+        }
+      }
+    }
+    return {
+      pid: chain[0]?.pid ?? startPid,
+      cmdline: chain[0]?.cmdline ?? null,
+      chainCmdlines: chain.map((c) => c.cmdline),
+    };
   } catch {
-    return { pid: null, cmdline: null };
+    return { pid: null, cmdline: null, chainCmdlines: [] };
   }
 }
 
@@ -182,9 +221,13 @@ async function runFramework(spec: { id: string; templateId: string }, port: numb
     // BEFORE the HTTP server actually accepts connections.
     await new Promise((r) => setTimeout(r, 3000));
 
-    // Identify the actually-listening process
-    const { pid, cmdline } = await findListeningPid(port);
+    // Identify the actually-listening process (walks up to 5 ancestors,
+    // returns the first that matches one of the expected signatures).
+    const { pid, cmdline, chainCmdlines } = await findListeningPid(port, expected);
     const signatureMatched = cmdline ? expected.some((sig) => cmdline.toLowerCase().includes(sig.toLowerCase())) : false;
+    if (!signatureMatched && chainCmdlines.length > 0) {
+      console.log(`              tree: ${chainCmdlines.map((c) => c.slice(0, 60)).join(" → ")}`);
+    }
 
     // Final HTTP probe
     const httpStatus = await probeHttp(port, 5000);
@@ -194,7 +237,11 @@ async function runFramework(spec: { id: string; templateId: string }, port: numb
     let pageTitle: string | null = null;
     let bodyLengthBytes: number | null = null;
     try {
-      const puppeteer = (await import("puppeteer")).default;
+      // puppeteer is a workspace dep of services/api, not the root —
+      // resolve via that package's node_modules so this script works
+      // regardless of where it's run from.
+      const puppeteerPath = path.join(process.cwd(), "services", "api", "node_modules", "puppeteer", "lib", "cjs", "puppeteer", "puppeteer.js");
+      const puppeteer = (await import(puppeteerPath)).default;
       const browser = await puppeteer.launch({
         headless: true,
         args: ["--no-sandbox", "--disable-setuid-sandbox"],
