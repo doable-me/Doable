@@ -726,7 +726,11 @@ info "Step 11/13: Setting up publish infrastructure..."
 mkdir -p "${INSTALL_DIR}/sites"
 mkdir -p "${INSTALL_DIR}/services/api/projects"
 mkdir -p "${INSTALL_DIR}/services/api/thumbnails"
-chmod 755 /root
+# 711: allow sandboxed dev-server UIDs (10001-10100) to traverse /root
+# without being able to list its contents. Required because project dirs
+# live under /root/doable/services/api/projects/ and setpriv'd processes
+# need path traversal to reach their own chown'd project tree.
+chmod 711 /root
 chmod -R 755 "${INSTALL_DIR}/sites"
 
 # Caddyfile: serves *.domain from /sites/{subdomain}/
