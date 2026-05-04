@@ -7,12 +7,10 @@ import { portfolioTemplate } from "./definitions/portfolio.js";
 import { todoAppTemplate } from "./definitions/todo-app.js";
 import { nextjsBlankTemplate } from "./definitions/nextjs-blank.js";
 import { nextjsTodoAppTemplate } from "./definitions/nextjs-todo-app.js";
-import { nuxtBlankTemplate } from "./definitions/nuxt-blank.js";
-import { sveltekitBlankTemplate } from "./definitions/sveltekit-blank.js";
-import { astroBlankTemplate } from "./definitions/astro-blank.js";
-import { djangoBlankTemplate } from "./definitions/django-blank.js";
-import { fastapiBlankTemplate } from "./definitions/fastapi-blank.js";
-import { honoBlankTemplate } from "./definitions/hono-blank.js";
+import { getEnabledFrameworkIds } from "../frameworks/init.js";
+// Templates for the 6 disabled frameworks (nuxt, sveltekit, astro, django,
+// fastapi, hono) were removed alongside their adapters and AI prompt files.
+// Backups live at ~/Documents/doable-disabled-frameworks-backup-<date>/.
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -60,24 +58,24 @@ const BUILT_IN_TEMPLATES = new Map<string, TemplateDefinition>([
   [todoAppTemplate.id, todoAppTemplate],
   [nextjsBlankTemplate.id, nextjsBlankTemplate],
   [nextjsTodoAppTemplate.id, nextjsTodoAppTemplate],
-  [nuxtBlankTemplate.id, nuxtBlankTemplate],
-  [sveltekitBlankTemplate.id, sveltekitBlankTemplate],
-  [astroBlankTemplate.id, astroBlankTemplate],
-  [djangoBlankTemplate.id, djangoBlankTemplate],
-  [fastapiBlankTemplate.id, fastapiBlankTemplate],
-  [honoBlankTemplate.id, honoBlankTemplate],
 ]);
 
 /**
  * Get all available templates as summaries (no code).
+ *
+ * Templates whose `framework_id` isn't in the enabled framework set
+ * (controlled by `DOABLE_ENABLED_FRAMEWORKS` — see frameworks/init.ts)
+ * are filtered out so the UI picker stays consistent with what the
+ * backend actually runs. Default ships only vite-react + nextjs-app.
  */
 export function getTemplates(filter?: {
   category?: string;
   search?: string;
 }): TemplateSummary[] {
   const templates = Array.from(BUILT_IN_TEMPLATES.values());
+  const enabled = getEnabledFrameworkIds();
 
-  let filtered = templates;
+  let filtered = templates.filter((t) => enabled.has(t.framework_id));
 
   if (filter?.category) {
     filtered = filtered.filter((t) => t.category === filter.category);

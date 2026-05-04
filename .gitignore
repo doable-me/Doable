@@ -79,3 +79,4 @@ report.*.json
 
 # Private sync script (Gitea mirror)
 sync-codehub.ps1
+services/api/data/

@@ -10,22 +10,9 @@ describe("detectFrameworkFromPrompt", () => {
     assert.equal(detectFrameworkFromPrompt("App Router with server actions"), "nextjs-app");
   });
 
-  it("matches SvelteKit", () => {
-    assert.equal(detectFrameworkFromPrompt("I want a SvelteKit blog"), "sveltekit");
-    assert.equal(detectFrameworkFromPrompt("svelte-kit todo"), "sveltekit");
-  });
-
-  it("matches FastAPI", () => {
-    assert.equal(detectFrameworkFromPrompt("FastAPI backend with auth"), "fastapi");
-    assert.equal(detectFrameworkFromPrompt("fast api server"), "fastapi");
-  });
-
-  it("matches the other strong signals", () => {
-    assert.equal(detectFrameworkFromPrompt("build me an astro landing page"), "astro");
-    assert.equal(detectFrameworkFromPrompt("django app with admin"), "django");
-    assert.equal(detectFrameworkFromPrompt("Hono api server"), "hono");
+  it("matches Vite", () => {
     assert.equal(detectFrameworkFromPrompt("vite + react SPA"), "vite-react");
-    assert.equal(detectFrameworkFromPrompt("Nuxt 4 storefront"), "nuxt");
+    assert.equal(detectFrameworkFromPrompt("a vite app"), "vite-react");
   });
 
   it("returns null on ambiguous bare 'react'", () => {
@@ -37,13 +24,17 @@ describe("detectFrameworkFromPrompt", () => {
     assert.equal(detectFrameworkFromPrompt("a simple todo list"), null);
   });
 
-  it("returns null when two strong frameworks both appear", () => {
-    assert.equal(detectFrameworkFromPrompt("build a Next.js or Nuxt app"), null);
-    assert.equal(detectFrameworkFromPrompt("django backend with hono microservices"), null);
+  it("returns null when both shipped frameworks appear", () => {
+    assert.equal(detectFrameworkFromPrompt("Next.js or Vite — your call"), null);
   });
 
-  it("falls back to weak Vue/Svelte signals when no strong match", () => {
-    assert.equal(detectFrameworkFromPrompt("use Vue 3"), "nuxt");
-    assert.equal(detectFrameworkFromPrompt("svelte component"), "sveltekit");
+  it("ignores prompts mentioning disabled frameworks", () => {
+    // Prompts naming sveltekit/nuxt/astro/django/fastapi/hono used to map
+    // to those framework ids — they're now removed, so detection falls
+    // through to null and the admin default (or vite-react fallback) wins.
+    assert.equal(detectFrameworkFromPrompt("I want a SvelteKit blog"), null);
+    assert.equal(detectFrameworkFromPrompt("FastAPI backend with auth"), null);
+    assert.equal(detectFrameworkFromPrompt("django app with admin"), null);
+    assert.equal(detectFrameworkFromPrompt("Nuxt 4 storefront"), null);
   });
 });

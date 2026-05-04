@@ -8,7 +8,13 @@ initTracing({ serviceName: "doable-api" });
 // module that resolves a framework by id is imported (project create, dev
 // start, build, AI file tools). Idempotent.
 import { initFrameworks } from "./frameworks/init.js";
+import { startIdleEvictionSweeper } from "./projects/dev-server.js";
 initFrameworks();
+// Idle dev servers eat ~666 MB each (next-server + launcher). Start a
+// 5-minute sweeper that kills sessions with no preview-proxy traffic in
+// the last DEV_SERVER_IDLE_MS (default 15 min). Safe to call once at boot;
+// idempotent and gated by DEV_SERVER_IDLE_MS=0.
+startIdleEvictionSweeper();
 
 // Per-app runtime supervisor (Phase 5 — PRD 06 §4.4). Subscribes to
 // systemd journal so project_runtime.state reflects real unit health.
@@ -115,10 +121,13 @@ async function ensureProjectFilesTableExists(): Promise<void> {
 // Pre-create middleware instances (avoid re-instantiating on every request)
 const secureHeadersMw = secureHeaders();
 // Rate limit is env-configurable so operators can tune for their workload
-// without redeploying source. Defaults: 200 req/min/key, sliding 60s window.
-// Set RATE_LIMIT_MAX=0 to disable rate limiting entirely (only do this if
-// you have an upstream rate limiter — Cloudflare, nginx, etc.).
-const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX ?? "200", 10);
+// without redeploying source. **Defaults to OFF (max=0)** because Doable
+// production runs behind Cloudflare Tunnel which already provides DDoS /
+// bot protection upstream — the in-process limiter mostly punishes bursty
+// legit users (OAuth flows, dashboard polls) without adding much defence.
+// To turn it back on for hosts not behind a CDN: set RATE_LIMIT_MAX=200
+// (or any positive integer) in .env.
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX ?? "0", 10);
 const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "60000", 10);
 const apiRateLimiter = rateLimiter({
   windowMs: RATE_LIMIT_WINDOW_MS,
@@ -241,6 +250,14 @@ app.use("*", async (c, next) => {
 //   - /health     : liveness/readiness probes from Docker/K8s/monitoring
 //                   should never rate-limit (Wave 31-D fix)
 //   - /visual-edit-bridge.js : cached but loaded inside every iframe
+//   - /auth/*     : OAuth flows (Google/GitHub) issue many subrequests
+//                   per login (initiate → provider redirect → callback →
+//                   token exchange → user info → frontend bounces). The
+//                   keyGenerator falls back to client IP for unauthed
+//                   requests, so a single user retrying login from one
+//                   tab can blow 200/min. Auth has its own per-flow
+//                   nonce/state checks; rate-limit at upstream (Cloudflare)
+//                   if you need brute-force protection there.
 app.use("*", async (c, next) => {
   const p = c.req.path;
   if (
@@ -249,8 +266,27 @@ app.use("*", async (c, next) => {
     p.startsWith("/preview/") ||
     p.startsWith("/thumbnails/") ||
     p.startsWith("/analytics/") ||
-    p.startsWith("/admin/")
+    p.startsWith("/admin/") ||
+    p.startsWith("/auth/") ||
+    p === "/auth"
   ) {
+    await next();
+    return;
+  }
+  // Localhost bypass — explicit loopback IPs only. Direct localhost dev
+  // connections never set XFF/XRI, so we also bypass when neither header
+  // is present AND we're not in production. Production must always come
+  // through a known proxy that sets XFF, so missing XFF in prod is a
+  // misconfiguration rather than a localhost connection — fail closed.
+  const xff = c.req.header("x-forwarded-for") ?? "";
+  const xri = c.req.header("x-real-ip") ?? "";
+  const firstHop = xff.split(",")[0]?.trim() ?? "";
+  const isLoopback =
+    firstHop === "127.0.0.1" || firstHop === "::1" || firstHop === "localhost" ||
+    xri === "127.0.0.1" || xri === "::1";
+  const isUnannotatedDev =
+    process.env.NODE_ENV !== "production" && firstHop === "" && xri === "";
+  if (isLoopback || isUnannotatedDev) {
     await next();
     return;
   }

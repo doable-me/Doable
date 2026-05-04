@@ -231,18 +231,30 @@ fi  # end CONTAINER_MODE != 1 (Step 1 apt block)
 mkdir -p /data/projects /data/sites
 chmod 0755 /data/projects /data/sites
 
-# ─── Dev sandbox UID pool (chat preview iframes) ────────────
+# ─── Dev sandbox UID pool (chat preview iframes + builds) ───
 # Production (doable-app@.service) uses DynamicUser=yes for runtime
-# isolation. Dev preview servers run BEFORE deploy — separate jail.
-# We pre-create 100 unprivileged users; the API allocates one per
-# project on dev start (services/api/src/runtime/dev-uid-allocator.ts)
-# and wraps the spawn with `setpriv --reuid <uid>` so the dev process
-# (next dev / vite / nuxi / etc.) cannot read the API's .env or other
-# projects' files. Egress is blocked by the nft rule below — Squid at
-# 127.0.0.1:3128 handles npm/PyPI traffic. Idempotent.
-if [ "$CONTAINER_MODE" != "1" ]; then
-  info "Provisioning dev sandbox user pool (doable-dev-1..100, UID 10001..10100)"
-  for i in $(seq 1 100); do
+# isolation. Dev preview servers AND build/publish jobs run as
+# unprivileged UIDs from the range 10001..65000 (~55,000 slots).
+#
+# We pre-create 1000 named users (doable-dev-1..1000) for `ps` ergonomics
+# and `id doable-dev-N` lookups, but the allocator is free to hand out
+# higher numeric UIDs without prior useradd — kernel doesn't require a
+# passwd entry for setpriv --reuid or chown. Auto-scaling without ops.
+#
+# Per-project setpriv wrap lives in:
+#   - services/api/src/projects/vite-jail.ts  (dev preview spawn)
+#   - services/api/src/deploy/builder.ts      (npm install + framework build)
+#
+# Egress is blocked by the nft rule below — Squid at 127.0.0.1:3128 handles
+# npm/PyPI traffic. Idempotent.
+#
+# Runs in BOTH bare-metal AND container mode — Docker secure (Wave 30-D)
+# requires --privileged anyway for systemd PID 1, which is exactly what
+# nftables needs to install rules. The `nft` apt package is installed
+# below (also added to Dockerfile.secure's apt list).
+if true; then
+  info "Provisioning dev sandbox user pool (doable-dev-1..1000 named, UID range 10001..65000)"
+  for i in $(seq 1 1000); do
     uid=$((10000 + i))
     user="doable-dev-$i"
     if ! id "$user" &>/dev/null; then
@@ -251,11 +263,11 @@ if [ "$CONTAINER_MODE" != "1" ]; then
     fi
   done
 
-  info "Installing nft egress firewall for dev sandbox pool"
+  info "Installing nft egress firewall for dev sandbox pool (skuid 10001-65000)"
   apt-get install -y nftables >/dev/null 2>&1 || true
   mkdir -p /etc/nftables.d
 
-  # Drop-in: block all egress from UID range 10001-10100 except loopback.
+  # Drop-in: block all egress from UID range 10001-65000 except loopback.
   # Squid listens on 127.0.0.1:3128, so npm/PyPI traffic still works via
   # the proxy when packages are installed inside the dev sandbox.
   cat > /etc/nftables.d/doable-dev.nft << 'NFTEOF'
@@ -263,7 +275,7 @@ table inet doable_dev {
   chain output {
     type filter hook output priority 0; policy accept;
     oif "lo" accept
-    meta skuid 10001-10100 drop
+    meta skuid 10001-65000 drop
   }
 }
 NFTEOF
@@ -277,7 +289,7 @@ NFTEOF
   if ! nft -f /etc/nftables.conf 2>/dev/null; then
     warn "nftables reload failed — dev sandbox egress firewall not active. Check: nft -c -f /etc/nftables.conf"
   else
-    ok "Dev sandbox UID pool (100 users) + nft egress firewall active"
+    ok "Dev sandbox UID pool (1000 named users, UID range 10001-65000) + nft egress firewall active"
   fi
 fi
 

@@ -155,12 +155,36 @@ Connect services and the AI uses them as tools automatically:
 
 ## Security
 
-- All services bind to `127.0.0.1` only — no public ports exposed
-- Credentials encrypted at rest with `ENCRYPTION_KEY`
-- Non-root containers in Docker mode
-- Sandboxed code execution via `dovault`
-- Row-level security for multi-tenant isolation
-- See [SECURITY.md](SECURITY.md) for vulnerability reporting
+Doable runs untrusted AI-generated user code on a shared host. The
+sandbox is layered and **on by default** — `setup-server.sh` and
+`docker-compose.secure.yml` provision every primitive automatically:
+
+- **Per-project Linux UID** for every dev preview AND build/publish
+  (UIDs 10001–65000, auto-scaling, ~55,000 slots). `setpriv` drops
+  privileges before `next dev` / `npm install` / `next build` exec —
+  malicious npm `postinstall` scripts cannot run as root.
+- **`nft` egress firewall** — kernel drops all outbound from sandbox
+  UIDs except loopback. npm/PyPI traffic flows through a Squid proxy
+  on `127.0.0.1:3128` with an operator-supplied allow-list.
+- **`DynamicUser=yes`** + `PrivateUsers`, `ProtectKernel*`,
+  `SystemCallFilter`, `RestrictAddressFamilies` on production runtime
+  units (`doable-app@.service`).
+- **Optional seccomp** for dev (`DOABLE_DEV_SECCOMP=on`) — kernel
+  syscall deny-list on top of UID drop.
+- **All services bind `127.0.0.1`** — no public ports. External access
+  via Cloudflare Tunnel only.
+- **Credentials encrypted at rest** with `ENCRYPTION_KEY`. Per-user
+  vault for OAuth tokens / integration secrets.
+- **Idle eviction** — dev previews get killed after 15 min idle to
+  bound multi-tenant memory.
+- **Idempotent installer** — re-run `setup-server.sh` on existing
+  hosts to backfill missing primitives without breaking state.
+
+See [README-DEPLOY.md §7 + §13](README-DEPLOY.md) for the full security
+model, including the Docker-secure parity story and an operator-lever
+cheatsheet (every env var, default, and when to flip it).
+
+Vulnerability reports → [SECURITY.md](SECURITY.md).
 
 ---
 

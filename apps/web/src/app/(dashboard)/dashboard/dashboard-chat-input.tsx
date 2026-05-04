@@ -25,16 +25,13 @@ import {
 import type { ImageAttachment } from "@/hooks/use-image-attachments";
 import { useTypingPlaceholder } from "./dashboard-hooks";
 
+// Mirrors `services/api/src/frameworks/init.ts:DEFAULT_ENABLED`. The 6
+// other framework adapters were removed; backups are at
+// ~/Documents/doable-disabled-frameworks-backup-<date>/.
 const FRAMEWORK_OPTIONS: { id: string; label: string; icon: LucideIcon; color: string }[] = [
   { id: "", label: "Auto-detect", icon: Wand2, color: "text-violet-400 dark:text-violet-400" },
   { id: "vite-react", label: "React (Vite)", icon: Atom, color: "text-cyan-500 dark:text-cyan-400" },
   { id: "nextjs-app", label: "Next.js", icon: Globe, color: "text-gray-800 dark:text-white" },
-  { id: "sveltekit", label: "SvelteKit", icon: Hexagon, color: "text-orange-500 dark:text-orange-400" },
-  { id: "nuxt", label: "Nuxt", icon: Layers, color: "text-green-600 dark:text-green-400" },
-  { id: "astro", label: "Astro", icon: Wind, color: "text-purple-500 dark:text-purple-400" },
-  { id: "hono", label: "Hono", icon: Zap, color: "text-orange-500 dark:text-orange-300" },
-  { id: "fastapi", label: "FastAPI", icon: Server, color: "text-emerald-600 dark:text-emerald-400" },
-  { id: "django", label: "Django", icon: Code2, color: "text-green-700 dark:text-green-300" },
 ];
 
 export function ChatInput({

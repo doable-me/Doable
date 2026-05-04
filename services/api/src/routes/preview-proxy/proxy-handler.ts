@@ -4,6 +4,7 @@ import {
   getDevServerInternalUrlWhenReady,
   startDevServer,
   isRunning,
+  touchActivity,
 } from "../../projects/dev-server.js";
 import { isProjectScaffolded, ensureDependencies } from "../../projects/file-manager.js";
 import { VISUAL_EDIT_BRIDGE_INLINE } from "../../visual-edit-bridge-inline.js";
@@ -168,6 +169,12 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       "Cache-Control": "no-store",
     });
   }
+
+  // Mark this dev server as recently active so the idle-eviction sweeper
+  // (dev-server-core.ts) doesn't kill it. Cheap (Date.now write) and runs
+  // on every proxied subrequest — HTML, JS chunks, CSS, HMR pings — so any
+  // user with the iframe in view keeps the session warm.
+  touchActivity(projectId);
 
   const originalPath = c.req.path;
   const targetUrl = `${devUrl}${originalPath}`;

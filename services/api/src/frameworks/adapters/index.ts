@@ -1,12 +1,6 @@
 import type { FrameworkPack } from "../types.js";
 import { viteReactAdapter } from "./vite-react.js";
 import { nextjsAppAdapter } from "./nextjs-app.js";
-import { nuxtAdapter } from "./nuxt.js";
-import { sveltekitAdapter } from "./sveltekit.js";
-import { astroAdapter } from "./astro.js";
-import { djangoAdapter } from "./django.js";
-import { fastapiAdapter } from "./fastapi.js";
-import { honoAdapter } from "./hono.js";
 
 /**
  * Per-adapter framework pack — pure derivation from the adapter's static
@@ -15,6 +9,12 @@ import { honoAdapter } from "./hono.js";
  * we synthesize the pack here rather than duplicating the literals in the
  * adapter file. Canonical pattern: each adapter file exports its `*Adapter`
  * constant; this barrel derives the matching `*Pack` alongside.
+ *
+ * Currently shipping: vite-react, nextjs-app. The 6 other adapters
+ * (nuxt, sveltekit, astro, django, fastapi, hono) were deleted along with
+ * their templates and AI prompt files; see
+ * `~/Documents/doable-disabled-frameworks-backup-<date>/` for the
+ * removed sources if you ever need to bring them back.
  */
 function packFromAdapter(adapter: { id: string; family: FrameworkPack["family"]; displayName: string; capabilities: FrameworkPack["capabilities"]; defaults: FrameworkPack["defaults"] }): FrameworkPack {
   return {
@@ -28,20 +28,8 @@ function packFromAdapter(adapter: { id: string; family: FrameworkPack["family"];
 
 export const viteReactPack: FrameworkPack = packFromAdapter(viteReactAdapter);
 export const nextjsAppPack: FrameworkPack = packFromAdapter(nextjsAppAdapter);
-export const nuxtPack: FrameworkPack = packFromAdapter(nuxtAdapter);
-export const sveltekitPack: FrameworkPack = packFromAdapter(sveltekitAdapter);
-export const astroPack: FrameworkPack = packFromAdapter(astroAdapter);
-export const djangoPack: FrameworkPack = packFromAdapter(djangoAdapter);
-export const fastapiPack: FrameworkPack = packFromAdapter(fastapiAdapter);
-export const honoPack: FrameworkPack = packFromAdapter(honoAdapter);
 
 export {
   viteReactAdapter,
   nextjsAppAdapter,
-  nuxtAdapter,
-  sveltekitAdapter,
-  astroAdapter,
-  djangoAdapter,
-  fastapiAdapter,
-  honoAdapter,
 };

@@ -37,16 +37,13 @@ import type {
 } from "@/lib/api";
 import { apiGetAiDefaults, apiUpdateAiDefaults } from "@/lib/api";
 
+// Mirrors `services/api/src/frameworks/init.ts:DEFAULT_ENABLED`. The 6
+// other framework adapters were removed; backups are at
+// ~/Documents/doable-disabled-frameworks-backup-<date>/.
 const FRAMEWORK_OPTIONS = [
   { id: "", label: "No default (let users choose)" },
   { id: "vite-react", label: "React (Vite)" },
   { id: "nextjs-app", label: "Next.js" },
-  { id: "sveltekit", label: "SvelteKit" },
-  { id: "nuxt", label: "Nuxt" },
-  { id: "astro", label: "Astro" },
-  { id: "hono", label: "Hono" },
-  { id: "fastapi", label: "FastAPI" },
-  { id: "django", label: "Django" },
 ] as const;
 
 function DefaultFrameworkSection({ workspaceId, isAdmin }: { workspaceId: string; isAdmin: boolean }) {

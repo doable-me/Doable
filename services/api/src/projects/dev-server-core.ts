@@ -12,6 +12,21 @@ export const PORT_RANGE_END = 3200;
 export const DEV_SERVER_HOST = process.env.DEV_SERVER_HOST ?? "127.0.0.1";
 export const STARTUP_TIMEOUT_MS = 90_000;
 
+// Idle dev servers eat ~666 MB each (next-server + launcher). Sweep every
+// 5 minutes; kill any server with no preview-proxy traffic for IDLE_MS.
+// Defaults: enabled, 15-minute idle timeout. Set DEV_SERVER_IDLE_MS=0 to
+// disable. Lower it for tight memory budgets, raise it for laptops where
+// devs leave previews open all day. Each touch from the preview-proxy
+// resets the timer (touchActivity below).
+export const DEV_SERVER_IDLE_MS = parseInt(
+  process.env.DEV_SERVER_IDLE_MS ?? String(15 * 60 * 1000),
+  10,
+);
+export const DEV_SERVER_SWEEP_INTERVAL_MS = parseInt(
+  process.env.DEV_SERVER_SWEEP_INTERVAL_MS ?? String(5 * 60 * 1000),
+  10,
+);
+
 // ─── Types ───────────────────────────────────────────────
 
 export interface DevServerInstance {
@@ -20,6 +35,8 @@ export interface DevServerInstance {
   process: ChildProcess;
   url: string;
   startedAt: Date;
+  /** Last preview-proxy hit (touchActivity). Drives idle eviction. */
+  lastActivityAt: Date;
   ready: boolean;
   readyPromise: Promise<void>;
 }
@@ -111,6 +128,72 @@ export function cleanup(projectId: string): void {
     releasePort(instance.port);
     servers.delete(projectId);
   }
+}
+
+// ─── Idle eviction ───────────────────────────────────────
+
+/**
+ * Mark project as recently active. Called by the preview-proxy on every
+ * proxied request so idle eviction can use real foreground traffic
+ * (not just process aliveness) as the keep-alive signal.
+ */
+export function touchActivity(projectId: string): void {
+  const inst = servers.get(projectId);
+  if (inst) inst.lastActivityAt = new Date();
+}
+
+/**
+ * Kill any dev server with no preview-proxy hit for DEV_SERVER_IDLE_MS.
+ * Returns the projectIds that were swept so callers (admin views, tests)
+ * can audit what happened.
+ */
+export function sweepIdleDevServers(now: number = Date.now()): string[] {
+  if (DEV_SERVER_IDLE_MS <= 0) return [];
+  const swept: string[] = [];
+  for (const [projectId, inst] of servers) {
+    const idleFor = now - inst.lastActivityAt.getTime();
+    if (idleFor < DEV_SERVER_IDLE_MS) continue;
+    if (inst.process.exitCode !== null) continue; // already dead
+    try {
+      inst.process.kill();
+    } catch {
+      /* swallow — close handler will still fire and call cleanup */
+    }
+    swept.push(projectId);
+    console.log(
+      `[DevServer] idle-evict project=${projectId} idle=${Math.round(idleFor / 1000)}s pid=${inst.process.pid}`,
+    );
+  }
+  return swept;
+}
+
+let sweeperTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Start the periodic idle sweeper. Idempotent — calling twice is a no-op.
+ * Wired from `index.ts` once at API boot. Sweeper runs every
+ * DEV_SERVER_SWEEP_INTERVAL_MS (default 5 min); .unref() lets the process
+ * exit naturally without waiting for the next tick.
+ */
+export function startIdleEvictionSweeper(): void {
+  if (sweeperTimer) return;
+  if (DEV_SERVER_IDLE_MS <= 0) {
+    console.log(`[DevServer] idle eviction disabled (DEV_SERVER_IDLE_MS=0)`);
+    return;
+  }
+  sweeperTimer = setInterval(() => {
+    try {
+      sweepIdleDevServers();
+    } catch (err) {
+      console.warn(`[DevServer] sweepIdleDevServers failed:`, err);
+    }
+  }, DEV_SERVER_SWEEP_INTERVAL_MS);
+  sweeperTimer.unref();
+  console.log(
+    `[DevServer] idle eviction enabled: sweep every ${Math.round(
+      DEV_SERVER_SWEEP_INTERVAL_MS / 1000,
+    )}s, kill after ${Math.round(DEV_SERVER_IDLE_MS / 1000)}s idle`,
+  );
 }
 
 // ─── Admin snapshot ──────────────────────────────────────

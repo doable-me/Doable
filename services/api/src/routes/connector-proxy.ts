@@ -1,35 +1,46 @@
 /**
  * Connector-bridge proxy.
  *
- * Per devframeworkPRD/10-connector-bridge.md.
+ * Per devframeworkPRD/10-connector-bridge.md + secureIntegrationsPRD.
  *
- * Endpoint:
+ * Endpoints:
  *   POST /__doable/connector-proxy/:integration/:action
- *   Authorization: Bearer <project-scoped JWT>
- *   Content-Type: application/json
- *   { "props": { ...action params... } }
+ *   GET  /__doable/connector-proxy/available
  *
- * Lets static-kind generated apps (Vite SPAs, Astro static) reach
- * connected integrations without ever holding the raw secret. The proxy
- * resolves a project-scoped JWT, checks the project's allowlist, decrypts
- * vault credentials server-side, and runs the same Activepieces action
- * the AI tool bridge already uses.
+ * Auth: Bearer <project-scoped JWT> OR Bearer <project API key (dpk_*)>
  *
- * Threat-model summary:
- *   - JWT has 15-min lifetime, signed with the per-project secret.
- *   - .doable/connector-allowlist.json is deny-default; a generated app
- *     can only call (integration, action) pairs the allowlist explicitly
- *     opts in. AI populates the allowlist as it generates code.
- *   - Per-project rate limiting (in-memory, Map<projectId, count+windowStart>).
- *   - Every call writes a row to connector_audit (status: ok/denied/error).
+ * Lets generated apps (Vite SPAs, Next.js) reach connected integrations
+ * without ever holding the raw secret. The proxy validates auth, resolves
+ * per-user/workspace credentials from the vault, decrypts server-side, and
+ * runs the Activepieces action.
+ *
+ * Multi-user isolation:
+ *   - Each JWT carries the userId who owns the preview session.
+ *   - credentialVault.get() resolves that user's connection (or falls
+ *     back to workspace-level), so concurrent users with different
+ *     Slack workspaces / Stripe accounts get their own credentials.
+ *   - API keys are scoped to a project; deployed apps use the credential
+ *     of the user who connected the integration (workspace-level fallback).
+ *
+ * Security:
+ *   - JWT: 15-min lifetime, signed with PROJECT_JWT_SECRET.
+ *   - API Key: SHA-256 hashed in DB; plaintext shown once at creation.
+ *   - Allowlist: .doable/connector-allowlist.json is checked when present.
+ *     If absent AND the integration has an active vault connection, the
+ *     call is allowed (connected = permitted for SDK callers).
+ *   - Per-project rate limiting (in-memory sliding window).
+ *   - Every call writes a row to connector_audit.
  */
 
 import { Hono, type Context } from "hono";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { createHash, randomBytes } from "node:crypto";
 
 import { sql } from "../db/index.js";
-import { runAction } from "../integrations/runner.js";
+import { runAction, getIntegrationActions } from "../integrations/runner.js";
+import { credentialVault } from "../integrations/credential-vault.js";
+import { getIntegration } from "../integrations/registry/index.js";
 import { verifyProjectJwt } from "../auth/project-jwt.js";
 import { getProjectPath } from "../projects/file-manager.js";
 
@@ -38,7 +49,8 @@ export const connectorProxyRoutes = new Hono();
 // ─── Config ─────────────────────────────────────────────
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX = 600; // per project per minute
+const RATE_LIMIT_MAX_JWT = 600;     // per project per minute (preview)
+const RATE_LIMIT_MAX_API_KEY = 1200; // per project per minute (deployed, server key)
 
 const PROJECT_JWT_SECRET =
   process.env.PROJECT_JWT_SECRET ??
@@ -55,12 +67,127 @@ const rateBuckets = new Map<string, RateBucket>();
 
 interface AllowlistCache {
   loadedAt: number;
-  entries: Set<string>; // "{integration}:{action}"
+  entries: Set<string> | null; // null = no file (allow all connected)
 }
 const allowlistCache = new Map<string, AllowlistCache>();
 const ALLOWLIST_TTL_MS = 30_000;
 
-// ─── Endpoint ───────────────────────────────────────────
+// ─── Auth resolution ────────────────────────────────────
+
+interface ResolvedAuth {
+  projectId: string;
+  workspaceId: string;
+  userId: string;
+  authMode: "jwt" | "api-key";
+  rateLimit: number;
+}
+
+async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> {
+  const auth = c.req.header("authorization");
+  if (!auth?.startsWith("Bearer ")) {
+    return jsonError(c, 401, "UNAUTHORIZED", "Missing Authorization: Bearer <token>");
+  }
+
+  const token = auth.slice(7);
+
+  // ── API Key path (dpk_*) ──
+  if (token.startsWith("dpk_")) {
+    const keyHash = createHash("sha256").update(token).digest("hex");
+    const [row] = await sql`
+      SELECT pak.project_id, pak.tier, pak.created_by,
+             p.workspace_id
+      FROM project_api_keys pak
+      JOIN projects p ON p.id = pak.project_id
+      WHERE pak.key_hash = ${keyHash}
+        AND pak.revoked_at IS NULL
+      LIMIT 1
+    `;
+    if (!row) {
+      return jsonError(c, 401, "UNAUTHORIZED", "Invalid API key");
+    }
+
+    // Touch last_used_at (fire-and-forget)
+    sql`UPDATE project_api_keys SET last_used_at = now() WHERE key_hash = ${keyHash}`.catch(() => {});
+
+    return {
+      projectId: row.project_id as string,
+      workspaceId: row.workspace_id as string,
+      userId: row.created_by as string, // credentials resolved for the key creator
+      authMode: "api-key",
+      rateLimit: row.tier === "server" ? RATE_LIMIT_MAX_API_KEY : RATE_LIMIT_MAX_JWT,
+    };
+  }
+
+  // ── JWT path ──
+  try {
+    const claims = await verifyProjectJwt(token, PROJECT_JWT_SECRET);
+    if (claims.kind !== "connector-proxy") {
+      return jsonError(c, 401, "UNAUTHORIZED", "Wrong JWT kind");
+    }
+    return {
+      projectId: claims.projectId,
+      workspaceId: claims.workspaceId,
+      userId: claims.userId ?? "",
+      authMode: "jwt",
+      rateLimit: RATE_LIMIT_MAX_JWT,
+    };
+  } catch (err) {
+    return jsonError(c, 401, "UNAUTHORIZED", "Invalid or expired token");
+  }
+}
+
+// ─── Discovery endpoint ─────────────────────────────────
+
+connectorProxyRoutes.get(
+  "/__doable/connector-proxy/available",
+  async (c) => {
+    const authResult = await resolveAuth(c);
+    if (authResult instanceof Response) return authResult;
+    const { workspaceId, projectId, userId } = authResult;
+
+    // Get all active connections for this scope
+    const connections = await credentialVault.getEffective(workspaceId, projectId, userId);
+
+    // Dedupe by integration_id (highest-priority first)
+    const seen = new Set<string>();
+    const integrations: Array<{
+      id: string;
+      displayName: string;
+      actions: Array<{ name: string; displayName: string; description: string }>;
+    }> = [];
+
+    for (const conn of connections) {
+      if (seen.has(conn.integration_id)) continue;
+      seen.add(conn.integration_id);
+
+      const def = getIntegration(conn.integration_id);
+      if (!def) continue;
+
+      // Get available actions for this integration
+      let actions: Array<{ name: string; displayName: string; description: string }> = [];
+      try {
+        const actionList = await getIntegrationActions(conn.integration_id);
+        actions = actionList.map((a) => ({
+          name: a.name,
+          displayName: a.displayName ?? a.name,
+          description: a.description ?? "",
+        }));
+      } catch {
+        // Some integrations may fail to load — skip actions
+      }
+
+      integrations.push({
+        id: conn.integration_id,
+        displayName: def.displayName ?? conn.integration_id,
+        actions,
+      });
+    }
+
+    return c.json({ integrations });
+  },
+);
+
+// ─── Main proxy endpoint ────────────────────────────────
 
 connectorProxyRoutes.post(
   "/__doable/connector-proxy/:integration/:action",
@@ -69,37 +196,35 @@ connectorProxyRoutes.post(
     const integration = c.req.param("integration");
     const action = c.req.param("action");
 
-    // 1. Verify JWT.
-    const auth = c.req.header("authorization");
-    if (!auth?.startsWith("Bearer ")) {
-      return jsonError(c, 401, "missing-bearer");
-    }
-    let claims;
-    try {
-      claims = await verifyProjectJwt(auth.slice(7), PROJECT_JWT_SECRET);
-    } catch (err) {
-      return jsonError(c, 401, "jwt-invalid", String(err));
-    }
-    if (claims.kind !== "connector-proxy") {
-      return jsonError(c, 401, "wrong-jwt-kind");
-    }
+    // 1. Authenticate (JWT or API key)
+    const authResult = await resolveAuth(c);
+    if (authResult instanceof Response) return authResult;
+    const { projectId, workspaceId, userId, authMode, rateLimit } = authResult;
 
-    const { projectId, workspaceId, userId } = claims;
-
-    // 2. Rate limit per project.
-    if (!rateLimitOk(projectId)) {
+    // 2. Rate limit per project
+    if (!rateLimitOk(projectId, rateLimit)) {
       await audit(projectId, integration, action, userId, "denied", Date.now() - t0);
-      return jsonError(c, 429, "rate-limited");
+      return jsonError(c, 429, "RATE_LIMITED", "Too many requests. Try again shortly.");
     }
 
-    // 3. Allowlist check.
+    // 3. Allowlist check (if file exists) — otherwise allow any connected integration
     const allowed = await loadAllowlist(projectId);
-    if (!allowed.has(`${integration}:${action}`)) {
+    if (allowed !== null && !allowed.has(`${integration}:${action}`)) {
+      // Allowlist exists but doesn't include this action — check if integration is connected
+      // (backwards-compat: if allowlist is present, respect it strictly)
       await audit(projectId, integration, action, userId, "denied", Date.now() - t0);
-      return jsonError(c, 403, "not-in-allowlist", `add ${integration}:${action} to .doable/connector-allowlist.json`);
+      return jsonError(c, 403, "NOT_IN_ALLOWLIST", `Action ${integration}:${action} not in allowlist`);
     }
 
-    // 4. Run the action through the same path the AI tool bridge uses.
+    // 4. Verify integration is connected (vault has credentials for this user/workspace)
+    const connection = await credentialVault.get(userId, integration, workspaceId, projectId);
+    if (!connection) {
+      await audit(projectId, integration, action, userId, "denied", Date.now() - t0);
+      return jsonError(c, 403, "INTEGRATION_NOT_CONNECTED",
+        `${integration} is not connected. Connect it in Settings → Integrations.`);
+    }
+
+    // 5. Parse request body
     let body: { props?: Record<string, unknown> } = {};
     try {
       body = (await c.req.json()) as { props?: Record<string, unknown> };
@@ -108,28 +233,65 @@ connectorProxyRoutes.post(
     }
     const props = body.props ?? {};
 
+    // 6. Execute via the same runAction engine AI tools use.
+    //    Each concurrent call resolves its own credentials from the vault
+    //    based on the authenticated userId — full user isolation.
     try {
       const result = await runAction({
         integrationId: integration,
         actionName: action,
         props,
-        userId: userId ?? "",
+        userId,
         workspaceId,
         projectId,
       });
+
+      const durationMs = Date.now() - t0;
       const status = result.success ? "ok" : "error";
-      await audit(projectId, integration, action, userId, status, Date.now() - t0);
-      return c.json(result);
+      await audit(projectId, integration, action, userId, status, durationMs);
+
+      // Return normalized response
+      return c.json({
+        success: result.success,
+        data: result.success ? result.output : null,
+        error: result.success ? undefined : { code: "EXECUTION_FAILED", message: result.error ?? "Action failed" },
+        meta: { integrationId: integration, actionName: action, durationMs },
+      });
     } catch (err) {
-      await audit(projectId, integration, action, userId, "error", Date.now() - t0);
-      return jsonError(c, 500, "execution-error", err instanceof Error ? err.message : "unknown");
+      const durationMs = Date.now() - t0;
+      await audit(projectId, integration, action, userId, "error", durationMs);
+      return jsonError(c, 500, "EXECUTION_ERROR", err instanceof Error ? err.message : "Unknown error");
     }
   },
 );
 
+// ─── CORS preflight ─────────────────────────────────────
+
+connectorProxyRoutes.options("/__doable/connector-proxy/*", (c) => {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type, authorization, x-doable-project-id",
+      "Access-Control-Max-Age": "86400",
+    },
+  });
+});
+
+// ─── API Key Management Helpers (exported for routes) ───
+
+export function generateProjectApiKey(tier: "client" | "server"): { key: string; hash: string; prefix: string } {
+  const random = randomBytes(24).toString("base64url"); // 32 chars
+  const prefix = tier === "server" ? "dpk_s_" : "dpk_c_";
+  const key = `${prefix}${random}`;
+  const hash = createHash("sha256").update(key).digest("hex");
+  return { key, hash, prefix: key.slice(0, 8) };
+}
+
 // ─── Helpers ────────────────────────────────────────────
 
-function rateLimitOk(projectId: string): boolean {
+function rateLimitOk(projectId: string, max: number): boolean {
   const now = Date.now();
   const bucket = rateBuckets.get(projectId);
   if (!bucket || now - bucket.windowStart > RATE_LIMIT_WINDOW_MS) {
@@ -137,10 +299,15 @@ function rateLimitOk(projectId: string): boolean {
     return true;
   }
   bucket.count += 1;
-  return bucket.count <= RATE_LIMIT_MAX;
+  return bucket.count <= max;
 }
 
-async function loadAllowlist(projectId: string): Promise<Set<string>> {
+/**
+ * Load allowlist. Returns null if the file doesn't exist (meaning:
+ * allow all connected integrations). Returns a Set if the file exists
+ * (strict mode: only listed pairs are allowed).
+ */
+async function loadAllowlist(projectId: string): Promise<Set<string> | null> {
   const now = Date.now();
   const cached = allowlistCache.get(projectId);
   if (cached && now - cached.loadedAt < ALLOWLIST_TTL_MS) {
@@ -148,12 +315,13 @@ async function loadAllowlist(projectId: string): Promise<Set<string>> {
   }
 
   const file = path.join(getProjectPath(projectId), ".doable", "connector-allowlist.json");
-  let entries = new Set<string>();
+  let entries: Set<string> | null = null;
   try {
     const raw = await readFile(file, "utf-8");
     const parsed = JSON.parse(raw) as
       | { allow?: Array<{ integration: string; action: string }> }
       | undefined;
+    entries = new Set<string>();
     if (parsed?.allow && Array.isArray(parsed.allow)) {
       for (const e of parsed.allow) {
         if (typeof e?.integration === "string" && typeof e?.action === "string") {
@@ -162,7 +330,8 @@ async function loadAllowlist(projectId: string): Promise<Set<string>> {
       }
     }
   } catch {
-    // Missing file = deny all (the deny-default contract).
+    // Missing file = allow all connected integrations (no allowlist restriction)
+    entries = null;
   }
 
   allowlistCache.set(projectId, { loadedAt: now, entries });
@@ -194,5 +363,8 @@ function jsonError(
   code: string,
   detail?: string,
 ) {
-  return c.json({ error: { code, detail } }, status as never);
+  return c.json(
+    { success: false, error: { code, message: detail ?? code } },
+    status as never,
+  );
 }

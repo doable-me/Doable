@@ -1,105 +1,120 @@
-# Calling Connectors from a Next.js App
+# Calling Connected Integrations from a Next.js App
 
-A Next.js project has a server runtime, so it does NOT need the
-`/__doable/connector-proxy/*` bridge. That path exists only for static
-SPAs (Vite, plain React) that cannot hold secrets. In Next.js you call
-the third-party API directly from server code, using `process.env`.
+Use `@doable/sdk` to call connected integrations. The SDK proxies calls
+through a secure server-side bridge — credentials never reach the browser.
+Each user's own configured integration credentials are used (workspace/project scoped).
 
-There are two common patterns.
+Add to `package.json` dependencies:
+```json
+{ "@doable/sdk": "workspace:*" }
+```
 
-## Pattern 1 — Server-only call
-
-Use this for anything triggered by a server action, route handler, or
-server component. You read `process.env.X` directly and call the SDK.
+## Pattern 1 — Server Actions (PREFERRED for mutations)
 
 ```ts
 // app/actions/notify.ts
 'use server';
 
-import { WebClient } from '@slack/web-api';
+import { createServerClient } from "@doable/sdk/server";
 
-const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+const doable = createServerClient();
 
-export async function notify(text: string) {
-  await slack.chat.postMessage({
-    channel: process.env.SLACK_CHANNEL_ID!,
+export async function notifySlack(channel: string, text: string) {
+  const result = await doable.integrations.run("slack", "send_channel_message", {
+    channel,
     text,
   });
+  if (!result.success) throw new Error(result.error?.message);
+  return result.data;
 }
 ```
 
-The client component imports `notify` and calls it. The Slack token never
-leaves the server.
+The client component imports `notifySlack` and calls it. The Slack token never
+leaves the Doable API server.
 
-## Pattern 2 — Client component needs to call a connector
-
-You CAN'T import the SDK or read the secret in the browser. Instead,
-generate a thin route handler that proxies the call server-side, then have
-the client `fetch` your own route handler.
-
-`app/api/slack/notify/route.ts`:
+## Pattern 2 — Server Components (data fetching)
 
 ```ts
-import { NextResponse } from 'next/server';
-import { WebClient } from '@slack/web-api';
+// app/dashboard/page.tsx (Server Component)
+import { createServerClient } from "@doable/sdk/server";
 
-const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+const doable = createServerClient();
 
-export async function POST(req: Request) {
-  const { text } = (await req.json()) as { text?: string };
-  if (!text) {
-    return NextResponse.json({ ok: false, error: 'text required' }, { status: 400 });
-  }
-  await slack.chat.postMessage({
-    channel: process.env.SLACK_CHANNEL_ID!,
-    text,
-  });
-  return NextResponse.json({ ok: true });
+export default async function DashboardPage() {
+  const channels = await doable.integrations.run("slack", "list_channels", {});
+  return (
+    <ul>
+      {channels.data?.channels?.map((ch: any) => (
+        <li key={ch.id}>{ch.name}</li>
+      ))}
+    </ul>
+  );
 }
 ```
 
-`components/notify-button.tsx`:
+## Pattern 3 — Client Components (interactive UI)
+
+For client components that need to call integrations directly:
 
 ```tsx
 'use client';
 
-import useSWRMutation from 'swr/mutation';
-
-async function postNotify(url: string, { arg }: { arg: { text: string } }) {
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(arg),
-  });
-  return r.json();
-}
+import { useIntegration } from "@doable/sdk/react";
 
 export function NotifyButton() {
-  const { trigger, isMutating } = useSWRMutation('/api/slack/notify', postNotify);
+  const slack = useIntegration("slack", "send_channel_message");
+
   return (
-    <button onClick={() => trigger({ text: 'hello from the client' })} disabled={isMutating}>
-      Notify
+    <button
+      onClick={() => slack.run({ channel: "#general", text: "Hello!" })}
+      disabled={slack.loading}
+    >
+      {slack.loading ? "Sending..." : "Notify Slack"}
     </button>
   );
 }
 ```
 
-## Do NOT use the connector-proxy bridge
+## Pattern 4 — Route Handlers (for webhooks / external callbacks)
 
-```
-// WRONG in a Next.js project — that path is for static SPAs
-fetch('/__doable/connector-proxy/slack/post-message', ...)
+```ts
+// app/api/webhook/route.ts
+import { createServerClient } from "@doable/sdk/server";
+import { NextResponse } from "next/server";
+
+const doable = createServerClient();
+
+export async function POST(req: Request) {
+  const body = await req.json();
+  await doable.integrations.run("slack", "send_channel_message", {
+    channel: "#alerts",
+    text: `Webhook received: ${body.event}`,
+  });
+  return NextResponse.json({ ok: true });
+}
 ```
 
-The bridge is mounted by Caddy in front of published static previews. A
-Next.js project owns its own server, so it serves its own route handlers
-and reads its own env vars. Going through the bridge would add an
-unnecessary hop and a JWT round-trip you don't need.
+## Auth — handled automatically
+
+- **Server-side** (`createServerClient()`): Uses `DOABLE_PROJECT_KEY` env var (auto-provisioned)
+- **Client-side** (`useIntegration()`): Token arrives via postMessage from Doable editor in preview,
+  or uses `NEXT_PUBLIC_DOABLE_PROJECT_KEY` when deployed
+
+## Response shape
+
+```ts
+interface IntegrationCallResult<T> {
+  success: boolean;
+  data: T | null;
+  error: { code: string; message: string } | null;
+  meta: { integrationId: string; actionName: string; durationMs: number } | null;
+}
+```
 
 ## Checklist
 
-1. Decide: is the call triggered server-side (action / handler) or
-   client-side (button click in a `'use client'` component)?
-2. Server-side → Pattern 1.
-3. Client-side → Pattern 2 (route handler + fetch).
-4. Secrets go in `.env.local` as `process.env.X` — never `NEXT_PUBLIC_X`.
+1. Confirm the integration is connected (check `<connected-integrations>` block).
+2. Add `@doable/sdk` to package.json: `"@doable/sdk": "workspace:*"`.
+3. Server-side calls → `createServerClient()` from `@doable/sdk/server`.
+4. Client-side calls → `useIntegration()` from `@doable/sdk/react`.
+5. Always handle `result.success === false` — the user may have revoked the connection.

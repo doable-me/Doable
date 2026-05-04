@@ -2,13 +2,16 @@
  * Heuristic framework detection from a free-form user prompt.
  *
  * Used when the user creates a project via the dashboard prompt box and does
- * NOT explicitly pick a framework. Lets a prompt like "build me a Django blog"
- * land on the django adapter without forcing the user through a picker.
+ * NOT explicitly pick a framework. Currently returns either "nextjs-app" or
+ * "vite-react" (or null = use admin default), matching the only two
+ * registered frameworks. The 6 disabled frameworks (sveltekit, nuxt, astro,
+ * django, fastapi, hono) were removed; if a prompt mentions one of them, we
+ * return null so the picker / admin default decides.
  *
  * Returns null when:
  *   - the prompt has no clear framework signal, OR
  *   - two strong signals from different frameworks both appear (e.g.
- *     "Next.js or Nuxt — your call") — ambiguous, defer to admin default.
+ *     "Next.js or Vite — your call") — ambiguous, defer to admin default.
  */
 
 interface FrameworkPattern {
@@ -31,30 +34,6 @@ const STRONG: FrameworkPattern[] = [
     ],
   },
   {
-    id: "sveltekit",
-    patterns: [/\bsvelte[\s-]?kit\b/i],
-  },
-  {
-    id: "nuxt",
-    patterns: [/\bnuxt(?:\s*[34])?\b/i],
-  },
-  {
-    id: "astro",
-    patterns: [/\bastro\b/i],
-  },
-  {
-    id: "django",
-    patterns: [/\bdjango\b/i],
-  },
-  {
-    id: "fastapi",
-    patterns: [/\bfast[\s-]?api\b/i],
-  },
-  {
-    id: "hono",
-    patterns: [/\bhono\b/i],
-  },
-  {
     id: "vite-react",
     // Only the explicit phrase "vite" — bare "react" is too ambiguous (it
     // could mean Next.js, Vite-React, or just the React library).
@@ -62,15 +41,12 @@ const STRONG: FrameworkPattern[] = [
   },
 ];
 
-// Weaker signals only consulted if NO strong signal matched. Keep tight.
-const WEAK: FrameworkPattern[] = [
-  // "vue" / "vue.js" tilts toward Nuxt by default — Vue without a framework
-  // is rare for a "build me an app" prompt.
-  { id: "nuxt", patterns: [/\bvue(?:\.js)?\b/i] },
-  // Bare "svelte" (without "kit") still tilts toward SvelteKit because
-  // standalone Svelte is an unusual "build a full app" choice.
-  { id: "sveltekit", patterns: [/\bsvelte\b(?!\s*[\s-]?kit)/i] },
-];
+// Weaker signals only consulted if NO strong signal matched. Currently
+// none — when only vite-react and nextjs-app are registered, there's
+// no useful weak signal that can disambiguate them. Keep the array empty
+// rather than deleting the whole branch so re-enabling a framework is a
+// matter of pushing entries here.
+const WEAK: FrameworkPattern[] = [];
 
 export function detectFrameworkFromPrompt(prompt: string): string | null {
   if (!prompt || typeof prompt !== "string") return null;

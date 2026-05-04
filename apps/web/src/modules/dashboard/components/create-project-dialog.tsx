@@ -42,15 +42,23 @@ interface CreateProjectDialogProps {
 
 type CreationMode = "blank" | "prompt" | "template";
 
+// Mirrors `services/api/src/frameworks/init.ts:DEFAULT_ENABLED`. Default
+// ships only React (Vite) and Next.js — the two frameworks with the most
+// production mileage. The backend rejects creates for any framework not
+// in DOABLE_ENABLED_FRAMEWORKS, so even if a stale build of this file
+// sent a disabled id, the API guards against it.
+//
+// To re-enable any of the disabled frameworks: uncomment its entry here
+// AND set DOABLE_ENABLED_FRAMEWORKS on the API to include it.
 const FRAMEWORKS = [
   { id: "vite-react", name: "React (Vite)", description: "Client-side SPA", category: "Frontend", icon: Atom, color: "text-cyan-400" },
   { id: "nextjs-app", name: "Next.js", description: "Full-stack React", category: "Full-Stack", icon: Globe, color: "text-white" },
-  { id: "sveltekit", name: "SvelteKit", description: "Full-stack Svelte", category: "Full-Stack", icon: Hexagon, color: "text-orange-400" },
-  { id: "nuxt", name: "Nuxt", description: "Full-stack Vue", category: "Full-Stack", icon: Layers, color: "text-green-400" },
-  { id: "astro", name: "Astro", description: "Content sites", category: "Frontend", icon: Wind, color: "text-purple-400" },
-  { id: "hono", name: "Hono", description: "API server (Node.js)", category: "Backend", icon: Zap, color: "text-orange-300" },
-  { id: "fastapi", name: "FastAPI", description: "API server (Python)", category: "Backend", icon: Server, color: "text-emerald-400" },
-  { id: "django", name: "Django", description: "Full-stack Python", category: "Backend", icon: Code2, color: "text-green-300" },
+  // { id: "sveltekit", name: "SvelteKit", description: "Full-stack Svelte", category: "Full-Stack", icon: Hexagon, color: "text-orange-400" },
+  // { id: "nuxt", name: "Nuxt", description: "Full-stack Vue", category: "Full-Stack", icon: Layers, color: "text-green-400" },
+  // { id: "astro", name: "Astro", description: "Content sites", category: "Frontend", icon: Wind, color: "text-purple-400" },
+  // { id: "hono", name: "Hono", description: "API server (Node.js)", category: "Backend", icon: Zap, color: "text-orange-300" },
+  // { id: "fastapi", name: "FastAPI", description: "API server (Python)", category: "Backend", icon: Server, color: "text-emerald-400" },
+  // { id: "django", name: "Django", description: "Full-stack Python", category: "Backend", icon: Code2, color: "text-green-300" },
 ] as const;
 
 function slugify(text: string): string {

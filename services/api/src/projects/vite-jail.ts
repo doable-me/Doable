@@ -150,13 +150,45 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
     );
   }
 
+  // Optional seccomp filter — gated by DOABLE_DEV_SECCOMP. Default OFF
+  // (preserves debuggability for weird workflows: ptrace, perf, strace).
+  // When ON, wraps the (already-setpriv'd) command inside
+  // `systemd-run --scope --property=SystemCallFilter=...` so the dev
+  // process gets a kernel-level syscall deny-list on top of UID drop.
+  // `--scope` runs in the calling process's context and forwards
+  // stdout/stderr — no journalctl detour, log capture pipeline unchanged.
+  // Layered: cgroup (dovault) > scope (systemd-run + seccomp) > setpriv (uid drop) > next dev.
+  const useSeccomp =
+    process.platform === "linux" &&
+    (process.env.DOABLE_DEV_SECCOMP ?? "off").toLowerCase() === "on";
+  let finalExec = effectiveExec;
+  let finalArgs = effectiveArgs;
+  if (useSeccomp) {
+    const scfDeny = "~@debug @module @mount @raw-io @reboot @swap @privileged";
+    finalExec = "systemd-run";
+    finalArgs = [
+      "--scope",
+      "--quiet",
+      "--collect=yes",
+      `--property=SystemCallFilter=${scfDeny}`,
+      "--property=NoNewPrivileges=yes",
+      "--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+      "--",
+      effectiveExec,
+      ...effectiveArgs,
+    ];
+    console.log(
+      `[vite-jail] seccomp wrap enabled for project=${opts.projectId}`,
+    );
+  }
+
   // Raw-spawn helper — used both by the DOABLE_HARDENING=off short-circuit
   // and by the platform-incompatibility fallback below.
   const rawSpawnFallback = async (): Promise<JailedViteResult> => {
     const { spawn } = await import("node:child_process");
     // On Windows, bare commands like "npx" need shell:true to resolve .cmd extensions.
     // setpriv path is Linux-only so this stays Windows-only.
-    const needsShell = process.platform === "win32" && !effectiveExec.includes("/") && !effectiveExec.includes("\\");
+    const needsShell = process.platform === "win32" && !finalExec.includes("/") && !finalExec.includes("\\");
     // stdio: stdin=ignore prevents Next.js 15 / other dev servers from
     // self-exiting when they detect a piped-but-empty stdin (treated as
     // EOF mid-startup on Windows). stdout/stderr stay piped for log
@@ -165,7 +197,7 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
       opts.stdio === "ignore" ? "ignore"
       : opts.stdio === "inherit" ? "inherit"
       : ["ignore", "pipe", "pipe"];
-    const child = spawn(effectiveExec, effectiveArgs, {
+    const child = spawn(finalExec, finalArgs, {
       cwd: opts.cwd,
       shell: needsShell,
       stdio,
@@ -190,13 +222,14 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
   const vault = getVault();
 
   try {
-    // setpriv wrap (computed above) flows into the vault.spawn path too,
-    // so the dovault cgroup limits + fs jail apply ON TOP of UID isolation.
-    // vault.spawn becomes: cgroup-bounded(setpriv-uid-dropped(next dev ...)).
+    // setpriv (and optional seccomp) wrapping flows into the vault.spawn
+    // path too, so dovault cgroup limits + fs jail apply ON TOP of UID +
+    // syscall isolation. vault.spawn becomes:
+    //   cgroup(scope-with-seccomp(setpriv-uid-dropped(next dev ...))).
     // Egress for that uid is independently firewalled by nft.
     const jailed: JailedProcess = await vault.spawn(
-      effectiveExec,
-      effectiveArgs,
+      finalExec,
+      finalArgs,
       {
         cwd: opts.cwd,
         jail: opts.cwd,

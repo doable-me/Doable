@@ -210,6 +210,21 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  packages/doable-sdk:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.15
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      react:
+        specifier: ^19.0.0
+        version: 19.0.0
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   packages/docore:
     dependencies:
       '@github/copilot-sdk':

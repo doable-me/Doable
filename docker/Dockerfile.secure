@@ -130,12 +130,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bubblewrap \
         fail2ban \
         ufw \
+        nftables \
+        util-linux \
         nodejs \
         git \
         openssl \
         sudo \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
+
+# nftables: per-UID egress firewall for the dev sandbox pool. setpriv
+# (in util-linux, already pulled in by the base image but listed
+# explicitly above for clarity) drops the spawned dev/build process to
+# UID 10001+. setup-server.sh installs a drop-in /etc/nftables.d/doable-dev.nft
+# blocking egress for skuid 10001-65000 except loopback. --privileged
+# (required for systemd-in-container anyway) gives the container
+# CAP_NET_ADMIN so it can manipulate netfilter.
 
 # pnpm via corepack (ships with Node.js 22)
 RUN corepack enable && corepack prepare pnpm@latest --activate

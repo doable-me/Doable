@@ -220,7 +220,13 @@ async function doStartDevServer(
     basePath: base,
     host: DEV_SERVER_HOST,
     port,
-    env: { ...userEnvVars },
+    env: {
+      ...userEnvVars,
+      // Inject SDK env vars so @doable/sdk/server can reach the connector-proxy
+      // during preview (Next.js Server Actions / API routes need this).
+      DOABLE_PROJECT_ID: projectId,
+      DOABLE_PROXY_URL: `http://127.0.0.1:${process.env.API_PORT ?? "4000"}/__doable/connector-proxy`,
+    },
     userId: opts?.userId,
   });
   const spec = adapter.dev(devCtx);
@@ -242,6 +248,7 @@ async function doStartDevServer(
     process: child,
     url,
     startedAt: new Date(),
+    lastActivityAt: new Date(),
     ready: false,
     readyPromise,
   };

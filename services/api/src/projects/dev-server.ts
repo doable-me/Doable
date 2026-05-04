@@ -21,3 +21,8 @@ export {
   restartDevServer,
   stopAllDevServers,
 } from "./dev-server-ops.js";
+export {
+  touchActivity,
+  sweepIdleDevServers,
+  startIdleEvictionSweeper,
+} from "./dev-server-core.js";
