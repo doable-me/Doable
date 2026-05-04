@@ -17,8 +17,48 @@ import {
 } from "../../projects/file-manager.js";
 import { restartDevServer, isRunning } from "../../projects/dev-server.js";
 import { ConfigGuard } from "dovault";
+import { defaultRegistry } from "../../frameworks/registry.js";
+import { sql } from "../../db/index.js";
 
-const configGuard = new ConfigGuard();
+/**
+ * Per-project ConfigGuard. The bare `new ConfigGuard()` only ships
+ * vite-react locks (vite.config.*, postcss.config.*, tailwind.config.*).
+ * That meant a Next.js project's next.config.ts was *not* locked, so the
+ * AI could overwrite it with a `.js` variant containing TypeScript syntax
+ * — exactly the bug that surfaced live (`SyntaxError: Unexpected token '{'`
+ * because `next.config.js` had `import type { NextConfig }`).
+ *
+ * Per-project guards are cached for the process lifetime — framework_id
+ * doesn't change post-creation, so the cache is safe.
+ */
+const guardCache = new Map<string, ConfigGuard>();
+
+async function getConfigGuard(projectId: string): Promise<ConfigGuard> {
+  const cached = guardCache.get(projectId);
+  if (cached) return cached;
+
+  let frameworkId = "vite-react";
+  try {
+    const [row] = await sql<{ framework_id: string | null }[]>`
+      SELECT framework_id FROM projects WHERE id = ${projectId}
+    `;
+    if (row?.framework_id) frameworkId = row.framework_id;
+  } catch {
+    /* DB unreachable — vite-react fallback is safe */
+  }
+
+  let extraLockedFiles: string[] = [];
+  try {
+    const adapter = defaultRegistry.getAdapter(frameworkId);
+    extraLockedFiles = adapter.lockedConfigFiles?.() ?? [];
+  } catch {
+    /* unknown framework — defaults still apply */
+  }
+
+  const guard = new ConfigGuard({ extraLockedFiles });
+  guardCache.set(projectId, guard);
+  return guard;
+}
 
 /**
  * Normalize a file path — if the AI passes an absolute path that starts with
@@ -77,7 +117,8 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
       handler: async (args: { path: string; content: string }) => {
         const filePath = normalizePath(projectId, args.path);
         const { content } = args;
-        if (configGuard.isLocked(filePath)) {
+        const guard = await getConfigGuard(projectId);
+        if (guard.isLocked(filePath)) {
           return { success: false, error: `Cannot create ${filePath} — server-side config files are locked by dovault for security.` };
         }
         const fullPath = path.join(getProjectPath(projectId), filePath);
@@ -108,7 +149,8 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
       handler: async (args: { path: string; content: string }) => {
         const filePath = normalizePath(projectId, args.path);
         const { content } = args;
-        if (configGuard.isLocked(filePath)) {
+        const guard = await getConfigGuard(projectId);
+        if (guard.isLocked(filePath)) {
           return { success: false, error: `Cannot edit ${filePath} — server-side config files are locked by dovault for security.` };
         }
         emitToolEvent(projectId, "edit_file", "start", { path: filePath });
