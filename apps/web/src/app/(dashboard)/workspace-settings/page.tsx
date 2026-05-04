@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Settings, Loader2, Boxes, Plug, Radio, Brain } from "lucide-react";
+import { ArrowLeft, Settings, Loader2, Boxes, Plug, Radio, Brain, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   apiListWorkspaces,
@@ -24,6 +24,7 @@ import {
 import { EnvironmentsPanel } from "@/modules/environments/environments-panel";
 import { IntegrationsPanel } from "@/modules/integrations/integrations-panel";
 import { McpPanel } from "@/modules/settings/components/mcp-panel";
+import { SkillsRulesPanel } from "@/modules/settings/components/skills-rules-panel";
 import { WorkspaceKnowledgePanel } from "./workspace-knowledge";
 import { GeneralTab } from "./general-tab";
 
@@ -34,6 +35,7 @@ const TABS = [
   { id: "environments", label: "Environments", icon: Boxes },
   { id: "integrations", label: "Integrations", icon: Plug },
   { id: "mcp", label: "MCP Servers", icon: Radio },
+  { id: "skills", label: "Skills & Rules", icon: Sparkles },
   { id: "knowledge", label: "Knowledge", icon: Brain },
 ] as const;
 
@@ -406,6 +408,12 @@ export default function WorkspaceSettingsPage() {
       {activeTab === "mcp" && (
         <SettingsSection title="MCP Servers" description="Connect Model Context Protocol servers for custom tools and capabilities. Workspace-scoped connectors are available to all projects.">
           <McpPanel workspaceId={workspace.id} />
+        </SettingsSection>
+      )}
+
+      {activeTab === "skills" && (
+        <SettingsSection title="Skills & Rules" description="Manage reusable skills and rules that shape how the AI works. Workspace-level skills are inherited by all projects.">
+          <SkillsRulesPanel workspaceId={workspace.id} />
         </SettingsSection>
       )}
 
