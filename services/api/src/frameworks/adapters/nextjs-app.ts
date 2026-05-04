@@ -15,7 +15,25 @@
 
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
+
+/**
+ * The Doable preview proxy serves projects under /preview/<id>/. Without
+ * a basePath in next.config.*, Next.js thinks it's at / and returns 404
+ * for the iframe URL. Default content for next.config.ts that wires
+ * DOABLE_BASE_PATH (passed in the dev env) into next's basePath.
+ */
+const DEFAULT_NEXT_CONFIG = `import type { NextConfig } from "next";
+
+const basePath = process.env.DOABLE_BASE_PATH && process.env.DOABLE_BASE_PATH !== "/"
+  ? process.env.DOABLE_BASE_PATH.replace(/\\/$/, "")
+  : "";
+
+const nextConfig: NextConfig = { basePath };
+
+export default nextConfig;
+`;
 
 import type {
   BuildSpec,
@@ -151,6 +169,25 @@ export const nextjsAppAdapter: FrameworkAdapter = {
   },
 
   dev(ctx: DevContext): DevSpec {
+    // SAFETY NET: ensure next.config.{ts,js,mjs} exists before spawning
+    // dev. Without it, the preview iframe shows 404 because next doesn't
+    // know it lives under /preview/<id>/. The framework prompt asks the
+    // AI to create this file but compliance isn't 100%, so write the
+    // default if NONE of the config variants exist. Sync write so the
+    // next dev process sees it.
+    const configCandidates = ["next.config.ts", "next.config.js", "next.config.mjs", "next.config.cjs"];
+    const hasConfig = configCandidates.some((f) => existsSync(path.join(ctx.projectPath, f)));
+    if (!hasConfig) {
+      try {
+        // writeFileSync via fs (not fs/promises) to avoid making this method async.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require("node:fs").writeFileSync(path.join(ctx.projectPath, "next.config.ts"), DEFAULT_NEXT_CONFIG, "utf-8");
+        console.log(`[nextjs-adapter] auto-created missing next.config.ts for ${ctx.projectId}`);
+      } catch (err) {
+        console.warn(`[nextjs-adapter] failed to auto-create next.config.ts: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
     // Spawn node + next's bin script directly instead of `npx next dev`.
     // On Windows, `npx next dev` = npx.cmd → next.cmd → node.exe. When the
     // intermediate .cmd shells exit (which they do quickly after handing
