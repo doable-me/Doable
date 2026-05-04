@@ -226,11 +226,25 @@ app.use("*", async (c, next) => {
   return next();
 });
 
-// Rate limiter for all routes EXCEPT /preview/* — a single Vite page load
-// triggers many subrequests (HTML + JS chunks + CSS + assets) which would
-// quickly exhaust the limit and cause preview loads to fail with 429.
+// Rate limiter for all routes EXCEPT:
+//   - /preview/* : a single Vite page load triggers many subrequests
+//     (HTML + JS chunks + CSS + assets) which would quickly exhaust 200/min
+//   - /thumbnails/* : dashboard polls these continuously
+//   - /analytics/* : telemetry beacons fire on every navigation
+//   - /admin/*    : platform-admin views auto-refresh every 5s
+//   - /health     : liveness/readiness probes from Docker/K8s/monitoring
+//                   should never rate-limit (Wave 31-D fix)
+//   - /visual-edit-bridge.js : cached but loaded inside every iframe
 app.use("*", async (c, next) => {
-  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/thumbnails/") || c.req.path.startsWith("/analytics/") || c.req.path.startsWith("/admin/") || c.req.path === "/visual-edit-bridge.js") {
+  const p = c.req.path;
+  if (
+    p === "/health" ||
+    p === "/visual-edit-bridge.js" ||
+    p.startsWith("/preview/") ||
+    p.startsWith("/thumbnails/") ||
+    p.startsWith("/analytics/") ||
+    p.startsWith("/admin/")
+  ) {
     await next();
     return;
   }

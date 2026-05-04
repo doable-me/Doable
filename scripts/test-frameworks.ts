@@ -156,9 +156,14 @@ async function runFramework(spec: { id: string; templateId: string }, port: numb
     const devSpec = adapter.dev({
       projectId, projectPath: tmpRoot, basePath: "/", host: "127.0.0.1", port, env: {},
     });
+    // On Windows, bare commands like "npx"/"pnpm" need shell:true to
+    // resolve their .cmd shims — mirrors the rawSpawnFallback() shape in
+    // services/api/src/projects/vite-jail.ts.
+    const needsShell = process.platform === "win32" && !devSpec.command.includes("/") && !devSpec.command.includes("\\");
     const child = spawn(devSpec.command, devSpec.args, {
       cwd: devSpec.cwd ?? tmpRoot,
       stdio: ["ignore", "pipe", "pipe"],
+      shell: needsShell,
       env: { ...process.env, ...(devSpec.env ?? {}) },
     });
 
