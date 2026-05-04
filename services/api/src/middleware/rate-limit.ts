@@ -20,6 +20,14 @@ interface RateLimitOptions {
  */
 export function rateLimiter(options: RateLimitOptions) {
   const { windowMs, max, keyGenerator, prefix = "rl" } = options;
+
+  // max=0 → middleware is a no-op. Lets operators disable rate limiting via
+  // RATE_LIMIT_MAX=0 when an upstream limiter (Cloudflare, nginx, ALB) is
+  // already in place.
+  if (max <= 0) {
+    return createMiddleware(async (_c, next) => { await next(); });
+  }
+
   const kv = getKVStore();
 
   return createMiddleware(async (c, next) => {

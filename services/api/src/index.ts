@@ -114,9 +114,15 @@ async function ensureProjectFilesTableExists(): Promise<void> {
 
 // Pre-create middleware instances (avoid re-instantiating on every request)
 const secureHeadersMw = secureHeaders();
+// Rate limit is env-configurable so operators can tune for their workload
+// without redeploying source. Defaults: 200 req/min/key, sliding 60s window.
+// Set RATE_LIMIT_MAX=0 to disable rate limiting entirely (only do this if
+// you have an upstream rate limiter — Cloudflare, nginx, etc.).
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX ?? "200", 10);
+const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "60000", 10);
 const apiRateLimiter = rateLimiter({
-  windowMs: 60_000,
-  max: 200,
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
   keyGenerator: (c) => {
     // Use Authorization token (per-user) or fall back to IP
     const auth = c.req.header("authorization");

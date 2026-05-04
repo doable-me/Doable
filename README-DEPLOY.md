@@ -574,3 +574,34 @@ If you want to wipe and start fresh:
 docker compose -f docker-compose.secure.yml down -v   # -v deletes the volume
 docker compose -f docker-compose.secure.yml up -d
 ```
+
+## 12. API rate limiting (Wave 31-D)
+
+The API server applies a global rate limit (default **200 requests per minute
+per authenticated user**, or per IP for unauthenticated requests). Exceeding
+the limit returns `429 Too Many Requests` with a `Retry-After` header.
+
+### Configuration (env)
+
+| Env var | Default | Effect |
+|---|---|---|
+| `RATE_LIMIT_MAX` | `200` | Max requests per window per key. Set to **`0` to disable** the limiter entirely (use only when an upstream limiter — Cloudflare, nginx, ALB — is in front). |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | Window length in ms. e.g. `300000` for a 5-minute sliding window. |
+
+Some routes are intentionally **exempt** from rate limiting:
+
+| Path prefix | Why |
+|---|---|
+| `/health` | Liveness/readiness probes (Docker, K8s, monitoring) — must never throttle |
+| `/preview/*` | A single editor preview load triggers many subrequests (HTML + JS chunks + assets) |
+| `/thumbnails/*` | Dashboard polls these continuously while pages load |
+| `/analytics/*` | Telemetry beacons fire on every navigation |
+| `/admin/*` | Platform-admin views auto-refresh every 5s |
+| `/visual-edit-bridge.js` | Loaded inside every preview iframe |
+
+To change the limit, edit `services/api/src/index.ts` (search for `apiRateLimiter`).
+To change exemptions, edit the same file's `app.use("*", …)` block.
+
+Source: `services/api/src/middleware/rate-limit.ts`. The limiter uses the in-memory
+KV store by default (sufficient for ~100 concurrent users); set `REDIS_URL` for a
+shared limiter across multiple API instances.
