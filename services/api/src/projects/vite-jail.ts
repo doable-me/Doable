@@ -122,10 +122,17 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
     const { spawn } = await import("node:child_process");
     // On Windows, bare commands like "npx" need shell:true to resolve .cmd extensions.
     const needsShell = process.platform === "win32" && !opts.execPath.includes("/") && !opts.execPath.includes("\\");
+    // stdio: stdin=ignore prevents Next.js 15 / other dev servers from
+    // self-exiting when they detect a piped-but-empty stdin (treated as
+    // EOF mid-startup on Windows). stdout/stderr stay piped for log
+    // capture. Caller can override with opts.stdio.
+    const stdio = opts.stdio
+      ? (opts.stdio === "pipe" ? ["ignore", "pipe", "pipe"] as const : opts.stdio)
+      : ["ignore", "pipe", "pipe"] as const;
     const child = spawn(opts.execPath, opts.args, {
       cwd: opts.cwd,
       shell: needsShell,
-      stdio: opts.stdio ?? "pipe",
+      stdio,
       env: cleanEnv,
     });
     return {
