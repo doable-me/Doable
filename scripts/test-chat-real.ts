@@ -67,7 +67,7 @@ async function main() {
     },
     body: JSON.stringify({
       content: prompt,
-      mode: "chat",
+      mode: "agent",
     }),
   });
   console.log(`  HTTP ${resp.status}`);
