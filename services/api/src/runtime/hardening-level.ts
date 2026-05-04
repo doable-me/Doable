@@ -20,5 +20,13 @@ export function getHardeningLevel(): HardeningLevel {
 
 /** Convenience: should the caller wrap its spawn with vault.spawn? */
 export function shouldJail(): boolean {
+  // Windows: dovault's per-project isolation primitives (cgroups,
+  // bubblewrap, systemd hardening) are Linux-only. On Windows we run
+  // raw — the security story on Windows is "your dev box, your rules"
+  // anyway; the real hardening lives on the Linux production hosts.
+  // Without this, vault.spawn(... full hardening ...) causes long-lived
+  // dev-server processes (next-server) to exit cleanly within seconds
+  // of becoming ready, leaving the user stuck on "Starting preview…".
+  if (process.platform === "win32") return false;
   return getHardeningLevel() !== "off";
 }
