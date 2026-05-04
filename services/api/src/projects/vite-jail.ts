@@ -126,9 +126,10 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
     // self-exiting when they detect a piped-but-empty stdin (treated as
     // EOF mid-startup on Windows). stdout/stderr stay piped for log
     // capture. Caller can override with opts.stdio.
-    const stdio = opts.stdio
-      ? (opts.stdio === "pipe" ? ["ignore", "pipe", "pipe"] as const : opts.stdio)
-      : ["ignore", "pipe", "pipe"] as const;
+    const stdio: ["ignore", "pipe", "pipe"] | "ignore" | "inherit" =
+      opts.stdio === "ignore" ? "ignore"
+      : opts.stdio === "inherit" ? "inherit"
+      : ["ignore", "pipe", "pipe"];
     const child = spawn(opts.execPath, opts.args, {
       cwd: opts.cwd,
       shell: needsShell,
