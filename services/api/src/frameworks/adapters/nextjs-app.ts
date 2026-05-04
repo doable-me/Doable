@@ -151,10 +151,17 @@ export const nextjsAppAdapter: FrameworkAdapter = {
   },
 
   dev(ctx: DevContext): DevSpec {
+    // Spawn node + next's bin script directly instead of `npx next dev`.
+    // On Windows, `npx next dev` = npx.cmd → next.cmd → node.exe. When the
+    // intermediate .cmd shells exit (which they do quickly after handing
+    // off), our spawn wrapper sees the parent exit code 0 and treats the
+    // server as dead — leaving the actual next-server orphaned and
+    // unreachable. Going through node directly keeps our wrapper bound to
+    // the actual long-lived process.
     return {
-      command: "npx",
+      command: process.execPath, // node binary running this api
       args: [
-        "next",
+        path.join(ctx.projectPath, "node_modules", "next", "dist", "bin", "next"),
         "dev",
         "-H", ctx.host,
         "-p", String(ctx.port),
