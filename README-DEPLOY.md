@@ -377,6 +377,50 @@ registries."
 the operator picks Squid, mitmproxy, or an existing corporate proxy.
 The allow-list configuration lives outside Doable's deploy flow.
 
+### Dev sandbox UID pool
+
+Production runtime (`doable-app@.service`) uses systemd's
+`DynamicUser=yes` for per-app isolation. The **dev preview server**
+that runs during a chat session is a separate jail, sandboxed via a
+**pre-allocated UID pool**:
+
+- `setup-server.sh` creates 100 unprivileged users
+  (`doable-dev-1`..`doable-dev-100`, UIDs 10001..10100) at install time.
+- The API allocates a UID from the pool when a dev session starts
+  (`services/api/src/runtime/dev-uid-allocator.ts`) and releases it
+  when the session ends.
+- `services/api/src/projects/vite-jail.ts` wraps the dev spawn with
+  `setpriv --reuid <uid> --regid <uid> --clear-groups --` so the dev
+  process (next dev / vite / nuxi / fastapi / etc.) drops to that
+  UID before exec.
+- `nft` table `inet doable_dev` blocks all egress for skuid range
+  `10001-10100` except loopback. Squid at `127.0.0.1:3128` proxies
+  npm/PyPI traffic on the operator's allow-list; raw socket egress
+  to the internet is dropped at the kernel.
+- Project directory ownership is `chown`'d to the acquired UID before
+  spawn, so the sandboxed process can read/write its own tree but
+  not sibling projects (chmod 0700) and not the API's `.env` (owned
+  by root / API user).
+- stdout/stderr pipes are unchanged — log capture works exactly as
+  before. No journalctl detour, no debuggability loss.
+
+**Verify on the server:**
+
+    id doable-dev-1                            # UID=10001
+    nft list table inet doable_dev             # shows skuid drop rule
+    systemctl is-enabled nftables              # enabled
+    # During a live dev session for project X:
+    ps -o pid,uid,cmd $(pgrep -f "next dev")   # uid is in 10001..10100
+
+This jail is **Linux-only**. Windows/Mac dev (the `dev.ps1` flow on a
+laptop) skips the setpriv path entirely — `shouldJail()` already
+short-circuits there.
+
+**Pool exhaustion**: with 100 slots, sessions beyond #100 fall back to
+spawning without setpriv (logged). In practice this is well above any
+single host's expected concurrency; bump `POOL_SIZE` in
+`dev-uid-allocator.ts` and re-run `setup-server.sh` if you need more.
+
 ### Honest gaps still open
 
 - **Workloads needing exotic kernel surface will fail.** If a
@@ -386,6 +430,11 @@ The allow-list configuration lives outside Doable's deploy flow.
   don't need any of these, but a specialised app (network
   diagnostics tooling, real-time audio, etc.) would have to opt out
   of the relevant directive.
+- **Dev sandbox does not run a SystemCallFilter.** `setpriv` drops
+  privileges but doesn't install a seccomp filter. A kernel exploit
+  by a dev-time process could still escalate. Production runtime is
+  the right layer to demand more here; for dev, UID + nft is the
+  pragmatic high-leverage stop.
 
 ---
 

@@ -122,7 +122,7 @@ export const nextjsAppPrompt: FrameworkPrompt = {
     "      export default nextConfig;",
     "      ```",
     "      WITHOUT this file, the iframe shows 404 because Next.js doesn't know it lives under /preview/<id>/.",
-    "    - `app/layout.tsx` exporting a default component that renders <html><body>{children}</body></html>.",
+    "    - `app/layout.tsx` exporting a default component that renders `<html lang=\"en\" suppressHydrationWarning><body suppressHydrationWarning>{children}</body></html>`. **`suppressHydrationWarning` on BOTH `<html>` and `<body>` is REQUIRED** — the Doable preview proxy injects scripts (analytics, error capture, visual-edit bridge) into <head> and <body> on the way out, so the served HTML doesn't match React's expected tree. Without these props every page logs a hydration mismatch warning. Never remove them, even when refactoring layout.",
     "    - `app/page.tsx` (or whatever route the user asked for) exporting a default component.",
     "    - `tsconfig.json` with `\"jsx\": \"preserve\"` and Next.js's standard compilerOptions.",
     "",

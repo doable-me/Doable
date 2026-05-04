@@ -66,6 +66,15 @@ export interface SpawnJailedViteOpts {
   env: Record<string, string | undefined>;
   projectId: string;
   stdio?: "pipe" | "ignore" | "inherit";
+  /**
+   * Linux-only: per-project sandbox UID from the dev-uid-allocator pool.
+   * When set on Linux, the spawn is wrapped with `setpriv --reuid <uid>
+   * --regid <uid> --clear-groups --` so the dev process runs as a
+   * pre-created low-privilege user (doable-dev-N). nft rules in
+   * setup-server.sh block all egress for this UID range except loopback.
+   * Ignored on non-Linux (setpriv only exists on Linux).
+   */
+  uid?: number;
 }
 
 export interface JailedViteResult {
@@ -116,12 +125,38 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
     cleanEnv.PIP_PROXY = proxy;
   }
 
+  // setpriv wrap for per-project UID isolation. Only applies on Linux
+  // when the caller passed a uid from the dev-uid-allocator pool. Keeps
+  // stdout/stderr pipes intact (no journalctl detour), so the existing
+  // log capture pipeline works unchanged. nft rules in setup-server.sh
+  // (UID range 10001-10100) block all egress except loopback for these
+  // UIDs — Squid at 127.0.0.1:3128 handles npm/PyPI registry traffic.
+  const useSetpriv =
+    process.platform === "linux" && typeof opts.uid === "number";
+  const effectiveExec = useSetpriv ? "setpriv" : opts.execPath;
+  const effectiveArgs = useSetpriv
+    ? [
+        "--reuid", String(opts.uid),
+        "--regid", String(opts.uid),
+        "--clear-groups",
+        "--",
+        opts.execPath,
+        ...opts.args,
+      ]
+    : opts.args;
+  if (useSetpriv) {
+    console.log(
+      `[vite-jail] setpriv wrap: project=${opts.projectId} uid=${opts.uid}`,
+    );
+  }
+
   // Raw-spawn helper — used both by the DOABLE_HARDENING=off short-circuit
   // and by the platform-incompatibility fallback below.
   const rawSpawnFallback = async (): Promise<JailedViteResult> => {
     const { spawn } = await import("node:child_process");
     // On Windows, bare commands like "npx" need shell:true to resolve .cmd extensions.
-    const needsShell = process.platform === "win32" && !opts.execPath.includes("/") && !opts.execPath.includes("\\");
+    // setpriv path is Linux-only so this stays Windows-only.
+    const needsShell = process.platform === "win32" && !effectiveExec.includes("/") && !effectiveExec.includes("\\");
     // stdio: stdin=ignore prevents Next.js 15 / other dev servers from
     // self-exiting when they detect a piped-but-empty stdin (treated as
     // EOF mid-startup on Windows). stdout/stderr stay piped for log
@@ -130,7 +165,7 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
       opts.stdio === "ignore" ? "ignore"
       : opts.stdio === "inherit" ? "inherit"
       : ["ignore", "pipe", "pipe"];
-    const child = spawn(opts.execPath, opts.args, {
+    const child = spawn(effectiveExec, effectiveArgs, {
       cwd: opts.cwd,
       shell: needsShell,
       stdio,
@@ -155,9 +190,13 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
   const vault = getVault();
 
   try {
+    // setpriv wrap (computed above) flows into the vault.spawn path too,
+    // so the dovault cgroup limits + fs jail apply ON TOP of UID isolation.
+    // vault.spawn becomes: cgroup-bounded(setpriv-uid-dropped(next dev ...)).
+    // Egress for that uid is independently firewalled by nft.
     const jailed: JailedProcess = await vault.spawn(
-      opts.execPath,
-      opts.args,
+      effectiveExec,
+      effectiveArgs,
       {
         cwd: opts.cwd,
         jail: opts.cwd,

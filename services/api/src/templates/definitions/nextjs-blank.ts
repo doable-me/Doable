@@ -148,13 +148,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
+    // suppressHydrationWarning is REQUIRED on both <html> and <body>:
+    // the Doable preview proxy injects scripts (storage namespace, error
+    // capture, visual-edit bridge, analytics) into <head> AND <body> on
+    // the way out, so the served HTML doesn't match what React's server
+    // bundle produced. Without these props, React logs a hydration error
+    // on every page load. They have no impact in production (proxy is
+    // only active in the chat preview).
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
-      <body>{children}</body>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

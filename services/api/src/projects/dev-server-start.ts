@@ -3,9 +3,11 @@
  */
 
 import type { ChildProcess } from "node:child_process";
+import { spawn as nodeSpawn } from "node:child_process";
 import { getProjectPath } from "../ai/project-files.js";
 import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
 import { spawnJailedVite } from "./vite-jail.js";
+import { acquireDevUid, releaseDevUid } from "../runtime/dev-uid-allocator.js";
 import {
   BuildEventPublisher,
   LogFilterChain,
@@ -143,6 +145,27 @@ async function doStartDevServer(
   // avoid IPv6 resolution issues on Windows where localhost may hit ::1)
   const url = `http://127.0.0.1:${port}`;
 
+  // Per-project sandbox UID (Linux + DOABLE_HARDENING=full). Returns null
+  // on Windows/Mac (no setpriv available) or when the 100-slot pool is
+  // exhausted. When non-null, chown the project tree so the dropped-priv
+  // dev process can read/write it. The API process (root in production)
+  // can still read/write because root bypasses ownership.
+  const sandboxUid = acquireDevUid(projectId);
+  if (sandboxUid !== null) {
+    await new Promise<void>((resolve) => {
+      const ch = nodeSpawn(
+        "chown",
+        ["-R", `${sandboxUid}:${sandboxUid}`, projectPath],
+        { stdio: "ignore" },
+      );
+      ch.on("exit", () => resolve());
+      ch.on("error", () => resolve()); // chown missing → silent skip; jail still applies
+    });
+    console.log(
+      `[DevServer] Project ${projectId} sandbox uid=${sandboxUid} (chown applied)`,
+    );
+  }
+
   console.log(
     `[DevServer] Starting ${adapter.id} dev server for project ${projectId} on port ${port}`,
   );
@@ -209,6 +232,7 @@ async function doStartDevServer(
     env: spec.env,
     projectId,
     stdio: "pipe",
+    uid: sandboxUid ?? undefined,
   });
   const child = jailed.process;
 
@@ -299,6 +323,9 @@ async function doStartDevServer(
     console.log(
       `[DevServer] Server for project ${projectId} exited with code ${code}`,
     );
+    // Return the sandbox UID to the pool whether the exit was graceful
+    // or a failure — keeping it allocated would leak a slot.
+    releaseDevUid(projectId);
     if (!settled) {
       // Process died before becoming ready — this is a failure
       markFailed(

@@ -231,6 +231,56 @@ fi  # end CONTAINER_MODE != 1 (Step 1 apt block)
 mkdir -p /data/projects /data/sites
 chmod 0755 /data/projects /data/sites
 
+# ─── Dev sandbox UID pool (chat preview iframes) ────────────
+# Production (doable-app@.service) uses DynamicUser=yes for runtime
+# isolation. Dev preview servers run BEFORE deploy — separate jail.
+# We pre-create 100 unprivileged users; the API allocates one per
+# project on dev start (services/api/src/runtime/dev-uid-allocator.ts)
+# and wraps the spawn with `setpriv --reuid <uid>` so the dev process
+# (next dev / vite / nuxi / etc.) cannot read the API's .env or other
+# projects' files. Egress is blocked by the nft rule below — Squid at
+# 127.0.0.1:3128 handles npm/PyPI traffic. Idempotent.
+if [ "$CONTAINER_MODE" != "1" ]; then
+  info "Provisioning dev sandbox user pool (doable-dev-1..100, UID 10001..10100)"
+  for i in $(seq 1 100); do
+    uid=$((10000 + i))
+    user="doable-dev-$i"
+    if ! id "$user" &>/dev/null; then
+      useradd --system --no-create-home --shell /usr/sbin/nologin \
+        --uid "$uid" --user-group "$user" 2>/dev/null || true
+    fi
+  done
+
+  info "Installing nft egress firewall for dev sandbox pool"
+  apt-get install -y nftables >/dev/null 2>&1 || true
+  mkdir -p /etc/nftables.d
+
+  # Drop-in: block all egress from UID range 10001-10100 except loopback.
+  # Squid listens on 127.0.0.1:3128, so npm/PyPI traffic still works via
+  # the proxy when packages are installed inside the dev sandbox.
+  cat > /etc/nftables.d/doable-dev.nft << 'NFTEOF'
+table inet doable_dev {
+  chain output {
+    type filter hook output priority 0; policy accept;
+    oif "lo" accept
+    meta skuid 10001-10100 drop
+  }
+}
+NFTEOF
+
+  # Wire the drop-in into /etc/nftables.conf so it loads at boot.
+  if ! grep -q 'include "/etc/nftables.d/\*.nft"' /etc/nftables.conf 2>/dev/null; then
+    echo 'include "/etc/nftables.d/*.nft"' >> /etc/nftables.conf
+  fi
+
+  systemctl enable --now nftables.service 2>/dev/null || true
+  if ! nft -f /etc/nftables.conf 2>/dev/null; then
+    warn "nftables reload failed — dev sandbox egress firewall not active. Check: nft -c -f /etc/nftables.conf"
+  else
+    ok "Dev sandbox UID pool (100 users) + nft egress firewall active"
+  fi
+fi
+
 # ─── Step 2: Firewall (UFW) ──────────────────────────────────
 if [ "$CONTAINER_MODE" != "1" ]; then
   info "Step 2/13: Configuring firewall (UFW)..."

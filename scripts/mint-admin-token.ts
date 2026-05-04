@@ -29,7 +29,9 @@ async function main() {
     process.exit(4);
   }
   const token = await signAccessToken(u.id, u.email);
-  console.log(token);
+  const refresh = await (await import("../services/api/src/lib/jwt.js")).signRefreshToken(u.id);
+  // print as JSON so callers can grab both
+  console.log(JSON.stringify({ access: token, refresh }));
   process.exit(0);
 }
 
