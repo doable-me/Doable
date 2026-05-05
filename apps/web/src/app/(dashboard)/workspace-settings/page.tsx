@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Settings, Loader2, Boxes, Plug, Radio, Brain, Sparkles, Shield } from "lucide-react";
+import { ArrowLeft, Settings, Loader2, Boxes, Plug, Radio, Brain, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   apiListWorkspaces,
@@ -23,7 +23,6 @@ import {
 } from "@/lib/api";
 import { EnvironmentsPanel } from "@/modules/environments/environments-panel";
 import { IntegrationsPanel } from "@/modules/integrations/integrations-panel";
-import { IntegrationsAdminPanel } from "@/modules/integrations/integrations-admin-panel";
 import { McpPanel } from "@/modules/settings/components/mcp-panel";
 import { SkillsRulesPanel } from "@/modules/settings/components/skills-rules-panel";
 import { WorkspaceKnowledgePanel } from "./workspace-knowledge";
@@ -35,7 +34,6 @@ const TABS = [
   { id: "general", label: "General", icon: Settings },
   { id: "environments", label: "Environments", icon: Boxes },
   { id: "integrations", label: "Integrations", icon: Plug },
-  { id: "integration-admin", label: "Integration Admin", icon: Shield, adminOnly: true },
   { id: "mcp", label: "MCP Servers", icon: Radio },
   { id: "skills", label: "Skills & Rules", icon: Sparkles },
   { id: "knowledge", label: "Knowledge", icon: Brain },
@@ -332,7 +330,7 @@ export default function WorkspaceSettingsPage() {
 
       {/* ─── Tab Bar ──────────────────────────────────────── */}
       <div className="mb-8 flex gap-1 border-b border-border overflow-x-auto">
-        {TABS.filter((tab) => !("adminOnly" in tab && tab.adminOnly) || isAdmin).map((tab) => {
+        {TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
@@ -404,12 +402,6 @@ export default function WorkspaceSettingsPage() {
       {activeTab === "integrations" && (
         <SettingsSection title="Integrations" description="Connect third-party services like Slack, Notion, GitHub, and more. Workspace-level integrations are available to all projects.">
           <IntegrationsPanel workspaceId={workspace.id} variant="settings" />
-        </SettingsSection>
-      )}
-
-      {activeTab === "integration-admin" && isAdmin && (
-        <SettingsSection title="Integration Admin" description="Configure which integrations are available to workspace members. Only enabled integrations with valid credentials will appear in the catalog.">
-          <IntegrationsAdminPanel workspaceId={workspace.id} />
         </SettingsSection>
       )}
 

@@ -18,6 +18,7 @@ import {
   Wrench,
   ShieldCheck,
   Layers,
+  Plug,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import { EmailPanel } from "./email-panel";
 import { UserManagementPanel, type BulkApplyPayload } from "./user-management-panel";
 import { ToolsConfigPanel } from "./tools-config-panel";
 import { PlanDefaultsPanel } from "./plan-defaults-panel";
+import { IntegrationsAdminPanel } from "@/modules/integrations/integrations-admin-panel";
 
 // ─── Admin Page ─────────────────────────────────────────────
 
@@ -55,11 +57,11 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "planDefaults" | "thumbnails" | "copilot" | "email">(() => {
+  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "planDefaults" | "thumbnails" | "copilot" | "email" | "integrations">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get("tab");
-      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "planDefaults" || tab === "thumbnails" || tab === "copilot") return tab;
+      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "planDefaults" || tab === "thumbnails" || tab === "copilot" || tab === "integrations") return tab;
     }
     return "features";
   });
@@ -291,6 +293,7 @@ export default function AdminPage() {
         {([
           { key: "features" as const, label: "Feature Flags", icon: Settings2 },
           { key: "users" as const, label: "Users & AI", icon: Users },
+          { key: "integrations" as const, label: "Integrations", icon: Plug },
           { key: "planDefaults" as const, label: "Plan Defaults", icon: Layers },
           { key: "tools" as const, label: "AI Tools", icon: Wrench },
           { key: "thumbnails" as const, label: "Thumbnails", icon: ImageIcon },
@@ -358,6 +361,7 @@ export default function AdminPage() {
       {activeTab === "thumbnails" && <ThumbnailsPanel />}
       {activeTab === "copilot" && <CopilotSessionsPanel />}
       {activeTab === "email" && <EmailPanel />}
+      {activeTab === "integrations" && <IntegrationsAdminPanel />}
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>

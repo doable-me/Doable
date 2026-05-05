@@ -15,7 +15,7 @@ type Tab = "connections" | "models" | "access";
 export function AiSettingsPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>("models");
+  const [activeTab, setActiveTab] = useState<Tab>("connections");
   const [workspaces, setWorkspaces] = useState<ApiWorkspace[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -99,11 +99,18 @@ export function AiSettingsPage() {
   }
 
   const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
-    { key: "models", label: "Model Configuration", icon: Bot },
-    { key: "connections", label: "Connections", icon: Link2, adminOnly: true },
+    { key: "connections", label: "Add Provider", icon: Link2, adminOnly: true },
+    { key: "models", label: "Configure Model", icon: Bot },
     { key: "access", label: "Access Control", icon: Shield, adminOnly: true },
   ];
   const tabs = allTabs.filter((t) => !t.adminOnly || isPlatformAdmin);
+
+  // If current tab isn't visible (e.g. non-admin), fall back to first available
+  useEffect(() => {
+    if (tabs.length > 0 && !tabs.some((t) => t.key === activeTab)) {
+      setActiveTab(tabs[0].key);
+    }
+  }, [isPlatformAdmin]);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">

@@ -53,10 +53,30 @@ interface OAuthAppForm {
 // ─── Main Component ─────────────────────────────────────────
 
 interface IntegrationsAdminPanelProps {
-  workspaceId: string;
+  workspaceId?: string;
 }
 
-export function IntegrationsAdminPanel({ workspaceId }: IntegrationsAdminPanelProps) {
+export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: IntegrationsAdminPanelProps) {
+  const [workspaces, setWorkspaces] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(propWorkspaceId || "");
+
+  // Load workspaces if none provided
+  useEffect(() => {
+    if (propWorkspaceId) {
+      setSelectedWorkspaceId(propWorkspaceId);
+      return;
+    }
+    apiFetch<{ data: Array<{ id: string; name: string }> }>("/workspaces")
+      .then((res) => {
+        setWorkspaces(res.data);
+        if (res.data.length > 0 && !selectedWorkspaceId) {
+          setSelectedWorkspaceId(res.data[0].id);
+        }
+      })
+      .catch(() => {});
+  }, [propWorkspaceId]);
+
+  const workspaceId = selectedWorkspaceId;
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [enabledMap, setEnabledMap] = useState<Map<string, EnabledIntegration>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -180,14 +200,31 @@ export function IntegrationsAdminPanel({ workspaceId }: IntegrationsAdminPanelPr
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      <div className="space-y-4">
+        {!propWorkspaceId && workspaces.length > 1 && (
+          <WorkspaceSelector workspaces={workspaces} selected={selectedWorkspaceId} onChange={setSelectedWorkspaceId} />
+        )}
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!workspaceId) {
+    return (
+      <div className="text-center py-8 text-sm text-muted-foreground">
+        No workspace selected. Please select a workspace to manage integrations.
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      {/* Workspace selector for platform admins */}
+      {!propWorkspaceId && workspaces.length > 1 && (
+        <WorkspaceSelector workspaces={workspaces} selected={selectedWorkspaceId} onChange={setSelectedWorkspaceId} />
+      )}
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg border p-3 bg-background">
@@ -442,6 +479,35 @@ export function IntegrationsAdminPanel({ workspaceId }: IntegrationsAdminPanelPr
           No integrations match your filters.
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Workspace Selector ─────────────────────────────────────
+
+function WorkspaceSelector({
+  workspaces,
+  selected,
+  onChange,
+}: {
+  workspaces: Array<{ id: string; name: string }>;
+  selected: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <label className="text-xs font-medium text-muted-foreground">Workspace:</label>
+      <select
+        value={selected}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+      >
+        {workspaces.map((ws) => (
+          <option key={ws.id} value={ws.id}>
+            {ws.name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
