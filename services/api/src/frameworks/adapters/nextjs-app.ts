@@ -17,6 +17,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * The Doable preview proxy serves projects under /preview/<id>/. Without
@@ -213,10 +214,13 @@ export const nextjsAppAdapter: FrameworkAdapter = {
         // Safety net: cap server-side fetch timeouts so that SSR doesn't hang
         // indefinitely when env vars point to unreachable services (e.g.
         // SUPABASE_URL undefined → fetch("undefined/...") hangs on DNS).
-        // 10s is generous for any sane API call during SSR.
-        NEXT_REQUEST_TIMEOUT: "10000",
+        // The preload script patches globalThis.fetch with a 15s AbortSignal.
         // Prefer IPv4 to avoid IPv6 resolution issues in sandboxed environments.
-        NODE_OPTIONS: [ctx.env?.NODE_OPTIONS, "--dns-result-order=ipv4first"].filter(Boolean).join(" "),
+        NODE_OPTIONS: [
+          ctx.env?.NODE_OPTIONS,
+          "--dns-result-order=ipv4first",
+          `--require ${path.join(path.dirname(fileURLToPath(import.meta.url)), "nextjs-fetch-timeout.cjs")}`,
+        ].filter(Boolean).join(" "),
       },
       readinessSignal: {
         kind: "log-substring",
