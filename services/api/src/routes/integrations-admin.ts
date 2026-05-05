@@ -4,6 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { sql } from "../db/index.js";
 import { workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { oauthApps } from "../integrations/credential-vault.js";
 import { getIntegration } from "../integrations/registry/index.js";
 import { xray } from "../integrations/xray.js";
@@ -70,9 +71,17 @@ integrationAdminRoutes.post(
       const err = await requireAdmin(body.workspaceId, userId);
       if (err) return c.json({ error: err }, 403);
     } else if (body.isGlobal) {
-      return c.json({ error: "workspaceId is required (global apps are not yet supported via API)" }, 400);
+      // Platform admins can create global OAuth apps (no workspace)
+      // Platform admin check handled by the calling frontend (/admin page)
+      // Still verify via DB for safety
+      const { featureFlagQueries } = await import("@doable/db");
+      const ff = featureFlagQueries(sql);
+      const isPlatformAdmin = await ff.isPlatformAdmin(userId);
+      if (!isPlatformAdmin) {
+        return c.json({ error: "Platform admin access required for global apps" }, 403);
+      }
     } else {
-      return c.json({ error: "workspaceId is required" }, 400);
+      return c.json({ error: "workspaceId or isGlobal is required" }, 400);
     }
 
     const def = getIntegration(body.integrationId);
@@ -254,6 +263,110 @@ integrationAdminRoutes.post(
         INSERT INTO workspace_enabled_integrations (workspace_id, integration_id, enabled, configured, enabled_by)
         VALUES (${body.workspaceId}, ${integrationId}, ${body.enabled}, ${configured}, ${userId})
         ON CONFLICT (workspace_id, integration_id) DO UPDATE SET
+          enabled = EXCLUDED.enabled,
+          configured = ${configured},
+          enabled_by = EXCLUDED.enabled_by,
+          updated_at = now()
+        RETURNING *
+      `;
+      results.push(row);
+    }
+
+    return c.json({ data: results }, 201);
+  },
+);
+
+// ─── Platform Admin: Global Enabled Integrations ─────────────
+// These apply to ALL workspaces (existing and future).
+
+// GET /integrations/admin/platform-enabled — List globally enabled integrations
+integrationAdminRoutes.get("/integrations/admin/platform-enabled", authMiddleware, platformAdminMiddleware, async (c) => {
+  const rows = await sql`
+    SELECT pei.*, oa.id AS oauth_app_id, oa.client_id AS oauth_client_id
+    FROM platform_enabled_integrations pei
+    LEFT JOIN oauth_apps oa ON oa.integration_id = pei.integration_id AND oa.is_global = true
+    ORDER BY pei.integration_id
+  `;
+  return c.json({ data: rows });
+});
+
+// POST /integrations/admin/platform-enabled — Enable an integration globally
+integrationAdminRoutes.post(
+  "/integrations/admin/platform-enabled",
+  authMiddleware,
+  platformAdminMiddleware,
+  zValidator("json", z.object({
+    integrationId: z.string().min(1),
+    enabled: z.boolean().default(true),
+  })),
+  async (c) => {
+    const userId = c.get("userId");
+    const body = c.req.valid("json");
+
+    const def = getIntegration(body.integrationId);
+    if (!def) return c.json({ error: "Integration not found in registry" }, 404);
+
+    // Check if global OAuth credentials exist
+    let configured = true;
+    if (def.authType === "oauth2" && def.requiresOAuthApp) {
+      const [oauthApp] = await sql`
+        SELECT id FROM oauth_apps WHERE integration_id = ${body.integrationId} AND is_global = true LIMIT 1
+      `;
+      configured = !!oauthApp;
+    }
+
+    const [row] = await sql`
+      INSERT INTO platform_enabled_integrations (integration_id, enabled, configured, enabled_by)
+      VALUES (${body.integrationId}, ${body.enabled}, ${configured}, ${userId})
+      ON CONFLICT (integration_id) DO UPDATE SET
+        enabled = EXCLUDED.enabled,
+        configured = ${configured},
+        enabled_by = EXCLUDED.enabled_by,
+        updated_at = now()
+      RETURNING *
+    `;
+
+    return c.json({ data: row }, 201);
+  },
+);
+
+// DELETE /integrations/admin/platform-enabled/:integrationId — Disable globally
+integrationAdminRoutes.delete("/integrations/admin/platform-enabled/:integrationId", authMiddleware, platformAdminMiddleware, async (c) => {
+  const integrationId = c.req.param("integrationId");
+  await sql`DELETE FROM platform_enabled_integrations WHERE integration_id = ${integrationId}`;
+  return c.json({ data: { integrationId, disabled: true } });
+});
+
+// POST /integrations/admin/platform-enabled/bulk — Bulk enable globally
+integrationAdminRoutes.post(
+  "/integrations/admin/platform-enabled/bulk",
+  authMiddleware,
+  platformAdminMiddleware,
+  zValidator("json", z.object({
+    integrationIds: z.array(z.string().min(1)).min(1).max(50),
+    enabled: z.boolean().default(true),
+  })),
+  async (c) => {
+    const userId = c.get("userId");
+    const body = c.req.valid("json");
+
+    const results = [];
+    for (const integrationId of body.integrationIds) {
+      const def = getIntegration(integrationId);
+      if (!def) continue;
+
+      let configured = true;
+      if (def.authType === "oauth2" && def.requiresOAuthApp) {
+        const [oauthApp] = await sql`
+          SELECT id FROM oauth_apps WHERE integration_id = ${integrationId} AND is_global = true LIMIT 1
+        `;
+        configured = !!oauthApp;
+      }
+
+      const [row] = await sql`
+        INSERT INTO platform_enabled_integrations (integration_id, enabled, configured, enabled_by)
+        VALUES (${integrationId}, ${body.enabled}, ${configured}, ${userId})
+        ON CONFLICT (integration_id) DO UPDATE SET
           enabled = EXCLUDED.enabled,
           configured = ${configured},
           enabled_by = EXCLUDED.enabled_by,

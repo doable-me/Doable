@@ -77,6 +77,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
   }, [propWorkspaceId]);
 
   const workspaceId = selectedWorkspaceId;
+  const isPlatformMode = !propWorkspaceId; // Platform admin mode (global)
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [enabledMap, setEnabledMap] = useState<Map<string, EnabledIntegration>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -94,13 +95,18 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
+
+      // Platform mode: use global endpoints; Workspace mode: use workspace-scoped endpoints
+      const catalogUrl = workspaceId
+        ? `/integrations/catalog?workspaceId=${workspaceId}&showAll=true`
+        : `/integrations/catalog?showAll=true`;
+      const enabledUrl = isPlatformMode
+        ? `/integrations/admin/platform-enabled`
+        : `/integrations/admin/enabled?workspaceId=${workspaceId}`;
+
       const [catalogRes, enabledRes] = await Promise.all([
-        apiFetch<{ data: CatalogItem[]; categories: string[] }>(
-          `/integrations/catalog?workspaceId=${workspaceId}&showAll=true`
-        ),
-        apiFetch<{ data: EnabledIntegration[] }>(
-          `/integrations/admin/enabled?workspaceId=${workspaceId}`
-        ),
+        apiFetch<{ data: CatalogItem[]; categories: string[] }>(catalogUrl),
+        apiFetch<{ data: EnabledIntegration[] }>(enabledUrl),
       ]);
       setCatalog(catalogRes.data);
       setCategories(catalogRes.categories);
@@ -115,7 +121,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, isPlatformMode]);
 
   useEffect(() => {
     fetchData();
@@ -124,15 +130,30 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
   const toggleIntegration = async (integrationId: string, enable: boolean) => {
     setSaving(integrationId);
     try {
-      if (enable) {
-        await apiFetch("/integrations/admin/enabled", {
-          method: "POST",
-          body: JSON.stringify({ workspaceId, integrationId, enabled: true }),
-        });
+      if (isPlatformMode) {
+        // Global platform-level enablement
+        if (enable) {
+          await apiFetch("/integrations/admin/platform-enabled", {
+            method: "POST",
+            body: JSON.stringify({ integrationId, enabled: true }),
+          });
+        } else {
+          await apiFetch(`/integrations/admin/platform-enabled/${integrationId}`, {
+            method: "DELETE",
+          });
+        }
       } else {
-        await apiFetch(`/integrations/admin/enabled/${integrationId}?workspaceId=${workspaceId}`, {
-          method: "DELETE",
-        });
+        // Workspace-level enablement
+        if (enable) {
+          await apiFetch("/integrations/admin/enabled", {
+            method: "POST",
+            body: JSON.stringify({ workspaceId, integrationId, enabled: true }),
+          });
+        } else {
+          await apiFetch(`/integrations/admin/enabled/${integrationId}?workspaceId=${workspaceId}`, {
+            method: "DELETE",
+          });
+        }
       }
       await fetchData();
     } catch (err) {
@@ -147,20 +168,28 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
     setOauthSaving(true);
     setOauthError(null);
     try {
+      // Create OAuth app (global for platform admins, workspace-scoped otherwise)
+      const oauthPayload = isPlatformMode
+        ? { isGlobal: true, integrationId: oauthForm.integrationId, clientId: oauthForm.clientId, clientSecret: oauthForm.clientSecret }
+        : { workspaceId, integrationId: oauthForm.integrationId, clientId: oauthForm.clientId, clientSecret: oauthForm.clientSecret };
+
       await apiFetch("/integrations/admin/oauth-apps", {
         method: "POST",
-        body: JSON.stringify({
-          workspaceId,
-          integrationId: oauthForm.integrationId,
-          clientId: oauthForm.clientId,
-          clientSecret: oauthForm.clientSecret,
-        }),
+        body: JSON.stringify(oauthPayload),
       });
+
       // Also enable the integration
-      await apiFetch("/integrations/admin/enabled", {
-        method: "POST",
-        body: JSON.stringify({ workspaceId, integrationId: oauthForm.integrationId, enabled: true }),
-      });
+      if (isPlatformMode) {
+        await apiFetch("/integrations/admin/platform-enabled", {
+          method: "POST",
+          body: JSON.stringify({ integrationId: oauthForm.integrationId, enabled: true }),
+        });
+      } else {
+        await apiFetch("/integrations/admin/enabled", {
+          method: "POST",
+          body: JSON.stringify({ workspaceId, integrationId: oauthForm.integrationId, enabled: true }),
+        });
+      }
       setOauthForm(null);
       await fetchData();
     } catch (err) {
@@ -200,30 +229,23 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        {!propWorkspaceId && workspaces.length > 1 && (
-          <WorkspaceSelector workspaces={workspaces} selected={selectedWorkspaceId} onChange={setSelectedWorkspaceId} />
-        )}
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!workspaceId) {
-    return (
-      <div className="text-center py-8 text-sm text-muted-foreground">
-        No workspace selected. Please select a workspace to manage integrations.
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {/* Workspace selector for platform admins */}
-      {!propWorkspaceId && workspaces.length > 1 && (
-        <WorkspaceSelector workspaces={workspaces} selected={selectedWorkspaceId} onChange={setSelectedWorkspaceId} />
+      {/* Platform mode info */}
+      {isPlatformMode && (
+        <div className="flex items-start gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 p-3">
+          <ExternalLink className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+          <div className="text-sm text-blue-700 dark:text-blue-400">
+            Integrations enabled here apply <strong>globally to all workspaces</strong> (existing and new).
+            Users across the platform will see these integrations in their catalog.
+          </div>
+        </div>
       )}
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">

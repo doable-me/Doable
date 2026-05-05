@@ -29,21 +29,31 @@ integrationCatalogRoutes.get("/integrations/catalog", async (c) => {
 
   if (workspaceId) {
     try {
-      const [connRows, enabledRows] = await Promise.all([
+      const [connRows, workspaceEnabledRows, platformEnabledRows] = await Promise.all([
         sql`
           SELECT DISTINCT integration_id FROM integration_connections
           WHERE workspace_id = ${workspaceId} AND status = 'active'
         `,
         showAll ? Promise.resolve(null) : sql`
-          SELECT integration_id, configured FROM workspace_enabled_integrations
+          SELECT integration_id FROM workspace_enabled_integrations
           WHERE workspace_id = ${workspaceId} AND enabled = true
+        `,
+        showAll ? Promise.resolve(null) : sql`
+          SELECT integration_id FROM platform_enabled_integrations
+          WHERE enabled = true
         `,
       ]);
       connectedIds = new Set(connRows.map((r: any) => r.integration_id));
-      if (enabledRows && enabledRows.length > 0) {
-        enabledIds = new Set(enabledRows.map((r: any) => r.integration_id));
+
+      // Merge workspace-level + platform-level enabled integrations
+      const wsEnabled = workspaceEnabledRows ? workspaceEnabledRows.map((r: any) => r.integration_id) : [];
+      const platformEnabled = platformEnabledRows ? platformEnabledRows.map((r: any) => r.integration_id) : [];
+      const allEnabled = [...wsEnabled, ...platformEnabled];
+
+      if (allEnabled.length > 0) {
+        enabledIds = new Set(allEnabled);
       }
-      // If no rows in workspace_enabled_integrations at all, show everything (not yet configured)
+      // If no rows in either table, show everything (not yet configured by any admin)
     } catch {
       // Table may not exist yet — ignore
     }
