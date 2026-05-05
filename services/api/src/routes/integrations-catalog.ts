@@ -14,6 +14,7 @@ integrationCatalogRoutes.get("/integrations/catalog", async (c) => {
   const category = c.req.query("category") as IntegrationCategory | undefined;
   const search = c.req.query("search");
   const workspaceId = c.req.query("workspaceId");
+  const showAll = c.req.query("showAll") === "true"; // admin override
 
   const definitions = listIntegrations({ category, search });
   const categoriesRaw = getCategories();
@@ -24,19 +25,36 @@ integrationCatalogRoutes.get("/integrations/catalog", async (c) => {
 
   // If workspaceId provided, enrich with connection status
   let connectedIds = new Set<string>();
+  let enabledIds: Set<string> | null = null; // null = no filtering (all shown)
+
   if (workspaceId) {
     try {
-      const rows = await sql`
-        SELECT DISTINCT integration_id FROM integration_connections
-        WHERE workspace_id = ${workspaceId} AND status = 'active'
-      `;
-      connectedIds = new Set(rows.map((r: any) => r.integration_id));
+      const [connRows, enabledRows] = await Promise.all([
+        sql`
+          SELECT DISTINCT integration_id FROM integration_connections
+          WHERE workspace_id = ${workspaceId} AND status = 'active'
+        `,
+        showAll ? Promise.resolve(null) : sql`
+          SELECT integration_id, configured FROM workspace_enabled_integrations
+          WHERE workspace_id = ${workspaceId} AND enabled = true
+        `,
+      ]);
+      connectedIds = new Set(connRows.map((r: any) => r.integration_id));
+      if (enabledRows && enabledRows.length > 0) {
+        enabledIds = new Set(enabledRows.map((r: any) => r.integration_id));
+      }
+      // If no rows in workspace_enabled_integrations at all, show everything (not yet configured)
     } catch {
       // Table may not exist yet — ignore
     }
   }
 
-  const data = definitions.map((def) => ({
+  // Filter by enabled integrations (if admin has configured any)
+  const filteredDefinitions = enabledIds
+    ? definitions.filter((def) => enabledIds!.has(def.id))
+    : definitions;
+
+  const data = filteredDefinitions.map((def) => ({
     id: def.id,
     displayName: def.displayName,
     description: def.description,
