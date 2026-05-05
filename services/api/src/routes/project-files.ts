@@ -104,6 +104,15 @@ projectFileRoutes.use("/projects/:id/*", async (c, next) => {
     return;
   }
 
+  // 3. Platform admin — full access for moderation/support
+  const [adminCheck] = await sql<{ is_platform_admin: boolean }[]>`
+    SELECT is_platform_admin FROM users WHERE id = ${userId}
+  `;
+  if (adminCheck?.is_platform_admin) {
+    await next();
+    return;
+  }
+
   // No access — return 404 to avoid leaking that the project exists
   return c.json({ error: "Project not found" }, 404);
 });
