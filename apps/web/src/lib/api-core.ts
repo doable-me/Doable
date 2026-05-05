@@ -57,37 +57,49 @@ let refreshPromise: Promise<AuthTokens | null> | null = null;
  * or next apiFetch call reads the up-to-date value. Returns null if no
  * refresh token is stored or the server rejects the swap.
  *
- * Safe to call proactively — deduped by the apiFetch 401 retry and by
- * the AuthProvider's background keep-alive interval so we never fire two
- * refresh requests at once.
+ * Deduped globally: concurrent calls (proactive interval + 401 retry)
+ * share a single in-flight request to avoid rotating the same token twice.
  */
 export async function refreshAccessToken(): Promise<AuthTokens | null> {
+  // Deduplicate: if a refresh is already in-flight, piggyback on it.
+  if (refreshPromise) return refreshPromise;
+
   const { refreshToken } = getStoredTokens();
   if (!refreshToken) return null;
 
-  try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken } satisfies RefreshTokenRequest),
-    });
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken } satisfies RefreshTokenRequest),
+      });
 
-    if (!res.ok) {
-      clearTokens();
+      if (!res.ok) {
+        // Only clear tokens on definitive rejection (token revoked/invalid).
+        // 5xx or other transient errors should NOT destroy the session.
+        if (res.status === 401 || res.status === 403) {
+          clearTokens();
+        }
+        return null;
+      }
+
+      const data = (await res.json()) as AuthResponse;
+      storeTokens(data.tokens);
+      return data.tokens;
+    } catch {
+      // Network error (offline, timeout, Cloudflare hiccup) — do NOT
+      // clear tokens. The next request will retry the refresh.
       return null;
     }
+  })();
 
-    const data = (await res.json()) as AuthResponse;
-    storeTokens(data.tokens);
-    return data.tokens;
-  } catch {
-    clearTokens();
-    return null;
-  }
+  refreshPromise.finally(() => {
+    refreshPromise = null;
+  });
+
+  return refreshPromise;
 }
-
-// Internal alias kept for the existing 401-retry path below.
-const refreshTokens = refreshAccessToken;
 
 export async function apiFetch<T>(
   path: string,
@@ -107,14 +119,7 @@ export async function apiFetch<T>(
 
   // If 401, try to refresh and retry once
   if (res.status === 401 && accessToken) {
-    // Deduplicate concurrent refresh attempts
-    if (!refreshPromise) {
-      refreshPromise = refreshTokens().finally(() => {
-        refreshPromise = null;
-      });
-    }
-
-    const newTokens = await refreshPromise;
+    const newTokens = await refreshAccessToken();
     if (newTokens) {
       headers.set("Authorization", `Bearer ${newTokens.accessToken}`);
       res = await fetch(`${API_URL}${path}`, { ...options, headers });

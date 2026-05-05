@@ -157,7 +157,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const id = setInterval(() => {
       void refreshAccessToken();
     }, intervalMs);
-    return () => clearInterval(id);
+
+    // When the user returns to the tab after being away (browser throttles
+    // setInterval in background tabs), refresh immediately so they don't
+    // hit a stale/expired access token.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshAccessToken();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [user]);
 
   const login = useCallback(async (data: LoginData) => {
