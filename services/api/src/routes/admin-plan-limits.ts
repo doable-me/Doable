@@ -33,13 +33,14 @@ adminPlanLimitsRoutes.get("/plan-limits", async (c) => {
     const result = PLANS.map((plan) => {
       const row = rows.find((r) => r.plan === plan);
       const defaults = PLAN_LIMITS[plan];
+      const safeNum = (v: number | null | undefined) => (v != null && isFinite(v)) ? v : null;
       return {
         plan,
-        maxProjects: row?.max_projects ?? defaults.maxProjects,
-        maxMembers: row?.max_members ?? defaults.maxMembers,
-        dailyCredits: row?.daily_credits ?? defaults.dailyCredits,
-        monthlyCredits: row?.monthly_credits ?? defaults.monthlyCredits,
-        maxFileSize: row?.max_file_size ?? defaults.maxFileSize,
+        maxProjects: safeNum(row?.max_projects ?? defaults.maxProjects),
+        maxMembers: safeNum(row?.max_members ?? defaults.maxMembers),
+        dailyCredits: safeNum(row?.daily_credits ?? defaults.dailyCredits),
+        monthlyCredits: safeNum(row?.monthly_credits ?? defaults.monthlyCredits),
+        maxFileSize: safeNum(row?.max_file_size ?? defaults.maxFileSize),
         customDomains: row?.custom_domains ?? defaults.customDomains,
         analytics: row?.analytics ?? defaults.analytics,
         prioritySupport: row?.priority_support ?? defaults.prioritySupport,
@@ -53,7 +54,23 @@ adminPlanLimitsRoutes.get("/plan-limits", async (c) => {
       };
     });
 
-    return c.json({ data: result, defaults: PLAN_LIMITS });
+    // Serialize defaults with Infinity → null for JSON safety
+    const safeDefaults: Record<string, any> = {};
+    for (const p of PLANS) {
+      const d = PLAN_LIMITS[p];
+      safeDefaults[p] = {
+        maxProjects: isFinite(d.maxProjects) ? d.maxProjects : null,
+        maxMembers: isFinite(d.maxMembers) ? d.maxMembers : null,
+        dailyCredits: isFinite(d.dailyCredits) ? d.dailyCredits : null,
+        monthlyCredits: isFinite(d.monthlyCredits) ? d.monthlyCredits : null,
+        maxFileSize: isFinite(d.maxFileSize) ? d.maxFileSize : null,
+        customDomains: d.customDomains,
+        analytics: d.analytics,
+        prioritySupport: d.prioritySupport,
+      };
+    }
+
+    return c.json({ data: result, defaults: safeDefaults });
   } catch (err) {
     console.error("[admin/plan-limits] Error:", err);
     return c.json({ error: "Internal Server Error" }, 500);
