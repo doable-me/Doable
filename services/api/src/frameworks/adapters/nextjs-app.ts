@@ -210,6 +210,13 @@ export const nextjsAppAdapter: FrameworkAdapter = {
         // Next reads basePath from next.config; passing through env lets the
         // template's next.config.ts pick it up if the user wires it that way.
         DOABLE_BASE_PATH: ctx.basePath,
+        // Safety net: cap server-side fetch timeouts so that SSR doesn't hang
+        // indefinitely when env vars point to unreachable services (e.g.
+        // SUPABASE_URL undefined → fetch("undefined/...") hangs on DNS).
+        // 10s is generous for any sane API call during SSR.
+        NEXT_REQUEST_TIMEOUT: "10000",
+        // Prefer IPv4 to avoid IPv6 resolution issues in sandboxed environments.
+        NODE_OPTIONS: [ctx.env?.NODE_OPTIONS, "--dns-result-order=ipv4first"].filter(Boolean).join(" "),
       },
       readinessSignal: {
         kind: "log-substring",

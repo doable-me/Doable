@@ -368,6 +368,11 @@ export const DEVELOPER_TOOLS_PART1: Record<string, IntegrationDefinition> = {
         anonKey: "VITE_SUPABASE_ANON_KEY",
       },
       server: {
+        // Plain SUPABASE_URL for server-side code (Next.js Server Actions,
+        // API routes, etc.) — same value as the client URL but without the
+        // VITE_/NEXT_PUBLIC_ prefix so it's available on the server without
+        // being leaked into client bundles.
+        url: "SUPABASE_URL",
         serviceRoleKey: "SUPABASE_SERVICE_ROLE_KEY",
       },
       runtimeHint: "Postgres DB + auth + storage (Supabase).",

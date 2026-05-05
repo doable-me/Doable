@@ -211,6 +211,24 @@ async function doStartDevServer(
     console.warn("[DevServer] Failed to resolve env vars:", err);
   }
 
+  // Framework-aware env var aliasing: the vault-bridge provides Vite-prefixed
+  // client vars (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY). For Next.js
+  // projects, also expose them under NEXT_PUBLIC_* and bare names (SUPABASE_URL)
+  // so server-side code can access the URL without a client prefix.
+  if (adapter.id === "nextjs-app") {
+    // VITE_* → NEXT_PUBLIC_* (for client-side bundling)
+    for (const [key, value] of Object.entries(userEnvVars)) {
+      if (key.startsWith("VITE_") && value) {
+        const nextKey = "NEXT_PUBLIC_" + key.slice(5); // VITE_SUPABASE_URL → NEXT_PUBLIC_SUPABASE_URL
+        if (!userEnvVars[nextKey]) userEnvVars[nextKey] = value;
+      }
+    }
+    // Also expose SUPABASE_URL (bare, for server-side) from VITE_SUPABASE_URL
+    if (userEnvVars["VITE_SUPABASE_URL"] && !userEnvVars["SUPABASE_URL"]) {
+      userEnvVars["SUPABASE_URL"] = userEnvVars["VITE_SUPABASE_URL"];
+    }
+  }
+
   // Ask the framework adapter for the spawn-shape. The adapter is a pure
   // spec builder — it does NOT spawn. We hand the spec to spawnJailedVite,
   // which still owns the dovault/jail wiring.
