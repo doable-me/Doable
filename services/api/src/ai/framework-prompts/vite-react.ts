@@ -75,4 +75,20 @@ export const viteReactPrompt: FrameworkPrompt = {
     "",
     "11. **IMPORT TYPES**: Do not use `import type { X }` for values that are used at runtime (e.g., as a component, in a function call, or as a value). `import type` strips the import at compile time, causing runtime errors. Only use `import type` for values used exclusively in type annotations.",
   ].join("\n"),
+
+  pwa: [
+    "12. **PWA (Progressive Web App)**: When the user asks to make the app installable, work offline, or become a PWA:",
+    "   - Install `vite-plugin-pwa` (devDependency) and `idb-keyval` (dependency)",
+    "   - Add `VitePWA()` plugin to vite.config.ts with `registerType: \"autoUpdate\"`",
+    "   - Configure manifest INSIDE VitePWA() options (do NOT create a separate manifest.json)",
+    "   - Use `scope: \"./\"` and `start_url: \"./\"` (relative paths — required for sub-path deployment)",
+    "   - NEVER create sw.js manually — vite-plugin-pwa auto-generates it via Workbox",
+    "   - NEVER call navigator.serviceWorker.register() — the plugin handles it",
+    "   - Add to index.html: meta theme-color, apple-mobile-web-app-capable, apple-touch-icon, viewport-fit=cover",
+    "   - Provide icons: 192×192 + 512×512 PNG (include one with purpose: \"maskable\")",
+    "   - Add BeforeInstallPromptEvent type declaration in vite-env.d.ts",
+    "   - Use idb-keyval for offline data persistence (NOT localStorage)",
+    "   - Caching: CacheFirst for static assets/fonts, NetworkFirst for API calls",
+    "   - Add env(safe-area-inset-*) padding on body for iPhone notch",
+  ].join("\n"),
 };

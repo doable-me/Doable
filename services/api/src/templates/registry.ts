@@ -5,6 +5,7 @@ import { ecommerceStoreTemplate } from "./definitions/ecommerce-store.js";
 import { blogTemplate } from "./definitions/blog.js";
 import { portfolioTemplate } from "./definitions/portfolio.js";
 import { todoAppTemplate } from "./definitions/todo-app.js";
+import { pwaAppTemplate } from "./definitions/pwa-app.js";
 import { nextjsBlankTemplate } from "./definitions/nextjs-blank.js";
 import { nextjsTodoAppTemplate } from "./definitions/nextjs-todo-app.js";
 import { getEnabledFrameworkIds } from "../frameworks/init.js";
@@ -56,6 +57,7 @@ const BUILT_IN_TEMPLATES = new Map<string, TemplateDefinition>([
   [blogTemplate.id, blogTemplate],
   [portfolioTemplate.id, portfolioTemplate],
   [todoAppTemplate.id, todoAppTemplate],
+  [pwaAppTemplate.id, pwaAppTemplate],
   [nextjsBlankTemplate.id, nextjsBlankTemplate],
   [nextjsTodoAppTemplate.id, nextjsTodoAppTemplate],
 ]);

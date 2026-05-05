@@ -9,6 +9,8 @@ export interface FrameworkPrompt {
   styling: string;
   /** File-shape and edit conventions block. */
   fileShape: string;
+  /** PWA (Progressive Web App) conventions block. */
+  pwa?: string;
 }
 
 import { viteReactPrompt } from "./vite-react.js";
@@ -29,6 +31,6 @@ export function getFrameworkPrompt(frameworkId: string): FrameworkPrompt {
 /** Concatenate the prompt sections in canonical order. */
 export function renderFrameworkPrompt(frameworkId: string): string {
   const p = getFrameworkPrompt(frameworkId);
-  return [p.systemIntro, p.envConventions, p.routing, p.styling, p.fileShape]
+  return [p.systemIntro, p.envConventions, p.routing, p.styling, p.fileShape, p.pwa]
     .filter(Boolean).join("\n\n");
 }
