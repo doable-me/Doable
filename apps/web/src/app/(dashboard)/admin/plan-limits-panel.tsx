@@ -125,14 +125,15 @@ export function PlanLimitsPanel() {
     }
   };
 
-  const formatFileSize = (bytes: number) => {
+  const formatFileSize = (bytes: number | null) => {
+    if (bytes == null || !isFinite(bytes)) return "∞";
     if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(0)} GB`;
     if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(0)} MB`;
     return `${(bytes / 1024).toFixed(0)} KB`;
   };
 
-  const formatNumber = (n: number) => {
-    if (!isFinite(n)) return "∞";
+  const formatNumber = (n: number | null) => {
+    if (n == null || !isFinite(n)) return "∞";
     return n.toLocaleString();
   };
 
