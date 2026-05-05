@@ -12,6 +12,7 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
   if (!isProjectScaffolded(projectId)) {
     try {
       await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: "Creating project files..." } }) });
+      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: "Creating project scaffold..." }) });
       console.log(`[Chat] Auto-scaffolding project ${projectId}`);
 
       // Look up the project's framework_id and any pre-scaffolded files
@@ -43,7 +44,10 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
         // DB query failed — fall back to blank
       }
 
+      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: "Installing dependencies..." } }) });
+      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Installing dependencies..." }) });
       await createProject(projectId, templateFiles, scaffoldFrameworkId);
+      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: "Project files ready" } }) });
     } catch (err: unknown) {
       const isAlreadyExists = err instanceof Error && err.message.includes("already scaffolded");
       if (!isAlreadyExists) console.error(`[Chat] Scaffold failed for project ${projectId}:`, err);
@@ -51,9 +55,11 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
   }
   if (!isDevServerRunning(projectId) && isProjectScaffolded(projectId)) {
     try {
-      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Starting live preview..." } }) });
+      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Starting dev server — compiling project..." } }) });
+      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Starting dev server...\n" }) });
       console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
       await startDevServer(projectId, { userId });
+      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Dev server ready" } }) });
     } catch (err) {
       console.error(`[Chat] Dev server start failed for project ${projectId}:`, err);
     }

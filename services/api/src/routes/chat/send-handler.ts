@@ -241,8 +241,10 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
         const recordAssistantToolCall = createRecordAssistantToolCall(state);
 
         try {
-          await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: "Setting up..." }) });
+          await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: "Preparing workspace..." }) });
           await scaffoldAndStartDev(projectId, stream, userId);
+          await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Connecting to AI model...\n" }) });
+          await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "Connecting to AI..." } }) });
 
           const sessionKey = mode === "visual-edit" ? `${projectId}:visual-edit` : projectId;
           const [aiConfig, workspaceRow] = await Promise.all([
