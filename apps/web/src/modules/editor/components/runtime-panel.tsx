@@ -71,11 +71,8 @@ export function RuntimePanel({ projectId }: { projectId: string }) {
     );
   }
   if (metrics.source === "none") {
-    return (
-      <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
-        Runtime metrics unavailable in this environment — collected on the production server (systemd + cgroup).
-      </div>
-    );
+    // No runtime metrics available (dev environment) — render nothing.
+    return null;
   }
   const stateClass = STATE_STYLES[metrics.state] ?? STATE_STYLES.unknown;
   return (
