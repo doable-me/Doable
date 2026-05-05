@@ -42,6 +42,8 @@ interface EnabledIntegration {
   updated_at: string;
   oauth_app_id: string | null;
   oauth_client_id: string | null;
+  env_configured?: boolean;
+  env_source?: string | null;
 }
 
 interface OAuthAppForm {
@@ -90,7 +92,8 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
   const [oauthForm, setOauthForm] = useState<OAuthAppForm | null>(null);
   const [oauthSaving, setOauthSaving] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
-  const [filterMode, setFilterMode] = useState<"all" | "enabled" | "unconfigured">("all");
+  const [filterMode, setFilterMode] = useState<"all" | "enabled" | "unconfigured" | "env">("all");
+  const [envConfiguredMap, setEnvConfiguredMap] = useState<Map<string, { source: string; clientId?: string }>>(new Map());
 
   const fetchData = useCallback(async () => {
     try {
@@ -106,7 +109,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
 
       const [catalogRes, enabledRes] = await Promise.all([
         apiFetch<{ data: CatalogItem[]; categories: string[] }>(catalogUrl),
-        apiFetch<{ data: EnabledIntegration[] }>(enabledUrl),
+        apiFetch<{ data: EnabledIntegration[]; envConfigured?: Array<{ integration_id: string; env_configured: boolean; env_source: string; oauth_client_id?: string }> }>(enabledUrl),
       ]);
       setCatalog(catalogRes.data);
       setCategories(catalogRes.categories);
@@ -114,6 +117,20 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
       for (const row of enabledRes.data) {
         map.set(row.integration_id, row);
       }
+      // Merge env-configured integrations (from platform endpoint)
+      const envMap = new Map<string, { source: string; clientId?: string }>();
+      if (enabledRes.envConfigured) {
+        for (const env of enabledRes.envConfigured) {
+          envMap.set(env.integration_id, { source: env.env_source, clientId: env.oauth_client_id ?? undefined });
+        }
+      }
+      // Also check env_configured flag on regular rows
+      for (const row of enabledRes.data) {
+        if (row.env_configured && row.env_source) {
+          envMap.set(row.integration_id, { source: row.env_source });
+        }
+      }
+      setEnvConfiguredMap(envMap);
       setEnabledMap(map);
       setError(null);
     } catch (err) {
@@ -213,6 +230,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
       const entry = enabledMap.get(item.id);
       if (!entry || entry.configured) return false;
     }
+    if (filterMode === "env" && !envConfiguredMap.has(item.id)) return false;
     return true;
   });
 
@@ -225,6 +243,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
 
   const enabledCount = enabledMap.size;
   const unconfiguredCount = [...enabledMap.values()].filter((e) => !e.configured).length;
+  const envConfiguredCount = envConfiguredMap.size;
   const oauthIntegrations = catalog.filter((i) => i.authType === "oauth2");
 
   if (loading) {
@@ -248,7 +267,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
         </div>
       )}
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <div className="rounded-lg border p-3 bg-background">
           <div className="text-2xl font-bold text-foreground">{enabledCount}</div>
           <div className="text-xs text-muted-foreground">Enabled</div>
@@ -256,6 +275,12 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
         <div className="rounded-lg border p-3 bg-background">
           <div className="text-2xl font-bold text-foreground">{oauthIntegrations.length}</div>
           <div className="text-xs text-muted-foreground">Need OAuth Setup</div>
+        </div>
+        <div className={cn("rounded-lg border p-3 bg-background", envConfiguredCount > 0 && "border-blue-500/50")}>
+          <div className={cn("text-2xl font-bold", envConfiguredCount > 0 ? "text-blue-600" : "text-foreground")}>
+            {envConfiguredCount}
+          </div>
+          <div className="text-xs text-muted-foreground">Via Env Vars</div>
         </div>
         <div className={cn("rounded-lg border p-3 bg-background", unconfiguredCount > 0 && "border-yellow-500/50")}>
           <div className={cn("text-2xl font-bold", unconfiguredCount > 0 ? "text-yellow-600" : "text-foreground")}>
@@ -272,6 +297,18 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
             <strong>{unconfiguredCount} integration(s)</strong> are enabled but missing OAuth credentials.
             Users will see a &quot;redirect_uri_mismatch&quot; or similar error when trying to connect.
             Configure the OAuth app credentials below to fix this.
+          </div>
+        </div>
+      )}
+
+      {envConfiguredCount > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 p-3">
+          <Key className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+          <div className="text-sm text-blue-700 dark:text-blue-400">
+            <strong>{envConfiguredCount} integration(s)</strong> are pre-configured via server environment variables
+            (e.g. <code className="text-[11px] bg-background/50 px-1 py-0.5 rounded border">GOOGLE_CLIENT_ID</code>,{" "}
+            <code className="text-[11px] bg-background/50 px-1 py-0.5 rounded border">OAUTH_*_CLIENT_ID</code>).
+            These work automatically without manual OAuth setup here.
           </div>
         </div>
       )}
@@ -301,7 +338,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
           ))}
         </select>
         <div className="flex rounded-md border border-input overflow-hidden">
-          {(["all", "enabled", "unconfigured"] as const).map((mode) => (
+          {(["all", "enabled", "env", "unconfigured"] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => setFilterMode(mode)}
@@ -312,7 +349,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                   : "bg-background text-muted-foreground hover:text-foreground"
               )}
             >
-              {mode === "all" ? "All" : mode === "enabled" ? "Enabled" : "Needs Config"}
+              {mode === "all" ? "All" : mode === "enabled" ? "Enabled" : mode === "env" ? "Env Vars" : "Needs Config"}
             </button>
           ))}
         </div>
@@ -341,15 +378,18 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                   const isOAuth = item.authType === "oauth2";
                   const isExpanded = expandedId === item.id;
                   const isSaving = saving === item.id;
+                  const envInfo = envConfiguredMap.get(item.id);
+                  const isEnvConfigured = !!envInfo;
 
                   return (
                     <div
                       key={item.id}
                       className={cn(
                         "rounded-lg border transition-colors",
-                        isEnabled && !isConfigured && isOAuth && "border-yellow-500/40",
-                        isEnabled && isConfigured && "border-green-500/30",
-                        !isEnabled && "border-border"
+                        isEnvConfigured && "border-blue-500/30 bg-blue-500/5",
+                        isEnabled && !isConfigured && !isEnvConfigured && isOAuth && "border-yellow-500/40",
+                        isEnabled && (isConfigured || isEnvConfigured) && "border-green-500/30",
+                        !isEnabled && !isEnvConfigured && "border-border"
                       )}
                     >
                       <div className="flex items-center gap-3 p-3">
@@ -368,14 +408,24 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                                 OAuth
                               </span>
                             )}
-                            {isEnabled && isConfigured && (
+                            {isEnvConfigured && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20" title={`Configured via: ${envInfo!.source}`}>
+                                ENV
+                              </span>
+                            )}
+                            {isEnabled && (isConfigured || isEnvConfigured) && (
                               <Check className="h-3.5 w-3.5 text-green-500" />
                             )}
-                            {isEnabled && !isConfigured && isOAuth && (
+                            {isEnabled && !isConfigured && !isEnvConfigured && isOAuth && (
                               <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate">{item.description}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {isEnvConfigured && (
+                              <span className="text-blue-600 dark:text-blue-400">[{envInfo!.source}] </span>
+                            )}
+                            {item.description}
+                          </p>
                         </div>
                         {/* Actions */}
                         <div className="flex items-center gap-2 shrink-0">

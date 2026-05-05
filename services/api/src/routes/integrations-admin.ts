@@ -6,8 +6,54 @@ import { workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { oauthApps } from "../integrations/credential-vault.js";
-import { getIntegration } from "../integrations/registry/index.js";
+import { getIntegration, listIntegrations } from "../integrations/registry/index.js";
 import { xray } from "../integrations/xray.js";
+
+/**
+ * Detect integrations that have OAuth credentials configured via environment variables.
+ * These work without any admin DB configuration.
+ */
+function getEnvConfiguredIntegrations(): Map<string, { source: string; clientId?: string }> {
+  const result = new Map<string, { source: string; clientId?: string }>();
+  const allDefs = listIntegrations({});
+
+  for (const def of allDefs) {
+    if (def.authType !== "oauth2" || !def.oauth2Config) continue;
+
+    const envKey = def.id.toUpperCase().replace(/-/g, "_");
+    const envClientId = process.env[`OAUTH_${envKey}_CLIENT_ID`];
+    const envClientSecret = process.env[`OAUTH_${envKey}_CLIENT_SECRET`];
+
+    if (envClientId && envClientSecret) {
+      result.set(def.id, { source: `OAUTH_${envKey}_*`, clientId: envClientId });
+      continue;
+    }
+
+    // Google services share GOOGLE_CLIENT_ID
+    const isGoogle = def.oauth2Config.authUrl?.includes("accounts.google.com");
+    if (isGoogle) {
+      const gClientId = process.env.GOOGLE_INTEGRATIONS_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+      const gClientSecret = process.env.GOOGLE_INTEGRATIONS_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+      if (gClientId && gClientSecret) {
+        result.set(def.id, { source: "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET", clientId: gClientId });
+        continue;
+      }
+    }
+
+    // GitHub services share GITHUB_CLIENT_ID
+    const isGitHub = def.oauth2Config.authUrl?.includes("github.com");
+    if (isGitHub) {
+      const ghClientId = process.env.GITHUB_CLIENT_ID;
+      const ghClientSecret = process.env.GITHUB_CLIENT_SECRET;
+      if (ghClientId && ghClientSecret) {
+        result.set(def.id, { source: "GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET", clientId: ghClientId });
+        continue;
+      }
+    }
+  }
+
+  return result;
+}
 
 const workspaces = workspaceQueries(sql);
 
@@ -287,7 +333,33 @@ integrationAdminRoutes.get("/integrations/admin/platform-enabled", authMiddlewar
     LEFT JOIN oauth_apps oa ON oa.integration_id = pei.integration_id AND oa.is_global = true
     ORDER BY pei.integration_id
   `;
-  return c.json({ data: rows });
+
+  // Enrich with env-var configuration info
+  const envConfigured = getEnvConfiguredIntegrations();
+  const enrichedRows = rows.map((row: any) => ({
+    ...row,
+    env_configured: envConfigured.has(row.integration_id),
+    env_source: envConfigured.get(row.integration_id)?.source ?? null,
+  }));
+
+  // Also include env-configured integrations not in DB as "implicitly configured"
+  const envOnlyIntegrations = [...envConfigured.entries()]
+    .filter(([id]) => !rows.some((r: any) => r.integration_id === id))
+    .map(([id, info]) => ({
+      integration_id: id,
+      enabled: false,
+      configured: true,
+      env_configured: true,
+      env_source: info.source,
+      oauth_app_id: null,
+      oauth_client_id: info.clientId ?? null,
+      enabled_by: null,
+      notes: null,
+      created_at: null,
+      updated_at: null,
+    }));
+
+  return c.json({ data: enrichedRows, envConfigured: envOnlyIntegrations });
 });
 
 // POST /integrations/admin/platform-enabled — Enable an integration globally
@@ -379,6 +451,20 @@ integrationAdminRoutes.post(
     return c.json({ data: results }, 201);
   },
 );
+
+// ─── Platform Admin: Env-Configured Integrations ─────────────
+
+// GET /integrations/admin/env-configured — List integrations configured via env vars
+integrationAdminRoutes.get("/integrations/admin/env-configured", authMiddleware, platformAdminMiddleware, async (c) => {
+  const envConfigured = getEnvConfiguredIntegrations();
+  const data = [...envConfigured.entries()].map(([id, info]) => ({
+    integrationId: id,
+    source: info.source,
+    clientId: info.clientId,
+    displayName: getIntegration(id)?.displayName ?? id,
+  }));
+  return c.json({ data });
+});
 
 // ─── X-Ray: Integration Observability Endpoints ──────────
 
