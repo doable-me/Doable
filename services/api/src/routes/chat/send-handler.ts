@@ -114,9 +114,15 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           SELECT role FROM project_collaborators
           WHERE project_id = ${projectId} AND user_id = ${userId}
         `;
-        if (!collab) return c.json({ error: "Access denied" }, 403);
+        if (!collab) {
+          // Platform admin bypass
+          const [adminCheck] = await sql<{ is_platform_admin: boolean }[]>`
+            SELECT is_platform_admin FROM users WHERE id = ${userId}
+          `;
+          if (!adminCheck?.is_platform_admin) return c.json({ error: "Access denied" }, 403);
+        }
       }
-      const effectiveRole = chatRole ?? "member"; // collaborators treated as members
+      const effectiveRole = chatRole ?? "member"; // collaborators/admins treated as members
       if (effectiveRole === "viewer") {
         return c.json({ error: "Viewers cannot use AI chat" }, 403);
       }

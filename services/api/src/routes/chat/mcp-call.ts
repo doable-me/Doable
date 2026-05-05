@@ -38,7 +38,12 @@ export function registerMcpCallRoute(app: Hono<AuthEnv>) {
           SELECT role FROM project_collaborators
           WHERE project_id = ${projectId} AND user_id = ${userId}
         `;
-        if (!collab) return c.json({ error: "Access denied" }, 403);
+        if (!collab) {
+          const [adminCheck] = await sql<{ is_platform_admin: boolean }[]>`
+            SELECT is_platform_admin FROM users WHERE id = ${userId}
+          `;
+          if (!adminCheck?.is_platform_admin) return c.json({ error: "Access denied" }, 403);
+        }
       }
 
       const connectors = connectorQueries(sql);
