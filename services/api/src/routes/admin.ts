@@ -8,6 +8,7 @@ import { adminAiRoutes } from "./admin-ai.js";
 import { adminOpsRoutes } from "./admin-ops.js";
 import { adminEmailRoutes } from "./admin-email.js";
 import { adminToolsRoutes } from "./admin-tools.js";
+import { adminPlanLimitsRoutes } from "./admin-plan-limits.js";
 
 const featureFlags = featureFlagQueries(sql);
 
@@ -47,4 +48,5 @@ adminRoutes.route("/", adminUserRoutes);
 adminRoutes.route("/", adminAiRoutes);
 adminRoutes.route("/", adminOpsRoutes);
 adminRoutes.route("/", adminToolsRoutes);
+adminRoutes.route("/", adminPlanLimitsRoutes);
 adminRoutes.route("/email", adminEmailRoutes);
