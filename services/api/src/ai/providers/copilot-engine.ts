@@ -116,6 +116,18 @@ export class CopilotEngine {
         hooks: {
           onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
             config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs);
+            // Block bash tool from writing files via cat/heredoc — force use of create_file/edit_file
+            if (input.toolName === "bash") {
+              const args = input.toolArgs as { command?: string } | undefined;
+              const cmd = args?.command ?? "";
+              if (/cat\s*>|<<\s*['"]?EOF|>\s*src\/|>\s*\.\//i.test(cmd)) {
+                console.log(`[CopilotEngine] Denied bash file-write: ${cmd.slice(0, 80)}`);
+                return {
+                  permissionDecision: "deny" as const,
+                  permissionDecisionReason: "Do NOT use bash/cat to write files. Use the create_file or edit_file tool instead — it is faster and more reliable.",
+                };
+              }
+            }
             // Enforce plan mode: deny write/shell tools via SDK hook
             if (currentSessionId && this.sessionModes.get(currentSessionId) === "plan") {
               if (!PLAN_ALLOWED_TOOLS.has(input.toolName)) {
@@ -169,6 +181,18 @@ export class CopilotEngine {
           hooks: {
             onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
               config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs);
+              // Block bash tool from writing files via cat/heredoc
+              if (input.toolName === "bash") {
+                const args = input.toolArgs as { command?: string } | undefined;
+                const cmd = args?.command ?? "";
+                if (/cat\s*>|<<\s*['"]?EOF|>\s*src\/|>\s*\.\//i.test(cmd)) {
+                  console.log(`[CopilotEngine] Denied bash file-write: ${cmd.slice(0, 80)}`);
+                  return {
+                    permissionDecision: "deny" as const,
+                    permissionDecisionReason: "Do NOT use bash/cat to write files. Use the create_file or edit_file tool instead — it is faster and more reliable.",
+                  };
+                }
+              }
               if (currentSessionId && this.sessionModes.get(currentSessionId) === "plan") {
                 if (!PLAN_ALLOWED_TOOLS.has(input.toolName)) {
                   console.log(`[CopilotEngine] Plan mode: denied tool '${input.toolName}'`);
