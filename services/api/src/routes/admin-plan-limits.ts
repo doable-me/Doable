@@ -33,7 +33,11 @@ adminPlanLimitsRoutes.get("/plan-limits", async (c) => {
     const result = PLANS.map((plan) => {
       const row = rows.find((r) => r.plan === plan);
       const defaults = PLAN_LIMITS[plan];
-      const safeNum = (v: number | null | undefined) => (v != null && isFinite(v)) ? v : null;
+      const safeNum = (v: number | bigint | null | undefined) => {
+        if (v == null) return null;
+        const n = Number(v);
+        return isFinite(n) ? n : null;
+      };
       return {
         plan,
         maxProjects: safeNum(row?.max_projects ?? defaults.maxProjects),
