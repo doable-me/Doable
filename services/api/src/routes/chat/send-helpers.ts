@@ -14,8 +14,19 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
       await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: "Creating project files..." } }) });
       console.log(`[Chat] Auto-scaffolding project ${projectId}`);
 
-      // Check if project has pre-scaffolded files in the DB (from template remix)
+      // Look up the project's framework_id and any pre-scaffolded files
       let templateFiles: Record<string, string> | undefined;
+      let scaffoldFrameworkId: string | undefined;
+      try {
+        const [project] = await sql<{ framework_id: string | null }[]>`
+          SELECT framework_id FROM projects WHERE id = ${projectId}
+        `;
+        if (project?.framework_id) {
+          scaffoldFrameworkId = project.framework_id;
+        }
+      } catch {
+        // DB query failed — fall back to default (vite-react)
+      }
       try {
         const dbFiles = await sql<{ file_path: string; content: string }[]>`
           SELECT file_path, content FROM project_files
@@ -32,7 +43,7 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
         // DB query failed — fall back to blank
       }
 
-      await createProject(projectId, templateFiles);
+      await createProject(projectId, templateFiles, scaffoldFrameworkId);
     } catch (err: unknown) {
       const isAlreadyExists = err instanceof Error && err.message.includes("already scaffolded");
       if (!isAlreadyExists) console.error(`[Chat] Scaffold failed for project ${projectId}:`, err);
