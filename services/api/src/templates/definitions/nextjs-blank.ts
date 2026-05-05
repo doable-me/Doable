@@ -85,7 +85,7 @@ const TSCONFIG = JSON.stringify(
       isolatedModules: true,
       jsx: "preserve",
       incremental: true,
-      paths: { "@/*": ["./src/*"] },
+      paths: { "@/*": ["./*"] },
       plugins: [{ name: "next" }],
     },
     include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
