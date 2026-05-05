@@ -79,7 +79,7 @@ export const viteReactPrompt: FrameworkPrompt = {
   pwa: [
     "12. **PWA (Progressive Web App)**: When the user asks to make the app installable, work offline, or become a PWA:",
     "   - Install `vite-plugin-pwa` (devDependency) and `idb-keyval` (dependency)",
-    "   - Add `VitePWA()` plugin to vite.config.ts with `registerType: \"autoUpdate\"`",
+    "   - **CRITICAL**: Add `import { VitePWA } from \"vite-plugin-pwa\"` and `VitePWA({...})` to the plugins array in vite.config.ts — WITHOUT this, NO service worker, manifest, or registerSW.js will be generated",
     "   - Configure manifest INSIDE VitePWA() options (do NOT create a separate manifest.json)",
     "   - Use `scope: \"./\"` and `start_url: \"./\"` (relative paths — required for sub-path deployment)",
     "   - NEVER create sw.js manually — vite-plugin-pwa auto-generates it via Workbox",
@@ -87,7 +87,7 @@ export const viteReactPrompt: FrameworkPrompt = {
     "   - Add to index.html: meta theme-color, apple-mobile-web-app-capable, apple-touch-icon, viewport-fit=cover",
     "   - Provide icons: 192×192 + 512×512 PNG (include one with purpose: \"maskable\")",
     "   - Add BeforeInstallPromptEvent type declaration in vite-env.d.ts",
-    "   - Use idb-keyval for offline data persistence (NOT localStorage)",
+    "   - **IMPORTANT**: Wrap ALL idb-keyval/IndexedDB calls in try/catch — the preview iframe sandbox blocks IndexedDB; fall back to in-memory or localStorage on SecurityError",
     "   - Caching: CacheFirst for static assets/fonts, NetworkFirst for API calls",
     "   - Add env(safe-area-inset-*) padding on body for iPhone notch",
   ].join("\n"),

@@ -417,6 +417,8 @@ export function usePWA() {
 8. **viewport-fit=cover** — required for iPhone notch/safe areas to render correctly.
 9. **Offline data: use idb-keyval** (IndexedDB) — NOT localStorage (too small, sync-blocking).
 10. **theme_color in manifest AND in meta tag** — must match. Affects browser chrome color on mobile.
+11. **VitePWA() MUST be in vite.config.ts plugins array** — this is the MOST CRITICAL step. Without it, the build will NOT generate sw.js, manifest.webmanifest, or registerSW.js. The entire PWA depends on this plugin being present. Always verify vite.config.ts includes `import { VitePWA } from "vite-plugin-pwa"` and `VitePWA({...})` in the plugins array.
+12. **Wrap ALL IndexedDB/idb-keyval calls in try/catch** — the Doable preview iframe is sandboxed and blocks IndexedDB access. If the app crashes on IDB access in preview, the user sees a blank screen. Always catch SecurityError and fall back gracefully (e.g., use in-memory storage as fallback).
 
 ## Caching Strategy Guide
 
