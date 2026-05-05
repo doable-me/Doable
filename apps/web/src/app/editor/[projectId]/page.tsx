@@ -302,10 +302,24 @@ function toAbsolutePreviewUrl(url: string | null): string | null {
 }
 
 async function scaffoldProject(projectId: string): Promise<string | null> {
-  const json = await apiFetch<{ data: { previewUrl?: string | null } }>(`/projects/${projectId}/scaffold`, {
-    method: "POST",
-  });
-  return toAbsolutePreviewUrl(json.data.previewUrl ?? null);
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const json = await apiFetch<{ data: { previewUrl?: string | null } }>(`/projects/${projectId}/scaffold`, {
+        method: "POST",
+      });
+      return toAbsolutePreviewUrl(json.data.previewUrl ?? null);
+    } catch (err) {
+      // On network failures (Failed to fetch), retry with backoff
+      const msg = err instanceof Error ? err.message : "";
+      if (attempt < maxRetries - 1 && (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("ERR_FAILED"))) {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  return null;
 }
 
 async function fetchPreviewUrl(projectId: string): Promise<string | null> {
