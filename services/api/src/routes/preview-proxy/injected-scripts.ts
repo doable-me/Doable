@@ -87,8 +87,56 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
     }
     return res.json();
   }
+  // ─── MCP Tool Call Support ───
+  // Exposes callMcp(toolName, args) and also intercepts self-posted
+  // "mcp-call" messages (used by generated apps in published/standalone mode).
+  async function callMcp(toolName, args) {
+    var t = await awaitToken();
+    var doFetch = function (theToken) {
+      return fetch("/__doable/connector-proxy/mcp/" + encodeURIComponent(toolName), {
+        method: "POST",
+        headers: { "content-type": "application/json", "authorization": "Bearer " + theToken },
+        body: JSON.stringify({ props: args || {} }),
+      });
+    };
+    var res = await doFetch(t);
+    if (res.status === 401) {
+      token = null;
+      try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
+      var t2 = await awaitToken();
+      res = await doFetch(t2);
+    }
+    return res.json();
+  }
+
+  // Intercept mcp-call postMessages on own window (published mode: parent === window).
+  // In preview mode these go to parent (editor handles them), but when standalone
+  // they arrive on our own window, so we handle them here.
+  window.addEventListener("message", function (ev) {
+    if (!ev.data || typeof ev.data !== "object") return;
+    if (ev.data.type !== "mcp-call") return;
+    // Only handle if we are the top-level window (published) OR if the message
+    // originated from ourselves (ev.source === window).
+    if (window.parent !== window && ev.source !== window) return;
+    var callbackId = ev.data.callbackId;
+    var mcpToolName = ev.data.toolName;
+    var mcpArgs = ev.data.args || {};
+    callMcp(mcpToolName, mcpArgs).then(function (result) {
+      var response = { type: "mcp-response", callbackId: callbackId };
+      if (result && result.success) {
+        response.result = result.data;
+      } else {
+        response.error = (result && result.error && result.error.message) || "MCP call failed";
+      }
+      window.postMessage(response, "*");
+    }).catch(function (err) {
+      window.postMessage({ type: "mcp-response", callbackId: callbackId, error: err.message || "Network error" }, "*");
+    });
+  });
+
   window.__doable = window.__doable || {};
   window.__doable.callConnector = callConnector;
+  window.__doable.callMcp = callMcp;
 })();
 </script>`;
 

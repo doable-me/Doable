@@ -43,6 +43,9 @@ import { credentialVault } from "../integrations/credential-vault.js";
 import { getIntegration } from "../integrations/registry/index.js";
 import { verifyProjectJwt } from "../auth/project-jwt.js";
 import { getProjectPath } from "../projects/file-manager.js";
+import { connectorQueries } from "@doable/db";
+import { getConnectorManager } from "../mcp/connector-manager.js";
+import type { McpConnectorConfig } from "../mcp/types.js";
 
 export const connectorProxyRoutes = new Hono();
 
@@ -184,6 +187,172 @@ connectorProxyRoutes.get(
     }
 
     return c.json({ integrations });
+  },
+);
+
+// ─── MCP Available (extends /available) ─────────────────
+
+connectorProxyRoutes.get(
+  "/__doable/connector-proxy/mcp/available",
+  async (c) => {
+    const authResult = await resolveAuth(c);
+    if (authResult instanceof Response) return authResult;
+    const { workspaceId } = authResult;
+
+    const connectorsDb = connectorQueries(sql);
+    const rows = await connectorsDb.listConnectors(workspaceId);
+    const activeRows = rows.filter((r) => r.status === "active");
+
+    const tools: Array<{ fullName: string; connectorName: string; toolName: string; description?: string }> = [];
+
+    for (const row of activeRows) {
+      const safeName = row.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+      const cache = row.capabilities_cache as { tools?: { list?: Array<{ name: string; description?: string }> } } | null;
+      for (const tool of cache?.tools?.list ?? []) {
+        const safeToolName = tool.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+        tools.push({
+          fullName: `mcp_${safeName}_${safeToolName}`,
+          connectorName: row.name,
+          toolName: tool.name,
+          description: tool.description,
+        });
+      }
+    }
+
+    return c.json({ tools });
+  },
+);
+
+// ─── MCP Tool Proxy ─────────────────────────────────────
+// POST /__doable/connector-proxy/mcp/:toolName
+// Handles MCP tool calls via the same auth (JWT/API key) as integrations.
+// The toolName is the AI-prefixed name like "mcp_hpca_mcp_list_cases_and_folders".
+// Resolves the connector and real tool name internally.
+
+connectorProxyRoutes.post(
+  "/__doable/connector-proxy/mcp/:toolName",
+  async (c) => {
+    const t0 = Date.now();
+    const toolName = c.req.param("toolName");
+
+    // 1. Authenticate
+    const authResult = await resolveAuth(c);
+    if (authResult instanceof Response) return authResult;
+    const { projectId, workspaceId, userId, rateLimit } = authResult;
+
+    // 2. Rate limit
+    if (!rateLimitOk(projectId, rateLimit)) {
+      await audit(projectId, "mcp", toolName, userId, "denied", Date.now() - t0);
+      return jsonError(c, 429, "RATE_LIMITED", "Too many requests. Try again shortly.");
+    }
+
+    // 3. Parse body
+    let body: { props?: Record<string, unknown> } = {};
+    try {
+      body = (await c.req.json()) as { props?: Record<string, unknown> };
+    } catch {
+      // Empty body is OK
+    }
+    const props = body.props ?? {};
+
+    // 4. Resolve AI-prefixed tool name → connectorId + real tool name
+    const connectors = connectorQueries(sql);
+    const rows = await connectors.listConnectors(workspaceId);
+    const activeRows = rows.filter((r) => r.status === "active");
+
+    let resolvedConnector: typeof activeRows[0] | null = null;
+    let realToolName: string | null = null;
+
+    for (const row of activeRows) {
+      const safeName = row.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+      const prefix = `mcp_${safeName}_`;
+      if (toolName.startsWith(prefix)) {
+        const candidate = toolName.slice(prefix.length);
+        // Verify this tool exists in the connector's capabilities cache
+        const cache = row.capabilities_cache as { tools?: { list?: Array<{ name: string }> } } | null;
+        const toolList = cache?.tools?.list ?? [];
+        const match = toolList.find((t) => t.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase() === candidate);
+        if (match) {
+          resolvedConnector = row;
+          realToolName = match.name;
+          break;
+        }
+        // If no exact match from cache, try using the candidate directly
+        // (cache might be stale or missing)
+        resolvedConnector = row;
+        realToolName = candidate.replace(/_/g, "_"); // keep as-is, server will validate
+        break;
+      }
+    }
+
+    if (!resolvedConnector || !realToolName) {
+      await audit(projectId, "mcp", toolName, userId, "denied", Date.now() - t0);
+      return jsonError(c, 404, "MCP_TOOL_NOT_FOUND",
+        `Could not resolve MCP tool: ${toolName}. Ensure the connector is active.`);
+    }
+
+    // 5. Build connector config and call
+    const config: McpConnectorConfig = {
+      id: resolvedConnector.id,
+      workspaceId: resolvedConnector.workspace_id,
+      projectId: resolvedConnector.project_id ?? undefined,
+      scope: resolvedConnector.scope as "workspace" | "project" | "user",
+      name: resolvedConnector.name,
+      description: resolvedConnector.description ?? undefined,
+      transportType: resolvedConnector.transport_type as "streamable_http" | "http_sse" | "stdio",
+      serverUrl: resolvedConnector.server_url ?? undefined,
+      serverCommand: resolvedConnector.server_command ?? undefined,
+      serverArgs: resolvedConnector.server_args ?? undefined,
+      authType: (resolvedConnector.auth_type ?? "none") as "none" | "api_key" | "oauth2" | "bearer_token",
+      status: resolvedConnector.status as "active" | "inactive" | "error" | "connecting",
+      createdBy: resolvedConnector.created_by,
+      createdAt: new Date(resolvedConnector.created_at),
+      updatedAt: new Date(resolvedConnector.updated_at),
+    };
+
+    try {
+      const manager = getConnectorManager();
+      const client = await manager.getClient(config);
+      const result = await client.callTool(realToolName, props);
+
+      const durationMs = Date.now() - t0;
+
+      if (result.isError) {
+        const text = result.content
+          .filter((it) => it.type === "text")
+          .map((it) => (it as { type: "text"; text: string }).text)
+          .join("\n");
+        await audit(projectId, "mcp", toolName, userId, "error", durationMs);
+        return c.json({
+          success: false,
+          data: null,
+          error: { code: "MCP_TOOL_ERROR", message: text || "Tool returned an error" },
+          meta: { connectorName: resolvedConnector.name, toolName: realToolName, durationMs },
+        });
+      }
+
+      // Extract result data
+      const textContent = result.content
+        .filter((it) => it.type === "text")
+        .map((it) => (it as { type: "text"; text: string }).text)
+        .join("\n");
+
+      let data: unknown;
+      try { data = JSON.parse(textContent); } catch { data = textContent; }
+
+      await audit(projectId, "mcp", toolName, userId, "ok", durationMs);
+      return c.json({
+        success: true,
+        data,
+        error: undefined,
+        meta: { connectorName: resolvedConnector.name, toolName: realToolName, durationMs },
+      });
+    } catch (err) {
+      const durationMs = Date.now() - t0;
+      await audit(projectId, "mcp", toolName, userId, "error", durationMs);
+      return jsonError(c, 500, "MCP_EXECUTION_ERROR",
+        err instanceof Error ? err.message : "Unknown error");
+    }
   },
 );
 
