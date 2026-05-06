@@ -197,12 +197,34 @@ class TokenManager {
       }
     });
 
-    // Signal to parent that we need a token
-    try {
-      window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*");
-    } catch {
-      // Not in iframe or cross-origin — will use API key path
+    // If in an iframe, signal to parent that we need a token
+    if (window.parent !== window) {
+      try {
+        window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*");
+      } catch {
+        // Not in iframe or cross-origin — fall through to standalone fetch
+      }
+    } else {
+      // Standalone mode — fetch token directly from the preview token endpoint
+      this.fetchTokenDirect();
     }
+  }
+
+  private fetchTokenDirect(): void {
+    const meta = document.querySelector('meta[name="doable-project-id"]');
+    const pid = meta?.getAttribute("content");
+    if (!pid) return;
+    fetch(`/preview/${pid}/__doable/token`, { method: "POST" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d: { token?: string } | null) => {
+        if (d?.token) {
+          this.token = d.token;
+          const queue = this.waiters;
+          this.waiters = [];
+          queue.forEach((resolve) => resolve(this.token!));
+        }
+      })
+      .catch(() => {});
   }
 
   async getToken(): Promise<string> {
@@ -218,10 +240,14 @@ class TokenManager {
   invalidate(): void {
     this.token = null;
     if (typeof window !== "undefined") {
-      try {
-        window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*");
-      } catch {
-        // ignore
+      if (window.parent !== window) {
+        try {
+          window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*");
+        } catch {
+          // ignore
+        }
+      } else {
+        this.fetchTokenDirect();
       }
     }
   }

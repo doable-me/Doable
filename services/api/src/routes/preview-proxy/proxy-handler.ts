@@ -12,6 +12,7 @@ import { getTrackingScript } from "../../analytics/tracker.js";
 import { sql } from "../../db/index.js";
 import { defaultRegistry } from "../../frameworks/registry.js";
 import type { FrameworkAdapter } from "../../frameworks/types.js";
+import { signProjectJwt } from "../../auth/project-jwt.js";
 import {
   RETRY_HTML,
   getStorageNamespaceSnippet,
@@ -23,6 +24,10 @@ const publicApiUrl =
   process.env.NEXT_PUBLIC_API_URL ??
   process.env.CORS_ORIGINS?.split(",")[0]?.replace(/\/$/, "") ??
   `http://localhost:${process.env.API_PORT ?? "4000"}`;
+
+const PROJECT_JWT_SECRET =
+  process.env.PROJECT_JWT_SECRET ??
+  "DEVELOPMENT_PROJECT_JWT_SECRET_DO_NOT_USE_IN_PROD";
 
 export const previewRoutes = new Hono();
 
@@ -140,6 +145,53 @@ async function getAdapterForProject(projectId: string): Promise<FrameworkAdapter
   adapterCache.set(projectId, adapter);
   return adapter;
 }
+
+/**
+ * Token endpoint for standalone preview mode.
+ * When the preview is opened directly (not in the editor iframe), the SDK
+ * cannot receive a token via postMessage. This endpoint issues a short-lived
+ * connector-proxy JWT scoped to the project so MCP calls work standalone.
+ * Rate-limited to 10 req/min per project via simple in-memory counter.
+ */
+const tokenBuckets = new Map<string, { count: number; resetAt: number }>();
+previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
+  const projectId = c.req.param("projectId");
+  if (!UUID_RE.test(projectId)) {
+    return c.json({ error: "Invalid project ID" }, 400);
+  }
+
+  // Simple rate limit: 10 tokens/min per project
+  const now = Date.now();
+  let bucket = tokenBuckets.get(projectId);
+  if (!bucket || now > bucket.resetAt) {
+    bucket = { count: 0, resetAt: now + 60_000 };
+    tokenBuckets.set(projectId, bucket);
+  }
+  if (bucket.count >= 10) {
+    return c.json({ error: "Rate limited" }, 429);
+  }
+  bucket.count++;
+
+  // Look up the project's workspace
+  const [row] = await sql<{ workspace_id: string; created_by: string }[]>`
+    SELECT workspace_id, created_by FROM projects WHERE id = ${projectId} LIMIT 1
+  `;
+  if (!row) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  const token = await signProjectJwt(
+    {
+      projectId,
+      workspaceId: row.workspace_id,
+      userId: row.created_by,
+      kind: "connector-proxy",
+    },
+    PROJECT_JWT_SECRET,
+  );
+
+  return c.json({ token, expiresIn: 15 * 60 });
+});
 
 /**
  * Proxy ALL requests under /preview/:projectId/* to the Vite dev server.

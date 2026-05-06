@@ -60,6 +60,16 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
   function awaitToken() {
     return token ? Promise.resolve(token) : new Promise(function (resolve) { pendingRequests.push(resolve); });
   }
+  // Fetch token directly from the preview token endpoint (standalone mode)
+  function fetchTokenDirect() {
+    var meta = document.querySelector('meta[name="doable-project-id"]');
+    var pid = meta ? meta.getAttribute("content") : null;
+    if (!pid) return;
+    fetch("/preview/" + pid + "/__doable/token", { method: "POST" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d && d.token) setToken(d.token); })
+      .catch(function () {});
+  }
   window.addEventListener("message", function (ev) {
     if (!ev.data || typeof ev.data !== "object") return;
     if (ev.data.type === "doable:connector-proxy-token" && typeof ev.data.token === "string") {
@@ -67,7 +77,12 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
     }
   });
   // Tell the host we're ready to receive a token.
-  try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
+  // If standalone (no parent iframe), fetch token directly instead.
+  if (window.parent !== window) {
+    try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
+  } else {
+    fetchTokenDirect();
+  }
   async function callConnector(integration, action, props) {
     var t = await awaitToken();
     var doFetch = function (theToken) {
@@ -81,7 +96,11 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
     if (res.status === 401) {
       // token expired — clear and request a fresh one, then retry once
       token = null;
-      try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
+      if (window.parent !== window) {
+        try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
+      } else {
+        fetchTokenDirect();
+      }
       var t2 = await awaitToken();
       res = await doFetch(t2);
     }
@@ -102,7 +121,11 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
     var res = await doFetch(t);
     if (res.status === 401) {
       token = null;
-      try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
+      if (window.parent !== window) {
+        try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
+      } else {
+        fetchTokenDirect();
+      }
       var t2 = await awaitToken();
       res = await doFetch(t2);
     }
