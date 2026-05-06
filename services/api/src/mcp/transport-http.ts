@@ -34,32 +34,8 @@ export class StreamableHttpTransport implements McpTransport {
   ) {}
 
   async connect(): Promise<void> {
-    // Validate server is reachable
-    const response = await fetchWithTimeout(this.serverUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
-        ...this.headers,
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 0,
-        method: "initialize",
-        params: {
-          protocolVersion: "2025-03-26",
-          capabilities: {},
-          clientInfo: { name: "doable", version: "1.0.0" },
-        },
-      }),
-    }, MCP_HTTP_TIMEOUT_MS);
-
-    if (!response.ok) {
-      throw new Error(`MCP server returned ${response.status}: ${response.statusText}`);
-    }
-
-    // Extract session ID from response header if present
-    this.sessionId = response.headers.get("mcp-session-id");
+    // Mark as connected — the actual initialize handshake is done by McpClient.initialize()
+    // which sends the initialize request via sendRequest() and extracts the session ID.
     this.connected = true;
   }
 
@@ -106,6 +82,12 @@ export class StreamableHttpTransport implements McpTransport {
       const errBody = await response.text().catch(() => "");
       console.error(`[MCP:HTTP] ── RESPONSE ${response.status} (${durationMs}ms) ──\n  Error: ${errBody.slice(0, 2000)}`);
       throw new Error(`MCP request failed: ${response.status} — ${errBody.slice(0, 500)}`);
+    }
+
+    // Capture session ID from response header (set on first request, e.g. initialize)
+    const respSessionId = response.headers.get("mcp-session-id");
+    if (respSessionId) {
+      this.sessionId = respSessionId;
     }
 
     const contentType = response.headers.get("content-type") ?? "";

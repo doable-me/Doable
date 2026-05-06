@@ -151,6 +151,8 @@ export class ConnectorManager {
     error?: string;
   }> {
     try {
+      // Disconnect any stale cached connection first to ensure a fresh session
+      await this.disconnect(config.id).catch(() => {});
       const client = await this.connect(config);
       const tools = await client.listTools();
       return { success: true, tools };
