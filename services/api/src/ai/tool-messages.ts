@@ -101,6 +101,23 @@ export function friendlyToolMessage(
   // Presentation tools
   if (lower === "create_presentation") return "Setting up your presentation";
   if (lower === "build_deck") return "Rendering your slide deck";
+  // MCP tools: extract the human-readable tool action from the name
+  // Format: mcp_<server_parts>_<action_verb>_<action_noun>
+  if (lower.startsWith("mcp_")) {
+    const parts = toolName.slice(4).split("_");
+    const verbIdx = parts.findIndex(p =>
+      ["get", "list", "search", "create", "update", "delete", "query",
+       "manage", "run", "download", "cancel", "save", "new", "release"].includes(p.toLowerCase())
+    );
+    if (verbIdx > 0) {
+      const serverName = parts.slice(0, verbIdx).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+      const action = parts.slice(verbIdx).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+      return `${action} (${serverName})`;
+    }
+    // Fallback: just title-case everything after mcp_
+    const label = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+    return label;
+  }
   // Final fallback: show the raw tool name so the user at least sees what's happening
   return `Running ${toolName}`;
 }

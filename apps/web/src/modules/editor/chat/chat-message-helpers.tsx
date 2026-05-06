@@ -110,13 +110,31 @@ export function ToolActivitySummary({ toolCalls }: { toolCalls: Array<{ name: st
       case "install_package": return `Installed ${count} package${count > 1 ? "s" : ""}`;
       case "search_files": return `Searched ${count} time${count > 1 ? "s" : ""}`;
       case "run_terminal_command": return `Ran ${count} command${count > 1 ? "s" : ""}`;
-      default: return `${name} (${count})`;
+      default: {
+        // MCP tools: strip prefix, humanize the tool name
+        if (name.startsWith("mcp_")) {
+          const parts = name.slice(4).split("_");
+          // Find where server name ends and tool name starts by looking for common tool verbs
+          const verbIdx = parts.findIndex(p => ["get", "list", "search", "create", "update", "delete", "query", "manage", "run", "download", "cancel", "save", "new"].includes(p));
+          const toolParts = verbIdx > 0 ? parts.slice(verbIdx) : parts;
+          const label = toolParts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+          return count > 1 ? `${label} (×${count})` : label;
+        }
+        return `${name} (${count})`;
+      }
     }
   };
 
+  // Internal SDK tools that should never be shown in the summary
+  const HIDDEN_TOOLS = new Set(["report_intent", "create_plan", "mark_step_complete"]);
+  const visibleCounts = Object.entries(counts).filter(([name]) => !HIDDEN_TOOLS.has(name));
+
   const writeTools = ["create_file", "edit_file", "install_package", "run_terminal_command"];
-  const writeEntries = Object.entries(counts).filter(([name]) => writeTools.includes(name));
-  const entries = writeEntries.length > 0 ? writeEntries : Object.entries(counts);
+  const mcpTools = visibleCounts.filter(([name]) => name.startsWith("mcp_"));
+  const writeEntries = visibleCounts.filter(([name]) => writeTools.includes(name));
+  // Show write tools + MCP tools preferentially; fall back to all visible tools
+  const preferred = [...writeEntries, ...mcpTools];
+  const entries = preferred.length > 0 ? preferred : visibleCounts;
 
   if (entries.length === 0) return null;
 
