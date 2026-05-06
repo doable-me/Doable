@@ -738,6 +738,11 @@ async function streamChat(
             }
           }
 
+          // Thinking block boundary — tool completed between thought blocks
+          if (parsed.type === "thinking_block_end" && onThinking) {
+            onThinking("\n\n---\n\n");
+          }
+
           // Handle thinking_to_text: server's leading-text buffer overflowed
           // (>1500 chars with no tool call) — the text was emitted as thinking
           // but is actually content. Move it from thinking to content.
@@ -981,6 +986,10 @@ function processOneSSEPayload(
     if (parsed.type === "thinking" && cb.onThinking) {
       const thinkingContent = typeof parsed.data === "string" ? parsed.data : "";
       if (thinkingContent) cb.onThinking(thinkingContent);
+    }
+
+    if (parsed.type === "thinking_block_end" && cb.onThinking) {
+      cb.onThinking("\n\n---\n\n");
     }
 
     if (parsed.type === "thinking_to_text" && cb.onReclassify) {
@@ -5269,10 +5278,14 @@ export default function EditorPage() {
                               )}
                               {msg.isStreaming ? "Thinking..." : "Thought process"}
                             </summary>
-                            <div className="px-3 pb-2 text-muted-foreground whitespace-pre-wrap max-h-60 overflow-y-auto scroll-smooth">
+                            <div className="px-3 pb-2 text-muted-foreground max-h-60 overflow-y-auto scroll-smooth">
                               {extractFunctionSteps(msg.thinkingContent).length > 0
                                 ? renderFunctionStepList(msg.thinkingContent, true)
-                                : msg.thinkingContent}
+                                : msg.thinkingContent.split("\n\n---\n\n").filter(Boolean).map((block, i) => (
+                                  <div key={i} className={`whitespace-pre-wrap ${i > 0 ? "mt-2 pt-2 border-t border-border/50" : ""}`}>
+                                    {block.trim()}
+                                  </div>
+                                ))}
                             </div>
                           </details>
                         )}

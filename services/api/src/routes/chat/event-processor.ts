@@ -253,6 +253,10 @@ function routeSseEvent(
     state.friendlyLastTool = undefined;
     // Reset leading-text buffer after tool_result so inter-tool reasoning
     // (text between tool_result and next tool_call) is also captured as thinking.
+    // Emit a block separator so the frontend can render distinct thinking sections.
+    if (state.assistantThinking) {
+      stream.writeSSE({ data: JSON.stringify({ type: "thinking_block_end" }) }).catch(() => {});
+    }
     state.leadingTextFlushed = false;
     state.leadingTextBuffer = "";
   }

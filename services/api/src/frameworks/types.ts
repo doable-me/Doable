@@ -56,6 +56,7 @@ export interface FrameworkContext {
   env: Record<string, string>; // resolved user env vars + Doable defaults
   userId?: string;            // for env resolution + audit
   signal?: AbortSignal;       // cancellation
+  onProgress?: (message: string) => void; // real-time status updates during install
 }
 
 export interface ScaffoldContext extends FrameworkContext {

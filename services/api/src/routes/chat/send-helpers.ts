@@ -46,7 +46,9 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
 
       await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: "Installing dependencies..." } }) });
       await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Installing dependencies..." }) });
-      await createProject(projectId, templateFiles, scaffoldFrameworkId);
+      await createProject(projectId, templateFiles, scaffoldFrameworkId, (msg) => {
+        stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: msg } }) }).catch(() => {});
+      });
       await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: "Project files ready" } }) });
     } catch (err: unknown) {
       const isAlreadyExists = err instanceof Error && err.message.includes("already scaffolded");

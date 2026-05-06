@@ -58,6 +58,7 @@ export async function createProject(
   projectId: string,
   templateFiles?: Record<string, string>,
   frameworkId?: string,
+  onProgress?: (message: string) => void,
 ): Promise<ScaffoldResult> {
   // Deduplicate concurrent scaffold calls for the same project
   const inflight = scaffoldingInFlight.get(projectId);
@@ -65,7 +66,7 @@ export async function createProject(
     return inflight;
   }
 
-  const promise = doCreateProject(projectId, templateFiles, frameworkId);
+  const promise = doCreateProject(projectId, templateFiles, frameworkId, onProgress);
   scaffoldingInFlight.set(projectId, promise);
   try {
     return await promise;
@@ -78,6 +79,7 @@ async function doCreateProject(
   projectId: string,
   templateFiles?: Record<string, string>,
   frameworkIdOverride?: string,
+  onProgress?: (message: string) => void,
 ): Promise<ScaffoldResult> {
   const projectPath = getProjectPath(projectId);
 
@@ -162,6 +164,7 @@ async function doCreateProject(
     projectPath,
     basePath: "/",
     env: {},
+    onProgress,
   };
   const installResult = await adapter.install(installCtx);
   const installOutput = installResult.log;

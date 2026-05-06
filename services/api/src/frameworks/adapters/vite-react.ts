@@ -84,13 +84,27 @@ function runNpmInstall(ctx: FrameworkContext): Promise<InstallResult> {
 
     let stdout = "";
     let stderr = "";
+    let lastProgress = 0;
 
     child.stdout?.on("data", (data: Buffer) => {
       stdout += data.toString();
     });
 
     child.stderr?.on("data", (data: Buffer) => {
-      stderr += data.toString();
+      const chunk = data.toString();
+      stderr += chunk;
+      // npm writes progress to stderr — forward meaningful lines
+      if (ctx.onProgress && Date.now() - lastProgress > 500) {
+        lastProgress = Date.now();
+        // Parse npm progress: "added X packages in Ys" or package names
+        const line = chunk.trim().split("\n").pop()?.trim() ?? "";
+        if (line && !line.startsWith("npm warn") && line.length < 120) {
+          ctx.onProgress(line);
+        } else {
+          const elapsed = Math.round((Date.now() - start) / 1000);
+          ctx.onProgress(`Installing packages… (${elapsed}s)`);
+        }
+      }
     });
 
     const killChildTree = () => {
