@@ -173,8 +173,8 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
   bucket.count++;
 
   // Look up the project's workspace
-  const [row] = await sql<{ workspace_id: string; created_by: string }[]>`
-    SELECT workspace_id, created_by FROM projects WHERE id = ${projectId} LIMIT 1
+  const [row] = await sql<{ workspace_id: string }[]>`
+    SELECT workspace_id FROM projects WHERE id = ${projectId} LIMIT 1
   `;
   if (!row) {
     return c.json({ error: "Project not found" }, 404);
@@ -184,7 +184,6 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
     {
       projectId,
       workspaceId: row.workspace_id,
-      userId: row.created_by,
       kind: "connector-proxy",
     },
     PROJECT_JWT_SECRET,
