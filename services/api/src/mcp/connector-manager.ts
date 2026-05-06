@@ -245,6 +245,8 @@ export class ConnectorManager {
           case "oauth2":
             if (creds.access_token) {
               headers["Authorization"] = `Bearer ${String(creds.access_token)}`;
+            } else {
+              throw new Error("OAuth credentials missing. Please re-authenticate by connecting via OAuth again.");
             }
             break;
           // 'none' or unknown — leave headers empty (existing behavior)
