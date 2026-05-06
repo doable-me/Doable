@@ -1645,7 +1645,7 @@ async function fetchAISuggestions(
 }
 
 function generateProjectId(): string {
-  return `proj-${Date.now()}`;
+  return crypto.randomUUID();
 }
 
 function nowTimestamp(): string {

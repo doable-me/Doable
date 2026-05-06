@@ -2,8 +2,10 @@ import { createMiddleware } from "hono/factory";
 import type { AuthEnv } from "./auth.js";
 import { sql } from "../db/index.js";
 import { creditQueries } from "@doable/db/queries/credits";
+import { workspaceQueries } from "@doable/db";
 
 const credits = creditQueries(sql);
+const workspacesQ = workspaceQueries(sql);
 
 /**
  * Middleware that checks if the authenticated user has enough credits
@@ -55,8 +57,18 @@ export function requireCredits(minCredits: number = 1) {
           `;
           workspaceId = project?.workspace_id;
         } catch {
-          // Project not found — will fail downstream
+          // Project not found — will fall through to user default workspace
         }
+      }
+    }
+
+    // Fallback: resolve from user's default workspace (handles new/unsaved projects)
+    if (!workspaceId) {
+      try {
+        const userWorkspaces = await workspacesQ.listByUser(userId);
+        workspaceId = userWorkspaces.length > 0 ? userWorkspaces[0]!.id : undefined;
+      } catch {
+        // Workspace lookup failed
       }
     }
 

@@ -115,11 +115,15 @@ devServerFileRoutes.post("/projects/:id/dev-server/restart", async (c) => {
   // Stop if running
   await stopDevServer(projectId);
 
-  // Start fresh
+  // Start fresh with a timeout to prevent hanging HTTP requests
   if (isProjectScaffolded(projectId)) {
     try {
       const uid = c.get("userId");
-      const { url, port } = await startDevServer(projectId, uid ? { userId: uid } : undefined);
+      const startPromise = startDevServer(projectId, uid ? { userId: uid } : undefined);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Dev server start timed out (60s)")), 60_000)
+      );
+      const { url, port } = await Promise.race([startPromise, timeoutPromise]);
       return c.json({ data: { url, port, running: true } });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

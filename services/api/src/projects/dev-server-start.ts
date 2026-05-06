@@ -6,6 +6,7 @@ import type { ChildProcess } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
 import { getProjectPath } from "../ai/project-files.js";
 import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
+import { linkDoableSdk } from "./link-sdk.js";
 import { spawnJailedVite } from "./vite-jail.js";
 import { acquireDevUid, releaseDevUid } from "../runtime/dev-uid-allocator.js";
 import {
@@ -186,6 +187,13 @@ async function doStartDevServer(
     ensureSourceAnnotationsPlugin(projectPath);
   } catch (err) {
     console.warn("[DevServer] Failed to inject source annotations plugin:", err);
+  }
+
+  // Ensure @doable/sdk is linked (idempotent — skips if already present)
+  try {
+    await linkDoableSdk(projectPath);
+  } catch (err) {
+    console.warn("[DevServer] Failed to link @doable/sdk:", err);
   }
 
   // Tell the dev server to use the proxy prefix as its base path so all

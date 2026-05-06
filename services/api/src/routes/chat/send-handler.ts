@@ -105,7 +105,28 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
       const userId = c.get("userId")!;
 
       // Verify project access — must be at least a member (viewers are read-only)
-      const chatProject = await projectQueries(sql).findById(projectId);
+      let chatProject = await projectQueries(sql).findById(projectId);
+
+      // Auto-create project when ID doesn't exist (from /editor/new flow)
+      if (!chatProject) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(projectId)) {
+          const userWorkspaces = await workspaceQueries(sql).listByUser(userId);
+          const wsId = userWorkspaces.length > 0 ? userWorkspaces[0]!.id : null;
+          if (!wsId) return c.json({ error: "No workspace found" }, 400);
+          const name = content.slice(0, 100) || "New Project";
+          const slug = `p-${Date.now().toString(36)}`;
+          const [created] = await sql<[{ id: string; workspace_id: string; name: string; slug: string; status: string }]>`
+            INSERT INTO projects (id, workspace_id, name, slug)
+            VALUES (${projectId}::uuid, ${wsId}, ${name}, ${slug})
+            RETURNING *
+          `;
+          if (created) {
+            chatProject = await projectQueries(sql).findById(projectId);
+          }
+        }
+      }
+
       if (!chatProject) return c.json({ error: "Project not found" }, 404);
       const chatRole = await workspaceQueries(sql).getMemberRole(chatProject.workspace_id, userId);
       if (!chatRole) {
