@@ -2464,7 +2464,7 @@ export default function EditorPage() {
     const projectId = rawProjectId;
 
     // Cache: map of AI-prefixed tool name → { connectorId, realToolName }
-    let toolMap: Map<string, { connectorId: string; realToolName: string }> | null = null;
+    let toolMap: Record<string, { connectorId: string; realToolName: string }> | null = null;
     let toolMapLoading = false;
 
     async function loadToolMap() {
@@ -2474,18 +2474,18 @@ export default function EditorPage() {
         const res = await apiFetch<{ data: Array<{ connectorId: string; connectorName: string; tools: Array<{ name: string }> }> }>(
           `/projects/${projectId}/chat/mcp-tools`,
         );
-        toolMap = new Map();
+        toolMap = {};
         for (const connector of res.data ?? []) {
           const safeName = connector.connectorName.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
           for (const tool of connector.tools ?? []) {
             const safeToolName = tool.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
             const fullName = `mcp_${safeName}_${safeToolName}`;
-            toolMap.set(fullName, { connectorId: connector.connectorId, realToolName: tool.name });
+            toolMap[fullName] = { connectorId: connector.connectorId, realToolName: tool.name };
           }
         }
       } catch (e) {
         console.warn("[MCP Bridge] Failed to load tool map:", e);
-        toolMap = new Map();
+        toolMap = {};
       } finally {
         toolMapLoading = false;
       }
@@ -2502,7 +2502,7 @@ export default function EditorPage() {
 
       try {
         const map = await loadToolMap();
-        const resolved = map?.get(toolName);
+        const resolved = map?.[toolName];
         if (!resolved) {
           iframeRef.current?.contentWindow?.postMessage(
             { type: "mcp-response", callbackId, error: `Unknown MCP tool: ${toolName}` },
