@@ -262,7 +262,11 @@ export function useDashboard() {
       startBridge(projectId, text, mode, accessToken, bridgeAttachments.length > 0 ? bridgeAttachments : undefined);
       const unsub = onBridgeStatus((_status: BridgeStatus, msg: string) => { setCreatingStatus(msg); });
       imageAttachments.clearAll();
-      router.push(`/editor/${projectId}?prompt=${encodeURIComponent(text)}${startMode === "plan" ? "&mode=plan" : ""}`);
+      // Only put a truncated hint in the URL — the full prompt lives in
+      // sessionStorage and the in-flight bridge. Long prompts in the URL
+      // break browser/Next.js URL length limits (typically ~8 KB).
+      const urlPromptHint = text.length > 500 ? text.slice(0, 500) : text;
+      router.push(`/editor/${projectId}?prompt=${encodeURIComponent(urlPromptHint)}${startMode === "plan" ? "&mode=plan" : ""}`);
       setTimeout(unsub, 5000);
     } catch (err) {
       console.error("[dashboard] handleSubmit failed", err);

@@ -211,6 +211,9 @@ async function startSSEFetch(
       },
       body: JSON.stringify({
         content: prompt,
+        // For long prompts, send a truncated displayContent so the DB
+        // chat history stores a manageable preview instead of the full blob.
+        ...(prompt.length > 2000 ? { displayContent: prompt.slice(0, 2000) + "…" } : {}),
         mode,
         ...(attachments?.length
           ? { attachments: attachments.map((a) => ({ type: a.mimeType || a.type, data: a.data, name: a.name })) }

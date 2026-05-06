@@ -248,6 +248,7 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
     agentProgress?.phase === "cancelled";
 
   const [undoing, setUndoing] = useState(false);
+  const [userMsgExpanded, setUserMsgExpanded] = useState(false);
   const { projectId, updateMessageFields } = useEditorStore();
 
   // ─── Inline clarification send ────────────────────────────────
@@ -410,7 +411,32 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
             className={`prose-editor text-sm leading-relaxed ${message.undone ? "text-muted-foreground opacity-60" : "text-foreground"
               } ${isActivelyStreaming ? "streaming-bubble" : ""}`}
           >
-            <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+            {/* Collapse long user messages (>500 chars) to avoid overwhelming the chat */}
+            {isUser && message.content.length > 500 && !userMsgExpanded ? (
+              <>
+                <div dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content.slice(0, 500) + "…") }} />
+                <button
+                  onClick={() => setUserMsgExpanded(true)}
+                  className="mt-1 text-xs text-brand-500 hover:text-brand-400 font-medium flex items-center gap-1"
+                >
+                  <ChevronDown className="h-3 w-3" />
+                  Show full prompt ({Math.ceil(message.content.length / 1000)}k chars)
+                </button>
+              </>
+            ) : (
+              <>
+                <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+                {isUser && message.content.length > 500 && userMsgExpanded && (
+                  <button
+                    onClick={() => setUserMsgExpanded(false)}
+                    className="mt-1 text-xs text-brand-500 hover:text-brand-400 font-medium flex items-center gap-1"
+                  >
+                    <ChevronDown className="h-3 w-3 rotate-180" />
+                    Collapse
+                  </button>
+                )}
+              </>
+            )}
             {isActivelyStreaming && (
               <span className="streaming-caret inline-flex items-center ml-1 align-middle gap-[3px]">
                 <span className="status-dot-1 inline-block h-1.5 w-1.5 rounded-full bg-brand-500" />

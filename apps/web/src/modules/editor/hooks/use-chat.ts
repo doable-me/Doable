@@ -120,6 +120,8 @@ export function useChat(
             },
             body: JSON.stringify({
               content: content.trim(),
+              // For long prompts, store a truncated version in chat history
+              ...(content.trim().length > 2000 ? { displayContent: content.trim().slice(0, 2000) + "…" } : {}),
               // Read mode from store at call time to avoid stale closures
               // (e.g. approvePlan switches mode to "agent" before calling sendMessage).
               mode: useEditorStore.getState().mode,
