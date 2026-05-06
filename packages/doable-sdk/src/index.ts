@@ -26,7 +26,10 @@ export interface McpCallResult<T = unknown> {
 }
 
 export interface McpTool {
+  /** Full prefixed tool name — use this in doable.mcp.call() */
   fullName: string;
+  /** Alias for fullName (convenience) */
+  name: string;
   connectorName: string;
   toolName: string;
   description?: string;
@@ -151,7 +154,11 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
           const res = await fetch(url, { headers });
           if (!res.ok) return { success: false, data: [], error: { code: "HTTP_ERROR", message: `HTTP ${res.status}` } };
           const body = await res.json();
-          return { success: true, data: body.tools ?? [], error: null };
+          const tools: McpTool[] = (body.tools ?? []).map((t: Record<string, string>) => ({
+            ...t,
+            name: t.fullName ?? t.name ?? "",
+          }));
+          return { success: true, data: tools, error: null };
         } catch (err) {
           return { success: false, data: [], error: { code: "NETWORK_ERROR", message: err instanceof Error ? err.message : "Failed to list MCP tools" } };
         }
