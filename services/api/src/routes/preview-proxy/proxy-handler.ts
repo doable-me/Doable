@@ -215,6 +215,9 @@ async function handleMcpPassthrough(projectId: string, c: { req: { json: () => P
     return new Response(JSON.stringify({ error: "Missing toolName" }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
 
+  // Auto-add mcp_ prefix if missing (generated apps often omit it)
+  const resolvedToolName = toolName.startsWith("mcp_") ? toolName : `mcp_${toolName}`;
+
   // Look up workspace
   const [row] = await sql<{ workspace_id: string }[]>`
     SELECT workspace_id FROM projects WHERE id = ${projectId} LIMIT 1
@@ -236,7 +239,7 @@ async function handleMcpPassthrough(projectId: string, c: { req: { json: () => P
   // Forward to connector-proxy endpoint internally
   const apiPort = process.env.API_PORT ?? "4000";
   const apiHost = process.env.API_HOST ?? "127.0.0.1";
-  const proxyUrl = `http://${apiHost}:${apiPort}/__doable/connector-proxy/mcp/${encodeURIComponent(toolName)}`;
+  const proxyUrl = `http://${apiHost}:${apiPort}/__doable/connector-proxy/mcp/${encodeURIComponent(resolvedToolName)}`;
 
   const proxyResp = await fetch(proxyUrl, {
     method: "POST",
