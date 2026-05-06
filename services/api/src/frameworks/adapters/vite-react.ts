@@ -71,7 +71,7 @@ const INSTALL_TIMEOUT_MS = 180_000;
 function runNpmInstall(ctx: FrameworkContext): Promise<InstallResult> {
   return new Promise<InstallResult>((resolve, reject) => {
     const start = Date.now();
-    const child = spawn("npm", ["install", "--legacy-peer-deps"], {
+    const child = spawn("npm", ["install", "--legacy-peer-deps", "--loglevel", "http"], {
       cwd: ctx.projectPath,
       shell: true,
       stdio: "pipe",
@@ -85,21 +85,29 @@ function runNpmInstall(ctx: FrameworkContext): Promise<InstallResult> {
     let stdout = "";
     let stderr = "";
     let lastProgress = 0;
+    let pkgCount = 0;
 
     child.stdout?.on("data", (data: Buffer) => {
-      stdout += data.toString();
+      const chunk = data.toString();
+      stdout += chunk;
+      // stdout has the final summary "added X packages in Ys"
+      const addedMatch = chunk.match(/added (\d+) packages/);
+      if (addedMatch && ctx.onProgress) {
+        ctx.onProgress(`Installed ${addedMatch[1]} packages`);
+      }
     });
 
     child.stderr?.on("data", (data: Buffer) => {
       const chunk = data.toString();
       stderr += chunk;
-      // npm writes progress to stderr — forward meaningful lines
-      if (ctx.onProgress && Date.now() - lastProgress > 500) {
+      // With --loglevel http, stderr has "npm http fetch/cache <url>" lines
+      if (ctx.onProgress && Date.now() - lastProgress > 800) {
         lastProgress = Date.now();
-        // Parse npm progress: "added X packages in Ys" or package names
-        const line = chunk.trim().split("\n").pop()?.trim() ?? "";
-        if (line && !line.startsWith("npm warn") && line.length < 120) {
-          ctx.onProgress(line);
+        // Extract package names from npm http lines
+        const httpMatch = chunk.match(/npm http (?:fetch|cache) (?:GET \d+ )?https?:\/\/registry\.npmjs\.org\/([^\s/]+)/);
+        if (httpMatch) {
+          pkgCount++;
+          ctx.onProgress(`Resolving ${httpMatch[1]}… (${pkgCount} packages)`);
         } else {
           const elapsed = Math.round((Date.now() - start) / 1000);
           ctx.onProgress(`Installing packages… (${elapsed}s)`);

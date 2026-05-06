@@ -46,10 +46,25 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
 
       await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: "Installing dependencies..." } }) });
       await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Installing dependencies..." }) });
+
+      // Emit progress ticks every 3s so the user sees activity during npm install
+      const installStart = Date.now();
+      let lastNpmMsg = "";
+      const installTicker = setInterval(() => {
+        const elapsed = Math.round((Date.now() - installStart) / 1000);
+        const msg = lastNpmMsg || `Downloading and linking packages… (${elapsed}s)`;
+        stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: msg } }) }).catch(() => {});
+      }, 3000);
+
       await createProject(projectId, templateFiles, scaffoldFrameworkId, (msg) => {
+        lastNpmMsg = msg;
         stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: msg } }) }).catch(() => {});
       });
-      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: "Project files ready" } }) });
+      clearInterval(installTicker);
+
+      const installDuration = Math.round((Date.now() - installStart) / 1000);
+      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "scaffolding", message: `Dependencies installed (${installDuration}s)` } }) });
+      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: ` done (${installDuration}s)\n` }) });
     } catch (err: unknown) {
       const isAlreadyExists = err instanceof Error && err.message.includes("already scaffolded");
       if (!isAlreadyExists) console.error(`[Chat] Scaffold failed for project ${projectId}:`, err);
@@ -57,11 +72,23 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
   }
   if (!isDevServerRunning(projectId) && isProjectScaffolded(projectId)) {
     try {
-      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Starting dev server — compiling project..." } }) });
-      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Starting dev server...\n" }) });
+      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Starting dev server..." } }) });
+      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Starting dev server..." }) });
       console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
+
+      // Emit progress ticks during dev server startup (vite compilation)
+      const devStart = Date.now();
+      const devTicker = setInterval(() => {
+        const elapsed = Math.round((Date.now() - devStart) / 1000);
+        stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: `Compiling project… (${elapsed}s)` } }) }).catch(() => {});
+      }, 3000);
+
       await startDevServer(projectId, { userId });
-      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Dev server ready" } }) });
+      clearInterval(devTicker);
+
+      const devDuration = Math.round((Date.now() - devStart) / 1000);
+      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: `Dev server ready (${devDuration}s)` } }) });
+      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: ` ready (${devDuration}s)\n` }) });
     } catch (err) {
       console.error(`[Chat] Dev server start failed for project ${projectId}:`, err);
     }
