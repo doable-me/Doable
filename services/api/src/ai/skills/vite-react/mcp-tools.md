@@ -26,8 +26,13 @@ if (result.success) {
 ## Discovering Available Tools
 
 ```ts
-const tools = await doable.mcp.list();
-// Returns: [{ fullName, connectorName, toolName, description }]
+const response = await doable.mcp.list();
+if (response.success) {
+  response.data.forEach(tool => {
+    console.log(tool.fullName, tool.description);
+  });
+}
+// response.data is McpTool[] = [{ fullName, connectorName, toolName, description }]
 ```
 
 ## React Pattern

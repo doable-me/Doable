@@ -64,9 +64,9 @@ export interface DoableClient {
     ): Promise<IntegrationCallResult<T>>;
 
     /**
-     * List integrations available for this project (cached).
+     * List integrations available for this project.
      */
-    list(): Promise<AvailableIntegration[]>;
+    list(): Promise<{ success: boolean; data: AvailableIntegration[]; error: { code: string; message: string } | null }>;
   };
 
   mcp: {
@@ -83,7 +83,7 @@ export interface DoableClient {
     /**
      * List available MCP tools for this workspace.
      */
-    list(): Promise<McpTool[]>;
+    list(): Promise<{ success: boolean; data: McpTool[]; error: { code: string; message: string } | null }>;
   };
 }
 
@@ -112,7 +112,7 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
         return callProxy<T>(integrationId, actionName, props ?? {}, resolvedConfig, tokenManager);
       },
 
-      async list(): Promise<AvailableIntegration[]> {
+      async list(): Promise<{ success: boolean; data: AvailableIntegration[]; error: { code: string; message: string } | null }> {
         const baseUrl = resolvedConfig.proxyUrl!;
         const url = `${baseUrl}/available`;
         const token = await tokenManager.getToken();
@@ -122,11 +122,11 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
         }
         try {
           const res = await fetch(url, { headers });
-          if (!res.ok) return [];
+          if (!res.ok) return { success: false, data: [], error: { code: "HTTP_ERROR", message: `HTTP ${res.status}` } };
           const body = await res.json();
-          return body.integrations ?? [];
-        } catch {
-          return [];
+          return { success: true, data: body.integrations ?? [], error: null };
+        } catch (err) {
+          return { success: false, data: [], error: { code: "NETWORK_ERROR", message: err instanceof Error ? err.message : "Failed to list integrations" } };
         }
       },
     },
@@ -139,7 +139,7 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
         return callMcpProxy<T>(toolName, args ?? {}, resolvedConfig, tokenManager);
       },
 
-      async list(): Promise<McpTool[]> {
+      async list(): Promise<{ success: boolean; data: McpTool[]; error: { code: string; message: string } | null }> {
         const baseUrl = resolvedConfig.proxyUrl!;
         const url = `${baseUrl}/mcp/available`;
         const token = await tokenManager.getToken();
@@ -149,11 +149,11 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
         }
         try {
           const res = await fetch(url, { headers });
-          if (!res.ok) return [];
+          if (!res.ok) return { success: false, data: [], error: { code: "HTTP_ERROR", message: `HTTP ${res.status}` } };
           const body = await res.json();
-          return body.tools ?? [];
-        } catch {
-          return [];
+          return { success: true, data: body.tools ?? [], error: null };
+        } catch (err) {
+          return { success: false, data: [], error: { code: "NETWORK_ERROR", message: err instanceof Error ? err.message : "Failed to list MCP tools" } };
         }
       },
     },
