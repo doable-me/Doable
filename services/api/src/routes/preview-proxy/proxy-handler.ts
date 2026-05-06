@@ -198,22 +198,21 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
  * that don't use @doable/sdk (e.g. custom fetch to /__doable/mcp/call).
  * Auto-generates a JWT and forwards to the connector-proxy internally.
  */
-previewRoutes.post("/preview/:projectId/__doable/mcp/call", async (c) => {
-  const projectId = c.req.param("projectId");
+async function handleMcpPassthrough(projectId: string, c: { req: { json: () => Promise<unknown> } }) {
   if (!UUID_RE.test(projectId)) {
-    return c.json({ error: "Invalid project ID" }, 400);
+    return new Response(JSON.stringify({ error: "Invalid project ID" }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
 
   let body: { toolName?: string; args?: Record<string, unknown> };
   try {
-    body = await c.req.json();
+    body = (await c.req.json()) as { toolName?: string; args?: Record<string, unknown> };
   } catch {
-    return c.json({ error: "Invalid JSON body" }, 400);
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
 
   const toolName = body.toolName;
   if (!toolName || typeof toolName !== "string") {
-    return c.json({ error: "Missing toolName" }, 400);
+    return new Response(JSON.stringify({ error: "Missing toolName" }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
 
   // Look up workspace
@@ -221,7 +220,7 @@ previewRoutes.post("/preview/:projectId/__doable/mcp/call", async (c) => {
     SELECT workspace_id FROM projects WHERE id = ${projectId} LIMIT 1
   `;
   if (!row) {
-    return c.json({ error: "Project not found" }, 404);
+    return new Response(JSON.stringify({ error: "Project not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
   }
 
   // Generate internal token
@@ -251,8 +250,25 @@ previewRoutes.post("/preview/:projectId/__doable/mcp/call", async (c) => {
   const respBody = await proxyResp.text();
   return new Response(respBody, {
     status: proxyResp.status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
   });
+}
+
+// Route with explicit project ID in path
+previewRoutes.post("/preview/:projectId/__doable/mcp/call", async (c) => {
+  const projectId = c.req.param("projectId");
+  return handleMcpPassthrough(projectId, c);
+});
+
+// Root-level route: extracts project ID from Referer header
+// Handles generated apps that call fetch("/__doable/mcp/call") (root-relative)
+previewRoutes.post("/__doable/mcp/call", async (c) => {
+  const referer = c.req.header("referer") || "";
+  const match = referer.match(/\/preview\/([0-9a-f-]{36})\//i);
+  if (!match) {
+    return c.json({ error: "Cannot determine project ID from request context" }, 400);
+  }
+  return handleMcpPassthrough(match[1], c);
 });
 
 /**
