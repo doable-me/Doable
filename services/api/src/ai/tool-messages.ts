@@ -38,6 +38,11 @@ export function friendlyToolMessage(
   const context = describeFileContext(filePath);
   const lower = toolName.toLowerCase();
 
+  // Internal SDK tools — give them human-friendly names
+  if (toolName === "report_intent") return "Planning";
+  if (toolName === "create_plan") return "Creating plan";
+  if (toolName === "mark_step_complete") return "Tracking progress";
+
   // Shell-ish tools: surface the actual command being run
   if (
     lower.includes("bash") ||

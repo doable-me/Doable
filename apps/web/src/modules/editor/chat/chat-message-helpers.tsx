@@ -110,6 +110,9 @@ export function ToolActivitySummary({ toolCalls }: { toolCalls: Array<{ name: st
       case "install_package": return `Installed ${count} package${count > 1 ? "s" : ""}`;
       case "search_files": return `Searched ${count} time${count > 1 ? "s" : ""}`;
       case "run_terminal_command": return `Ran ${count} command${count > 1 ? "s" : ""}`;
+      case "report_intent": return "Planning";
+      case "create_plan": return "Creating plan";
+      case "mark_step_complete": return "Tracking progress";
       default: {
         // MCP tools: strip prefix, humanize the tool name
         if (name.startsWith("mcp_")) {
@@ -120,21 +123,21 @@ export function ToolActivitySummary({ toolCalls }: { toolCalls: Array<{ name: st
           const label = toolParts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
           return count > 1 ? `${label} (×${count})` : label;
         }
-        return `${name} (${count})`;
+        // Humanize underscore names
+        const humanized = name.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+        return count > 1 ? `${humanized} (×${count})` : humanized;
       }
     }
   };
 
-  // Internal SDK tools that should never be shown in the summary
-  const HIDDEN_TOOLS = new Set(["report_intent", "create_plan", "mark_step_complete"]);
-  const visibleCounts = Object.entries(counts).filter(([name]) => !HIDDEN_TOOLS.has(name));
+  const allCounts = Object.entries(counts);
 
   const writeTools = ["create_file", "edit_file", "install_package", "run_terminal_command"];
-  const mcpTools = visibleCounts.filter(([name]) => name.startsWith("mcp_"));
-  const writeEntries = visibleCounts.filter(([name]) => writeTools.includes(name));
-  // Show write tools + MCP tools preferentially; fall back to all visible tools
+  const mcpTools = allCounts.filter(([name]) => name.startsWith("mcp_"));
+  const writeEntries = allCounts.filter(([name]) => writeTools.includes(name));
+  // Show write tools + MCP tools preferentially; fall back to all tools
   const preferred = [...writeEntries, ...mcpTools];
-  const entries = preferred.length > 0 ? preferred : visibleCounts;
+  const entries = preferred.length > 0 ? preferred : allCounts;
 
   if (entries.length === 0) return null;
 

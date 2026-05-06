@@ -69,16 +69,6 @@ export function dispatchSSEEvent(
     const phase: AgentPhase = inferPhaseFromTool(toolName);
     const eventId = `${toolName}_${Date.now()}`;
 
-    // Hide internal SDK tools that aren't user-facing
-    const HIDDEN_TOOLS = new Set(["report_intent", "create_plan", "mark_step_complete"]);
-    if (HIDDEN_TOOLS.has(toolName)) {
-      // Still update progress indicator but don't add to visible tool list
-      const progress = { phase, message: friendly, toolName, filePath };
-      ctx.updateMessageFields(ctx.assistantId, { agentProgress: progress });
-      store.setActiveAgentProgress(progress);
-      return {};
-    }
-
     const progress = { phase, message: friendly, toolName, filePath };
 
     ctx.updateMessageFields(ctx.assistantId, {
@@ -121,9 +111,7 @@ export function dispatchSSEEvent(
     const linesRemoved: number | undefined = parsed.data?.linesRemoved;
     const success: boolean = parsed.data?.success !== false;
 
-    // Hide internal SDK tools
-    const HIDDEN_TOOLS = new Set(["report_intent", "create_plan", "mark_step_complete"]);
-    if (HIDDEN_TOOLS.has(toolName)) return {};
+
 
     const msg = useEditorStore.getState().messages.find((m) => m.id === ctx.assistantId);
     const prevToolCalls = msg?.liveToolCalls ?? [];

@@ -1398,9 +1398,15 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
     ? (a0 as { arguments: Record<string, unknown> }).arguments
     : a0;
   const fileName = a?.path ?? a?.filePath ?? a?.file ?? a?.file_path ?? a?.fileName ?? a?.name ?? a?.target ?? "";
-  const shortName = typeof fileName === "string" ? fileName.split("/").pop() ?? "" : "";
+  // Only show the filename, never full paths (sanitize PII/server paths)
+  const shortName = typeof fileName === "string" ? fileName.split(/[\\/]/).pop() ?? "" : "";
 
-  // Shell-ish tools: surface the actual command being run
+  // Internal SDK tools — give them human-friendly names
+  if (toolName === "report_intent") return "Planning";
+  if (toolName === "create_plan") return "Creating plan";
+  if (toolName === "mark_step_complete") return "Tracking progress";
+
+  // Shell-ish tools: surface the actual command being run (strip paths from commands)
   const lower0 = toolName.toLowerCase();
   if (lower0.includes("bash") || lower0.includes("shell") || lower0.includes("powershell")
       || lower0.includes("cmd") || lower0.includes("exec") || lower0.includes("run_command")
@@ -1411,6 +1417,10 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
       cmd = rawCmd.trim();
     }
     if (cmd) {
+      // Strip absolute paths and UUIDs from commands
+      cmd = cmd.replace(/\/[\w.\-/]+\/([\w.\-]+)/g, "$1");
+      cmd = cmd.replace(/[A-Za-z]:\\[\w.\\-]+\\([\w.\-]+)/g, "$1");
+      cmd = cmd.replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, "***");
       if (cmd.length > 80) cmd = cmd.slice(0, 77) + "\u2026";
       return `$ ${cmd}`;
     }
@@ -3423,9 +3433,6 @@ export default function EditorPage() {
   // ─── Handle tool started — add "running" card + update live status ──
   const handleToolStarted = useCallback(
     (toolName: string, _args: Record<string, unknown>) => {
-      // Hide internal SDK tools from the user
-      const HIDDEN_TOOL_NAMES = ["report_intent", "create_plan", "mark_step_complete"];
-      if (HIDDEN_TOOL_NAMES.includes(toolName)) return;
       // Update live status with human-friendly description
       const description = describeToolAction(toolName, _args);
       setLiveStatus(description);
@@ -3476,9 +3483,6 @@ export default function EditorPage() {
   // ─── Handle tool completion — refresh files + update card ─
   const handleToolCompleted = useCallback(
     (toolName: string, _args: Record<string, unknown>) => {
-      // Hide internal SDK tools from the user
-      const HIDDEN_TOOL_NAMES = ["report_intent", "create_plan", "mark_step_complete"];
-      if (HIDDEN_TOOL_NAMES.includes(toolName)) return;
       // Update the running tool action card to "completed", or add a new completed card
       setMessages((prev) => {
         const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
@@ -5362,11 +5366,8 @@ export default function EditorPage() {
                                 is a slightly elevated panel color that reads
                                 as a subtle lift in both dark + light modes. */}
                             {!msg.isError && (msg.isStreaming || (msg.toolActions && msg.toolActions.length > 0)) && (() => {
-                              const HIDDEN_TOOL_NAMES = ["report_intent", "create_plan", "mark_step_complete"];
-                              const visibleActions = msg.isStreaming
-                                ? msg.toolActions
-                                : (msg.toolActions ?? []).filter(a => !HIDDEN_TOOL_NAMES.includes(a.toolName));
-                              // Reformat MCP tool descriptions at display time for historical items
+                              const allActions = msg.toolActions ?? [];
+                              // Reformat MCP tool descriptions and sanitize paths/PII at display time
                               const formatDescription = (action: ToolAction) => {
                                 if (action.toolName?.startsWith("mcp_")) {
                                   const parts = action.toolName.slice(4).split("_");
@@ -5375,9 +5376,15 @@ export default function EditorPage() {
                                     return parts.slice(verbIdx).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
                                   }
                                 }
-                                return action.description;
+                                // Sanitize: strip absolute paths, UUIDs, emails
+                                let desc = action.description;
+                                desc = desc.replace(/\/[\w.\-/]+\/([\w.\-]+)/g, "$1"); // /abs/path/file → file
+                                desc = desc.replace(/[A-Za-z]:\\[\w.\\-]+\\([\w.\-]+)/g, "$1"); // C:\path\file → file
+                                desc = desc.replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, "***"); // UUIDs
+                                desc = desc.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "***@***"); // emails
+                                return desc;
                               };
-                              if (!msg.isStreaming && (!visibleActions || visibleActions.length === 0)) return null;
+                              if (!msg.isStreaming && allActions.length === 0) return null;
                               return (
                               <div data-testid="streaming-orb-card" className="relative mt-4 mb-4 overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-md p-5 shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm ml-auto mr-auto">
                                 <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-brand-600/10 to-transparent pointer-events-none" />
@@ -5397,12 +5404,12 @@ export default function EditorPage() {
                                   <h3 className="mt-4 mb-3 text-sm font-semibold text-foreground tracking-wide">
                                     {msg.isStreaming
                                       ? (liveStatus || "Building...")
-                                      : `${visibleActions?.length ?? 0} ${((visibleActions?.length ?? 0) === 1) ? "change" : "changes"} applied`}
+                                      : `${allActions.length} ${(allActions.length === 1) ? "change" : "changes"} applied`}
                                   </h3>
                                   
-                                  {visibleActions && visibleActions.length > 0 && (
+                                  {allActions.length > 0 && (
                                     <div className="w-full flex flex-col gap-2 relative mt-1">
-                                      {visibleActions.map((action, idx) => (
+                                      {allActions.map((action, idx) => (
                                         <div key={idx} className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 w-full bg-accent rounded-md p-1.5 border border-border text-left">
                                           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/15 border border-brand-500/30">
                                              {action.status === "running" ? (

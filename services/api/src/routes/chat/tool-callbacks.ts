@@ -196,11 +196,8 @@ import { extractSseHintPayload } from "../../ai/plan-parser.js";
 
 /** Deduplicating recorder for assistant tool calls. */
 export function createRecordAssistantToolCall(state: ChatStreamState) {
-  // Internal SDK tools that should not appear in persisted tool call lists
-  const HIDDEN_TOOLS = new Set(["report_intent", "create_plan", "mark_step_complete"]);
   return (name?: string, args?: unknown) => {
     if (!name) return;
-    if (HIDDEN_TOOLS.has(name)) return;
     const normalizedArgs = args && typeof args === "object"
       ? (args as Record<string, unknown>)
       : undefined;
@@ -239,9 +236,6 @@ export function createToolProgressCallbacks(
       const args = (argsObj as { arguments?: Record<string, unknown> }).arguments ?? argsObj;
       recordAssistantToolCall(toolName, args);
       traceCollector?.onToolStart(toolName, args);
-      // Skip emitting internal SDK tools that are not user-facing
-      const HIDDEN_TOOLS = ["report_intent", "create_plan", "mark_step_complete"];
-      if (HIDDEN_TOOLS.includes(toolName)) return;
       const friendly = friendlyToolMessage(toolName, args);
       const a = args;
       const path =
@@ -282,9 +276,6 @@ export function createToolProgressCallbacks(
       const _args = (_argsObj as { arguments?: Record<string, unknown> }).arguments ?? _argsObj;
       state.hadToolCalls = true;
       traceCollector?.onToolEnd(toolName, _args, result);
-      // Skip emitting internal SDK tools that are not user-facing
-      const HIDDEN_TOOLS = ["report_intent", "create_plan", "mark_step_complete"];
-      if (HIDDEN_TOOLS.includes(toolName)) return;
       const friendly = friendlyToolResult(toolName, result, true);
       const ea = _args;
       const endPath =
