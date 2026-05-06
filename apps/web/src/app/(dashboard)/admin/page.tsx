@@ -17,7 +17,6 @@ import {
   Mail,
   Wrench,
   ShieldCheck,
-  Layers,
   Plug,
   CreditCard,
 } from "lucide-react";
@@ -59,14 +58,17 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "planDefaults" | "planLimits" | "thumbnails" | "copilot" | "email" | "integrations">(() => {
+  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "plans" | "thumbnails" | "copilot" | "email" | "integrations">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get("tab");
-      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "planDefaults" || tab === "planLimits" || tab === "thumbnails" || tab === "copilot" || tab === "integrations") return tab;
+      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "plans" || tab === "thumbnails" || tab === "copilot" || tab === "integrations") return tab;
+      // Legacy redirects
+      if (tab === "planLimits" || tab === "planDefaults") return "plans";
     }
     return "features";
   });
+  const [plansSubTab, setPlansSubTab] = useState<"limits" | "defaults">("limits");
 
   // AI allocations state
   const [allocations, setAllocations] = useState<UserAiAllocation[]>([]);
@@ -296,8 +298,7 @@ export default function AdminPage() {
           { key: "features" as const, label: "Feature Flags", icon: Settings2 },
           { key: "users" as const, label: "Users & AI", icon: Users },
           { key: "integrations" as const, label: "Integrations", icon: Plug },
-          { key: "planLimits" as const, label: "Plan Limits", icon: CreditCard },
-          { key: "planDefaults" as const, label: "Plan Defaults", icon: Layers },
+          { key: "plans" as const, label: "Plans", icon: CreditCard },
           { key: "tools" as const, label: "AI Tools", icon: Wrench },
           { key: "thumbnails" as const, label: "Thumbnails", icon: ImageIcon },
           { key: "copilot" as const, label: "Sessions", icon: Activity },
@@ -355,11 +356,31 @@ export default function AdminPage() {
         />
       )}
 
-      {/* Plan Limits Tab */}
-      {activeTab === "planLimits" && <PlanLimitsPanel />}
-
-      {/* Plan Defaults Tab */}
-      {activeTab === "planDefaults" && <PlanDefaultsPanel />}
+      {/* Plans Tab (sub-tabs: Limits & Defaults) */}
+      {activeTab === "plans" && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-1 border-b border-border/50 pb-px">
+            <button
+              onClick={() => setPlansSubTab("limits")}
+              className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
+                plansSubTab === "limits" ? "text-foreground border-b-2 border-brand-500" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Plan Limits
+            </button>
+            <button
+              onClick={() => setPlansSubTab("defaults")}
+              className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
+                plansSubTab === "defaults" ? "text-foreground border-b-2 border-brand-500" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Plan Defaults
+            </button>
+          </div>
+          {plansSubTab === "limits" && <PlanLimitsPanel />}
+          {plansSubTab === "defaults" && <PlanDefaultsPanel />}
+        </div>
+      )}
 
       {/* AI Tools Tab */}
       {activeTab === "tools" && <ToolsConfigPanel />}
