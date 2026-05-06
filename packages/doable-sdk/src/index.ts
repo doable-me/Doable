@@ -211,8 +211,13 @@ class TokenManager {
   }
 
   private fetchTokenDirect(): void {
-    const meta = document.querySelector('meta[name="doable-project-id"]');
-    const pid = meta?.getAttribute("content");
+    // Extract project ID from URL path: /preview/:projectId/...
+    const pathMatch = window.location.pathname.match(/^\/preview\/([0-9a-f-]{36})\//i);
+    let pid = pathMatch?.[1] ?? null;
+    if (!pid) {
+      const meta = document.querySelector('meta[name="doable-project-id"]');
+      pid = meta?.getAttribute("content") ?? null;
+    }
     if (!pid) return;
     fetch(`/preview/${pid}/__doable/token`, { method: "POST" })
       .then((r) => r.ok ? r.json() : null)

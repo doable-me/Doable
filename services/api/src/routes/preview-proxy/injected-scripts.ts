@@ -62,8 +62,14 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
   }
   // Fetch token directly from the preview token endpoint (standalone mode)
   function fetchTokenDirect() {
-    var meta = document.querySelector('meta[name="doable-project-id"]');
-    var pid = meta ? meta.getAttribute("content") : null;
+    var pid = null;
+    // Extract project ID from URL path: /preview/:projectId/...
+    var m = window.location.pathname.match(/^\/preview\/([0-9a-f-]{36})\//i);
+    if (m) pid = m[1];
+    if (!pid) {
+      var meta = document.querySelector('meta[name="doable-project-id"]');
+      pid = meta ? meta.getAttribute("content") : null;
+    }
     if (!pid) return;
     fetch("/preview/" + pid + "/__doable/token", { method: "POST" })
       .then(function (r) { return r.ok ? r.json() : null; })
