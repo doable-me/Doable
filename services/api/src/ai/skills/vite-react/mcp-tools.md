@@ -30,9 +30,12 @@ const response = await doable.mcp.list();
 if (response.success) {
   response.data.forEach(tool => {
     console.log(tool.fullName, tool.description);
+    // tool.fullName: "mcp_hpca_mcp_search_documents" (use this in doable.mcp.call())
+    // tool.connectorName: "HPCA MCP"
+    // tool.toolName: "search_documents"
+    // tool.description: "Search documents in a case folder"
   });
 }
-// response.data is McpTool[] = [{ fullName, connectorName, toolName, description }]
 ```
 
 ## React Pattern
