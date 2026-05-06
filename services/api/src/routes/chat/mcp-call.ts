@@ -94,4 +94,49 @@ export function registerMcpCallRoute(app: Hono<AuthEnv>) {
       }
     },
   );
+
+  // GET /projects/:id/chat/mcp-tools — list available MCP tools for the project
+  // Returns connector IDs, names, and their tools so the frontend MCP bridge
+  // can resolve AI-prefixed tool names (mcp_connector_name_tool_name) back to
+  // the real connectorId + toolName.
+  app.get(
+    "/projects/:id/chat/mcp-tools",
+    async (c) => {
+      const projectId = c.req.param("id");
+      const userId = c.get("userId")!;
+
+      const project = await projectQueries(sql).findById(projectId);
+      if (!project) return c.json({ data: [] });
+
+      const role = await workspaceQueries(sql).getMemberRole(project.workspace_id, userId);
+      if (!role) {
+        const [collab] = await sql<{ role: string }[]>`
+          SELECT role FROM project_collaborators
+          WHERE project_id = ${projectId} AND user_id = ${userId}
+        `;
+        if (!collab) {
+          const [adminCheck] = await sql<{ is_platform_admin: boolean }[]>`
+            SELECT is_platform_admin FROM users WHERE id = ${userId}
+          `;
+          if (!adminCheck?.is_platform_admin) return c.json({ data: [] });
+        }
+      }
+
+      // Get all active connectors for this workspace
+      const connectors = connectorQueries(sql);
+      const rows = await connectors.listConnectors(project.workspace_id);
+      const activeRows = rows.filter((r) => r.status === "active");
+
+      const data = activeRows.map((row) => {
+        const cache = row.capabilities_cache as { tools?: { list?: Array<{ name: string; description?: string }> } } | null;
+        return {
+          connectorId: row.id,
+          connectorName: row.name,
+          tools: cache?.tools?.list ?? [],
+        };
+      });
+
+      return c.json({ data });
+    },
+  );
 }

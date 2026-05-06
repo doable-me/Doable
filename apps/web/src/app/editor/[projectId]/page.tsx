@@ -2456,6 +2456,103 @@ export default function EditorPage() {
     return () => window.removeEventListener("message", handleReady);
   }, [rawProjectId]);
 
+  // ─── MCP Call Bridge ─────────────────────────────────────
+  // Generated apps call MCP tools via postMessage({ type: 'mcp-call', toolName, args, callbackId }).
+  // This handler proxies the call to /projects/:id/chat/mcp-call and responds with mcp-response.
+  useEffect(() => {
+    if (!rawProjectId || rawProjectId === "new") return;
+    const projectId = rawProjectId;
+
+    // Cache: map of AI-prefixed tool name → { connectorId, realToolName }
+    let toolMap: Map<string, { connectorId: string; realToolName: string }> | null = null;
+    let toolMapLoading = false;
+
+    async function loadToolMap() {
+      if (toolMap || toolMapLoading) return toolMap;
+      toolMapLoading = true;
+      try {
+        const res = await apiFetch<{ data: Array<{ connectorId: string; connectorName: string; tools: Array<{ name: string }> }> }>(
+          `/projects/${projectId}/chat/mcp-tools`,
+        );
+        toolMap = new Map();
+        for (const connector of res.data ?? []) {
+          const safeName = connector.connectorName.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+          for (const tool of connector.tools ?? []) {
+            const safeToolName = tool.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+            const fullName = `mcp_${safeName}_${safeToolName}`;
+            toolMap.set(fullName, { connectorId: connector.connectorId, realToolName: tool.name });
+          }
+        }
+      } catch (e) {
+        console.warn("[MCP Bridge] Failed to load tool map:", e);
+        toolMap = new Map();
+      } finally {
+        toolMapLoading = false;
+      }
+      return toolMap;
+    }
+
+    async function handleMcpCall(ev: MessageEvent) {
+      if (!ev.data || typeof ev.data !== "object") return;
+      if (ev.data.type !== "mcp-call") return;
+      if (iframeRef.current && ev.source !== iframeRef.current.contentWindow) return;
+
+      const { toolName, args, callbackId } = ev.data as { toolName: string; args: Record<string, unknown>; callbackId: string };
+      if (!toolName || !callbackId) return;
+
+      try {
+        const map = await loadToolMap();
+        const resolved = map?.get(toolName);
+        if (!resolved) {
+          iframeRef.current?.contentWindow?.postMessage(
+            { type: "mcp-response", callbackId, error: `Unknown MCP tool: ${toolName}` },
+            "*",
+          );
+          return;
+        }
+
+        const res = await apiFetch<{ success: boolean; content?: unknown[]; error?: string }>(
+          `/projects/${projectId}/chat/mcp-call`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              connectorId: resolved.connectorId,
+              toolName: resolved.realToolName,
+              params: args ?? {},
+            }),
+          },
+        );
+
+        if (res.success) {
+          // Extract text content from MCP response
+          const textContent = (res.content ?? [])
+            .filter((c: any) => c.type === "text")
+            .map((c: any) => c.text)
+            .join("\n");
+          let result: unknown;
+          try { result = JSON.parse(textContent); } catch { result = textContent; }
+          iframeRef.current?.contentWindow?.postMessage(
+            { type: "mcp-response", callbackId, result },
+            "*",
+          );
+        } else {
+          iframeRef.current?.contentWindow?.postMessage(
+            { type: "mcp-response", callbackId, error: res.error ?? "MCP call failed" },
+            "*",
+          );
+        }
+      } catch (err) {
+        iframeRef.current?.contentWindow?.postMessage(
+          { type: "mcp-response", callbackId, error: err instanceof Error ? err.message : "MCP bridge error" },
+          "*",
+        );
+      }
+    }
+
+    window.addEventListener("message", handleMcpCall);
+    return () => window.removeEventListener("message", handleMcpCall);
+  }, [rawProjectId]);
+
   useEffect(() => {
     const handlePreviewMessage = (event: MessageEvent) => {
       if (!event.data || typeof event.data !== "object") return;
