@@ -194,6 +194,68 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
 });
 
 /**
+ * Server-side MCP passthrough: handles direct MCP calls from generated apps
+ * that don't use @doable/sdk (e.g. custom fetch to /__doable/mcp/call).
+ * Auto-generates a JWT and forwards to the connector-proxy internally.
+ */
+previewRoutes.post("/preview/:projectId/__doable/mcp/call", async (c) => {
+  const projectId = c.req.param("projectId");
+  if (!UUID_RE.test(projectId)) {
+    return c.json({ error: "Invalid project ID" }, 400);
+  }
+
+  let body: { toolName?: string; args?: Record<string, unknown> };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const toolName = body.toolName;
+  if (!toolName || typeof toolName !== "string") {
+    return c.json({ error: "Missing toolName" }, 400);
+  }
+
+  // Look up workspace
+  const [row] = await sql<{ workspace_id: string }[]>`
+    SELECT workspace_id FROM projects WHERE id = ${projectId} LIMIT 1
+  `;
+  if (!row) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  // Generate internal token
+  const token = await signProjectJwt(
+    {
+      projectId,
+      workspaceId: row.workspace_id,
+      kind: "connector-proxy",
+    },
+    PROJECT_JWT_SECRET,
+  );
+
+  // Forward to connector-proxy endpoint internally
+  const apiPort = process.env.API_PORT ?? "4000";
+  const apiHost = process.env.API_HOST ?? "127.0.0.1";
+  const proxyUrl = `http://${apiHost}:${apiPort}/__doable/connector-proxy/mcp/${encodeURIComponent(toolName)}`;
+
+  const proxyResp = await fetch(proxyUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ props: body.args ?? {} }),
+  });
+
+  const respBody = await proxyResp.text();
+  return new Response(respBody, {
+    status: proxyResp.status,
+    headers: { "Content-Type": "application/json" },
+  });
+});
+
+/**
  * Proxy ALL requests under /preview/:projectId/* to the Vite dev server.
  */
 previewRoutes.all("/preview/:projectId/*", async (c) => {
