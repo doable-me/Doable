@@ -27,6 +27,7 @@ const publicApiUrl =
 
 const PROJECT_JWT_SECRET =
   process.env.PROJECT_JWT_SECRET ??
+  process.env.JWT_SECRET ??
   "DEVELOPMENT_PROJECT_JWT_SECRET_DO_NOT_USE_IN_PROD";
 
 export const previewRoutes = new Hono();
