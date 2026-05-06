@@ -18,6 +18,20 @@ export interface IntegrationCallResult<T = unknown> {
   meta: { integrationId: string; actionName: string; durationMs: number } | null;
 }
 
+export interface McpCallResult<T = unknown> {
+  success: boolean;
+  data: T | null;
+  error: { code: string; message: string } | null;
+  meta: { connectorName: string; toolName: string; durationMs: number } | null;
+}
+
+export interface McpTool {
+  fullName: string;
+  connectorName: string;
+  toolName: string;
+  description?: string;
+}
+
 export interface AvailableIntegration {
   id: string;
   displayName: string;
@@ -53,6 +67,23 @@ export interface DoableClient {
      * List integrations available for this project (cached).
      */
     list(): Promise<AvailableIntegration[]>;
+  };
+
+  mcp: {
+    /**
+     * Call an MCP tool through the secure proxy.
+     * Use the full AI-prefixed tool name (e.g. "mcp_hpca_mcp_get_user_info")
+     * or connector-scoped name. Credentials are resolved server-side.
+     */
+    call<T = unknown>(
+      toolName: string,
+      args?: Record<string, unknown>,
+    ): Promise<McpCallResult<T>>;
+
+    /**
+     * List available MCP tools for this workspace.
+     */
+    list(): Promise<McpTool[]>;
   };
 }
 
@@ -94,6 +125,33 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
           if (!res.ok) return [];
           const body = await res.json();
           return body.integrations ?? [];
+        } catch {
+          return [];
+        }
+      },
+    },
+
+    mcp: {
+      async call<T = unknown>(
+        toolName: string,
+        args?: Record<string, unknown>,
+      ): Promise<McpCallResult<T>> {
+        return callMcpProxy<T>(toolName, args ?? {}, resolvedConfig, tokenManager);
+      },
+
+      async list(): Promise<McpTool[]> {
+        const baseUrl = resolvedConfig.proxyUrl!;
+        const url = `${baseUrl}/mcp/available`;
+        const token = await tokenManager.getToken();
+        const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+        if (resolvedConfig.projectId) {
+          headers["x-doable-project-id"] = resolvedConfig.projectId;
+        }
+        try {
+          const res = await fetch(url, { headers });
+          if (!res.ok) return [];
+          const body = await res.json();
+          return body.tools ?? [];
         } catch {
           return [];
         }
@@ -229,6 +287,56 @@ async function callProxy<T>(
     }
 
     return { success: true, data: json as T, error: null, meta: { integrationId, actionName, durationMs: 0 } };
+  } catch (err) {
+    return {
+      success: false,
+      data: null,
+      error: { code: "NETWORK_ERROR", message: err instanceof Error ? err.message : "Network request failed" },
+      meta: null,
+    };
+  }
+}
+
+// ─── MCP Proxy Fetch ───────────────────────────────────────
+
+async function callMcpProxy<T>(
+  toolName: string,
+  args: Record<string, unknown>,
+  config: DoableSDKConfig,
+  tokenManager: TokenManager,
+): Promise<McpCallResult<T>> {
+  const baseUrl = config.proxyUrl ?? "/__doable/connector-proxy";
+  const url = `${baseUrl}/mcp/${encodeURIComponent(toolName)}`;
+
+  const headers: Record<string, string> = { "content-type": "application/json" };
+
+  const token = await tokenManager.getToken();
+  headers["authorization"] = `Bearer ${token}`;
+  if (config.projectId) {
+    headers["x-doable-project-id"] = config.projectId;
+  }
+
+  const body = JSON.stringify({ props: args });
+
+  try {
+    let res = await fetch(url, { method: "POST", headers, body });
+
+    // Token expired — refresh and retry once
+    if (res.status === 401 && !config.apiKey) {
+      tokenManager.invalidate();
+      const freshToken = await tokenManager.getToken();
+      headers["authorization"] = `Bearer ${freshToken}`;
+      res = await fetch(url, { method: "POST", headers, body });
+    }
+
+    const json = await res.json();
+
+    return {
+      success: json.success ?? false,
+      data: json.success ? (json.data as T ?? null) : null,
+      error: json.success ? null : { code: json.error?.code ?? "UNKNOWN", message: json.error?.message ?? "MCP call failed" },
+      meta: json.meta ?? null,
+    };
   } catch (err) {
     return {
       success: false,
