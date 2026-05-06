@@ -5260,16 +5260,16 @@ export default function EditorPage() {
                             orb below should display file modifications. ── */}
                         {/* Task card block removed — the purple streaming orb below displays file modifications. */}
 
-                        {/* Inline thinking indicator */}
+                        {/* Inline thinking indicator — auto-open during streaming for live visibility */}
                         {msg.thinkingContent && (
-                          <details className="mb-2 rounded-lg border border-border bg-card text-[13px]">
+                          <details open={msg.isStreaming} className="mb-2 rounded-lg border border-border bg-card text-[13px]">
                             <summary className="cursor-pointer select-none px-3 py-1.5 text-muted-foreground hover:text-muted-foreground flex items-center gap-2">
                               {msg.isStreaming && (
                                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-700 dark:bg-brand-400 animate-pulse" />
                               )}
                               {msg.isStreaming ? "Thinking..." : "Thought process"}
                             </summary>
-                            <div className="px-3 pb-2 text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
+                            <div className="px-3 pb-2 text-muted-foreground whitespace-pre-wrap max-h-60 overflow-y-auto scroll-smooth">
                               {extractFunctionSteps(msg.thinkingContent).length > 0
                                 ? renderFunctionStepList(msg.thinkingContent, true)
                                 : msg.thinkingContent}
