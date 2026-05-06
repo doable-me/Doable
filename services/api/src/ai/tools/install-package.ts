@@ -3,6 +3,7 @@ import type { Tool } from "./index.js";
 import { getProjectPath } from "../project-files.js";
 import { restartDevServer, isRunning } from "../../projects/dev-server.js";
 import { buildSafeEnv } from "../../projects/safe-env.js";
+import { linkDoableSdk } from "../../projects/link-sdk.js";
 
 // Packages that should never be installed
 const BLOCKED_PACKAGES = new Set([
@@ -84,7 +85,43 @@ export const installPackageTool: Tool = {
     }
 
     const cwd = getProjectPath(ctx.projectId);
-    const args = buildArgs(pm, packages, isDev);
+
+    // Special-case @doable/sdk — it's a private workspace package, not on npm.
+    // Link it from the monorepo instead of running npm install.
+    const sdkPackages = packages.filter((p) => p === "@doable/sdk" || p.startsWith("@doable/sdk@"));
+    const npmPackages = packages.filter((p) => p !== "@doable/sdk" && !p.startsWith("@doable/sdk@"));
+
+    if (sdkPackages.length > 0) {
+      try {
+        await linkDoableSdk(cwd);
+      } catch (err) {
+        return {
+          success: false,
+          output: "",
+          error: `Failed to link @doable/sdk: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    }
+
+    // If only @doable/sdk was requested, skip npm install entirely
+    if (npmPackages.length === 0) {
+      let restarted = false;
+      if (isRunning(ctx.projectId)) {
+        try {
+          await restartDevServer(ctx.projectId, { userId: ctx.userId });
+          restarted = true;
+        } catch (err) {
+          console.error(`[install_package] Failed to restart dev server:`, err);
+        }
+      }
+      return {
+        success: true,
+        output: `Linked @doable/sdk${restarted ? " (dev server restarted)" : ""}`,
+        metadata: { packages: sdkPackages, dev: isDev, packageManager: pm },
+      };
+    }
+
+    const args = buildArgs(pm, npmPackages, isDev);
 
     const result = await runInstall(pm, args, cwd);
 
@@ -109,8 +146,8 @@ export const installPackageTool: Tool = {
 
     return {
       success: true,
-      output: `Installed ${packages.join(", ")}${isDev ? " (dev)" : ""}${restarted ? " (dev server restarted)" : ""}\n${result.output}`,
-      metadata: { packages, dev: isDev, packageManager: pm },
+      output: `Installed ${[...sdkPackages.map(() => "@doable/sdk (linked)"), ...npmPackages].join(", ")}${isDev ? " (dev)" : ""}${restarted ? " (dev server restarted)" : ""}\n${result.output}`,
+      metadata: { packages: [...sdkPackages, ...npmPackages], dev: isDev, packageManager: pm },
     };
   },
 };

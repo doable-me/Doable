@@ -24,6 +24,7 @@ import { getTemplate } from "../templates/registry.js";
 import { initRepo } from "../git/init.js";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { FrameworkAdapterError, type FrameworkContext } from "../frameworks/types.js";
+import { linkDoableSdk } from "./link-sdk.js";
 
 // Re-export for convenience
 export {
@@ -177,6 +178,13 @@ async function doCreateProject(
     );
   }
 
+  // Pre-link @doable/sdk so generated apps can import it without npm publish
+  try {
+    await linkDoableSdk(projectPath);
+  } catch (err) {
+    console.warn(`[FileManager] Failed to link @doable/sdk for project ${projectId}:`, err);
+  }
+
   // Initialize git repo for the new project
   try {
     await initRepo(projectPath);
@@ -260,6 +268,13 @@ export async function ensureDependencies(projectId: string): Promise<void> {
     env: {},
   };
   await adapter.install(ctx);
+
+  // Ensure @doable/sdk is available after install
+  try {
+    await linkDoableSdk(projectPath);
+  } catch {
+    // Non-critical
+  }
 }
 
 // ─── Errors ──────────────────────────────────────────────

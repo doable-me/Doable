@@ -75,3 +75,4 @@ Same as integrations:
 - NEVER hardcode MCP server URLs or credentials
 - NEVER use raw fetch() to MCP endpoints
 - ALWAYS use `@doable/sdk` — it handles auth, retries, and error normalization
+- `@doable/sdk` is pre-installed — just import it, do NOT add it to package.json or call install_package for it

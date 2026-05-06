@@ -34,7 +34,7 @@ export const viteReactPrompt: FrameworkPrompt = {
     "   - NEVER use fetch() to call external APIs directly (Slack API, Stripe API, etc.) — ALWAYS use the SDK",
     "   - NEVER hardcode API keys or tokens in the code",
     "   - The only exception is Supabase: use the direct Supabase client SDK (its keys are browser-safe)",
-    "   - Add `@doable/sdk` to package.json dependencies: `\"@doable/sdk\": \"workspace:*\"`",
+    "   - `@doable/sdk` is pre-installed in all projects — just import it, do NOT add it to package.json or run install_package for it",
     "",
     "0b. **🔌 MCP TOOLS IN GENERATED APPS**: When the generated app needs to call MCP server tools at runtime (e.g. fetching data from a connected MCP server like HPCA, Supabase MCP, or any custom MCP), use `@doable/sdk`'s MCP support:",
     "   ```ts",
