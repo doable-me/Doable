@@ -1663,6 +1663,7 @@ export default function EditorPage() {
   // ─── Scaffold / preview state ─────────────────────────────
   const [scaffoldStatus, setScaffoldStatus] = useState<ScaffoldStatus>("idle");
   const [scaffoldError, setScaffoldError] = useState<string | null>(null);
+  const [scaffoldProgressMsg, setScaffoldProgressMsg] = useState<string>("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewRoute, setPreviewRoute] = useState("/");
   const [isEditingRoute, setIsEditingRoute] = useState(false);
@@ -2126,8 +2127,21 @@ export default function EditorPage() {
       setScaffoldStatus("scaffolding");
       setScaffoldError(null);
 
+      // Progress ticker — shows elapsed time and phase during scaffold
+      const startTime = Date.now();
+      setScaffoldProgressMsg("Creating project files…");
+      const ticker = setInterval(() => {
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        if (elapsed < 5) setScaffoldProgressMsg("Creating project files…");
+        else if (elapsed < 15) setScaffoldProgressMsg(`Downloading packages… (${elapsed}s)`);
+        else if (elapsed < 40) setScaffoldProgressMsg(`Installing dependencies… (${elapsed}s)`);
+        else if (elapsed < 90) setScaffoldProgressMsg(`Linking packages… (${elapsed}s)`);
+        else setScaffoldProgressMsg(`Almost there… (${elapsed}s)`);
+      }, 2000);
+
       try {
         const scaffoldUrl = await scaffoldProject(resolvedProjectId);
+        clearInterval(ticker);
         if (cancelled) return;
 
         if (scaffoldUrl) {
@@ -2162,6 +2176,7 @@ export default function EditorPage() {
           }
         }
       } catch (err: unknown) {
+        clearInterval(ticker);
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : "Failed to scaffold project";
         setScaffoldError(msg);
@@ -4112,8 +4127,18 @@ export default function EditorPage() {
     // We need to re-run the effect — simplest is to just call init inline
     const init = async () => {
       setScaffoldStatus("scaffolding");
+      const startTime = Date.now();
+      const ticker = setInterval(() => {
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        if (elapsed < 5) setScaffoldProgressMsg("Creating project files…");
+        else if (elapsed < 15) setScaffoldProgressMsg(`Downloading packages… (${elapsed}s)`);
+        else if (elapsed < 40) setScaffoldProgressMsg(`Installing dependencies… (${elapsed}s)`);
+        else if (elapsed < 90) setScaffoldProgressMsg(`Linking packages… (${elapsed}s)`);
+        else setScaffoldProgressMsg(`Almost there… (${elapsed}s)`);
+      }, 2000);
       try {
         const scaffoldUrl = await scaffoldProject(resolvedProjectId);
+        clearInterval(ticker);
         if (scaffoldUrl) {
           setPreviewUrl(scaffoldUrl);
           setScaffoldStatus("ready");
@@ -4140,6 +4165,7 @@ export default function EditorPage() {
           }
         }
       } catch (err: unknown) {
+        clearInterval(ticker);
         const msg = err instanceof Error ? err.message : "Failed to scaffold project";
         setScaffoldError(msg);
         setScaffoldStatus("error");
@@ -4410,10 +4436,11 @@ export default function EditorPage() {
           ? "Preparing live preview..."
           : "Getting things ready...";
 
-    const subtitleMsg =
-      scaffoldStatus === "scaffolding"
-        ? "Installing tools and configuring your project"
-        : "Starting the live preview so you can see changes instantly. First launch may take a moment.";
+    const subtitleMsg = liveStatus
+      || scaffoldProgressMsg
+      || (scaffoldStatus === "scaffolding"
+        ? "Installing dependencies..."
+        : "Starting the live preview so you can see changes instantly.");
 
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-8">
@@ -4422,7 +4449,7 @@ export default function EditorPage() {
           <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-brand-700 dark:text-brand-400" />
         </div>
         <h3 className="text-sm font-medium text-foreground mb-1.5">{statusMsg}</h3>
-        <p className="text-[13px] text-muted-foreground max-w-[280px]">
+        <p className="text-[13px] text-muted-foreground max-w-[280px] transition-all">
           {subtitleMsg}
         </p>
       </div>
@@ -6298,7 +6325,7 @@ export default function EditorPage() {
                             : "Building your app..."}
                       </h3>
                       <p className="text-xs text-muted-foreground max-w-[260px] text-center">
-                        {liveStatus || (scaffoldStatus !== "ready" ? "Installing dependencies" : "AI is writing code")}
+                        {liveStatus || scaffoldProgressMsg || (scaffoldStatus !== "ready" ? "Installing dependencies" : "AI is writing code")}
                       </p>
                     </div>
                   )}
