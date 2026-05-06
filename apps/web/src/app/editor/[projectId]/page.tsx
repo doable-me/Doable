@@ -1449,6 +1449,13 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
   if (toolName.toLowerCase().includes("deploy")) {
     return "Deploying preview";
   }
+  // MCP tools: extract action name from the prefixed tool name
+  if (toolName.startsWith("mcp_")) {
+    const parts = toolName.slice(4).split("_");
+    const verbIdx = parts.findIndex(p => ["get", "list", "search", "create", "update", "delete", "query", "manage", "run", "download", "cancel", "save", "new"].includes(p));
+    const toolParts = verbIdx > 0 ? parts.slice(verbIdx) : parts;
+    return toolParts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+  }
   // Filter out technical jargon - never show raw tool names like "powershell"
   const cleaned = toolName
     .replace(/[_-]/g, " ")
@@ -3416,6 +3423,9 @@ export default function EditorPage() {
   // ─── Handle tool started — add "running" card + update live status ──
   const handleToolStarted = useCallback(
     (toolName: string, _args: Record<string, unknown>) => {
+      // Hide internal SDK tools from the user
+      const HIDDEN_TOOL_NAMES = ["report_intent", "create_plan", "mark_step_complete"];
+      if (HIDDEN_TOOL_NAMES.includes(toolName)) return;
       // Update live status with human-friendly description
       const description = describeToolAction(toolName, _args);
       setLiveStatus(description);
@@ -3466,6 +3476,9 @@ export default function EditorPage() {
   // ─── Handle tool completion — refresh files + update card ─
   const handleToolCompleted = useCallback(
     (toolName: string, _args: Record<string, unknown>) => {
+      // Hide internal SDK tools from the user
+      const HIDDEN_TOOL_NAMES = ["report_intent", "create_plan", "mark_step_complete"];
+      if (HIDDEN_TOOL_NAMES.includes(toolName)) return;
       // Update the running tool action card to "completed", or add a new completed card
       setMessages((prev) => {
         const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
@@ -5348,7 +5361,24 @@ export default function EditorPage() {
                                 overlay during presentation creation. `--card`
                                 is a slightly elevated panel color that reads
                                 as a subtle lift in both dark + light modes. */}
-                            {!msg.isError && (msg.isStreaming || (msg.toolActions && msg.toolActions.length > 0)) && (
+                            {!msg.isError && (msg.isStreaming || (msg.toolActions && msg.toolActions.length > 0)) && (() => {
+                              const HIDDEN_TOOL_NAMES = ["report_intent", "create_plan", "mark_step_complete"];
+                              const visibleActions = msg.isStreaming
+                                ? msg.toolActions
+                                : (msg.toolActions ?? []).filter(a => !HIDDEN_TOOL_NAMES.includes(a.toolName));
+                              // Reformat MCP tool descriptions at display time for historical items
+                              const formatDescription = (action: ToolAction) => {
+                                if (action.toolName?.startsWith("mcp_")) {
+                                  const parts = action.toolName.slice(4).split("_");
+                                  const verbIdx = parts.findIndex(p => ["get", "list", "search", "create", "update", "delete", "query", "manage", "run", "download", "cancel", "save", "new"].includes(p));
+                                  if (verbIdx > 0) {
+                                    return parts.slice(verbIdx).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+                                  }
+                                }
+                                return action.description;
+                              };
+                              if (!msg.isStreaming && (!visibleActions || visibleActions.length === 0)) return null;
+                              return (
                               <div data-testid="streaming-orb-card" className="relative mt-4 mb-4 overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-md p-5 shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm ml-auto mr-auto">
                                 <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-brand-600/10 to-transparent pointer-events-none" />
                                 <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-500/20 blur-[60px] pointer-events-none rounded-full" />
@@ -5367,12 +5397,12 @@ export default function EditorPage() {
                                   <h3 className="mt-4 mb-3 text-sm font-semibold text-foreground tracking-wide">
                                     {msg.isStreaming
                                       ? (liveStatus || "Building...")
-                                      : `${msg.toolActions?.length ?? 0} ${((msg.toolActions?.length ?? 0) === 1) ? "change" : "changes"} applied`}
+                                      : `${visibleActions?.length ?? 0} ${((visibleActions?.length ?? 0) === 1) ? "change" : "changes"} applied`}
                                   </h3>
                                   
-                                  {msg.toolActions && msg.toolActions.length > 0 && (
+                                  {visibleActions && visibleActions.length > 0 && (
                                     <div className="w-full flex flex-col gap-2 relative mt-1">
-                                      {msg.toolActions.map((action, idx) => (
+                                      {visibleActions.map((action, idx) => (
                                         <div key={idx} className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 w-full bg-accent rounded-md p-1.5 border border-border text-left">
                                           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/15 border border-brand-500/30">
                                              {action.status === "running" ? (
@@ -5384,7 +5414,7 @@ export default function EditorPage() {
                                              )}
                                           </div>
                                           <span className="text-[11px] font-medium truncate text-foreground flex-1">
-                                            {action.description}
+                                            {formatDescription(action)}
                                           </span>
                                         </div>
                                       ))}
@@ -5392,7 +5422,8 @@ export default function EditorPage() {
                                   )}
                                 </div>
                               </div>
-                            )}
+                              );
+                            })()}
                           </div>
                         </div>
 
