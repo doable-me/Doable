@@ -1941,6 +1941,8 @@ export default function EditorPage() {
   const [isFirstGeneration, setIsFirstGeneration] = useState(false);
   // Track whether tool calls are active (for building overlay on follow-up builds)
   const [hasActiveToolCalls, setHasActiveToolCalls] = useState(false);
+  // Track which long user messages are expanded in the chat
+  const [expandedUserMsgs, setExpandedUserMsgs] = useState<Set<string>>(new Set());
   const previewRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -5267,7 +5269,29 @@ export default function EditorPage() {
                                 ))}
                               </div>
                             )}
-                            {msg.content}
+                            {msg.content.length > 500 && !expandedUserMsgs.has(msg.id) ? (
+                              <>
+                                {msg.content.slice(0, 500)}…
+                                <button
+                                  onClick={() => setExpandedUserMsgs((prev) => new Set(prev).add(msg.id))}
+                                  className="ml-1 text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                                >
+                                  Show full prompt ({Math.round(msg.content.length / 1000)}k chars)
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {msg.content}
+                                {msg.content.length > 500 && (
+                                  <button
+                                    onClick={() => setExpandedUserMsgs((prev) => { const next = new Set(prev); next.delete(msg.id); return next; })}
+                                    className="ml-1 text-xs text-muted-foreground hover:underline"
+                                  >
+                                    Collapse
+                                  </button>
+                                )}
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
