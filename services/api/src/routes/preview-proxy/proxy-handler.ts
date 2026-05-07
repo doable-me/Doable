@@ -197,11 +197,64 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
  * Server-side MCP passthrough: handles direct MCP calls from generated apps
  * that don't use @doable/sdk (e.g. custom fetch to /__doable/mcp/call).
  * Auto-generates a JWT and forwards to the connector-proxy internally.
+ *
+ * Security:
+ *   - Origin validated: only same-origin preview requests accepted
+ *   - Rate-limited: 30 MCP calls/min per project (separate from token bucket)
+ *   - Project existence verified via DB lookup
+ *   - JWT issued is short-lived (15 min) and scoped
  */
-async function handleMcpPassthrough(projectId: string, c: { req: { json: () => Promise<unknown> } }) {
+const mcpBuckets = new Map<string, { count: number; resetAt: number }>();
+const MCP_RATE_LIMIT = 30; // calls per minute per project
+
+function validateMcpOrigin(c: { req: { header: (name: string) => string | undefined } }): boolean {
+  // In the preview context, requests come from the same origin (preview page
+  // rendered by our proxy). We validate via Origin or Referer to block
+  // arbitrary cross-origin callers.
+  const origin = c.req.header("origin") || "";
+  const referer = c.req.header("referer") || "";
+  const requestSource = origin || referer;
+
+  if (!requestSource) return false;
+
+  // Must originate from our own API domain (the preview host)
+  const allowedHosts = [
+    publicApiUrl.replace(/^https?:\/\//, ""),
+    "localhost",
+    "127.0.0.1",
+  ];
+
+  try {
+    const url = new URL(requestSource);
+    return allowedHosts.some(
+      (h) => url.hostname === h || url.hostname.endsWith(`.${h}`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function handleMcpPassthrough(projectId: string, c: { req: { json: () => Promise<unknown>; header: (name: string) => string | undefined } }) {
   if (!UUID_RE.test(projectId)) {
     return new Response(JSON.stringify({ error: "Invalid project ID" }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
+
+  // Origin check: only accept requests from the same preview origin
+  if (!validateMcpOrigin(c)) {
+    return new Response(JSON.stringify({ error: "Forbidden: invalid origin" }), { status: 403, headers: { "Content-Type": "application/json" } });
+  }
+
+  // Rate limit: 30 MCP calls/min per project
+  const now = Date.now();
+  let bucket = mcpBuckets.get(projectId);
+  if (!bucket || now > bucket.resetAt) {
+    bucket = { count: 0, resetAt: now + 60_000 };
+    mcpBuckets.set(projectId, bucket);
+  }
+  if (bucket.count >= MCP_RATE_LIMIT) {
+    return new Response(JSON.stringify({ error: "Rate limited" }), { status: 429, headers: { "Content-Type": "application/json" } });
+  }
+  bucket.count++;
 
   let body: { toolName?: string; args?: Record<string, unknown> };
   try {
@@ -253,25 +306,16 @@ async function handleMcpPassthrough(projectId: string, c: { req: { json: () => P
   const respBody = await proxyResp.text();
   return new Response(respBody, {
     status: proxyResp.status,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    headers: { "Content-Type": "application/json" },
   });
 }
 
-// Route with explicit project ID in path
+// Single MCP passthrough route — project ID explicit in path.
+// Generated apps always run inside /preview/:projectId/ so the SDK
+// bridge rewrites /__doable/mcp/call to this path-based route.
 previewRoutes.post("/preview/:projectId/__doable/mcp/call", async (c) => {
   const projectId = c.req.param("projectId");
   return handleMcpPassthrough(projectId, c);
-});
-
-// Root-level route: extracts project ID from Referer header
-// Handles generated apps that call fetch("/__doable/mcp/call") (root-relative)
-previewRoutes.post("/__doable/mcp/call", async (c) => {
-  const referer = c.req.header("referer") || "";
-  const match = referer.match(/\/preview\/([0-9a-f-]{36})\//i);
-  if (!match) {
-    return c.json({ error: "Cannot determine project ID from request context" }, 400);
-  }
-  return handleMcpPassthrough(match[1], c);
 });
 
 /**

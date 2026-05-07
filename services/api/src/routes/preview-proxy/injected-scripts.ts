@@ -163,6 +163,28 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
     });
   });
 
+  // ─── Fetch Interceptor ───
+  // Rewrite root-relative /__doable/mcp/call to path-based route
+  // so generated apps that bypass the bridge still hit the secure
+  // /preview/:projectId/__doable/mcp/call endpoint.
+  var _origFetch = window.fetch;
+  window.fetch = function (input, init) {
+    var url = typeof input === "string" ? input : (input && input.url ? input.url : "");
+    if (url === "/__doable/mcp/call" || url.endsWith("/__doable/mcp/call")) {
+      var pid2 = null;
+      var m2 = window.location.pathname.match(/^\/preview\/([0-9a-f-]{36})\//i);
+      if (m2) pid2 = m2[1];
+      if (pid2) {
+        var rewrittenUrl = "/preview/" + pid2 + "/__doable/mcp/call";
+        if (typeof input === "string") {
+          return _origFetch.call(window, rewrittenUrl, init);
+        }
+        return _origFetch.call(window, new Request(rewrittenUrl, input), init);
+      }
+    }
+    return _origFetch.apply(window, arguments);
+  };
+
   window.__doable = window.__doable || {};
   window.__doable.callConnector = callConnector;
   window.__doable.callMcp = callMcp;
