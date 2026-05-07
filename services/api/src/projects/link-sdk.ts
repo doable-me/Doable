@@ -21,14 +21,11 @@ function getSdkSourceDir(): string {
 
 /**
  * Copy @doable/sdk into a project's node_modules.
- * Safe to call multiple times — skips if already present.
+ * Always re-copies source files to ensure the latest SDK version is used.
  */
 export async function linkDoableSdk(projectPath: string): Promise<void> {
   const targetDir = path.join(projectPath, "node_modules", "@doable", "sdk");
   const markerFile = path.join(targetDir, "package.json");
-
-  // Already linked
-  if (existsSync(markerFile)) return;
 
   const srcDir = getSdkSourceDir();
   if (!existsSync(path.join(srcDir, "package.json"))) {

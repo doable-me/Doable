@@ -19,6 +19,7 @@ import { addProcessRoute, caddyAdminAvailable } from "../runtime/caddy-admin.js"
 import type { RuntimeAdapter, RuntimeContext } from "../runtime/types.js";
 import { getProjectPath } from "../ai/project-files.js";
 import { autoProvisionApiKey } from "./auto-api-key.js";
+import { linkDoableSdk } from "../projects/link-sdk.js";
 
 const deployments = deploymentQueries(sql);
 const projects = projectQueries(sql);
@@ -151,6 +152,10 @@ export async function runPipeline(
 
     const buildStart = Date.now();
     const projectDir = getProjectPath(projectId);
+
+    // Ensure latest SDK is linked before build
+    try { await linkDoableSdk(projectDir); } catch { /* non-fatal */ }
+
     // Compute publish URL & base path BEFORE build so Vite emits assets
     // with the correct base href when path-based hosting is enabled.
     const publishLoc = computeSitePublishLocation(subdomain, environment);
