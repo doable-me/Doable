@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { useImageAttachments } from "@/hooks/use-image-attachments";
+import { useAttachments } from "@/hooks/use-attachments";
 import {
   apiListProjects, apiListSharedProjects, apiListRecentlyViewed,
   apiRecordProjectView, apiCreateProject, apiToggleStarProject,
@@ -30,7 +30,7 @@ export function useDashboard() {
   const speechRecognition = useSpeechRecognition((transcript: string) => {
     setPrompt((prev) => (prev ? prev + " " + transcript : transcript));
   });
-  const imageAttachments = useImageAttachments();
+  const imageAttachments = useAttachments();
 
   // Data
   const [projects, setProjects] = useState<ApiProject[]>([]);
@@ -242,7 +242,7 @@ export function useDashboard() {
     if (!hasContent || isCreating) return;
     setIsCreating(true); setCreatingStatus("Creating project…");
     try {
-      const text = inputText.trim() || "See attached image(s)";
+      const text = inputText.trim() || "See attached file(s)";
       const activeWsId = typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? undefined : undefined;
       // API caps: name ≤100, description ≤500, prompt ≤5000. Slice each so
       // long prompts don't trip validation on the server.
@@ -258,7 +258,7 @@ export function useDashboard() {
       setCreatingStatus("Connecting to AI…");
       const mode = startMode === "plan" ? "plan" : "agent";
       const { accessToken } = getStoredTokens();
-      const bridgeAttachments = imageAttachments.attachments.map((a) => ({ type: a.type, data: a.data, name: a.name }));
+      const bridgeAttachments = imageAttachments.attachments.map((a) => ({ type: a.mimeType, data: a.data, name: a.name }));
       startBridge(projectId, text, mode, accessToken, bridgeAttachments.length > 0 ? bridgeAttachments : undefined);
       const unsub = onBridgeStatus((_status: BridgeStatus, msg: string) => { setCreatingStatus(msg); });
       imageAttachments.clearAll();

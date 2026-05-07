@@ -7,10 +7,12 @@
  * - PDFs are saved as temp files for the SDK to read
  */
 
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
+import mammoth from "mammoth";
+import * as XLSX from "xlsx";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -76,6 +78,73 @@ function isPdfMime(mime: string): boolean {
   return mime === "application/pdf";
 }
 
+function isDocumentMime(mime: string): boolean {
+  return mime === "application/msword" ||
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    mime === "application/vnd.ms-excel" ||
+    mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mime === "application/vnd.ms-powerpoint" ||
+    mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+    mime === "text/csv";
+}
+
+function getDocExtension(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 ? name.slice(dot).toLowerCase() : "";
+}
+
+/**
+ * Extract text from a document file buffer.
+ * Supports: docx, doc (best-effort), xlsx, xls, csv, pptx
+ */
+async function extractDocumentText(buffer: Buffer, name: string, mime: string): Promise<string> {
+  const ext = getDocExtension(name);
+
+  // Word documents (.docx)
+  if (ext === ".docx" || mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    const result = await mammoth.extractRawText({ buffer });
+    return result.value;
+  }
+
+  // Legacy Word (.doc) — mammoth supports it too
+  if (ext === ".doc" || mime === "application/msword") {
+    try {
+      const result = await mammoth.extractRawText({ buffer });
+      return result.value;
+    } catch {
+      return "[Could not parse .doc file — try saving as .docx]";
+    }
+  }
+
+  // Excel files (.xlsx, .xls)
+  if (ext === ".xlsx" || ext === ".xls" ||
+      mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      mime === "application/vnd.ms-excel") {
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheets: string[] = [];
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+      const csv = XLSX.utils.sheet_to_csv(sheet);
+      sheets.push(`## Sheet: ${sheetName}\n${csv}`);
+    }
+    return sheets.join("\n\n");
+  }
+
+  // CSV — treat as plain text
+  if (ext === ".csv" || mime === "text/csv") {
+    return buffer.toString("utf-8");
+  }
+
+  // PowerPoint (.pptx) — basic extraction via xlsx (it can read some OOXML)
+  if (ext === ".pptx" || mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+    // Save as file for SDK to handle
+    return "";
+  }
+
+  return "";
+}
+
 /**
  * Extract base64 payload from a data URL.
  * Handles "data:image/png;base64,AAAA..." format.
@@ -130,10 +199,10 @@ function saveToTempFile(base64Data: string, name: string, mime: string): string 
  * - An augmented prompt with text/code content inlined
  * - File paths for images/PDFs to pass to the Copilot SDK's attachments API
  */
-export function processAttachments(
+export async function processAttachments(
   attachments: RawAttachment[],
   userPrompt: string,
-): AttachmentPromptAugmentation {
+): Promise<AttachmentPromptAugmentation> {
   const fileAttachments: AttachmentPromptAugmentation["fileAttachments"] = [];
   const fileSections: string[] = [];
   const notes: string[] = [];
@@ -205,6 +274,36 @@ export function processAttachments(
         }
       } else {
         notes.push(`\n\n[Attached PDF: ${name} — could not decode PDF data]`);
+      }
+      continue;
+    }
+
+    // ── Documents (Word, Excel, CSV, PowerPoint) ──
+    if (isDocumentMime(mime)) {
+      const base64 = extractBase64(attachment.data);
+      if (base64) {
+        try {
+          const buffer = Buffer.from(base64, "base64");
+          const textContent = await extractDocumentText(buffer, name, mime);
+          if (textContent && textContent.length > 0) {
+            const truncated = textContent.length > MAX_TEXT_CHARS
+              ? textContent.slice(0, MAX_TEXT_CHARS) + `\n... [truncated — file exceeds ${MAX_TEXT_CHARS} characters]`
+              : textContent;
+            fileSections.push(
+              `\n\n--- Attached file: ${name} ---\n${truncated}\n--- End of ${name} ---`,
+            );
+          } else {
+            // Fallback: save as temp file for SDK
+            const tempPath = saveToTempFile(base64, name, mime);
+            fileAttachments.push({ type: "file", path: tempPath, displayName: name });
+          }
+          console.log(`[Attachments] Processed document "${name}" (${textContent.length} chars)`);
+        } catch (err) {
+          console.error(`[Attachments] Failed to parse document "${name}":`, err);
+          notes.push(`\n\n[Attached document: ${name} — failed to extract text content]`);
+        }
+      } else {
+        notes.push(`\n\n[Attached document: ${name} — could not decode file data]`);
       }
       continue;
     }

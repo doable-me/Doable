@@ -21,6 +21,8 @@ function FileTypeIcon({
       return <FileText className={className} />;
     case "pdf":
       return <File className={className} />;
+    case "document":
+      return <FileText className={className} />;
     default:
       return <File className={className} />;
   }
@@ -80,7 +82,7 @@ export const AttachmentPreviewStrip = memo(function AttachmentPreviewStrip({
 // ─── Message Attachments (displayed in chat messages) ────────
 interface MessageAttachmentsProps {
   attachments: Array<{
-    type: "image" | "text" | "pdf" | "code";
+    type: "image" | "text" | "pdf" | "code" | "document";
     name: string;
     mimeType: string;
     preview?: string;

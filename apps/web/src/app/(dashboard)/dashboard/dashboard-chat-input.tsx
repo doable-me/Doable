@@ -22,7 +22,7 @@ import {
   ChevronDown,
   type LucideIcon,
 } from "lucide-react";
-import type { ImageAttachment } from "@/hooks/use-image-attachments";
+import type { Attachment } from "@/hooks/use-attachments";
 import { useTypingPlaceholder } from "./dashboard-hooks";
 import { apiFetch } from "@/lib/api";
 
@@ -40,6 +40,16 @@ const FRAMEWORK_META: Record<string, { icon: LucideIcon; color: string }> = {
 
 const AUTO_DETECT_OPTION = { id: "", label: "Auto-detect", icon: Wand2, color: "text-violet-400 dark:text-violet-400" };
 
+function getDocIcon(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") return "📄";
+  if (ext === "doc" || ext === "docx") return "📝";
+  if (ext === "xls" || ext === "xlsx" || ext === "csv") return "📊";
+  if (ext === "ppt" || ext === "pptx") return "📑";
+  if (ext === "txt" || ext === "md") return "📃";
+  return "📎";
+}
+
 export function ChatInput({
   value,
   onChange,
@@ -48,7 +58,7 @@ export function ChatInput({
   creatingStatus,
   attachments,
   onOpenFilePicker,
-  onRemoveImage,
+  onRemoveAttachment,
   isListening,
   isMicSupported,
   onToggleMic,
@@ -62,9 +72,9 @@ export function ChatInput({
   onSubmit: () => void;
   isCreating: boolean;
   creatingStatus: string;
-  attachments: ImageAttachment[];
+  attachments: Attachment[];
   onOpenFilePicker: () => void;
-  onRemoveImage: (index: number) => void;
+  onRemoveAttachment: (id: string) => void;
   isListening: boolean;
   isMicSupported: boolean;
   onToggleMic: () => void;
@@ -100,18 +110,25 @@ export function ChatInput({
             disabled={isCreating}
           />
         </div>
-        {/* Image preview thumbnails */}
+        {/* Attachment preview thumbnails */}
         {attachments.length > 0 && (
-          <div className="flex items-center gap-2 px-4 pb-2">
-            {attachments.map((att, i) => (
-              <div key={i} className="relative group/thumb">
-                <img
-                  src={att.data}
-                  alt={att.name}
-                  className="h-16 w-16 rounded-lg object-cover border border-border"
-                />
+          <div className="flex items-center gap-2 px-4 pb-2 flex-wrap">
+            {attachments.map((att) => (
+              <div key={att.id} className="relative group/thumb">
+                {att.type === "image" ? (
+                  <img
+                    src={att.preview || att.data}
+                    alt={att.name}
+                    className="h-16 w-16 rounded-lg object-cover border border-border"
+                  />
+                ) : (
+                  <div className="h-16 w-auto min-w-[64px] max-w-[140px] rounded-lg border border-border bg-muted/50 flex items-center gap-1.5 px-2">
+                    <span className="text-lg shrink-0">{getDocIcon(att.name)}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">{att.name}</span>
+                  </div>
+                )}
                 <button
-                  onClick={() => onRemoveImage(i)}
+                  onClick={() => onRemoveAttachment(att.id)}
                   className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-secondary border border-border text-muted-foreground hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100"
                 >
                   <X className="h-2.5 w-2.5" />
@@ -125,7 +142,7 @@ export function ChatInput({
             <button
               onClick={onOpenFilePicker}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-              title="Attach image"
+              title="Attach files"
             >
               <Plus className="h-4 w-4" />
             </button>

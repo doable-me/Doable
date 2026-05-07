@@ -153,7 +153,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
       let augmentedContent = content;
       let fileAttachments: Array<{ type: "file"; path: string; displayName?: string }> = [];
       if (attachments && attachments.length > 0) {
-        const processed = processAttachments(attachments, content);
+        const processed = await processAttachments(attachments, content);
         augmentedContent = processed.augmentedPrompt;
         fileAttachments = processed.fileAttachments;
       }

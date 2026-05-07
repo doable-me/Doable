@@ -4,11 +4,11 @@ import { useState, useCallback, useRef } from "react";
 
 export interface Attachment {
   id: string;
-  type: "image" | "text" | "pdf" | "code";
+  type: "image" | "text" | "pdf" | "code" | "document";
   mimeType: string;
   name: string;
   size: number;
-  data: string; // base64 data URL for images/PDFs, raw text content for text/code
+  data: string; // base64 data URL for images/PDFs/documents, raw text content for text/code
   preview?: string; // thumbnail data URL for images, first ~200 chars for text/code
 }
 
@@ -29,13 +29,15 @@ const CODE_EXTENSIONS = new Set([
   ".go", ".rs", ".rb", ".php", ".html", ".css", ".scss", ".sql", ".sh", ".bat",
 ]);
 const PDF_EXTENSIONS = new Set([".pdf"]);
+const DOCUMENT_EXTENSIONS = new Set([".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx"]);
 
 const IMAGE_MIMES = "image/jpeg,image/png,image/gif,image/webp,image/svg+xml,image/bmp";
 const TEXT_MIMES = "text/plain,text/markdown,application/json,text/csv,text/xml,application/x-yaml,text/yaml";
 const CODE_MIMES = "text/javascript,text/typescript,text/x-python,text/x-java,text/x-c,text/x-c++,text/html,text/css";
 const PDF_MIMES = "application/pdf";
+const DOCUMENT_MIMES = "application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
-export const ACCEPTED_FILE_TYPES = [IMAGE_MIMES, TEXT_MIMES, CODE_MIMES, PDF_MIMES].join(",");
+export const ACCEPTED_FILE_TYPES = [IMAGE_MIMES, TEXT_MIMES, CODE_MIMES, PDF_MIMES, DOCUMENT_MIMES].join(",");
 
 // Also accept by extension for browsers that don't recognize some MIME types
 export const ACCEPTED_EXTENSIONS = [
@@ -43,6 +45,7 @@ export const ACCEPTED_EXTENSIONS = [
   ...TEXT_EXTENSIONS,
   ...CODE_EXTENSIONS,
   ...PDF_EXTENSIONS,
+  ...DOCUMENT_EXTENSIONS,
 ].join(",");
 
 function getFileExtension(name: string): string {
@@ -55,10 +58,20 @@ function classifyFile(name: string, mimeType: string): Attachment["type"] | null
 
   if (IMAGE_EXTENSIONS.has(ext) || mimeType.startsWith("image/")) return "image";
   if (PDF_EXTENSIONS.has(ext) || mimeType === "application/pdf") return "pdf";
+  if (DOCUMENT_EXTENSIONS.has(ext) || isDocumentMime(mimeType)) return "document";
   if (CODE_EXTENSIONS.has(ext)) return "code";
   if (TEXT_EXTENSIONS.has(ext) || mimeType.startsWith("text/")) return "text";
 
   return null;
+}
+
+function isDocumentMime(mime: string): boolean {
+  return mime === "application/msword" ||
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    mime === "application/vnd.ms-excel" ||
+    mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mime === "application/vnd.ms-powerpoint" ||
+    mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 }
 
 function generateId(): string {
@@ -173,6 +186,10 @@ async function processFile(file: File): Promise<Attachment | null> {
     case "pdf": {
       const data = await readAsDataURL(file);
       return { ...base, type: "pdf", mimeType: "application/pdf", data };
+    }
+    case "document": {
+      const data = await readAsDataURL(file);
+      return { ...base, type: "document", data };
     }
     default:
       return null;

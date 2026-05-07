@@ -13,6 +13,7 @@ import { ContextMenuPortal } from "./dashboard-context-menu";
 import { DashboardToolbar } from "./dashboard-toolbar";
 import { DashboardDialogs } from "./dashboard-dialogs";
 import { useDashboard } from "./use-dashboard";
+import { ACCEPTED_EXTENSIONS } from "@/hooks/use-attachments";
 import { useMyShared } from "@/modules/discover/use-my-shared";
 import { CreateProjectDialog } from "@/modules/dashboard/components/create-project-dialog";
 import { apiCreateProject } from "@/lib/api";
@@ -57,7 +58,7 @@ export default function DashboardPage() {
                 creatingStatus={d.creatingStatus}
                 attachments={d.imageAttachments.attachments}
                 onOpenFilePicker={d.imageAttachments.openFilePicker}
-                onRemoveImage={d.imageAttachments.removeImage}
+                onRemoveAttachment={d.imageAttachments.removeAttachment}
                 isListening={d.speechRecognition.isListening}
                 isMicSupported={d.speechRecognition.isSupported}
                 onToggleMic={d.speechRecognition.toggle}
@@ -69,7 +70,7 @@ export default function DashboardPage() {
               <input
                 ref={d.imageAttachments.fileInputRef}
                 type="file"
-                accept="image/*"
+                accept={ACCEPTED_EXTENSIONS}
                 multiple
                 className="hidden"
                 onChange={d.imageAttachments.handleFileChange}
