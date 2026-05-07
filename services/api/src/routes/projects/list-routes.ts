@@ -15,6 +15,7 @@ import {
   type WorkspacePlan,
 } from "@doable/shared";
 import { projects, workspacesQ, getUserWorkspaceId, getUserWorkspaceIdWithMinRole } from "./helpers.js";
+import { getEnabledFrameworkIds } from "../../frameworks/init.js";
 
 const stars = starQueries(sql);
 const projectViews = projectViewQueries(sql);
@@ -213,6 +214,16 @@ projectListRoutes.post("/", async (c) => {
       if (wsDefault) frameworkId = wsDefault;
     } catch {
       // Pre-migration host: column doesn't exist yet — fall through to DB default.
+    }
+  }
+
+  // Enforce enabled frameworks — reject creation with disabled framework
+  if (frameworkId) {
+    const enabled = getEnabledFrameworkIds();
+    if (!enabled.has(frameworkId)) {
+      return c.json({
+        error: `Framework "${frameworkId}" is currently disabled by the platform admin.`,
+      }, 403);
     }
   }
 
