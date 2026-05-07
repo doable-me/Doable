@@ -113,8 +113,23 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
     }
   }
 
+  // Auto-detect proxy URL from VITE_DOABLE_API_URL env var for deployed sites.
+  // Published sites need an absolute URL because they're served from a different
+  // domain (e.g. dev-my-app-x7k2m.doable.me) than the API (dev-api.doable.me).
+  let autoProxyUrl = config?.proxyUrl;
+  if (!autoProxyUrl) {
+    try {
+      const apiUrl = (import.meta as any).env?.VITE_DOABLE_API_URL;
+      if (typeof apiUrl === "string" && apiUrl.length > 0) {
+        autoProxyUrl = `${apiUrl.replace(/\/$/, "")}/__doable/connector-proxy`;
+      }
+    } catch {
+      // Not in a Vite context — ignore
+    }
+  }
+
   const resolvedConfig: DoableSDKConfig = {
-    proxyUrl: config?.proxyUrl ?? "/__doable/connector-proxy",
+    proxyUrl: autoProxyUrl ?? "/__doable/connector-proxy",
     apiKey: autoKey,
     projectId: config?.projectId,
   };

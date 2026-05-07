@@ -158,6 +158,31 @@ export async function autoProvisionApiKey(opts: {
         ${userId}
       )
     `;
+
+    // Also store VITE_DOABLE_API_URL so the SDK knows where to send requests.
+    // Published sites are on a different domain from the API, so same-origin
+    // relative paths won't work.
+    const publicApiUrl = process.env.NEXT_PUBLIC_API_URL ?? process.env.API_URL ?? "";
+    if (publicApiUrl) {
+      await sql`
+        DELETE FROM env_vars
+        WHERE project_id = ${projectId} AND key = 'VITE_DOABLE_API_URL' AND target = 'production'
+      `;
+      await sql`
+        INSERT INTO env_vars (workspace_id, project_id, scope, key, value_encrypted, is_secret, target, description, created_by)
+        VALUES (
+          ${project.workspace_id},
+          ${projectId},
+          'project',
+          'VITE_DOABLE_API_URL',
+          pgp_sym_encrypt(${publicApiUrl}, ${ENCRYPTION_KEY}),
+          false,
+          'production',
+          'API base URL for published app SDK calls',
+          ${userId}
+        )
+      `;
+    }
   }
 
   console.log(
