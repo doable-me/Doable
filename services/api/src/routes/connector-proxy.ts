@@ -99,7 +99,7 @@ async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> {
     const keyHash = createHash("sha256").update(token).digest("hex");
     const [row] = await sql`
       SELECT pak.project_id, pak.tier, pak.created_by,
-             pak.allowed_tools,
+             pak.allowed_tools, pak.allowed_origins,
              p.workspace_id
       FROM project_api_keys pak
       JOIN projects p ON p.id = pak.project_id
@@ -109,6 +109,33 @@ async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> {
     `;
     if (!row) {
       return jsonError(c, 401, "UNAUTHORIZED", "Invalid API key");
+    }
+
+    // Origin binding: if allowed_origins is set, verify the request comes from an allowed domain.
+    // This prevents stolen keys from being used from arbitrary origins (curl, attacker sites).
+    const allowedOrigins = Array.isArray(row.allowed_origins) ? row.allowed_origins as string[] : null;
+    if (allowedOrigins !== null && allowedOrigins.length > 0) {
+      const origin = c.req.header("origin") ?? "";
+      const referer = c.req.header("referer") ?? "";
+      const requestOrigin = origin || (referer ? new URL(referer).origin : "");
+
+      // If no origin/referer at all (curl, server-to-server), block it for client keys.
+      // Server-tier keys skip origin check (they're meant for backend use).
+      if (row.tier !== "server") {
+        if (!requestOrigin) {
+          return jsonError(c, 403, "ORIGIN_REQUIRED",
+            "This API key requires browser origin. Use a server-tier key for backend calls.");
+        }
+        const originHost = requestOrigin.replace(/^https?:\/\//, "").replace(/:\d+$/, "");
+        const isAllowed = allowedOrigins.some((allowed: string) => {
+          const pattern = allowed.replace(/^\*\./, "");
+          return originHost === pattern || originHost.endsWith("." + pattern);
+        });
+        if (!isAllowed) {
+          return jsonError(c, 403, "ORIGIN_NOT_ALLOWED",
+            `Request origin "${originHost}" is not in this key's allowed origins.`);
+        }
+      }
     }
 
     // Touch last_used_at (fire-and-forget)
