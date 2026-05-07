@@ -224,9 +224,7 @@ export default function Home() {
             {phrases[phraseIndex]}
           </p>
         </div>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
-          Your project is ready — start chatting to build
-        </p>
+
         <div className="flex justify-center pt-2">
           <div className="flex gap-1.5">
             {[0, 1, 2].map((i) => (
