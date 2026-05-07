@@ -429,3 +429,62 @@ projectItemRoutes.delete("/:id/collaborators/:userId", async (c) => {
 
   return c.json({ data: { removed: true } });
 });
+
+// ─── GET /:id/connector-settings — Get connector/MCP rate limit settings ───
+projectItemRoutes.get("/:id/connector-settings", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(id, userId);
+  if (!access) return c.json({ error: "Not found" }, 404);
+
+  const [row] = await sql<{ connector_settings: Record<string, unknown> }[]>`
+    SELECT connector_settings FROM projects WHERE id = ${id} LIMIT 1
+  `;
+
+  const settings = row?.connector_settings ?? {};
+  return c.json({
+    data: {
+      rateLimitPerMinute: typeof settings.rateLimitPerMinute === "number" ? settings.rateLimitPerMinute : null,
+    },
+  });
+});
+
+// ─── PUT /:id/connector-settings — Update connector/MCP rate limit settings ───
+const connectorSettingsSchema = z.object({
+  rateLimitPerMinute: z.number().int().min(0).max(10000).nullable(),
+});
+
+projectItemRoutes.put("/:id/connector-settings", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(id, userId);
+  if (!access) return c.json({ error: "Not found" }, 404);
+  if (!isRoleAtLeast(access.role, "editor")) {
+    return c.json({ error: "Insufficient permissions" }, 403);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
+  }
+
+  const parsed = connectorSettingsSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid settings", details: parsed.error.issues }, 400);
+  }
+
+  const newSettings = { rateLimitPerMinute: parsed.data.rateLimitPerMinute };
+
+  await sql`
+    UPDATE projects
+    SET connector_settings = ${JSON.stringify(newSettings)}::jsonb,
+        updated_at = now()
+    WHERE id = ${id}
+  `;
+
+  return c.json({ data: newSettings });
+});

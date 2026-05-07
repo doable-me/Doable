@@ -240,8 +240,9 @@ connectorProxyRoutes.post(
     if (authResult instanceof Response) return authResult;
     const { projectId, workspaceId, userId, rateLimit } = authResult;
 
-    // 2. Rate limit
-    if (!rateLimitOk(projectId, rateLimit)) {
+    // 2. Rate limit (configurable per-project)
+    const effectiveLimit = await getEffectiveRateLimit(projectId, rateLimit);
+    if (!rateLimitOk(projectId, effectiveLimit)) {
       await audit(projectId, "mcp", toolName, userId, "denied", Date.now() - t0);
       return jsonError(c, 429, "RATE_LIMITED", "Too many requests. Try again shortly.");
     }
@@ -370,8 +371,9 @@ connectorProxyRoutes.post(
     if (authResult instanceof Response) return authResult;
     const { projectId, workspaceId, userId, authMode, rateLimit } = authResult;
 
-    // 2. Rate limit per project
-    if (!rateLimitOk(projectId, rateLimit)) {
+    // 2. Rate limit per project (configurable)
+    const effectiveLimit = await getEffectiveRateLimit(projectId, rateLimit);
+    if (!rateLimitOk(projectId, effectiveLimit)) {
       await audit(projectId, integration, action, userId, "denied", Date.now() - t0);
       return jsonError(c, 429, "RATE_LIMITED", "Too many requests. Try again shortly.");
     }
@@ -460,7 +462,46 @@ export function generateProjectApiKey(tier: "client" | "server"): { key: string;
 
 // ─── Helpers ────────────────────────────────────────────
 
-function rateLimitOk(projectId: string, max: number): boolean {
+/**
+ * Per-project connector settings cache (from projects.connector_settings JSONB).
+ * TTL: 60s to avoid hammering DB on every request.
+ */
+interface ConnectorSettings {
+  rateLimitPerMinute: number | null; // null = use default, 0 = disabled
+}
+const settingsCache = new Map<string, { settings: ConnectorSettings; loadedAt: number }>();
+const SETTINGS_CACHE_TTL_MS = 60_000;
+
+async function getProjectConnectorSettings(projectId: string): Promise<ConnectorSettings> {
+  const cached = settingsCache.get(projectId);
+  if (cached && Date.now() - cached.loadedAt < SETTINGS_CACHE_TTL_MS) {
+    return cached.settings;
+  }
+  const [row] = await sql<{ connector_settings: Record<string, unknown> }[]>`
+    SELECT connector_settings FROM projects WHERE id = ${projectId} LIMIT 1
+  `;
+  const raw = row?.connector_settings ?? {};
+  const settings: ConnectorSettings = {
+    rateLimitPerMinute: typeof raw.rateLimitPerMinute === "number" ? raw.rateLimitPerMinute : null,
+  };
+  settingsCache.set(projectId, { settings, loadedAt: Date.now() });
+  return settings;
+}
+
+/**
+ * Resolve effective rate limit for a project.
+ * Priority: project setting > auth-mode default.
+ * Setting of 0 disables rate limiting entirely.
+ */
+async function getEffectiveRateLimit(projectId: string, authModeDefault: number): Promise<number | null> {
+  const settings = await getProjectConnectorSettings(projectId);
+  if (settings.rateLimitPerMinute === 0) return null; // disabled
+  if (settings.rateLimitPerMinute !== null) return settings.rateLimitPerMinute;
+  return authModeDefault;
+}
+
+function rateLimitOk(projectId: string, max: number | null): boolean {
+  if (max === null) return true; // rate limiting disabled for this project
   const now = Date.now();
   const bucket = rateBuckets.get(projectId);
   if (!bucket || now - bucket.windowStart > RATE_LIMIT_WINDOW_MS) {

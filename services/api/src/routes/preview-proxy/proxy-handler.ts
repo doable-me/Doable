@@ -200,12 +200,10 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
  *
  * Security:
  *   - Origin validated: only same-origin preview requests accepted
- *   - Rate-limited: 30 MCP calls/min per project (separate from token bucket)
+ *   - Rate limiting delegated to connector-proxy (configurable per-project)
  *   - Project existence verified via DB lookup
  *   - JWT issued is short-lived (15 min) and scoped
  */
-const mcpBuckets = new Map<string, { count: number; resetAt: number }>();
-const MCP_RATE_LIMIT = 30; // calls per minute per project
 
 function validateMcpOrigin(c: { req: { header: (name: string) => string | undefined } }): boolean {
   // In the preview context, requests come from the same origin (preview page
@@ -243,18 +241,6 @@ async function handleMcpPassthrough(projectId: string, c: { req: { json: () => P
   if (!validateMcpOrigin(c)) {
     return new Response(JSON.stringify({ error: "Forbidden: invalid origin" }), { status: 403, headers: { "Content-Type": "application/json" } });
   }
-
-  // Rate limit: 30 MCP calls/min per project
-  const now = Date.now();
-  let bucket = mcpBuckets.get(projectId);
-  if (!bucket || now > bucket.resetAt) {
-    bucket = { count: 0, resetAt: now + 60_000 };
-    mcpBuckets.set(projectId, bucket);
-  }
-  if (bucket.count >= MCP_RATE_LIMIT) {
-    return new Response(JSON.stringify({ error: "Rate limited" }), { status: 429, headers: { "Content-Type": "application/json" } });
-  }
-  bucket.count++;
 
   let body: { toolName?: string; args?: Record<string, unknown> };
   try {
