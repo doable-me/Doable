@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { sql } from "../db/index.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { setCachedEnabledFrameworks } from "../frameworks/init.js";
 
@@ -21,11 +22,18 @@ const ALL_FRAMEWORKS = [
 // ─── Helpers ────────────────────────────────────────────
 
 async function getEnabledFrameworksFromDb(): Promise<string[]> {
-  const [row] = await sql<{ value: string[] }[]>`
+  const [row] = await sql<{ value: unknown }[]>`
     SELECT value FROM platform_config WHERE key = 'enabled_frameworks'
   `;
-  if (row?.value && Array.isArray(row.value)) {
-    return row.value.filter((id: string) => ALL_FRAMEWORKS.some((f) => f.id === id));
+  if (row?.value) {
+    // Handle both correct jsonb array and legacy double-encoded string
+    let parsed = row.value;
+    if (typeof parsed === "string") {
+      try { parsed = JSON.parse(parsed); } catch { /* ignore */ }
+    }
+    if (Array.isArray(parsed)) {
+      return (parsed as string[]).filter((id) => ALL_FRAMEWORKS.some((f) => f.id === id));
+    }
   }
   // Fallback to env var
   const env = process.env.DOABLE_ENABLED_FRAMEWORKS ?? "vite-react,nextjs-app";
@@ -33,10 +41,17 @@ async function getEnabledFrameworksFromDb(): Promise<string[]> {
 }
 
 async function getDefaultFrameworkFromDb(): Promise<string> {
-  const [row] = await sql<{ value: string }[]>`
+  const [row] = await sql<{ value: unknown }[]>`
     SELECT value FROM platform_config WHERE key = 'default_framework'
   `;
-  if (row?.value && typeof row.value === "string") return row.value;
+  if (row?.value) {
+    // Handle both correct jsonb string and legacy double-encoded string
+    let parsed = row.value;
+    if (typeof parsed === "string") {
+      try { parsed = JSON.parse(parsed); } catch { /* use as-is */ }
+    }
+    if (typeof parsed === "string") return parsed;
+  }
   return "vite-react";
 }
 
@@ -88,14 +103,14 @@ adminFrameworkRoutes.put("/frameworks", async (c) => {
 
   await sql`
     INSERT INTO platform_config (key, value, updated_at, updated_by)
-    VALUES ('enabled_frameworks', ${JSON.stringify(enabledFrameworks)}::jsonb, now(), ${userId})
-    ON CONFLICT (key) DO UPDATE SET value = ${JSON.stringify(enabledFrameworks)}::jsonb, updated_at = now(), updated_by = ${userId}
+    VALUES ('enabled_frameworks', ${sql.json(enabledFrameworks)}, now(), ${userId})
+    ON CONFLICT (key) DO UPDATE SET value = ${sql.json(enabledFrameworks)}, updated_at = now(), updated_by = ${userId}
   `;
 
   await sql`
     INSERT INTO platform_config (key, value, updated_at, updated_by)
-    VALUES ('default_framework', ${JSON.stringify(effectiveDefault)}::jsonb, now(), ${userId})
-    ON CONFLICT (key) DO UPDATE SET value = ${JSON.stringify(effectiveDefault)}::jsonb, updated_at = now(), updated_by = ${userId}
+    VALUES ('default_framework', ${sql.json(effectiveDefault)}, now(), ${userId})
+    ON CONFLICT (key) DO UPDATE SET value = ${sql.json(effectiveDefault)}, updated_at = now(), updated_by = ${userId}
   `;
 
   // Update the in-memory cache used by getEnabledFrameworkIds
