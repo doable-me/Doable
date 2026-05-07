@@ -253,18 +253,10 @@ export default function AdminPage() {
           <Link
             href="/admin/runtime"
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-            title="Live process list — every running project, by user, port, framework, CPU, memory, uptime"
+            title="Published apps + live dev servers — CPU, memory, uptime, controls"
           >
             <Activity className="h-3.5 w-3.5 text-brand-400" />
             Runtime
-          </Link>
-          <Link
-            href="/admin/dev-servers"
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-            title="Live editor previews — every Vite/dev-server process"
-          >
-            <Activity className="h-3.5 w-3.5 text-brand-400" />
-            Dev Servers
           </Link>
           <Link
             href="/admin/chat"
