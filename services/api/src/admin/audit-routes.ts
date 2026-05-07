@@ -89,12 +89,12 @@ adminAuditRoutes.get("/audit/conversations", async (c) => {
            LEFT(ms.last_assistant_text, 280) AS last_assistant_excerpt
       FROM ai_sessions  s
       LEFT JOIN msg_stats  ms ON ms.session_id = s.id
-      LEFT JOIN projects   p  ON p.id   = s.project_id
+      LEFT JOIN projects   p  ON p.id::text = s.project_id
       LEFT JOIN workspaces w  ON w.id   = p.workspace_id
       LEFT JOIN users      u  ON u.id::text = s.user_id
-     WHERE (${userId}::uuid      IS NULL OR s.user_id::text = ${userId}::text)
+     WHERE (${userId}::text       IS NULL OR s.user_id       = ${userId}::text)
        AND (${workspaceId}::uuid IS NULL OR p.workspace_id  = ${workspaceId}::uuid)
-       AND (${projectId}::uuid   IS NULL OR s.project_id    = ${projectId}::uuid)
+       AND (${projectId}::text   IS NULL OR s.project_id    = ${projectId}::text)
        AND (${from}::timestamptz IS NULL OR s.updated_at   >= ${from}::timestamptz)
        AND (${to}::timestamptz   IS NULL OR s.updated_at   <= ${to}::timestamptz)
        AND (${q}::text           IS NULL OR EXISTS (
@@ -153,7 +153,7 @@ adminAuditRoutes.get("/audit/conversations/:sessionId", async (c) => {
            s.created_at,
            s.updated_at
       FROM ai_sessions  s
-      LEFT JOIN projects   p ON p.id = s.project_id
+      LEFT JOIN projects   p ON p.id::text = s.project_id
       LEFT JOIN workspaces w ON w.id = p.workspace_id
       LEFT JOIN users      u ON u.id::text = s.user_id
      WHERE s.id = ${sessionId}::uuid
@@ -242,11 +242,11 @@ adminAuditRoutes.get("/audit/messages", async (c) => {
            p.workspace_id::text     AS workspace_id
       FROM ai_messages m
       JOIN ai_sessions s ON s.id = m.session_id
-      LEFT JOIN projects p ON p.id = s.project_id
+      LEFT JOIN projects p ON p.id::text = s.project_id
       LEFT JOIN users    u ON u.id::text = s.user_id
      WHERE m.content ILIKE '%' || ${q}::text || '%'
        AND (${role}::text        IS NULL OR m.role::text     = ${role}::text)
-       AND (${userId}::uuid      IS NULL OR s.user_id::text  = ${userId}::text)
+       AND (${userId}::text      IS NULL OR s.user_id        = ${userId}::text)
        AND (${workspaceId}::uuid IS NULL OR p.workspace_id   = ${workspaceId}::uuid)
        AND (${from}::timestamptz IS NULL OR m.created_at    >= ${from}::timestamptz)
        AND (${to}::timestamptz   IS NULL OR m.created_at    <= ${to}::timestamptz)

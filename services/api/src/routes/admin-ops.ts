@@ -428,13 +428,13 @@ adminOpsRoutes.get("/projects", async (c) => {
       LEFT JOIN (
         SELECT project_id, COUNT(*)::int AS sessions_count
         FROM ai_sessions GROUP BY project_id
-      ) s ON s.project_id::uuid = p.id
+      ) s ON s.project_id = p.id::text
       LEFT JOIN (
         SELECT s.project_id, COUNT(am.id)::int AS messages_count
         FROM ai_sessions s
         LEFT JOIN ai_messages am ON am.session_id = s.id
         GROUP BY s.project_id
-      ) m ON m.project_id::uuid = p.id
+      ) m ON m.project_id = p.id::text
       WHERE p.deleted_at IS NULL
         AND (
           ${search} = '' OR
