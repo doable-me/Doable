@@ -7,6 +7,14 @@ CREATE TABLE IF NOT EXISTS platform_config (
   updated_by UUID REFERENCES users(id) ON DELETE SET NULL
 );
 
+-- Grant access to the doable application user
+DO $$ BEGIN
+  EXECUTE 'GRANT ALL ON platform_config TO doable';
+EXCEPTION WHEN OTHERS THEN
+  -- doable role may not exist in dev environments
+  NULL;
+END $$;
+
 -- Seed default: both frameworks enabled, vite-react is default
 INSERT INTO platform_config (key, value) VALUES
   ('enabled_frameworks', '["vite-react", "nextjs-app"]'::jsonb),
