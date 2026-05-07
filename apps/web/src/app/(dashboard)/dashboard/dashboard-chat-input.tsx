@@ -241,6 +241,9 @@ function FrameworkPicker({
       .catch(() => { /* use default auto-detect only */ });
   }, []);
 
+  // Hide picker entirely if only one framework (no choice to make)
+  if (options.length <= 2) return null;
+
   const selected = options.find((o) => o.id === (value ?? "")) ?? options[0]!;
   const Icon = selected.icon;
 
