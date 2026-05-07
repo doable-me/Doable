@@ -359,6 +359,11 @@ await initDocore().catch((err) => {
   console.error("[docore] init failed:", err);
 });
 
+// Refresh framework cache from platform_config (admin-configurable).
+// Falls back to DOABLE_ENABLED_FRAMEWORKS env var if table doesn't exist yet.
+import { refreshFrameworkCache } from "./routes/admin-frameworks.js";
+await refreshFrameworkCache();
+
 // Initialize email service (provider + queue worker)
 await initEmailService(sql).catch((err) => {
   console.error("[Email] init failed:", err);

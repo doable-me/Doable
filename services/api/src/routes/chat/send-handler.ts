@@ -92,6 +92,8 @@ const sendMessageSchema = z.object({
     data: z.string(),
     name: z.string(),
   })).max(5).optional(),
+  // Project files to attach as context (relative paths within the project)
+  projectFiles: z.array(z.string().max(500)).max(10).optional(),
 });
 
 export function registerSendHandler(app: Hono<AuthEnv>) {
@@ -101,7 +103,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
     zValidator("json", sendMessageSchema),
     async (c) => {
       const projectId = c.req.param("id");
-      const { content, displayContent, mode, model, provider, providerId, copilotAccountId, attachments } = c.req.valid("json");
+      const { content, displayContent, mode, model, provider, providerId, copilotAccountId, attachments, projectFiles } = c.req.valid("json");
       const userId = c.get("userId")!;
 
       // Verify project access — must be at least a member (viewers are read-only)
@@ -154,6 +156,30 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
         const processed = processAttachments(attachments, content);
         augmentedContent = processed.augmentedPrompt;
         fileAttachments = processed.fileAttachments;
+      }
+
+      // Resolve project files as SDK file attachments (relative paths → absolute)
+      if (projectFiles && projectFiles.length > 0) {
+        const projectPath = getProjectPath(projectId);
+        for (const relPath of projectFiles) {
+          try {
+            const { resolve } = await import("node:path");
+            const { existsSync } = await import("node:fs");
+            const absPath = resolve(projectPath, relPath);
+            // Prevent path traversal
+            if (!absPath.startsWith(projectPath)) {
+              console.warn(`[Chat] project file path traversal blocked: ${relPath}`);
+              continue;
+            }
+            if (!existsSync(absPath)) {
+              console.warn(`[Chat] project file not found: ${relPath}`);
+              continue;
+            }
+            fileAttachments.push({ type: "file", path: absPath, displayName: relPath });
+          } catch (err) {
+            console.warn(`[Chat] failed to resolve project file "${relPath}":`, err);
+          }
+        }
       }
 
       c.header("X-Accel-Buffering", "no");

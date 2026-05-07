@@ -45,6 +45,7 @@ import { internalRoutes } from "./routes/internal.js";
 import { planRoutes } from "./routes/plan.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import artifactsRoutes from "./routes/artifacts.js";
+import { publicFrameworkRoutes } from "./routes/admin-frameworks.js";
 
 export function mountRoutes(app: Hono): void {
 app.route("/health", healthRoutes);
@@ -109,5 +110,6 @@ app.route("/", marketplaceModerationRoutes);
 app.route("/workspaces/:wid/context", workspaceContextRoutes);
 app.route("/team-chat", teamChatRoutes);
 app.route("/design-comments", designCommentRoutes);
+app.route("/", publicFrameworkRoutes);
 
 }

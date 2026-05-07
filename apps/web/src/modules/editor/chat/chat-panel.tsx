@@ -62,6 +62,7 @@ export function ChatPanel() {
   const pendingQuestions = useEditorStore((s) => s.pendingQuestions);
   const activeAgentProgress = useEditorStore((s) => s.activeAgentProgress);
   const agentTimeline    = useEditorStore((s) => s.agentTimeline);
+  const fileTree         = useEditorStore((s) => s.fileTree);
 
   const {
     updatePlanStep,
@@ -342,9 +343,10 @@ export function ChatPanel() {
 
       {/* Chat input */}
       <ChatInput
-        onSend={(content, attachments) => sendMessage(content, attachments)}
+        onSend={(content, attachments, projectFiles) => sendMessage(content, attachments, projectFiles)}
         onStop={stopStreaming}
         isStreaming={isStreaming}
+        fileTree={fileTree}
       />
     </div>
   );

@@ -63,7 +63,7 @@ export function useChat(
 
   // ─── sendMessage ─────────────────────────────────────────────────
   const sendMessage = useCallback(
-    async (content: string, attachments?: Attachment[]) => {
+    async (content: string, attachments?: Attachment[], projectFiles?: string[]) => {
       if (!projectId || !content.trim() || isStreaming) return;
 
       lastUserMessageRef.current = content.trim();
@@ -82,6 +82,7 @@ export function useChat(
           mimeType: a.mimeType,
           preview: a.preview,
         })),
+        projectFiles: projectFiles && projectFiles.length > 0 ? projectFiles : undefined,
       };
       addMessage(userMessage);
 
@@ -128,6 +129,7 @@ export function useChat(
                 data: a.data,
                 name: a.name,
               })),
+              projectFiles: projectFiles && projectFiles.length > 0 ? projectFiles : undefined,
             }),
             signal: controller.signal,
           }

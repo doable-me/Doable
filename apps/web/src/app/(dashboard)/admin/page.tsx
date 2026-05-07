@@ -38,6 +38,7 @@ import { ToolsConfigPanel } from "./tools-config-panel";
 import { PlanDefaultsPanel } from "./plan-defaults-panel";
 import { PlanLimitsPanel } from "./plan-limits-panel";
 import { IntegrationsAdminPanel } from "@/modules/integrations/integrations-admin-panel";
+import { FrameworksPanel } from "./frameworks-panel";
 
 // ─── Admin Page ─────────────────────────────────────────────
 
@@ -322,14 +323,20 @@ export default function AdminPage() {
 
       {/* Feature Flags Tab */}
       {activeTab === "features" && (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground mb-4">Toggle features on/off globally. Set minimum plan or workspace role requirements.</p>
-          {features.map((f) => (
-            <FeatureRow key={f.feature_key} feature={f} onToggle={toggleFeature} onUpdate={updateFeature} />
-          ))}
-          {features.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-8">No feature flags configured.</p>
-          )}
+        <div className="space-y-6">
+          {/* Framework Controls */}
+          <FrameworksPanel />
+
+          {/* Feature Flags */}
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground mb-4">Toggle features on/off globally. Set minimum plan or workspace role requirements.</p>
+            {features.map((f) => (
+              <FeatureRow key={f.feature_key} feature={f} onToggle={toggleFeature} onUpdate={updateFeature} />
+            ))}
+            {features.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-8">No feature flags configured.</p>
+            )}
+          </div>
         </div>
       )}
 

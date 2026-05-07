@@ -71,6 +71,8 @@ export interface ChatMessage {
     mimeType: string;
     preview?: string;
   }>;
+  /** Project files attached as context */
+  projectFiles?: string[];
   /** Git commit SHA created by this AI response (for undo) */
   versionSha?: string;
   /** Whether the user has undone this AI response */

@@ -25,7 +25,7 @@ import {
   Hexagon,
   Code2,
 } from "lucide-react";
-import { apiListTemplates, type ApiTemplate } from "@/lib/api";
+import { apiListTemplates, apiFetch, type ApiTemplate } from "@/lib/api";
 
 interface CreateProjectDialogProps {
   open: boolean;
@@ -48,18 +48,24 @@ type CreationMode = "blank" | "prompt" | "template";
 // in DOABLE_ENABLED_FRAMEWORKS, so even if a stale build of this file
 // sent a disabled id, the API guards against it.
 //
-// To re-enable any of the disabled frameworks: uncomment its entry here
-// AND set DOABLE_ENABLED_FRAMEWORKS on the API to include it.
-const FRAMEWORKS = [
-  { id: "vite-react", name: "React (Vite)", description: "Client-side SPA", category: "Frontend", icon: Atom, color: "text-cyan-400" },
-  { id: "nextjs-app", name: "Next.js", description: "Full-stack React", category: "Full-Stack", icon: Globe, color: "text-white" },
-  // { id: "sveltekit", name: "SvelteKit", description: "Full-stack Svelte", category: "Full-Stack", icon: Hexagon, color: "text-orange-400" },
-  // { id: "nuxt", name: "Nuxt", description: "Full-stack Vue", category: "Full-Stack", icon: Layers, color: "text-green-400" },
-  // { id: "astro", name: "Astro", description: "Content sites", category: "Frontend", icon: Wind, color: "text-purple-400" },
-  // { id: "hono", name: "Hono", description: "API server (Node.js)", category: "Backend", icon: Zap, color: "text-orange-300" },
-  // { id: "fastapi", name: "FastAPI", description: "API server (Python)", category: "Backend", icon: Server, color: "text-emerald-400" },
-  // { id: "django", name: "Django", description: "Full-stack Python", category: "Backend", icon: Code2, color: "text-green-300" },
-] as const;
+// This is the FULL set of known frameworks (for icon/color mapping).
+// The actual enabled set is fetched from GET /frameworks at runtime.
+const FRAMEWORK_META: Record<string, { icon: typeof Globe; color: string }> = {
+  "vite-react": { icon: Atom, color: "text-cyan-400" },
+  "nextjs-app": { icon: Globe, color: "text-white" },
+  "sveltekit": { icon: Hexagon, color: "text-orange-400" },
+  "nuxt": { icon: Layers, color: "text-green-400" },
+  "astro": { icon: Wind, color: "text-purple-400" },
+  "hono": { icon: Zap, color: "text-orange-300" },
+  "fastapi": { icon: Server, color: "text-emerald-400" },
+  "django": { icon: Code2, color: "text-green-300" },
+};
+
+// Fallback list if API call fails
+const FALLBACK_FRAMEWORKS = [
+  { id: "vite-react", name: "React (Vite)", description: "Client-side SPA", category: "Frontend", isDefault: true },
+  { id: "nextjs-app", name: "Next.js", description: "Full-stack React", category: "Full-Stack", isDefault: false },
+];
 
 function slugify(text: string): string {
   return text
@@ -86,6 +92,24 @@ export function CreateProjectDialog({
   const [slugEdited, setSlugEdited] = useState(false);
   const [templates, setTemplates] = useState<ApiTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [frameworks, setFrameworks] = useState(FALLBACK_FRAMEWORKS);
+
+  // Fetch enabled frameworks from the API
+  useEffect(() => {
+    if (!open) return;
+    apiFetch<{ frameworks: Array<{ id: string; name: string; description: string; category: string; isDefault: boolean }>; defaultFramework: string }>("/frameworks")
+      .then((res) => {
+        if (res.frameworks && res.frameworks.length > 0) {
+          setFrameworks(res.frameworks);
+          // Set default framework selection
+          const def = res.frameworks.find((f) => f.isDefault) ?? res.frameworks[0];
+          if (def) setSelectedFramework(def.id);
+        }
+      })
+      .catch(() => {
+        // Use fallback on error
+      });
+  }, [open]);
 
   // Fetch templates from the registry on first open. Filter out the empty
   // "blank" template — the dialog's "Blank" mode covers that case directly.
@@ -119,7 +143,7 @@ export function CreateProjectDialog({
     setDescription("");
     setPrompt("");
     setSelectedTemplate(null);
-    setSelectedFramework("vite-react");
+    setSelectedFramework(frameworks.find((f) => f.isDefault)?.id ?? frameworks[0]?.id ?? "vite-react");
     setError(null);
     setSlugEdited(false);
   };
@@ -197,8 +221,9 @@ export function CreateProjectDialog({
           <div className="space-y-2">
             <label className="text-sm font-medium text-zinc-300">Framework</label>
             <div className="grid grid-cols-2 gap-2">
-              {FRAMEWORKS.map((fw) => {
-                const Icon = fw.icon;
+              {frameworks.map((fw) => {
+                const meta = FRAMEWORK_META[fw.id] ?? { icon: Globe, color: "text-white" };
+                const Icon = meta.icon;
                 return (
                   <button
                     key={fw.id}
@@ -213,7 +238,7 @@ export function CreateProjectDialog({
                     <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
                       selectedFramework === fw.id ? "bg-blue-500/20" : "bg-zinc-800"
                     }`}>
-                      <Icon className={`h-4.5 w-4.5 ${fw.color}`} />
+                      <Icon className={`h-4.5 w-4.5 ${meta.color}`} />
                     </div>
                     <div className="min-w-0">
                       <div className={`text-sm font-medium ${
