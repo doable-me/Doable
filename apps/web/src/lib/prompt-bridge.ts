@@ -18,6 +18,8 @@
  * state survives across route transitions within the same session.
  */
 
+import { refreshAccessToken, getStoredTokens } from "./api-core";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -203,21 +205,32 @@ async function startSSEFetch(
   abortController: AbortController,
 ) {
   try {
-    const res = await fetch(`${API_URL}/projects/${projectId}/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        content: prompt,
-        mode,
-        ...(attachments?.length
-          ? { attachments: attachments.map((a) => ({ type: a.mimeType || a.type, data: a.data, name: a.name })) }
-          : {}),
-      }),
-      signal: abortController.signal,
-    });
+    const makeRequest = (authToken: string | null) =>
+      fetch(`${API_URL}/projects/${projectId}/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({
+          content: prompt,
+          mode,
+          ...(attachments?.length
+            ? { attachments: attachments.map((a) => ({ type: a.mimeType || a.type, data: a.data, name: a.name })) }
+            : {}),
+        }),
+        signal: abortController.signal,
+      });
+
+    let res = await makeRequest(token);
+
+    // On 401, refresh the token and retry once (mirrors apiFetch behavior)
+    if (res.status === 401 && !abortController.signal.aborted) {
+      const newTokens = await refreshAccessToken();
+      if (newTokens) {
+        res = await makeRequest(newTokens.accessToken);
+      }
+    }
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");

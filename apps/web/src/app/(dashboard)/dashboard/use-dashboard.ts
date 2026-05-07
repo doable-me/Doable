@@ -187,7 +187,12 @@ export function useDashboard() {
             if (valid) localStorage.setItem(WS_KEY, valid.id);
             else localStorage.removeItem(WS_KEY);
           }
-        } catch { /* proceed with existing ID if validation fails */ }
+        } catch {
+          // Validation failed (token expired mid-request, network error, etc.)
+          // Clear the potentially stale workspace ID to prevent 403 errors
+          // when fetching projects — the API will use the user's default workspace.
+          localStorage.removeItem(WS_KEY);
+        }
       }
       if (!cancelled) { fetchProjects(); fetchRecentlyViewed(); fetchFolders(); }
     })();

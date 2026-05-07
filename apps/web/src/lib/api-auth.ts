@@ -41,6 +41,9 @@ export async function apiLogout(): Promise<void> {
     });
   } finally {
     clearTokens();
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("doable_active_workspace_id");
+    }
   }
 }
 
