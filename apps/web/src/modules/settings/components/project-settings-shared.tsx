@@ -16,6 +16,7 @@ import {
   Clock,
   User,
   Map,
+  Gauge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ export type Tab =
   | "mcp"
   | "skills"
   | "context"
+  | "ratelimit"
   | "domain"
   | "environments"
   | "danger";
@@ -56,6 +58,7 @@ export const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "mcp", label: "MCP Servers", icon: Terminal },
   { id: "skills", label: "Skills & Rules", icon: Brain },
   { id: "context", label: "Knowledge", icon: Brain },
+  { id: "ratelimit", label: "Rate Limiting", icon: Gauge },
   { id: "domain", label: "Custom Domain", icon: Globe },
   { id: "environments", label: "Environments", icon: Server },
   { id: "danger", label: "Danger Zone", icon: AlertTriangle },

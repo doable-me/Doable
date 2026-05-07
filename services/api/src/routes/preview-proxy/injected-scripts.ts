@@ -164,22 +164,34 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
   });
 
   // ─── Fetch Interceptor ───
-  // Rewrite root-relative /__doable/mcp/call to path-based route
-  // so generated apps that bypass the bridge still hit the secure
-  // /preview/:projectId/__doable/mcp/call endpoint.
+  // Intercept fetch("/__doable/mcp/call") and route through the bridge's
+  // authenticated callMcp() — this is the SINGLE mechanism for all modes
+  // (preview, standalone, published). No separate passthrough endpoint needed.
   var _origFetch = window.fetch;
   window.fetch = function (input, init) {
     var url = typeof input === "string" ? input : (input && input.url ? input.url : "");
     if (url === "/__doable/mcp/call" || url.endsWith("/__doable/mcp/call")) {
-      var pid2 = null;
-      var m2 = window.location.pathname.match(/^\/preview\/([0-9a-f-]{36})\//i);
-      if (m2) pid2 = m2[1];
-      if (pid2) {
-        var rewrittenUrl = "/preview/" + pid2 + "/__doable/mcp/call";
-        if (typeof input === "string") {
-          return _origFetch.call(window, rewrittenUrl, init);
-        }
-        return _origFetch.call(window, new Request(rewrittenUrl, input), init);
+      // Parse the body to extract toolName and args
+      var bodyText = init && init.body ? (typeof init.body === "string" ? init.body : null) : null;
+      if (bodyText) {
+        try {
+          var parsed = JSON.parse(bodyText);
+          var tName = parsed.toolName || "";
+          var tArgs = parsed.args || {};
+          // Route through bridge's callMcp (handles auth, prefix, retries)
+          var finalName = tName.startsWith("mcp_") ? tName : "mcp_" + tName;
+          return callMcp(finalName, tArgs).then(function (result) {
+            return new Response(JSON.stringify(result), {
+              status: 200,
+              headers: { "Content-Type": "application/json" }
+            });
+          }).catch(function (err) {
+            return new Response(JSON.stringify({
+              success: false, data: null,
+              error: { code: "NETWORK_ERROR", message: err.message || "MCP call failed" }
+            }), { status: 500, headers: { "Content-Type": "application/json" } });
+          });
+        } catch (e) { /* fall through to original fetch */ }
       }
     }
     return _origFetch.apply(window, arguments);
