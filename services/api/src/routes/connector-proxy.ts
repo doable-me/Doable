@@ -83,6 +83,7 @@ interface ResolvedAuth {
   userId: string;
   authMode: "jwt" | "api-key";
   rateLimit: number;
+  allowedTools: string[] | null; // null = unrestricted
 }
 
 async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> {
@@ -98,6 +99,7 @@ async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> {
     const keyHash = createHash("sha256").update(token).digest("hex");
     const [row] = await sql`
       SELECT pak.project_id, pak.tier, pak.created_by,
+             pak.allowed_tools,
              p.workspace_id
       FROM project_api_keys pak
       JOIN projects p ON p.id = pak.project_id
@@ -118,6 +120,7 @@ async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> {
       userId: row.created_by as string, // credentials resolved for the key creator
       authMode: "api-key",
       rateLimit: row.tier === "server" ? RATE_LIMIT_MAX_API_KEY : RATE_LIMIT_MAX_JWT,
+      allowedTools: Array.isArray(row.allowed_tools) ? row.allowed_tools as string[] : null,
     };
   }
 
@@ -133,6 +136,7 @@ async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> {
       userId: claims.userId ?? "",
       authMode: "jwt",
       rateLimit: RATE_LIMIT_MAX_JWT,
+      allowedTools: null, // JWTs are short-lived, no tool restriction needed
     };
   } catch (err) {
     return jsonError(c, 401, "UNAUTHORIZED", "Invalid or expired token");
@@ -238,7 +242,14 @@ connectorProxyRoutes.post(
     // 1. Authenticate
     const authResult = await resolveAuth(c);
     if (authResult instanceof Response) return authResult;
-    const { projectId, workspaceId, userId, rateLimit } = authResult;
+    const { projectId, workspaceId, userId, rateLimit, allowedTools } = authResult;
+
+    // 1b. Tool-scoping: if the API key restricts which tools can be called, enforce it
+    if (allowedTools !== null && !allowedTools.includes(toolName)) {
+      await audit(projectId, "mcp", toolName, userId, "denied", Date.now() - t0);
+      return jsonError(c, 403, "TOOL_NOT_ALLOWED",
+        `This API key is not authorized to call tool: ${toolName}`);
+    }
 
     // 2. Rate limit (configurable per-project)
     const effectiveLimit = await getEffectiveRateLimit(projectId, rateLimit);
@@ -369,7 +380,15 @@ connectorProxyRoutes.post(
     // 1. Authenticate (JWT or API key)
     const authResult = await resolveAuth(c);
     if (authResult instanceof Response) return authResult;
-    const { projectId, workspaceId, userId, authMode, rateLimit } = authResult;
+    const { projectId, workspaceId, userId, authMode, rateLimit, allowedTools } = authResult;
+
+    // 1b. Tool-scoping for API keys
+    const toolId = `${integration}:${action}`;
+    if (allowedTools !== null && !allowedTools.includes(toolId)) {
+      await audit(projectId, integration, action, userId, "denied", Date.now() - t0);
+      return jsonError(c, 403, "TOOL_NOT_ALLOWED",
+        `This API key is not authorized to call: ${toolId}`);
+    }
 
     // 2. Rate limit per project (configurable)
     const effectiveLimit = await getEffectiveRateLimit(projectId, rateLimit);
