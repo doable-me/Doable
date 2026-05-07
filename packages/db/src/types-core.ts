@@ -35,6 +35,7 @@ export interface WorkspaceRow {
   avatar_url: string | null;
   owner_id: string;
   plan: WorkspacePlan;
+  max_projects_override: number | null;
   created_at: Date;
   updated_at: Date;
 }

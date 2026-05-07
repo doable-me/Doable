@@ -4,7 +4,7 @@ import { sql } from "../db/index.js";
 import { featureFlagQueries, creditQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
-import { WORKSPACE_PLANS, WORKSPACE_ROLES } from "@doable/shared";
+import { WORKSPACE_PLANS, WORKSPACE_ROLES, PLAN_LIMITS } from "@doable/shared";
 
 const featureFlags = featureFlagQueries(sql);
 const credits = creditQueries(sql);
@@ -191,4 +191,55 @@ adminUserRoutes.post("/users/bulk-update", async (c) => {
   }
 
   return c.json({ data: { roleUpdated, planUpdated } });
+});
+
+// ─── Admin Project Limit Override ────────────────────────
+
+const setProjectLimitSchema = z.object({
+  maxProjects: z.number().int().min(1).max(10000).nullable(),
+});
+
+// GET /admin/users/:userId/project-limit
+adminUserRoutes.get("/users/:userId/project-limit", async (c) => {
+  const userId = c.req.param("userId");
+  const [ws] = await sql<{ id: string; plan: string; max_projects_override: number | null }[]>`
+    SELECT w.id, w.plan, w.max_projects_override FROM workspaces w
+    INNER JOIN workspace_members wm ON wm.workspace_id = w.id
+    WHERE wm.user_id = ${userId} AND wm.role = 'owner'
+    ORDER BY w.created_at ASC LIMIT 1
+  `;
+  if (!ws) return c.json({ error: "User has no workspace" }, 404);
+
+  const planLimits = PLAN_LIMITS[ws.plan as import("@doable/shared").WorkspacePlan] ?? PLAN_LIMITS.free;
+  return c.json({
+    workspaceId: ws.id,
+    plan: ws.plan,
+    planDefault: planLimits.maxProjects,
+    override: ws.max_projects_override,
+    effective: ws.max_projects_override ?? planLimits.maxProjects,
+  });
+});
+
+// PATCH /admin/users/:userId/project-limit
+// Set maxProjects to a number to override, or null to reset to plan default.
+adminUserRoutes.patch("/users/:userId/project-limit", async (c) => {
+  const userId = c.req.param("userId");
+  const body = await c.req.json();
+  const parsed = setProjectLimitSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  const [ws] = await sql<{ id: string }[]>`
+    SELECT w.id FROM workspaces w
+    INNER JOIN workspace_members wm ON wm.workspace_id = w.id
+    WHERE wm.user_id = ${userId} AND wm.role = 'owner'
+    ORDER BY w.created_at ASC LIMIT 1
+  `;
+  if (!ws) return c.json({ error: "User has no workspace" }, 404);
+
+  await sql`
+    UPDATE workspaces SET max_projects_override = ${parsed.data.maxProjects}, updated_at = now()
+    WHERE id = ${ws.id}
+  `;
+
+  return c.json({ ok: true, maxProjects: parsed.data.maxProjects });
 });

@@ -227,14 +227,15 @@ projectListRoutes.post("/", async (c) => {
     }
   }
 
-  // Enforce plan project limit
+  // Enforce plan project limit (with per-workspace override)
   const workspace = await workspacesQ.findById(workspaceId);
   if (workspace) {
     const limits = PLAN_LIMITS[workspace.plan as WorkspacePlan] ?? PLAN_LIMITS.free;
+    const maxProjects = workspace.max_projects_override ?? limits.maxProjects;
     const { total } = await projects.listByWorkspace(workspaceId, { page: 1, pageSize: 1 });
-    if (total >= limits.maxProjects) {
+    if (total >= maxProjects) {
       return c.json({
-        error: `Project limit reached (${limits.maxProjects} for ${workspace.plan} plan). Upgrade to create more.`,
+        error: `Project limit reached (${maxProjects} for ${workspace.plan} plan). Upgrade to create more.`,
       }, 403);
     }
   }

@@ -20,6 +20,8 @@ import { createPermissionHandler } from "../../ai/docore-bridge.js";
 import { materializeSkillsForSession } from "../../ai/skills-materializer.js";
 import type { AuthEnv } from "../../middleware/auth.js";
 import { projectSessions } from "./session-state.js";
+import { creditQueries } from "@doable/db/queries/credits";
+import { sql as dbSql } from "../../db/index.js";
 
 const fixErrorSchema = z.object({
   error: z.string().min(1).max(16_000),
@@ -161,6 +163,22 @@ export function registerFixErrorRoute(app: Hono<AuthEnv>) {
           }
           try { await sql`UPDATE projects SET updated_at = NOW() WHERE id = ${projectId}`; } catch {}
           scheduleThumbnailCapture(projectId);
+        }
+
+        // Consume 1 credit after fix-error completion
+        try {
+          const [proj] = await dbSql<[{ workspace_id: string }?]>`
+            SELECT workspace_id FROM projects WHERE id = ${projectId}
+          `;
+          if (proj?.workspace_id) {
+            const credits = creditQueries(dbSql);
+            await credits.consumeCredits(userId, proj.workspace_id, 1, {
+              actionType: "ai_fix",
+              projectId,
+            });
+          }
+        } catch (err) {
+          console.warn("[Chat] Failed to consume credit for fix-error:", err instanceof Error ? err.message : err);
         }
 
         await stream.writeSSE({ data: "[DONE]" });
