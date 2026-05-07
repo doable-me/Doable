@@ -97,9 +97,25 @@ export interface DoableClient {
  * In deployed mode: pass apiKey from env.
  */
 export function createDoableClient(config?: DoableSDKConfig): DoableClient {
+  // Auto-detect VITE_DOABLE_PROJECT_KEY from env when no apiKey is explicitly provided.
+  // This allows generated projects to just call createDoableClient() and have the key
+  // automatically injected at build time via the auto-provisioning pipeline.
+  let autoKey = config?.apiKey;
+  if (!autoKey) {
+    try {
+      // Vite replaces import.meta.env.* at build time with the literal value
+      const envKey = (import.meta as any).env?.VITE_DOABLE_PROJECT_KEY;
+      if (typeof envKey === "string" && envKey.length > 0) {
+        autoKey = envKey;
+      }
+    } catch {
+      // Not in a Vite context (SSR, tests, etc.) — ignore
+    }
+  }
+
   const resolvedConfig: DoableSDKConfig = {
     proxyUrl: config?.proxyUrl ?? "/__doable/connector-proxy",
-    apiKey: config?.apiKey,
+    apiKey: autoKey,
     projectId: config?.projectId,
   };
 
