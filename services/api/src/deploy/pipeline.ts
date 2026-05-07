@@ -18,6 +18,7 @@ import { allocateProcessPort } from "../runtime/port-allocator.js";
 import { addProcessRoute, caddyAdminAvailable } from "../runtime/caddy-admin.js";
 import type { RuntimeAdapter, RuntimeContext } from "../runtime/types.js";
 import { getProjectPath } from "../ai/project-files.js";
+import { autoProvisionApiKey } from "./auto-api-key.js";
 
 const deployments = deploymentQueries(sql);
 const projects = projectQueries(sql);
@@ -229,6 +230,22 @@ export async function runPipeline(
         publishedUrl: deployResult.url,
         status: "published",
       });
+
+      // ── 7b. Auto-provision API key on first publish ────
+      try {
+        await autoProvisionApiKey({
+          projectId,
+          userId,
+          projectDir: getProjectPath(projectId),
+          publishedUrl: deployResult.url,
+        });
+      } catch (err) {
+        // Non-fatal: key provisioning failure should not break deployment
+        console.warn(
+          `[pipeline] Auto API key provisioning failed for ${projectId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
 
     onBuildLog?.(`\nDeployed to ${deployResult.url}\n`);
