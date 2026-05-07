@@ -124,6 +124,27 @@ export async function runPipeline(
   });
 
   try {
+    // ── 2b. Auto-provision API key BEFORE build (production only) ────
+    // Must happen before build so VITE_DOABLE_PROJECT_KEY env var is
+    // available during Vite compilation and baked into the JS bundle.
+    if (environment === "production") {
+      try {
+        const publishLoc = computeSitePublishLocation(subdomain, environment);
+        await autoProvisionApiKey({
+          projectId,
+          userId,
+          projectDir: getProjectPath(projectId),
+          publishedUrl: publishLoc.url,
+        });
+      } catch (err) {
+        // Non-fatal: key provisioning failure should not break deployment
+        console.warn(
+          `[pipeline] Auto API key provisioning failed for ${projectId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
     // ── 3. Build ─────────────────────────────────────────
     await deployments.updateStatus(deployment.id, "building");
     onBuildLog?.("Starting build...\n");
@@ -230,22 +251,6 @@ export async function runPipeline(
         publishedUrl: deployResult.url,
         status: "published",
       });
-
-      // ── 7b. Auto-provision API key on first publish ────
-      try {
-        await autoProvisionApiKey({
-          projectId,
-          userId,
-          projectDir: getProjectPath(projectId),
-          publishedUrl: deployResult.url,
-        });
-      } catch (err) {
-        // Non-fatal: key provisioning failure should not break deployment
-        console.warn(
-          `[pipeline] Auto API key provisioning failed for ${projectId}:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
     }
 
     onBuildLog?.(`\nDeployed to ${deployResult.url}\n`);
