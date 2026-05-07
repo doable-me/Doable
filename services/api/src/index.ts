@@ -179,6 +179,13 @@ app.use(
         return "";
       }
 
+      // Connector-proxy routes: published apps on *.doable.me subdomains call
+      // the API cross-origin. The connector-proxy OPTIONS handler and auth
+      // (origin binding) handle security; let all origins through here.
+      if (c.req.path.startsWith("/__doable/connector-proxy")) {
+        return origin || "*";
+      }
+
       // Allow any localhost origin (any port) for development
       if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) {
         return origin;
@@ -204,7 +211,7 @@ app.use(
     },
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "x-doable-project-id"],
     maxAge: 86400,
   })
 );
