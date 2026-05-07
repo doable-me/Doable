@@ -24,15 +24,21 @@ import {
 } from "lucide-react";
 import type { ImageAttachment } from "@/hooks/use-image-attachments";
 import { useTypingPlaceholder } from "./dashboard-hooks";
+import { apiFetch } from "@/lib/api";
 
-// Mirrors `services/api/src/frameworks/init.ts:DEFAULT_ENABLED`. The 6
-// other framework adapters were removed; backups are at
-// ~/Documents/doable-disabled-frameworks-backup-<date>/.
-const FRAMEWORK_OPTIONS: { id: string; label: string; icon: LucideIcon; color: string }[] = [
-  { id: "", label: "Auto-detect", icon: Wand2, color: "text-violet-400 dark:text-violet-400" },
-  { id: "vite-react", label: "React (Vite)", icon: Atom, color: "text-cyan-500 dark:text-cyan-400" },
-  { id: "nextjs-app", label: "Next.js", icon: Globe, color: "text-gray-800 dark:text-white" },
-];
+// Static meta for icon/color mapping — the actual enabled set is fetched from API
+const FRAMEWORK_META: Record<string, { icon: LucideIcon; color: string }> = {
+  "vite-react": { icon: Atom, color: "text-cyan-500 dark:text-cyan-400" },
+  "nextjs-app": { icon: Globe, color: "text-gray-800 dark:text-white" },
+  "sveltekit": { icon: Hexagon, color: "text-orange-400" },
+  "nuxt": { icon: Layers, color: "text-green-400" },
+  "astro": { icon: Wind, color: "text-purple-400" },
+  "hono": { icon: Zap, color: "text-orange-300" },
+  "fastapi": { icon: Server, color: "text-emerald-400" },
+  "django": { icon: Code2, color: "text-green-300" },
+};
+
+const AUTO_DETECT_OPTION = { id: "", label: "Auto-detect", icon: Wand2, color: "text-violet-400 dark:text-violet-400" };
 
 export function ChatInput({
   value,
@@ -216,8 +222,26 @@ function FrameworkPicker({
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [options, setOptions] = useState<{ id: string; label: string; icon: LucideIcon; color: string }[]>([AUTO_DETECT_OPTION]);
 
-  const selected = FRAMEWORK_OPTIONS.find((o) => o.id === (value ?? "")) ?? FRAMEWORK_OPTIONS[0]!;
+  // Fetch enabled frameworks from API once
+  useEffect(() => {
+    apiFetch<{ frameworks: Array<{ id: string; name: string }> }>("/frameworks")
+      .then((res) => {
+        if (res.frameworks?.length > 0) {
+          const opts = [AUTO_DETECT_OPTION, ...res.frameworks.map((fw) => ({
+            id: fw.id,
+            label: fw.name,
+            icon: FRAMEWORK_META[fw.id]?.icon ?? Globe,
+            color: FRAMEWORK_META[fw.id]?.color ?? "text-muted-foreground",
+          }))];
+          setOptions(opts);
+        }
+      })
+      .catch(() => { /* use default auto-detect only */ });
+  }, []);
+
+  const selected = options.find((o) => o.id === (value ?? "")) ?? options[0]!;
   const Icon = selected.icon;
 
   // Close on outside click
@@ -263,7 +287,7 @@ function FrameworkPicker({
           className="fixed z-[9999] min-w-[180px] rounded-xl border border-border bg-popover p-1 shadow-xl animate-in fade-in slide-in-from-top-2 duration-150"
           style={{ top: pos.top, left: pos.left }}
         >
-          {FRAMEWORK_OPTIONS.map((opt) => {
+          {options.map((opt) => {
             const OptIcon = opt.icon;
             const isSelected = opt.id === (value ?? "");
             return (
