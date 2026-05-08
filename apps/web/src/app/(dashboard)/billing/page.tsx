@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CreditCard, Zap, ExternalLink, Loader2, CheckCircle2, XCircle, AlertTriangle, X } from "lucide-react";
@@ -61,7 +61,24 @@ function useActiveWorkspaceId(): { workspaceId: string | undefined; loading: boo
   return { workspaceId, loading };
 }
 
-export default function BillingPage() {
+export default function BillingPageWrapper() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
+            <p className="text-sm text-muted-foreground">Loading billing...</p>
+          </div>
+        </div>
+      }
+    >
+      <BillingPage />
+    </Suspense>
+  );
+}
+
+function BillingPage() {
   const router = useRouter();
   const { workspaceId: WORKSPACE_ID, loading: wsLoading } = useActiveWorkspaceId();
   const searchParams = useSearchParams();

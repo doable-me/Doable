@@ -64,12 +64,26 @@ export function AiSettingsPage() {
     (featureDeniedReason === "feature_disabled" || featureDeniedReason === "user_override_denied");
   const hasAccess = !isHardDenied;
 
+  const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
+    { key: "connections", label: "Add Provider", icon: Link2, adminOnly: true },
+    { key: "models", label: "Configure Model", icon: Bot },
+    { key: "access", label: "Access Control", icon: Shield, adminOnly: true },
+  ];
+  const tabs = allTabs.filter((t) => !t.adminOnly || isPlatformAdmin);
+
   // Redirect only when explicitly denied (not for insufficient_role)
   useEffect(() => {
     if (loaded && isHardDenied) {
       router.replace("/");
     }
   }, [loaded, isHardDenied, router]);
+
+  // If current tab isn't visible (e.g. non-admin), fall back to first available
+  useEffect(() => {
+    if (tabs.length > 0 && !tabs.some((t) => t.key === activeTab)) {
+      setActiveTab(tabs[0].key);
+    }
+  }, [isPlatformAdmin]);
 
   if (!loaded) return null;
 
@@ -97,20 +111,6 @@ export function AiSettingsPage() {
       </div>
     );
   }
-
-  const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
-    { key: "connections", label: "Add Provider", icon: Link2, adminOnly: true },
-    { key: "models", label: "Configure Model", icon: Bot },
-    { key: "access", label: "Access Control", icon: Shield, adminOnly: true },
-  ];
-  const tabs = allTabs.filter((t) => !t.adminOnly || isPlatformAdmin);
-
-  // If current tab isn't visible (e.g. non-admin), fall back to first available
-  useEffect(() => {
-    if (tabs.length > 0 && !tabs.some((t) => t.key === activeTab)) {
-      setActiveTab(tabs[0].key);
-    }
-  }, [isPlatformAdmin]);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">

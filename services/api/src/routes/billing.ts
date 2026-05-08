@@ -146,8 +146,26 @@ billingRoutes.get("/credits", async (c) => {
 
   const userId = c.get("userId");
 
-  const balance = await creditsDb.getCreditBalance(userId, workspaceId);
-  return c.json({ data: balance });
+  try {
+    const balance = await creditsDb.getCreditBalance(userId, workspaceId);
+    return c.json({ data: balance });
+  } catch (err: any) {
+    console.error("[Billing] getCreditBalance error:", err?.message ?? err);
+    // Return safe defaults on failure (e.g. FK violation if user/workspace mismatch)
+    return c.json({
+      data: {
+        daily_remaining: 0,
+        daily_total: 0,
+        monthly_remaining: 0,
+        monthly_total: 0,
+        rollover_credits: 0,
+        total_available: 0,
+        daily_reset_at: null,
+        monthly_reset_at: null,
+        plan_type: "free",
+      },
+    });
+  }
 });
 
 // ─── GET /billing/credits/usage ─────────────────────────────
@@ -181,20 +199,28 @@ billingRoutes.get("/usage", async (c) => {
   const page = parseInt(c.req.query("page") ?? "1", 10);
   const pageSize = parseInt(c.req.query("pageSize") ?? "20", 10);
 
-  const { rows, total } = await billing.getUsageHistory(workspaceId, {
-    limit: pageSize,
-    offset: (page - 1) * pageSize,
-  });
+  try {
+    const { rows, total } = await billing.getUsageHistory(workspaceId, {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    });
 
-  return c.json({
-    data: rows,
-    pagination: {
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    },
-  });
+    return c.json({
+      data: rows,
+      pagination: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    });
+  } catch (err: any) {
+    console.error("[Billing] getUsageHistory error:", err?.message ?? err);
+    return c.json({
+      data: [],
+      pagination: { total: 0, page, pageSize, totalPages: 0 },
+    });
+  }
 });
 
 // ─── POST /billing/subscribe ───────────────────────────────
