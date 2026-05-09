@@ -341,55 +341,118 @@ ufw --force enable
 ok "UFW active; SSH allowed; everything else denied (services proxy via Cloudflare Tunnel)."
 ufw status numbered | sed 's/^/    /'
 
-# ─── Phase 6: Squid (registry-only egress proxy) ─────────────────────────
-phase "Phase 6/15  Squid registry-only proxy on 127.0.0.1:3128"
+# ─── Phase 6: Squid (default-allow egress proxy with SSRF + exec filters) ─
+phase "Phase 6/15  Squid egress proxy on 127.0.0.1:3128 (default-allow + filters)"
 
-# Reference: servertodo/04-egress-jail.md.
+# Reference: servertodo/04-egress-jail.md, servertodo/15-egress-policy-shift.md.
+#
+# Policy shift (servertodo/15): the previous strict dstdomain whitelist
+# blocked the AI from browsing arbitrary public sites for design
+# inspiration. The new policy is "default-allow with filters":
+#   - Trusted hostnames (npm/github/AI providers) get full access — same
+#     as before.
+#   - Private/loopback/link-local destinations are blocked (SSRF).
+#   - Executable URL paths (.exe/.sh/.dmg/...) are blocked — but only on
+#     plain HTTP. HTTPS via Squid CONNECT only exposes the hostname, so
+#     URL-path filtering CANNOT work on HTTPS without SSL Bump (which we
+#     deliberately do NOT enable: it requires CA cert install on every
+#     sandbox UID, breaks HSTS, and adds significant ops burden).
+#   - Defense-in-depth: even if a malicious binary is downloaded over
+#     HTTPS, the Path C sandbox UID can only execute `node` running vite
+#     — no shell, no chmod +x, no exec elsewhere (see
+#     servertodo/13-sandbox-path-c.md).
 cat > /etc/squid/squid.conf <<'SQUIDCONF'
-# Doable build-time/runtime allowlist proxy (servertodo/04).
+# Doable egress proxy — default-allow with SSRF + executable-URL filters.
+# See servertodo/15-egress-policy-shift.md for rationale and threat model.
 # Listens loopback-only — sandbox UIDs reach it via HTTPS_PROXY env.
 http_port 127.0.0.1:3128
 
-acl allowed_dst dstdomain registry.npmjs.org
-acl allowed_dst dstdomain registry.yarnpkg.com
-acl allowed_dst dstdomain pypi.org
-acl allowed_dst dstdomain files.pythonhosted.org
-acl allowed_dst dstdomain github.com
-acl allowed_dst dstdomain codeload.github.com
-acl allowed_dst dstdomain raw.githubusercontent.com
-acl allowed_dst dstdomain api.github.com
-acl allowed_dst dstdomain objects.githubusercontent.com
-acl allowed_dst dstdomain cdn.jsdelivr.net
-acl allowed_dst dstdomain unpkg.com
-acl allowed_dst dstdomain fonts.googleapis.com
-acl allowed_dst dstdomain fonts.gstatic.com
-acl allowed_dst dstdomain cdnjs.cloudflare.com
-# AI provider API hosts — for BYOK providers configured via the in-app
-# settings wizard. Only matters for child build/scaffold processes that
-# may need to call the user's chosen LLM (the API process itself bypasses
-# Squid since HTTP_PROXY is not set globally — see .env block).
-acl allowed_dst dstdomain api.openai.com
-acl allowed_dst dstdomain api.anthropic.com
-acl allowed_dst dstdomain api.minimax.io
-acl allowed_dst dstdomain api.deepseek.com
-acl allowed_dst dstdomain generativelanguage.googleapis.com
-acl allowed_dst dstdomain api.mistral.ai
-acl allowed_dst dstdomain api.groq.com
-acl allowed_dst dstdomain api.together.xyz
-acl allowed_dst dstdomain api.fireworks.ai
-acl allowed_dst dstdomain api.cohere.ai
-acl allowed_dst dstdomain api.x.ai
-acl allowed_dst dstdomain openrouter.ai
+# ─── Doable egress policy (default-allow with filters) ─────────
+#
+# Old policy (strict whitelist): only npm/github/AI provider hostnames
+# allowed; everything else denied.
+#
+# New policy: AI may browse arbitrary public sites for design inspiration.
+# Blocks remain:
+#   1. Private/RFC1918 destinations (SSRF protection)
+#   2. Loopback 127.0.0.0/8 except trusted_dst (Squid itself, not for clients)
+#   3. Link-local 169.254.0.0/16 (cloud metadata SSRF)
+#   4. Executable file extensions in URL paths (HTTP-only — see HTTPS
+#      caveat below; defense-in-depth via Path C sandbox UID isolation)
+#
+# HTTPS caveat: Squid in CONNECT mode only sees the hostname, not URL
+# path or response body. So .exe URL filtering applies to HTTP only.
+# For HTTPS, the sandbox (Path C) is the primary defense: even if a
+# malicious binary is downloaded, the sandbox UID can only execute
+# `node` running vite — no shell, no chmod +x, no exec elsewhere.
+
+# ─── Trusted destinations (full access — build, package, AI providers) ──
+acl trusted_dst dstdomain registry.npmjs.org
+acl trusted_dst dstdomain registry.yarnpkg.com
+acl trusted_dst dstdomain pypi.org
+acl trusted_dst dstdomain files.pythonhosted.org
+acl trusted_dst dstdomain github.com
+acl trusted_dst dstdomain codeload.github.com
+acl trusted_dst dstdomain raw.githubusercontent.com
+acl trusted_dst dstdomain api.github.com
+acl trusted_dst dstdomain objects.githubusercontent.com
+acl trusted_dst dstdomain cdn.jsdelivr.net
+acl trusted_dst dstdomain unpkg.com
+acl trusted_dst dstdomain fonts.googleapis.com
+acl trusted_dst dstdomain fonts.gstatic.com
+acl trusted_dst dstdomain cdnjs.cloudflare.com
+# AI providers
+acl trusted_dst dstdomain api.openai.com
+acl trusted_dst dstdomain api.anthropic.com
+acl trusted_dst dstdomain api.minimax.io
+acl trusted_dst dstdomain api.deepseek.com
+acl trusted_dst dstdomain generativelanguage.googleapis.com
+acl trusted_dst dstdomain api.mistral.ai
+acl trusted_dst dstdomain api.groq.com
+acl trusted_dst dstdomain api.together.xyz
+acl trusted_dst dstdomain api.fireworks.ai
+acl trusted_dst dstdomain api.cohere.ai
+acl trusted_dst dstdomain api.x.ai
+acl trusted_dst dstdomain openrouter.ai
+
+# ─── SSRF protection ──────────────────────────────────────────
+acl rfc1918 dst 10.0.0.0/8
+acl rfc1918 dst 172.16.0.0/12
+acl rfc1918 dst 192.168.0.0/16
+acl loopback_dst dst 127.0.0.0/8
+acl link_local dst 169.254.0.0/16
+acl unique_local_v6 dst fc00::/7
+acl link_local_v6 dst fe80::/10
+acl loopback_v6 dst ::1
+
+# ─── Executable URL paths (HTTP-only — see header comment) ────
+acl blocked_exec_exts urlpath_regex -i \.(exe|msi|dmg|deb|rpm|pkg|app|bat|cmd|com|scr|ps1|psm1|psd1|bash|sh|bin|elf|jar|war|vbs|wsf|hta|cpl|msc|class|so|dylib)(\?|$)
 
 acl SSL_ports port 443
 acl Safe_ports port 80
 acl Safe_ports port 443
 acl CONNECT method CONNECT
 
+# ─── Decision tree ────────────────────────────────────────────
 http_access deny !Safe_ports
 http_access deny CONNECT !SSL_ports
-http_access allow allowed_dst
-http_access deny all
+
+# Trusted destinations: full access (overrides SSRF + exec blocks).
+http_access allow trusted_dst
+
+# SSRF: block private/loopback/link-local for non-trusted destinations.
+http_access deny rfc1918
+http_access deny loopback_dst
+http_access deny link_local
+http_access deny unique_local_v6
+http_access deny link_local_v6
+http_access deny loopback_v6
+
+# Block executable URLs (HTTP only — Squid CONNECT can't see URL path on HTTPS).
+http_access deny blocked_exec_exts
+
+# Default: allow public internet browsing.
+http_access allow all
 
 access_log /var/log/squid/access.log squid
 cache deny all
