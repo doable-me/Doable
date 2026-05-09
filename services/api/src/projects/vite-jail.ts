@@ -11,6 +11,9 @@ import { createVault, Tracer as VaultTracer } from "dovault";
 import type { Vault, JailedProcess } from "dovault";
 import { xray } from "../integrations/xray.js";
 import { shouldJail, getHardeningLevel } from "../runtime/hardening-level.js";
+import { isSandboxWrapperAvailable } from "../runtime/dev-uid-allocator.js";
+
+const SANDBOX_SPAWN_PATH = "/opt/doable/bin/sandbox-spawn";
 
 // ─── Resource limits (configurable via env) ──────────────
 
@@ -125,39 +128,66 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
     cleanEnv.PIP_PROXY = proxy;
   }
 
-  // setpriv wrap for per-project UID isolation. Only applies on Linux
-  // when the caller passed a uid from the dev-uid-allocator pool. Keeps
+  // UID-drop wrap for per-project isolation. Only applies on Linux when
+  // the caller passed a uid from the dev-uid-allocator pool. Keeps
   // stdout/stderr pipes intact (no journalctl detour), so the existing
   // log capture pipeline works unchanged. nft rules in setup-server.sh
-  // (UID range 10001-10100) block all egress except loopback for these
+  // (UID range 10001-65000) block all egress except loopback for these
   // UIDs — Squid at 127.0.0.1:3128 handles npm/PyPI registry traffic.
-  const useSetpriv =
+  //
+  // Two paths:
+  //   (a) API runs as root → exec setpriv directly.
+  //   (b) API unprivileged + sandbox-spawn wrapper installed →
+  //       `sudo -n /opt/doable/bin/sandbox-spawn <uid> <projectId> ...`
+  //       The wrapper validates args and ends with the same setpriv
+  //       --reuid/--regid/--clear-groups exec.
+  // dev-uid-allocator already refused to allocate when neither path is
+  // open, so we don't need to fail-close here — but we do need to pick
+  // the right command shape.
+  const useUidDrop =
     process.platform === "linux" && typeof opts.uid === "number";
-  const effectiveExec = useSetpriv ? "setpriv" : opts.execPath;
-  const effectiveArgs = useSetpriv
-    ? [
-        "--reuid", String(opts.uid),
-        "--regid", String(opts.uid),
-        "--clear-groups",
-        "--",
-        opts.execPath,
-        ...opts.args,
-      ]
-    : opts.args;
-  if (useSetpriv) {
+  const useWrapper = useUidDrop && isSandboxWrapperAvailable();
+  let effectiveExec: string;
+  let effectiveArgs: string[];
+  if (useWrapper) {
+    effectiveExec = "sudo";
+    effectiveArgs = [
+      "-n",
+      SANDBOX_SPAWN_PATH,
+      String(opts.uid),
+      opts.projectId,
+      opts.execPath,
+      ...opts.args,
+    ];
+  } else if (useUidDrop) {
+    effectiveExec = "setpriv";
+    effectiveArgs = [
+      "--reuid", String(opts.uid),
+      "--regid", String(opts.uid),
+      "--clear-groups",
+      "--",
+      opts.execPath,
+      ...opts.args,
+    ];
+  } else {
+    effectiveExec = opts.execPath;
+    effectiveArgs = opts.args;
+  }
+  if (useUidDrop) {
     console.log(
-      `[vite-jail] setpriv wrap: project=${opts.projectId} uid=${opts.uid}`,
+      `[vite-jail] uid-drop wrap (${useWrapper ? "sudo+sandbox-spawn" : "setpriv"}): project=${opts.projectId} uid=${opts.uid}`,
     );
   }
 
   // Optional seccomp filter — gated by DOABLE_DEV_SECCOMP. Default OFF
   // (preserves debuggability for weird workflows: ptrace, perf, strace).
-  // When ON, wraps the (already-setpriv'd) command inside
+  // When ON, wraps the (already-uid-dropped) command inside
   // `systemd-run --scope --property=SystemCallFilter=...` so the dev
   // process gets a kernel-level syscall deny-list on top of UID drop.
   // `--scope` runs in the calling process's context and forwards
   // stdout/stderr — no journalctl detour, log capture pipeline unchanged.
-  // Layered: cgroup (dovault) > scope (systemd-run + seccomp) > setpriv (uid drop) > next dev.
+  // Layered: cgroup (dovault) > scope (systemd-run + seccomp) >
+  //          [sudo + sandbox-spawn | setpriv] (uid drop) > next dev.
   const useSeccomp =
     process.platform === "linux" &&
     (process.env.DOABLE_DEV_SECCOMP ?? "off").toLowerCase() === "on";

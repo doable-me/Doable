@@ -22,9 +22,78 @@
  * blocks egress for skuid 10001-65000 except loopback.
  */
 
+import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+
 const UID_BASE = 10000;
 const UID_MAX = 65000;
 const POOL_SIZE = UID_MAX - UID_BASE; // 55,000 slots
+
+const SANDBOX_SPAWN_PATH = "/opt/doable/bin/sandbox-spawn";
+
+/**
+ * Detect whether the API can drop privileges via the sudo wrapper. Two
+ * conditions must be met:
+ *   1. `/opt/doable/bin/sandbox-spawn` exists (installed by setup-v3 / J).
+ *   2. `sudo -n true` succeeds (NOPASSWD sudoers rule is in place).
+ * When both are true, the API can chown project trees and spawn
+ * UID-dropped vite processes even while running as an unprivileged user.
+ *
+ * Cached at module-load time. If operators install/uninstall the wrapper
+ * after API boot, restart the API.
+ */
+function detectSudoWrapper(): { available: boolean; reason: string } {
+  if (process.platform !== "linux") {
+    return { available: false, reason: "non-linux platform" };
+  }
+  if (!existsSync(SANDBOX_SPAWN_PATH)) {
+    return { available: false, reason: `wrapper not installed at ${SANDBOX_SPAWN_PATH}` };
+  }
+  try {
+    const r = spawnSync("sudo", ["-n", "true"], {
+      stdio: "ignore",
+      timeout: 2000,
+    });
+    if (r.status === 0) {
+      return { available: true, reason: "sudo -n true succeeded" };
+    }
+    return {
+      available: false,
+      reason: `sudo -n true failed (status=${r.status ?? "null"})`,
+    };
+  } catch (err) {
+    return {
+      available: false,
+      reason: `sudo probe threw: ${(err as Error).message}`,
+    };
+  }
+}
+
+const sudoWrapper = detectSudoWrapper();
+const isRoot =
+  process.platform === "linux" &&
+  typeof process.geteuid === "function" &&
+  process.geteuid() === 0;
+
+// One-time startup log describing which mode is active.
+if (process.platform === "linux") {
+  if (process.env.DOABLE_DEV_UID_DISABLED === "1") {
+    console.log("[dev-uid] sandbox UID drop: disabled — DOABLE_DEV_UID_DISABLED=1");
+  } else if (isRoot) {
+    console.log("[dev-uid] sandbox UID drop: enabled — API running as root (direct chown + setpriv)");
+  } else if (sudoWrapper.available) {
+    console.log("[dev-uid] sandbox UID drop: enabled via sudo wrapper");
+  } else {
+    console.log(
+      `[dev-uid] sandbox UID drop: disabled — ${sudoWrapper.reason}`,
+    );
+  }
+}
+
+/** Exported for vite-jail and dev-server-start to know whether to use sudo. */
+export function isSandboxWrapperAvailable(): boolean {
+  return sudoWrapper.available;
+}
 
 // Pre-created named users (setup-server.sh useradd doable-dev-1..PRECREATED_USERS).
 // The rest are numeric-only — kernel doesn't care, just a cosmetic difference
@@ -45,20 +114,22 @@ const free = new Set<number>(
  */
 export function acquireDevUid(projectId: string): number | null {
   if (process.platform !== "linux") return null;
-  // The per-project UID drop only works when the API process can chown
-  // the project tree to the new UID. That requires CAP_CHOWN, which only
-  // root has. When the API runs as an unprivileged user (the v3 hardened
-  // default), we MUST skip the UID drop — otherwise chown silently fails
-  // and the spawned vite process can't read its own project files.
-  // Operators who want per-project UID drop while running unprivileged
-  // must add a sudoers NOPASSWD rule for chown and rewire dev-server-start
-  // to invoke `sudo chown`. Until that's wired, fail closed at allocation.
-  if (typeof process.geteuid === "function" && process.geteuid() !== 0) {
-    return null;
-  }
   // Operator opt-out for hosts without setpriv or when per-project UID
   // drop is genuinely not desired.
   if (process.env.DOABLE_DEV_UID_DISABLED === "1") return null;
+  // The per-project UID drop only works when the API process can chown
+  // the project tree to the new UID and exec setpriv against it. That
+  // requires either:
+  //   (a) the API runs as root (CAP_CHOWN + can exec setpriv directly), or
+  //   (b) sudo is callable AND /opt/doable/bin/sandbox-spawn is installed,
+  //       so the API can shell out to `sudo -n chown` + `sudo -n
+  //       sandbox-spawn` (the v3 hardened default).
+  // If neither path is open, we MUST fail closed — otherwise chown
+  // silently fails and the spawned vite process can't read its own
+  // project files.
+  if (!isRoot && !sudoWrapper.available) {
+    return null;
+  }
   const existing = inUse.get(projectId);
   if (existing !== undefined) return existing;
   const next = free.values().next().value as number | undefined;

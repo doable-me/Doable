@@ -8,7 +8,11 @@ import { getProjectPath } from "../ai/project-files.js";
 import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
 import { linkDoableSdk } from "./link-sdk.js";
 import { spawnJailedVite } from "./vite-jail.js";
-import { acquireDevUid, releaseDevUid } from "../runtime/dev-uid-allocator.js";
+import {
+  acquireDevUid,
+  releaseDevUid,
+  isSandboxWrapperAvailable,
+} from "../runtime/dev-uid-allocator.js";
 import {
   BuildEventPublisher,
   LogFilterChain,
@@ -147,24 +151,51 @@ async function doStartDevServer(
   const url = `http://127.0.0.1:${port}`;
 
   // Per-project sandbox UID (Linux + DOABLE_HARDENING=full). Returns null
-  // on Windows/Mac (no setpriv available) or when the 100-slot pool is
-  // exhausted. When non-null, chown the project tree so the dropped-priv
-  // dev process can read/write it. The API process (root in production)
-  // can still read/write because root bypasses ownership.
-  const sandboxUid = acquireDevUid(projectId);
+  // on Windows/Mac (no setpriv available) or when the API can neither
+  // chown directly (root) nor via the sudo wrapper (v3 hardened default).
+  // When non-null, chown the project tree so the dropped-priv dev process
+  // can read/write it. We use `sudo -n chown` so this works even when the
+  // API runs unprivileged (the sudoers rule installed by setup-v3 grants
+  // NOPASSWD for the exact `/usr/bin/chown -R <uid>:<uid> /opt/doable/.../<projectId>`
+  // pattern). When running as root, sudo -n is a no-op tax but harmless.
+  let sandboxUid: number | null = acquireDevUid(projectId);
   if (sandboxUid !== null) {
-    await new Promise<void>((resolve) => {
-      const ch = nodeSpawn(
-        "chown",
-        ["-R", `${sandboxUid}:${sandboxUid}`, projectPath],
-        { stdio: "ignore" },
-      );
-      ch.on("exit", () => resolve());
-      ch.on("error", () => resolve()); // chown missing → silent skip; jail still applies
-    });
-    console.log(
-      `[DevServer] Project ${projectId} sandbox uid=${sandboxUid} (chown applied)`,
+    const useSudo = isSandboxWrapperAvailable();
+    const cmd = useSudo ? "sudo" : "chown";
+    const args = useSudo
+      ? ["-n", "chown", "-R", `${sandboxUid}:${sandboxUid}`, projectPath]
+      : ["-R", `${sandboxUid}:${sandboxUid}`, projectPath];
+    const chownResult = await new Promise<{ ok: boolean; stderr: string; code: number | null }>(
+      (resolve) => {
+        const ch = nodeSpawn(cmd, args, { stdio: ["ignore", "ignore", "pipe"] });
+        let stderr = "";
+        ch.stderr?.on("data", (d: Buffer) => {
+          stderr += d.toString();
+        });
+        ch.on("exit", (code) => {
+          resolve({ ok: code === 0, stderr: stderr.trim(), code });
+        });
+        ch.on("error", (err) => {
+          resolve({ ok: false, stderr: err.message, code: null });
+        });
+      },
     );
+    if (chownResult.ok) {
+      console.log(
+        `[DevServer] Project ${projectId} sandbox uid=${sandboxUid} (chown applied)`,
+      );
+    } else {
+      // chown failure is fatal for UID-drop: the dropped-priv vite would
+      // be unable to read its own project files. Release the UID and
+      // null out so the spawn falls back to running as the API user
+      // (still inside dovault + seccomp, just without the per-project
+      // UID isolation layer).
+      console.error(
+        `[DevServer] sudo chown failed for ${projectId} (uid ${sandboxUid}): ${chownResult.stderr || `exit code ${chownResult.code}`}`,
+      );
+      releaseDevUid(projectId);
+      sandboxUid = null;
+    }
   }
 
   console.log(
