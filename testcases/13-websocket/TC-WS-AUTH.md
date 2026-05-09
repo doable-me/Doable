@@ -1,6 +1,19 @@
 # TC-WS-AUTH — WebSocket authentication and connection lifecycle
 
-WS endpoint: `wss://staging-ws.doable.me/?token=<JWT>`.
+WS endpoint: `wss://<env>-ws.doable.me/?token=<JWT>` (or `wss://ws.doable.me/?token=<JWT>` on prod).
+
+Verified on env1 (zantaz) on 2026-05-10:
+- `wss://zantaz-ws.doable.me/?token=$VALID` → `{"type":"connected","userId":"<uuid>","resumeToken":""}`
+- `wss://zantaz-ws.doable.me/` (no token) → close 4001 "Missing token"
+- `?token=` (empty) → 4001 (server treats as missing)
+- `?token=abc` (garbage) → 4002 "Invalid token"
+- forged HS256 / alg=none / wrong issuer → 4002
+- second connect with same token → both accepted (no per-token uniqueness — by design)
+- `{"type":"heartbeat"}` after connect → `{"type":"heartbeat_ack"}`
+- malformed JSON frame → `{"type":"error","code":"PARSE_ERROR","message":"Invalid JSON"}` (connection stays open)
+- HTTP `/health` → 200 with rooms count
+- HTTP `/internal/broadcast` without/with-wrong `X-Internal-Secret` → 403
+- HTTP `/internal/presence/<id>` → 200 (no secret enforced — see TC-WS-AUTH-037 finding)
 
 JWT verification:
 - Algorithm: as configured (likely HS256).

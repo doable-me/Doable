@@ -46,3 +46,59 @@ WARN: project create failed — skipping versions tests
 - INFO: 15
 - WS_ID: e860bfcb-36ce-4cfe-823f-a1660e0e1514
 - PROJ_ID: NONE
+
+## Evolution pass — fixed paths and PROJ_ID reuse
+
+| TC | When (UTC) | Result | Notes |
+|---|---|---|---|
+| TC-VERSIONS-LIST-002 | 2026-05-09T21:42:51Z | PASS | got=200 exp=200 — GET /projects/:id/versions (existing) · {"data":[{"id":"f4fbc99057ce9e9bbde0c4a9e060b6640c25c996","project_id":"","version_number":1,"description":"Initial commit","bookmarked":false,"created_by":"Doable","created_at":"2026-05-09T21:04:50+00:00","sha":"f4fbc99 |
+| TC-VERSIONS-CREATE-003 | 2026-05-09T21:42:52Z | INFO | got=400 exp= — POST /projects/:id/versions minimal · {"error":"Missing required fields: createdBy, projectPath"} |
+| TC-NOTIF-LIST-002-evolve | 2026-05-09T21:42:53Z | PASS | got=200 exp=200 — GET /notifications?workspaceId · {"data":[]} |
+| TC-NOTIF-UNREAD-001 | 2026-05-09T21:42:53Z | PASS | got=200 exp=200 — GET /notifications/unread-count?workspaceId · {"count":0} |
+| TC-NOTIF-READALL-001 | 2026-05-09T21:42:54Z | INFO | got=204 exp= — POST /notifications/read-all?workspaceId (corrected path) ·  |
+| TC-THUMB-PROJ-001 | 2026-05-09T21:42:55Z | PASS | got=200 exp=200 — GET /projects/:id (thumbnail in body) · {"data":{"id":"e3f23fd0-9eb6-4a99-93dc-86c0cdc9b73f","workspace_id":"e860bfcb-36ce-4cfe-823f-a1660e0e1514","name":"E3f23fd0 9eb6 4a99 93dc 86c0cdc9b73f","slug":"e3f23fd0-9eb6-4a99-93dc-86c0cdc9b73f-moyu1ell","description |
+| TC-THUMB-REGEN-002 | 2026-05-09T21:42:55Z | INFO | got=404 exp= — POST /projects/:id/thumbnail (regenerate) · {"error":"Not Found","path":"/projects/e3f23fd0-9eb6-4a99-93dc-86c0cdc9b73f/thumbnail"} |
+| TC-DEPLOY-PUBLISH-LIST | 2026-05-09T21:42:56Z | INFO | got=404 exp= — GET /projects/:id/publish (history) · {"error":"Not Found","path":"/projects/e3f23fd0-9eb6-4a99-93dc-86c0cdc9b73f/publish"} |
+| TC-DEPLOY-PUBLISH-STATUS | 2026-05-09T21:42:57Z | INFO | got=404 exp= — GET /projects/:id/publish/status · {"error":"Not Found","path":"/projects/e3f23fd0-9eb6-4a99-93dc-86c0cdc9b73f/publish/status"} |
+| TC-COMMENTS-LIST-002 | 2026-05-09T21:42:58Z | INFO | got=404 exp= — GET /comments?projectId · {"error":"Not Found","path":"/comments"} |
+| TC-COMMENTS-LIST-003 | 2026-05-09T21:42:58Z | INFO | got=404 exp= — GET /projects/:id/comments · {"error":"Not Found","path":"/projects/e3f23fd0-9eb6-4a99-93dc-86c0cdc9b73f/comments"} |
+| TC-CHAT-LIST-002 | 2026-05-09T21:42:59Z | INFO | got=404 exp= — GET /chat/channels?workspaceId · {"error":"Not Found","path":"/chat/channels"} |
+| TC-CHAT-LIST-003 | 2026-05-09T21:42:59Z | INFO | got=404 exp= — GET /workspaces/:id/messages · {"error":"Not Found","path":"/workspaces/e860bfcb-36ce-4cfe-823f-a1660e0e1514/messages"} |
+
+## Evolution Summary
+- run: 13 · pass: 4 · fail: 0 · info: 9
+
+## Combined Totals (initial + evolution)
+- TCs run: 44 · PASS: 13 · FAIL: 7 · INFO: 24
+- WS_ID: e860bfcb-36ce-4cfe-823f-a1660e0e1514
+- PROJ_ID (reused for evolution): e3f23fd0-9eb6-4a99-93dc-86c0cdc9b73f
+
+## Bugs filed
+- BUG-CORPUS-TPL-001 — `/templates` is auth-gated; TC-TEMPL-LIST-012 expected public read.
+- BUG-CORPUS-NOT-001 — `/notifications` requires `workspaceId`; TC expected user-scoped global; also `/notifications/mark-all-read` should alias `/notifications/read-all`.
+- BUG-CORPUS-AN-001 — `/analytics/{events,dashboard,page-views,retention}` all 404; analytics route module not implemented.
+- BUG-CORPUS-RT-001 — `/runtime/*` and `/admin/runtime` not exposed via HTTP (admin TUI only).
+- BUG-CORPUS-DPL-001 — `/deployments`, `/projects/:id/publish*` paths in TCs do not match implementation; corpus-path errors per AUTHOR-GUIDE §2.
+- (existing) BUG-CORPUS-VERSIONS-001 — re-confirmed: `POST /projects/:id/versions` still requires `createdBy` + `projectPath` from client.
+
+## Author-guide regressions / corpus-path errors needing TC edits
+- 16-templates: TC-TEMPL-LIST-012 — change "public read" expectation to 401 (or fix route per BUG-CORPUS-TPL-001).
+- 16-templates: TC-TEMPL-REGISTRY-002 — actual mount is not `/admin/templates/refresh` (404); verify in `services/api/src/routes/templates.ts` and update.
+- 22-notifications: TC-NOTIF-LIST-001/003/008 — add `workspaceId` query param to all examples; fix mark-all path to `/notifications/read-all`.
+- 24-deploy: TC-DEPLOY-LIFECYCLE-002 SSE path `/api/deploy/:id/stream` — not mounted; investigate actual publish route mount.
+- 25-runtime: all three TCs — mark BLOCKED (no HTTP surface) or accept admin-TUI-only.
+- 26-analytics: all four TCs — mark BLOCKED until analytics route ships.
+- 19-skills + 21-team-chat: empty TC dirs (no files); either remove from corpus index or stub TCs.
+
+## Domain coverage notes
+- 16-templates: list/filter/category PASS modulo auth-gate spec mismatch; refresh endpoint not at documented path.
+- 17-folders: full CRUD validated (PASS) — list/create/empty-name/negative-position/unauth all green.
+- 18-versions: list PASS; create still blocked by BUG-CORPUS-VERSIONS-001.
+- 19-skills: empty corpus dir; `/skills`, `/marketplace/skills` both 404.
+- 20-design-comments: `/design-comments`, `/comments`, `/projects/:id/comments` all 404 → no API surface.
+- 21-team-chat: empty corpus dir; no `/chat/*` API surface.
+- 22-notifications: works with `workspaceId` query; minor TC drift documented.
+- 23-thumbnails: thumbnail field exists on project record (PASS); regenerate endpoint absent.
+- 24-deploy: no `/deployments` or `/projects/:id/publish*` GET surface; needs path discovery.
+- 25-runtime: no HTTP surface — admin-TUI only.
+- 26-analytics: no route module shipped.

@@ -2,6 +2,13 @@
 
 Covers the install flow: copy bundle artifacts to a new project (remix), attribution, install counts, project_remixes table.
 
+> **Path note (2026-05-09 corpus run):** install endpoints:
+> - `POST /marketplace/listings/:id/install` body `{workspaceId}` — creates remix; returns 404 on unknown listing.
+> - `DELETE /marketplace/listings/:id/install?workspaceId=...` — uninstall; returns `404 "Not installed"` if not installed.
+> - `GET /workspaces/:wid/marketplace/installs` — list installs.
+> - `GET /marketplace/my-listings` requires auth → 401 anon.
+> Source: `services/api/src/routes/marketplace.ts:207–320`.
+
 ---
 
 ## TC-MARKET-INSTALL-001

@@ -2,6 +2,8 @@
 
 Source: `services/api/src/middleware/rate-limit.ts`. Key default = `x-forwarded-for` then `x-real-ip` then `"unknown"`.
 
+> **Evolution log — 2026-05-10 / env1 (zantaz):** TC-SEC-RL-001 confirmed live: 11 successive POSTs to `/auth/forgot-password` with rotated `X-Forwarded-For: 1.2.3.<i>` returned 200 every time, while same-IP-without-XFF (TC-SEC-RL-025) hit 429 by the 4th request. The limiter trusts client-supplied XFF — see `BUG-CORPUS-SEC-001` in `99-runlog/env1/`. Severity raised from "smoke" / "document" to **high real defect**. Cloudflare Tunnel does not strip / overwrite XFF for inbound, so this is a real bypass at the edge. RL-016/017/022/023 are accurate (no limiter at all on those routes).
+
 ## TC-SEC-RL-001 — Rotate X-Forwarded-For each request
 - **Steps:** 20 logins each with unique `X-Forwarded-For: 1.2.3.<i>`.
 - **Expected:** If the API trusts client-supplied XFF, all succeed → bypass. If Cloudflare tunnel sets XFF/X-Real-IP itself and overrides the client value, only 10 succeed. Document deployment behaviour.

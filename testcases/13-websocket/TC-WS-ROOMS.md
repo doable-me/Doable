@@ -1,5 +1,9 @@
 # TC-WS-ROOMS — Room join/leave, isolation, cleanup, heartbeat
 
+> **Evolution log — 2026-05-10 / env1 (zantaz):** `room:join` for an arbitrary `roomId` (random UUID, project the user has no membership for) succeeds with a full `room:joined` response and presence echo. WS server does NOT cross-check workspace/project membership before joining. See `BUG-CORPUS-WS-001` in `99-runlog/env1/`. Authors must update the "isolation" cases below to assert the *intended* behaviour and recognise the current implementation as the bug, not as expected.
+
+Note from same run: server accepts `roomId` field on the `room:join` envelope; the bug repro used `{"type":"room:join","roomId":"<random uuid>"}`. The doc below also lists `projectId` as the expected key — verify whether server accepts both or only one.
+
 Client messages relevant:
 - `room:join {projectId}`
 - `room:leave`

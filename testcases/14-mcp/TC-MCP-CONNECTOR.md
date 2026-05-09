@@ -3,23 +3,33 @@
 Covers add, configure, list, update, delete connectors via /mcp/connectors. Both stdio and HTTP transports. Auto-spawn by ConnectorManager, health checks, listTools, capability discovery, audit log.
 
 ## TC-MCP-CONNECTOR-001 — List connectors (smoke)
-- **Steps:** GET /mcp/connectors
-- **Expected:** 200 array with builtin and user-installed connectors; status, transport, lastSeenAt
+- **Steps:** GET `/workspaces/:wsId/connectors`  (the route is mounted under workspaces, NOT under `/mcp/`)
+- **Expected:** 200 `{"data":[…]}` with builtin + user-installed connectors; each row has `transport_type`, `scope`, `server_command`/`server_url`, `created_by`.
 - **Severity:** smoke
+- **Evolution Log:**
+  - 2026-05-10 / env1: original spec used `/mcp/connectors` and 404'd. Confirmed mount in `services/api/src/routes.ts` is `app.route("/workspaces", connectorRoutes)` and handler `GET "/:workspaceId/connectors"`. Path corrected.
 
-## TC-MCP-CONNECTOR-002 — Built-in Supabase connector present by default
+## TC-MCP-CONNECTOR-002 — Built-in MCP-Apps present by default
+- **Steps:** GET `/workspaces/:wsId/connectors`
+- **Expected:** Includes (at minimum) the four built-in MCP Apps: Markdown Builder, PDF Builder, Presentation Builder, Spreadsheet Builder (all transport=stdio, scope=workspace, command=node, args pointing under `/opt/doable/mcp-servers/`).
 - **Severity:** smoke
+- **Evolution Log:**
+  - 2026-05-10 / env1: was "Built-in Supabase connector present by default" — incorrect. zantaz env1 lists Markdown/PDF/Presentation/Spreadsheet Builder; no Supabase/GitHub built-ins. Supabase + GitHub are configured per workspace via the connector wizard, not seeded.
 
-## TC-MCP-CONNECTOR-003 — Built-in GitHub connector present by default
+## TC-MCP-CONNECTOR-003 — *(deprecated: see CONNECTOR-002 — Supabase/GitHub are not seeded as built-ins)*
 - **Severity:** smoke
+- **Evolution Log:**
+  - 2026-05-10 / env1: deprecated; built-ins are MCP-Apps document builders only.
 
 ## TC-MCP-CONNECTOR-004 — Add stdio connector
-- **Steps:** POST /mcp/connectors {transport:"stdio", command:"node", args:["./mcp.js"]}
+- **Steps:** POST `/workspaces/:wsId/connectors` `{ "name":"x","transport_type":"stdio","scope":"workspace","server_command":"node","server_args":["./mcp.js"] }`
 - **Expected:** 201; row in mcp_connectors; status=initializing then active
 - **Severity:** smoke
+- **Evolution Log:**
+  - 2026-05-10 / env1: payload schema: zod requires `scope` in `{workspace|project|user}` and `transport_type` (not `transport`). 400 returned otherwise. Path corrected from `/mcp/connectors`.
 
 ## TC-MCP-CONNECTOR-005 — Add HTTP connector
-- **Steps:** POST {transport:"http", url:"https://x.example/mcp"}
+- **Steps:** POST `/workspaces/:wsId/connectors` `{ "name":"x","transport_type":"http","scope":"workspace","server_url":"https://x.example/mcp" }`
 - **Expected:** 201; signed JWT registered for outbound
 - **Severity:** smoke
 
