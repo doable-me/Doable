@@ -2,6 +2,8 @@
 
 Covers GET /billing/plans, plan switch (upgrade/downgrade), trial state, plan limits, plan-driven feature gating. Stripe is bypassed in staging (STRIPE_SECRET_KEY empty) — paths must remain graceful.
 
+> **Path note (2026-05-09 corpus run):** plan upgrades route through `POST /billing/subscribe {planId, workspaceId, interval?}` — there is **no** `/billing/upgrade` or `/billing/change-plan` endpoint. The subscribe handler returns a Stripe Checkout URL on success. In bypass mode (`STRIPE_SECRET_KEY=""`) it currently leaks `400 "Price not configured for this plan"` regardless of role — see BUG-CORPUS-BIL-001. Source: `services/api/src/routes/billing.ts:358–399`.
+
 ## TC-BILLING-PLANS-001 — Get plans list (smoke)
 - **Steps:** GET /billing/plans
 - **Expected:** 200 with array of {id,name,priceCents,interval,features,limits}

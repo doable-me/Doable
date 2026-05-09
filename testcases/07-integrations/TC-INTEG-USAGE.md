@@ -2,6 +2,15 @@
 
 Covers integration_usage_log writes, query, retention, dashboards.
 
+> **Path note (2026-05-09 corpus run):** xray endpoints are mounted at `/xray/*` (not `/integrations/xray/*`). `integrationAdminRoutes` is registered under `app.route("/", integrationRoutes)`, and the xray routes inside it use bare `/xray/...` paths. So smoke checks should use:
+> - `GET /xray/active`
+> - `GET /xray/stats`
+> - `GET /xray/spans`
+> - `GET /xray/stats/:integrationId`
+> - `GET /xray/history/:integrationId`
+> - `GET /xray/call/:callId`
+> Source: `services/api/src/routes/integrations-admin.ts:471–512`.
+
 ## TC-INTEG-USAGE-001 — Usage log row written per action call (smoke)
 - **Severity:** smoke
 

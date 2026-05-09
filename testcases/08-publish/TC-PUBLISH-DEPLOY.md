@@ -2,6 +2,15 @@
 
 Covers static-file build pipeline, artifact persistence under `/root/doable/sites/<sub>/`, and the SSE `build-stream` channel.
 
+> **Path note (2026-05-09 corpus run):** deploy routes are mounted at `/deploy/*`. Smoke endpoints:
+> - `GET /deploy/:projectId/status` — current deploy state
+> - `GET /deploy/:projectId/history` — recent deploys
+> - `GET /deploy/:projectId/deployments` — full deployment list
+> - `POST /deploy/:projectId` — trigger build (body optional; missing fields default to `adapter:doable-cloud, environment:production`)
+> - `POST /deploy/:projectId/publish` and `POST /deploy/:projectId/publish/preview` — same default-body behavior; on env1 these returned 200 with a `live` deployment when called with `{}`. Author tip: don't expect 400 for empty body — assert on the deployment shape instead.
+> - `POST /deploy/:projectId/rollback/:deploymentId` — 404 on unknown deployment id
+> Source: `services/api/src/routes/deploy/deploy-trigger.ts:27–231`, `deploy-query.ts:17–108`.
+
 ---
 
 ## TC-PUBLISH-DEPLOY-001

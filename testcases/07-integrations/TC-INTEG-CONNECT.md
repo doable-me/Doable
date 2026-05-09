@@ -2,6 +2,8 @@
 
 Covers /integrations/enhanced-auth start + callback at /integrations/enhanced-auth/callback, PKCE, state, account selection, multi-account support, edge cases.
 
+> **Path note (2026-05-09 corpus run):** the legacy OAuth start path is `GET /integrations/oauth/:id/authorize` (not `/integrations/oauth/:id/start`). The OAuth callback at `GET /integrations/oauth/callback` returns **302** to `<origin>/settings/integrations?error=...` when params are missing (NOT 400). Source: `services/api/src/routes/integrations-oauth.ts:33,75` and `services/api/src/routes/integrations-enhanced-auth.ts:65`. Tests must allow 302 on missing-code/state callback.
+
 ## TC-INTEG-CONNECT-001 — Start OAuth GitHub (smoke)
 - **Steps:** GET /integrations/enhanced-auth/start?slug=github
 - **Expected:** 302 to provider with state + code_challenge
