@@ -58,7 +58,7 @@ Findings 01 and the staging audit:
 
 ## Phase 3 — SSH posture
 
-- [ ] During provisioning create a dedicated sudo user (e.g. `gj`) with the SSH key. `usermod -aG sudo gj`.
+- [ ] During provisioning create a dedicated sudo user `douser` with the SSH key. `usermod -aG sudo douser`. (Setup script default — change `ADMIN_USER` if you want a different name.)
 - [ ] In `/etc/ssh/sshd_config`:
   - `PermitRootLogin no` (currently `without-password` on staging — key-only but still root-capable)
   - `PasswordAuthentication no`

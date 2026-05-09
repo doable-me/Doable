@@ -59,6 +59,14 @@ services/ws/projects/
 *.log
 npm-debug.log*
 
+# Rust build artifacts (doable-cli)
+**/target/
+Cargo.lock
+
+# Orchestrator status logs (ephemeral teammate timing + ping logs)
+.spec/
+**/.spec/
+
 # TypeScript build info
 *.tsbuildinfo
 

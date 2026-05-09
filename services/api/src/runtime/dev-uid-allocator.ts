@@ -45,6 +45,20 @@ const free = new Set<number>(
  */
 export function acquireDevUid(projectId: string): number | null {
   if (process.platform !== "linux") return null;
+  // The per-project UID drop only works when the API process can chown
+  // the project tree to the new UID. That requires CAP_CHOWN, which only
+  // root has. When the API runs as an unprivileged user (the v3 hardened
+  // default), we MUST skip the UID drop — otherwise chown silently fails
+  // and the spawned vite process can't read its own project files.
+  // Operators who want per-project UID drop while running unprivileged
+  // must add a sudoers NOPASSWD rule for chown and rewire dev-server-start
+  // to invoke `sudo chown`. Until that's wired, fail closed at allocation.
+  if (typeof process.geteuid === "function" && process.geteuid() !== 0) {
+    return null;
+  }
+  // Operator opt-out for hosts without setpriv or when per-project UID
+  // drop is genuinely not desired.
+  if (process.env.DOABLE_DEV_UID_DISABLED === "1") return null;
   const existing = inUse.get(projectId);
   if (existing !== undefined) return existing;
   const next = free.values().next().value as number | undefined;

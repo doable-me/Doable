@@ -15,6 +15,7 @@ Bare-metal Ubuntu 24.04 host (`143.110.188.13`) running Doable as `root` via `do
 | 05 | 05-dovault-spawn-wiring.md             | HIGH     | vite-jail bypasses `dovault.spawn`        |
 | 06 | 06-app-layer-findings-pointer.md       | INFO     | Pointer to app-layer audit                |
 | 07 | 07-next-server-setup-checklist.md      | TODO     | Forward-looking checklist for new server  |
+| 08 | 08-v3-flow.md                          | TODO     | v3 setup flow + operator CLI              |
 
 ## Recommended fix order
 
