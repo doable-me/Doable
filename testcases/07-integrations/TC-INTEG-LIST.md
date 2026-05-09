@@ -83,23 +83,30 @@ Covers GET /integrations, /integrations/categories, /integrations/:slug. Search,
 - **Severity:** low
 
 ## TC-INTEG-LIST-026 — User connections endpoint shows installed
-- **Steps:** GET /integrations/connections
-- **Expected:** array with status, account label, last used
+- **Steps:** `curl -H "Authorization: Bearer $TOKEN" "$API/integrations/connections?workspaceId=$WORKSPACE_ID"`
+- **Note:** `workspaceId` query param is REQUIRED — endpoint returns 400 without it. Connections are scoped per workspace.
+- **Expected:** 200 `{data: [{id, integrationId, displayName, logoUrl, scope, projectId, authType, status, errorMessage, createdAt, updatedAt}]}` — caller must be a member of `workspaceId` (else 403).
 - **Severity:** smoke
 
 ## TC-INTEG-LIST-027 — Connections cross-tenant isolated
+- **Steps:** `curl -H "Authorization: Bearer $TOKEN" "$API/integrations/connections?workspaceId=$OTHER_WORKSPACE_ID"`
+- **Expected:** 403 `{error:"Not a member of this workspace"}` when caller is not a member of the requested workspace.
 - **Severity:** critical
 
 ## TC-INTEG-LIST-028 — Connections include error state when token expired
+- **Steps:** `curl -H "Authorization: Bearer $TOKEN" "$API/integrations/connections?workspaceId=$WORKSPACE_ID"`
+- **Expected:** rows with expired tokens have `status:"error"` and a populated `errorMessage`.
 - **Severity:** high
 
 ## TC-INTEG-LIST-029 — Connections list grouped by category
+- **Steps:** `curl -H "Authorization: Bearer $TOKEN" "$API/integrations/connections?workspaceId=$WORKSPACE_ID"`
 - **Severity:** low
 
 ## TC-INTEG-LIST-030 — Connection labels editable
 - **Severity:** low
 
 ## TC-INTEG-LIST-031 — Connection metadata exposes enabled actions
+- **Steps:** `curl -H "Authorization: Bearer $TOKEN" "$API/integrations/connections?workspaceId=$WORKSPACE_ID"`
 - **Severity:** medium
 
 ## TC-INTEG-LIST-032 — Marketplace filter by trigger-only
