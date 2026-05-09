@@ -1,0 +1,28 @@
+HTTP/1.1 201 Created
+Date: Sat, 09 May 2026 18:40:52 GMT
+Content-Type: application/json
+Content-Length: 509
+Connection: keep-alive
+access-control-allow-credentials: true
+access-control-allow-origin: https://zantaz.doable.me
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=16.8;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_715000ebbd444a7e
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=0nBv5Tz9APmK9DDAtEMBUG6fn7mv1%2Bq8CPdgCvhzjyOql%2FUD9vpVRXPfxlu5wz0qENkQxx0j37rL6x6I9iR%2BYW%2F7qZR17xaRSnW7ZX24A3gV6lsDJBKEUgO1KjUa5lFIIBeiswXmDA%3D%3D"}]}
+Server: cloudflare
+CF-RAY: 9f92d5c6199c7ef4-MAA
+alt-svc: h3=":443"; ma=86400
+

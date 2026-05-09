@@ -1,0 +1,29 @@
+HTTP/1.1 302 Found
+Date: Sat, 09 May 2026 18:43:44 GMT
+Content-Type: text/plain; charset=UTF-8
+Content-Length: 0
+Connection: keep-alive
+access-control-allow-credentials: true
+access-control-allow-origin: https://zantaz.doable.me
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+location: https://github.com/login/oauth/authorize?client_id=Ov23lixtciqu75ir3IRP&redirect_uri=https%3A%2F%2Fzantaz-api.doable.me%2Fauth%2Fgithub%2Frepo%2Fcallback&scope=repo+read%3Auser&state=eyJ0eXBlIjoicmVwbyIsInVzZXJJZCI6IiIsInByb2plY3RJZCI6IiIsInJldHVyblVybCI6IiIsIm5vbmNlIjoiZDMzMTYwNDgtMGM5Yy00NmY4LWI4NzYtNTY2MmQ3MzdlNWYyIn0
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=0.9;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_ab5bc1b3ed724f7f
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=11XfXQhyAzDZf0iTw8COeS7X%2BClgVTcSs2vBMSLqEtkFmdpAhRyt7A3gt4im3YcWn8HDo2E8mlPHzzo1f5BjkpKxoiOv%2FLwjiMr5Zp6vmbsln6DMLdUUkl6jtiaihUziaw%2BFHa2Fgw%3D%3D"}]}
+Server: cloudflare
+CF-RAY: 9f92d9fc7aad7e93-MAA
+alt-svc: h3=":443"; ma=86400
+

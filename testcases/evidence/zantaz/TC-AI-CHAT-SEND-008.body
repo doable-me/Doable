@@ -1,0 +1,1 @@
+{"success":false,"error":{"issues":[{"received":"foobar","code":"invalid_enum_value","options":["agent","plan","visual-edit"],"path":["mode"],"message":"Invalid enum value. Expected 'agent' | 'plan' | 'visual-edit', received 'foobar'"}],"name":"ZodError"}}

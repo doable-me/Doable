@@ -1,0 +1,14 @@
+data: {"type":"thinking","data":"Preparing workspace..."}
+
+data: {"type":"status","data":{"phase":"dev-server","message":"Starting dev server..."}}
+
+data: {"type":"thinking","data":" Starting dev server..."}
+
+data: {"type":"thinking","data":" Connecting to AI model...\n"}
+
+data: {"type":"status","data":{"phase":"thinking","message":"Connecting to AI..."}}
+
+data: {"type":"error","data":"Copilot SDK error: AI is not configured for this workspace/user. Connect a GitHub Copilot account or add a custom provider key in Settings > AI.. Ensure you have a GitHub Copilot subscription or configure BYOK in settings."}
+
+data: [DONE]
+

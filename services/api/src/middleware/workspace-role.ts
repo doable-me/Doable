@@ -7,6 +7,14 @@ import { WORKSPACE_ROLES, type WorkspaceRole } from "@doable/shared";
 const workspaces = workspaceQueries(sql);
 
 /**
+ * RFC 4122 UUID shape (any version, any variant). We validate at the route
+ * boundary so callers passing malformed ids get a clean 400 instead of the
+ * driver throwing `invalid input syntax for type uuid` and surfacing as 500.
+ */
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
  * Role hierarchy for workspace access.
  * Lower index = higher privilege.
  */
@@ -32,6 +40,10 @@ export function requireRole(minRole: WorkspaceRole) {
 
     if (!workspaceId) {
       return c.json({ error: "Workspace ID required" }, 400);
+    }
+
+    if (!UUID_REGEX.test(workspaceId)) {
+      return c.json({ error: "Invalid workspace id" }, 400);
     }
 
     const role = await workspaces.getMemberRole(workspaceId, userId);
