@@ -186,28 +186,37 @@ app.use(
         return origin || "*";
       }
 
-      // Allow any localhost origin (any port) for development
-      if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) {
+      // Build the allowlist from env up front so we can decide whether
+      // to apply the dev fallback or strictly enforce.
+      const allowed = (process.env.CORS_ORIGINS ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      // Explicit allowlist match — always honored, in any environment.
+      if (origin && allowed.includes(origin)) {
         return origin;
       }
 
-      // Allow any 127.0.0.1 origin (any port) for development
-      if (/^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) {
-        return origin;
+      // Dev convenience: only when the operator has NOT configured
+      // CORS_ORIGINS at all AND we're not running in production, allow
+      // localhost / 127.0.0.1 (any port) so local dev works out of the
+      // box. We deliberately do NOT reflect arbitrary origins here —
+      // reflecting any Origin combined with credentials:true would let
+      // any website read authenticated API responses.
+      if (allowed.length === 0 && process.env.NODE_ENV !== "production") {
+        if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) {
+          return origin;
+        }
+        if (/^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) {
+          return origin;
+        }
       }
 
-      // Check against explicit allowed origins from env
-      const allowed = (process.env.CORS_ORIGINS ?? "").split(",").filter(Boolean);
-      if (allowed.length > 0 && allowed.includes(origin)) {
-        return origin;
-      }
-
-      // Default: allow the origin (in dev mode)
-      if (process.env.NODE_ENV !== "production") {
-        return origin;
-      }
-
-      return allowed[0] ?? "http://localhost:3000";
+      // Refuse: returning null causes hono/cors to omit the
+      // Access-Control-Allow-Origin header, so the browser blocks
+      // the cross-origin response.
+      return null;
     },
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
