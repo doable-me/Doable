@@ -15,6 +15,29 @@
 ## Result legend
 PASS / FAIL / BLOCKED / PARTIAL / INFO
 
+## Run window
+- **Started:** 2026-05-09 18:39 UTC
+- **Closed:**  2026-05-09 18:44 UTC (~5 minutes total, on budget)
+
+## Tally (rough)
+- Workspace CRUD (02-workspace): 18 ran, 17 PASS, 1 INFO (TC-WS-CRUD-032 = 500 on malformed UUID — see BUG-WS-001).
+- Projects (03-projects): 14 ran, 13 PASS, 1 INFO (nextjs-app disabled by config on this host — TC-PROJ-CREATE-003).
+- Folders (17-folders): 8 ran, all PASS.
+- Versions (18-versions): 4 ran, 2 PASS, 1 doc mismatch (BUG-WS-002 — corpus says /versions/:id/...; API mounts under /projects/:id/versions), 1 INFO (cross-user listing returns 404, hides existence).
+- Templates (16-templates): 4 ran, 3 PASS, 1 BUG (BUG-WS-003 — /templates open to unauthenticated callers).
+
+## Bugs filed
+- `testcases/bugs/BUG-WS-001.md` — GET /workspaces/:id with malformed UUID returns 500 (medium).
+- `testcases/bugs/BUG-WS-002.md` — Test-corpus path mismatch: /versions/:projectId/versions vs /projects/:projectId/versions (low/docs).
+- `testcases/bugs/BUG-WS-003.md` — GET /templates exposes full registry without auth (medium).
+
+## Notes / observations
+- `nextjs-app` framework appears DISABLED on zantaz-api by platform-admin config. `TC-PROJ-CREATE-003` returned 403 not 201. Update TC or fix config.
+- `POST /projects` body-not-JSON yields 400 with `error:"Invalid JSON"` (TC-PROJ-CREATE-061) — passes; corpus marked it as expected.
+- `PATCH /workspaces/:id` strips extraneous fields (slug, owner_id) silently — confirmed safe (TC-WS-CRUD-039r).
+- `/workspaces/` (trailing slash, empty path-segment) issues 308 redirect to `/workspaces` — benign.
+- Cross-user version list returns 404 not 403; better hide than leak, but inconsistent with workspace 403 pattern.
+
 ## Live runs (chronological)
 
 | Test ID | UTC | Result | Notes |

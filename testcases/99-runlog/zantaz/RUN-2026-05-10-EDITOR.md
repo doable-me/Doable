@@ -29,3 +29,21 @@ Started: 2026-05-10T (UTC, see rows)
 | TC-MCP-CONNECTOR-LIST | 2026-05-09T18:44:52Z | FAIL | got=404 exp=200 — List connectors · {"error":"Not Found","path":"/mcp/connectors"} |
 | TC-MCP-BUILTIN-CATALOG | 2026-05-09T18:44:53Z | FAIL | got=404 exp=200 — Get connector catalog · {"error":"Not Found","path":"/mcp/catalog"} |
 | TC-MCP-CONNECTOR-AUTH-MISSING | 2026-05-09T18:44:53Z | PASS | got=401 exp=401 — List connectors no auth · {"error":"Missing or invalid Authorization header"} |
+| TC-MCP-CONNECTOR-NOPE | 2026-05-09T18:44:54Z | PASS | got=404 exp=404 — GET non-existent connector · {"error":"Not Found","path":"/mcp/connectors/00000000-0000-0000-0000-000000000000"} |
+| TC-MCP-CONNECTOR-INVALID-CREATE | 2026-05-09T18:44:55Z | FAIL | got=404 exp=400 — POST connector missing fields · {"error":"Not Found","path":"/mcp/connectors"} |
+| TC-MCP-TOOL-INVALID | 2026-05-09T18:44:56Z | PASS | got=404 exp=404 — Invoke tool on missing connector · {"error":"Not Found","path":"/mcp/connectors/00000000-0000-0000-0000-000000000000/invoke"} |
+| TC-COMMENTS-CRUD-LIST-EMPTY | 2026-05-09T18:44:56Z | FAIL | got=404 exp=200 — List comments empty · {"error":"Not Found","path":"/projects/ee0a1e7d-3124-4694-8198-19fb8e90ae91/comments"} |
+| TC-COMMENTS-CRUD-AUTH | 2026-05-09T18:44:57Z | PASS | got=401 exp=401 — List comments unauth · {"error":"Missing or invalid Authorization header"} |
+| TC-COMMENTS-CRUD-CREATE | 2026-05-09T18:44:58Z | FAIL | got=404 exp=201 — Create comment · {"error":"Not Found","path":"/projects/ee0a1e7d-3124-4694-8198-19fb8e90ae91/comments"} |
+| TC-COMMENTS-CRUD-GET | 2026-05-09T18:44:59Z | FAIL | got=404 exp=200 — Get comment by id · {"error":"Not Found","path":"/projects/ee0a1e7d-3124-4694-8198-19fb8e90ae91/comments/none"} |
+| TC-COMMENTS-RESOLVE | 2026-05-09T18:44:59Z | FAIL | got=404 exp=200 — Resolve comment · {"error":"Not Found","path":"/projects/ee0a1e7d-3124-4694-8198-19fb8e90ae91/comments/none/resolve"} |
+| TC-COMMENTS-REOPEN | 2026-05-09T18:45:00Z | FAIL | got=404 exp=200 — Reopen comment · {"error":"Not Found","path":"/projects/ee0a1e7d-3124-4694-8198-19fb8e90ae91/comments/none/reopen"} |
+| TC-COMMENTS-EDIT | 2026-05-09T18:45:01Z | FAIL | got=404 exp=200 — Edit comment body · {"error":"Not Found","path":"/projects/ee0a1e7d-3124-4694-8198-19fb8e90ae91/comments/none"} |
+| TC-COMMENTS-DELETE | 2026-05-09T18:45:02Z | FAIL | got=404 exp=200 — Delete comment · {"error":"Not Found","path":"/projects/ee0a1e7d-3124-4694-8198-19fb8e90ae91/comments/none"} |
+| TC-COMMENTS-CROSS | 2026-05-09T18:45:02Z | PASS | got=404 exp=404 — Cross-project comment access · {"error":"Not Found","path":"/projects/00000000-0000-0000-0000-000000000000/comments"} |
+| TC-SKILLS-LIST | 2026-05-09T18:45:03Z | FAIL | got=404 exp=200 — List skills · {"error":"Not Found","path":"/skills"} |
+| TC-WS-AUTH-001 | 2026-05-09T18:45:28Z | PASS | opened=true close=1005 exp_open=true exp_close= — valid JWT in query |
+| TC-WS-AUTH-002 | 2026-05-09T18:45:31Z | FAIL | opened=true close=4001 exp_open=false exp_close=4001 — no token → 4001 |
+| TC-WS-AUTH-005 | 2026-05-09T18:45:32Z | FAIL | opened=true close=4002 exp_open=false exp_close=4002 — garbage token → 4002 |
+| TC-WS-AUTH-007 | 2026-05-09T18:45:34Z | FAIL | opened=true close=4002 exp_open=false exp_close=4002 — wrong-secret token → 4002 |
+| TC-WS-AUTH-021 | 2026-05-09T18:45:35Z | PASS | opened=true close=1005 exp_open=true exp_close= — alice connect ok |
