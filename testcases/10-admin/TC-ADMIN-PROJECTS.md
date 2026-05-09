@@ -242,3 +242,224 @@ Scope: `/admin/projects`. Lists every project in the platform with search, filte
 - Steps: Tamper request to set `?per=1000000`.
 - Expected: Server clamps to max 200; warning header `X-Param-Clamped: true`.
 - Severity: P1
+
+---
+
+# Deep Functional Verification (041–060)
+
+These tests verify that **actual rendered data** in the admin Projects table matches the real database state. Every assertion checks visible cell content — not just HTTP 200 or page loads.
+
+---
+
+## TC-ADMIN-PROJECTS-041
+**Title:** Project row shows correct owner email matching database
+**Pre:** Admin logged in; user "alice@test.com" owns project "My Todo App" (`SELECT u.email FROM users u JOIN projects p ON p.owner_id = u.id WHERE p.name = 'My Todo App'` returns "alice@test.com").
+**Steps:**
+1. Navigate to `/admin/projects`
+2. Search for "My Todo App"
+3. Read the Owner column cell for the matching row
+**Expected:** Owner column shows "alice@test.com"; matches the DB query result exactly; not "(unknown)", empty, or a user ID.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-042
+**Title:** Framework badge matches the framework the project was created with
+**Pre:** Admin logged in; project "React Dashboard" was created with framework `react` (`SELECT framework FROM projects WHERE name = 'React Dashboard'` returns "react").
+**Steps:**
+1. Navigate to `/admin/projects`
+2. Search for "React Dashboard"
+3. Read the Framework column cell
+**Expected:** Framework column shows "react" (or a badge labeled "React"); matches the DB value. Not "unknown", blank, or a different framework.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-043
+**Title:** Status badge reflects actual runtime state from dev server
+**Pre:** Admin logged in; project "Live API" has a running dev server (`SELECT listen_addr FROM dev_servers WHERE project_id = (SELECT id FROM projects WHERE name = 'Live API') AND stopped_at IS NULL` returns a non-null address).
+**Steps:**
+1. Navigate to `/admin/projects`
+2. Search for "Live API"
+3. Read the Status badge column
+**Expected:** Status badge shows "running" with a green-tinted background. Not "draft" or "stopped". Badge state matches whether `dev_servers` has an active (non-stopped) entry.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-044
+**Title:** Messages count in row matches real database count
+**Pre:** Admin logged in; project "Chatbot" has exactly 37 chat messages (`SELECT COUNT(*) FROM messages WHERE project_id = (SELECT id FROM projects WHERE name = 'Chatbot')` returns 37).
+**Steps:**
+1. Navigate to `/admin/projects`
+2. Search for "Chatbot"
+3. Read the messages count column cell
+**Expected:** Messages column shows "37". Not "0", blank, or a stale cached value. Matches the live DB count.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-045
+**Title:** Updated timestamp reflects actual last modification time
+**Pre:** Admin logged in; project "Portfolio" was last updated 3 hours ago (`SELECT updated_at FROM projects WHERE name = 'Portfolio'` returns a timestamp ~3h before now).
+**Steps:**
+1. Navigate to `/admin/projects`
+2. Search for "Portfolio"
+3. Read the updated (relative time) column cell
+**Expected:** Updated column shows "3 hours ago" (or close approximation like "3h ago"). Not "just now", a future date, or the created_at time if different.
+**Severity:** High
+
+## TC-ADMIN-PROJECTS-046
+**Title:** Running project shows green "running" status badge
+**Pre:** Admin logged in; project "Server App" has an active dev server (started, not stopped).
+**Steps:**
+1. Start the dev server for "Server App" via API or editor
+2. Navigate to `/admin/projects`
+3. Search for "Server App"
+4. Inspect the Status badge element's CSS
+**Expected:** Badge text is "running"; badge has green background color (e.g., `bg-green-*` or equivalent); distinguishable from other states.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-047
+**Title:** Stopped project shows gray status badge
+**Pre:** Admin logged in; project "Old Blog" has no active dev server and is not published (`visibility != 'published'`, no running dev server).
+**Steps:**
+1. Ensure "Old Blog" dev server is stopped
+2. Navigate to `/admin/projects`
+3. Search for "Old Blog"
+4. Inspect the Status badge
+**Expected:** Badge text is "draft" or "stopped"; badge has gray/neutral background color; not green or blue.
+**Severity:** High
+
+## TC-ADMIN-PROJECTS-048
+**Title:** Published project shows blue "published" status badge
+**Pre:** Admin logged in; project "Landing Page" has `visibility = 'published'` in DB.
+**Steps:**
+1. Publish project "Landing Page" (set visibility to published)
+2. Navigate to `/admin/projects`
+3. Search for "Landing Page"
+4. Inspect the Status badge
+**Expected:** Badge text is "published"; badge has blue background color; reflects the `visibility` column in DB.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-049
+**Title:** Draft project shows yellow/amber status badge
+**Pre:** Admin logged in; project "WIP Prototype" has `visibility = 'draft'` and no active dev server.
+**Steps:**
+1. Ensure "WIP Prototype" is draft with no running server
+2. Navigate to `/admin/projects`
+3. Search for "WIP Prototype"
+4. Inspect the Status badge
+**Expected:** Badge text is "draft"; badge has yellow or amber background color; visually distinct from running (green) and published (blue).
+**Severity:** High
+
+## TC-ADMIN-PROJECTS-050
+**Title:** Errored dev server shows red status badge
+**Pre:** Admin logged in; project "Crash Test" has a dev server entry with a non-zero `exit_code` or `error` field set.
+**Steps:**
+1. Trigger or simulate a dev server crash for "Crash Test" (server exits with error)
+2. Navigate to `/admin/projects`
+3. Search for "Crash Test"
+4. Inspect the Status badge
+**Expected:** Badge text is "errored" or "error"; badge has red background color; clearly signals failure state to admin.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-051
+**Title:** Click project name navigates to editor with that project's files
+**Pre:** Admin logged in; project "My Todo App" exists with known files (e.g., `index.html`, `style.css`).
+**Steps:**
+1. Navigate to `/admin/projects`
+2. Search for "My Todo App"
+3. Click the project name link in the Name column
+**Expected:** Browser navigates to `/projects/<project-id>` (the editor view); editor loads with the file tree showing "My Todo App"'s actual files; not a 404 or different project's files.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-052
+**Title:** Click owner email navigates to user detail in admin
+**Pre:** Admin logged in; project owned by "bob@test.com" visible in list.
+**Steps:**
+1. Navigate to `/admin/projects`
+2. Find a row with owner "bob@test.com"
+3. Click the owner email link
+**Expected:** Browser navigates to `/admin/users/<user-id>` showing Bob's user detail page; the email on the detail page matches "bob@test.com"; not a dead link or 404.
+**Severity:** High
+
+## TC-ADMIN-PROJECTS-053
+**Title:** Sessions count links to filtered chat sessions for that project
+**Pre:** Admin logged in; project "Chatbot" has 5 chat sessions visible in admin.
+**Steps:**
+1. Navigate to `/admin/projects`
+2. Search for "Chatbot"
+3. Click the sessions count number (e.g., "5")
+**Expected:** Navigates to chat sessions admin view filtered by project ID; shows exactly 5 sessions; each session belongs to project "Chatbot" (verify project name in session rows).
+**Severity:** High
+
+## TC-ADMIN-PROJECTS-054
+**Title:** Messages count matches chat admin totals for same project
+**Pre:** Admin logged in; project "Chatbot" shows "37" in messages column.
+**Steps:**
+1. Navigate to `/admin/projects`, note messages count for "Chatbot" (e.g., 37)
+2. Navigate to `/admin/chat` or equivalent chat admin
+3. Filter by project "Chatbot"
+4. Count total messages shown
+**Expected:** Chat admin total messages for "Chatbot" equals 37; both views pull from the same source of truth; no discrepancy.
+**Severity:** High
+
+## TC-ADMIN-PROJECTS-055
+**Title:** listenAddr column shows actual port from active dev server
+**Pre:** Admin logged in; project "Live API" has a running dev server on port 38421 (`SELECT listen_addr FROM dev_servers WHERE project_id = ... AND stopped_at IS NULL` returns "127.0.0.1:38421").
+**Steps:**
+1. Start dev server for "Live API"
+2. Navigate to `/admin/projects`
+3. Search for "Live API"
+4. Read the listenAddr column cell
+**Expected:** listenAddr shows "127.0.0.1:38421" (or `:38421`); matches the actual port the dev server bound to; not empty, "N/A", or a stale port from a previous run.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-056
+**Title:** Create new project → appears in admin list within 5 seconds
+**Pre:** Admin logged in; admin projects page open.
+**Steps:**
+1. In a second tab, create a new project named "Fresh Project 2025" via the editor UI
+2. Wait 5 seconds
+3. In the admin tab, refresh `/admin/projects`
+4. Search for "Fresh Project 2025"
+**Expected:** "Fresh Project 2025" appears in the list with correct owner email, "draft" status badge, 0 messages, 0 sessions, and a recent "updated" timestamp ("just now" or "< 1 min ago"). No stale cache hiding the new row.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-057
+**Title:** Delete project → admin shows strikethrough and "deleted" badge
+**Pre:** Admin logged in; project "Disposable App" exists and is visible in admin list.
+**Steps:**
+1. Soft-delete project "Disposable App" (via admin action or API `DELETE /admin/projects/<id>`)
+2. Refresh `/admin/projects`
+3. Search for "Disposable App"
+**Expected:** "Disposable App" row still visible (soft-deleted); project name has strikethrough text decoration (`line-through`); status badge shows "deleted" with a distinct color (e.g., red or gray); row is visually distinguishable from active projects.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-058
+**Title:** Publish project → admin status changes to "published" badge
+**Pre:** Admin logged in; project "Launch Ready" exists with status "draft".
+**Steps:**
+1. Verify "Launch Ready" shows "draft" badge in admin list
+2. Publish "Launch Ready" via editor UI or API (`PATCH /projects/<id>` with `visibility: 'published'`)
+3. Refresh `/admin/projects`
+4. Search for "Launch Ready"
+**Expected:** Status badge changes from "draft" (yellow) to "published" (blue); transition is immediate on refresh; no stale "draft" badge.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-059
+**Title:** Start dev server → admin shows "running" with listen address
+**Pre:** Admin logged in; project "Dev Test" exists with no running server (status "draft").
+**Steps:**
+1. Verify "Dev Test" shows "draft" badge and empty listenAddr in admin list
+2. Start dev server for "Dev Test" via editor preview
+3. Wait for server to bind (5–10 seconds)
+4. Refresh `/admin/projects`
+5. Search for "Dev Test"
+**Expected:** Status badge changes to "running" (green); listenAddr column now shows the bound address (e.g., "127.0.0.1:XXXXX"); both fields populated; not still showing "draft" with empty address.
+**Severity:** Critical
+
+## TC-ADMIN-PROJECTS-060
+**Title:** Send AI message → admin messages count increments in real time
+**Pre:** Admin logged in; project "AI Chat App" currently shows messages count = N in admin list.
+**Steps:**
+1. Note current messages count N for "AI Chat App" in admin list
+2. In a second tab, open "AI Chat App" editor and send one AI chat message
+3. Wait for AI response to complete
+4. Refresh `/admin/projects` in admin tab
+5. Search for "AI Chat App"
+**Expected:** Messages column now shows N+2 (user message + AI response) or at minimum N+1 (user message); count incremented from the previously observed value; not stale at N.
+**Severity:** Critical
