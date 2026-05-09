@@ -1,0 +1,1 @@
+{"status":"healthy","timestamp":"2026-05-08T06:07:35.253Z","version":"0.1.0","uptime":5099.10551045,"checks":{"database":{"status":"up","latencyMs":1},"memory":{"rssBytes":277471232,"heapUsedBytes":105304024,"heapTotalBytes":109600768},"devServers":{"active":1}}}

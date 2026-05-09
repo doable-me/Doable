@@ -1,0 +1,55 @@
+HTTP/1.1 308 Permanent Redirect
+Date: Fri, 08 May 2026 05:53:02 GMT
+Content-Type: text/plain; charset=UTF-8
+Content-Length: 0
+Connection: keep-alive
+access-control-allow-credentials: true
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+location: /community/a22139b7-42a5-4d51-861c-7f01a7ab7c4b/share
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=1.1;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_68013960a1854f01
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=pGQfE%2Blyfp%2F0XjTd6zVzlFolGc%2FRsCU0G6O54Dkq%2FYC29pbQRG%2F1UzF5ZBg%2FoUSh1Fnl6J5fyFlFTiUeaL5wkU5SZb%2BvUVcio3UvwiJAKREHFkqpiWC2pxOOA0cUo7WaCDDyd7b18gI%3D"}]}
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Server: cloudflare
+CF-RAY: 9f8633a4c93f97ac-SIN
+alt-svc: h3=":443"; ma=86400
+
+HTTP/1.1 400 Bad Request
+Date: Fri, 08 May 2026 05:53:02 GMT
+Content-Type: application/json
+Content-Length: 161
+Connection: keep-alive
+access-control-allow-credentials: true
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=2.4;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_f75c86a7fca64efc
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=mZAi3ujC0mP1V75MrDjLN%2Fj%2BQZvFq9wAwxjUIBqil0b3MlOBKIKe812aCkydz%2FDEepq%2Bn5XdU4XrtxZBV5BOo9jzWQsQOIpVZLyYCYBTtE0V0gaPQt%2FRtxMe1tiRD9L43yxDagu2iMk%3D"}]}
+Server: cloudflare
+CF-RAY: 9f8633a87f7097ac-SIN
+alt-svc: h3=":443"; ma=86400
+

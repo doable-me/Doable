@@ -1,0 +1,27 @@
+HTTP/1.1 403 Forbidden
+Date: Fri, 08 May 2026 06:04:14 GMT
+Content-Type: application/json
+Content-Length: 40
+Connection: keep-alive
+access-control-allow-credentials: true
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=39.4;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_5dd5b7310ada4690
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=qfJ3SxO0i7HmXG154fvxhIt5m%2BDndkQYFtLcRk%2FpM79uv9XOSz%2FX4uWY4BxRWhXnk4LKtJeep19eoqiVbI8UDraXP0Znx4xa7sGJoqGuAD3cxclka4dyT%2BOnp7DINhVN%2FTtGT%2BGjkoY%3D"}]}
+Server: cloudflare
+CF-RAY: 9f86440899c26115-MAA
+alt-svc: h3=":443"; ma=86400
+

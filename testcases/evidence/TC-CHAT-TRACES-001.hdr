@@ -1,0 +1,27 @@
+HTTP/1.1 200 OK
+Date: Fri, 08 May 2026 05:49:03 GMT
+Content-Type: application/json
+Content-Length: 11
+Connection: keep-alive
+access-control-allow-credentials: true
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=10.0;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_ca1e26a7f56e4428
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=LVJ5xvjyx%2BoZV4RCttFva6AKD8I4wnmgD%2Fs0z0U0LCzWJDoHqLQkE1roHU9ZfSrew0tqzNNQ7wRKXIk5GCqQk%2B%2Fsfpucv%2B%2FaGzLC4jArjoh%2Be8Q7VXXVa%2FWv3l5ZuEk7EkIDCg83iJo%3D"}]}
+Server: cloudflare
+CF-RAY: 9f862dc63df97f92-MAA
+alt-svc: h3=":443"; ma=86400
+

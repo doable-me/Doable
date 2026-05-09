@@ -1,0 +1,27 @@
+HTTP/1.1 401 Unauthorized
+Date: Fri, 08 May 2026 06:02:24 GMT
+Content-Type: application/json
+Content-Length: 25
+Connection: keep-alive
+access-control-allow-credentials: true
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=1.2;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_8aca8cf5b06b495f
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=Gb2mueYZnglSZ%2BYkNTGMcjR0n7wNUtqjDydgDuJEwSk4eQTBESp43Vy9iFI%2F5zDqa6M7kvA%2FEDXTdEEkJyLRnPkeYyKoT%2B%2FOiURt2IZU%2FG40%2FdK52bHrqOhz7I7hga0UeoKM4%2BjZsGk%3D"}]}
+Server: cloudflare
+CF-RAY: 9f86415ced9cad28-MAA
+alt-svc: h3=":443"; ma=86400
+

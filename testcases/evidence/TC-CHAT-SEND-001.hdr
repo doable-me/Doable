@@ -1,0 +1,31 @@
+HTTP/1.1 200 OK
+Date: Fri, 08 May 2026 05:50:44 GMT
+Content-Type: text/event-stream
+Transfer-Encoding: chunked
+Connection: keep-alive
+access-control-allow-credentials: true
+Cache-Control: no-cache
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=33.9;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-ratelimit-limit: 20
+x-ratelimit-remaining: 19
+x-ratelimit-reset: 120
+x-request-id: req_1aaed9e991a44da1
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=cvb%2BQ%2BxPZQ%2Fgaygwhx4vrb%2BuxW7qSe2XcDQwPyYN5zssM9OHU5f8PNtnO%2BpwdFk6wOl5ONsTnjReig%2BSSUtT6d4Ig3PsATjP%2F1%2FMYNd4aLyhCSiMWCjYwl8sJDOENLva%2F2RPL7iVPY0%3D"}]}
+Server: cloudflare
+CF-RAY: 9f8630455842c784-MAA
+alt-svc: h3=":443"; ma=86400
+

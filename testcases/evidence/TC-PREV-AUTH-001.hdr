@@ -1,0 +1,21 @@
+HTTP/1.1 200 OK
+Date: Fri, 08 May 2026 06:07:32 GMT
+Content-Type: text/html; charset=utf-8
+Transfer-Encoding: chunked
+Connection: keep-alive
+access-control-allow-credentials: true
+access-control-allow-headers: *
+access-control-allow-methods: GET, POST, OPTIONS
+access-control-allow-origin: *
+Cache-Control: no-store, no-cache, must-revalidate
+content-security-policy: default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src * data: blob:; connect-src *; media-src * data: blob:; frame-ancestors 'self' https://*.doable.me http://localhost:* http://127.0.0.1:*; object-src 'none'
+server-timing: total;dur=11.9;desc="Total Response Time"
+vary: Origin, Origin
+x-request-id: req_b8dadebe43fe4d02
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=vQ0BugiLKToqhZ4JAq9sm6Pp92yEe8sL8jhA9Pf4TDKS3ySZ6KzkzcsWtc1wIZ40FMpLDLF95CYqj3%2BzKQffV2ohvIANSg%2FINF5tlIERv9%2FCn1SJyCeIX1xGHHrsKu2EZIHHl3WAv1g%3D"}]}
+Server: cloudflare
+CF-RAY: 9f8648e338daad28-MAA
+alt-svc: h3=":443"; ma=86400
+

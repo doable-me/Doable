@@ -1,0 +1,27 @@
+HTTP/1.1 400 Bad Request
+Date: Fri, 08 May 2026 05:53:16 GMT
+Content-Type: application/json
+Content-Length: 67
+Connection: keep-alive
+access-control-allow-credentials: true
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=4.1;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_c63fb4243197424f
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=Nc3efzEmO3k65AayamRPmwFTFPKDjJN6R9qdPmY7JL82wEOEQzZP8Qw8WGlzlHykWqsP0OoDNqfPYEPnWU%2B682euJupOxqLHUR%2Fnk2WR2lp3iY7zYlysJHJP4GBEzn%2FkVHRGTYbmIak%3D"}]}
+Server: cloudflare
+CF-RAY: 9f8633fd2a2b4981-MAA
+alt-svc: h3=":443"; ma=86400
+

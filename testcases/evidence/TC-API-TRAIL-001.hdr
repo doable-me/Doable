@@ -1,0 +1,29 @@
+HTTP/1.1 308 Permanent Redirect
+Date: Fri, 08 May 2026 06:02:22 GMT
+Content-Type: text/plain; charset=UTF-8
+Content-Length: 0
+Connection: keep-alive
+access-control-allow-credentials: true
+Cache-Control: no-store
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+location: http://staging-api.doable.me/health
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=0.8;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_f15a738ef78e4329
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=XpyoA3wXySH%2BnSRz4hJ0FvZY386WIrux1QB34oiUlkjpgBSqnsEz%2FoAp%2FtIIspClyEGJL1IjzYjnQFM1cRt6J6k7VxsKqTzGzJTWaiFhSTdN3Gvwem%2BJ3xgdDxDlOTeoXXc3yGeegsM%3D"}]}
+Server: cloudflare
+CF-RAY: 9f8641512b8a182b-MAA
+alt-svc: h3=":443"; ma=86400
+

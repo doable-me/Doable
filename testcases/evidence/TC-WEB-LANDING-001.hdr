@@ -1,0 +1,23 @@
+HTTP/1.1 200 OK
+Date: Fri, 08 May 2026 05:44:17 GMT
+Content-Type: text/html; charset=utf-8
+Transfer-Encoding: chunked
+Connection: keep-alive
+Cache-Control: s-maxage=31536000
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=x%2BvrT2mZBD%2FIRQn%2BlJ7M4UItXkkA%2BJNemZy%2BqU4hp5TlN%2FgwK9C6h3wG3%2FKKqizRBKwJgw35zOrpIUwo229a6lgVE3wwxyvZxeJVEjzg%2BpcZt5EQALkRa2tDHi%2FH1D%2FC9ZbR3w%3D%3D"}]}
+content-security-policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://cdn.activepieces.com http://localhost:* http://127.0.0.1:* https://*.doable.me; connect-src 'self' https://*.doable.me wss://*.doable.me ws://localhost:* wss://localhost:* ws://127.0.0.1:* wss://127.0.0.1:* http://localhost:* http://127.0.0.1:*; frame-src 'self' http://localhost:* http://127.0.0.1:* https://*.doable.me; frame-ancestors 'self'; object-src 'none'; base-uri 'self'
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+permissions-policy: camera=(), microphone=(), geolocation=(), fullscreen=(self)
+referrer-policy: strict-origin-when-cross-origin
+vary: RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Router-Segment-Prefetch, Accept-Encoding
+x-content-type-options: nosniff
+x-frame-options: SAMEORIGIN
+x-nextjs-cache: HIT
+x-nextjs-prerender: 1
+x-nextjs-stale-time: 300
+x-powered-by: Next.js
+cf-cache-status: DYNAMIC
+Server: cloudflare
+CF-RAY: 9f8626cfdb690bbe-MAA
+alt-svc: h3=":443"; ma=86400
+
