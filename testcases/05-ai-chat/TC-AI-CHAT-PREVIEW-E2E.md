@@ -3,6 +3,8 @@
 API endpoint: `POST https://${ENV}-api.doable.me/projects/{id}/chat`
 Source: `services/api/src/routes/chat/send-handler.ts`
 
+> **Authoring acceptance regex?** Read [`testcases/_AUTHOR-GUIDE.md`](../_AUTHOR-GUIDE.md) first. The corpus runner has rejected functionally-correct AI output because TCs hard-coded literal strings (e.g. `setSelectedPiece` vs `setSelected`, `thumbnails` vs `mini-slides`, `fade` vs `transition-opacity`, split JSX ternaries breaking `White to move` matches). Use the regex menu in the guide and provide both literal + regex variants in your `## Acceptance` block.
+
 These TCs **do not pass** unless the *preview* renders the requested feature correctly. SSE events alone are not sufficient — we measure each phase's timing AND inspect the iframe's DOM to confirm the generated app matches the prompt intent.
 
 ## Stage taxonomy (every preview test must record these timings)

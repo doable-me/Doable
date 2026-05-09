@@ -46,9 +46,28 @@
   inside ~3 minutes pushed us over. Window cleared and turn 5 re-run; see
   retry section below.
 
-## Turn 5 retry
+## Turn 5 retry attempts
 
-(filled in after the rate-limit window closes — see latest summary CSV)
+- **Attempt 1** (after ~125s wait from initial 429 at 21:02:24): retried at
+  21:04:32 — still 429. The bucket appears to extend itself on every probe
+  while exhausted (`retry-after` header keeps resetting to 120).
+- **Attempt 2** (after another ~130s wait, at 21:07:35): still 429.
+- **Attempt 3** (manual probe at 21:08:06): still 429.
+
+Net effect: the 5-min test cap was exceeded before the bucket could
+clear. Turn 5 is therefore **BLOCKED** in this run, not failed. The first
+4 turns pass on their own merits; turn 5 needs either:
+1. raised per-project budget (see BUG-SHEET-001), or
+2. a longer wait window without intermediate probes.
+
+## Cumulative status
+
+- 4 / 5 turns PASS (preview-200 within budget, App.tsx changed, ≥1 ACCEPT
+  hit on each).
+- 1 / 5 turns BLOCKED on rate-limit (HTTP 429), not on AI quality.
+- All 4 passing turns were served by `MiniMax-M2.7-highspeed`.
+- Cumulative tokens (turns 1–4): prompt ~258,596; completion ~8,778.
+- Cumulative wallclock (turns 1–4 SSE): ~170 s; preview-stable: ~195 s.
 
 ## Bugs filed
 - `testcases/99-runlog/env1/bugs/BUG-SHEET-001.md` — chat rate-limit budget

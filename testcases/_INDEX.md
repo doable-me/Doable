@@ -1,5 +1,7 @@
 # Doable End-to-End Test Catalogue
 
+> **Author/evolve test cases?** Start with [`_AUTHOR-GUIDE.md`](_AUTHOR-GUIDE.md) — covers acceptance-regex semantic-equivalence (state setters, Tailwind variants, JSX literal-vs-expression), API path-mount validation, and the 4-step diagnose-then-evolve recipe for multi-turn corpus runs. Every new TC needs an `## Acceptance` block with **both** literal + regex variants.
+
 **Total: 5,689 test cases across 178 markdown files**, executed against `https://staging.doable.me`.
 
 | Area | Folder | Files | Approx cases |

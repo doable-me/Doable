@@ -10,8 +10,9 @@
 | TC-AI-CHAT-ATTACH.md | Doc/csv/pdf attachments, validation, extraction | 40 |
 | TC-AI-CHAT-HISTORY.md | Sessions list, pagination, edit/delete/export, search | 45 |
 | TC-AI-CHAT-MODELS.md | Model selection, BYOK, fallback, audit | 40 |
+| TC-AI-CHAT-MULTIPAGE.md | Multi-page React Router app build (5-turn integration) | 5 |
 
-**Total:** 355 cases
+**Total:** 360 cases
 
 ## Conventions
 - Severity tiers: smoke, critical, high, medium, low
