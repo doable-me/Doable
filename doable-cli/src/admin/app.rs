@@ -181,6 +181,22 @@ pub enum Modal {
         user_idx: usize,
         idx: usize,
     },
+    // ── DB Credentials modals ──
+    /// Step 1: confirm the operator wants to rotate the postgres password.
+    /// `btn`: 0 = Cancel, 1 = Rotate.
+    ConfirmRotateDbPassword {
+        btn: usize,
+    },
+    /// Step 2: in-flight progress while the 5-stage rotation runs.
+    /// `progress_msg` is the current stage's human label.
+    RotateInProgress {
+        progress_msg: String,
+    },
+    /// Step 3: terminal state — either a success summary or a stage failure.
+    RotateResult {
+        success: bool,
+        message: String,
+    },
 }
 
 pub const PLATFORM_ROLES: &[&str] = &["owner", "admin", "member", "viewer"];
@@ -238,6 +254,12 @@ pub struct App {
     pub sc_systemd: Option<sc::ConfigState<sc::SystemdState>>,
     pub sc_nft: Option<sc::ConfigState<sc::NftState>>,
     pub sc_caddy: Option<sc::ConfigState<sc::CaddyState>>,
+    /// Read-only display state for the DB Credentials sub-view.  Built from
+    /// `db_url` + `remote_ctx`; refreshed by `load_server_config_subview`.
+    pub db_credentials: Option<sc::DbCredentialsState>,
+    /// True ⇒ password is shown in cleartext on the DB Credentials sub-view.
+    /// Toggled with `s`.  Always reset to false on screen change.
+    pub db_creds_revealed: bool,
     /// Pending in-memory edits — applied to disk when user hits Apply.
     pub sc_squid_dirty: Option<Vec<String>>,
     pub sc_cloudflared_dirty: Option<Vec<sc::IngressEntry>>,
@@ -291,6 +313,8 @@ impl App {
             sc_systemd: None,
             sc_nft: None,
             sc_caddy: None,
+            db_credentials: None,
+            db_creds_revealed: false,
             sc_squid_dirty: None,
             sc_cloudflared_dirty: None,
             sc_env_dirty: None,
@@ -416,6 +440,21 @@ impl App {
             sc::SubView::Caddy => {
                 self.sc_caddy = Some(sc::load_caddy().await);
             }
+            sc::SubView::DbCredentials => {
+                // No I/O — purely parsed from app.db_url + remote_ctx.
+                match sc::build_db_credentials_state(
+                    &self.db_url,
+                    self.remote_ctx.as_ref(),
+                ) {
+                    Ok(st) => self.db_credentials = Some(st),
+                    Err(e) => {
+                        self.db_credentials = None;
+                        self.toast(format!("DB creds parse error: {e}"), StatusKind::Error);
+                    }
+                }
+                // Always start masked when entering the sub-view.
+                self.db_creds_revealed = false;
+            }
         }
     }
 
@@ -538,6 +577,11 @@ impl App {
                     Some(sc::ConfigState::Loaded(s)) => s.matchers.len(),
                     _ => 0,
                 },
+                // 4 logical rows: server URL, tunnel URL (when remote),
+                // password, rotate button.  We always report 4 so the
+                // selection cursor can land on any of them; the renderer
+                // simply omits the tunnel row when not applicable.
+                sc::SubView::DbCredentials => 4,
             },
             Screen::CreditsAndPlan => self.credit_balances.len(),
             Screen::ApiKeys => self.api_keys.len(),
@@ -679,6 +723,27 @@ impl App {
             KeyCode::Char('4') if self.screen == Screen::ServerConfig => self.go_subview(sc::SubView::Systemd).await,
             KeyCode::Char('5') if self.screen == Screen::ServerConfig => self.go_subview(sc::SubView::Nft).await,
             KeyCode::Char('6') if self.screen == Screen::ServerConfig => self.go_subview(sc::SubView::Caddy).await,
+            KeyCode::Char('7') if self.screen == Screen::ServerConfig => self.go_subview(sc::SubView::DbCredentials).await,
+            // DB Credentials shortcuts — match BEFORE the generic 'a'/'d' arms
+            // so we don't accidentally trigger sc_open_add on this read-only view.
+            KeyCode::Char('s')
+                if self.screen == Screen::ServerConfig
+                    && self.sc_subview == sc::SubView::DbCredentials =>
+            {
+                self.db_creds_revealed = !self.db_creds_revealed;
+            }
+            KeyCode::Char('r')
+                if self.screen == Screen::ServerConfig
+                    && self.sc_subview == sc::SubView::DbCredentials =>
+            {
+                self.open_confirm_rotate_db_password();
+            }
+            KeyCode::Char('c')
+                if self.screen == Screen::ServerConfig
+                    && self.sc_subview == sc::SubView::DbCredentials =>
+            {
+                self.copy_db_url_to_clipboard();
+            }
             KeyCode::Char('a') if self.screen == Screen::ServerConfig => self.sc_open_add(),
             KeyCode::Char('d') if self.screen == Screen::ServerConfig => self.sc_open_delete(),
             KeyCode::Char('A') if self.screen == Screen::ServerConfig => self.sc_open_apply(),
@@ -748,6 +813,12 @@ impl App {
             sc::SubView::Nft | sc::SubView::Caddy => {
                 self.toast("Read-only view — edit via setup-server.sh".into(), StatusKind::Info);
             }
+            sc::SubView::DbCredentials => {
+                self.toast(
+                    "Use 'r' to rotate the password (no add/edit on this view).".into(),
+                    StatusKind::Info,
+                );
+            }
         }
     }
 
@@ -805,6 +876,12 @@ impl App {
             }
             sc::SubView::Systemd | sc::SubView::Nft | sc::SubView::Caddy => {
                 self.toast("Read-only view — no apply action".into(), StatusKind::Info);
+            }
+            sc::SubView::DbCredentials => {
+                self.toast(
+                    "Use 'r' to rotate the password (Apply doesn't apply here).".into(),
+                    StatusKind::Info,
+                );
             }
         }
     }
@@ -919,6 +996,14 @@ impl App {
             }
             sc::SubView::Systemd | sc::SubView::Nft | sc::SubView::Caddy => {
                 self.toast("Read-only view".into(), StatusKind::Info);
+            }
+            sc::SubView::DbCredentials => {
+                // Row 3 (the rotate button) is the only actionable row.
+                // Rows 0-2 are display-only; Enter on the button opens
+                // the confirm modal — same as pressing 'r'.
+                if idx == 3 {
+                    self.open_confirm_rotate_db_password();
+                }
             }
         }
     }
@@ -1304,6 +1389,9 @@ impl App {
             Modal::EditApiKeyTools { .. } => 21,
             Modal::EditModeTools { .. } => 22,
             Modal::PickPlatformRole { .. } => 23,
+            Modal::ConfirmRotateDbPassword { .. } => 24,
+            Modal::RotateInProgress { .. } => 25,
+            Modal::RotateResult { .. } => 26,
         });
 
         match modal_ref_type {
@@ -1331,6 +1419,9 @@ impl App {
             Some(21) => self.modal_edit_api_key_tools(key).await,
             Some(22) => self.modal_edit_mode_tools(key).await,
             Some(23) => self.modal_pick_platform_role(key).await,
+            Some(24) => self.modal_confirm_rotate_db_password(key).await,
+            Some(25) => { /* RotateInProgress: ignore keys; runs to completion */ }
+            Some(26) => self.modal_rotate_result(key).await,
             _ => {}
         }
     }
@@ -2305,6 +2396,9 @@ impl App {
                 let bi = *balance_idx;
                 self.modal = Some(Modal::ConfirmCreditsApply { balance_idx: bi, btn: b });
             }
+            Some(Modal::ConfirmRotateDbPassword { .. }) => {
+                self.modal = Some(Modal::ConfirmRotateDbPassword { btn: b });
+            }
             _ => {}
         }
     }
@@ -2733,5 +2827,190 @@ impl App {
             _ => {}
         }
         self.modal = Some(Modal::EditModeTools { mode_idx, text, cursor, error: None });
+    }
+
+    // ── DB Credentials handlers ────────────────────────
+
+    fn open_confirm_rotate_db_password(&mut self) {
+        if self.db_credentials.is_none() {
+            self.toast("DB credentials not loaded".into(), StatusKind::Error);
+            return;
+        }
+        self.modal = Some(Modal::ConfirmRotateDbPassword { btn: 0 });
+        self.focus = Focus::Modal;
+    }
+
+    fn copy_db_url_to_clipboard(&mut self) {
+        let url = match &self.db_credentials {
+            Some(s) => s.db_url.clone(),
+            None => {
+                self.toast("DB credentials not loaded".into(), StatusKind::Error);
+                return;
+            }
+        };
+        match arboard::Clipboard::new().and_then(|mut c| c.set_text(url)) {
+            Ok(()) => self.toast("Server-local URL copied to clipboard".into(), StatusKind::Success),
+            Err(e) => self.toast(format!("Clipboard error: {e}"), StatusKind::Error),
+        }
+    }
+
+    async fn modal_confirm_rotate_db_password(&mut self, key: KeyEvent) {
+        let btn = match &self.modal {
+            Some(Modal::ConfirmRotateDbPassword { btn }) => *btn,
+            _ => return,
+        };
+        match key.code {
+            KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
+                self.modal = Some(Modal::ConfirmRotateDbPassword { btn: 1 - btn });
+            }
+            KeyCode::Esc => {
+                self.modal = None;
+                self.focus = Focus::Content;
+            }
+            KeyCode::Enter => {
+                if btn == 1 {
+                    self.do_rotate_db_password().await;
+                } else {
+                    self.modal = None;
+                    self.focus = Focus::Content;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    async fn modal_rotate_result(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter | KeyCode::Esc | KeyCode::Char(' ') => {
+                self.modal = None;
+                self.focus = Focus::Content;
+                // Refresh display state — the password we hold now matches
+                // the new one, so re-parse from db_url.
+                self.load_server_config_subview().await;
+            }
+            _ => {}
+        }
+    }
+
+    /// 5-stage rotation pipeline.  We deliberately render between stages so
+    /// the operator sees progress; if we awaited everything in one shot the
+    /// modal would freeze on "Confirming..." for several seconds during the
+    /// systemctl restart at the end.
+    ///
+    /// On success we update `self.db_url` in-place so re-rendering the
+    /// sub-view shows the new password.  Note: the existing PG client
+    /// connection survives the ALTER USER (Postgres only re-checks creds on
+    /// the next auth) so admin doesn't get kicked out.
+    async fn do_rotate_db_password(&mut self) {
+        // Snapshot creds we need across stages.
+        let (user, db) = match &self.db_credentials {
+            Some(s) => (s.user.clone(), s.db.clone()),
+            None => {
+                self.modal = Some(Modal::RotateResult {
+                    success: false,
+                    message: "DB credentials not loaded — cannot rotate.".into(),
+                });
+                return;
+            }
+        };
+        let remote = self.remote_ctx.clone();
+
+        // Stage 1: generate password.
+        self.modal = Some(Modal::RotateInProgress {
+            progress_msg: "Generating new password...".into(),
+        });
+        let new_pass = sc::generate_hex_password().await;
+        if new_pass.len() != 64 || !new_pass.chars().all(|c| c.is_ascii_hexdigit()) {
+            self.modal = Some(Modal::RotateResult {
+                success: false,
+                message: "Stage 1 (generate): produced invalid hex password".into(),
+            });
+            return;
+        }
+
+        // Stage 2: ALTER USER via the existing pg client.  We use a literal
+        // since password is hex-only (no escape concerns), and quote with
+        // single quotes per Postgres SQL string literal rules.
+        self.modal = Some(Modal::RotateInProgress {
+            progress_msg: "Updating Postgres role...".into(),
+        });
+        let alter_sql = format!("ALTER USER \"{}\" WITH PASSWORD '{}'", user.replace('"', "\"\""), new_pass);
+        if let Err(e) = self.client.batch_execute(&alter_sql).await {
+            self.modal = Some(Modal::RotateResult {
+                success: false,
+                message: format!("Stage 2 (ALTER USER) failed: {e}"),
+            });
+            return;
+        }
+
+        // Stage 3: write /etc/doable/.db_pass.  Use printf via stdin to keep
+        // the password out of the process command line / shell history.
+        // We pass the new password as a single-quoted literal to bash; since
+        // it's pure hex, no escaping is needed.
+        self.modal = Some(Modal::RotateInProgress {
+            progress_msg: "Writing /etc/doable/.db_pass...".into(),
+        });
+        let write_cmd = format!(
+            "printf '%s' '{}' | sudo -n tee /etc/doable/.db_pass > /dev/null && sudo -n chmod 600 /etc/doable/.db_pass",
+            new_pass
+        );
+        if let Err(e) = sc::run_remote_or_local(remote.as_ref(), &write_cmd).await {
+            self.modal = Some(Modal::RotateResult {
+                success: false,
+                message: format!("Stage 3 (.db_pass write) failed: {e}"),
+            });
+            return;
+        }
+
+        // Stage 4: update DATABASE_URL in /opt/doable/.env via sed.  We use a
+        // sed delimiter of `|` since the URL contains `:` and `/`.  The new
+        // URL is fully quoted-bracket-safe (hex password).
+        self.modal = Some(Modal::RotateInProgress {
+            progress_msg: "Updating /opt/doable/.env...".into(),
+        });
+        let new_url = format!("postgres://{}:{}@localhost:5432/{}", user, new_pass, db);
+        let sed_cmd = format!(
+            "sudo -n sed -i 's|^DATABASE_URL=.*|DATABASE_URL={}|' /opt/doable/.env",
+            new_url
+        );
+        if let Err(e) = sc::run_remote_or_local(remote.as_ref(), &sed_cmd).await {
+            self.modal = Some(Modal::RotateResult {
+                success: false,
+                message: format!("Stage 4 (.env sed) failed: {e}"),
+            });
+            return;
+        }
+
+        // Stage 5: restart doable.service so the API picks up the new URL.
+        self.modal = Some(Modal::RotateInProgress {
+            progress_msg: "Restarting doable.service...".into(),
+        });
+        let restart_cmd = "sudo -n systemctl restart doable.service".to_string();
+        if let Err(e) = sc::run_remote_or_local(remote.as_ref(), &restart_cmd).await {
+            self.modal = Some(Modal::RotateResult {
+                success: false,
+                message: format!("Stage 5 (systemctl restart) failed: {e}"),
+            });
+            return;
+        }
+
+        // All stages succeeded — patch our in-memory db_url so the sub-view
+        // renders the new password.  When admin reconnects later (e.g. after
+        // an idle disconnect) it'll use this URL automatically.
+        // For tunnel mode the user/pass are the same; we keep the host:port
+        // portion as-is so the tunnel still works.
+        let updated_url = if let Some((u, _, hp, d)) = sc::parse_db_url(&self.db_url) {
+            format!("postgres://{}:{}@{}/{}", u, new_pass, hp, d)
+        } else {
+            new_url
+        };
+        self.db_url = updated_url;
+
+        self.modal = Some(Modal::RotateResult {
+            success: true,
+            message:
+                "Password rotated. Your existing admin connection is still valid; if it drops, restart `doable admin --remote ...` to use the new credentials."
+                    .into(),
+        });
     }
 }

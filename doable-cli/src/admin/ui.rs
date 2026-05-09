@@ -349,7 +349,11 @@ fn render_content_footer(f: &mut Frame, app: &mut App, area: Rect, has_actions: 
             "Enter: Edit allowed tools    \u{2191}\u{2193}: Navigate    Esc: Sidebar"
         }
         Screen::ServerConfig => {
-            "1-4: Tab    Enter: Edit    a: Add    d: Delete    A: Apply    R: Reload    Esc: Sidebar"
+            if app.sc_subview == sc::SubView::DbCredentials {
+                "s: show/hide password    r: rotate    c: copy URL    \u{2191}\u{2193}: Navigate    Esc: Sidebar"
+            } else {
+                "1-7: Tab    Enter: Edit    a: Add    d: Delete    A: Apply    R: Reload    Esc: Sidebar"
+            }
         }
     };
 
@@ -921,7 +925,116 @@ fn render_modal(f: &mut Frame, app: &mut App, screen: Rect) {
             let i = *idx;
             render_modal_pick_platform_role(f, app, screen, ui, i);
         }
+        Modal::ConfirmRotateDbPassword { btn } => {
+            let b = *btn;
+            // Tailored body — make the consequences explicit (admin's existing
+            // session survives but next reconnect needs the new pass).
+            render_modal_confirm_simple(
+                f,
+                app,
+                screen,
+                " Rotate Postgres Password ",
+                "Generate a new password and roll it through .db_pass / .env / API restart?",
+                "Cancel",
+                "Rotate",
+                b,
+            );
+        }
+        Modal::RotateInProgress { progress_msg } => {
+            let m = progress_msg.clone();
+            render_modal_rotate_in_progress(f, screen, &m);
+        }
+        Modal::RotateResult { success, message } => {
+            let succ = *success;
+            let msg = message.clone();
+            render_modal_rotate_result(f, screen, succ, &msg);
+        }
     }
+}
+
+fn render_modal_rotate_in_progress(f: &mut Frame, screen: Rect, progress_msg: &str) {
+    let w = 60u16;
+    let h = 8u16;
+    let area = centered(w, h, screen);
+    f.render_widget(Clear, area);
+    let block = modal_block(" Rotating Postgres Password... ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let p = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(Span::styled(progress_msg.to_string(), sb(c::TEAL))),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Please wait — do not close this window.",
+            s(c::OVERLAY0),
+        )),
+    ])
+    .alignment(Alignment::Center)
+    .style(Style::default().bg(c::MANTLE));
+    f.render_widget(p, inner);
+}
+
+fn render_modal_rotate_result(f: &mut Frame, screen: Rect, success: bool, message: &str) {
+    // Wider modal so a long stage-error stderr is readable.
+    let w = 76u16;
+    let h = 10u16;
+    let area = centered(w, h, screen);
+    f.render_widget(Clear, area);
+    let title = if success {
+        " Rotation Complete "
+    } else {
+        " Rotation Failed "
+    };
+    let block = modal_block(title);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let banner_style = if success { sb(c::GREEN) } else { sb(c::RED) };
+    let banner_text = if success { "SUCCESS" } else { "FAILURE" };
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(banner_text, banner_style)));
+    lines.push(Line::from(""));
+    // Wrap message at ~70 chars so it fits inside w=76.
+    for chunk in wrap_string(message, 70) {
+        lines.push(Line::from(Span::styled(chunk, s(c::TEXT))));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Press Enter or Esc to close.",
+        s(c::OVERLAY0),
+    )));
+
+    let p = Paragraph::new(lines)
+        .alignment(Alignment::Center)
+        .style(Style::default().bg(c::MANTLE));
+    f.render_widget(p, inner);
+}
+
+/// Trivial word-wrap on whitespace; used by the rotation-result modal so a
+/// long stderr message line-wraps cleanly inside the modal.
+fn wrap_string(s: &str, max: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for word in s.split_whitespace() {
+        if cur.is_empty() {
+            cur.push_str(word);
+        } else if cur.len() + 1 + word.len() <= max {
+            cur.push(' ');
+            cur.push_str(word);
+        } else {
+            out.push(cur);
+            cur = word.to_string();
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
 }
 
 fn render_modal_pick_platform_role(
@@ -1432,6 +1545,174 @@ fn render_server_config(f: &mut Frame, app: &mut App, area: Rect) {
         sc::SubView::Systemd => render_sc_systemd(f, app, body_area),
         sc::SubView::Nft => render_sc_nft(f, app, body_area),
         sc::SubView::Caddy => render_sc_caddy(f, app, body_area),
+        sc::SubView::DbCredentials => render_sc_db_credentials(f, app, body_area),
+    }
+}
+
+fn render_sc_db_credentials(f: &mut Frame, app: &mut App, area: Rect) {
+    let st = match &app.db_credentials {
+        Some(s) => s,
+        None => {
+            render_empty(f, "DB credentials not loaded.", area);
+            return;
+        }
+    };
+
+    let block = table_block(" DB Credentials (read-only + Rotate) ");
+    let inner = block.inner(area);
+    f.render_widget(block.clone(), area);
+
+    if inner.height < 4 {
+        return;
+    }
+
+    // Mask the password to a length-stable bullet string when hidden.
+    let pw_display = if app.db_creds_revealed {
+        st.password.clone()
+    } else {
+        // Use a fixed-length mask so the operator can't guess the length.
+        "\u{2022}".repeat(20)
+    };
+
+    // Rebuild the URL we show row-by-row so the password masking is honored.
+    let masked_url = {
+        let pw_in_url = if app.db_creds_revealed {
+            st.password.clone()
+        } else {
+            "\u{2022}".repeat(20)
+        };
+        // Strip scheme://user:<pw>@host/db, then re-glue.
+        if let Some((u, _, hp, d)) = sc::parse_db_url(&st.db_url) {
+            format!("postgres://{}:{}@{}/{}", u, pw_in_url, hp, d)
+        } else {
+            st.db_url.clone()
+        }
+    };
+
+    let sel = app.table_state.selected().unwrap_or(0);
+    let row_style = |row_idx: usize| -> Style {
+        if sel == row_idx {
+            highlight_style()
+        } else {
+            s(c::TEXT)
+        }
+    };
+    let label_style = s(c::OVERLAY0);
+
+    // Layout: each logical row gets 2 visible lines (label + value), plus a
+    // 1-row separator.  Final row 3 is the rotate button.
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Row 0 — Server-local URL
+    lines.push(Line::from(vec![
+        Span::styled(" Server-local URL", label_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("   "),
+        Span::styled(masked_url.clone(), row_style(0)),
+    ]));
+    lines.push(Line::from(""));
+
+    // Row 1 — tunnel URL (only when remote)
+    if let Some(tunnel_masked_template) = &st.tunnel_url {
+        // We rebuild the tunnel URL with the LIVE masking — st.tunnel_url
+        // was constructed with a fixed mask placeholder.  Re-parse from
+        // app.db_url (which holds the actual tunnel host:port + password).
+        let live = if let Some((u, _pw, hp, d)) = sc::parse_db_url(&app.db_url) {
+            let pw_disp = if app.db_creds_revealed {
+                st.password.clone()
+            } else {
+                "\u{2022}".repeat(20)
+            };
+            format!("postgres://{}:{}@{}/{}", u, pw_disp, hp, d)
+        } else {
+            tunnel_masked_template.clone()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(" Your tunnel URL", label_style),
+        ]));
+        lines.push(Line::from(vec![
+            Span::raw("   "),
+            Span::styled(live, row_style(1)),
+        ]));
+        lines.push(Line::from(""));
+    } else {
+        // Even when not remote, reserve row 1 with an explanatory blurb so
+        // the row index → cursor mapping stays stable (content_len = 4).
+        lines.push(Line::from(vec![
+            Span::styled(" Your tunnel URL", label_style),
+        ]));
+        lines.push(Line::from(vec![
+            Span::raw("   "),
+            Span::styled("(none — admin is running ON the server)", row_style(1)),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    // Row 2 — password (separately, so the operator can copy just the pw)
+    lines.push(Line::from(vec![
+        Span::styled(" Password", label_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("   "),
+        Span::styled(pw_display, row_style(2)),
+        Span::raw("   "),
+        Span::styled(
+            if app.db_creds_revealed {
+                "(visible — press 's' to hide)"
+            } else {
+                "(hidden — press 's' to reveal)"
+            },
+            s(c::OVERLAY0),
+        ),
+    ]));
+    lines.push(Line::from(""));
+
+    // Row 3 — Rotate button.
+    let btn_style = if sel == 3 {
+        Style::default()
+            .fg(c::MANTLE)
+            .bg(c::RED)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(c::TEXT).bg(c::SURFACE0)
+    };
+    lines.push(Line::from(vec![
+        Span::raw(" "),
+        Span::styled(" [ Rotate password ] ", btn_style),
+        Span::raw("  "),
+        Span::styled("(press 'r' or Enter)", s(c::OVERLAY0)),
+    ]));
+    lines.push(Line::from(""));
+
+    // Source / context note at the bottom.
+    lines.push(Line::from(vec![
+        Span::styled(format!(" host: {}", st.host_label), s(c::SUBTEXT0)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!(" source: {}", st.source_note), s(c::OVERLAY0)),
+    ]));
+
+    let p = Paragraph::new(lines).style(Style::default().bg(c::BASE));
+    f.render_widget(p, inner);
+
+    // Register click rows so click-to-select still works.  We place 4 logical
+    // hit-rects, one per row, aligned with the label lines above.
+    // Layout: row0 label@0/value@1/blank@2 (3 lines per group → row n at y=3n).
+    let inner_y = inner.y;
+    for i in 0..4u16 {
+        let y = inner_y + i * 3;
+        if y >= inner.y + inner.height {
+            break;
+        }
+        let r = Rect {
+            x: inner.x,
+            y,
+            width: inner.width,
+            height: 2.min(inner.y + inner.height - y),
+        };
+        app.click_targets
+            .push((r, ClickTarget::ContentRow(i as usize)));
     }
 }
 
@@ -1582,7 +1863,10 @@ fn render_subview_tabs(f: &mut Frame, app: &mut App, area: Rect) {
         sc::SubView::Squid => app.sc_squid_dirty.is_some(),
         sc::SubView::Cloudflared => app.sc_cloudflared_dirty.is_some(),
         sc::SubView::EnvFile => app.sc_env_dirty.is_some(),
-        sc::SubView::Systemd | sc::SubView::Nft | sc::SubView::Caddy => false,
+        sc::SubView::Systemd
+        | sc::SubView::Nft
+        | sc::SubView::Caddy
+        | sc::SubView::DbCredentials => false,
     };
     if pending {
         spans.push(Span::styled(

@@ -39,6 +39,7 @@ pub enum SubView {
     Systemd,
     Nft,
     Caddy,
+    DbCredentials,
 }
 
 pub const SUBVIEWS: &[(SubView, &str)] = &[
@@ -48,6 +49,7 @@ pub const SUBVIEWS: &[(SubView, &str)] = &[
     (SubView::Systemd, "systemd Hardening"),
     (SubView::Nft, "nft Egress Jail"),
     (SubView::Caddy, "Caddy Routing"),
+    (SubView::DbCredentials, "DB Credentials"),
 ];
 
 // ─── Data models ──────────────────────────────────────────
@@ -893,4 +895,198 @@ pub async fn apply_env(new_raw: &str) -> Result<(), String> {
         return Err(format!("systemctl restart doable.service failed: {}", stderr.trim()));
     }
     Ok(())
+}
+
+// ─── DB Credentials sub-view ──────────────────────────────
+
+/// Snapshot of the DB connection details we display in the DB Credentials
+/// sub-view. The password is held only for the lifetime of admin's process —
+/// it is NEVER persisted by us; we just parse it back out of `app.db_url`
+/// (which the operator handed us).
+pub struct DbCredentialsState {
+    /// Full server-local URL (with password).  When admin connected via SSH
+    /// tunnel, we rewrite the host portion back from `127.0.0.1:<tunnel>` to
+    /// `localhost:5432` so the operator sees what the SERVER sees.
+    pub db_url: String,
+    pub user: String,
+    pub password: String,
+    pub db: String,
+    /// Friendly host label for the URL the operator is actually connected to
+    /// (e.g. "localhost (server-side)" or "127.0.0.1:55432 (your local tunnel)").
+    pub host_label: String,
+    /// One-line provenance — where these creds were obtained from.
+    pub source_note: String,
+    /// When admin is connected through an SSH tunnel, this is the literal URL
+    /// that the local `doable admin` process connects to (host = 127.0.0.1,
+    /// port = forwarded tunnel port). `None` when running ON the server.
+    pub tunnel_url: Option<String>,
+}
+
+/// Parse `postgres://user:pass@host:port/db` (or `postgresql://...`) into its
+/// 4 user-visible parts.  Returns None for malformed URLs.
+pub fn parse_db_url(url: &str) -> Option<(String, String, String, String)> {
+    let scheme_end = url.find("://")?;
+    let after_scheme = &url[scheme_end + 3..];
+    let at = after_scheme.rfind('@')?;
+    let userinfo = &after_scheme[..at];
+    let hostpart = &after_scheme[at + 1..];
+    let colon = userinfo.find(':')?;
+    let user = userinfo[..colon].to_string();
+    let pass = userinfo[colon + 1..].to_string();
+    // Split host:port from /db (path may also have ?params — we ignore them
+    // for display purposes; rotation rewrites the URL fresh).
+    let (hostport, db) = match hostpart.find('/') {
+        Some(slash) => {
+            let h = hostpart[..slash].to_string();
+            let rest = &hostpart[slash + 1..];
+            let d = match rest.find('?') {
+                Some(q) => rest[..q].to_string(),
+                None => rest.to_string(),
+            };
+            (h, d)
+        }
+        None => (hostpart.to_string(), String::new()),
+    };
+    Some((user, pass, hostport, db))
+}
+
+/// Build the DB Credentials display state from the live db_url plus the
+/// optional remote SSH context.  No I/O — purely a parse + label.
+pub fn build_db_credentials_state(
+    db_url: &str,
+    remote: Option<&crate::admin::RemoteCtx>,
+) -> Result<DbCredentialsState, String> {
+    let (user, password, hostport, db) =
+        parse_db_url(db_url).ok_or_else(|| format!("Could not parse db url"))?;
+
+    if let Some(ctx) = remote {
+        // Tunnel mode: rewrite host back to server-local for the canonical URL.
+        let server_url = format!("postgres://{}:{}@localhost:5432/{}", user, password, db);
+        let host_label = format!("{} (your local tunnel)", hostport);
+        let source_note = format!(
+            "fetched from /opt/doable/.env on the server (via SSH to {})",
+            ctx.spec
+        );
+        Ok(DbCredentialsState {
+            db_url: server_url,
+            user,
+            password,
+            db,
+            host_label,
+            source_note,
+            tunnel_url: Some(format!("postgres://{}:{}@{}/{}",
+                "doable",
+                "********",
+                hostport,
+                "doable",
+            )),
+        })
+    } else {
+        // Local mode: the URL is already server-local.
+        let host_label = format!("{} (server-side)", hostport);
+        let source_note = "read from /opt/doable/.env on this host".to_string();
+        Ok(DbCredentialsState {
+            db_url: db_url.to_string(),
+            user,
+            password,
+            db,
+            host_label,
+            source_note,
+            tunnel_url: None,
+        })
+    }
+}
+
+/// Run a shell command either locally (under `bash -c`) or on the remote
+/// server via SSH.  Used by the rotation pipeline.  Returns combined
+/// stdout+stderr on success, or a single-line error string on failure
+/// (non-zero status, ssh failure, etc).
+pub async fn run_remote_or_local(
+    remote: Option<&crate::admin::RemoteCtx>,
+    shell_cmd: &str,
+) -> Result<String, String> {
+    let out = if let Some(ctx) = remote {
+        // Remote: ssh -i <key> -o BatchMode=yes -o StrictHostKeyChecking=accept-new <spec> '<cmd>'
+        let key = ctx.ssh_key.to_string_lossy().to_string();
+        Command::new("ssh")
+            .arg("-i")
+            .arg(&key)
+            .arg("-o")
+            .arg("BatchMode=yes")
+            .arg("-o")
+            .arg("StrictHostKeyChecking=accept-new")
+            .arg(&ctx.spec)
+            .arg(shell_cmd)
+            .output()
+            .await
+            .map_err(|e| format!("ssh failed to spawn: {}", e))?
+    } else {
+        // Local: bash -c '<cmd>'
+        Command::new("bash")
+            .arg("-c")
+            .arg(shell_cmd)
+            .output()
+            .await
+            .map_err(|e| format!("bash failed to spawn: {}", e))?
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    if out.status.success() {
+        // Combined output for visibility (stdout first, then stderr if any).
+        let mut combined = stdout;
+        if !stderr.trim().is_empty() {
+            if !combined.is_empty() {
+                combined.push('\n');
+            }
+            combined.push_str(&stderr);
+        }
+        Ok(combined)
+    } else {
+        let body = if stderr.trim().is_empty() {
+            stdout
+        } else {
+            stderr
+        };
+        Err(body.trim().to_string())
+    }
+}
+
+/// Generate a 64-hex-char password (32 random bytes) without pulling in the
+/// `rand` crate.  Mixes nanos timing + a self-hashing FNV-1a chain to stretch
+/// entropy enough to make brute-force unattractive for a one-shot rotation.
+/// For higher-grade randomness we fall back to `openssl rand -hex 32` when
+/// available (which we already require on every doable server for setup).
+pub async fn generate_hex_password() -> String {
+    // Try openssl first.
+    if let Ok(out) = Command::new("openssl")
+        .args(["rand", "-hex", "32"])
+        .output()
+        .await
+    {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) {
+                return s;
+            }
+        }
+    }
+    // Fallback: nanos-seeded FNV chain. Not cryptographically pristine but
+    // good enough as a last-ditch (the operator can always re-rotate).
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let mut state: u64 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0xcbf29ce484222325);
+    let pid = std::process::id() as u64;
+    state ^= pid.wrapping_mul(0x100000001b3);
+    let mut out = String::with_capacity(64);
+    for _ in 0..32 {
+        state ^= state.wrapping_shl(13);
+        state ^= state.wrapping_shr(7);
+        state ^= state.wrapping_shl(17);
+        state = state.wrapping_mul(0x100000001b3);
+        let byte = (state & 0xff) as u8;
+        out.push_str(&format!("{:02x}", byte));
+    }
+    out
 }
