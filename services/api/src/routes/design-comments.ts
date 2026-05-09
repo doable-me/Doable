@@ -9,7 +9,14 @@ import { INTERNAL_SECRET } from "../lib/secrets.js";
 const comments = designCommentQueries(sql);
 const projects = projectQueries(sql);
 
-export const designCommentRoutes = new Hono<AuthEnv>();
+// BUG-WSI-003: `strict: false` makes the router treat `/design-comments/:id`
+// and `/design-comments/:id/` as the same route, so external clients that
+// build URLs by string concatenation (and inadvertently end up with a
+// trailing slash) reach the handler instead of being bounced through the
+// global 308 trailing-slash middleware in services/api/src/index.ts —
+// which under some edges (Cloudflare/Caddy + auth header propagation) was
+// observed to surface as a permanent 308 with no usable Location header.
+export const designCommentRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── Internal endpoints (for WS server) ───────────────────────────────
 // POST /design-comments/:projectId/internal — persist a comment from WS

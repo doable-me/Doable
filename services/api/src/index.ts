@@ -248,7 +248,14 @@ app.use("*", async (c, next) => {
     path.length > 1 &&
     path.endsWith("/") &&
     !path.startsWith("/preview/") &&
-    !path.startsWith("/thumbnails/")
+    !path.startsWith("/thumbnails/") &&
+    // BUG-WSI-003: design-comments router is registered with
+    // `strict: false` so it accepts both `/design-comments/:id` and
+    // `/design-comments/:id/`. Skipping the 308 redirect here prevents
+    // a permanent redirect (which Cloudflare/Caddy can cache and which
+    // some clients dropped the Authorization header on) from masking
+    // an otherwise-valid request.
+    !path.startsWith("/design-comments/")
   ) {
     const url = new URL(c.req.url);
     url.pathname = path.replace(/\/+$/, "");
