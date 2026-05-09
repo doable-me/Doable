@@ -73,7 +73,11 @@ async function assertToolCapableModel(providerId: string | undefined, modelId: s
 }
 
 const sendMessageSchema = z.object({
-  content: z.string().min(1).max(100_000),
+  // BUG-AI-002: trim before length check so "   \n\t  " is rejected as empty
+  // rather than silently passing validation, scaffolding, and burning a credit.
+  content: z.string().max(100_000).transform((s) => s.trim()).refine((s) => s.length >= 1, {
+    message: "content must be non-empty after trim",
+  }),
   // Optional short label to persist in chat history in place of `content` (which
   // may contain large injected tool/skill instructions that shouldn't pollute
   // the user-visible transcript). The LLM still receives the full `content`.
@@ -94,6 +98,10 @@ const sendMessageSchema = z.object({
   })).max(5).optional(),
   // Project files to attach as context (relative paths within the project)
   projectFiles: z.array(z.string().max(500)).max(10).optional(),
+  // BUG-AI-003: explicit opt-in for the /editor/new auto-scaffold flow.
+  // When false (default), POST to a nonexistent project ID returns 404
+  // instead of silently creating a phantom project + burning a credit.
+  createIfMissing: z.boolean().optional().default(false),
 });
 
 export function registerSendHandler(app: Hono<AuthEnv>) {
@@ -103,14 +111,18 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
     zValidator("json", sendMessageSchema),
     async (c) => {
       const projectId = c.req.param("id");
-      const { content, displayContent, mode, model, provider, providerId, copilotAccountId, attachments, projectFiles } = c.req.valid("json");
+      const { content, displayContent, mode, model, provider, providerId, copilotAccountId, attachments, projectFiles, createIfMissing } = c.req.valid("json");
       const userId = c.get("userId")!;
 
       // Verify project access — must be at least a member (viewers are read-only)
       let chatProject = await projectQueries(sql).findById(projectId);
 
-      // Auto-create project when ID doesn't exist (from /editor/new flow)
-      if (!chatProject) {
+      // BUG-AI-003: never auto-scaffold a phantom project on POST unless the
+      // caller explicitly opts in via createIfMissing=true (the /editor/new
+      // flow). Without this gate, anyone could POST to a random UUID and burn
+      // a credit while the server scaffolds, starts a dev server, and runs an
+      // agent against a project that never existed.
+      if (!chatProject && createIfMissing) {
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (uuidRegex.test(projectId)) {
           const userWorkspaces = await workspaceQueries(sql).listByUser(userId);

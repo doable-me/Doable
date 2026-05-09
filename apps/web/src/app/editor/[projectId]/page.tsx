@@ -5378,7 +5378,35 @@ export default function EditorPage() {
                             </>
                           )}
                           <div className={msg.isError ? "flex-1 min-w-0 font-medium text-[13px]" : ""}>
-                            {msg.content && (
+                            {msg.isError && msg.content && /AI is not configured/i.test(msg.content) ? (
+                              // Friendly CTA replaces the raw "Copilot SDK error: AI is not configured…"
+                              // string from the SSE stream. See BUG-WEB-AI-001.
+                              <div className="space-y-2">
+                                <div className="font-semibold text-red-300">
+                                  AI provider not connected
+                                </div>
+                                <div className="text-[12px] text-red-400/90 leading-relaxed">
+                                  This workspace does not have an AI provider configured yet. Connect a
+                                  GitHub Copilot account or add a custom provider key (BYOK) to start
+                                  building.
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                  <a
+                                    href="/ai-settings"
+                                    className="inline-flex items-center gap-1.5 rounded-md bg-brand-500 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-brand-600 transition-colors no-underline"
+                                  >
+                                    <Settings className="h-3.5 w-3.5" />
+                                    Connect AI provider
+                                  </a>
+                                  <a
+                                    href="/admin/ai-settings"
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-red-500/40 bg-transparent px-3 py-1.5 text-[12px] font-medium text-red-300 hover:bg-red-500/10 transition-colors no-underline"
+                                  >
+                                    Platform AI settings
+                                  </a>
+                                </div>
+                              </div>
+                            ) : msg.content && (
                               extractFunctionSteps(msg.content).length > 0 && stripFunctionMarkup(msg.content).length === 0
                                 ? renderFunctionStepList(msg.content)
                                 : <MemoizedMessageContent content={stripFunctionMarkup(msg.content)} />

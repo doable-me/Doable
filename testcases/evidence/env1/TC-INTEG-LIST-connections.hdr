@@ -1,0 +1,28 @@
+HTTP/1.1 403 Forbidden
+Date: Sat, 09 May 2026 18:43:23 GMT
+Content-Type: application/json
+Content-Length: 42
+Connection: keep-alive
+access-control-allow-credentials: true
+access-control-allow-origin: https://<env>.doable.me
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=2.3;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_541dc9c2f2094718
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=tH6CE8%2F0rEpf1xkq%2BEq1oThAoZORZbVLRLncHJ1mxBTEGZ2q63lFqTKbI0KwKxaMTww5RU3n2SAwsYUpySXvTyD7%2BROsL3ikspNLaGFdmRqQTq6OmVt5AhOl6FoAelDnGuOr6gAiEw%3D%3D"}]}
+Server: cloudflare
+CF-RAY: 9f92d973ead77fc2-MAA
+alt-svc: h3=":443"; ma=86400
+

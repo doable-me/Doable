@@ -1,0 +1,32 @@
+HTTP/1.1 429 Too Many Requests
+Date: Sat, 09 May 2026 18:40:39 GMT
+Content-Type: application/json
+Content-Length: 54
+Connection: keep-alive
+access-control-allow-credentials: true
+access-control-allow-origin: https://<env>.doable.me
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+retry-after: 3600
+server-timing: total;dur=0.5;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-ratelimit-limit: 3
+x-ratelimit-remaining: 0
+x-ratelimit-reset: 3600
+x-request-id: req_998c81d77b8e4943
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=9lD0f1PlVosPk%2FpjhLfUooi9QcBC4BjajgJMSSafw%2BQg7ANdef7F2KBme%2BHrnzAKpGCPPZZLW4%2BydvJ7XjDuYTRPcidCKVCI1ngH4b1r3WbxMDlQmgBee8JNLlLVaZF37hIDVbr1%2Bw%3D%3D"}]}
+Server: cloudflare
+CF-RAY: 9f92d5746d9c0553-MAA
+alt-svc: h3=":443"; ma=86400
+

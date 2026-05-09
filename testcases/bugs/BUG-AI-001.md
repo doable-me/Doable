@@ -1,7 +1,7 @@
 # BUG-AI-001 — `chat` mode rejected as invalid enum
 
 **Severity:** medium
-**Found:** 2026-05-10 by qa-ai on https://zantaz-api.doable.me
+**Found:** 2026-05-10 by qa-ai on https://<env>-api.doable.me
 **Test:** TC-AI-CHAT-SEND-003
 
 ## Reproduction

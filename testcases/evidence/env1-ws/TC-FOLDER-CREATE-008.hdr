@@ -1,0 +1,28 @@
+HTTP/1.1 400 Bad Request
+Date: Sat, 09 May 2026 18:41:49 GMT
+Content-Type: application/json
+Content-Length: 97
+Connection: keep-alive
+access-control-allow-credentials: true
+access-control-allow-origin: https://<env>.doable.me
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=1.8;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-request-id: req_d8d4ccb748ba405f
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=3bYasqRKHwjaYv276q39nvX4fJImO%2FbZC%2BL6HAH9MK31mIdo0pO8wUnsN1rYD6vkIWXy9Pg6NPXVVxfGbkfBEtjWIcWbuFlMmUxQOt793ssQhPyZRIp6FRSmD9yDxDXhCZUBPuX2AA%3D%3D"}]}
+Server: cloudflare
+CF-RAY: 9f92d7293ff57eee-MAA
+alt-svc: h3=":443"; ma=86400
+

@@ -1,7 +1,7 @@
 # BUG-WEB-AI-001 — Editor surfaces raw "Copilot SDK error: AI is not configured" instead of a friendly setup CTA
 
 **Severity:** medium (UX / first-run experience)
-**Found:** 2026-05-10 by lead via Chrome MCP on https://zantaz.doable.me
+**Found:** 2026-05-10 by lead via Chrome MCP on https://<env>.doable.me
 **Test:** TC-WEB-EDITOR-AI-CONFIG-001 (new — evolved during run)
 **Project under test:** /editor/88279d57-29fa-42f0-bef9-3c5dcd8fde1d
 
@@ -29,4 +29,4 @@ Repeated multiple times. No CTA, no link, no inline "Configure" button. Live pre
 - Optional: gate dashboard omnibar submit behind the same precondition.
 
 ## Context
-zantaz `/opt/doable/.env` has no `COPILOT_API_KEY` (or equivalent BYOK secret). Same workspace's credit_balances row is enterprise/100k daily, so credit-side is fine — only the upstream provider is missing. This is the most common first-run trip-up after a fresh install.
+Server `/opt/doable/.env` has no `COPILOT_API_KEY` (or equivalent BYOK secret). Same workspace's credit_balances row is enterprise/100k daily, so credit-side is fine — only the upstream provider is missing. This is the most common first-run trip-up after a fresh install.

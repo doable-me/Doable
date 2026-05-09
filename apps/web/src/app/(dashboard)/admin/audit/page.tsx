@@ -61,6 +61,8 @@ export default function AdminAuditPage() {
   const [stats, setStats] = useState<AuditStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   const queryString = params.toString();
 
@@ -70,6 +72,7 @@ export default function AdminAuditPage() {
     async function load() {
       setLoading(true);
       setError(null);
+      setErrorStatus(null);
       try {
         const [list, statsRes] = await Promise.all([
           apiFetch<{ conversations: ConversationRow[] }>(
@@ -85,8 +88,16 @@ export default function AdminAuditPage() {
         }
       } catch (e) {
         if (!cancelled) {
+          // Surface HTTP status when available so a 404 can be distinguished
+          // from a transient/network failure in the empty-state UI below.
+          const status =
+            e && typeof e === "object" && "status" in e && typeof (e as { status?: unknown }).status === "number"
+              ? ((e as { status: number }).status)
+              : null;
+          setErrorStatus(status);
           setError(e instanceof Error ? e.message : "Failed to load audit data");
           setConversations([]);
+          setStats(null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -96,7 +107,7 @@ export default function AdminAuditPage() {
     return () => {
       cancelled = true;
     };
-  }, [isPlatformAdmin, queryString]);
+  }, [isPlatformAdmin, queryString, reloadTick]);
 
   if (adminLoading) {
     return (
@@ -154,12 +165,30 @@ export default function AdminAuditPage() {
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">
-            {error}
+          <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <div className="font-medium text-red-300">
+                  {errorStatus === 404
+                    ? "Audit log is not yet enabled on this platform"
+                    : errorStatus
+                    ? `Audit endpoint is unavailable (HTTP ${errorStatus})`
+                    : "Could not load audit data"}
+                </div>
+                <div className="mt-0.5 text-xs text-red-400/80">{error}</div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReloadTick((t) => t + 1)}
+              >
+                Retry
+              </Button>
+            </div>
           </div>
         )}
 
-        <ConversationTable rows={conversations} loading={loading} />
+        <ConversationTable rows={conversations} loading={loading && !error} />
       </div>
     </div>
   );

@@ -3,14 +3,14 @@
 **Severity:** medium (information disclosure / DoS surface)
 **Filed by:** workspace-shard executor
 **Date:** 2026-05-10
-**Test:** TC-TEMPL-LIST-noauth on https://zantaz-api.doable.me
+**Test:** TC-TEMPL-LIST-noauth on https://<env>-api.doable.me
 
 ## Summary
 `GET /templates` returns 200 with the full template registry (template ids, names, descriptions, official flag, tags, code-files reference, etc.) when called without an `Authorization` header.
 
 ## Repro
 ```
-curl -i https://zantaz-api.doable.me/templates
+curl -i https://<env>-api.doable.me/templates
 # HTTP/2 200
 # {"data":{"templates":[{"id":"blank","name":"Blank Project","description":"Minimal React + Vite + Tailwind CSS v4 + shadcn/ui starter...","category":"starter","tags":["react","vite","tailwind","typescript","starter"],"previewImageUrl":null,"isOfficial":true,"file...
 ```

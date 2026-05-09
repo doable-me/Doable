@@ -1,6 +1,6 @@
 # Preview + BYOK AI broke on a v2 install — root causes & fix
 
-**Date:** 2026-05-09 — observed during the zantaz audit on a fresh v2 install. The findings below apply to **any** v2 install with the same configuration (`HTTP_PROXY` set globally + non-root API user), not just that one host.
+**Date:** 2026-05-09 — observed during the operator audit on a fresh v2 install. The findings below apply to **any** v2 install with the same configuration (`HTTP_PROXY` set globally + non-root API user), not just that one host.
 
 User report: "creating apps stuck compiling, switches between 2 statuses, ends up in timeout. preview does not work. I added an LLM provider, it does not work."
 

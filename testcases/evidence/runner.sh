@@ -1,16 +1,35 @@
 #!/usr/bin/env bash
-# Doable staging test runner.
+# Doable E2E test runner — works for any operator environment.
+# Usage: ENV_NAME=staging ./runner.sh
+#   ENV_NAME  — the subdomain prefix (e.g. "staging", "prod", "client1")
+#               API will be https://${ENV_NAME}-api.doable.me
+#               Web will be https://${ENV_NAME}.doable.me
+#   If ENV_NAME is unset, defaults to "dev" and uses _tokens.json.
 set -u
-EVIDENCE_DIR=/c/Users/gj/Documents/workspace/doable/testcases/evidence
-RUNLOG=/c/Users/gj/Documents/workspace/doable/testcases/99-runlog/RUNLOG.md
-# Path that Windows Python can read:
-TOKENS_WIN='C:/Users/gj/Documents/workspace/doable/testcases/evidence/_tokens.json'
+
+: "${ENV_NAME:=dev}"
+: "${RUN_DATE:=$(date -u +%Y-%m-%d)}"
+
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+if [ "$ENV_NAME" = "dev" ]; then
+  EVIDENCE_DIR="$REPO_ROOT/testcases/evidence"
+  TOKENS_FILE="$REPO_ROOT/testcases/evidence/_tokens.json"
+  RUNLOG="$REPO_ROOT/testcases/99-runlog/RUNLOG.md"
+else
+  EVIDENCE_DIR="$REPO_ROOT/testcases/evidence/${ENV_NAME}"
+  TOKENS_FILE="$REPO_ROOT/testcases/evidence/_tokens-${ENV_NAME}.json"
+  RUNLOG="$REPO_ROOT/testcases/99-runlog/${ENV_NAME}/RUN-${RUN_DATE}.md"
+  mkdir -p "$EVIDENCE_DIR" "$(dirname "$RUNLOG")"
+fi
+
+API="https://${ENV_NAME}-api.doable.me"
 
 token_for() {
-  TOKEN_USER="$1" python3 -c "import json,os; print(json.load(open(r'$TOKENS_WIN'))[os.environ['TOKEN_USER']]['access'])"
+  TOKEN_USER="$1" python3 -c "import json,os; print(json.load(open(r'$TOKENS_FILE'))[os.environ['TOKEN_USER']]['access'])"
 }
 uid_for() {
-  TOKEN_USER="$1" python3 -c "import json,os; print(json.load(open(r'$TOKENS_WIN'))[os.environ['TOKEN_USER']]['user_id'])"
+  TOKEN_USER="$1" python3 -c "import json,os; print(json.load(open(r'$TOKENS_FILE'))[os.environ['TOKEN_USER']]['user_id'])"
 }
 
 run_tc() {
@@ -37,4 +56,4 @@ run_tc() {
   echo "$result $status $tc_id"
 }
 export -f run_tc token_for uid_for
-export EVIDENCE_DIR RUNLOG TOKENS_WIN
+export EVIDENCE_DIR RUNLOG TOKENS_FILE API ENV_NAME

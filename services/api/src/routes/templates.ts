@@ -12,7 +12,17 @@ export const templateRoutes = new Hono<AuthEnv>();
 
 const scaffold = scaffolder(sql);
 
-// ─── Public Routes ──────────────────────────────────────────
+// ─── Auth gate (BUG-WS-003) ─────────────────────────────────
+// `GET /templates` and `GET /templates/:id` previously returned the full
+// registry — including `codeFiles` payloads — to unauthenticated callers.
+// That's an information-disclosure / scraping surface inconsistent with
+// the rest of the API which requires `Authorization: Bearer <jwt>`.
+// Gate the listing and detail endpoints with the JWT middleware. The
+// `/:id/preview` HTML render stays public because it is loaded by the
+// dashboard iframe (which cannot carry an Authorization header) and the
+// rendered HTML does not expose the underlying `codeFiles` source.
+templateRoutes.use("/", authMiddleware);
+templateRoutes.use("/:id", authMiddleware);
 
 /**
  * GET /templates

@@ -1,0 +1,1 @@
+{"success":false,"error":{"issues":[{"code":"invalid_type","expected":"object","received":"string","path":["attachments",0],"message":"Expected object, received string"}],"name":"ZodError"}}
