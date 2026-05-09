@@ -1,0 +1,43 @@
+[package]
+name = "doable"
+version = "0.3.0"
+edition = "2021"
+description = "All-in-one TUI for Doable — install a fresh server and manage existing ones (local or remote over SSH)"
+license = "MIT"
+
+[[bin]]
+name = "doable"
+path = "src/main.rs"
+
+[dependencies]
+# UI
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# Async runtime — `full` covers the admin module's needs; the installer
+# module's explicit feature list is a strict subset.
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+
+# CLI + errors
+clap = { version = "4", features = ["derive", "env"] }
+anyhow = "1"
+
+# Data
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Installer-specific
+arboard = { version = "3", default-features = false }
+zeroize = "1"
+
+# Admin-specific
+tokio-postgres = { version = "0.7", features = ["with-uuid-0_8", "with-chrono-0_4"] }
+uuid = { version = "0.8", features = ["v4"] }
+chrono = "0.4"
+dotenvy = "0.15"
