@@ -9,8 +9,14 @@
 | BUG-AI-002 | medium | FIXED + DEPLOYED | PASS — whitespace-only content → 400 (stops credit burn on empty prompts) |
 | BUG-AI-003 | high | FIXED + DEPLOYED | PASS — POST chat to fresh nonexistent UUID → 404; opt-in `createIfMissing:true` still 200 (closes phantom-project credit leak) |
 | BUG-ADMIN-001 | low | OPEN (coverage gap) | Many admin routes (`/admin/audit`, `/admin/runtime`, `/admin/feature-flags` etc) return 404 — some are intentional (admin sub-views call different endpoints), some are impl gaps |
-| BUG-WEB-AI-001 | medium | OPEN (fix-web-ux running) | First-run AI-not-configured shows raw SDK error in chat — needs friendly "Connect AI provider" CTA |
-| BUG-WEB-ADMIN-001 | medium | OPEN (fix-web-ux running) | `/admin/audit` page hangs on "Loading..." when underlying API returns 404 — needs error/empty state |
+| BUG-WEB-AI-001 | medium | RE-PATCHED + DEPLOYED | 2nd-pass patch removed `msg.isError` gate, added data-testid="ai-not-configured-cta", primary CTA → /admin?tab=users (real route). Trigger pending: now that all qa workspaces have MiniMax provider, the error condition no longer fires for normal runs — CTA stays dormant. Verify via dev tools: `document.querySelector('[data-testid="ai-not-configured-cta"]')` should be non-null when condition is forced. |
+| BUG-WEB-ADMIN-001 | medium | RESOLVED | After deploy /admin/audit renders fully (4 sessions, 8 messages, 2 users); error/empty-state card stays dormant for future genuine 404s |
+| BUG-PUB-001 | high | FIXED + DEPLOYED + VERIFIED | PASS — `/billing/balance`, `/billing/topup/packages`, `/billing/topup`, `/billing/invoices` all return 200 with proper schemas (4 packages: small/medium/large/xlarge; balance returns dailyRemaining/dailyMax/etc) |
+| BUG-PUB-004 | critical | FIRST-PATCH-INSUFFICIENT | First fix added install-step before build but gated by `node_modules missing`. Retest revealed scaffold install runs --omit=dev so node_modules is partial (missing vite/typescript). Second-pass fix-pub-004b agent in flight: A) drop --omit=dev from scaffold install B) probe build-tool presence in builder gate |
+| BUG-PUB-002 | medium | OPEN | /billing/portal returns 400 on empty body in Stripe-bypass mode; should 503 |
+| BUG-PUB-003 | high | OPEN | /marketplace anon → 401; should be public per docs (workaround: /marketplace/listings) |
+| BUG-WSI-001..004 | mixed | OPEN | WS room.join no presence ack; /integrations/connections requires workspaceId; /design-comments/:id 308 redirect; /notifications API unmounted |
+| BUG-AI-PREVIEW-001 | **CRITICAL** | RCA-IN-FLIGHT (fix-preview-spawn) | Live preview never spawns. AI writes correct code (verified — counter app exact match), files land on disk, but no vite process starts; `pgrep vite` 0 results, /admin/dev-servers empty, /preview-proxy/<id>/ 404. The "Compiling project… (Xs)" SSE messages are synthetic timer output, not real process state. End-user value-prop ("see your app live") is NON-FUNCTIONAL on this build. |
 
 ## Retest commands (<env>)
 ```bash
