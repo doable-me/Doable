@@ -172,7 +172,23 @@ function generateSlug(name: string): string {
 
 projectListRoutes.post("/", async (c) => {
   const userId = c.get("userId");
-  const body = await c.req.json();
+  const rawBody = await c.req.json();
+  // Accept snake_case aliases for legacy clients (workspace_id, template_id, folder_id, framework_id).
+  // Without this, zod silently strips unknown keys and the handler falls back to the user's first
+  // workspace (their personal one), which silently mis-routes the project. See BUG-PWA-002.
+  const body = (rawBody && typeof rawBody === "object" && !Array.isArray(rawBody))
+    ? {
+        ...rawBody,
+        workspaceId: (rawBody as Record<string, unknown>).workspaceId
+          ?? (rawBody as Record<string, unknown>).workspace_id,
+        templateId: (rawBody as Record<string, unknown>).templateId
+          ?? (rawBody as Record<string, unknown>).template_id,
+        folderId: (rawBody as Record<string, unknown>).folderId
+          ?? (rawBody as Record<string, unknown>).folder_id,
+        frameworkId: (rawBody as Record<string, unknown>).frameworkId
+          ?? (rawBody as Record<string, unknown>).framework_id,
+      }
+    : rawBody;
   const parsed = createSchema.safeParse(body);
 
   if (!parsed.success) {
