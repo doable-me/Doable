@@ -4,6 +4,14 @@ API base: `https://staging-api.doable.me/workspaces`. All require `Authorization
 Source: `services/api/src/routes/workspaces.ts`.
 Slug regex `/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/`, length 3-48.
 
+## Membership-check-before-lookup note (added 2026-05-10 from env1 run)
+For all `/workspaces/:id/*` reads:
+- Bogus-but-syntactically-valid UUID → HTTP 403 `Not a member of this workspace` (NOT 404).
+- Non-UUID id → HTTP 400 `Invalid workspace id`.
+The 403-on-bogus is the membership middleware short-circuiting before existence check (prevents
+enumeration). Tests that previously expected 404 for a non-existent UUID should accept 403 as
+the semantic equivalent (per AUTHOR-GUIDE — regex pitfall correction, not a bug).
+
 ## TC-WS-CRUD-001 — GET /workspaces lists user's workspaces (happy)
 - **Pre:** Login as `qa-owner@doable.test`. User has at least 1 ws.
 - **Steps:** GET /workspaces.

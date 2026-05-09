@@ -21,10 +21,18 @@ Enabled frameworks (default): `vite-react`, `nextjs-app`. Disabled frameworks re
 - **Severity:** smoke
 
 ## TC-PROJ-CREATE-003 — Create project explicitly with frameworkId=nextjs-app
-- **Pre:** authenticated as qa-owner.
+- **Pre:** authenticated as qa-owner; verify `nextjs-app` appears in `GET /frameworks` for the
+  target environment first (per-env operator config — `DOABLE_ENABLED_FRAMEWORKS`).
 - **Steps:** `POST /projects` body `{"name":"Next App","workspaceId":<wsId>,"frameworkId":"nextjs-app"}`.
-- **Expected:** 201; `data.framework_id === "nextjs-app"`; eventual file tree contains `app/page.tsx`, `app/layout.tsx`, `next.config.ts` (or .js).
+- **Expected:**
+  - If `nextjs-app` is enabled on the env: 201; `data.framework_id === "nextjs-app"`; eventual
+    file tree contains `app/page.tsx`, `app/layout.tsx`, `next.config.ts` (or `.js`).
+  - If `nextjs-app` is NOT enabled on the env (e.g. env1/zantaz): 403 with body
+    `{"error":"Framework \"nextjs-app\" is currently disabled by the platform admin."}`.
+    Record as INFO/PASS depending on configured set.
 - **Severity:** smoke
+- **Note (2026-05-10, env1 run):** zantaz env has only `vite-react` enabled, so the 403 path
+  applies. TC corrected from absolute "201" to env-aware expectation per AUTHOR-GUIDE.
 
 ## TC-PROJ-CREATE-004 — Create project with disabled framework returns 403
 - **Pre:** authenticated as qa-owner; `DOABLE_ENABLED_FRAMEWORKS` does NOT include `django`.
@@ -49,6 +57,23 @@ Enabled frameworks (default): `vite-react`, `nextjs-app`. Disabled frameworks re
 - **Steps:** `POST /projects` body `{"name":"NextPrompt","workspaceId":<wsId>,"prompt":"build a nextjs marketing site"}`.
 - **Expected:** 201; `data.framework_id === "nextjs-app"`.
 - **Severity:** medium
+
+## TC-PROJ-CREATE-008b — POST /projects without workspaceId silently picks a workspace (BUG)
+- **Source:** sibling TC added 2026-05-10 from env1 corpus run; see BUG-CORPUS-PROJ-001.md.
+- **Pre:** authenticated as qa-owner who owns >=1 workspace.
+- **Steps:** `POST /projects` body `{"name":"X"}` — `workspaceId` deliberately omitted.
+- **Expected (per spec):** 400 `{"error":"Validation failed","details":{"workspaceId":["Required"]}}`.
+- **Actual on env1:** 201 with the new project assigned to the caller's most-recent /default
+  workspace silently. See `services/api/src/routes/projects.ts` schema — should be required.
+- **Severity:** medium (privacy / multi-workspace data routing risk)
+
+## TC-PROJ-CREATE-008c — GET /projects/:id with non-UUID returns 500 (BUG)
+- **Source:** sibling TC added 2026-05-10 from env1 corpus run; see BUG-CORPUS-PROJ-002.md.
+- **Steps:** `GET /projects/not-a-uuid` with valid auth.
+- **Expected:** 400 `{"error":"Invalid project id"}` (mirroring workspaces handler).
+- **Actual on env1:** 500 `{"error":"Internal Server Error"}` — likely an unhandled
+  Postgres `invalid input syntax for type uuid` error.
+- **Severity:** low
 
 ## TC-PROJ-CREATE-008 — Workspace default framework applied when no explicit/prompt value
 - **Pre:** workspace_ai_settings row sets `default_framework_id = 'nextjs-app'` for the workspace.
