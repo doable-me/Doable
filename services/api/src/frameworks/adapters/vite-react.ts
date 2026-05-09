@@ -71,7 +71,7 @@ const INSTALL_TIMEOUT_MS = 180_000;
 function runNpmInstall(ctx: FrameworkContext): Promise<InstallResult> {
   return new Promise<InstallResult>((resolve, reject) => {
     const start = Date.now();
-    const child = spawn("npm", ["install", "--legacy-peer-deps", "--loglevel", "http"], {
+    const child = spawn("npm", ["install", "--legacy-peer-deps", "--include=dev", "--loglevel", "http"], {
       cwd: ctx.projectPath,
       shell: true,
       stdio: "pipe",
@@ -79,6 +79,15 @@ function runNpmInstall(ctx: FrameworkContext): Promise<InstallResult> {
         ...process.env,
         ...ctx.env,
         FORCE_COLOR: "0",
+        // BUG-PUB-004: when the API process itself runs with NODE_ENV=production
+        // (the systemd default on dodev/zantaz), npm install silently switches
+        // to --omit=dev and skips devDependencies (vite, @vitejs/plugin-react,
+        // typescript, etc.). The publish builder then runs `vite build`, the
+        // project's own vite.config.ts does `import { defineConfig } from "vite"`,
+        // and the build aborts with UNRESOLVED_IMPORT. Force NODE_ENV=development
+        // for the install spawn ONLY so devDeps are always pulled, and pair it
+        // with --include=dev as a belt-and-braces guard.
+        NODE_ENV: "development",
       },
     });
 
@@ -177,6 +186,11 @@ export const viteReactAdapter: FrameworkAdapter = {
   id: "vite-react",
   family: "node",
   displayName: "Vite + React",
+  // BUG-PUB-004: the publish builder probes node_modules/vite/package.json
+  // before running install(). A bare `node_modules/` populated with only
+  // production deps (no vite) is otherwise treated as "already installed"
+  // and the build then fails resolving `vite` in vite.config.ts.
+  requiredBuildTool: "vite",
   capabilities: new Set([
     "static-spa",
     "hmr-supported",

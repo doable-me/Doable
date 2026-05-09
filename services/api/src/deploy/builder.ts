@@ -83,12 +83,26 @@ function getBuildVault(): Vault {
   return buildVaultSingleton;
 }
 
+/**
+ * Closed-set error codes the frontend keys off to render specific failure
+ * states (BUG-PUB-004). Adding a new variant requires a frontend update.
+ *
+ *   build_failed_install — `pnpm/npm install` exited non-zero (bad lockfile,
+ *                          unreachable registry, postinstall failure, etc.).
+ *                          Retrying without code changes might work.
+ *   build_failed_compile — install succeeded; the build tool (vite/next/etc.)
+ *                          failed. User must fix their code.
+ */
+export type BuildErrorCode = "build_failed_install" | "build_failed_compile";
+
 export interface BuildResult {
   success: boolean;
   outputDir: string;
   log: string;
   durationMs: number;
   error?: string;
+  /** Closed-set classification of `error`; absent on success. */
+  errorCode?: BuildErrorCode;
 }
 
 export type BuildLogCallback = (chunk: string) => void | Promise<void>;
@@ -166,6 +180,66 @@ export async function runBuild(
     workspaceId = (project as { workspace_id?: string }).workspace_id ?? "";
   }
   const adapter = defaultRegistry.getAdapter(frameworkId);
+
+  // ── Ensure dependencies are installed BEFORE the build spawn (BUG-PUB-004).
+  //
+  // The build spawn (`vite build` / `next build` / etc.) runs the project's
+  // own config files (vite.config.ts imports `vite`, next.config.js imports
+  // `next`). When `node_modules` is missing those imports fail with
+  // UNRESOLVED_IMPORT and the build aborts with a confusing log.
+  //
+  // We delegate to the framework adapter's `install()` so the right command
+  // runs per family (npm for node, pip for python, bundle for ruby) and the
+  // existing timeout/abort/log plumbing (vite-react.ts:71 runNpmInstall) is
+  // reused. Idempotent: skipped when node_modules already exists AND the
+  // adapter's `requiredBuildTool` (e.g. "vite", "next") is also resolvable
+  // under it. Probing the build tool catches the "partial install" failure
+  // mode where a prior `npm install` ran with NODE_ENV=production / --omit=dev
+  // and left a populated-looking node_modules/ that has only `dependencies`.
+  // Without the tool-probe, the build gate would skip install and `vite build`
+  // would fail with UNRESOLVED_IMPORT for `vite` in vite.config.ts.
+  //
+  // Failures here are classified as `build_failed_install` so the frontend can
+  // distinguish "bad code" (build_failed_compile) from "bad deps / registry
+  // unreachable" (build_failed_install) per BUG-PUB-004 acceptance criteria.
+  const nodeModulesPath = path.join(projectDir, "node_modules");
+  const packageJsonPath = path.join(projectDir, "package.json");
+  const requiredBuildTool = (adapter as { requiredBuildTool?: string }).requiredBuildTool;
+  const buildToolPath = requiredBuildTool
+    ? path.join(nodeModulesPath, requiredBuildTool, "package.json")
+    : null;
+  const nodeModulesMissing = !existsSync(nodeModulesPath);
+  const buildToolMissing = buildToolPath !== null && !existsSync(buildToolPath);
+  if (adapter.family === "node" && existsSync(packageJsonPath) && (nodeModulesMissing || buildToolMissing)) {
+    const reason = nodeModulesMissing
+      ? "node_modules/ missing"
+      : `${requiredBuildTool} missing from node_modules (likely a --omit=dev install)`;
+    onLog?.(`Installing dependencies (${reason})...\n`);
+    try {
+      const installCtx = {
+        projectId: opts?.projectId ?? "<unknown>",
+        projectPath: projectDir,
+        basePath: "/",
+        env: { ...userEnvVars },
+        userId: opts?.userId,
+        onProgress: (msg: string) => onLog?.(`${msg}\n`),
+      };
+      const installResult = await adapter.install(installCtx);
+      onLog?.(installResult.log);
+      onLog?.(`\nDependencies installed in ${(installResult.durationMs / 1000).toFixed(1)}s\n`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onLog?.(`\nERROR: dependency install failed: ${message}\n`);
+      return {
+        success: false,
+        outputDir: "",
+        log: message,
+        durationMs: Date.now() - start,
+        error: `Dependency install failed: ${message}`,
+        errorCode: "build_failed_install",
+      };
+    }
+  }
 
   // Pre-load workspace-supplied log filters (PRD 04 §4.2/§5). Layered
   // AFTER the always-on baseline. Failure is non-fatal — empty array.
@@ -364,6 +438,7 @@ export async function runBuild(
         log: chunks.join(""),
         durationMs: Date.now() - start,
         error,
+        errorCode: "build_failed_compile",
       });
     }, BUILD_TIMEOUT_MS);
 
@@ -409,6 +484,7 @@ export async function runBuild(
           log,
           durationMs,
           error,
+          errorCode: "build_failed_compile",
         });
       }
     });
@@ -422,6 +498,7 @@ export async function runBuild(
         log: chunks.join(""),
         durationMs: Date.now() - start,
         error: err.message,
+        errorCode: "build_failed_compile",
       });
     });
   });

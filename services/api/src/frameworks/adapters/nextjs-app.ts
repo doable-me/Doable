@@ -62,11 +62,15 @@ const INSTALL_TIMEOUT_MS = 240_000;
 function runNpmInstall(ctx: FrameworkContext): Promise<InstallResult> {
   return new Promise<InstallResult>((resolve, reject) => {
     const start = Date.now();
-    const child = spawn("npm", ["install", "--legacy-peer-deps"], {
+    const child = spawn("npm", ["install", "--legacy-peer-deps", "--include=dev"], {
       cwd: ctx.projectPath,
       shell: true,
       stdio: "pipe",
-      env: { ...process.env, ...ctx.env, FORCE_COLOR: "0" },
+      // BUG-PUB-004: force NODE_ENV=development for install spawn so npm doesn't
+      // silently --omit=dev when the API itself runs as NODE_ENV=production.
+      // Without this, devDeps like next, typescript, @types/* are skipped and
+      // the subsequent `next build` fails resolving its own config imports.
+      env: { ...process.env, ...ctx.env, FORCE_COLOR: "0", NODE_ENV: "development" },
     });
 
     let log = "";
@@ -126,6 +130,10 @@ export const nextjsAppAdapter: FrameworkAdapter = {
   id: "nextjs-app",
   family: "node",
   displayName: "Next.js (App Router)",
+  // BUG-PUB-004: see vite-react adapter — probed by deploy/builder.ts to
+  // detect a partial node_modules (production-only install) and re-run
+  // install before `next build` runs.
+  requiredBuildTool: "next",
   capabilities: new Set([
     "ssr-node",
     "hmr-supported",

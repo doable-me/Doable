@@ -1,3 +1,22 @@
+# BUG-PUB-004 — Publish build fails: scaffold install skips devDependencies
+
+## 2026-05-10 update — first fix attempt revealed deeper root cause
+
+The first patch added `adapter.install(installCtx)` before build, gated by `node_modules/` missing. After deploy, retest shows the deeper root cause:
+
+- `node_modules/` IS present after scaffolding (react, react-dom, scheduler, tailwind, etc.)
+- But `node_modules/vite/`, `node_modules/@vitejs/plugin-react/`, `node_modules/typescript/` are **NOT** present.
+- Reason: the scaffolding-time install runs with `--production` / `--omit=dev` (or `pnpm --prod`), so only `dependencies` get installed; `devDependencies` (vite, plugins, typescript) are skipped.
+- The publish builder's check `if (!node_modules) install()` is too coarse: a partial `node_modules/` looks populated, install is skipped, build then fails.
+
+Result: publish errors with `errorCode: build_failed_compile`, buildLog: `[UNRESOLVED_IMPORT] Could not resolve 'vite' in vite.config.ts`. Same end-user symptom as the original report; different root cause one layer up.
+
+## Two-part fix needed
+A. **Scaffolder install must include devDeps.** Drop any `--omit=dev`/`--production`/`NODE_ENV=production` from the scaffold path's install command. devDependencies must land in `node_modules/`.
+B. **Publish builder install gate must verify the build tool is present**, not just `node_modules/` shape. Probe a per-framework "required build tool" path (e.g., `node_modules/vite/package.json`). If missing, install.
+
+# (original report)
+
 # BUG-PUB-004 — Publish build fails with vite UNRESOLVED_IMPORT for project 88279d57
 
 **Severity:** Critical

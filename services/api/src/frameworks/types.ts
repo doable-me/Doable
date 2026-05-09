@@ -193,6 +193,17 @@ export interface FrameworkAdapter {
     buildTimeoutMs: number;            // default 120_000
   };
 
+  // ─── Build-tool probe (BUG-PUB-004) ─────────────────────────────────
+  // The package whose presence under node_modules/ proves the install was
+  // complete enough to run `build()`. Used by the publish builder to decide
+  // whether to (re)run install: an existing node_modules/ directory is NOT
+  // sufficient evidence that devDependencies are present (e.g. when a prior
+  // install ran with NODE_ENV=production), so the builder also probes
+  // `node_modules/${requiredBuildTool}/package.json`. If absent, install
+  // runs. Vite-react sets "vite"; next-app sets "next"; static/python
+  // adapters can leave it undefined (no node_modules required).
+  readonly requiredBuildTool?: string;
+
   // ─── Lifecycle methods ──────────────────────────────────────────────
 
   // Write template files to disk + any framework-specific post-scaffold steps
