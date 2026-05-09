@@ -288,11 +288,15 @@ ROLESPLITSQL
   ok "Postgres: role split enabled (doable_admin=DDL, doable=DML); admin pass at ${DB_ADMIN_PASS_FILE}"
 fi
 
-# servertodo/10 §3c — Optional peer auth via Unix socket for the runtime role.
-# Set DOABLE_PG_PEER_AUTH=1 in your env before running setup to enable.
+# servertodo/10 §3c — Peer auth via Unix socket for the runtime role.
+# Default-ON as of 2026-05-09. Operators can opt out with DOABLE_PG_PEER_AUTH=0.
+# Why: eliminates the postgres password from the API process's runtime
+# environment by trusting the OS uid mapping (doable user → doable role
+# via Unix socket). Existing installs migrating to this need the
+# upgrade-to-peer-auth.sh helper (NOT YET WRITTEN — out of scope here).
 # Requires the API to run as the OS user 'doable' (already does in v3).
-DOABLE_PG_PEER_AUTH="${DOABLE_PG_PEER_AUTH:-0}"
-if [ "${DOABLE_PG_PEER_AUTH}" = "1" ]; then
+DOABLE_PG_PEER_AUTH="${DOABLE_PG_PEER_AUTH:-1}"
+if [ "${DOABLE_PG_PEER_AUTH}" != "0" ]; then
   PG_HBA="$(find /etc/postgresql -name pg_hba.conf 2>/dev/null | head -1 || true)"
   if [ -n "${PG_HBA}" ]; then
     if ! grep -qE '^# servertodo/10 — Doable peer auth' "${PG_HBA}"; then
@@ -596,7 +600,8 @@ if [ ! -f "${ENV_FILE}" ]; then
 
   # servertodo/10 §3c — peer auth via Unix socket removes the password from
   # the connection string entirely; node-postgres parses host=... as socket.
-  if [ "${DOABLE_PG_PEER_AUTH:-0}" = "1" ]; then
+  # Default-ON as of 2026-05-09; opt out with DOABLE_PG_PEER_AUTH=0.
+  if [ "${DOABLE_PG_PEER_AUTH:-1}" != "0" ]; then
     DATABASE_URL_LINE="DATABASE_URL=postgres:///doable?host=/var/run/postgresql"
   else
     DATABASE_URL_LINE="DATABASE_URL=postgres://doable:${DB_PASS}@localhost:5432/doable"
@@ -712,6 +717,12 @@ SITES_DIR=${APP_DIR}/sites
 DOABLE_HARDENING=full
 DOVAULT_BACKEND=systemd
 DOABLE_DEV_UID_DISABLED=0
+# App-layer encryption of ai_messages.content (operator-toggleable).
+# When set to 1, new chat messages are stored encrypted via pgp_sym_encrypt
+# using ENCRYPTION_KEY. Existing rows keep their plaintext content unchanged
+# unless an explicit backfill script is run. Default 0 (off) for backward
+# compatibility — enable for installs that need encrypted-at-rest chat history.
+DOABLE_ENCRYPT_AI_MESSAGES=0
 # BUILD_HTTP_PROXY is for child build/scaffold processes (npm install,
 # vite-jail spawn). HTTP_PROXY (without BUILD_) was previously set globally
 # on the API process itself, which forced ALL outbound traffic — including

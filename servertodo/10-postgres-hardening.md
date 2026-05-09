@@ -10,16 +10,16 @@ Cross-refs: `01-env-secrets.md` (.env perms), `02-services-as-root.md` (run-as u
 |------|-------|---------------|
 | **3a** Revoke `CREATEDB` from runtime role | **APPLIED** (always-on, no env var) | automatic on every fresh install AND on rerun against existing installs |
 | **3b** Role split (`doable_admin` for DDL, `doable` for DML) | **AVAILABLE** behind `DOABLE_PG_ROLE_SPLIT=1` | export `DOABLE_PG_ROLE_SPLIT=1` before `./setup-v3/setup-server-v3.sh` |
-| **3c** Peer auth via Unix socket | **AVAILABLE** behind `DOABLE_PG_PEER_AUTH=1` | export `DOABLE_PG_PEER_AUTH=1` before `./setup-v3/setup-server-v3.sh`; requires API to run as OS user `doable` (already does in v3) |
+| **3c** Peer auth via Unix socket | **APPLIED 2026-05-09 (default-on; opt-out via `DOABLE_PG_PEER_AUTH=0`)** | automatic on every fresh install; opt out by exporting `DOABLE_PG_PEER_AUTH=0` before `./setup-v3/setup-server-v3.sh`; requires API to run as OS user `doable` (already does in v3) |
 | **3d** Read-only role | **DEFERRED** (TODO comment in script) | not implemented; add only when a consumer needs it |
 
-Defaults preserve the previous installer behaviour EXCEPT the always-on `CREATEDB` revoke (3a) — which is the intended security improvement.
+Defaults preserve the previous installer behaviour EXCEPT the always-on `CREATEDB` revoke (3a) and the now-default-on peer auth (3c) — both are intended security improvements; 3c is opt-out via `DOABLE_PG_PEER_AUTH=0` for legacy / non-`doable`-OS-user setups.
 
 This document audits the postgres security posture installed by
 `setup-v3/setup-server-v3.sh` (Phase 4) and lays out a layered remediation
 plan ordered by impact-to-effort ratio. The diffs below describe the exact
-patches that have been applied (3a) or are gated behind opt-in env vars
-(3b/3c) in the current `setup-v3/setup-server-v3.sh`.
+patches that have been applied (3a, 3c) or are gated behind opt-in env vars
+(3b) in the current `setup-v3/setup-server-v3.sh`.
 
 ---
 
@@ -291,10 +291,10 @@ clearly in the operator checklist (Section 5 below).
 
 ---
 
-### 3c. Switch to peer auth on the Unix socket — **OPT-IN via `DOABLE_PG_PEER_AUTH=1`**
+### 3c. Switch to peer auth on the Unix socket — **APPLIED 2026-05-09 (default-on; opt-out via `DOABLE_PG_PEER_AUTH=0`)**
 
-Installer behaviour: when `DOABLE_PG_PEER_AUTH=1` is exported before
-running `setup-v3/setup-server-v3.sh`, the installer additionally
+Installer behaviour: by default (env var unset OR `DOABLE_PG_PEER_AUTH=1`)
+the installer
 - inserts a `local doable doable peer` line (with a sentinel comment
   `# servertodo/10 — Doable peer auth` so re-runs do not duplicate)
   before the catch-all `local all all` block in `pg_hba.conf`,
@@ -303,8 +303,14 @@ running `setup-v3/setup-server-v3.sh`, the installer additionally
   `/opt/doable/.env` (no password component on the runtime URL).
 
 Requires the API to run as the OS user `doable`, which v3 already does.
-When the env var is unset (default), the installer skips this step and
-keeps password-on-loopback auth.
+Operators can opt out by exporting `DOABLE_PG_PEER_AUTH=0` before running
+`setup-v3/setup-server-v3.sh`; the installer then keeps password-on-loopback
+auth and writes the prior `postgres://doable:<pw>@localhost:5432/doable`
+form in `/opt/doable/.env`.
+
+Existing installs migrating from password-on-loopback to peer auth need
+the `upgrade-to-peer-auth.sh` helper (not yet written — tracked separately;
+see Section 5.4 below for the manual sequence in the meantime).
 
 Strictly the strongest auth posture for a single-host deploy: the kernel
 authenticates the connecting OS user, no password ever touches the wire,
