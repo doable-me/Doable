@@ -281,6 +281,64 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           try { await stream.writeSSE({ data: JSON.stringify({ type: "keep_alive" }) }); } catch {}
         }, 10_000);
         const isBuildDeckTurn = content.trimStart().startsWith("BUILD_DECK");
+
+        // ─── Thinking-loop watchdog (BUG-PWA-001) ───────────────────────────
+        // If the model goes silent (no real SDK events: no text, no tool calls,
+        // no tool deltas) for THINKING_LOOP_ABORT_MS while still producing
+        // nothing, abort the stream with a recoverable error so the client can
+        // retry instead of hanging on a "thinking" spinner forever.
+        //
+        //   CHAT_THINKING_LOOP_ABORT_MS  default 180000 (3 min). 0 disables.
+        //   CHAT_THINKING_LOOP_GRACE_MS  default 15000  (don't fire in first N ms).
+        const thinkingAbortMs = (() => {
+          const v = process.env.CHAT_THINKING_LOOP_ABORT_MS;
+          const n = v === undefined || v === "" ? 180_000 : Number(v);
+          return Number.isFinite(n) && n >= 0 ? n : 180_000;
+        })();
+        const thinkingGraceMs = (() => {
+          const v = process.env.CHAT_THINKING_LOOP_GRACE_MS;
+          const n = v === undefined || v === "" ? 15_000 : Number(v);
+          return Number.isFinite(n) && n >= 0 ? n : 15_000;
+        })();
+        const turnStartedAt = Date.now();
+        let thinkingLoopAborted = false;
+        const thinkingLoopWatchdog = thinkingAbortMs > 0 ? setInterval(async () => {
+          if (thinkingLoopAborted) return;
+          const sinceTurnStart = Date.now() - turnStartedAt;
+          if (sinceTurnStart < thinkingGraceMs) return;
+          const realSilence = Date.now() - state.lastRealEventAt;
+          if (realSilence < thinkingAbortMs) return;
+          // Stuck thinking: no real progress for N ms, no tools, no text.
+          if (state.hadToolCalls) return; // tool work in progress is real progress
+          if (state.assistantContent.length > 0 || state.assistantThinking.length > 0) {
+            // Some output already produced — don't kill productive turns. Bump
+            // lastRealEventAt forward so we don't refire on the next tick.
+            state.lastRealEventAt = Date.now();
+            return;
+          }
+          thinkingLoopAborted = true;
+          console.warn(`[Chat][${projectId.slice(0, 8)}] thinking_loop watchdog firing — realSilence=${realSilence}ms, no tools, no content`);
+          state.traceCollector?.onError("thinking_loop", "STREAM", "thinking_loop_timeout");
+          try {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "error",
+                data: { phase: "error", error: "thinking_loop", retry: true, message: "AI got stuck thinking. Please retry." },
+              }),
+            });
+          } catch {}
+          // Evict the engine so the next attempt starts fresh.
+          try {
+            const mgr = getCopilotManager();
+            await mgr.evictEngine(projectId);
+          } catch {}
+          // Abort the underlying request signal where supported (forces SDK
+          // sendMessage to throw and unwind cleanly).
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (c.req.raw as any).signal?.dispatchEvent?.(new Event("abort"));
+          } catch {}
+        }, 5_000) : null;
         const softHeartbeat = setInterval(async () => {
           const sseSilence = Date.now() - state.lastSseEmitAt;
           if (sseSilence < 3_000) return;
@@ -571,11 +629,17 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
             // version, memory) can take seconds and we don't want the frontend
             // to show stale "Building detailed presentation…" status.
             clearInterval(softHeartbeat);
+            if (thinkingLoopWatchdog) clearInterval(thinkingLoopWatchdog);
             console.log(`[Chat] AI streaming complete for ${projectId}, starting post-processing...`);
           }
 
-          await handleAutoFixPreview(stream, state, projectId, resolvedGithubToken, sessionId!);
-          await handleVersionAndMemory(stream, state, projectId, userId, content, messageId);
+          // Skip post-processing entirely if the watchdog already aborted —
+          // the stream is in an error state and there's no real assistant
+          // content to fix/version/save.
+          if (!thinkingLoopAborted) {
+            await handleAutoFixPreview(stream, state, projectId, resolvedGithubToken, sessionId!);
+            await handleVersionAndMemory(stream, state, projectId, userId, content, messageId);
+          }
           await handleFinalCleanup(stream, state, projectId, mode, keepAlive, softHeartbeat);
 
           // Mark stream buffer complete with shortened TTL so late reconnects
@@ -596,6 +660,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           }
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
+          if (thinkingLoopWatchdog) clearInterval(thinkingLoopWatchdog);
           await handleStreamError(stream, state, err, projectId, keepAlive, softHeartbeat);
           // Mark buffer as done + record error so resume clients can surface it.
           flushBuffer(true, errMsg);

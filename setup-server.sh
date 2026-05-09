@@ -605,6 +605,23 @@ DOABLE_HARDENING=full
 # with the allow-list at /etc/squid/conf.d/doable-allowlist.conf.
 # Comment out to disable build-time proxying.
 BUILD_HTTP_PROXY=http://127.0.0.1:3128
+
+# ─── Chat rate limiting (per-user, in-memory or Redis) ──────
+# Defaults are operator-friendly; raise for power users / load tests, set to
+# 0 to fully disable that bucket. is_platform_admin users skip all limits
+# unless CHAT_RATE_LIMIT_BYPASS_ADMIN=0.
+CHAT_RATE_LIMIT_PER_MIN=30
+CHAT_RATE_LIMIT_ANON_PER_MIN=5
+SUGGEST_RATE_LIMIT_PER_MIN=10
+CHAT_RATE_LIMIT_BYPASS_ADMIN=1
+
+# ─── Chat thinking-loop watchdog (BUG-PWA-001) ──────────────
+# If the AI emits no real progress (no text, no tool calls) for this many ms
+# the SSE stream is aborted with phase:error error:thinking_loop retry:true
+# so the client can recover instead of hanging on a "thinking" spinner.
+# Set CHAT_THINKING_LOOP_ABORT_MS=0 to disable the watchdog entirely.
+CHAT_THINKING_LOOP_ABORT_MS=180000
+CHAT_THINKING_LOOP_GRACE_MS=15000
 ENVEOF
 
 # Next.js needs NEXT_PUBLIC_* in its own directory
@@ -1014,4 +1031,35 @@ echo "     https://${API_DOMAIN}/auth/google/callback"
 echo "  2. Add https://${DOMAIN} as an authorized JavaScript origin"
 echo "  3. If using GitHub OAuth, update the callback URL to:"
 echo "     https://${API_DOMAIN}/auth/github/callback"
+echo "     and the repo-scope callback to:"
+echo "     https://${API_DOMAIN}/auth/github/repo/callback"
+echo ""
+
+# ─── OAuth credential validation ──────────────────────────────
+# Loud warnings when integration creds are missing — silent absence has
+# burned us before (BUG-PWA-002, BUG-WSI-002 history). For each missing key,
+# print exactly what the user needs to do.
+echo "  ── Integration credentials check ──"
+MISSING=0
+check_creds() {
+  local feature="$1" key1="$2" val1="$3" url="$4"
+  if [[ -z "$val1" ]]; then
+    warn "  ❌ ${feature}: ${key1} is empty — feature will NOT work until you set it."
+    echo "       Register an OAuth app at ${url}"
+    echo "       Then add to /opt/doable/.env and 'systemctl restart doable.service'"
+    MISSING=$((MISSING+1))
+  else
+    ok "  ✓ ${feature}: configured"
+  fi
+}
+check_creds "Google login + integrations" "GOOGLE_CLIENT_ID" "${GOOGLE_CLIENT_ID:-}" "https://console.cloud.google.com/apis/credentials"
+check_creds "GitHub login + repo import"  "GITHUB_CLIENT_ID" "${GITHUB_CLIENT_ID:-}" "https://github.com/settings/applications/new (callback: https://${API_DOMAIN}/auth/github/callback)"
+check_creds "Anthropic AI"                "ANTHROPIC_API_KEY" "${ANTHROPIC_API_KEY:-}" "https://console.anthropic.com/settings/keys"
+check_creds "OpenAI AI"                   "OPENAI_API_KEY" "${OPENAI_API_KEY:-}" "https://platform.openai.com/api-keys"
+check_creds "Stripe billing"              "STRIPE_SECRET_KEY" "${STRIPE_SECRET_KEY:-}" "https://dashboard.stripe.com/apikeys (skip if you want bypass-mode)"
+if [ "$MISSING" -gt 0 ]; then
+  echo ""
+  warn "  ${MISSING} integration(s) are not configured. Doable will run, but those features will return 401/404 to users."
+  echo "  Edit /opt/doable/.env to add the missing keys, then restart doable.service."
+fi
 echo ""
