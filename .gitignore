@@ -88,3 +88,17 @@ report.*.json
 # Private sync script (Gitea mirror)
 sync-codehub.ps1
 services/api/data/
+
+# Per-TC evidence scratch artifacts (response bodies, headers, pids, SSE captures, timing/diff probes)
+testcases/evidence/**/*.body
+testcases/evidence/**/*.hdr
+testcases/evidence/**/*.pid
+testcases/evidence/**/*.start
+testcases/evidence/**/*.sse.jsonl
+testcases/evidence/**/*.sse.log
+testcases/evidence/**/*.timing.tsv
+testcases/evidence/**/*.diff.log
+testcases/evidence/**/*.probe.tsv
+testcases/evidence/**/*.preview.html
+testcases/99-runlog/**/*.pid
+testcases/99-runlog/**/*.start
