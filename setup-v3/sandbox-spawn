@@ -1,0 +1,145 @@
+#!/bin/bash
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  /opt/doable/bin/sandbox-spawn — privileged sandbox-drop wrapper     ║
+# ║                                                                      ║
+# ║  Installed by setup-v3/setup-server-v3.sh (root:root mode 0755).     ║
+# ║  Invoked by the unprivileged `doable` API user via sudo (NOPASSWD)   ║
+# ║  to drop into a per-project UID for dev-server / build spawns.       ║
+# ║                                                                      ║
+# ║  Sole privileged operation: setpriv --reuid/--regid/--clear-groups   ║
+# ║  to a UID in 10001..65000, then exec the validated command.          ║
+# ║                                                                      ║
+# ║  This is the SECURITY BOUNDARY: every input is validated before we   ║
+# ║  give up root. Be paranoid. Reject anything weird. No stdout/stderr  ║
+# ║  leakage of secrets — error messages are short and explicit.         ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+#
+# Usage:
+#   sudo /opt/doable/bin/sandbox-spawn <uid> <project_id> <command> [args...]
+#
+# Exit codes:
+#   1   - argument / validation failure (rejected before privilege drop)
+#   126 - command not executable
+#   127 - command not found
+#   *   - whatever the child returns
+#
+# This script intentionally does NOT use `set -e` because we want to emit
+# clear error messages on every failure path, not silent aborts.
+
+set -u
+umask 0022
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+die() {
+  echo "sandbox-spawn: $*" 1>&2
+  exit 1
+}
+
+# ─── Hard-coded constants (do NOT make these env-overridable) ──────────
+PROJECTS_PREFIX="/opt/doable/services/api/projects"
+NODE_BIN="/usr/bin/node"
+MIN_UID=10001
+MAX_UID=65000
+
+# ─── Argument count ────────────────────────────────────────────────────
+if [ $# -lt 3 ]; then
+  die "usage: sandbox-spawn <uid> <project_id> <command> [args...]"
+fi
+
+UID_ARG="$1"
+PROJECT_ID="$2"
+CMD="$3"
+shift 3
+
+# ─── Validate UID ──────────────────────────────────────────────────────
+# Must be a pure non-negative decimal integer in the sandbox range.
+case "${UID_ARG}" in
+  ''|*[!0-9]*) die "uid must be a positive integer (got: ${UID_ARG})" ;;
+esac
+if [ "${UID_ARG}" -lt "${MIN_UID}" ] || [ "${UID_ARG}" -gt "${MAX_UID}" ]; then
+  die "uid ${UID_ARG} outside sandbox range ${MIN_UID}-${MAX_UID}"
+fi
+
+# ─── Validate project_id (UUID format, 36 chars, lower hex + dashes) ───
+# Accept canonical UUIDs only: 8-4-4-4-12 hex pattern.
+# We use a strict glob match via case to avoid pulling in regex deps.
+case "${PROJECT_ID}" in
+  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) : ;;
+  *) die "project_id must be a lowercase UUID (got: ${PROJECT_ID})" ;;
+esac
+
+# Belt-and-braces: reject any path-traversal markers even though the
+# UUID glob already excludes them. If this ever fires, somebody changed
+# the validator above and got it wrong.
+case "${PROJECT_ID}" in
+  *..*|*/*|*\\*) die "project_id contains illegal characters" ;;
+esac
+
+PROJECT_PATH="${PROJECTS_PREFIX}/${PROJECT_ID}"
+
+# ─── Validate project path exists, is a directory, and is INSIDE the
+#     prefix after symlink resolution (no escape via symlink) ───────────
+if [ ! -d "${PROJECT_PATH}" ]; then
+  die "project path does not exist: ${PROJECT_PATH}"
+fi
+
+# Resolve symlinks; readlink -f is GNU-coreutils on Ubuntu (always present).
+RESOLVED="$(readlink -f -- "${PROJECT_PATH}" 2>/dev/null || true)"
+if [ -z "${RESOLVED}" ]; then
+  die "could not resolve project path: ${PROJECT_PATH}"
+fi
+case "${RESOLVED}" in
+  "${PROJECTS_PREFIX}"/*) : ;;
+  *) die "project path escapes prefix (resolved=${RESOLVED})" ;;
+esac
+
+# ─── Validate command ──────────────────────────────────────────────────
+# Allowed commands:
+#   1. /usr/bin/node                         (system node)
+#   2. <project_path>/node_modules/.bin/...  (project-local bins)
+#
+# Anything else is rejected. We re-resolve the bin path to make sure
+# a symlink can't escape node_modules/.bin.
+CMD_RESOLVED=""
+case "${CMD}" in
+  "${NODE_BIN}")
+    CMD_RESOLVED="${NODE_BIN}"
+    ;;
+  "${PROJECT_PATH}/node_modules/.bin/"*)
+    # Reject any traversal markers before resolving.
+    case "${CMD}" in
+      *..*) die "command contains '..': ${CMD}" ;;
+    esac
+    if [ ! -x "${CMD}" ]; then
+      die "command not executable: ${CMD}"
+    fi
+    CMD_RESOLVED="$(readlink -f -- "${CMD}" 2>/dev/null || true)"
+    if [ -z "${CMD_RESOLVED}" ]; then
+      die "could not resolve command path: ${CMD}"
+    fi
+    # Resolved target must be inside the project tree.
+    case "${CMD_RESOLVED}" in
+      "${RESOLVED}"/*) : ;;
+      *) die "command resolves outside project tree (resolved=${CMD_RESOLVED})" ;;
+    esac
+    ;;
+  *)
+    die "command must be ${NODE_BIN} or under ${PROJECT_PATH}/node_modules/.bin/ (got: ${CMD})"
+    ;;
+esac
+
+# ─── Drop privileges and exec ──────────────────────────────────────────
+# setpriv is the safe path: it does NOT load PAM, doesn't allow setuid
+# binaries to regain privileges (we leave NoNewPrivs default off here
+# since the API caller may set it; the egress jail also enforces UID
+# isolation at the kernel level).
+exec /usr/bin/setpriv \
+  --reuid="${UID_ARG}" \
+  --regid="${UID_ARG}" \
+  --clear-groups \
+  -- "${CMD_RESOLVED}" "$@"
+
+# Unreachable; exec replaces the process. If we get here, something
+# went very wrong (setpriv missing, kernel weirdness, etc.).
+die "exec setpriv failed (this should never print)"

@@ -1,0 +1,6 @@
+# /etc/sudoers.d/90-doable-sandbox
+# Grants the `doable` API user the ability to chown project files to a
+# per-project UID and drop privileges to that UID for dev-server spawning.
+# These are the ONLY privileged operations the API needs.
+doable ALL=(root) NOPASSWD: /usr/bin/chown -R [0-9]*\:[0-9]* /opt/doable/services/api/projects/*
+doable ALL=(root) NOPASSWD: /opt/doable/bin/sandbox-spawn

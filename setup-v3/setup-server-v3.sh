@@ -696,17 +696,22 @@ DOABLE_PROJECTS_DIR=${APP_DIR}/services/api/projects
 SITES_DIR=${APP_DIR}/sites
 
 # Hardening (Wave 27-30)
-# IMPORTANT: When the API runs as an unprivileged user (the v3 default),
-# the per-project sandbox UID drop CAN'T work — chown to UIDs 10001+
-# requires CAP_CHOWN, which only root has. Either:
-#   (a) leave HARDENING=full but ensure dev-uid-allocator returns null
-#       when EUID!=0 (post-2026-05-09 build does this automatically), OR
-#   (b) explicitly opt out via DOABLE_DEV_UID_DISABLED=1 below.
-# Both paths still keep nft egress jail + Squid allowlist + dovault cgroup
-# limits — only the per-project setpriv layer is dropped.
+# Per-project sandbox UID drop is RE-ENABLED in v3 path-c. The API runs
+# as the unprivileged `doable` user; it can't chown to UIDs 10001+ or
+# call setpriv directly. Instead it shells out via NOPASSWD sudo to:
+#   - /usr/bin/chown -R <uid>:<uid> /opt/doable/services/api/projects/*
+#   - /opt/doable/bin/sandbox-spawn <uid> <project_id> <cmd> [args...]
+# Both are installed by Phase 10.5 below. The wrapper validates UID range,
+# project_id (UUID glob), project path containment, and command allowlist
+# before exec'ing setpriv. nft egress jail + Squid allowlist + dovault
+# cgroup limits remain in place as defense-in-depth.
+#
+# To disable the UID drop (e.g. on a host where the wrapper isn't
+# installed yet), flip this to 1 — the API falls back to running spawns
+# as the `doable` user.
 DOABLE_HARDENING=full
 DOVAULT_BACKEND=systemd
-DOABLE_DEV_UID_DISABLED=1
+DOABLE_DEV_UID_DISABLED=0
 # BUILD_HTTP_PROXY is for child build/scaffold processes (npm install,
 # vite-jail spawn). HTTP_PROXY (without BUILD_) was previously set globally
 # on the API process itself, which forced ALL outbound traffic — including
@@ -835,6 +840,65 @@ if nft -c -f /etc/nftables.conf; then
 else
   warn "nft validation failed; egress jail NOT loaded. Inspect: nft -c -f /etc/nftables.conf"
 fi
+
+# ─── Phase 10.5: Privileged sandbox-spawn wrapper + sudoers ──────────────
+# Security model:
+#   The unprivileged `doable` API user MUST be able to (a) chown a
+#   project's files to a per-project UID before dev-server spawn, and
+#   (b) drop privileges to that UID when running the dev server / build
+#   commands. Doing either requires root. We confine root to two
+#   well-defined operations behind NOPASSWD sudo:
+#
+#     1. /usr/bin/chown -R <uid>:<uid> /opt/doable/services/api/projects/*
+#     2. /opt/doable/bin/sandbox-spawn <uid> <project_id> <cmd> [args...]
+#
+#   sandbox-spawn (root-owned, mode 0755) is the ONLY privileged code
+#   path the API can drive. It validates the UID range (10001-65000),
+#   the project_id (canonical lowercase UUID), the project path
+#   (must exist and resolve under /opt/doable/services/api/projects),
+#   and the command (either /usr/bin/node or a project-local
+#   node_modules/.bin entry whose realpath stays inside the project
+#   tree). On success it `exec setpriv --reuid=<uid> --regid=<uid>
+#   --clear-groups -- <cmd> ...`, dropping privileges before the
+#   child runs. On failure it exits non-zero with a short diagnostic.
+#
+#   The sudoers fragment is mode 0440 root:root, validated with
+#   `visudo -c` before activation (this script aborts on parse error
+#   to avoid corrupting /etc/sudoers).
+phase "Phase 10.5/15  Privileged sandbox-spawn wrapper + sudoers fragment"
+
+SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WRAPPER_SRC="${SETUP_DIR}/sandbox-spawn"
+SUDOERS_SRC="${SETUP_DIR}/90-doable-sandbox.sudoers"
+
+if [ ! -f "${WRAPPER_SRC}" ]; then
+  err "Missing wrapper source: ${WRAPPER_SRC}"
+fi
+if [ ! -f "${SUDOERS_SRC}" ]; then
+  err "Missing sudoers source: ${SUDOERS_SRC}"
+fi
+
+# Wrapper: install root-owned, mode 0755 under /opt/doable/bin.
+install -d -m 0755 -o root -g root /opt/doable/bin
+install -m 0755 -o root -g root "${WRAPPER_SRC}" /opt/doable/bin/sandbox-spawn
+ok "Installed /opt/doable/bin/sandbox-spawn (root:root 0755)"
+
+# Sudoers: stage to a temp path, validate with visudo, then move into
+# /etc/sudoers.d. A bad sudoers file would lock out sudo entirely, so
+# we refuse to activate one that fails parse.
+SUDOERS_STAGE="$(mktemp /tmp/doable-sudoers.XXXXXX)"
+install -m 0440 -o root -g root "${SUDOERS_SRC}" "${SUDOERS_STAGE}"
+if ! visudo -c -f "${SUDOERS_STAGE}" >/dev/null 2>&1; then
+  rm -f "${SUDOERS_STAGE}"
+  err "visudo -c rejected ${SUDOERS_SRC}; refusing to install. Inspect manually."
+fi
+install -m 0440 -o root -g root "${SUDOERS_STAGE}" /etc/sudoers.d/90-doable-sandbox
+rm -f "${SUDOERS_STAGE}"
+# Re-validate the live file as a final guard (catches install-time tampering).
+if ! visudo -c -f /etc/sudoers.d/90-doable-sandbox >/dev/null 2>&1; then
+  err "Live /etc/sudoers.d/90-doable-sandbox failed visudo -c after install."
+fi
+ok "Installed /etc/sudoers.d/90-doable-sandbox (root:root 0440, visudo-validated)"
 
 # ─── Phase 11: systemd units (per-service, hardened) ─────────────────────
 phase "Phase 11/15  systemd units: doable-api / doable-web / doable-ws + doable.target"
