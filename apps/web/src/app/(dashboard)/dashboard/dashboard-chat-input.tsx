@@ -240,6 +240,7 @@ function FrameworkPicker({
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [options, setOptions] = useState<{ id: string; label: string; icon: LucideIcon; color: string }[]>([AUTO_DETECT_OPTION]);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
 
   // Fetch enabled frameworks from API once
   useEffect(() => {
@@ -258,12 +259,6 @@ function FrameworkPicker({
       .catch(() => { /* use default auto-detect only */ });
   }, []);
 
-  // Hide picker entirely if only one framework (no choice to make)
-  if (options.length <= 2) return null;
-
-  const selected = options.find((o) => o.id === (value ?? "")) ?? options[0]!;
-  const Icon = selected.icon;
-
   // Close on outside click
   useEffect(() => {
     if (!open) return;
@@ -279,12 +274,19 @@ function FrameworkPicker({
   }, [open]);
 
   // Position the menu below the button
-  const [pos, setPos] = useState({ top: 0, left: 0 });
   useEffect(() => {
     if (!open || !btnRef.current) return;
     const rect = btnRef.current.getBoundingClientRect();
     setPos({ top: rect.bottom + 6, left: rect.left });
   }, [open]);
+
+  // Hide picker entirely if only one framework (no choice to make).
+  // This guard MUST come after every hook call — moving it earlier causes
+  // React error #310 (rendered more hooks after fetch resolves).
+  if (options.length <= 2) return null;
+
+  const selected = options.find((o) => o.id === (value ?? "")) ?? options[0]!;
+  const Icon = selected.icon;
 
   return (
     <div className="relative ml-1">
