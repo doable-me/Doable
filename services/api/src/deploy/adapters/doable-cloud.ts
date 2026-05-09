@@ -97,9 +97,16 @@ export class DoableCloudAdapter implements DeployAdapter {
       );
     }
 
-    // Directory structure: /data/sites/[slug]/live/ or /data/sites/[slug]/test/
-    const envDir = environment === "preview" ? "test" : "live";
-    const siteDir = path.join(SITES_DIR, subdomain);
+    // Directory structure: /data/sites/[siteSubdomain]/live/
+    // We key off siteSubdomain (which already includes SUBDOMAIN_PREFIX + envPrefix)
+    // so each environment gets its own directory — production lands at
+    // staging-<slug>/live/, preview lands at staging-p-<slug>/live/. That
+    // lets Caddy's single wildcard regex map any request Host directly
+    // to <SITES_DIR>/<first-host-label>/live/ without having to know about
+    // env prefixes or pick between live/test subdirectories.
+    const envDir = "live";
+    const { siteSubdomain } = computeSitePublishLocation(subdomain, environment);
+    const siteDir = path.join(SITES_DIR, siteSubdomain);
     const targetDir = path.join(siteDir, envDir);
 
     try {
@@ -340,7 +347,9 @@ export class DoableCloudAdapter implements DeployAdapter {
 
     // URL: {prefix}{subdomain}.doable.me. On dev, prefix="dev-" so the
     // single-label wildcard SSL covers it. Defaults to no prefix on prod.
-    const { url, siteSubdomain, hostname } = computeSitePublishLocation(
+    // Reuse the siteSubdomain computed earlier for the directory name —
+    // recomputing here would just shadow the same value.
+    const { url, hostname } = computeSitePublishLocation(
       subdomain,
       environment,
     );
