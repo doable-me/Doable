@@ -12,6 +12,7 @@
  */
 import { Hono } from "hono";
 import { sql } from "../db/index.js";
+import { selectMessageContent } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { recordAdminAction } from "./audit-log.js";
@@ -63,10 +64,10 @@ adminAuditRoutes.get("/audit/conversations", async (c) => {
       SELECT m.session_id,
              COUNT(*)::int                        AS message_count,
              MAX(m.created_at)                    AS last_message_at,
-             MAX(m.content) FILTER (
+             MAX(${selectMessageContent(sql)}) FILTER (
                WHERE m.role = 'user'
              )                                    AS last_user_text,
-             MAX(m.content) FILTER (
+             MAX(${selectMessageContent(sql)}) FILTER (
                WHERE m.role = 'assistant'
              )                                    AS last_assistant_text
         FROM ai_messages m
@@ -100,7 +101,7 @@ adminAuditRoutes.get("/audit/conversations", async (c) => {
        AND (${q}::text           IS NULL OR EXISTS (
               SELECT 1 FROM ai_messages mm
                WHERE mm.session_id = s.id
-                 AND mm.content ILIKE '%' || ${q}::text || '%'
+                 AND ${selectMessageContent(sql)} ILIKE '%' || ${q}::text || '%'
             ))
      ORDER BY COALESCE(ms.last_message_at, s.updated_at) DESC NULLS LAST
      LIMIT ${limit}
@@ -177,7 +178,8 @@ adminAuditRoutes.get("/audit/conversations/:sessionId", async (c) => {
       created_at: string;
     }>
   >`
-    SELECT id, role::text AS role, content,
+    SELECT id, role::text AS role,
+           ${selectMessageContent(sql)} AS content,
            tool_calls, tool_actions, thinking_content,
            had_tool_calls, version_sha,
            sent_by_user_id::text AS sent_by_user_id,
@@ -233,7 +235,7 @@ adminAuditRoutes.get("/audit/messages", async (c) => {
     SELECT m.id,
            m.session_id::text       AS session_id,
            m.role::text             AS role,
-           LEFT(m.content, 400)     AS excerpt,
+           LEFT(${selectMessageContent(sql)}, 400) AS excerpt,
            m.created_at,
            s.user_id::text          AS user_id,
            u.email                  AS user_email,
@@ -244,7 +246,7 @@ adminAuditRoutes.get("/audit/messages", async (c) => {
       JOIN ai_sessions s ON s.id = m.session_id
       LEFT JOIN projects p ON p.id::text = s.project_id
       LEFT JOIN users    u ON u.id::text = s.user_id
-     WHERE m.content ILIKE '%' || ${q}::text || '%'
+     WHERE ${selectMessageContent(sql)} ILIKE '%' || ${q}::text || '%'
        AND (${role}::text        IS NULL OR m.role::text     = ${role}::text)
        AND (${userId}::text      IS NULL OR s.user_id        = ${userId}::text)
        AND (${workspaceId}::uuid IS NULL OR p.workspace_id   = ${workspaceId}::uuid)

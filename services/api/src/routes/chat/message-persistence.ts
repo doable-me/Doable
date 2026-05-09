@@ -1,9 +1,16 @@
 /**
  * Message persistence: saving user messages, pre-inserting assistant
  * message rows, and final assistant message updates.
+ *
+ * All `ai_messages.content` writes go through
+ * `messageContentColumnAndValue()` so the row lands in either `content`
+ * (plaintext, default) or `encrypted_content` (pgp_sym_encrypt) based on
+ * `DOABLE_ENCRYPT_AI_MESSAGES`. The XOR check from migration 072
+ * requires exactly one of those columns to be non-null per row.
  */
 import { sql } from "../../db/index.js";
 import { buildToolActionsFromCalls } from "../../ai/tool-messages.js";
+import { messageContentColumnAndValue } from "@doable/db";
 
 /** Resolve user display info (name + deterministic color). */
 export async function resolveUserDisplay(userId: string): Promise<{ displayName: string; color: string }> {
@@ -34,9 +41,10 @@ export async function saveUserMessage(
   color: string,
 ): Promise<void> {
   try {
+    const { column, value } = messageContentColumnAndValue(sql, content);
     await sql`
-      INSERT INTO ai_messages (session_id, role, content, sent_by_user_id, display_name, user_color)
-      VALUES (${dbSessionId}, 'user', ${content}, ${userId}, ${displayName}, ${color})
+      INSERT INTO ai_messages (session_id, role, ${sql(column)}, sent_by_user_id, display_name, user_color)
+      VALUES (${dbSessionId}, 'user', ${value}, ${userId}, ${displayName}, ${color})
     `;
   } catch (e) {
     console.warn("[Chat] Failed to save user message:", e);
@@ -46,9 +54,15 @@ export async function saveUserMessage(
 /** Pre-insert an empty assistant message row. Returns the message ID. */
 export async function preInsertAssistantMessage(dbSessionId: string): Promise<string | undefined> {
   try {
+    // Empty string (not NULL) — the XOR check requires exactly one of
+    // (content, encrypted_content) to be non-null. Empty plaintext is
+    // a valid value; encrypting an empty string still yields a non-null
+    // ciphertext. The row is updated with real content in
+    // finalSaveAssistantMessage().
+    const { column, value } = messageContentColumnAndValue(sql, "");
     const [row] = await sql`
-      INSERT INTO ai_messages (session_id, role, content)
-      VALUES (${dbSessionId}, 'assistant', '')
+      INSERT INTO ai_messages (session_id, role, ${sql(column)})
+      VALUES (${dbSessionId}, 'assistant', ${value})
       RETURNING id
     `;
     return row?.id;
@@ -74,9 +88,18 @@ export async function finalSaveAssistantMessage(
       const toolActionsJson = assistantToolCalls.length > 0
         ? sql.json(buildToolActionsFromCalls(assistantToolCalls, assistantMessageId) as any)
         : sql.json([]);
+      // Encryption-aware UPDATE: write the right column for the current
+      // toggle state and NULL the other so the XOR check (migration 072)
+      // is always satisfied. We pass empty string (not null) when there
+      // was no text but tool calls happened — matches the pre-insert
+      // semantics and keeps exactly one side non-null.
+      const plaintext = assistantContent || "";
+      const { column, value } = messageContentColumnAndValue(sql, plaintext);
+      const otherColumn = column === "content" ? "encrypted_content" : "content";
       await sql`
         UPDATE ai_messages
-        SET content = ${assistantContent || null},
+        SET ${sql(column)} = ${value},
+            ${sql(otherColumn)} = ${null},
             tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls as any) : sql.json([])},
             tool_actions = ${toolActionsJson},
             version_sha = ${versionSha ?? null},

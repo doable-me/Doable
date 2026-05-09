@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { sql } from "../db/index.js";
+import { selectMessageContent } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { getCopilotManager } from "../ai/providers/copilot-manager.js";
@@ -602,7 +603,9 @@ adminOpsRoutes.get("/chat-sessions/:id/messages", async (c) => {
     had_tool_calls: boolean; display_name: string | null;
     created_at: Date;
   }[]>`
-    SELECT id, role::text AS role, content, tool_calls, thinking_content,
+    SELECT id, role::text AS role,
+           ${selectMessageContent(sql)} AS content,
+           tool_calls, thinking_content,
            had_tool_calls, display_name, created_at
     FROM ai_messages
     WHERE session_id = ${sessionId}

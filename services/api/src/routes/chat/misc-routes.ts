@@ -8,7 +8,7 @@ import { sql } from "../../db/index.js";
 import { getCopilotEngine } from "../../ai/providers/copilot.js";
 import { getCopilotManager } from "../../ai/providers/copilot-manager.js";
 import { getActiveTrace } from "../../ai/trace-collector.js";
-import { aiSettingsQueries } from "@doable/db";
+import { aiSettingsQueries, selectMessageContent } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../../middleware/auth.js";
 import { projectSessions, activeRequests } from "./session-state.js";
 import { ENCRYPTION_KEY } from "../../lib/secrets.js";
@@ -188,7 +188,8 @@ export function registerMiscRoutes(app: Hono<AuthEnv>) {
 
       if (returnAll) {
         const messages = await sql`
-          SELECT id, role, content, tool_calls, suggestions, tool_actions,
+          SELECT id, role, ${selectMessageContent(sql)} AS content,
+                 tool_calls, suggestions, tool_actions,
                  sent_by_user_id, display_name, user_color, created_at,
                  version_sha, had_tool_calls, thinking_content
           FROM ai_messages WHERE session_id = ${dbSession.id}
@@ -201,7 +202,8 @@ export function registerMiscRoutes(app: Hono<AuthEnv>) {
       let messages;
       if (beforeCursor) {
         messages = await sql`
-          SELECT id, role, content, tool_calls, suggestions, tool_actions,
+          SELECT id, role, ${selectMessageContent(sql)} AS content,
+                 tool_calls, suggestions, tool_actions,
                  sent_by_user_id, display_name, user_color, created_at,
                  version_sha, had_tool_calls, thinking_content
           FROM ai_messages
@@ -215,7 +217,8 @@ export function registerMiscRoutes(app: Hono<AuthEnv>) {
       } else {
         // Get the latest N messages
         messages = await sql`
-          SELECT id, role, content, tool_calls, suggestions, tool_actions,
+          SELECT id, role, ${selectMessageContent(sql)} AS content,
+                 tool_calls, suggestions, tool_actions,
                  sent_by_user_id, display_name, user_color, created_at,
                  version_sha, had_tool_calls, thinking_content
           FROM ai_messages

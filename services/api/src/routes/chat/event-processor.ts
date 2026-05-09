@@ -4,6 +4,7 @@
 import type { SSEStreamingApi } from "hono/streaming";
 import type { ChatStreamState } from "./types.js";
 import { sql } from "../../db/index.js";
+import { isMessageEncryptionEnabled } from "@doable/db";
 import {
   friendlyToolMessage,
   stripServerPaths,
@@ -304,7 +305,17 @@ function routeSseEvent(
           continue;
         }
         state.assistantContent += chunk.content;
-        if (state.assistantMessageId && state.assistantContent.length - state.lastFlushLen > 500) {
+        // Incremental DB flush every ~500 chars so a crash mid-stream
+        // still leaves a useful partial transcript. Skip when app-layer
+        // encryption is on: we'd have to either pgp_sym_encrypt every
+        // 500 chars (costly) or write plaintext to `content` and break
+        // the XOR check from migration 072. The accumulated full value
+        // is encrypted once at finalSaveAssistantMessage.
+        if (
+          state.assistantMessageId &&
+          state.assistantContent.length - state.lastFlushLen > 500 &&
+          !isMessageEncryptionEnabled()
+        ) {
           state.lastFlushLen = state.assistantContent.length;
           sql`UPDATE ai_messages SET content = ${state.assistantContent} WHERE id = ${state.assistantMessageId}`.catch(() => {});
         }
