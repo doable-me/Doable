@@ -136,6 +136,131 @@ billingRoutes.post("/webhook", async (c) => {
 // ─── Authenticated routes below ────────────────────────────
 billingRoutes.use("/*", authMiddleware);
 
+// ─── Top-up packages (hardcoded, used in bypass + Stripe modes) ──
+const TOPUP_PACKAGES = [
+  { id: "small",   credits: 100,  priceCents: 500,   bonus: 0 },
+  { id: "medium",  credits: 500,  priceCents: 2000,  bonus: 50 },
+  { id: "large",   credits: 1500, priceCents: 5000,  bonus: 250 },
+  { id: "xlarge",  credits: 5000, priceCents: 15000, bonus: 1000 },
+] as const;
+
+// ─── GET /billing/balance ──────────────────────────────────
+// Workspace-scoped balance shape per BUG-PUB-001 / TC-BILLING-CREDITS-001.
+billingRoutes.get("/balance", async (c) => {
+  const workspaceId = c.req.query("workspaceId");
+  if (!workspaceId) {
+    return c.json({ error: "workspaceId query param required" }, 400);
+  }
+  const userId = c.get("userId");
+  try {
+    const b = await creditsDb.getCreditBalance(userId, workspaceId);
+    return c.json({
+      data: {
+        dailyRemaining: b.daily_remaining,
+        dailyMax: b.daily_total,
+        monthlyRemaining: b.monthly_remaining,
+        monthlyMax: b.monthly_total,
+        topupRemaining: b.rollover_credits,
+        planUnlimited: b.plan_type === "enterprise",
+        planType: b.plan_type,
+      },
+    });
+  } catch (err: any) {
+    console.error("[Billing] /balance error:", err?.message ?? err);
+    return c.json({
+      data: {
+        dailyRemaining: 0, dailyMax: 0,
+        monthlyRemaining: 0, monthlyMax: 0,
+        topupRemaining: 0, planUnlimited: false, planType: "free",
+      },
+    });
+  }
+});
+
+// ─── GET /billing/topup/packages ───────────────────────────
+billingRoutes.get("/topup/packages", (c) => {
+  return c.json({ data: TOPUP_PACKAGES });
+});
+
+// ─── POST /billing/topup ───────────────────────────────────
+// Bypass mode (STRIPE_SECRET_KEY empty): grants rollover credits directly.
+// Stripe mode: delegates to /top-up (existing checkout) — clients should use that.
+const topupBodySchema = z.object({
+  workspaceId: z.string().uuid(),
+  packageId: z.enum(["small", "medium", "large", "xlarge"]),
+});
+billingRoutes.post("/topup", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = topupBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid request", details: parsed.error.flatten().fieldErrors }, 400);
+  }
+  const { workspaceId, packageId } = parsed.data;
+  const pkg = TOPUP_PACKAGES.find((p) => p.id === packageId);
+  if (!pkg) return c.json({ error: "Unknown packageId" }, 400);
+
+  const stripeEnabled = !!process.env.STRIPE_SECRET_KEY;
+  if (!stripeEnabled) {
+    // Bypass mode — grant immediately
+    const granted = pkg.credits + pkg.bonus;
+    await creditsDb.addRolloverCredits(workspaceId, granted);
+    return c.json({
+      data: {
+        mode: "bypass",
+        granted,
+        packageId,
+        transactionType: "topup_grant_bypass",
+      },
+    });
+  }
+
+  // Stripe mode — create checkout session for the package amount
+  let subscription = await billing.getSubscription(workspaceId);
+  let customerId = subscription?.stripe_customer_id;
+  if (!customerId) {
+    const userEmail = c.get("userEmail");
+    const customer = await createCustomer({ email: userEmail, workspaceId });
+    customerId = customer.id;
+  }
+  const origin = c.req.header("origin") ?? "http://localhost:3000";
+  const session = await createTopUpSession({
+    customerId,
+    amount: pkg.priceCents,
+    credits: pkg.credits + pkg.bonus,
+    workspaceId,
+    successUrl: `${origin}/billing?topup=success`,
+    cancelUrl: `${origin}/billing?topup=canceled`,
+  });
+  return c.json({ data: { mode: "stripe", url: session.url, packageId } });
+});
+
+// ─── GET /billing/invoices ─────────────────────────────────
+// Reads from billing_invoices table if present; returns [] otherwise (bypass mode).
+billingRoutes.get("/invoices", async (c) => {
+  const workspaceId = c.req.query("workspaceId");
+  if (!workspaceId) {
+    return c.json({ error: "workspaceId query param required" }, 400);
+  }
+  try {
+    const rows = await sql<any[]>`
+      SELECT id, workspace_id, stripe_invoice_id, amount_cents, currency,
+             status, hosted_invoice_url, invoice_pdf, created_at
+      FROM billing_invoices
+      WHERE workspace_id = ${workspaceId}
+      ORDER BY created_at DESC
+      LIMIT 100
+    `;
+    return c.json({ data: rows });
+  } catch (err: any) {
+    // Table may not exist (no Stripe integration yet) — return empty list, not 404.
+    if (err?.code === "42P01") {
+      return c.json({ data: [] });
+    }
+    console.error("[Billing] /invoices error:", err?.message ?? err);
+    return c.json({ data: [] });
+  }
+});
+
 // ─── GET /billing/credits ──────────────────────────────────
 // Returns user-level credit balance (with auto-initialization and reset)
 billingRoutes.get("/credits", async (c) => {
