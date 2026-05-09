@@ -276,7 +276,24 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
     // child spans created in message-handler.ts hang off this trace.
     otelContext.with(otelTrace.setSpan(otelContext.active(), connSpan), () => {
       try {
-        const msg = JSON.parse(raw.toString()) as WsClientMessage;
+        const parsed = JSON.parse(raw.toString()) as Record<string, unknown>;
+        // BUG-WSI-001: accept dotted alias `room.join` and `roomId` field
+        // alongside canonical `room:join` / `projectId`. Some early QA
+        // clients (and external integrations) used the dotted form; rather
+        // than silently no-op'ing them and leaving the client waiting 5+s
+        // for an ack, normalise here so the rest of the pipeline behaves
+        // uniformly.
+        if (parsed && typeof parsed === "object") {
+          const t = parsed["type"];
+          if (typeof t === "string") {
+            if (t === "room.join") parsed["type"] = "room:join";
+            else if (t === "room.leave") parsed["type"] = "room:leave";
+          }
+          if (parsed["type"] === "room:join" && parsed["projectId"] === undefined && typeof parsed["roomId"] === "string") {
+            parsed["projectId"] = parsed["roomId"];
+          }
+        }
+        const msg = parsed as unknown as WsClientMessage;
         handleMessage(ws, state, msg);
       } catch {
         send(ws, { type: "error", code: "PARSE_ERROR", message: "Invalid JSON" });

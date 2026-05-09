@@ -66,6 +66,9 @@ export function createMessageHandler(deps: {
       state.projectId = msg.projectId;
       const room = rooms.getOrCreate(msg.projectId);
       const members = room.join(ws, state.userId, state.displayName, null);
+      // BUG-WSI-001: ack must arrive within ~50ms — `room:joined` carries the
+      // member snapshot so clients can render presence immediately. The
+      // chat history is sent asynchronously below; ack is NOT gated on it.
       send(ws, { type: "room:joined", projectId: msg.projectId, members });
       // Send chat history
       const API_URL = process.env.API_URL ?? "http://localhost:4000";
