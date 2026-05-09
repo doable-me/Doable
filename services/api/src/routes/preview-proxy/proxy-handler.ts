@@ -195,7 +195,16 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
 
 /**
  * Proxy ALL requests under /preview/:projectId/* to the Vite dev server.
+ *
+ * Lazy wake-up (BUG-PREVIEW-EVICTION-001): if the dev-server has been
+ * evicted from the registry (memory pressure / idle sweep) but the project
+ * files still exist on disk, this route auto-respawns the dev server and
+ * waits up to WAKE_TIMEOUT_MS for readiness. If the wake takes longer than
+ * the cap, we return a structured 503 (`dev_server_starting`) so the
+ * frontend can render a meaningful retry state instead of a stuck spinner.
  */
+const WAKE_TIMEOUT_MS = 30_000;
+
 previewRoutes.all("/preview/:projectId/*", async (c) => {
   const projectId = c.req.param("projectId");
 
@@ -204,23 +213,79 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
     return c.text("Not found", 404);
   }
 
-  // Ensure the dev server is running (auto-start if scaffolded)
-  if (!isRunning(projectId) && isProjectScaffolded(projectId)) {
+  const alreadyRunning = isRunning(projectId);
+
+  // Truly stale projectId? No registry entry AND no files on disk → 404.
+  // (Distinguishes "evicted from memory but disk-resident" — which we can
+  // wake — from "deleted / never existed" — which is a hard 404.)
+  if (!alreadyRunning && !isProjectScaffolded(projectId)) {
+    return c.text("Not found", 404);
+  }
+
+  // Ensure the dev server is running (auto-start if scaffolded but not in
+  // registry — i.e. evicted/hibernated). Cap the spawn+ready wait at
+  // WAKE_TIMEOUT_MS so the proxy never hangs the request indefinitely.
+  if (!alreadyRunning) {
     try {
       await ensureDependencies(projectId);
-      await startDevServer(projectId);
-    } catch {
-      // Fall through — getDevServerInternalUrlWhenReady will return null
+      // Fire-and-forget: startDevServer registers an inflight promise that
+      // getDevServerInternalUrlWhenReady will await below. Catching here
+      // prevents an unhandledRejection if startup fails synchronously.
+      startDevServer(projectId).catch((err) => {
+        console.warn(
+          `[preview-proxy] startDevServer failed for ${projectId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      });
+    } catch (err) {
+      console.warn(
+        `[preview-proxy] ensureDependencies failed for ${projectId}:`,
+        err instanceof Error ? err.message : err,
+      );
+      // Fall through — readiness wait below will time out and emit 503.
     }
   }
 
-  const devUrl = await getDevServerInternalUrlWhenReady(projectId);
-  if (!devUrl) {
+  // Race readiness against the wake-up budget. On timeout we emit a
+  // structured 503 so the editor can show a "waking up…" CTA instead of
+  // hanging the iframe on the stock retry HTML forever.
+  const readyOrTimeout = await Promise.race([
+    getDevServerInternalUrlWhenReady(projectId),
+    new Promise<"__timeout__">((resolve) =>
+      setTimeout(() => resolve("__timeout__"), WAKE_TIMEOUT_MS).unref?.(),
+    ),
+  ]);
+
+  if (readyOrTimeout === "__timeout__" || !readyOrTimeout) {
+    // Structured 503: project files exist but dev-server hasn't bound its
+    // port within WAKE_TIMEOUT_MS. Frontend should poll again after 5s.
+    // Suppress the iframe's auto-rendered JSON page by negotiating
+    // content-type — top-level HTML requests get the friendly RETRY_HTML
+    // page (which auto-reloads), API/JSON callers get the structured body.
+    const accept = c.req.header("accept") ?? "";
+    const wantsJson =
+      accept.includes("application/json") || !accept.includes("text/html");
+    if (wantsJson) {
+      return c.json(
+        {
+          error: "dev_server_starting",
+          projectId,
+          etaSeconds: Math.round(WAKE_TIMEOUT_MS / 1000),
+        },
+        503,
+        {
+          "Retry-After": "5",
+          "Cache-Control": "no-store",
+        },
+      );
+    }
     return c.html(RETRY_HTML, 503, {
-      "Retry-After": "3",
+      "Retry-After": "5",
       "Cache-Control": "no-store",
     });
   }
+
+  const devUrl = readyOrTimeout;
 
   // Mark this dev server as recently active so the idle-eviction sweeper
   // (dev-server-core.ts) doesn't kill it. Cheap (Date.now write) and runs
