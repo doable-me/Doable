@@ -1,13 +1,13 @@
 # BUG-PUB-004 — Publish build fails with vite UNRESOLVED_IMPORT for project 88279d57
 
 **Severity:** Critical
-**Env:** zantaz, project `88279d57-29fa-42f0-bef9-3c5dcd8fde1d` (qa-owner workspace)
+**Env:** <env>, project `88279d57-29fa-42f0-bef9-3c5dcd8fde1d` (qa-owner workspace)
 **Date:** 2026-05-10
 
 ## Repro
 ```
 PID=88279d57-29fa-42f0-bef9-3c5dcd8fde1d
-curl -X POST -H "Authorization: Bearer $OWNER" https://zantaz-api.doable.me/deploy/$PID/publish
+curl -X POST -H "Authorization: Bearer $OWNER" https://<env>-api.doable.me/deploy/$PID/publish
 # → HTTP 500
 # {"error":"Deployment failed","data":{"deploymentId":"9f7953d7-…","buildLog":"npm warn exec The following package was not found and will be installed: vite@8.0.11\nvite.config.ts (1:417) [UNRESOLVED_IMPORT] Warning: Could not resolve 'vite' in vite.config.ts …"}}
 ```
@@ -18,7 +18,7 @@ curl -X POST -H "Authorization: Bearer $OWNER" https://zantaz-api.doable.me/depl
 - The endpoint returns the build log synchronously in the error body — but TC-DEPLOY-LIFECYCLE-002/003 expect SSE events (`queued`, `building:step:install`, `failed`) on `/api/deploy/:id/stream`. Not enforced here.
 
 ## Impact
-- Blocks the entire publish/marketplace/thumbnails/deploy chain on zantaz against the only available real project.
+- Blocks the entire publish/marketplace/thumbnails/deploy chain on <env> against the only available real project.
 - Cascading BLOCKED on TC-PUBLISH-SUBDOMAIN-*, TC-PUBLISH-LIFECYCLE-*, TC-DEPLOY-ARTIFACTS-*, TC-DEPLOY-ROLLBACK-*, TC-THUMB-GEN-*, TC-THUMB-QUEUE-*.
 
 ## Suggested fix

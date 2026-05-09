@@ -1,12 +1,12 @@
 # BUG-PUB-003 — GET /marketplace requires auth (401) — anon browse blocked
 
 **Severity:** High
-**Env:** zantaz
+**Env:** <env>
 **Date:** 2026-05-10
 
 ## Repro
 ```
-curl https://zantaz-api.doable.me/marketplace
+curl https://<env>-api.doable.me/marketplace
 # → HTTP 401 {"error":"Missing or invalid Authorization header"}
 ```
 

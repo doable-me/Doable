@@ -1,13 +1,13 @@
 # BUG-WSI-004 — Notifications API completely missing
 
 ## Environment
-- zantaz: https://zantaz-api.doable.me
+- <env>: https://<env>-api.doable.me
 - 2026-05-10 ~18:58Z
 - Test corpus: `testcases/22-notifications/`
 
 ## Reproduction
 ```bash
-curl -i -H "Authorization: Bearer $OWNER" https://zantaz-api.doable.me/notifications
+curl -i -H "Authorization: Bearer $OWNER" https://<env>-api.doable.me/notifications
 # HTTP/2 404
 # {"error":"Not Found","path":"/notifications"}
 ```

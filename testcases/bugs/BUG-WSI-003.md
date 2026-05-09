@@ -1,14 +1,14 @@
 # BUG-WSI-003 — /design-comments/:projectId returns 308 redirect
 
 ## Environment
-- zantaz: https://zantaz-api.doable.me
+- <env>: https://<env>-api.doable.me
 - 2026-05-10 ~18:58Z
 - qa-owner JWT, projectId from /projects
 
 ## Reproduction
 ```bash
 curl -i -H "Authorization: Bearer $OWNER" \
-  https://zantaz-api.doable.me/design-comments/ec8fd6b0-4297-4198-b396-f9a44eecda08
+  https://<env>-api.doable.me/design-comments/ec8fd6b0-4297-4198-b396-f9a44eecda08
 # HTTP/2 308
 ```
 
@@ -22,11 +22,11 @@ Routes look correct. The 308 likely comes from edge layer (Caddy/CF) rewriting t
 
 ## Recommended action
 1. Run `curl -i -L` to capture Location.
-2. Inspect Caddy config on zantaz server for any `/design-comments` rewrite.
+2. Inspect Caddy config on <env> server for any `/design-comments` rewrite.
 3. Confirm whether CF Page Rules / Workers add redirects.
 
 ## Severity
-high — entire design-comments API unreachable from external clients on zantaz tenant.
+high — entire design-comments API unreachable from external clients on <env> tenant.
 
 ## Evidence
-`testcases/evidence/zantaz/comments.json` (empty body), `comments-create.json` (empty body), curl status 308.
+`testcases/evidence/<env>/comments.json` (empty body), `comments-create.json` (empty body), curl status 308.

@@ -1,14 +1,14 @@
 # BUG-WSI-001 — room.join sends no presence/snapshot ack within 5s
 
 ## Environment
-- zantaz: wss://zantaz-ws.doable.me, https://zantaz-api.doable.me
+- <env>: wss://<env>-ws.doable.me, https://<env>-api.doable.me
 - 2026-05-10 ~18:58Z
 - Token: qa-owner JWT (24h, fresh)
 
 ## Reproduction
 ```js
-const w = new WebSocket('wss://zantaz-ws.doable.me/?token=' + ownerJwt);
-w.on('open', () => w.send(JSON.stringify({type:'room.join', roomId:'r:zantaz'})));
+const w = new WebSocket('wss://<env>-ws.doable.me/?token=' + ownerJwt);
+w.on('open', () => w.send(JSON.stringify({type:'room.join', roomId:'r:<env>'})));
 w.on('message', m => console.log(m.toString()));
 // Wait 5s
 ```
@@ -28,4 +28,4 @@ medium — collaboration UX cannot show "you joined room" until first peer publi
 heartbeat works (PASS), so socket is alive. Likely server simply does not emit a join ack — only broadcasts subsequent presence updates. Verify expected behavior in `services/ws/src` and update corpus or fix server accordingly.
 
 ## Evidence
-`testcases/evidence/zantaz/TC-WS-ROOMS.log`
+`testcases/evidence/<env>/TC-WS-ROOMS.log`

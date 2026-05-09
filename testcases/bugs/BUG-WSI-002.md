@@ -1,16 +1,16 @@
 # BUG-WSI-002 — /integrations/connections requires workspaceId; test corpus does not document it
 
 ## Environment
-- zantaz: https://zantaz-api.doable.me
+- <env>: https://<env>-api.doable.me
 - 2026-05-10 ~18:58Z
 - qa-owner JWT (200 OK on /projects)
 
 ## Reproduction
 ```bash
-curl -H "Authorization: Bearer $OWNER" https://zantaz-api.doable.me/integrations/connections
+curl -H "Authorization: Bearer $OWNER" https://<env>-api.doable.me/integrations/connections
 # 400 {"error":"workspaceId query parameter is required"}
 
-curl -H "Authorization: Bearer $OWNER" "https://zantaz-api.doable.me/integrations/connections?workspaceId=<wsid>"
+curl -H "Authorization: Bearer $OWNER" "https://<env>-api.doable.me/integrations/connections?workspaceId=<wsid>"
 # 200
 ```
 

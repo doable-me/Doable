@@ -1,19 +1,19 @@
-# BUG-PUB-001 — Billing endpoints /balance, /topup/*, /invoices return 404 on zantaz
+# BUG-PUB-001 — Billing endpoints /balance, /topup/*, /invoices return 404 on <env>
 
 **Severity:** High
-**Env:** zantaz (https://zantaz-api.doable.me)
+**Env:** <env> (https://<env>-api.doable.me)
 **Date:** 2026-05-10
 
 ## Repro
 ```
 TOKEN=<qa-owner JWT>
-curl -H "Authorization: Bearer $TOKEN" https://zantaz-api.doable.me/billing/balance
+curl -H "Authorization: Bearer $TOKEN" https://<env>-api.doable.me/billing/balance
 # → 404 {"error":"Not Found","path":"/billing/balance"}
-curl -H "Authorization: Bearer $TOKEN" https://zantaz-api.doable.me/billing/topup/packages
+curl -H "Authorization: Bearer $TOKEN" https://<env>-api.doable.me/billing/topup/packages
 # → 404
-curl -H "Authorization: Bearer $TOKEN" https://zantaz-api.doable.me/billing/invoices
+curl -H "Authorization: Bearer $TOKEN" https://<env>-api.doable.me/billing/invoices
 # → 404
-curl -X POST -H "Authorization: Bearer $TOKEN" https://zantaz-api.doable.me/billing/topup
+curl -X POST -H "Authorization: Bearer $TOKEN" https://<env>-api.doable.me/billing/topup
 # → 404
 ```
 
@@ -28,4 +28,4 @@ Per testcases/06-billing/ (TC-BILLING-CREDITS-001, TC-BILLING-TOPUP-001, TC-BILL
 404 Not Found from API for all four endpoints. Only `/billing/plans` and `/billing/webhook` exist; the credits/topup/invoices/portal-list surface is missing.
 
 ## Impact
-Billing UI (sidebar Upgrade button → /billing) cannot render balances or buy topups; tests in TC-BILLING-CREDITS-* and TC-BILLING-TOPUP-* are wholly unrunnable on zantaz.
+Billing UI (sidebar Upgrade button → /billing) cannot render balances or buy topups; tests in TC-BILLING-CREDITS-* and TC-BILLING-TOPUP-* are wholly unrunnable on <env>.

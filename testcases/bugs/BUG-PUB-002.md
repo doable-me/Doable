@@ -1,12 +1,12 @@
 # BUG-PUB-002 — POST /billing/portal returns 400 instead of 503 in Stripe bypass mode
 
 **Severity:** Medium
-**Env:** zantaz (STRIPE_SECRET_KEY="")
+**Env:** <env> (STRIPE_SECRET_KEY="")
 **Date:** 2026-05-10
 
 ## Repro
 ```
-curl -X POST -H "Authorization: Bearer $OWNER" https://zantaz-api.doable.me/billing/portal
+curl -X POST -H "Authorization: Bearer $OWNER" https://<env>-api.doable.me/billing/portal
 # → HTTP 400 {"error":"Invalid JSON in request body"}
 ```
 
