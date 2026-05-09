@@ -42,6 +42,7 @@ import { marketplaceModerationRoutes } from "./routes/marketplace-moderation.js"
 import { teamChatRoutes } from "./routes/team-chat.js";
 import { designCommentRoutes } from "./routes/design-comments.js";
 import { internalRoutes } from "./routes/internal.js";
+import { notificationRoutes } from "./routes/notifications.js";
 import { planRoutes } from "./routes/plan.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import artifactsRoutes from "./routes/artifacts.js";
@@ -110,6 +111,7 @@ app.route("/", marketplaceModerationRoutes);
 app.route("/workspaces/:wid/context", workspaceContextRoutes);
 app.route("/team-chat", teamChatRoutes);
 app.route("/design-comments", designCommentRoutes);
+app.route("/", notificationRoutes);
 app.route("/", publicFrameworkRoutes);
 
 }
