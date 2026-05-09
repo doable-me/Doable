@@ -1,15 +1,25 @@
 # 10 — PostgreSQL hardening
 
-Status: **doc-only — diffs not yet applied to `setup-v3/setup-server-v3.sh`**.
 Owner: platform / setup-server.
 Cross-refs: `01-env-secrets.md` (.env perms), `02-services-as-root.md` (run-as user),
 `secureIntegrationsPRD/07-security-findings.md`.
 
+## STATUS: as of 2026-05-09
+
+| Diff | State | How to enable |
+|------|-------|---------------|
+| **3a** Revoke `CREATEDB` from runtime role | **APPLIED** (always-on, no env var) | automatic on every fresh install AND on rerun against existing installs |
+| **3b** Role split (`doable_admin` for DDL, `doable` for DML) | **AVAILABLE** behind `DOABLE_PG_ROLE_SPLIT=1` | export `DOABLE_PG_ROLE_SPLIT=1` before `./setup-v3/setup-server-v3.sh` |
+| **3c** Peer auth via Unix socket | **AVAILABLE** behind `DOABLE_PG_PEER_AUTH=1` | export `DOABLE_PG_PEER_AUTH=1` before `./setup-v3/setup-server-v3.sh`; requires API to run as OS user `doable` (already does in v3) |
+| **3d** Read-only role | **DEFERRED** (TODO comment in script) | not implemented; add only when a consumer needs it |
+
+Defaults preserve the previous installer behaviour EXCEPT the always-on `CREATEDB` revoke (3a) — which is the intended security improvement.
+
 This document audits the postgres security posture installed by
-`setup-v3/setup-server-v3.sh` (Phase 4, lines 199–245) and proposes a layered
-remediation plan ordered by impact-to-effort ratio. Nothing here has been
-applied — the diffs below are the exact patches a follow-up commit should
-make against the post-rename path `setup-v3/setup-server-v3.sh`.
+`setup-v3/setup-server-v3.sh` (Phase 4) and lays out a layered remediation
+plan ordered by impact-to-effort ratio. The diffs below describe the exact
+patches that have been applied (3a) or are gated behind opt-in env vars
+(3b/3c) in the current `setup-v3/setup-server-v3.sh`.
 
 ---
 
@@ -104,11 +114,14 @@ that ships, operators must rotate by hand. Lowest priority.
 Diffs are unified-format against `setup-v3/setup-server-v3.sh`. Apply
 in order — each step is independently shippable.
 
-### 3a. Revoke `CREATEDB` (smallest change, biggest win)
+### 3a. Revoke `CREATEDB` (smallest change, biggest win) — **APPLIED 2026-05-09 (always-on)**
 
 Removes dead privilege on every fresh install AND idempotently strips it
 from existing installs on rerun. **No data migration cost. No connection
 string change. Zero operator action.**
+
+This is unconditionally executed by every run of `setup-v3/setup-server-v3.sh`.
+The original diff:
 
 ```diff
 --- a/setup-v3/setup-server-v3.sh
@@ -137,7 +150,25 @@ installer's own behaviour.
 
 ---
 
-### 3b. Split `doable_admin` (DDL) from `doable` (DML)
+### 3b. Split `doable_admin` (DDL) from `doable` (DML) — **OPT-IN via `DOABLE_PG_ROLE_SPLIT=1`**
+
+Installer behaviour: when `DOABLE_PG_ROLE_SPLIT=1` is exported before
+running `setup-v3/setup-server-v3.sh`, the installer additionally
+- creates a `doable_admin` role (random hex password persisted to
+  `/etc/doable/.db_pass_admin`, mode 0600),
+- runs `REASSIGN OWNED BY doable TO doable_admin`,
+- revokes `ALL`+`CREATE` on the `public` schema from the runtime
+  `doable` role and re-grants only `SELECT/INSERT/UPDATE/DELETE` on
+  existing tables/sequences,
+- adds `ALTER DEFAULT PRIVILEGES` so future tables created by
+  `doable_admin` inherit the same DML-only grant for `doable`,
+- writes `DATABASE_URL_ADMIN=postgres://doable_admin:<hex>@localhost:5432/doable`
+  into `/opt/doable/.env`.
+
+When the env var is unset (default), the installer skips all of the
+above and preserves the prior single-role behaviour.
+
+`migrate.ts` consumer-side change is still pending — see 3b.ii below.
 
 Heavier change — touches both the installer and `services/api/src/db/migrate.ts`.
 
@@ -260,7 +291,20 @@ clearly in the operator checklist (Section 5 below).
 
 ---
 
-### 3c. Switch to peer auth on the Unix socket
+### 3c. Switch to peer auth on the Unix socket — **OPT-IN via `DOABLE_PG_PEER_AUTH=1`**
+
+Installer behaviour: when `DOABLE_PG_PEER_AUTH=1` is exported before
+running `setup-v3/setup-server-v3.sh`, the installer additionally
+- inserts a `local doable doable peer` line (with a sentinel comment
+  `# servertodo/10 — Doable peer auth` so re-runs do not duplicate)
+  before the catch-all `local all all` block in `pg_hba.conf`,
+- reloads postgres (`systemctl reload postgresql@16-main`),
+- renders `DATABASE_URL=postgres:///doable?host=/var/run/postgresql` in
+  `/opt/doable/.env` (no password component on the runtime URL).
+
+Requires the API to run as the OS user `doable`, which v3 already does.
+When the env var is unset (default), the installer skips this step and
+keeps password-on-loopback auth.
 
 Strictly the strongest auth posture for a single-host deploy: the kernel
 authenticates the connecting OS user, no password ever touches the wire,
@@ -365,7 +409,11 @@ parses the `host=...` query parameter as the socket dir.
 
 ---
 
-### 3d. Add a read-only role (optional, low cost)
+### 3d. Add a read-only role (optional, low cost) — **DEFERRED**
+
+Not implemented in the installer. A `TODO` comment in `setup-v3/setup-server-v3.sh`
+notes that this should be gated behind `DOABLE_PG_READONLY_ROLE=1` once a
+consumer (analytics / observability) actually needs it.
 
 After the migrations land, grant a `doable_readonly` role for ad-hoc
 queries / future observability:

@@ -228,11 +228,37 @@ if [ ! -s "${DB_PASS_FILE}" ]; then
 fi
 DB_PASS="$(cat "${DB_PASS_FILE}")"
 
+# servertodo/10 §3b — Optional role split (DDL admin role + DML runtime role).
+# Set DOABLE_PG_ROLE_SPLIT=1 in your env before running setup to enable role-split.
+# Default (unset) preserves the prior single-role behaviour.
+DOABLE_PG_ROLE_SPLIT="${DOABLE_PG_ROLE_SPLIT:-0}"
+DB_ADMIN_PASS_FILE="/etc/doable/.db_pass_admin"
+if [ "${DOABLE_PG_ROLE_SPLIT}" = "1" ]; then
+  if [ ! -s "${DB_ADMIN_PASS_FILE}" ]; then
+    umask 077
+    openssl rand -hex 32 > "${DB_ADMIN_PASS_FILE}"
+    chmod 0600 "${DB_ADMIN_PASS_FILE}"
+  fi
+  DB_ADMIN_PASS="$(cat "${DB_ADMIN_PASS_FILE}")"
+fi
+
 # Idempotent role + database creation.
+# servertodo/10 §3a — runtime role MUST NOT have CREATEDB (always-on).
+# The API never creates databases; the script itself uses the postgres
+# superuser for the one-time CREATE DATABASE below.
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='doable'" | grep -q 1 \
-  || sudo -u postgres psql -c "CREATE USER doable WITH PASSWORD '${DB_PASS}' CREATEDB;"
+  || sudo -u postgres psql -c "CREATE USER doable WITH PASSWORD '${DB_PASS}';"
 # Always sync the password to the random value (in case rerun and previous runs left a default).
 sudo -u postgres psql -c "ALTER USER doable WITH PASSWORD '${DB_PASS}';" >/dev/null
+# Idempotently strip CREATEDB in case a prior install of this script granted it.
+sudo -u postgres psql -c "ALTER USER doable NOCREATEDB;" >/dev/null 2>&1 || true
+
+# servertodo/10 §3b — admin role for DDL (only when DOABLE_PG_ROLE_SPLIT=1).
+if [ "${DOABLE_PG_ROLE_SPLIT}" = "1" ]; then
+  sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='doable_admin'" | grep -q 1 \
+    || sudo -u postgres psql -c "CREATE USER doable_admin WITH PASSWORD '${DB_ADMIN_PASS}';"
+  sudo -u postgres psql -c "ALTER USER doable_admin WITH PASSWORD '${DB_ADMIN_PASS}';" >/dev/null
+fi
 
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='doable'" | grep -q 1 \
   || sudo -u postgres psql -c "CREATE DATABASE doable OWNER doable;"
@@ -242,7 +268,55 @@ for ext in pgcrypto vector pg_trgm; do
   sudo -u postgres psql -d doable -c "CREATE EXTENSION IF NOT EXISTS ${ext};" >/dev/null 2>&1 || true
 done
 
-ok "Postgres: role=doable, db=doable, password persisted at ${DB_PASS_FILE} (mode 600)"
+# servertodo/10 §3b — when role split is enabled, reassign ownership to
+# doable_admin and re-grant DML to the runtime role. Idempotent: REASSIGN
+# OWNED is a no-op when nothing is owned by 'doable' anymore.
+if [ "${DOABLE_PG_ROLE_SPLIT}" = "1" ]; then
+  sudo -u postgres psql -d doable <<'ROLESPLITSQL' >/dev/null
+REASSIGN OWNED BY doable TO doable_admin;
+REVOKE ALL ON SCHEMA public FROM doable;
+REVOKE CREATE ON SCHEMA public FROM doable;
+GRANT CONNECT ON DATABASE doable TO doable;
+GRANT USAGE ON SCHEMA public TO doable;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO doable;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO doable;
+ALTER DEFAULT PRIVILEGES FOR ROLE doable_admin IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO doable;
+ALTER DEFAULT PRIVILEGES FOR ROLE doable_admin IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO doable;
+ROLESPLITSQL
+  ok "Postgres: role split enabled (doable_admin=DDL, doable=DML); admin pass at ${DB_ADMIN_PASS_FILE}"
+fi
+
+# servertodo/10 §3c — Optional peer auth via Unix socket for the runtime role.
+# Set DOABLE_PG_PEER_AUTH=1 in your env before running setup to enable.
+# Requires the API to run as the OS user 'doable' (already does in v3).
+DOABLE_PG_PEER_AUTH="${DOABLE_PG_PEER_AUTH:-0}"
+if [ "${DOABLE_PG_PEER_AUTH}" = "1" ]; then
+  PG_HBA="$(find /etc/postgresql -name pg_hba.conf 2>/dev/null | head -1 || true)"
+  if [ -n "${PG_HBA}" ]; then
+    if ! grep -qE '^# servertodo/10 — Doable peer auth' "${PG_HBA}"; then
+      # Insert before the catch-all 'local all all' line. Sentinel comment
+      # ensures re-runs don't duplicate.
+      sed -i '/^local[[:space:]]\+all[[:space:]]\+all/i\
+# servertodo/10 — Doable peer auth\
+local   doable          doable                                  peer\
+local   doable          doable_admin                            peer
+' "${PG_HBA}"
+      systemctl reload postgresql@16-main 2>/dev/null || systemctl reload postgresql
+      ok "pg_hba.conf: added peer-auth entry for doable role"
+    else
+      ok "pg_hba.conf: peer-auth entry already present"
+    fi
+  else
+    warn "Could not locate pg_hba.conf — verify peer auth manually."
+  fi
+fi
+
+# servertodo/10 §3d — read-only role: deferred. TODO: gate behind
+# DOABLE_PG_READONLY_ROLE=1 once a consumer (analytics / observability) needs it.
+
+ok "Postgres: role=doable (NOCREATEDB), db=doable, password persisted at ${DB_PASS_FILE} (mode 600)"
 
 # ─── Phase 5: UFW firewall ───────────────────────────────────────────────
 phase "Phase 5/15  UFW firewall (deny incoming, allow OpenSSH)"
@@ -520,6 +594,21 @@ if [ ! -f "${ENV_FILE}" ]; then
   INTERNAL_SECRET="$(openssl rand -hex 32)"
   PROJECT_JWT_SECRET="$(openssl rand -hex 32)"
 
+  # servertodo/10 §3c — peer auth via Unix socket removes the password from
+  # the connection string entirely; node-postgres parses host=... as socket.
+  if [ "${DOABLE_PG_PEER_AUTH:-0}" = "1" ]; then
+    DATABASE_URL_LINE="DATABASE_URL=postgres:///doable?host=/var/run/postgresql"
+  else
+    DATABASE_URL_LINE="DATABASE_URL=postgres://doable:${DB_PASS}@localhost:5432/doable"
+  fi
+  # servertodo/10 §3b — admin URL (DDL only) when role split is enabled.
+  # migrate.ts must read DATABASE_URL_ADMIN with fallback to DATABASE_URL.
+  if [ "${DOABLE_PG_ROLE_SPLIT:-0}" = "1" ]; then
+    DATABASE_URL_ADMIN_LINE=$'\n# Admin URL — used ONLY by services/api/src/db/migrate.ts. Do NOT use at runtime.\nDATABASE_URL_ADMIN=postgres://doable_admin:'"${DB_ADMIN_PASS}"'@localhost:5432/doable'
+  else
+    DATABASE_URL_ADMIN_LINE=""
+  fi
+
   # Write atomically with restrictive perms BEFORE content lands.
   TMP_ENV="$(mktemp)"
   chmod 0600 "${TMP_ENV}"
@@ -528,7 +617,7 @@ if [ ! -f "${ENV_FILE}" ]; then
 # Mode 0600 doable:doable. Do not chmod 644; do not commit.
 
 # Database
-DATABASE_URL=postgres://doable:${DB_PASS}@localhost:5432/doable
+${DATABASE_URL_LINE}${DATABASE_URL_ADMIN_LINE}
 DATABASE_POOL_SIZE=20
 
 # Auth / JWT  (PROJECT_JWT_SECRET is split per servertodo + secureIntegrationsPRD/07 #2/#3)
