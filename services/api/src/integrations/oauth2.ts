@@ -6,6 +6,12 @@ import type { IntegrationConnection, OAuth2TokenData } from "./types.js";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? process.env.PUBLIC_URL ?? "http://localhost:3000";
 const API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
 
+// Public-facing API origin used to build redirect_uri values. Many OAuth
+// providers (Supabase, Google for non-localhost flows) require HTTPS, so the
+// loopback API_URL above is unsuitable as a redirect target on production
+// installs. Prefer the explicit public URL when present.
+const PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL ?? (API_URL.startsWith("http://127.") || API_URL.startsWith("http://localhost") ? null : API_URL) ?? API_URL;
+
 // The redirect URI for integration OAuth flows. This MUST be registered as an
 // "Authorized redirect URI" in each OAuth provider's developer console.
 //
@@ -21,7 +27,7 @@ const API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
 // Override with INTEGRATIONS_OAUTH_REDIRECT_URI env var if the API is behind
 // a reverse proxy / tunnel and the public URL differs from API_URL.
 const OAUTH_REDIRECT_URI =
-  process.env.INTEGRATIONS_OAUTH_REDIRECT_URI ?? `${API_URL}/integrations/oauth/callback`;
+  process.env.INTEGRATIONS_OAUTH_REDIRECT_URI ?? `${PUBLIC_API_URL}/integrations/oauth/callback`;
 
 // ─── State Encryption ────────────────────────────────────
 // OAuth state parameter carries the integration context through the flow.

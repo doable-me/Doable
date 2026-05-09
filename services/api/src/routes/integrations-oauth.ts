@@ -19,7 +19,13 @@ async function requireMember(workspaceId: string, userId: string): Promise<strin
 }
 
 const EA_API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
-const EA_REDIRECT_URI = process.env.INTEGRATIONS_ENHANCED_AUTH_REDIRECT_URI ?? `${EA_API_URL}/integrations/enhanced-auth/callback`;
+// Public-facing API origin (HTTPS) — Supabase + Google reject http:// redirect
+// targets that aren't localhost. Prefer NEXT_PUBLIC_API_URL on production
+// installs and only fall back to API_URL for dev when no public host is set.
+const EA_PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL
+  ?? (EA_API_URL.startsWith("http://127.") || EA_API_URL.startsWith("http://localhost") ? null : EA_API_URL)
+  ?? EA_API_URL;
+const EA_REDIRECT_URI = process.env.INTEGRATIONS_ENHANCED_AUTH_REDIRECT_URI ?? `${EA_PUBLIC_API_URL}/integrations/enhanced-auth/callback`;
 
 // ─── OAuth Flow ────────────────────────────────────────────
 

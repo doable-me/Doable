@@ -533,6 +533,15 @@ GITHUB_REDIRECT_URI=https://${API_DOMAIN}/auth/github/callback
 GITHUB_COPILOT_REDIRECT_URI=https://${API_DOMAIN}/auth/github/copilot/callback
 GITHUB_REPO_REDIRECT_URI=https://api.${DOMAIN}/auth/github/repo/callback
 
+# Integration OAuth callbacks — must be HTTPS (Supabase, Google reject http://
+# non-localhost). Reusing the public API hostname avoids edge-layer mismatches.
+INTEGRATIONS_OAUTH_REDIRECT_URI=https://${API_DOMAIN}/integrations/oauth/callback
+INTEGRATIONS_ENHANCED_AUTH_REDIRECT_URI=https://${API_DOMAIN}/integrations/enhanced-auth/callback
+
+# Supabase management OAuth (BYO Supabase) — register at supabase.com/dashboard/account/apps
+OAUTH_SUPABASE_MGMT_CLIENT_ID=${OAUTH_SUPABASE_MGMT_CLIENT_ID:-}
+OAUTH_SUPABASE_MGMT_CLIENT_SECRET=${OAUTH_SUPABASE_MGMT_CLIENT_SECRET:-}
+
 # ─── AI / Copilot SDK ─────────────────────────────────────
 COPILOT_DEFAULT_MODEL=
 COPILOT_CLI_PATH=
