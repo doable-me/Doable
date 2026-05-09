@@ -3,7 +3,7 @@ import { sql } from "../db/index.js";
 import { deploymentQueries } from "@doable/db/queries/deployments";
 import { projectQueries } from "@doable/db/queries/projects";
 import { workspaceQueries } from "@doable/db/queries/workspaces";
-import { runBuild, type BuildLogCallback } from "./builder.js";
+import { runBuild, type BuildLogCallback, type BuildErrorCode } from "./builder.js";
 import type { DeployAdapter } from "./adapter.js";
 import {
   DoableCloudAdapter,
@@ -61,6 +61,8 @@ export interface PipelineResult {
   deployTimeMs: number;
   durationMs: number;
   error?: string;
+  /** Closed-set code surfaced from the build step; absent on success. */
+  errorCode?: BuildErrorCode;
 }
 
 /**
@@ -186,6 +188,7 @@ export async function runPipeline(
         deployTimeMs: 0,
         durationMs: Date.now() - pipelineStart,
         error: buildResult.error,
+        errorCode: buildResult.errorCode,
       };
     }
 

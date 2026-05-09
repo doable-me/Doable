@@ -58,10 +58,12 @@ deployTriggerRoutes.post("/:projectId", async (c) => {
     return c.json(
       {
         error: "Deployment failed",
+        errorCode: result.errorCode,
         data: {
           deploymentId: result.deploymentId,
           buildLog: result.buildLog,
           errorMessage: result.error,
+          errorCode: result.errorCode,
           buildTimeMs: result.buildTimeMs,
           deployTimeMs: result.deployTimeMs,
           durationMs: result.durationMs,
@@ -135,6 +137,7 @@ deployTriggerRoutes.post("/:projectId/stream", async (c) => {
           deploymentId: result.deploymentId,
           buildLog: result.buildLog,
           errorMessage: result.error,
+          errorCode: result.errorCode,
           buildTimeMs: result.buildTimeMs,
           durationMs: result.durationMs,
         });
@@ -193,10 +196,12 @@ deployTriggerRoutes.post("/:projectId/publish", async (c) => {
     return c.json(
       {
         error: "Deployment failed",
+        errorCode: result.errorCode,
         data: {
           deploymentId: result.deploymentId,
           buildLog: result.buildLog,
           errorMessage: result.error,
+          errorCode: result.errorCode,
           durationMs: result.durationMs,
         },
       },
@@ -247,10 +252,12 @@ deployTriggerRoutes.post("/:projectId/publish/preview", async (c) => {
     return c.json(
       {
         error: "Preview deployment failed",
+        errorCode: result.errorCode,
         data: {
           deploymentId: result.deploymentId,
           buildLog: result.buildLog,
           errorMessage: result.error,
+          errorCode: result.errorCode,
           durationMs: result.durationMs,
         },
       },
