@@ -14,7 +14,13 @@ export default function MarketplacePage() {
       try {
         const res = await apiListWorkspaces();
         if (res.data.length > 0) {
-          setWorkspace(res.data[0] ?? null);
+          // Honor the workspace the sidebar has active so installs land
+          // in the workspace the user expects.
+          const activeId = typeof window !== "undefined"
+            ? localStorage.getItem("doable_active_workspace_id")
+            : null;
+          const active = activeId ? res.data.find((w) => w.id === activeId) : null;
+          setWorkspace(active ?? res.data[0] ?? null);
         }
       } finally {
         setLoading(false);

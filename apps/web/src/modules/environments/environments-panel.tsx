@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Loader2, X, AlertCircle, RefreshCw, LayoutGrid, FileText, Copy, Boxes } from "lucide-react";
+import { Plus, Loader2, X, AlertCircle, RefreshCw, LayoutGrid, FileText, Copy, Boxes, Store, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api";
@@ -10,6 +10,73 @@ import { getColorClass } from "./env-shared";
 import { CreateEnvironmentForm } from "./env-forms";
 import { DefaultEnvironmentCard, EnvironmentCard } from "./env-cards";
 import { ProjectEnvironmentView } from "./env-project-view";
+import { useMarketplaceInstalls } from "@/modules/marketplace/use-marketplace";
+
+// ─── Installed-from-Marketplace section ─────────────────────
+
+function InstalledMarketplaceListings({ workspaceId, onChange }: { workspaceId: string; onChange: () => void }) {
+  const { installs, loading, uninstall, refresh } = useMarketplaceInstalls(workspaceId);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const handleUninstall = async (listingId: string) => {
+    setBusyId(listingId);
+    try {
+      await uninstall(listingId);
+      // Also refresh the parent environments list — uninstall deletes
+      // the cloned environment row, so the panel below should drop it.
+      onChange();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (loading) return null;
+  if (installs.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="flex items-center justify-between border-b px-3 py-2">
+        <div className="flex items-center gap-2">
+          <Store className="h-3.5 w-3.5 text-violet-400" />
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Installed from Marketplace</h3>
+          <Badge variant="secondary" className="text-[10px]">{installs.length}</Badge>
+        </div>
+        <button onClick={() => void refresh()} className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="Refresh">
+          <RefreshCw className="h-3 w-3" />
+        </button>
+      </div>
+      <ul className="divide-y">
+        {installs.map((inst) => (
+          <li key={inst.id} className="flex items-center gap-3 px-3 py-2.5">
+            <Store className="h-4 w-4 shrink-0 text-violet-400" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">
+                {inst.listing_title ?? "Marketplace listing"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                v{inst.version} · installed {new Date(inst.installed_at).toLocaleDateString()}
+                {inst.is_modified && <span className="ml-1.5 text-amber-400">· modified</span>}
+              </p>
+            </div>
+            <button
+              onClick={() => void handleUninstall(inst.listing_id)}
+              disabled={busyId === inst.listing_id}
+              className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 disabled:opacity-50"
+              title="Uninstall — removes the cloned environment from this workspace"
+            >
+              {busyId === inst.listing_id ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Trash2 className="h-3 w-3" />
+              )}
+              Uninstall
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 // ─── Template Gallery Dialog ────────────────────────────────
 
@@ -125,6 +192,7 @@ function WorkspaceEnvironmentsView({ workspaceId }: { workspaceId: string }) {
           Environments bundle workspace skills, rules, knowledge, and connectors into reusable presets.
           The <strong>default</strong> environment includes all workspace items automatically.
         </p>
+        <InstalledMarketplaceListings workspaceId={workspaceId} onChange={() => void refresh()} />
         {showCreate && <CreateEnvironmentForm onSubmit={handleCreate} onCancel={() => setShowCreate(false)} />}
         {error && (
           <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">

@@ -32,6 +32,7 @@ import { ReportListingDialog } from "@/modules/marketplace/report-listing-dialog
 export default function MarketplaceListingPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const router = useRouter();
+  const [workspaces, setWorkspaces] = useState<ApiWorkspace[]>([]);
   const [workspace, setWorkspace] = useState<ApiWorkspace | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(true);
   const [installError, setInstallError] = useState<string | null>(null);
@@ -45,12 +46,31 @@ export default function MarketplaceListingPage({ params }: { params: Promise<{ s
     (async () => {
       try {
         const res = await apiListWorkspaces();
-        setWorkspace(res.data[0] ?? null);
+        setWorkspaces(res.data);
+        // Default to the workspace the sidebar has active. The previous
+        // behaviour (`res.data[0]`) caused installs to land in whichever
+        // workspace sorted first, which on accounts with multiple ws
+        // meant installs went to the wrong place.
+        const activeId = typeof window !== "undefined"
+          ? localStorage.getItem("doable_active_workspace_id")
+          : null;
+        const active = activeId ? res.data.find((w) => w.id === activeId) : null;
+        setWorkspace(active ?? res.data[0] ?? null);
       } finally {
         setWorkspaceLoading(false);
       }
     })();
   }, []);
+
+  const handleWorkspaceChange = (id: string) => {
+    const next = workspaces.find((w) => w.id === id);
+    if (next) {
+      setWorkspace(next);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("doable_active_workspace_id", next.id);
+      }
+    }
+  };
 
   const handleConfirmInstall = async () => {
     if (!listing) return;
@@ -136,22 +156,45 @@ export default function MarketplaceListingPage({ params }: { params: Promise<{ s
           </div>
           <div className="flex flex-col items-end gap-2">
             {workspace ? (
-              <Button
-                size="lg"
-                onClick={() => setPermissionDialogOpen(true)}
-                disabled={installed}
-                className={installed ? "pointer-events-none opacity-60" : ""}
-              >
-                {installed ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 mr-2" /> Installed
-                  </>
+              <>
+                <Button
+                  size="lg"
+                  onClick={() => setPermissionDialogOpen(true)}
+                  disabled={installed}
+                  className={installed ? "pointer-events-none opacity-60" : ""}
+                >
+                  {installed ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 mr-2" /> Installed
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4 mr-2" /> Install
+                    </>
+                  )}
+                </Button>
+                {/* Workspace destination — visible BEFORE you click Install
+                    so it's never ambiguous where this is going to land. */}
+                {workspaces.length > 1 ? (
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>Install to:</span>
+                    <select
+                      value={workspace.id}
+                      onChange={(e) => handleWorkspaceChange(e.target.value)}
+                      disabled={installed}
+                      className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50"
+                    >
+                      {workspaces.map((w) => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </label>
                 ) : (
-                  <>
-                    <Download className="w-4 h-4 mr-2" /> Install
-                  </>
+                  <p className="text-xs text-muted-foreground">
+                    Installs to <span className="text-foreground font-medium">{workspace.name}</span>
+                  </p>
                 )}
-              </Button>
+              </>
             ) : (
               <p className="text-xs text-muted-foreground">No workspace available</p>
             )}
