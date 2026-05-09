@@ -8,12 +8,12 @@
 | Workspaces (CRUD, members, invites, plans) | [02-workspace/](02-workspace/) | 6 | ~236 |
 | Projects (create/list/update/delete/collab) | [03-projects/](03-projects/) | 6 | ~293 |
 | Editor (Monaco, file ops, Yjs, presence) | [04-editor/](04-editor/) | 4 | ~230 |
-| AI chat (modes, credits, tools, attachments) | [05-ai-chat/](05-ai-chat/) | 8 | ~355 |
+| AI chat (modes, credits, tools, attachments, long conv, stress, E2E) | [05-ai-chat/](05-ai-chat/) | 11 | ~470 |
 | Billing (plans, credits, top-up, webhook, portal) | [06-billing/](06-billing/) | 5 | ~220 |
 | Integrations marketplace | [07-integrations/](07-integrations/) | 5 | ~215 |
 | Publishing (subdomain, custom domain, deploy, preview) | [08-publish/](08-publish/) | 7 | ~235 |
-| Marketplace (listings, install, reviews, moderation) | [09-marketplace/](09-marketplace/) | 6 | ~197 |
-| Admin / platform ops | [10-admin/](10-admin/) | 11 | ~362 |
+| Marketplace (listings, install, uninstall, reviews, moderation) | [09-marketplace/](09-marketplace/) | 7 | ~242 |
+| Admin / platform ops (deep data verification) | [10-admin/](10-admin/) | 11 | ~461 |
 | Security (RLS, JWT, CSRF, injection, headers) | [11-security/](11-security/) | 7 | ~323 |
 | API surface coverage | [12-api/](12-api/) | many | (partial — agent timed out) |
 | WebSocket (auth, rooms, reconnect, messages) | [13-websocket/](13-websocket/) | 4 | ~185 |

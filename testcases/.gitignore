@@ -1,3 +1,4 @@
 # Live test-user credentials — never commit
 evidence/_tokens.json
+evidence/_tokens-*.json
 evidence/qa-*_login.json

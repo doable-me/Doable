@@ -1,0 +1,31 @@
+HTTP/1.1 401 Unauthorized
+Date: Sat, 09 May 2026 18:40:21 GMT
+Content-Type: application/json
+Content-Length: 37
+Connection: keep-alive
+access-control-allow-credentials: true
+access-control-allow-origin: https://zantaz.doable.me
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-origin
+origin-agent-cluster: ?1
+referrer-policy: no-referrer
+server-timing: total;dur=54.9;desc="Total Response Time"
+strict-transport-security: max-age=15552000; includeSubDomains
+vary: Origin
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: SAMEORIGIN
+x-permitted-cross-domain-policies: none
+x-ratelimit-limit: 10
+x-ratelimit-remaining: 4
+x-ratelimit-reset: 900
+x-request-id: req_3cb04af0aff24b29
+x-xss-protection: 0
+cf-cache-status: DYNAMIC
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=hpfWt3HxDmOoZADHlZcKpt6rEAgpJTU8droSatsetXMuZOPXffay%2BY5w4xW8InrZM96VNetv1d6E1jzbpFs4%2Fkt5W%2FbCw071%2FeCB5T6FqZpS8lX4FJ4Y4fLKGJi1yVbfYNpe51P4lg%3D%3D"}]}
+Server: cloudflare
+CF-RAY: 9f92d5049cbe7ff2-MAA
+alt-svc: h3=":443"; ma=86400
+
