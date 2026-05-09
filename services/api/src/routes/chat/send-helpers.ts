@@ -7,6 +7,7 @@ import type { TraceCollector } from "../../ai/trace-collector.js";
 import type { ByokProviderConfig } from "../../ai/providers/copilot.js";
 import { isProjectScaffolded, createProject } from "../../projects/file-manager.js";
 import { startDevServer, isRunning as isDevServerRunning } from "../../projects/dev-server.js";
+import { servers as devServersRegistry } from "../../projects/dev-server-core.js";
 
 export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamingApi, userId: string) {
   if (!isProjectScaffolded(projectId)) {
@@ -71,26 +72,58 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
     }
   }
   if (!isDevServerRunning(projectId) && isProjectScaffolded(projectId)) {
+    await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Starting dev server..." } }) });
+    await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Starting dev server..." }) });
+    console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
+
+    // BUG-AI-PREVIEW-001: tick from REAL registry state, not setInterval-only.
+    // Previously a setInterval emitted "Compiling project… (Xs)" forever
+    // even when startDevServer threw — the catch swallowed the error and
+    // never cleared the timer, so users saw fake progress for a process
+    // that never spawned. The new tick reads the actual `servers` map:
+    //   - no entry yet  → "Spawning dev server…"
+    //   - entry, ready=false → "Compiling project… (Xs)" (real vite is up,
+    //     waiting for HMR ready signal — see dev-server-start.ts)
+    //   - entry, ready=true → loop ends
+    //   - process.exitCode !== null → loop ends (failure surfaces below)
+    const devStart = Date.now();
+    let tickerStopped = false;
+    const ticker = setInterval(() => {
+      if (tickerStopped) return;
+      const elapsed = Math.round((Date.now() - devStart) / 1000);
+      const inst = devServersRegistry.get(projectId);
+      let msg: string;
+      if (!inst) {
+        msg = `Spawning dev server… (${elapsed}s)`;
+      } else if (inst.process.exitCode !== null) {
+        // Process died — let the awaiter throw and surface the real error
+        return;
+      } else if (inst.ready) {
+        return; // success path will emit "Dev server ready"
+      } else {
+        msg = `Compiling project… (${elapsed}s)`;
+      }
+      stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: msg } }) }).catch(() => {});
+    }, 3000);
+    const stopTicker = () => { tickerStopped = true; clearInterval(ticker); };
+
     try {
-      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Starting dev server..." } }) });
-      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Starting dev server..." }) });
-      console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
-
-      // Emit progress ticks during dev server startup (vite compilation)
-      const devStart = Date.now();
-      const devTicker = setInterval(() => {
-        const elapsed = Math.round((Date.now() - devStart) / 1000);
-        stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: `Compiling project… (${elapsed}s)` } }) }).catch(() => {});
-      }, 3000);
-
       await startDevServer(projectId, { userId });
-      clearInterval(devTicker);
+      stopTicker();
 
       const devDuration = Math.round((Date.now() - devStart) / 1000);
       await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: `Dev server ready (${devDuration}s)` } }) });
       await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: ` ready (${devDuration}s)\n` }) });
     } catch (err) {
+      stopTicker();
+      const reason = err instanceof Error ? err.message : String(err);
+      // Full stack to console so operators can diagnose the underlying
+      // spawn failure (sandbox-spawn missing, framework_id invalid, etc.)
       console.error(`[Chat] Dev server start failed for project ${projectId}:`, err);
+      // Surface the real failure to the SSE stream — no more synthetic
+      // progress on a server that never started.
+      await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: `Dev server failed to start: ${reason.slice(0, 240)}`, error: true } }) }).catch(() => {});
+      await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: ` failed: ${reason.slice(0, 240)}\n` }) }).catch(() => {});
     }
   }
 }
