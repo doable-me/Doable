@@ -38,6 +38,45 @@ async function requireMember(workspaceId: string, userId: string): Promise<strin
 
 // ─── Public: Browse / Search / Categories ─────────────────
 
+/**
+ * Bare /marketplace — public catalog summary. Without this, the route falls
+ * through to the authed sub-router and 401s anonymous browsers, violating
+ * TC-MARKET-LIST-001 ("no auth wall"). Returns a small overview object so
+ * web clients linking directly to /marketplace get a useful payload, plus
+ * pointers to the dedicated browse / category endpoints.
+ * See BUG-PUB-003.
+ */
+publicRoutes.get("/marketplace", async (c) => {
+  try {
+    const [categories, listings] = await Promise.all([
+      mkt.listCategories().catch(() => []),
+      mkt.browseListings({ sort: "popular", limit: 12 }).catch(() => ({ data: [], total: 0 })),
+    ]);
+    return c.json({
+      data: {
+        categories,
+        featured: listings.data,
+        total: listings.total,
+      },
+      links: {
+        listings: "/marketplace/listings",
+        categories: "/marketplace/categories",
+        featured: "/marketplace/featured",
+      },
+    });
+  } catch (err) {
+    console.warn("[marketplace] root summary failed:", err);
+    return c.json({
+      data: { categories: [], featured: [], total: 0 },
+      links: {
+        listings: "/marketplace/listings",
+        categories: "/marketplace/categories",
+        featured: "/marketplace/featured",
+      },
+    });
+  }
+});
+
 publicRoutes.get("/marketplace/categories", async (c) => {
   // KV-cached: categories change rarely, but the endpoint is hit on every
   // marketplace landing render. 5-min TTL strikes a good balance.
