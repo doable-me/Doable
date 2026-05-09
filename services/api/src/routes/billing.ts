@@ -401,7 +401,22 @@ billingRoutes.post("/subscribe", async (c) => {
 
 // ─── POST /billing/portal ──────────────────────────────────
 billingRoutes.post("/portal", async (c) => {
-  const { workspaceId } = await c.req.json();
+  // Stripe-bypass check FIRST — before any body parsing, so a request with
+  // no body (or invalid JSON) still gets the informative 503 instead of a
+  // useless "Invalid JSON" 400. See BUG-PUB-002 / TC-BILLING-PORTAL-003.
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return c.json(
+      {
+        error: "stripe_disabled",
+        message: "Billing portal unavailable in bypass mode",
+      },
+      503,
+    );
+  }
+
+  // Tolerate empty/missing body — only workspaceId matters here.
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const workspaceId = (body as { workspaceId?: string }).workspaceId;
   if (!workspaceId) {
     return c.json({ error: "workspaceId required" }, 400);
   }
