@@ -4,10 +4,11 @@ Mounted at `/projects` (`services/api/src/routes.ts:87`). Source: `services/api/
 
 Endpoints (representative):
 - `GET    /projects/:id/versions`
-- `POST   /projects/:id/versions`             — snapshot
-- `GET    /projects/:id/versions/:vid`
-- `POST   /projects/:id/versions/:vid/restore`
-- `DELETE /projects/:id/versions/:vid`
+- `POST   /projects/:id/versions`             — snapshot **(broken — see bugs/BUG-CORPUS-VERSIONS-001.md, requires server-derivable createdBy + projectPath in body as of 2026-05-10)**
+- `POST   /projects/:id/versions/auto`        — auto-snapshot
+- `POST   /projects/:id/versions/undo`
+- `GET    /projects/:id/versions/:versionId`
+- `POST   /projects/:id/versions/:versionId/restore`
 - `GET    /projects/:id/versions/:vid/diff`
 
 ---

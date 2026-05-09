@@ -3,11 +3,20 @@
 Mounted at `/deploy` (`services/api/src/routes.ts:83`) and `/domains` (`:84`). Source: `routes/deploy.ts`, `routes/deploy/`, `routes/custom-domains.ts`.
 
 Endpoints (representative):
+> CORRECTED 2026-05-10 (env1 verified): there is NO `GET /deploy` listing endpoint. All deploy traffic is keyed by `:projectId`. Trigger paths split between `deploy-trigger.ts` (POST) and `deploy-query.ts` (GET).
+
+Trigger:
+- `POST   /deploy/:projectId`                            — start build/deploy
+- `POST   /deploy/:projectId/stream`                     — streaming deploy
 - `POST   /deploy/:projectId/publish`
-- `POST   /deploy/:projectId/unpublish`
+- `POST   /deploy/:projectId/publish/preview`
+- `POST   /deploy/:projectId/rollback/:deploymentId`
+
+Query:
 - `GET    /deploy/:projectId/status`
 - `GET    /deploy/:projectId/history`
-- `POST   /deploy/:projectId/rollback/:deployId`
+- `GET    /deploy/:projectId/deployments`
+- `GET    /deploy/:projectId/deployments/:deploymentId`
 - `GET    /deploy/:projectId/preview-url`
 - `POST   /deploy/:projectId/build`
 - `GET    /domains`

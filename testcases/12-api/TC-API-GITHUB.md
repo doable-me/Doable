@@ -3,11 +3,24 @@
 Mounted at `/` (`services/api/src/routes.ts:88`). Source: `services/api/src/routes/github.ts` (and `routes/github/`).
 
 Endpoints (representative):
-- `GET    /github/install-url`                   — start GitHub App install
-- `GET    /github/callback`                      — install callback
-- `POST   /github/disconnect`
+> CORRECTED 2026-05-10 (env1 verified): account-level OAuth uses `/github/connect` (302), `/github/status`, `/github/repos`, `DELETE /github/disconnect`. Project routes are mounted at the **root** under `/:projectId/github/...` (not under `/github/projects/:id/...`).
+
+Account-level (auth):
+- `GET    /github/status`                        — account connect state
+- `GET    /github/connect`                       — 302 → GitHub OAuth
+- `GET    /github/repo/callback`                 — OAuth return
+- `DELETE /github/disconnect`
 - `GET    /github/repos`                         — list connected repos
-- `POST   /github/projects/:id/connect`          — link project to repo
+
+Project-level (mounted at root, NOT under /github):
+- `POST   /:projectId/github/connect`            — link project to repo
+- `POST   /:projectId/github/push`
+- `POST   /:projectId/github/pull`
+- `POST   /:projectId/github/import`
+- `POST   /:projectId/github/resolve`
+- `POST   /:projectId/github/abort-merge`
+- `GET    /:projectId/github/status`
+- `GET    /:projectId/github/commits`
 - `POST   /github/projects/:id/disconnect`
 - `POST   /github/projects/:id/push`             — sync local → remote
 - `POST   /github/projects/:id/pull`

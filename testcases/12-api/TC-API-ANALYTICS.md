@@ -1,13 +1,25 @@
 # TC-API-ANALYTICS — /analytics
 
-Mounted at `/analytics` (`services/api/src/routes.ts:90`). Source: `services/api/src/routes/analytics.ts` and `routes/analytics/`.
+Mounted at `/analytics` (`services/api/src/routes.ts:91`). Source: `services/api/src/routes/analytics/dashboard.ts` and `routes/analytics/tracking.ts`.
 
-Endpoints (representative):
-- `GET    /analytics/workspace/:wid/overview`
-- `GET    /analytics/workspace/:wid/projects`
-- `GET    /analytics/workspace/:wid/usage`
-- `GET    /analytics/project/:id/views`
-- `POST   /analytics/track`              — public track event
+> CORRECTED 2026-05-10 (env1 verified): the dashboard reads are `project**s**` plural and `pageviews` (single word, no dash). Old listing was wrong on both counts.
+
+Dashboard endpoints (auth required):
+- `GET    /analytics/projects/:id/overview`
+- `GET    /analytics/projects/:id/timeseries`
+- `GET    /analytics/projects/:id/pageviews`
+- `GET    /analytics/projects/:id/events`
+- `GET    /analytics/projects/:id/pages`
+- `GET    /analytics/projects/:id/referrers`
+- `GET    /analytics/projects/:id/devices`
+- `GET    /analytics/projects/:id/browsers`
+- `GET    /analytics/projects/:id/os`
+- `GET    /analytics/projects/:id/realtime`
+- `GET    /analytics/projects/:id/settings`
+
+Tracking (public):
+- `GET    /analytics/script.js`
+- `POST   /analytics/track`
 - `GET    /analytics/funnels/:id`
 
 ---

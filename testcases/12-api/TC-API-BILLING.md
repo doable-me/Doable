@@ -3,11 +3,18 @@
 Mounted at `/billing` (`services/api/src/routes.ts:82`). Source: `services/api/src/routes/billing.ts`.
 
 Endpoints (representative):
-- `GET    /billing/plans`
-- `GET    /billing/subscription`
-- `POST   /billing/checkout`             — start Stripe checkout
-- `POST   /billing/portal`               — billing portal
-- `GET    /billing/invoices`
+> CORRECTED 2026-05-10 (env1 verified): all per-workspace billing endpoints REQUIRE `?workspaceId=<wid>` query param (400 with `{"error":"workspaceId query param required"}` otherwise). Only `/billing/plans` and `/billing/topup/packages` are workspace-agnostic.
+
+- `GET    /billing/plans`                                — public/static plan catalog
+- `GET    /billing/balance?workspaceId=<wid>`
+- `GET    /billing/usage?workspaceId=<wid>`
+- `GET    /billing/credits?workspaceId=<wid>`
+- `GET    /billing/credits/usage?workspaceId=<wid>`
+- `GET    /billing/invoices?workspaceId=<wid>`
+- `GET    /billing/topup/packages`
+- `POST   /billing/topup`                                — body must include workspaceId
+- `POST   /billing/subscribe`                            — body must include workspaceId
+- `POST   /billing/webhook`                              — Stripe ingress (no auth)
 - `POST   /billing/cancel`
 - `POST   /billing/resume`
 - `POST   /billing/webhook`              — Stripe webhook (no auth, signature)
