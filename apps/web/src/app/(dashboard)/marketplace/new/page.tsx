@@ -23,8 +23,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { apiListWorkspaces, type ApiWorkspace } from "@/lib/api";
-import { useEnvironments } from "@/modules/environments/use-environments";
+import { apiListWorkspaces, apiFetch, type ApiWorkspace } from "@/lib/api";
+import { useEnvironments, type Environment } from "@/modules/environments/use-environments";
 import { useMyListings } from "@/modules/marketplace/use-marketplace";
 
 type Step = "environment" | "metadata" | "preview" | "publish";
@@ -53,7 +53,14 @@ export default function MarketplaceNewPage() {
     (async () => {
       try {
         const res = await apiListWorkspaces();
-        setWorkspace(res.data[0] ?? null);
+        // Honor the workspace the sidebar has active. The wizard used to
+        // pick res.data[0] blindly, which on accounts with multiple
+        // workspaces meant the picker showed envs from the wrong one.
+        const activeId = typeof window !== "undefined"
+          ? localStorage.getItem("doable_active_workspace_id")
+          : null;
+        const active = activeId ? res.data.find((w) => w.id === activeId) : null;
+        setWorkspace(active ?? res.data[0] ?? null);
       } finally {
         setWsLoading(false);
       }
@@ -86,7 +93,27 @@ function Wizard({ workspace, onCancel }: { workspace: ApiWorkspace; onCancel: ()
   const router = useRouter();
   const [step, setStep] = useState<Step>("environment");
 
-  const { environments, loading: envsLoading } = useEnvironments(workspace.id, { scope: "workspace" });
+  // Pull every environment in the workspace — both workspace-scoped envs
+  // (curated bundles like "Testing") AND project-scoped envs (auto-created
+  // per project, which is what most users actually customise). The default
+  // listForWorkspace query excludes project-scoped envs ("those are accessed
+  // via their projects" — see packages/db/src/queries/environments-core.ts:34),
+  // so we explicitly merge both scopes here. The publish step snapshots the
+  // env into a marketplace artifact, so the source scope is irrelevant once
+  // the listing is live.
+  const { environments: workspaceEnvs, loading: workspaceEnvsLoading } = useEnvironments(workspace.id);
+  const [projectEnvs, setProjectEnvs] = useState<Environment[]>([]);
+  const [projectEnvsLoading, setProjectEnvsLoading] = useState(true);
+  useEffect(() => {
+    if (!workspace.id) { setProjectEnvsLoading(false); return; }
+    setProjectEnvsLoading(true);
+    apiFetch<{ data: Environment[] }>(`/workspaces/${workspace.id}/environments?scope=project`)
+      .then((res) => setProjectEnvs(res.data))
+      .catch(() => setProjectEnvs([]))
+      .finally(() => setProjectEnvsLoading(false));
+  }, [workspace.id]);
+  const environments = useMemo(() => [...workspaceEnvs, ...projectEnvs], [workspaceEnvs, projectEnvs]);
+  const envsLoading = workspaceEnvsLoading || projectEnvsLoading;
   const { createListing, publishListing } = useMyListings();
 
   const [envId, setEnvId] = useState<string | null>(null);
@@ -328,6 +355,18 @@ function PickEnvironmentStep({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-foreground truncate">{env.name}</span>
+                <span
+                  className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                    env.scope === "workspace"
+                      ? "bg-blue-500/15 text-blue-400"
+                      : env.scope === "project"
+                        ? "bg-emerald-500/15 text-emerald-400"
+                        : "bg-zinc-500/15 text-zinc-400"
+                  }`}
+                  title={env.scope === "project" ? "Auto-created for a single project" : env.scope === "workspace" ? "Shared across the whole workspace" : "Personal to you"}
+                >
+                  {env.scope}
+                </span>
                 {envId === env.id && <Check className="h-4 w-4 text-brand-400" />}
               </div>
               {env.description && (

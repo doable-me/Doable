@@ -241,12 +241,16 @@ export function useMyListings() {
       longDesc?: string;
       tags?: string[];
     }) => {
-      const res = await apiFetch<{ data: MarketplaceListing }>(
+      // The API wraps the listing inside `data.listing` and also returns a
+      // draft `data.bundle` snapshot built at create-time. Callers only need
+      // the listing record (its id is what they use to publish), so drill
+      // through to it here.
+      const res = await apiFetch<{ data: { listing: MarketplaceListing; bundle: unknown } }>(
         "/marketplace/listings",
         { method: "POST", body: JSON.stringify(data) },
       );
       await refresh();
-      return res.data;
+      return res.data.listing;
     },
     [refresh],
   );
