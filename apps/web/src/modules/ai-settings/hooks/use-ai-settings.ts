@@ -46,9 +46,19 @@ export function useGitHubAccounts(workspaceId: string | null) {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const add = async (label: string, githubToken: string) => {
+  /**
+   * Add a Copilot account.
+   * @param scope - "user" (default) creates a personal account only the
+   *   caller can see/use. "workspace" shares it across the workspace and
+   *   requires owner/admin role.
+   */
+  const add = async (
+    label: string,
+    githubToken: string,
+    scope: "user" | "workspace" = "user",
+  ) => {
     if (!workspaceId) return;
-    await apiAddCopilotAccount(workspaceId, { label, githubToken });
+    await apiAddCopilotAccount(workspaceId, { label, githubToken, scope });
     await refresh();
   };
 
@@ -94,9 +104,15 @@ export function useCustomProviders(workspaceId: string | null) {
     apiKey?: string;
     bearerToken?: string;
     azureApiVersion?: string;
+    /**
+     * "user" (default) creates a personal provider only the caller can
+     * see/use. "workspace" shares it across the workspace and requires
+     * owner/admin role.
+     */
+    scope?: "user" | "workspace";
   }) => {
     if (!workspaceId) return;
-    await apiAddAiProvider(workspaceId, data);
+    await apiAddAiProvider(workspaceId, { scope: "user", ...data });
     await refresh();
   };
 

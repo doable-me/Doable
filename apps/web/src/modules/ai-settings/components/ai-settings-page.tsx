@@ -50,6 +50,8 @@ export function AiSettingsPage() {
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const isPlatformAdmin = !!user?.isPlatformAdmin;
+  const isWorkspaceAdmin =
+    activeWorkspace?.userRole === "owner" || activeWorkspace?.userRole === "admin";
 
   // All hooks must be called before any conditional returns
   const githubAccounts = useGitHubAccounts(activeWorkspaceId);
@@ -64,8 +66,11 @@ export function AiSettingsPage() {
     (featureDeniedReason === "feature_disabled" || featureDeniedReason === "user_override_denied");
   const hasAccess = !isHardDenied;
 
+  // Connections is now visible to every member: any member can add their
+  // own personal Copilot account / provider. Admin-only actions inside
+  // (e.g. "Add for workspace") are gated within the tab itself.
   const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
-    { key: "connections", label: "Add Provider", icon: Link2, adminOnly: true },
+    { key: "connections", label: "Connections", icon: Link2 },
     { key: "models", label: "Configure Model", icon: Bot },
     { key: "access", label: "Access Control", icon: Shield, adminOnly: true },
   ];
@@ -158,6 +163,8 @@ export function AiSettingsPage() {
       {activeTab === "connections" && (
         <ConnectionsTab
           workspaceId={activeWorkspaceId}
+          isWorkspaceAdmin={isWorkspaceAdmin}
+          currentUserId={user?.id ?? null}
           accounts={githubAccounts.accounts}
           accountsLoading={githubAccounts.loading}
           providers={providers.providers}

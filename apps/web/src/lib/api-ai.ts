@@ -2,6 +2,12 @@ import { apiFetch } from "./api-core";
 
 // ─── AI Settings Types ────────────────────────────────────
 
+/**
+ * Whether an AI account/provider is shared with the whole workspace
+ * (admin-managed) or owned privately by a single user. Migration 072.
+ */
+export type ApiAiAccountScope = "workspace" | "user";
+
 export interface ApiGitHubCopilotAccount {
   id: string;
   workspace_id: string;
@@ -10,6 +16,8 @@ export interface ApiGitHubCopilotAccount {
   github_id: string | null;
   is_valid: boolean;
   added_by: string;
+  scope: ApiAiAccountScope;
+  owner_user_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -23,6 +31,8 @@ export interface ApiAiProvider {
   azure_api_version: string | null;
   is_valid: boolean;
   added_by: string;
+  scope: ApiAiAccountScope;
+  owner_user_id: string | null;
   created_at: string;
   updated_at: string;
   /** Provider preset ID (e.g. "openai", "ollama") */
@@ -154,7 +164,7 @@ export async function apiListCopilotAccounts(workspaceId: string): Promise<{ dat
 
 export async function apiAddCopilotAccount(
   workspaceId: string,
-  data: { label: string; githubToken: string }
+  data: { label: string; githubToken: string; scope?: ApiAiAccountScope }
 ): Promise<{ data: ApiGitHubCopilotAccount }> {
   return apiFetch(`/workspaces/${workspaceId}/ai-settings/copilot-accounts`, {
     method: "POST",
@@ -190,6 +200,7 @@ export async function apiAddAiProvider(
     apiKey?: string;
     bearerToken?: string;
     azureApiVersion?: string;
+    scope?: ApiAiAccountScope;
   }
 ): Promise<{ data: ApiAiProvider }> {
   return apiFetch(`/workspaces/${workspaceId}/ai-settings/providers`, {

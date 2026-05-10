@@ -23,6 +23,7 @@ export function ProviderWizard({
   onOpenChange,
   workspaceId,
   onProviderAdded,
+  scope = "user",
 }: ProviderWizardProps) {
   // Wizard state
   const [step, setStep] = useState<WizardStep>("choose");
@@ -72,6 +73,7 @@ export function ProviderWizard({
     testConnection, workspaceId, onProviderAdded,
     // handleOpenChange defined below — we pass a stable ref via useCallback
     (open: boolean) => handleOpenChangeRef.current(open),
+    scope,
   );
 
   // ─── Reset wizard when closed ──────────────────────────────

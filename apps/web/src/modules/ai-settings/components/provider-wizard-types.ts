@@ -10,6 +10,12 @@ export interface ProviderWizardProps {
   onOpenChange: (open: boolean) => void;
   workspaceId: string | null;
   onProviderAdded: () => void;
+  /**
+   * Whether the new provider is shared with the workspace ("workspace",
+   * admin-only) or owned privately by the caller ("user", default).
+   * Migration 072 / Personal-scope feature.
+   */
+  scope?: "user" | "workspace";
 }
 
 export interface WizardFormState {

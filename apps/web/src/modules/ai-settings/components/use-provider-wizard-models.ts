@@ -13,6 +13,8 @@ export function useProviderWizardModels(
   workspaceId: string | null,
   onProviderAdded: () => void,
   handleOpenChange: (open: boolean) => void,
+  /** Personal vs workspace scope. Migration 072. */
+  scope: "user" | "workspace" = "user",
 ) {
   const [modelSelections, setModelSelections] = useState<ModelSelection[]>([]);
   const [defaultModelId, setDefaultModelId] = useState<string | null>(null);
@@ -130,6 +132,7 @@ export function useProviderWizardModels(
           azureApiVersion:
             selectedPreset.sdkType === "azure" ? form.azureApiVersion : undefined,
           presetId: selectedPreset.id,
+          scope,
         }),
       });
 
@@ -147,6 +150,7 @@ export function useProviderWizardModels(
     resolvedBaseUrl,
     onProviderAdded,
     handleOpenChange,
+    scope,
   ]);
 
   return {
