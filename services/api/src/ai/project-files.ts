@@ -2,6 +2,7 @@ import { readFile, writeFile, unlink, readdir, mkdir, stat } from "node:fs/promi
 import { join, dirname, relative, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { writeFileThroughYjs } from "./yjs-bridge.js";
+import { validatePathSafe } from "../projects/path-safety.js";
 
 // ─── Configuration ────────────────────────────────────────
 
@@ -37,7 +38,25 @@ export function resolveFilePath(projectId: string, filePath: string): string {
   return resolved;
 }
 
-function validatePath(filePath: string): void {
+/**
+ * Validate a user/AI-supplied relative path before any filesystem op.
+ *
+ * Defense-in-depth: route handlers also call validatePathSafe at the
+ * boundary. Calling it here catches any internal caller (or future AI tool)
+ * that bypasses the route layer. See BUG-CORPUS-EDT-002 and
+ * services/api/src/projects/path-safety.ts.
+ *
+ * `.` and an empty directory are tolerated for listProjectFiles which
+ * passes the project root itself through this gate.
+ */
+function validatePath(filePath: string, projectId?: string): void {
+  // Allow the project-root sentinel used by listProjectFiles.
+  if (filePath !== "." && filePath !== "") {
+    const safety = validatePathSafe(filePath, projectId ?? "");
+    if (!safety.ok) {
+      throw new FileAccessError(safety.message ?? "invalid path");
+    }
+  }
   const segments = filePath.split(/[/\\]/);
   for (const segment of segments) {
     if (FORBIDDEN_PATHS.includes(segment)) {
@@ -52,7 +71,7 @@ export async function readProjectFile(
   projectId: string,
   filePath: string,
 ): Promise<string> {
-  validatePath(filePath);
+  validatePath(filePath, projectId);
   const fullPath = resolveFilePath(projectId, filePath);
 
   try {
@@ -76,7 +95,7 @@ export async function writeProjectFile(
   filePath: string,
   content: string,
 ): Promise<void> {
-  validatePath(filePath);
+  validatePath(filePath, projectId);
 
   if (Buffer.byteLength(content, "utf-8") > MAX_FILE_SIZE) {
     throw new FileAccessError("Content exceeds max file size");
@@ -99,7 +118,7 @@ export async function deleteProjectFile(
   projectId: string,
   filePath: string,
 ): Promise<void> {
-  validatePath(filePath);
+  validatePath(filePath, projectId);
   const fullPath = resolveFilePath(projectId, filePath);
 
   try {
@@ -117,7 +136,7 @@ export async function listProjectFiles(
   directory = ".",
   options: { recursive?: boolean; maxDepth?: number } = {},
 ): Promise<string[]> {
-  validatePath(directory);
+  validatePath(directory, projectId);
   const { recursive = true, maxDepth = 10 } = options;
   const projectPath = getProjectPath(projectId);
   const dirPath = resolveFilePath(projectId, directory);

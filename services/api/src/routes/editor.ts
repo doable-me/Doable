@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { validatePathSafe } from "../projects/path-safety.js";
 
 export const editorRoutes = new Hono<AuthEnv>();
 
@@ -113,8 +114,12 @@ editorRoutes.get("/projects/:id/files/*", (c) => {
   }
 
   const decodedPath = decodeURIComponent(filePath);
+  const safety = validatePathSafe(decodedPath, projectId);
+  if (!safety.ok) {
+    return c.json({ error: "invalid_path", message: safety.message }, 400);
+  }
   const store = getProjectStore(projectId);
-  const file = store.get(decodedPath);
+  const file = store.get(safety.normalized!);
 
   if (!file) {
     return c.json({ error: "File not found" }, 404);
@@ -142,6 +147,11 @@ editorRoutes.put("/projects/:id/files/*", async (c) => {
   }
 
   const decodedPath = decodeURIComponent(filePath);
+  const safety = validatePathSafe(decodedPath, projectId);
+  if (!safety.ok) {
+    return c.json({ error: "invalid_path", message: safety.message }, 400);
+  }
+  const safePath = safety.normalized!;
   const body = await c.req.json<{ content: string }>();
 
   if (typeof body.content !== "string") {
@@ -150,11 +160,11 @@ editorRoutes.put("/projects/:id/files/*", async (c) => {
 
   const store = getProjectStore(projectId);
   const file: ProjectFile = {
-    path: decodedPath,
+    path: safePath,
     content: body.content,
     updatedAt: new Date().toISOString(),
   };
-  store.set(decodedPath, file);
+  store.set(safePath, file);
 
   return c.json({
     data: {
@@ -165,6 +175,9 @@ editorRoutes.put("/projects/:id/files/*", async (c) => {
 });
 
 // ─── POST /projects/:id/files ─ Create file ─────────────────
+// Schema validates basic shape; the path-safety check below covers traversal
+// rules (../, absolute, drive letters, NUL, backslash, project-dir escape).
+// See services/api/src/projects/path-safety.ts and BUG-CORPUS-EDT-002.
 const createFileSchema = z.object({
   path: z.string().min(1),
   content: z.string().default(""),
@@ -177,18 +190,24 @@ editorRoutes.post(
     const projectId = c.req.param("id");
     const { path: filePath, content } = c.req.valid("json");
 
+    const safety = validatePathSafe(filePath, projectId);
+    if (!safety.ok) {
+      return c.json({ error: "invalid_path", message: safety.message }, 400);
+    }
+    const safePath = safety.normalized!;
+
     const store = getProjectStore(projectId);
 
-    if (store.has(filePath)) {
+    if (store.has(safePath)) {
       return c.json({ error: "File already exists" }, 409);
     }
 
     const file: ProjectFile = {
-      path: filePath,
+      path: safePath,
       content,
       updatedAt: new Date().toISOString(),
     };
-    store.set(filePath, file);
+    store.set(safePath, file);
 
     return c.json(
       {
@@ -215,12 +234,17 @@ editorRoutes.delete("/projects/:id/files/*", (c) => {
   }
 
   const decodedPath = decodeURIComponent(filePath);
+  const safety = validatePathSafe(decodedPath, projectId);
+  if (!safety.ok) {
+    return c.json({ error: "invalid_path", message: safety.message }, 400);
+  }
+  const safePath = safety.normalized!;
   const store = getProjectStore(projectId);
 
-  if (!store.has(decodedPath)) {
+  if (!store.has(safePath)) {
     return c.json({ error: "File not found" }, 404);
   }
 
-  store.delete(decodedPath);
+  store.delete(safePath);
   return c.json({ data: { deleted: true } });
 });

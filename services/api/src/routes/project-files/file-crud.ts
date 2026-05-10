@@ -8,6 +8,7 @@ import {
   FileNotFoundError,
   FileAccessError,
 } from "../../projects/file-manager.js";
+import { validatePathSafe } from "../../projects/path-safety.js";
 import { sql } from "../../db/index.js";
 import { emitActivity } from "../../lib/activity.js";
 
@@ -40,17 +41,23 @@ fileCrudRoutes.get("/projects/:id/files/*", async (c) => {
     return c.json({ error: "File path required" }, 400);
   }
 
+  const safety = validatePathSafe(filePath, projectId);
+  if (!safety.ok) {
+    return c.json({ error: "invalid_path", message: safety.message }, 400);
+  }
+  const safePath = safety.normalized!;
+
   try {
-    const content = await readFile(projectId, filePath);
+    const content = await readFile(projectId, safePath);
     return c.json({
       data: {
-        path: filePath,
+        path: safePath,
         content,
       },
     });
   } catch (err) {
     if (err instanceof FileNotFoundError) {
-      return c.json({ error: `File not found: ${filePath}` }, 404);
+      return c.json({ error: `File not found: ${safePath}` }, 404);
     }
     if (err instanceof FileAccessError) {
       return c.json({ error: err.message }, 403);
@@ -69,6 +76,12 @@ fileCrudRoutes.put("/projects/:id/files/*", async (c) => {
     return c.json({ error: "File path required" }, 400);
   }
 
+  const safety = validatePathSafe(filePath, projectId);
+  if (!safety.ok) {
+    return c.json({ error: "invalid_path", message: safety.message }, 400);
+  }
+  const safePath = safety.normalized!;
+
   try {
     const body = await c.req.json<{ content: string }>();
 
@@ -76,7 +89,7 @@ fileCrudRoutes.put("/projects/:id/files/*", async (c) => {
       return c.json({ error: "Content must be a string" }, 400);
     }
 
-    await writeFile(projectId, filePath, body.content);
+    await writeFile(projectId, safePath, body.content);
 
     // Bump project's updated_at so the dashboard's "recently edited" sort
     // reflects this save. Fire-and-forget — don't block the response.
@@ -89,13 +102,13 @@ fileCrudRoutes.put("/projects/:id/files/*", async (c) => {
       projectId,
       userId: c.get("userId"),
       eventType: "file_save",
-      summary: `saved ${filePath.split("/").pop()}`,
-      metadata: { filePath },
+      summary: `saved ${safePath.split("/").pop()}`,
+      metadata: { filePath: safePath },
     });
 
     return c.json({
       data: {
-        path: filePath,
+        path: safePath,
         size: Buffer.byteLength(body.content, "utf-8"),
         updatedAt: new Date().toISOString(),
       },
@@ -118,21 +131,27 @@ fileCrudRoutes.delete("/projects/:id/files/*", async (c) => {
     return c.json({ error: "File path required" }, 400);
   }
 
+  const safety = validatePathSafe(filePath, projectId);
+  if (!safety.ok) {
+    return c.json({ error: "invalid_path", message: safety.message }, 400);
+  }
+  const safePath = safety.normalized!;
+
   try {
-    await deleteFile(projectId, filePath);
+    await deleteFile(projectId, safePath);
 
     emitActivity(sql, {
       projectId,
       userId: c.get("userId"),
       eventType: "file_delete",
-      summary: `deleted ${filePath.split("/").pop()}`,
-      metadata: { filePath },
+      summary: `deleted ${safePath.split("/").pop()}`,
+      metadata: { filePath: safePath },
     });
 
-    return c.json({ data: { deleted: true, path: filePath } });
+    return c.json({ data: { deleted: true, path: safePath } });
   } catch (err) {
     if (err instanceof FileNotFoundError) {
-      return c.json({ error: `File not found: ${filePath}` }, 404);
+      return c.json({ error: `File not found: ${safePath}` }, 404);
     }
     if (err instanceof FileAccessError) {
       return c.json({ error: err.message }, 403);
