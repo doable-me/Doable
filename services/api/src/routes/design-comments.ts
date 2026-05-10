@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import type { AuthEnv } from "../middleware/auth.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { sql } from "../db/index.js";
@@ -8,6 +9,37 @@ import { INTERNAL_SECRET } from "../lib/secrets.js";
 
 const comments = designCommentQueries(sql);
 const projects = projectQueries(sql);
+
+// BUG-CORPUS-DC-001: previously the POST handler forwarded the request body
+// straight into the DB with no validation, accepting xPercent=1.5 (off-canvas
+// pin), empty content (junk rows), and surfacing 500 ISE for {} (missing
+// required fields). Both the auth-protected POST and the internal POST share
+// this schema so neither can poison rows.
+const CreateCommentSchema = z.object({
+  xPercent: z.number().min(0).max(1),
+  yPercent: z.number().min(0).max(1),
+  content: z.string().trim().min(1).max(4096),
+  pagePath: z.string().trim().max(512).optional(),
+  selector: z.string().max(2048).nullish(),
+  parentId: z.string().uuid().nullish(),
+  displayName: z.string().max(120).nullish(),
+  userColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullish(),
+  // Internal-only fields (ignored on the auth-protected route, used by the
+  // WS bridge endpoint).
+  id: z.string().uuid().optional(),
+  userId: z.string().uuid().optional(),
+});
+type CreateCommentInput = z.infer<typeof CreateCommentSchema>;
+
+function safeParseCommentBody(raw: unknown):
+  | { ok: true; data: CreateCommentInput }
+  | { ok: false; status: 400; error: string; issues: z.ZodIssue[] } {
+  const parsed = CreateCommentSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, status: 400, error: "Invalid input", issues: parsed.error.issues };
+  }
+  return { ok: true, data: parsed.data };
+}
 
 // BUG-WSI-003: `strict: false` makes the router treat `/design-comments/:id`
 // and `/design-comments/:id/` as the same route, so external clients that
@@ -24,21 +56,36 @@ designCommentRoutes.post("/:projectId/internal", async (c) => {
   const secret = c.req.header("x-internal-secret");
   if (secret !== INTERNAL_SECRET) return c.json({ error: "Forbidden" }, 403);
 
-  const body = await c.req.json();
-  const comment = await comments.create({
-    id: body.id ?? crypto.randomUUID(),
-    projectId: c.req.param("projectId"),
-    userId: body.userId,
-    displayName: body.displayName ? body.displayName.replace(/<[^>]*>/g, "").trim() || null : null,
-    userColor: body.userColor ?? null,
-    xPercent: body.xPercent,
-    yPercent: body.yPercent,
-    selector: body.selector ?? null,
-    pagePath: body.pagePath ?? "index.html",
-    content: body.content,
-    parentId: body.parentId ?? null,
-  });
-  return c.json({ data: comment });
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const parsed = safeParseCommentBody(raw);
+  if (!parsed.ok) return c.json({ error: parsed.error, issues: parsed.issues }, parsed.status);
+  const body = parsed.data;
+  if (!body.userId) return c.json({ error: "userId is required" }, 400);
+
+  try {
+    const comment = await comments.create({
+      id: body.id ?? crypto.randomUUID(),
+      projectId: c.req.param("projectId"),
+      userId: body.userId,
+      displayName: body.displayName ? body.displayName.replace(/<[^>]*>/g, "").trim() || null : null,
+      userColor: body.userColor ?? null,
+      xPercent: body.xPercent,
+      yPercent: body.yPercent,
+      selector: body.selector ?? null,
+      pagePath: body.pagePath ?? "index.html",
+      content: body.content,
+      parentId: body.parentId ?? null,
+    });
+    return c.json({ data: comment });
+  } catch (err) {
+    console.warn("[design-comments] internal create failed:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Failed to persist comment" }, 500);
+  }
 });
 
 // ─── Auth-protected endpoints ─────────────────────────────────────────
@@ -60,24 +107,44 @@ designCommentRoutes.get("/:projectId", async (c) => {
 designCommentRoutes.post("/:projectId", async (c) => {
   const projectId = c.req.param("projectId");
   const userId = c.get("userId");
-  const body = await c.req.json();
+
+  // BUG-CORPUS-DC-001: validate body BEFORE the project lookup so a malformed
+  // request never burns a DB roundtrip and never reaches the unhandled SQL
+  // path that surfaced as 500 ISE on `{}`.
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const parsed = safeParseCommentBody(raw);
+  if (!parsed.ok) return c.json({ error: parsed.error, issues: parsed.issues }, parsed.status);
+  const body = parsed.data;
 
   const project = await projects.findById(projectId);
   if (!project) return c.json({ error: "Project not found" }, 404);
 
-  const comment = await comments.create({
-    id: crypto.randomUUID(),
-    projectId,
-    userId,
-    displayName: body.displayName ? body.displayName.replace(/<[^>]*>/g, "").trim() || null : null,
-    userColor: body.userColor ?? null,
-    xPercent: body.xPercent,
-    yPercent: body.yPercent,
-    selector: body.selector ?? null,
-    pagePath: body.pagePath ?? "index.html",
-    content: body.content,
-    parentId: body.parentId ?? null,
-  });
+  let comment: Awaited<ReturnType<typeof comments.create>>;
+  try {
+    comment = await comments.create({
+      id: crypto.randomUUID(),
+      projectId,
+      userId,
+      displayName: body.displayName ? body.displayName.replace(/<[^>]*>/g, "").trim() || null : null,
+      userColor: body.userColor ?? null,
+      xPercent: body.xPercent,
+      yPercent: body.yPercent,
+      selector: body.selector ?? null,
+      pagePath: body.pagePath ?? "index.html",
+      content: body.content,
+      parentId: body.parentId ?? null,
+    });
+  } catch (err) {
+    // Should never fire post-validation, but guards against e.g. FK violations
+    // from a parentId pointing at a comment in another project.
+    console.warn("[design-comments] create failed:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Failed to persist comment" }, 500);
+  }
 
   // Broadcast to WS room
   const WS_URL = process.env.WS_INTERNAL_URL ?? "http://localhost:4001";
