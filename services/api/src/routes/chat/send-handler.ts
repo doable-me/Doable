@@ -40,6 +40,52 @@ import { handleAutoContinue, handleEmptyResponseRetry } from "./stream-recovery.
 import { handleAutoFixPreview, handleVersionAndMemory, handleFinalCleanup, handleStreamError } from "./post-processing.js";
 import { writeStreamBuffer, shouldBufferType, type BufferedEvent, type StreamBuffer } from "./stream-buffer.js";
 
+/**
+ * BUG-TRACE-002 instrumentation helper. Wraps a post-stream phase so the
+ * trace timeline shows `post_processing_phase_start`/`post_processing_phase_end`
+ * boundaries with millisecond timing, plus a periodic
+ * `post_processing_phase_pending` heartbeat every 5s so any await > 5s shows
+ * up in the trace as an explicit "still in <phase>…" event instead of
+ * silently consuming wall-clock between recorded events.
+ *
+ * Use one wrapper per await between SDK stream resolution and the SSE
+ * `done` event so any 100s+ stall is attributable to a specific phase.
+ */
+async function tracePhase<T>(
+  state: { traceCollector?: { pushRaw: (type: string, data: unknown) => void } | null },
+  phase: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  state.traceCollector?.pushRaw("post_processing_phase_start", { phase });
+  let pingTicks = 0;
+  const pinger = setInterval(() => {
+    pingTicks += 1;
+    state.traceCollector?.pushRaw("post_processing_phase_pending", {
+      phase,
+      elapsed_ms: Date.now() - startedAt,
+      ping: pingTicks,
+    });
+  }, 5_000);
+  try {
+    const result = await fn();
+    return result;
+  } catch (err) {
+    state.traceCollector?.pushRaw("post_processing_phase_error", {
+      phase,
+      elapsed_ms: Date.now() - startedAt,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  } finally {
+    clearInterval(pinger);
+    state.traceCollector?.pushRaw("post_processing_phase_end", {
+      phase,
+      duration_ms: Date.now() - startedAt,
+    });
+  }
+}
+
 async function assertToolCapableModel(providerId: string | undefined, modelId: string | undefined): Promise<void> {
   if (!providerId || !modelId) return;
 
@@ -566,11 +612,25 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
             }
 
             console.log(`[Chat][${projectId.slice(0, 8)}] stream done — content: ${state.assistantContent.length}, thinking: ${state.assistantThinking.length}, tools: ${state.hadToolCalls}`);
+            // BUG-TRACE-002: mark the SDK stream resolution boundary so the
+            // dead-gap between sendAndWait completion and post-processing
+            // start is attributable to a specific phase (autoContinue,
+            // emptyRetry, autoFixPreview, versionAndMemory).
+            state.traceCollector?.pushRaw("post_stream_boundary", {
+              phase: "sdk_stream_resolved",
+              content_chars: state.assistantContent.length,
+              thinking_chars: state.assistantThinking.length,
+              had_tool_calls: state.hadToolCalls,
+            });
 
             // Save pre-recovery content length to detect if auto-continue added anything
             const contentBeforeRecovery = state.assistantContent.length;
-            await handleAutoContinue(stream, state, currentEngine, sessionId!, projectId, mode, recordAssistantToolCall, content);
-            await handleEmptyResponseRetry(stream, state, currentEngine, sessionId!, projectId, augmentedContent, fileAttachments);
+            await tracePhase(state, "auto_continue", () =>
+              handleAutoContinue(stream, state, currentEngine, sessionId!, projectId, mode, recordAssistantToolCall, content),
+            );
+            await tracePhase(state, "empty_response_retry", () =>
+              handleEmptyResponseRetry(stream, state, currentEngine, sessionId!, projectId, augmentedContent, fileAttachments),
+            );
 
             if (!state.hadToolCalls && state.sawToolDelta) {
               await stream.writeSSE({
@@ -637,10 +697,16 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           // the stream is in an error state and there's no real assistant
           // content to fix/version/save.
           if (!thinkingLoopAborted) {
-            await handleAutoFixPreview(stream, state, projectId, resolvedGithubToken, sessionId!);
-            await handleVersionAndMemory(stream, state, projectId, userId, content, messageId);
+            await tracePhase(state, "auto_fix_preview", () =>
+              handleAutoFixPreview(stream, state, projectId, resolvedGithubToken, sessionId!),
+            );
+            await tracePhase(state, "version_and_memory", () =>
+              handleVersionAndMemory(stream, state, projectId, userId, content, messageId),
+            );
           }
-          await handleFinalCleanup(stream, state, projectId, mode, keepAlive, softHeartbeat);
+          await tracePhase(state, "final_cleanup", () =>
+            handleFinalCleanup(stream, state, projectId, mode, keepAlive, softHeartbeat),
+          );
 
           // Mark stream buffer complete with shortened TTL so late reconnects
           // can still replay the 'complete' event before it expires.
