@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,7 @@ import {
 import type { ProviderPreset } from "@doable/shared";
 import { useProviderCatalog } from "../hooks/use-provider-catalog";
 import { useTestConnection } from "../hooks/use-test-connection";
-import { Loader2, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight, X, User as UserIcon, Users as UsersIcon, Lock } from "lucide-react";
 import type { WizardStep, CategoryTab, ProviderWizardProps, WizardFormState } from "./provider-wizard-types";
 import { STEP_LABELS, STEP_ORDER, INITIAL_FORM_STATE } from "./provider-wizard-types";
 import { StepChoose, StepConfigure, StepValidate, StepModels } from "./provider-wizard-steps";
@@ -23,8 +23,14 @@ export function ProviderWizard({
   onOpenChange,
   workspaceId,
   onProviderAdded,
-  scope = "user",
+  scope: initialScope = "user",
+  isWorkspaceAdmin = false,
 }: ProviderWizardProps) {
+  // Live scope — initialized from the prop on open, mutable via the toggle
+  // when isWorkspaceAdmin. Non-admins are locked to 'user'. Migration 072.
+  const [scope, setScope] = useState<"user" | "workspace">(
+    isWorkspaceAdmin ? initialScope : "user",
+  );
   // Wizard state
   const [step, setStep] = useState<WizardStep>("choose");
   const [selectedPreset, setSelectedPreset] = useState<ProviderPreset | null>(null);
@@ -103,6 +109,16 @@ export function ProviderWizard({
   // Stable ref so the models hook can call handleOpenChange without circular deps
   const handleOpenChangeRef = useRef(handleOpenChange);
   handleOpenChangeRef.current = handleOpenChange;
+
+  // When the wizard opens, snap scope to whatever the parent passed.
+  // (The Add Personal / Add for workspace buttons in CustomProvidersTab
+  // each pass a different initialScope, and the user can flip it inside
+  // the wizard via the toggle when admin.)
+  useEffect(() => {
+    if (open) {
+      setScope(isWorkspaceAdmin ? initialScope : "user");
+    }
+  }, [open, initialScope, isWorkspaceAdmin]);
 
   // ─── Filtered catalog ──────────────────────────────────────
 
@@ -213,6 +229,56 @@ export function ProviderWizard({
             </button>
           </div>
         </DialogHeader>
+
+        {/* Scope toggle (Personal vs Workspace).
+            - Members see a static lock chip explaining personal-only.
+            - Admins see two radios; selection lives in component state and
+              flows into the POST body via the models hook. Locked once
+              past the choose step so a mid-wizard switch doesn't silently
+              re-target an in-flight provider creation. */}
+        {isWorkspaceAdmin ? (
+          <div className="flex items-center gap-2 px-1 pt-1 text-xs">
+            <span className="text-muted-foreground">Add as:</span>
+            <div className="flex rounded-md border border-border overflow-hidden">
+              <button
+                type="button"
+                onClick={() => step === "choose" && setScope("user")}
+                disabled={step !== "choose"}
+                className={`flex items-center gap-1 px-2.5 py-1 transition-colors ${
+                  scope === "user"
+                    ? "bg-brand-600 text-white"
+                    : "bg-background text-muted-foreground hover:bg-accent disabled:opacity-50"
+                }`}
+                title={step === "choose" ? "Visible only to you" : "Pick at the start of the wizard"}
+              >
+                <UserIcon className="h-3 w-3" />
+                Personal
+              </button>
+              <button
+                type="button"
+                onClick={() => step === "choose" && setScope("workspace")}
+                disabled={step !== "choose"}
+                className={`flex items-center gap-1 px-2.5 py-1 transition-colors border-l border-border ${
+                  scope === "workspace"
+                    ? "bg-brand-600 text-white"
+                    : "bg-background text-muted-foreground hover:bg-accent disabled:opacity-50"
+                }`}
+                title={step === "choose" ? "Shared with all workspace members" : "Pick at the start of the wizard"}
+              >
+                <UsersIcon className="h-3 w-3" />
+                Workspace
+              </button>
+            </div>
+            {step !== "choose" && (
+              <span className="text-[10px] text-muted-foreground">locked for this run</span>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-1 pt-1 text-xs text-muted-foreground">
+            <Lock className="h-3 w-3" />
+            <span>Adding as personal — visible only to you.</span>
+          </div>
+        )}
 
         {/* Step indicator */}
         <div className="flex items-center gap-1 px-1 py-2">

@@ -11,11 +11,17 @@ export interface ProviderWizardProps {
   workspaceId: string | null;
   onProviderAdded: () => void;
   /**
-   * Whether the new provider is shared with the workspace ("workspace",
-   * admin-only) or owned privately by the caller ("user", default).
+   * Initial scope when the wizard opens. The user can flip it via the
+   * in-wizard toggle if `isWorkspaceAdmin` is true.
    * Migration 072 / Personal-scope feature.
    */
   scope?: "user" | "workspace";
+  /**
+   * Whether the caller is owner/admin of the workspace. Controls whether
+   * the in-wizard scope toggle exposes the "Workspace" option. When false,
+   * the wizard is locked to scope='user'.
+   */
+  isWorkspaceAdmin?: boolean;
 }
 
 export interface WizardFormState {

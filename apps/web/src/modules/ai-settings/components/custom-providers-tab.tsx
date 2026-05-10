@@ -185,6 +185,7 @@ export function CustomProvidersTab({
         workspaceId={workspaceId}
         onProviderAdded={handleProviderAdded}
         scope={wizardScope}
+        isWorkspaceAdmin={isWorkspaceAdmin}
       />
     </div>
   );
