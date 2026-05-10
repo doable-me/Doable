@@ -10,8 +10,28 @@ import { recordToolEventForTrace } from "./tool-event-bookkeeping.js";
 
 const MAX_AUTO_CONTINUE = 6;
 const MAX_READ_ONLY_CYCLES = 3;
+// BUG-VISUAL-EDIT-001: Visual Edit prompts arrive with full selector
+// context, so the model SHOULD edit immediately. But it sometimes does up
+// to 3-4 reads (locate the JSX, peek related components) before committing
+// — bumping the stall ceiling from 3 to 5 keeps the watchdog protective on
+// truly stuck turns while not killing the legitimate visual-edit "explore
+// then edit" pattern.
+const MAX_READ_ONLY_CYCLES_VISUAL_EDIT = 5;
 const FILE_WRITE_TOOLS = new Set(["create_file", "edit_file", "write_file", "create", "edit", "write"]);
 const READ_TOOLS = new Set(["read_file", "list_files", "search_files", "read", "list", "search"]);
+
+/**
+ * Returns true when the user message is a Visual Edit turn (the editor
+ * auto-prefixes `[Visual Edit] For the <tag> element with class "..."
+ * (selector: ...): <user instruction>`). These turns ALWAYS want a build
+ * intent regardless of what verb the user used ("animate this text",
+ * "make it red", etc.) — the selector + element tag is implicit context
+ * that the request is to MUTATE the element.
+ */
+function isVisualEditPrompt(userMessage: string | undefined): boolean {
+  if (!userMessage) return false;
+  return /^\s*\[Visual Edit\]/i.test(userMessage);
+}
 /**
  * MCP tools that produce a finished artifact (UI resource, download, etc.)
  * — calling one of these IS the deliverable, so auto-continue must NOT
@@ -50,6 +70,10 @@ function isProductiveToolName(name: string | undefined): boolean {
  */
 function userWantsBuild(userMessage: string | undefined): boolean {
   if (!userMessage) return true; // unknown intent → preserve old behaviour
+  // BUG-VISUAL-EDIT-001: Visual Edit prompts ALWAYS want a build — the
+  // selector + element tag are implicit "mutate this" context regardless
+  // of which verb the user used ("animate this", "make it red", etc.).
+  if (isVisualEditPrompt(userMessage)) return true;
   const m = userMessage.toLowerCase().trim();
   if (m.length === 0) return true;
   // Strong informational/read-only signals — short messages dominated by these
@@ -96,6 +120,14 @@ export async function handleAutoContinue(
     return;
   }
 
+  // BUG-VISUAL-EDIT-001: a Visual Edit turn arrives with full selector
+  // context, so 3 read-only cycles is too tight a ceiling — the model often
+  // legitimately needs 3-4 reads to locate the JSX before committing the
+  // edit. Use the wider cap for these turns; everyone else keeps the old
+  // 3-cycle ceiling.
+  const isVisualEdit = isVisualEditPrompt(userMessage);
+  const readOnlyCycleCeiling = isVisualEdit ? MAX_READ_ONLY_CYCLES_VISUAL_EDIT : MAX_READ_ONLY_CYCLES;
+
   let autoContinueCount = 0;
   let prevReadFingerprint = "";
   let consecutiveReadOnlyCycles = 0;
@@ -136,14 +168,17 @@ export async function handleAutoContinue(
     prevReadFingerprint = readFiles;
 
     consecutiveReadOnlyCycles++;
-    if (consecutiveReadOnlyCycles >= MAX_READ_ONLY_CYCLES) {
-      state.traceCollector?.onError(`Stall: ${consecutiveReadOnlyCycles} consecutive read-only continues`, "auto_continue_write_free");
+    if (consecutiveReadOnlyCycles >= readOnlyCycleCeiling) {
+      state.traceCollector?.onError(`Stall: ${consecutiveReadOnlyCycles} consecutive read-only continues (visualEdit=${isVisualEdit})`, "auto_continue_write_free");
       console.warn(`[Chat][${projectId.slice(0, 8)}] stall detected — ${consecutiveReadOnlyCycles} read-only continues`);
+      // BUG-VISUAL-EDIT-001: tailor the bail message — Visual Edit users
+      // already gave a precise selector, so "provide more guidance" is
+      // misleading; the real problem is the model's planning.
+      const bailMessage = isVisualEdit
+        ? "I couldn't apply the visual edit automatically. Try rephrasing — for example, name the exact change ('add a fade-in animation', 'change the color to red')."
+        : "The AI has been investigating without making changes. Please provide more specific guidance, or check the preview console for errors.";
       await stream.writeSSE({
-        data: JSON.stringify({
-          type: "error",
-          data: "The AI has been investigating without making changes. Please provide more specific guidance, or check the preview console for errors.",
-        }),
+        data: JSON.stringify({ type: "error", data: bailMessage }),
       }).catch(() => {});
       break;
     }
@@ -159,9 +194,17 @@ export async function handleAutoContinue(
           data: { phase: "continuing", message: `Continuing to build\u2026 (step ${autoContinueCount})` },
         }),
       });
+      // BUG-VISUAL-EDIT-001: when a Visual Edit turn enters auto-continue,
+      // use a sharper, selector-aware nudge instead of the generic "create
+      // all the files" prompt. The Visual Edit user already specified the
+      // exact element; the model just needs to commit to an `edit_file`
+      // call now.
+      const continuePrompt = isVisualEdit
+        ? "You have the selector and the user's intent. Make the edit NOW with edit_file — modify the JSX/HTML for that exact element only. Do not read any more files. Apply the change in a single edit_file call. Reply with one short sentence describing what you changed."
+        : "You explored the project and installed packages but haven't created any files yet. Continue building NOW — create all the files the user asked for. Do NOT stop until the app is working in the preview.";
       await engine.sendMessage(
         sessionId,
-        "You explored the project and installed packages but haven't created any files yet. Continue building NOW — create all the files the user asked for. Do NOT stop until the app is working in the preview.",
+        continuePrompt,
         undefined,
         (evt: import("@github/copilot-sdk").SessionEvent) => {
           if (state.usageCollector) state.usageCollector.onUsageEvent(evt);
