@@ -14,7 +14,7 @@ import { registerQueueRoutes } from "./queue.js";
 import { registerTraceRoutes } from "./traces.js";
 import { registerMiscRoutes } from "./misc-routes.js";
 import { registerMcpCallRoute } from "./mcp-call.js";
-import { rateLimiter } from "../../middleware/rate-limit.js";
+import { rateLimiter, getTrustedClientIp } from "../../middleware/rate-limit.js";
 
 export { getChatSessionsSnapshot } from "./session-state.js";
 
@@ -65,7 +65,9 @@ const chatSendLimiterAnon = rateLimiter({
   windowMs: 60_000,
   max: CHAT_LIMIT_ANON,
   prefix: "chat-ip",
-  keyGenerator: (c) => `ip:${c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? "unknown"}`,
+  // BUG-CORPUS-SEC-001: must not trust client-supplied XFF for keying.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  keyGenerator: (c: any) => `ip:${getTrustedClientIp(c)}`,
 });
 const suggestionLimiter = rateLimiter({
   windowMs: 60_000,
@@ -73,8 +75,9 @@ const suggestionLimiter = rateLimiter({
   prefix: "suggest-u",
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   keyGenerator: (c: any) => {
-    const userId = c.get?.("userId") ?? c.req.header("x-forwarded-for") ?? "unknown";
-    return `u:${userId}`;
+    const userId = c.get?.("userId");
+    if (userId && userId !== "anonymous") return `u:${userId}`;
+    return `ip:${getTrustedClientIp(c)}`;
   },
 });
 

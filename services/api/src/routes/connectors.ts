@@ -21,6 +21,29 @@ export const connectorRoutes = new Hono<AuthEnv>();
 
 connectorRoutes.use("*", authMiddleware);
 
+// ─── Path-param guards ─────────────────────────────────────
+//
+// BUG-CORPUS-MCP-001: malformed/non-UUID `:id` (e.g. `notacid`) reached the
+// `connectors.getConnector(id)` call which threw `invalid input syntax for
+// type uuid` and surfaced as 500. We now validate path params up-front and
+// return 400 — the SQL layer never sees a malformed UUID.
+//
+// Helper used inline in every handler that takes a `:id` (connector id) or
+// `:workspaceId` path param. Returns a JSON 400 response when the value is
+// not a UUID, otherwise null.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function ensureUuidParam(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  c: any,
+  paramName: string,
+): Response | null {
+  const value = c.req.param(paramName);
+  if (typeof value !== "string" || !UUID_RE.test(value)) {
+    return c.json({ error: `Invalid ${paramName}: must be a UUID` }, 400);
+  }
+  return null;
+}
+
 // ─── Role helpers ──────────────────────────────────────────
 
 async function requireMember(workspaceId: string, userId: string): Promise<string | null> {
@@ -98,6 +121,9 @@ connectorRoutes.post(
 
 // GET /:workspaceId/connectors
 connectorRoutes.get("/:workspaceId/connectors", async (c) => {
+  // BUG-CORPUS-MCP-001: reject non-UUID workspaceId before SQL lookup.
+  const wsErr = ensureUuidParam(c, "workspaceId");
+  if (wsErr) return wsErr;
   const workspaceId = c.req.param("workspaceId");
   const userId = c.get("userId");
   const projectId = c.req.query("projectId");
@@ -203,6 +229,11 @@ connectorRoutes.post(
 
 // GET /:workspaceId/connectors/:id
 connectorRoutes.get("/:workspaceId/connectors/:id", async (c) => {
+  // BUG-CORPUS-MCP-001: reject non-UUID path params before SQL lookup.
+  const wsErr = ensureUuidParam(c, "workspaceId");
+  if (wsErr) return wsErr;
+  const idErr = ensureUuidParam(c, "id");
+  if (idErr) return idErr;
   const workspaceId = c.req.param("workspaceId");
   const connectorId = c.req.param("id");
   const userId = c.get("userId");
@@ -235,6 +266,11 @@ connectorRoutes.patch(
   "/:workspaceId/connectors/:id",
   zValidator("json", updateConnectorSchema),
   async (c) => {
+    // BUG-CORPUS-MCP-001: reject non-UUID path params before SQL lookup.
+    const wsErr = ensureUuidParam(c, "workspaceId");
+    if (wsErr) return wsErr;
+    const idErr = ensureUuidParam(c, "id");
+    if (idErr) return idErr;
     const workspaceId = c.req.param("workspaceId");
     const connectorId = c.req.param("id");
     const userId = c.get("userId");
@@ -255,6 +291,11 @@ connectorRoutes.patch(
 
 // DELETE /:workspaceId/connectors/:id
 connectorRoutes.delete("/:workspaceId/connectors/:id", async (c) => {
+  // BUG-CORPUS-MCP-001: reject non-UUID path params before SQL lookup.
+  const wsErr = ensureUuidParam(c, "workspaceId");
+  if (wsErr) return wsErr;
+  const idErr = ensureUuidParam(c, "id");
+  if (idErr) return idErr;
   const workspaceId = c.req.param("workspaceId");
   const connectorId = c.req.param("id");
   const userId = c.get("userId");
@@ -276,6 +317,12 @@ connectorRoutes.delete("/:workspaceId/connectors/:id", async (c) => {
 
 // POST /:workspaceId/connectors/:id/test — test a connector connection
 connectorRoutes.post("/:workspaceId/connectors/:id/test", async (c) => {
+  // BUG-CORPUS-MCP-001: reject non-UUID :id BEFORE the SQL lookup that
+  // would otherwise throw `invalid input syntax for type uuid` → 500.
+  const wsErr = ensureUuidParam(c, "workspaceId");
+  if (wsErr) return wsErr;
+  const idErr = ensureUuidParam(c, "id");
+  if (idErr) return idErr;
   const workspaceId = c.req.param("workspaceId");
   const connectorId = c.req.param("id");
   const userId = c.get("userId");
@@ -322,6 +369,11 @@ connectorRoutes.post("/:workspaceId/connectors/:id/test", async (c) => {
 
 // GET /:workspaceId/connectors/:id/tools — list discovered tools
 connectorRoutes.get("/:workspaceId/connectors/:id/tools", async (c) => {
+  // BUG-CORPUS-MCP-001: reject non-UUID path params before SQL lookup.
+  const wsErr = ensureUuidParam(c, "workspaceId");
+  if (wsErr) return wsErr;
+  const idErr = ensureUuidParam(c, "id");
+  if (idErr) return idErr;
   const workspaceId = c.req.param("workspaceId");
   const connectorId = c.req.param("id");
   const userId = c.get("userId");

@@ -6,6 +6,7 @@ import { sql } from "../../db/index.js";
 import { githubQueries } from "@doable/db/queries/github.js";
 import { authMiddleware, type AuthEnv } from "../../middleware/auth.js";
 import { getProjectPath } from "../../ai/project-files.js";
+import { requireProjectAccess } from "../projects/helpers.js";
 
 const db = githubQueries(sql);
 
@@ -13,6 +14,26 @@ export const githubProjectRoutes = new Hono<AuthEnv>();
 
 // Protect project-level routes (not webhook)
 githubProjectRoutes.use("/:projectId/github/*", authMiddleware);
+
+// ─── Project-membership guard ───────────────────────────────
+// BUG-CORPUS-GH-001: prior to this guard, `/:projectId/github/*` only
+// required auth; any signed-in user could read another tenant's
+// repoOwner / repoName / repoUrl / lastCommitSha via /github/status and
+// enumerate projects via /github/commits. We now hide existence (404) for
+// any caller that is not a workspace member, project collaborator, or
+// platform admin — same semantics as `/projects/:id`.
+githubProjectRoutes.use("/:projectId/github/*", async (c, next) => {
+  const projectId = c.req.param("projectId");
+  const userId = c.get("userId");
+  if (!projectId || !userId) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+  const access = await requireProjectAccess(userId, projectId);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+  await next();
+});
 
 // ─── Connect project to GitHub ─────────────────────────────
 githubProjectRoutes.post("/:projectId/github/connect", async (c) => {

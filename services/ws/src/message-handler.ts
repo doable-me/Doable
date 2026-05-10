@@ -3,8 +3,51 @@ import { SpanStatusCode, type Span } from "@opentelemetry/api";
 import type { RoomManager } from "./rooms/room-manager.js";
 import { type WsClientMessage, type WsServerMessage, type PresenceUser, userColor } from "./rooms/room.js";
 import { getTracer } from "./tracing/instrumentation.js";
+import { sql } from "./db.js";
 
 const tracer = getTracer("doable-ws");
+
+/**
+ * BUG-CORPUS-WS-001: verify the joining user is a member of the project's
+ * workspace before granting access to the room. Previously `room:join`
+ * accepted ANY UUID and emitted `room:joined` (with member list/presence)
+ * — leaking cross-tenant project IDs and enabling presence/cursor probing.
+ *
+ * Returns:
+ *   - "ok"           → user is in workspace; allow join.
+ *   - "forbidden"    → user is NOT in workspace OR project doesn't exist.
+ *   - "db-error"     → DB query failed; we fail-closed (forbidden) but log.
+ *
+ * We deliberately collapse "project not found" into "forbidden" so an
+ * attacker cannot distinguish nonexistent project IDs from ones in other
+ * workspaces (timing-channel mitigation aside, this avoids the namespace
+ * probe.)
+ */
+async function checkProjectMembership(
+  projectId: string,
+  userId: string,
+): Promise<"ok" | "forbidden"> {
+  try {
+    // Single round-trip: join projects → workspace_members. NULL result if
+    // either the project is missing or the user is not a member of its
+    // workspace. `deleted_at IS NULL` mirrors the canonical project query
+    // helper so soft-deleted projects are treated as nonexistent.
+    const rows = await sql<{ ok: boolean }[]>`
+      SELECT TRUE AS ok
+      FROM projects p
+      INNER JOIN workspace_members wm
+        ON wm.workspace_id = p.workspace_id AND wm.user_id = ${userId}::uuid
+      WHERE p.id = ${projectId}::uuid AND p.deleted_at IS NULL
+      LIMIT 1
+    `;
+    return rows.length > 0 ? "ok" : "forbidden";
+  } catch (err) {
+    // Invalid UUID syntax, schema mismatch, DB outage — never silently
+    // grant access. Log and treat as forbidden.
+    console.warn(`[ws] room:join membership check failed projectId=${projectId} userId=${userId}:`, err);
+    return "forbidden";
+  }
+}
 
 export interface ClientState {
   userId: string;
@@ -53,36 +96,71 @@ export function createMessageHandler(deps: {
   switch (msg.type) {
     case "room:join": {
       console.log(`[ws] room:join userId=${state.userId} displayName=${state.displayName} projectId=${msg.projectId}`);
-      // Leave previous room if any
-      if (state.projectId) {
-        const oldRoom = rooms.get(state.projectId);
-        if (oldRoom) {
-          oldRoom.leave(state.userId, ws);
-          if (oldRoom.isEmpty) {
-            oldRoom.onEmpty(() => rooms.remove(state.projectId!));
+      // BUG-CORPUS-WS-001: enforce workspace membership BEFORE letting the
+      // user into the room. We perform the DB check first; only on success
+      // do we leave the previous room and register in the new one. This is
+      // the async branch — we own the span and end it in the .then/.catch.
+      const targetProjectId = msg.projectId;
+      const previousProjectId = state.projectId;
+      checkProjectMembership(targetProjectId, state.userId)
+        .then((result) => {
+          span.setAttribute("ws.room.access", result);
+          if (result !== "ok") {
+            send(ws, {
+              type: "error",
+              code: "FORBIDDEN_ROOM",
+              message: "Not authorized to join this room",
+            });
+            span.setStatus({ code: SpanStatusCode.ERROR, message: "forbidden" });
+            span.end();
+            return;
           }
-        }
-      }
-      state.projectId = msg.projectId;
-      const room = rooms.getOrCreate(msg.projectId);
-      const members = room.join(ws, state.userId, state.displayName, null);
-      // BUG-WSI-001: ack must arrive within ~50ms — `room:joined` carries the
-      // member snapshot so clients can render presence immediately. The
-      // chat history is sent asynchronously below; ack is NOT gated on it.
-      send(ws, { type: "room:joined", projectId: msg.projectId, members });
-      // Send chat history
-      const API_URL = process.env.API_URL ?? "http://localhost:4000";
-      fetch(`${API_URL}/team-chat/${msg.projectId}/internal?limit=50`, {
-        headers: { "X-Internal-Secret": INTERNAL_SECRET },
-      }).then(r => r.json()).then((data: any) => {
-        if (data.data) send(ws, { type: "chat:history", messages: data.data.map((m: any) => ({
-          id: m.id, projectId: m.project_id, userId: m.user_id,
-          displayName: m.display_name, avatarUrl: null, content: m.content,
-          messageType: m.message_type, mentions: m.mentions ?? [],
-          parentId: m.parent_id, createdAt: m.created_at,
-        })) });
-      }).catch(() => {});
-      break;
+
+          // Authorized — proceed with the original join logic.
+          if (previousProjectId) {
+            const oldRoom = rooms.get(previousProjectId);
+            if (oldRoom) {
+              oldRoom.leave(state.userId, ws);
+              if (oldRoom.isEmpty) {
+                oldRoom.onEmpty(() => rooms.remove(previousProjectId));
+              }
+            }
+          }
+          state.projectId = targetProjectId;
+          const room = rooms.getOrCreate(targetProjectId);
+          const members = room.join(ws, state.userId, state.displayName, null);
+          // BUG-WSI-001: ack must arrive within ~50ms — `room:joined` carries
+          // the member snapshot so clients can render presence immediately.
+          // The chat history is sent asynchronously below; ack is NOT gated
+          // on it.
+          send(ws, { type: "room:joined", projectId: targetProjectId, members });
+          span.end();
+
+          // Send chat history (best-effort, off the critical path)
+          const API_URL = process.env.API_URL ?? "http://localhost:4000";
+          fetch(`${API_URL}/team-chat/${targetProjectId}/internal?limit=50`, {
+            headers: { "X-Internal-Secret": INTERNAL_SECRET },
+          }).then(r => r.json()).then((data: any) => {
+            if (data.data) send(ws, { type: "chat:history", messages: data.data.map((m: any) => ({
+              id: m.id, projectId: m.project_id, userId: m.user_id,
+              displayName: m.display_name, avatarUrl: null, content: m.content,
+              messageType: m.message_type, mentions: m.mentions ?? [],
+              parentId: m.parent_id, createdAt: m.created_at,
+            })) });
+          }).catch(() => {});
+        })
+        .catch((err) => {
+          console.error(`[ws] room:join membership check threw:`, err);
+          send(ws, {
+            type: "error",
+            code: "FORBIDDEN_ROOM",
+            message: "Not authorized to join this room",
+          });
+          span.recordException(err as Error);
+          span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+          span.end();
+        });
+      return true; // async branch owns span lifecycle
     }
 
     case "room:leave": {

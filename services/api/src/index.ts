@@ -37,7 +37,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { sql } from "./db/index.js";
 import { handleWebSocketUpgrade } from "./routes/preview-proxy/ws-proxy.js";
-import { rateLimiter } from "./middleware/rate-limit.js";
+import { rateLimiter, getTrustedClientIp } from "./middleware/rate-limit.js";
 import { getConnectorManager } from "./mcp/connector-manager.js";
 import { getCopilotManager } from "./ai/providers/copilot-manager.js";
 import { getOAuthRedirectUri } from "./integrations/oauth2.js";
@@ -132,11 +132,13 @@ const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "60000
 const apiRateLimiter = rateLimiter({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
-  keyGenerator: (c) => {
-    // Use Authorization token (per-user) or fall back to IP
+  // BUG-CORPUS-SEC-001: never trust client-supplied XFF for IP keying.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  keyGenerator: (c: any) => {
+    // Use Authorization token (per-user) or fall back to trusted IP
     const auth = c.req.header("authorization");
     if (auth) return `auth:${auth.slice(-16)}`;
-    return c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? "unknown";
+    return getTrustedClientIp(c);
   },
 });
 

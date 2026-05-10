@@ -43,6 +43,7 @@ import {
   Sparkles,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   File,
   FileText,
   Folder,
@@ -1872,6 +1873,10 @@ export default function EditorPage() {
   const [aiSuggestions, setAiSuggestions] = useState<string[]>(FALLBACK_SUGGESTIONS);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [moreMenuMsgId, setMoreMenuMsgId] = useState<string | null>(null);
+  // Tracks which messages have their older tool-call rows expanded.
+  // When a message has >4 tool actions, only the last 4 are shown by default;
+  // clicking the "Show N earlier steps" pill adds the msg.id to this set.
+  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(new Set());
   const [taskCardTabs, setTaskCardTabs] = useState<Record<string, TaskCardTab>>({});
   const [collapsedTaskCards, setCollapsedTaskCards] = useState<Set<string>>(new Set());
   const [splitPos, setSplitPos] = useState(35); // percentage
@@ -5468,9 +5473,42 @@ export default function EditorPage() {
                                       : `${allActions.length} ${(allActions.length === 1) ? "change" : "changes"} applied`}
                                   </h3>
                                   
-                                  {allActions.length > 0 && (
+                                  {allActions.length > 0 && (() => {
+                                    const isExpanded = expandedToolCalls.has(msg.id);
+                                    const COLLAPSE_THRESHOLD = 4;
+                                    const shouldCollapse = allActions.length > COLLAPSE_THRESHOLD && !isExpanded;
+                                    const visibleActions = shouldCollapse ? allActions.slice(-COLLAPSE_THRESHOLD) : allActions;
+                                    const hiddenCount = allActions.length - COLLAPSE_THRESHOLD;
+                                    return (
                                     <div className="w-full flex flex-col gap-2 relative mt-1">
-                                      {allActions.map((action, idx) => (
+                                      {allActions.length > COLLAPSE_THRESHOLD && (
+                                        <button
+                                          type="button"
+                                          data-testid="toolcalls-collapse-toggle"
+                                          onClick={() => {
+                                            setExpandedToolCalls((prev) => {
+                                              const next = new Set(prev);
+                                              if (next.has(msg.id)) next.delete(msg.id);
+                                              else next.add(msg.id);
+                                              return next;
+                                            });
+                                          }}
+                                          className="self-center inline-flex items-center gap-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-border px-2.5 py-1 text-[10px] font-medium text-foreground/80 hover:text-foreground transition-colors"
+                                        >
+                                          {isExpanded ? (
+                                            <>
+                                              <ChevronUp className="h-3 w-3" />
+                                              Hide earlier steps
+                                            </>
+                                          ) : (
+                                            <>
+                                              <ChevronDown className="h-3 w-3" />
+                                              Show {hiddenCount} earlier {hiddenCount === 1 ? "step" : "steps"}
+                                            </>
+                                          )}
+                                        </button>
+                                      )}
+                                      {visibleActions.map((action, idx) => (
                                         <div key={idx} className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 w-full bg-accent rounded-md p-1.5 border border-border text-left">
                                           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/15 border border-brand-500/30">
                                              {action.status === "running" ? (
@@ -5487,7 +5525,8 @@ export default function EditorPage() {
                                         </div>
                                       ))}
                                     </div>
-                                  )}
+                                    );
+                                  })()}
                                 </div>
                               </div>
                               );

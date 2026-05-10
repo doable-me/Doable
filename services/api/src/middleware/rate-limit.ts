@@ -7,10 +7,48 @@ interface RateLimitOptions {
   windowMs: number;
   /** Max requests per window */
   max: number;
-  /** Custom key extractor (defaults to IP) */
-  keyGenerator?: (c: { req: { header: (name: string) => string | undefined } }) => string;
+  /** Custom key extractor (defaults to trusted-source IP) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  keyGenerator?: (c: any) => string;
   /** Namespace prefix for KV keys (avoids collisions) */
   prefix?: string;
+}
+
+/**
+ * Resolve the client IP from a trusted source.
+ *
+ * BUG-CORPUS-SEC-001 (rate-limit bypass): we previously keyed on
+ * `x-forwarded-for`, which is client-supplied. An attacker rotating XFF
+ * trivially evades the limiter. Behind Cloudflare Tunnel, the inner-most
+ * XFF entry is attacker-controlled — only `cf-connecting-ip` (set by
+ * Cloudflare) is trustworthy. For non-CF deployments we fall back to
+ * `x-real-ip` (typical reverse-proxy convention) and finally the actual
+ * connecting socket address from `c.env.incoming.socket`.
+ *
+ * We deliberately do NOT honour raw XFF here. Operators who run behind a
+ * trusted proxy that strips XFF can plumb its address in via `x-real-ip`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getTrustedClientIp(c: any): string {
+  // 1. Cloudflare Tunnel (production) — set by the CF edge, cannot be spoofed
+  //    upstream because cloudflared overwrites it on every request.
+  const cf = c.req?.header?.("cf-connecting-ip");
+  if (cf && typeof cf === "string" && cf.length > 0) return cf.trim();
+
+  // 2. Reverse-proxy convention (nginx, Caddy in some configs)
+  const real = c.req?.header?.("x-real-ip");
+  if (real && typeof real === "string" && real.length > 0) return real.trim();
+
+  // 3. Direct socket address. Hono on Node exposes the underlying request via
+  //    `c.env.incoming` (see @hono/node-server). Guard everything because the
+  //    runtime shape varies (Bun, Deno, edge), and never let a missing field
+  //    fall back to client headers.
+  const incoming = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)
+    ?.incoming;
+  const sock = incoming?.socket?.remoteAddress;
+  if (sock && typeof sock === "string" && sock.length > 0) return sock;
+
+  return "unknown";
 }
 
 /**
@@ -31,11 +69,9 @@ export function rateLimiter(options: RateLimitOptions) {
   const kv = getKVStore();
 
   return createMiddleware(async (c, next) => {
-    const key =
-      keyGenerator?.(c) ??
-      c.req.header("x-forwarded-for") ??
-      c.req.header("x-real-ip") ??
-      "unknown";
+    // BUG-CORPUS-SEC-001: never key on client-supplied XFF. Use the trusted
+    // resolver, which prefers cf-connecting-ip → x-real-ip → socket addr.
+    const key = keyGenerator?.(c) ?? getTrustedClientIp(c);
 
     const kvKey = `${prefix}:${key}`;
     const count = await kv.incr(kvKey, windowMs);
