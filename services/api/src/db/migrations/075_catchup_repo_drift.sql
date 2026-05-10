@@ -1189,40 +1189,16 @@ CREATE POLICY notifications_self ON notifications FOR ALL TO public
     OR user_id = doable_current_user_id()
   );
 
--- ─── SEED DATA ─────────────────────────────────────────────
--- Bootstrap rows that the original (lost) migrations inserted. ON CONFLICT
--- DO NOTHING keeps this safe if any rows have been added/customized on a
--- live server before this migration runs. updated_by columns are set to
--- NULL because the original setup-user UUID won't exist on a fresh install.
-
-INSERT INTO feature_flags (feature_key, label, description, enabled, min_plan, min_role) VALUES
-  ('ai_chat',           'AI Chat',            'AI chat and code generation',                              true, NULL,       NULL),
-  ('visual_editor',     'Visual Editor',      'Click-to-edit visual editing in preview',                  true, NULL,       NULL),
-  ('code_editor',       'Code Editor',        'Monaco code editor (Dev Mode)',                            true, 'pro',      NULL),
-  ('github_sync',       'GitHub Sync',        'Connect and sync projects with GitHub',                    true, NULL,       NULL),
-  ('publish',           'Publish / Deploy',   'Publish projects to doable.me or custom domains',          true, NULL,       NULL),
-  ('custom_domains',    'Custom Domains',     'Use your own domain for published apps',                   true, 'pro',      NULL),
-  ('templates',         'Templates',          'Create projects from templates',                           true, NULL,       NULL),
-  ('analytics',         'Analytics',          'Built-in analytics for published apps',                    true, NULL,       NULL),
-  ('billing',           'Billing & Credits',  'Manage subscriptions and credits',                         true, NULL,       'owner'),
-  ('version_history',   'Version History',    'View and restore previous versions',                       true, NULL,       NULL),
-  ('workspaces',        'Workspaces',         'Create and manage workspaces',                             true, NULL,       NULL),
-  ('workspace_members', 'Workspace Members',  'Invite and manage workspace members',                      true, NULL,       'admin'),
-  ('connectors',        'Connectors',         'Configure integrations and MCP servers',                   true, 'pro',      NULL),
-  ('security_center',   'Security Center',    'Security scanning and vulnerability management',           true, 'business', 'admin'),
-  ('ai_settings',       'AI Settings',        'Configure AI models, providers, and enforcement',          true, NULL,       'admin')
-ON CONFLICT (feature_key) DO NOTHING;
-
-INSERT INTO mode_tool_config (mode, allowed_tools, description, updated_by) VALUES
-  ('plan',  ARRAY['read_file','list_files','search_files','ask_clarification','create_plan','mark_step_complete','view','grep','glob','ask_user','report_intent'],
-            'Strategize mode — read-only planning and analysis tools', NULL),
-  ('build', ARRAY['create_file','edit_file','read_file','list_files','install_package','deploy_preview','provision_supabase','request_integration','mark_step_complete','view','grep','glob','ask_user','report_intent','bash','edit'],
-            'Build mode — full creation and editing tools', NULL)
-ON CONFLICT (mode) DO NOTHING;
-
-INSERT INTO platform_config (key, value, updated_by) VALUES
-  ('enabled_frameworks', '["vite-react"]'::jsonb, NULL),
-  ('default_framework',  '"vite-react"'::jsonb,   NULL)
-ON CONFLICT (key) DO NOTHING;
+-- ─── SEED DATA: intentionally omitted ──────────────────────
+-- The original (lost) migrations also bootstrapped feature_flags (15 rows),
+-- mode_tool_config (2 rows), and platform_config (2 rows). Audit confirmed
+-- the API code has fallbacks for each:
+--   - feature_flags: features/check returns "feature_not_found" when missing,
+--     and the only frontend caller (AI Settings page) treats that as
+--     fail-open — only "feature_disabled" / "user_override_denied" hard-block.
+--   - mode_tool_config: not queried by current API code.
+--   - platform_config: admin-frameworks.ts falls back to
+--     process.env.DOABLE_ENABLED_FRAMEWORKS or hardcoded "vite-react".
+-- Skip the seed to keep the migration schema-only.
 
 -- End of catch-up.
