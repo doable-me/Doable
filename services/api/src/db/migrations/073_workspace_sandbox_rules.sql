@@ -1,6 +1,12 @@
 -- 073_workspace_sandbox_rules.sql
 -- Workspace-configurable allow/deny rules for AI tool actions.
 --
+-- Deploy note: run via `pnpm db:migrate` (which connects as the `doable`
+-- application user). If you have to apply this manually as the postgres
+-- superuser, the ALTER ... OWNER TO doable lines at the bottom of this
+-- file move ownership of the new objects so the API can read/write them
+-- without a 42501 (insufficient_privilege) error.
+--
 -- Two layers:
 --   workspace_sandbox_settings — per-workspace default action when no rule
 --     matches ('allow' or 'deny'). Defaults to 'allow' so existing
@@ -116,3 +122,13 @@ CREATE POLICY wsr_workspace_member ON workspace_sandbox_rules
         AND wm.role IN ('owner', 'admin')
     )
   );
+
+-- ─── Ownership safety net ─────────────────────────────────────
+-- When this migration is applied as the `doable` user (via
+-- `pnpm db:migrate`), these lines are no-ops. When applied as the
+-- postgres superuser they transfer ownership so the application user
+-- can read/write the new objects without a 42501 error.
+ALTER TABLE workspace_sandbox_settings OWNER TO doable;
+ALTER TABLE workspace_sandbox_rules    OWNER TO doable;
+ALTER TYPE  sandbox_rule_action        OWNER TO doable;
+ALTER TYPE  sandbox_rule_type          OWNER TO doable;
