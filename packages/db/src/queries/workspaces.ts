@@ -45,41 +45,47 @@ export function workspaceQueries(sql: postgres.Sql) {
       },
       tx?: postgres.Sql
     ): Promise<WorkspaceRow> {
-      const q = tx ?? sql;
       const plan = data.plan ?? "free";
       const limits = PLAN_LIMITS[plan];
 
-      // Create workspace, owner membership, and initial credits in a transaction
-      const [workspace] = await q<WorkspaceRow[]>`
-        INSERT INTO workspaces (name, slug, description, owner_id, plan)
-        VALUES (${data.name}, ${data.slug}, ${data.description ?? null}, ${data.ownerId}, ${plan})
-        RETURNING *
-      `;
+      // The four inserts below MUST be atomic. If the workspace_members
+      // insert fails (as happened when the 071 RLS WITH CHECK was recursive
+      // — see migration 074), the caller would otherwise be left with an
+      // orphan workspace row and a user who can't see it. Wrap in a
+      // transaction whenever we don't already have one.
+      const run = async (q: postgres.Sql): Promise<WorkspaceRow> => {
+        const [workspace] = await q<WorkspaceRow[]>`
+          INSERT INTO workspaces (name, slug, description, owner_id, plan)
+          VALUES (${data.name}, ${data.slug}, ${data.description ?? null}, ${data.ownerId}, ${plan})
+          RETURNING *
+        `;
 
-      await q`
-        INSERT INTO workspace_members (workspace_id, user_id, role)
-        VALUES (${workspace!.id}, ${data.ownerId}, 'owner')
-      `;
+        await q`
+          INSERT INTO workspace_members (workspace_id, user_id, role)
+          VALUES (${workspace!.id}, ${data.ownerId}, 'owner')
+        `;
 
-      // Initialize credit balance for the workspace owner
-      await q`
-        INSERT INTO credit_balances (user_id, workspace_id, daily_credits, monthly_credits, rollover_credits, plan_type, daily_reset_at, monthly_reset_at)
-        VALUES (
-          ${data.ownerId}, ${workspace!.id},
-          ${limits.dailyCredits}, ${limits.monthlyCredits}, 0, ${plan},
-          now() + interval '1 day', now() + interval '1 month'
-        )
-        ON CONFLICT (user_id, workspace_id) DO NOTHING
-      `;
+        await q`
+          INSERT INTO credit_balances (user_id, workspace_id, daily_credits, monthly_credits, rollover_credits, plan_type, daily_reset_at, monthly_reset_at)
+          VALUES (
+            ${data.ownerId}, ${workspace!.id},
+            ${limits.dailyCredits}, ${limits.monthlyCredits}, 0, ${plan},
+            now() + interval '1 day', now() + interval '1 month'
+          )
+          ON CONFLICT (user_id, workspace_id) DO NOTHING
+        `;
 
-      // Initialize default AI settings for the workspace
-      await q`
-        INSERT INTO workspace_ai_settings (workspace_id, show_model_selector)
-        VALUES (${workspace!.id}, true)
-        ON CONFLICT (workspace_id) DO NOTHING
-      `;
+        await q`
+          INSERT INTO workspace_ai_settings (workspace_id, show_model_selector)
+          VALUES (${workspace!.id}, true)
+          ON CONFLICT (workspace_id) DO NOTHING
+        `;
 
-      return workspace!;
+        return workspace!;
+      };
+
+      if (tx) return run(tx);
+      return sql.begin((newTx) => run(newTx as unknown as postgres.Sql)) as Promise<WorkspaceRow>;
     },
 
     async update(

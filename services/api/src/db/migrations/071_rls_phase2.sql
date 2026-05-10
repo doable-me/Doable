@@ -17,6 +17,18 @@ CREATE OR REPLACE FUNCTION doable_user_workspace_ids(uid uuid) RETURNS SETOF uui
   SELECT workspace_id FROM workspace_members WHERE user_id = uid;
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
+-- Second helper: workspace ids where the user is owner/admin. Used by the
+-- WITH CHECK clause below. Both helpers MUST be SECURITY DEFINER so they
+-- bypass RLS on workspace_members — otherwise any self-reference inside the
+-- policy causes "infinite recursion detected in policy" the moment Postgres
+-- plans an insert against the table (recursion is detected at plan time, not
+-- via runtime OR short-circuit, so the doable_current_user_id() IS NULL guard
+-- doesn't save us — see migration 074).
+CREATE OR REPLACE FUNCTION doable_user_admin_workspace_ids(uid uuid) RETURNS SETOF uuid AS $$
+  SELECT workspace_id FROM workspace_members
+  WHERE user_id = uid AND role IN ('owner', 'admin');
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
 -- ════════════════════════════════════════════════════════════
 -- workspace_members — visible only to fellow members of the same workspace
 -- ════════════════════════════════════════════════════════════
@@ -31,14 +43,7 @@ CREATE POLICY workspace_members_self_visibility ON workspace_members
   )
   WITH CHECK (
     doable_current_user_id() IS NULL
-    OR workspace_id IN (
-      -- We can self-reference here without recursion because we constrain
-      -- by user_id and role, both small lookups. If recursion ever
-      -- resurfaces in practice, switch this to a second SECURITY DEFINER
-      -- helper that returns admin-workspace ids.
-      SELECT workspace_id FROM workspace_members
-      WHERE user_id = doable_current_user_id() AND role IN ('owner', 'admin')
-    )
+    OR workspace_id IN (SELECT doable_user_admin_workspace_ids(doable_current_user_id()))
   );
 
 -- ════════════════════════════════════════════════════════════
