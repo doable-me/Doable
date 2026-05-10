@@ -14,6 +14,7 @@ import { parsePlanSteps } from "../../ai/plan-parser.js";
 import { mapEventToSSE, ChannelTokenRouter } from "../../ai/sse-mapper.js";
 import { popArtifacts } from "./artifact-stash.js";
 import { broadcastToRoom } from "../../ai/yjs-bridge.js";
+import { recordToolEventForTrace } from "./tool-event-bookkeeping.js";
 
 /** Create the processEvent callback for SDK sendMessage. */
 export function createProcessEvent(
@@ -56,26 +57,15 @@ export function createProcessEvent(
       console.log(`[Chat][${projectId.slice(0, 8)}] ${evtType}: ${(evtData?.toolName ?? evtData?.name ?? "").toString().slice(0, 50)}`);
     }
 
-    // Tool call bookkeeping
-    if (evtType === "tool.execution_start" || evtType === "tool.running") {
-      const tcId = evtData?.toolCallId as string | undefined;
-      const tcName = (evtData?.toolName ?? evtData?.name) as string | undefined;
-      if (tcId && tcName) state.toolCallIdMap.set(tcId, tcName);
-      if (tcName) {
-        // Some SDK channels wrap the real tool args under .arguments;
-        // unwrap so downstream code finds args.path / args.command etc.
-        const toolArgs = ((evtData as { arguments?: Record<string, unknown> })
-          ?.arguments ?? evtData) as Record<string, unknown>;
-        state.pendingToolNames.push(tcName);
-        recordAssistantToolCall(tcName, toolArgs);
-        state.lastToolName = tcName;
-        state.friendlyLastTool = friendlyToolMessage(tcName, toolArgs) ?? tcName;
-        state.traceCollector?.onToolStart(tcName, toolArgs);
-      }
-    }
-    if (evtType === "tool.execution_complete" || evtType === "tool.completed" || evtType === "external_tool.completed") {
-      const tcName = (evtData?.toolName ?? evtData?.name) as string | undefined;
-      if (tcName) state.traceCollector?.onToolEnd(tcName, evtData, evtData?.result ?? evtData?.output ?? null);
+    // Tool call bookkeeping (shared with stream-recovery auto-continue —
+    // see tool-event-bookkeeping.ts. BUG-TRACE-001: keep these two paths
+    // identical so auto-continue tool events still increment the trace
+    // counter.)
+    const toolEvt = recordToolEventForTrace(state, event as Record<string, unknown>, recordAssistantToolCall);
+    if (toolEvt.handled && toolEvt.phase === "start" && toolEvt.toolName) {
+      state.pendingToolNames.push(toolEvt.toolName);
+      state.lastToolName = toolEvt.toolName;
+      state.friendlyLastTool = friendlyToolMessage(toolEvt.toolName, toolEvt.toolArgs ?? {}) ?? toolEvt.toolName;
     }
 
     // Multi-turn message ID tracking

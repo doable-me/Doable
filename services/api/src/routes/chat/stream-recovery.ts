@@ -6,6 +6,7 @@ import type { ChatStreamState } from "./types.js";
 import type { CopilotEngine } from "../../ai/providers/copilot.js";
 import { mapEventToSSE, ChannelTokenRouter } from "../../ai/sse-mapper.js";
 import { stripServerPaths } from "../../ai/tool-messages.js";
+import { recordToolEventForTrace } from "./tool-event-bookkeeping.js";
 
 const MAX_AUTO_CONTINUE = 6;
 const MAX_READ_ONLY_CYCLES = 3;
@@ -163,23 +164,17 @@ export async function handleAutoContinue(
         "You explored the project and installed packages but haven't created any files yet. Continue building NOW — create all the files the user asked for. Do NOT stop until the app is working in the preview.",
         undefined,
         (evt: import("@github/copilot-sdk").SessionEvent) => {
-          const evtType = (evt as Record<string, unknown>).type as string;
-          const evtData = (evt as Record<string, unknown>).data as Record<string, unknown> | undefined;
           if (state.usageCollector) state.usageCollector.onUsageEvent(evt);
           state.traceCollector?.onSdkEvent(evt as Record<string, unknown>);
-          if (evtType === "tool.execution_start") {
-            const toolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
-            // Unwrap envelope: real args live under .arguments on some channels.
-            const toolArgs = ((evtData as { arguments?: Record<string, unknown> })
-              ?.arguments ?? evtData) as Record<string, unknown>;
-            recordAssistantToolCall(toolName, toolArgs);
-            if (toolName) state.traceCollector?.onToolStart(toolName, toolArgs);
-            state.hadToolCalls = true;
-          }
-          if (evtType === "tool.execution_complete" || evtType === "tool.completed") {
-            const toolName = (evtData?.toolName ?? evtData?.name ?? "") as string;
-            if (toolName) state.traceCollector?.onToolEnd(toolName, evtData, evtData?.result ?? evtData?.output ?? null);
-          }
+          // BUG-TRACE-001: route tool start/end through the same helper the
+          // main turn uses, so auto-continue's tool calls (read_file /
+          // edit_file etc.) increment `tool_call_count` and produce
+          // tool_start/tool_end trace events.  Previously this inline
+          // callback only matched `tool.execution_start` /
+          // `tool.execution_complete` / `tool.completed` — missing
+          // `tool.running` and `external_tool.completed`, which silently
+          // dropped MCP-channel tool events from the trace.
+          recordToolEventForTrace(state, evt as Record<string, unknown>, recordAssistantToolCall);
           const sseData = mapEventToSSE(evt as Record<string, unknown>);
           if (!sseData) return;
           state.lastRealEventAt = Date.now();
