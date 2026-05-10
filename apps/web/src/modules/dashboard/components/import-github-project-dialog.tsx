@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   apiGitHubUserStatus,
   apiGitHubListRepos,
+  apiGitHubDisconnect,
   apiCreateProject,
   apiImportGitHubRepo,
   getGitHubConnectUrl,
@@ -72,6 +73,7 @@ export function ImportGitHubProjectDialog({
   const [githubUsername, setGithubUsername] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importingStatus, setImportingStatus] = useState("");
+  const [switching, setSwitching] = useState(false);
 
   // Check GitHub connection status when dialog opens
   useEffect(() => {
@@ -132,6 +134,31 @@ export function ImportGitHubProjectDialog({
     const returnUrl = `${window.location.origin}/dashboard?github_connected=1&import=1`;
     window.location.href = getGitHubConnectUrl(user.id, returnUrl);
   }, [user]);
+
+  // Drop the current user-level GitHub OAuth token, reset to the connect step,
+  // and immediately kick off a fresh OAuth flow. The user picks the new
+  // account on github.com (GitHub remembers their last login but the
+  // "Use a different account" link on the OAuth page lets them switch).
+  const handleSwitchAccount = useCallback(async () => {
+    if (!user?.id) return;
+    if (!confirm(
+      `Disconnect ${githubUsername ? `@${githubUsername}` : "your GitHub account"} and connect a different one?\n\n` +
+      "Existing project-to-repo links won't be deleted, but new pushes/pulls and imports will use the next account you sign in with.",
+    )) return;
+    setSwitching(true);
+    setError(null);
+    try {
+      await apiGitHubDisconnect();
+      setRepos([]);
+      setGithubUsername(null);
+      // Re-launch OAuth — same redirect target as the initial connect path.
+      const returnUrl = `${window.location.origin}/dashboard?github_connected=1&import=1`;
+      window.location.href = getGitHubConnectUrl(user.id, returnUrl);
+    } catch (err) {
+      setSwitching(false);
+      setError(err instanceof Error ? err.message : "Failed to disconnect");
+    }
+  }, [user, githubUsername]);
 
   const handleImport = useCallback(async () => {
     const repo = repos.find((r) => r.fullName === selectedRepo);
@@ -256,12 +283,27 @@ export function ImportGitHubProjectDialog({
           <div className="space-y-4">
             {/* Connected user */}
             {githubUsername && (
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2">
-                <span className="h-2 w-2 rounded-full bg-green-500" />
-                <span className="text-sm text-muted-foreground">
-                  Connected as{" "}
-                  <span className="font-medium text-foreground">{githubUsername}</span>
-                </span>
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+                  <span className="text-sm text-muted-foreground truncate">
+                    Connected as{" "}
+                    <span className="font-medium text-foreground">{githubUsername}</span>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleSwitchAccount()}
+                  disabled={switching}
+                  className="shrink-0 rounded px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 transition-colors"
+                  title="Disconnect this GitHub account and connect a different one"
+                >
+                  {switching ? (
+                    <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Disconnecting…</span>
+                  ) : (
+                    "Switch account"
+                  )}
+                </button>
               </div>
             )}
 

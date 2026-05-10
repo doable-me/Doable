@@ -17,6 +17,10 @@ interface GitHubConnectDialogProps {
     description: string;
   }) => Promise<void>;
   onInitiateOAuth: () => void;
+  /** Drop the current user-level GitHub OAuth token then re-launch OAuth so
+   * the user can sign in as a different GitHub account. Optional — when
+   * absent, no Switch-account control is shown. */
+  onSwitchAccount?: () => Promise<void>;
   repos: never[];
   reposLoading: boolean;
   githubUsername: string | null;
@@ -45,6 +49,7 @@ export function GitHubConnectDialog({
   onClose,
   onConnect,
   onInitiateOAuth,
+  onSwitchAccount,
   githubUsername,
   isGitHubConnected,
   projectName,
@@ -58,6 +63,23 @@ export function GitHubConnectDialog({
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [switching, setSwitching] = useState(false);
+
+  const handleSwitchAccount = useCallback(async () => {
+    if (!onSwitchAccount) return;
+    if (!confirm(
+      `Disconnect ${githubUsername ? `@${githubUsername}` : "your GitHub account"} and connect a different one?\n\n` +
+      "Existing project-to-repo links won't be deleted, but new pushes/pulls will use the next account you sign in with.",
+    )) return;
+    setSwitching(true);
+    setError(null);
+    try {
+      await onSwitchAccount();
+    } catch (err) {
+      setSwitching(false);
+      setError(err instanceof Error ? err.message : "Failed to switch account");
+    }
+  }, [onSwitchAccount, githubUsername]);
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -168,14 +190,34 @@ export function GitHubConnectDialog({
             {/* Connected — show one-click create */}
             <div className="p-6 space-y-4">
               {/* Connected user */}
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-green-500" />
-                <span className="text-sm text-muted-foreground">
-                  Connected as{" "}
-                  <span className="font-medium text-foreground">
-                    {githubUsername}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+                  <span className="text-sm text-muted-foreground truncate">
+                    Connected as{" "}
+                    <span className="font-medium text-foreground">
+                      {githubUsername}
+                    </span>
                   </span>
-                </span>
+                </div>
+                {onSwitchAccount && (
+                  <button
+                    type="button"
+                    onClick={() => void handleSwitchAccount()}
+                    disabled={switching || connecting}
+                    className="shrink-0 rounded px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 transition-colors"
+                    title="Disconnect this GitHub account and connect a different one"
+                  >
+                    {switching ? (
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Disconnecting…
+                      </span>
+                    ) : (
+                      "Switch account"
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Repo preview — shows what will be created */}

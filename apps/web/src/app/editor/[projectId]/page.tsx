@@ -7025,6 +7025,14 @@ export default function EditorPage() {
           await github.connect(opts);
         }}
         onInitiateOAuth={() => github.initiateOAuth()}
+        onSwitchAccount={async () => {
+          // Drop the user-level OAuth token, then re-launch OAuth so the
+          // user can pick a different GitHub account on github.com.
+          // initiateOAuth() does a full-page redirect, so post-redirect
+          // state in this component is irrelevant.
+          await github.disconnectUser();
+          github.initiateOAuth();
+        }}
         repos={[] as never[]}
         reposLoading={false}
         githubUsername={github.githubUsername}

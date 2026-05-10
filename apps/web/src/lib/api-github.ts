@@ -30,6 +30,10 @@ export async function apiGitHubListRepos(): Promise<{ data: ApiGitHubRepo[] }> {
   return apiFetch("/github/repos");
 }
 
+export async function apiGitHubDisconnect(): Promise<{ data: { disconnected: true } }> {
+  return apiFetch("/github/disconnect", { method: "DELETE" });
+}
+
 export async function apiImportGitHubRepo(
   projectId: string,
   repoOwner: string,

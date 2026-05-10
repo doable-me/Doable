@@ -119,6 +119,7 @@ export {
   type ApiGitHubRepo,
   apiGitHubUserStatus,
   apiGitHubListRepos,
+  apiGitHubDisconnect,
   apiImportGitHubRepo,
   getGitHubConnectUrl,
 } from "./api-github";
