@@ -347,6 +347,12 @@ export function useDashboard() {
   const displayProjects = useMemo(() => {
     let filtered = [...sourceProjects];
     if (sidebarFilter === "starred" || starredFilter) filtered = filtered.filter((p) => p.starred);
+    // Client-side search filter for tabs without server-side search (recent, shared)
+    if (debouncedSearch.trim() && activeTab !== "projects") {
+      const q = debouncedSearch.trim().toLowerCase();
+      filtered = filtered.filter((p) => p.name.toLowerCase().includes(q));
+    }
+    if (statusFilter !== "all") filtered = filtered.filter((p) => p.status === statusFilter);
     filtered.sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
       switch (sortKey) {
@@ -357,7 +363,7 @@ export function useDashboard() {
       }
     });
     return filtered;
-  }, [sourceProjects, sidebarFilter, starredFilter, sortKey, sortDir]);
+  }, [sourceProjects, sidebarFilter, starredFilter, sortKey, sortDir, debouncedSearch, activeTab, statusFilter]);
 
   const hasMore = sidebarFilter === "shared" ? sharedProjects.length < totalShared : activeTab === "recent" ? recentProjects.length < totalRecent : projects.length < totalProjects;
   const loadMore = () => {

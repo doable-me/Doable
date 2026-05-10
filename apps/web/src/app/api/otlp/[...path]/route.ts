@@ -35,6 +35,8 @@ export async function POST(req: NextRequest, ctx: RouteParams) {
   if (ct) fwdHeaders.set("content-type", ct);
   const ce = req.headers.get("content-encoding");
   if (ce) fwdHeaders.set("content-encoding", ce);
+  const internalSecret = process.env.INTERNAL_SECRET;
+  if (internalSecret) fwdHeaders.set("x-internal-secret", internalSecret);
 
   // Read the body once. Browser OTLP payloads are small (batched spans),
   // so buffering is acceptable and avoids streaming-body quirks across

@@ -378,7 +378,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
               <DropdownMenuItem className="focus:bg-accent focus:text-accent-foreground" onClick={() => router.push("/billing")}><CreditCard className="mr-2 h-4 w-4" />Billing</DropdownMenuItem>
               {user?.isPlatformAdmin && <DropdownMenuItem className="text-amber-800 font-bold dark:text-amber-400 dark:font-normal focus:bg-amber-500/10 focus:text-amber-700 dark:focus:text-amber-300" onClick={() => router.push("/admin")}><Shield className="mr-2 h-4 w-4" />System Admin</DropdownMenuItem>}
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={() => { logout(); router.push("/"); }}><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem>
+              <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={async () => { await logout(); router.push("/"); }}><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
