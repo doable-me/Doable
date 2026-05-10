@@ -27,8 +27,8 @@ export const projectItemRoutes = new Hono<AuthEnv>();
 // Reject non-UUID `:id` params with 400 before any handler hits Postgres
 // (BUG-CORPUS-PROJ-002). Every route in this group is `/:id...` so the
 // guard is safe to apply globally here.
-projectItemRoutes.use("/:id", validateProjectIdParam);
-projectItemRoutes.use("/:id/*", validateProjectIdParam);
+projectItemRoutes.use("/:id", validateProjectIdParam());
+projectItemRoutes.use("/:id/*", validateProjectIdParam());
 
 // ─── Record Project View ────────────────────────────────────
 projectItemRoutes.post("/:id/view", async (c) => {

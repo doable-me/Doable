@@ -20,13 +20,30 @@ export const projectFileRoutes = new Hono<AuthEnv>();
 // Require authentication for all project file operations
 // UUID regex — skip middleware for non-UUID :id values (e.g. "recently-viewed", "starred")
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 projectFileRoutes.use("/projects/:id/*", authMiddleware);
+
+// BUG-CORPUS-PROJ-003: reject non-UUID :id with 400 (instead of skipping
+// auth/access middleware and letting the inner handler 500 on the SQL
+// invalid-uuid cast). The previous "skip if non-UUID" behaviour was
+// dangerous: it bypassed the access-check below and the inner SQL still
+// crashed.
+// BUG-CORPUS-PROJ-004: also reject the nil UUID so the all-zeros placeholder
+// stops getting reachable through the file CRUD path.
+projectFileRoutes.use("/projects/:id/*", async (c, next) => {
+  const projectId = c.req.param("id");
+  if (!projectId || !UUID_RE.test(projectId) || projectId.toLowerCase() === NIL_UUID) {
+    return c.json({ error: "Invalid project id" }, 400);
+  }
+  await next();
+});
 
 // ─── Auto-join: add user as collaborator ONLY if project link sharing is enabled ──
 projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   const projectId = c.req.param("id");
-  if (!UUID_RE.test(projectId)) { await next(); return; }
+  // UUID guard already applied at the top mount; defense-in-depth.
+  if (!UUID_RE.test(projectId)) { return c.json({ error: "Invalid project id" }, 400); }
   const userId = c.get("userId");
   if (projectId && userId) {
     try {
@@ -67,7 +84,8 @@ projectFileRoutes.use("/projects/:id/*", async (c, next) => {
 // Returns 404 "Project not found" to avoid leaking project existence.
 projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   const projectId = c.req.param("id");
-  if (!UUID_RE.test(projectId)) { await next(); return; }
+  // UUID guard already applied at the top mount; defense-in-depth.
+  if (!UUID_RE.test(projectId)) { return c.json({ error: "Invalid project id" }, 400); }
   const userId = c.get("userId");
 
   // Look up the project and verify access

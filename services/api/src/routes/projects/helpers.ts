@@ -14,27 +14,59 @@ export { projects, workspacesQ };
 // RFC 4122 (any version, any variant). Validates :id at the route boundary
 // so callers passing malformed ids get a clean 400 instead of postgres.js
 // throwing `invalid input syntax for type uuid` and surfacing as 500
-// (BUG-CORPUS-PROJ-002). Mirrors the workspace-role.ts guard.
+// (BUG-CORPUS-PROJ-002, BUG-CORPUS-PROJ-003). Mirrors the
+// workspace-role.ts guard.
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Nil UUID — RFC 4122 §4.1.7 reserves all-zeros as the "nil" UUID. Treat it
+// as invalid for project ids so a placeholder/test row keyed on it can't be
+// silently created or mutated (BUG-CORPUS-PROJ-004 — PATCH/DELETE on
+// `00000000-0000-0000-0000-000000000000` was returning 200 because a stub
+// row existed, having been auto-created by the chat `createIfMissing` flow
+// in a prior run).
+export const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
 export function isProjectIdValid(id: string | undefined): boolean {
-  return !!id && UUID_REGEX.test(id);
+  return !!id && UUID_REGEX.test(id) && id.toLowerCase() !== NIL_UUID;
 }
 
 /**
- * Hono middleware that returns 400 if the `:id` param is missing or not a UUID.
- * Apply via `routes.use("/:id", validateProjectIdParam)` and
- * `routes.use("/:id/*", validateProjectIdParam)` so ALL handlers under that
- * mount get the guard for free.
+ * Hono middleware that returns 400 if a UUID-shaped path param is missing,
+ * malformed, or the nil UUID. Apply via
+ * `routes.use("/:id", validateProjectIdParam())` and
+ * `routes.use("/:id/*", validateProjectIdParam())` so all handlers under
+ * that mount get the guard for free.
+ *
+ * @param paramName - which Hono path param to read. Defaults to `id`. Pass
+ *   `"projectId"` for routers that capture the id under a different name
+ *   (e.g. versions, env-vars, file-routes).
  */
-export const validateProjectIdParam = createMiddleware<AuthEnv>(async (c, next) => {
-  const id = c.req.param("id");
-  if (!id || !UUID_REGEX.test(id)) {
-    return c.json({ error: "Invalid project id" }, 400);
-  }
-  await next();
-});
+export function validateProjectIdParam(paramName: string = "id") {
+  return createMiddleware<AuthEnv>(async (c, next) => {
+    const id = c.req.param(paramName);
+    if (!id || !UUID_REGEX.test(id) || id.toLowerCase() === NIL_UUID) {
+      return c.json({ error: "Invalid project id" }, 400);
+    }
+    await next();
+  });
+}
+
+/**
+ * Hono middleware that validates a UUID-shaped *query* parameter (e.g.
+ * `GET /projects?workspaceId=…`). Returns 400 if the param is present but
+ * not a UUID. Missing params are allowed through — handlers fall back to
+ * defaults.
+ */
+export function validateUuidQueryParam(queryName: string, label?: string) {
+  return createMiddleware<AuthEnv>(async (c, next) => {
+    const v = c.req.query(queryName);
+    if (v !== undefined && v !== "" && !UUID_REGEX.test(v)) {
+      return c.json({ error: `Invalid ${label ?? queryName}` }, 400);
+    }
+    await next();
+  });
+}
 
 // ─── Role hierarchy helper ──────────────────────────────────
 const ROLES = WORKSPACE_ROLES as readonly string[];

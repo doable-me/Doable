@@ -14,7 +14,7 @@ import {
   PLAN_LIMITS,
   type WorkspacePlan,
 } from "@doable/shared";
-import { projects, workspacesQ, getUserWorkspaceId, getUserWorkspaceIdWithMinRole } from "./helpers.js";
+import { projects, workspacesQ, getUserWorkspaceId, getUserWorkspaceIdWithMinRole, validateUuidQueryParam } from "./helpers.js";
 import { getEnabledFrameworkIds } from "../../frameworks/init.js";
 
 const stars = starQueries(sql);
@@ -22,6 +22,14 @@ const projectViews = projectViewQueries(sql);
 const shareTracking = shareTrackingQueries(sql);
 
 export const projectListRoutes = new Hono<AuthEnv>();
+
+// BUG-CORPUS-PROJ-003: validate the `workspaceId` query param on
+// `GET /projects` and `GET /projects/recently-viewed` etc. before any SQL
+// runs. Previously a non-UUID value reached postgres.js and surfaced as 500
+// "Internal Server Error". Other query params (folderId, status, search)
+// are validated inline by the existing handlers.
+projectListRoutes.use("*", validateUuidQueryParam("workspaceId", "workspaceId"));
+projectListRoutes.use("*", validateUuidQueryParam("folderId", "folderId"));
 
 // ─── List Starred Projects ──────────────────────────────────
 // NOTE: This must be defined BEFORE "/:id" to avoid matching "starred" as an id

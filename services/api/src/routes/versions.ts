@@ -24,6 +24,7 @@ import {
   revertToCommit,
   diffCommits as gitDiffCommits,
 } from "../git/operations.js";
+import { validateProjectIdParam } from "./projects/helpers.js";
 
 export const versionRoutes = new Hono<AuthEnv>();
 
@@ -52,6 +53,10 @@ function formatGitLogAsVersions(
 
 // ─── Require authentication for all version routes ───────
 versionRoutes.use("/:projectId/*", authMiddleware);
+
+// BUG-CORPUS-PROJ-003: reject non-UUID `:projectId` with 400 before SQL.
+// Apply AFTER auth so the 401 path still fires for unauthenticated callers.
+versionRoutes.use("/:projectId/*", validateProjectIdParam("projectId"));
 
 // ─── Undo AI changes (git-based) ──────────────────────────
 versionRoutes.post("/:projectId/versions/undo", async (c) => {

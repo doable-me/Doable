@@ -4,12 +4,17 @@ import { securityQueries } from "@doable/db/queries/security.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { getProjectPath } from "../projects/file-manager.js";
 import { runFullScan } from "../security/scanner.js";
+import { validateProjectIdParam } from "./projects/helpers.js";
 
 const security = securityQueries(sql);
 export const securityRoutes = new Hono();
 
 // All security routes require authentication
 securityRoutes.use("*", authMiddleware);
+
+// BUG-CORPUS-PROJ-003: reject non-UUID `:id` before SQL → 400, not 500.
+securityRoutes.use("/:id/security", validateProjectIdParam());
+securityRoutes.use("/:id/security/*", validateProjectIdParam());
 
 // ─── POST /projects/:id/security/scan ─ Trigger a full security scan ───
 securityRoutes.post("/:id/security/scan", async (c) => {

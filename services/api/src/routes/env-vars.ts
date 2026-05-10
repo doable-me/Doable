@@ -4,6 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { sql } from "../db/index.js";
 import { envVarQueries, workspaceQueries, projectQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { validateProjectIdParam } from "./projects/helpers.js";
 
 const vars = envVarQueries(sql);
 const workspaces = workspaceQueries(sql);
@@ -118,6 +119,9 @@ wsEnvVarRoutes.delete("/:workspaceId/env-vars/:varId", async (c) => {
 
 export const projEnvVarRoutes = new Hono<AuthEnv>();
 projEnvVarRoutes.use("*", authMiddleware);
+// BUG-CORPUS-PROJ-003: reject non-UUID :projectId before SQL → 400, not 500.
+projEnvVarRoutes.use("/:projectId/env-vars", validateProjectIdParam("projectId"));
+projEnvVarRoutes.use("/:projectId/env-vars/*", validateProjectIdParam("projectId"));
 
 // GET /projects/:projectId/env-vars
 projEnvVarRoutes.get("/:projectId/env-vars", async (c) => {
