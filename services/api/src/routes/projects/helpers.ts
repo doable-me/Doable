@@ -2,11 +2,39 @@ import { sql } from "../../db/index.js";
 import { projectQueries } from "@doable/db";
 import { workspaceQueries } from "@doable/db";
 import { WORKSPACE_ROLES, type WorkspaceRole } from "@doable/shared";
+import { createMiddleware } from "hono/factory";
+import type { AuthEnv } from "../../middleware/auth.js";
 
 const projects = projectQueries(sql);
 const workspacesQ = workspaceQueries(sql);
 
 export { projects, workspacesQ };
+
+// ─── Project-id UUID guard ──────────────────────────────────
+// RFC 4122 (any version, any variant). Validates :id at the route boundary
+// so callers passing malformed ids get a clean 400 instead of postgres.js
+// throwing `invalid input syntax for type uuid` and surfacing as 500
+// (BUG-CORPUS-PROJ-002). Mirrors the workspace-role.ts guard.
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isProjectIdValid(id: string | undefined): boolean {
+  return !!id && UUID_REGEX.test(id);
+}
+
+/**
+ * Hono middleware that returns 400 if the `:id` param is missing or not a UUID.
+ * Apply via `routes.use("/:id", validateProjectIdParam)` and
+ * `routes.use("/:id/*", validateProjectIdParam)` so ALL handlers under that
+ * mount get the guard for free.
+ */
+export const validateProjectIdParam = createMiddleware<AuthEnv>(async (c, next) => {
+  const id = c.req.param("id");
+  if (!id || !UUID_REGEX.test(id)) {
+    return c.json({ error: "Invalid project id" }, 400);
+  }
+  await next();
+});
 
 // ─── Role hierarchy helper ──────────────────────────────────
 const ROLES = WORKSPACE_ROLES as readonly string[];

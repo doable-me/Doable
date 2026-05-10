@@ -10,7 +10,7 @@ import type { AuthEnv } from "../../middleware/auth.js";
 import { getProjectPath } from "../../ai/project-files.js";
 import { getThumbnailPath } from "../../thumbnails/capture.js";
 import { stopDevServer } from "../../projects/dev-server.js";
-import { projects, workspacesQ, requireProjectAccess, isRoleAtLeast } from "./helpers.js";
+import { projects, workspacesQ, requireProjectAccess, isRoleAtLeast, validateProjectIdParam } from "./helpers.js";
 import { signProjectJwt } from "../../auth/project-jwt.js";
 
 const PROJECT_JWT_SECRET =
@@ -23,6 +23,12 @@ const shareTracking = shareTrackingQueries(sql);
 const projectViews = projectViewQueries(sql);
 
 export const projectItemRoutes = new Hono<AuthEnv>();
+
+// Reject non-UUID `:id` params with 400 before any handler hits Postgres
+// (BUG-CORPUS-PROJ-002). Every route in this group is `/:id...` so the
+// guard is safe to apply globally here.
+projectItemRoutes.use("/:id", validateProjectIdParam);
+projectItemRoutes.use("/:id/*", validateProjectIdParam);
 
 // ─── Record Project View ────────────────────────────────────
 projectItemRoutes.post("/:id/view", async (c) => {
