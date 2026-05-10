@@ -4,13 +4,36 @@ import { getProjectPath } from "../project-files.js";
 import { restartDevServer, isRunning } from "../../projects/dev-server.js";
 import { buildSafeEnv } from "../../projects/safe-env.js";
 import { linkDoableSdk } from "../../projects/link-sdk.js";
+import { sql } from "../../db/index.js";
+import { getSandboxSettings, listSandboxRules } from "../../sandbox/queries.js";
+import { evaluateSandbox } from "../../sandbox/rule-matcher.js";
 
-// Packages that should never be installed
+// Hardcoded floor: these are intrinsically dangerous regardless of workspace
+// policy. Anything else is governed by the workspace sandbox rules
+// (Migration 073). A workspace admin can deny additional packages by
+// adding rule_type='tool', pattern='<package>', action='deny'.
 const BLOCKED_PACKAGES = new Set([
   "eval",
   "child_process",
   "fs-extra-unsafe",
 ]);
+
+/**
+ * Look up the workspace id for a project. Returns null if the project
+ * row is missing or the column is unset, in which case the install
+ * proceeds without consulting workspace rules (preserves behavior for
+ * legacy / on-disk projects).
+ */
+async function getWorkspaceIdForProject(projectId: string): Promise<string | null> {
+  try {
+    const [row] = await sql<{ workspace_id: string | null }[]>`
+      SELECT workspace_id FROM projects WHERE id = ${projectId}
+    `;
+    return row?.workspace_id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // Allowed package managers
 const ALLOWED_MANAGERS = ["npm", "pnpm", "yarn"] as const;
@@ -65,7 +88,15 @@ export const installPackageTool: Tool = {
       };
     }
 
-    // Validate package names
+    // Validate package names against the hardcoded floor + workspace
+    // sandbox rules. Migration 073 introduced workspace_sandbox_rules so
+    // an admin can deny additional packages without a code change.
+    const workspaceId = await getWorkspaceIdForProject(ctx.projectId);
+    const sandboxSettings = workspaceId
+      ? await getSandboxSettings(workspaceId)
+      : { tool_default_action: "allow" as const, network_default_action: "allow" as const };
+    const sandboxRules = workspaceId ? await listSandboxRules(workspaceId) : [];
+
     for (const pkg of packages) {
       const name = pkg.replace(/@[\d^~>=<.*]+$/, ""); // Strip version
       if (BLOCKED_PACKAGES.has(name)) {
@@ -81,6 +112,24 @@ export const installPackageTool: Tool = {
           output: "",
           error: `Invalid package name: ${pkg}`,
         };
+      }
+      // Workspace sandbox rules. Tool target shape: 'install:<package>'.
+      // The pattern can be e.g. 'install:eval', 'install:*' (block all),
+      // 'install:@evil/*' (block scope). See sandbox/rule-matcher.ts.
+      if (workspaceId) {
+        const verdict = evaluateSandbox(
+          sandboxRules,
+          "tool",
+          sandboxSettings.tool_default_action,
+          `install:${name}`,
+        );
+        if (verdict.action === "deny") {
+          return {
+            success: false,
+            output: "",
+            error: `Package '${name}' is denied by workspace sandbox policy. ${verdict.reason}`,
+          };
+        }
       }
     }
 
