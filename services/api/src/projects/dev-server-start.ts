@@ -76,6 +76,21 @@ export async function startDevServer(
 }
 
 /**
+ * Summarize buffered dev-server stdout+stderr for inclusion in error
+ * messages. Keeps both the head and the tail because Node's
+ * `MODULE_NOT_FOUND` error prints the missing module path at the TOP of the
+ * stack — slicing only the tail (the previous behavior) dropped exactly the
+ * line operators need to diagnose a partial install. Cap each end so the
+ * combined message stays bounded.
+ */
+function summarizeOutput(buf: string): string {
+  const HEAD = 1500;
+  const TAIL = 1500;
+  if (buf.length <= HEAD + TAIL) return buf;
+  return `${buf.slice(0, HEAD)}\n…[truncated ${buf.length - HEAD - TAIL} chars]…\n${buf.slice(-TAIL)}`;
+}
+
+/**
  * Wait for a spawned dev/serve process to signal readiness.
  *
  * Phase 1 implements `log-substring` only — http-probe and custom kinds throw
@@ -394,7 +409,7 @@ async function doStartDevServer(
       // Process died before becoming ready — this is a failure
       markFailed(
         new Error(
-          `Dev server exited with code ${code} before becoming ready.\nOutput: ${outputBuffer.slice(-500)}`,
+          `Dev server exited with code ${code} before becoming ready.\nOutput: ${summarizeOutput(outputBuffer)}`,
         ),
       );
     } else {
@@ -417,7 +432,7 @@ async function doStartDevServer(
       if (child.exitCode !== null) {
         markFailed(
           new Error(
-            `Dev server process exited (code ${child.exitCode}) without signaling ready.\nOutput: ${outputBuffer.slice(-500)}`,
+            `Dev server process exited (code ${child.exitCode}) without signaling ready.\nOutput: ${summarizeOutput(outputBuffer)}`,
           ),
         );
       } else {

@@ -170,11 +170,26 @@ async function doCreateProject(
   const installResult = await adapter.install(installCtx);
   const installOutput = installResult.log;
 
-  // Verify node_modules was actually created (npm install can "succeed"
-  // with exit code 0 but not create node_modules in edge cases)
+  // Verify node_modules was actually created AND the framework's required
+  // build tool is resolvable inside it (e.g. node_modules/vite for vite-react).
+  // npm install can exit 0 but skip devDeps when NODE_ENV=production leaks
+  // through; without this guard, the dev server later crashes with
+  // MODULE_NOT_FOUND for vite/bin/vite.js and the preview iframe never
+  // mounts. Throw instead of warning so callers see the failure.
   if (!existsSync(projectPath + "/node_modules")) {
-    console.warn(
-      `[FileManager] npm install completed but node_modules was not created for project ${projectId}`,
+    throw new FrameworkAdapterError(
+      "install-failed",
+      `npm install completed but node_modules was not created for project ${projectId}`,
+    );
+  }
+  const requiredBuildTool = (adapter as { requiredBuildTool?: string }).requiredBuildTool;
+  if (
+    requiredBuildTool &&
+    !existsSync(path.join(projectPath, "node_modules", requiredBuildTool, "package.json"))
+  ) {
+    throw new FrameworkAdapterError(
+      "install-failed",
+      `npm install completed but ${requiredBuildTool} (the ${frameworkId} build tool) is missing from node_modules for project ${projectId} — likely a --omit=dev install`,
     );
   }
 
@@ -220,7 +235,9 @@ export function hasNodeModules(projectId: string): boolean {
 /**
  * Install dependencies for an existing project that's missing node_modules.
  * This can happen if the project was scaffolded but node_modules was
- * cleaned up, or if npm install failed during initial scaffold.
+ * cleaned up, or if npm install failed during initial scaffold, or if
+ * `install_package` later created a partial node_modules/ that lacks the
+ * framework's required build tool (e.g. vite).
  */
 export async function ensureDependencies(projectId: string): Promise<void> {
   const projectPath = getProjectPath(projectId);
@@ -229,21 +246,10 @@ export async function ensureDependencies(projectId: string): Promise<void> {
   const hasPkgJson = existsSync(projectPath + "/package.json");
   const hasReqTxt = existsSync(projectPath + "/requirements.txt");
 
-  if (hasPkgJson) {
-    // Node project — skip if already installed
-    if (hasNodeModules(projectId)) return;
-  } else if (hasReqTxt) {
-    // Python project — skip if already installed (site-packages marker)
-    if (existsSync(projectPath + "/.venv") || existsSync(projectPath + "/__pypackages__")) return;
-  } else {
+  if (!hasPkgJson && !hasReqTxt) {
     // No recognizable dependency file
     return;
   }
-
-  const family = hasPkgJson ? "node" : "python";
-  console.log(
-    `[FileManager] dependencies missing for ${family} project ${projectId} — running install`,
-  );
 
   // Resolve framework adapter for the install spawn shape. Reads
   // projects.framework_id (column from migration 060); falls back to
@@ -261,6 +267,36 @@ export async function ensureDependencies(projectId: string): Promise<void> {
     // DB unreachable or column missing — fallback is safe.
   }
   const adapter = defaultRegistry.getAdapter(frameworkId);
+
+  if (hasPkgJson) {
+    // Node project — skip only when node_modules exists AND the framework's
+    // required build tool is resolvable inside it. BUG-PUB-004 / preview-empty
+    // mode: a prior install ran with NODE_ENV=production, OR the AI's
+    // `install_package` tool ran `npm install <pkg>` after a failed initial
+    // install — both leave a populated-looking node_modules/ that lacks vite.
+    // Mirrors the probe at services/api/src/deploy/builder.ts:207-216.
+    const nodeModulesPresent = hasNodeModules(projectId);
+    const requiredBuildTool = (adapter as { requiredBuildTool?: string }).requiredBuildTool;
+    const buildToolPath = requiredBuildTool
+      ? path.join(projectPath, "node_modules", requiredBuildTool, "package.json")
+      : null;
+    const buildToolMissing = buildToolPath !== null && !existsSync(buildToolPath);
+    if (nodeModulesPresent && !buildToolMissing) return;
+    if (nodeModulesPresent && buildToolMissing) {
+      console.log(
+        `[FileManager] node_modules exists but ${requiredBuildTool} is missing for project ${projectId} — re-running install`,
+      );
+    }
+  } else if (hasReqTxt) {
+    // Python project — skip if already installed (site-packages marker)
+    if (existsSync(projectPath + "/.venv") || existsSync(projectPath + "/__pypackages__")) return;
+  }
+
+  const family = hasPkgJson ? "node" : "python";
+  console.log(
+    `[FileManager] dependencies missing for ${family} project ${projectId} — running install`,
+  );
+
   const ctx: FrameworkContext = {
     projectId,
     projectPath,

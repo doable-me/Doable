@@ -2177,12 +2177,21 @@ export default function EditorPage() {
           setScaffoldStatus("starting");
           let url: string | null = null;
           let attempts = 0;
+          let lastError: string | null = null;
           const maxAttempts = 90;
           while (!url && attempts < maxAttempts && !cancelled) {
             try {
               url = await fetchPreviewUrl(resolvedProjectId);
-            } catch {
-              // ignore and retry
+              // Successful 200 with running=false just means "still starting" —
+              // keep polling, but clear any prior error so we don't surface it.
+              if (!url) lastError = null;
+            } catch (pollErr) {
+              // Capture the actual API error so we can surface it after the
+              // retry budget expires. Previously this was a bare `catch {}`,
+              // which left the user staring at "Loading Live Preview…" forever
+              // when the dev server crashloop'd (e.g. MODULE_NOT_FOUND for
+              // vite/bin/vite.js after a partial node_modules install).
+              lastError = pollErr instanceof Error ? pollErr.message : String(pollErr);
             }
             if (!url) {
               attempts++;
@@ -2195,6 +2204,8 @@ export default function EditorPage() {
           if (url) {
             setPreviewUrl(url);
             setScaffoldStatus("ready");
+          } else if (lastError) {
+            throw new Error(`Preview failed to start: ${lastError}`);
           } else {
             throw new Error("Dev server did not start in time. Please try refreshing.");
           }
