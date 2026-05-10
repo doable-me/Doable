@@ -170,7 +170,12 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
       // agent against a project that never existed.
       if (!chatProject && createIfMissing) {
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (uuidRegex.test(projectId)) {
+        const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+        // BUG-CORPUS-PROJ-004: never auto-mint the nil UUID. Earlier runs
+        // created a placeholder row keyed on `00000000-...` here, which then
+        // made PATCH/DELETE return 200 instead of 404 on what was supposed
+        // to be a non-existent project.
+        if (uuidRegex.test(projectId) && projectId.toLowerCase() !== NIL_UUID) {
           const userWorkspaces = await workspaceQueries(sql).listByUser(userId);
           const wsId = userWorkspaces.length > 0 ? userWorkspaces[0]!.id : null;
           if (!wsId) return c.json({ error: "No workspace found" }, 400);
