@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AuthEnv } from "../middleware/auth.js";
 import { authMiddleware } from "../middleware/auth.js";
+import { requireRole } from "../middleware/workspace-role.js";
 import { sql } from "../db/index.js";
 import { contextManager } from "../context/manager.js";
 import { getContextStats } from "../context/injector.js";
@@ -158,6 +159,11 @@ contextRoutes.delete("/:filename", async (c) => {
 
 export const workspaceContextRoutes = new Hono<AuthEnv>();
 workspaceContextRoutes.use("*", authMiddleware);
+// BUG-CORPUS-CTX-001: workspace context endpoints leaked to ANY authenticated
+// user — all routes here only require `viewer` role on the workspace
+// identified by `:wid` so non-members get 403 instead of 200. Read paths
+// (GET) are gated at viewer; write paths (PUT/DELETE) escalate inline.
+workspaceContextRoutes.use("*", requireRole("viewer", "wid"));
 
 /** GET /workspaces/:wid/context — list workspace context files */
 workspaceContextRoutes.get("/", async (c) => {
@@ -178,9 +184,10 @@ workspaceContextRoutes.get("/:filename", async (c) => {
   return c.json({ data: file });
 });
 
-/** PUT /workspaces/:wid/context/:filename */
+/** PUT /workspaces/:wid/context/:filename — admin-only (workspace-level write) */
 workspaceContextRoutes.put(
   "/:filename",
+  requireRole("admin", "wid"),
   zValidator("json", updateBody),
   async (c) => {
     const workspaceId = c.req.param("wid");
@@ -198,8 +205,8 @@ workspaceContextRoutes.put(
   }
 );
 
-/** DELETE /workspaces/:wid/context/:filename */
-workspaceContextRoutes.delete("/:filename", async (c) => {
+/** DELETE /workspaces/:wid/context/:filename — admin-only (workspace-level write) */
+workspaceContextRoutes.delete("/:filename", requireRole("admin", "wid"), async (c) => {
   const workspaceId = c.req.param("wid");
   const filename = c.req.param("filename");
 

@@ -22,17 +22,26 @@ const ROLE_HIERARCHY: WorkspaceRole[] = [...WORKSPACE_ROLES].reverse();
 
 /**
  * Factory that returns a Hono middleware requiring the authenticated user
- * to hold at least `minRole` on the workspace identified by `:id` in the URL.
+ * to hold at least `minRole` on the workspace identified by a path param.
  *
  * Must be used AFTER authMiddleware.
  *
+ * @param minRole   - minimum role required (viewer/member/admin/owner).
+ * @param paramName - which Hono path param holds the workspace id.
+ *                    Defaults to `"id"` for the canonical
+ *                    `/workspaces/:id/...` mount; pass `"wid"` for routers
+ *                    that capture the workspace under a different name
+ *                    (e.g. `workspaceContextRoutes` mounted at
+ *                    `/workspaces/:wid/context`, BUG-CORPUS-CTX-001).
+ *
  * Usage:
  *   workspaceRoutes.patch("/:id/members/:userId", requireRole("owner"), handler)
+ *   workspaceContextRoutes.use("*", requireRole("viewer", "wid"))
  */
-export function requireRole(minRole: WorkspaceRole) {
+export function requireRole(minRole: WorkspaceRole, paramName: string = "id") {
   return createMiddleware<AuthEnv>(async (c, next) => {
     const userId = c.get("userId");
-    const workspaceId = c.req.param("id");
+    const workspaceId = c.req.param(paramName);
 
     if (!userId || userId === "anonymous") {
       return c.json({ error: "Authentication required" }, 401);
