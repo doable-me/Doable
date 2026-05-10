@@ -193,12 +193,17 @@ adminAiRoutes.get("/users/ai-allocations", async (c) => {
       own_wm.role,
       own_wm.workspace_plan,
       uap.source,
-      uap.copilot_account_id,
-      gca.label AS copilot_account_label,
+      -- Personal rows are private to the owning user. Don't leak their
+      -- id/label/type to other admins; just flag that a personal selection
+      -- exists. Migration 072.
+      CASE WHEN gca.scope = 'user' THEN NULL ELSE uap.copilot_account_id END AS copilot_account_id,
+      CASE WHEN gca.scope = 'user' THEN NULL ELSE gca.label END AS copilot_account_label,
+      gca.scope AS copilot_account_scope,
       uap.copilot_model,
-      uap.provider_id,
-      ap.label AS provider_label,
-      ap.provider_type,
+      CASE WHEN ap.scope  = 'user' THEN NULL ELSE uap.provider_id        END AS provider_id,
+      CASE WHEN ap.scope  = 'user' THEN NULL ELSE ap.label               END AS provider_label,
+      CASE WHEN ap.scope  = 'user' THEN NULL ELSE ap.provider_type::text END AS provider_type,
+      ap.scope AS provider_scope,
       uap.provider_model,
       uap.model,
       uap.updated_at AS preference_updated_at,

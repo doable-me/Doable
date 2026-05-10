@@ -32,9 +32,38 @@ async function requireMember(workspaceId: string, userId: string): Promise<strin
   return null;
 }
 
+/** Scope-aware authorization for an existing provider row. Migration 072. */
+async function authorizeProviderMutation(
+  workspaceId: string,
+  providerId: string,
+  callerId: string,
+): Promise<
+  | { ok: true; row: NonNullable<Awaited<ReturnType<typeof aiSettings.getProviderAuthInfo>>> }
+  | { ok: false; error: string; status: 403 | 404 }
+> {
+  const row = await aiSettings.getProviderAuthInfo(providerId);
+  if (!row || row.workspace_id !== workspaceId) {
+    return { ok: false, error: "Provider not found", status: 404 };
+  }
+  if (row.scope === "user") {
+    if (row.owner_user_id !== callerId) {
+      return { ok: false, error: "Provider not found", status: 404 };
+    }
+    const memErr = await requireMember(workspaceId, callerId);
+    if (memErr) return { ok: false, error: memErr, status: 403 };
+    return { ok: true, row };
+  }
+  const adminErr = await requireAdmin(workspaceId, callerId);
+  if (adminErr) return { ok: false, error: adminErr, status: 403 };
+  return { ok: true, row };
+}
+
 // ─── Custom AI Providers ──────────────────────────────────
 
 // GET /workspaces/:workspaceId/ai-settings/providers
+//
+// Returns the workspace-shared providers plus the caller's personal ones.
+// Other members' personal providers are never disclosed.
 aiSettingsProviderRoutes.get("/:workspaceId/ai-settings/providers", async (c) => {
   const workspaceId = c.req.param("workspaceId");
   const userId = c.get("userId");
@@ -42,7 +71,7 @@ aiSettingsProviderRoutes.get("/:workspaceId/ai-settings/providers", async (c) =>
   const err = await requireMember(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
-  const providers = await aiSettings.listProviders(workspaceId);
+  const providers = await aiSettings.listProviders(workspaceId, userId);
   return c.json({ data: providers });
 });
 
@@ -54,6 +83,8 @@ const addProviderSchema = z.object({
   bearerToken: z.string().optional(),
   azureApiVersion: z.string().optional(),
   presetId: z.string().optional(),
+  /** 'user' (default) for personal; 'workspace' for admin-shared. */
+  scope: z.enum(["workspace", "user"]).default("user"),
 });
 
 // POST /workspaces/:workspaceId/ai-settings/providers
@@ -65,8 +96,10 @@ aiSettingsProviderRoutes.post(
     const userId = c.get("userId");
     const body = c.req.valid("json");
 
-    const err = await requireAdmin(workspaceId, userId);
-    if (err) return c.json({ error: err }, 403);
+    const authErr = body.scope === "workspace"
+      ? await requireAdmin(workspaceId, userId)
+      : await requireMember(workspaceId, userId);
+    if (authErr) return c.json({ error: authErr }, 403);
 
     const provider = await aiSettings.addProvider({
       workspaceId,
@@ -78,6 +111,8 @@ aiSettingsProviderRoutes.post(
       azureApiVersion: body.azureApiVersion,
       addedBy: userId,
       presetId: body.presetId,
+      scope: body.scope,
+      ownerUserId: body.scope === "user" ? userId : null,
     });
 
     const { encrypted_api_key, encrypted_bearer_token, ...safe } = provider;
@@ -103,8 +138,8 @@ aiSettingsProviderRoutes.patch(
     const userId = c.get("userId");
     const body = c.req.valid("json");
 
-    const err = await requireAdmin(workspaceId, userId);
-    if (err) return c.json({ error: err }, 403);
+    const auth = await authorizeProviderMutation(workspaceId, providerId, userId);
+    if (!auth.ok) return c.json({ error: auth.error }, auth.status);
 
     const updated = await aiSettings.updateProvider(providerId, body);
     if (!updated) return c.json({ error: "Provider not found" }, 404);
@@ -120,8 +155,8 @@ aiSettingsProviderRoutes.delete("/:workspaceId/ai-settings/providers/:id", async
   const providerId = c.req.param("id");
   const userId = c.get("userId");
 
-  const err = await requireAdmin(workspaceId, userId);
-  if (err) return c.json({ error: err }, 403);
+  const auth = await authorizeProviderMutation(workspaceId, providerId, userId);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
 
   const deleted = await aiSettings.deleteProvider(providerId);
   if (!deleted) return c.json({ error: "Provider not found" }, 404);
@@ -135,8 +170,8 @@ aiSettingsProviderRoutes.post("/:workspaceId/ai-settings/providers/:id/validate"
   const providerId = c.req.param("id");
   const userId = c.get("userId");
 
-  const err = await requireAdmin(workspaceId, userId);
-  if (err) return c.json({ error: err }, 403);
+  const auth = await authorizeProviderMutation(workspaceId, providerId, userId);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
 
   const providerData = await aiSettings.getProviderWithKeyAnyStatus(providerId);
   if (!providerData) return c.json({ error: "Provider not found" }, 404);
@@ -238,6 +273,10 @@ aiSettingsProviderRoutes.post("/:workspaceId/ai-settings/providers/:id/validate"
 // ─── Available Models ─────────────────────────────────────
 
 // GET /workspaces/:workspaceId/ai-settings/models
+//
+// Returns the accounts/providers the caller can actually pick as their
+// chat default — workspace-shared rows + their own personal rows. Other
+// members' personal rows are never disclosed.
 aiSettingsProviderRoutes.get("/:workspaceId/ai-settings/models", async (c) => {
   const workspaceId = c.req.param("workspaceId");
   const userId = c.get("userId");
@@ -246,8 +285,8 @@ aiSettingsProviderRoutes.get("/:workspaceId/ai-settings/models", async (c) => {
   if (err) return c.json({ error: err }, 403);
 
   const [accounts, providers] = await Promise.all([
-    aiSettings.listCopilotAccounts(workspaceId),
-    aiSettings.listProviders(workspaceId),
+    aiSettings.listCopilotAccounts(workspaceId, userId),
+    aiSettings.listProviders(workspaceId, userId),
   ]);
 
   return c.json({
@@ -257,12 +296,14 @@ aiSettingsProviderRoutes.get("/:workspaceId/ai-settings/models", async (c) => {
         label: a.label,
         githubLogin: a.github_login,
         isValid: a.is_valid,
+        scope: a.scope,
       })),
       providers: providers.map((p) => ({
         id: p.id,
         label: p.label,
         providerType: p.provider_type,
         isValid: p.is_valid,
+        scope: p.scope,
       })),
     },
   });

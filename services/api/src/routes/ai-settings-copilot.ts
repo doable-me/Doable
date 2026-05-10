@@ -31,9 +31,48 @@ async function requireMember(workspaceId: string, userId: string): Promise<strin
   return null;
 }
 
+/**
+ * Authorize a mutation on an existing copilot account row. Migration 072.
+ * - workspace-scoped row → requires owner/admin role
+ * - user-scoped row      → caller must be owner_user_id
+ *
+ * Returns the auth-info row when the caller may proceed, or { error, status }
+ * to be returned directly. Treats a missing row as 404.
+ */
+async function authorizeCopilotAccountMutation(
+  workspaceId: string,
+  accountId: string,
+  callerId: string,
+): Promise<
+  | { ok: true; row: NonNullable<Awaited<ReturnType<typeof aiSettings.getCopilotAccountAuthInfo>>> }
+  | { ok: false; error: string; status: 403 | 404 }
+> {
+  const row = await aiSettings.getCopilotAccountAuthInfo(accountId);
+  if (!row || row.workspace_id !== workspaceId) {
+    return { ok: false, error: "Account not found", status: 404 };
+  }
+  if (row.scope === "user") {
+    if (row.owner_user_id !== callerId) {
+      // Don't reveal that the row exists for someone else.
+      return { ok: false, error: "Account not found", status: 404 };
+    }
+    // Personal row owner must still be a member of the workspace.
+    const memErr = await requireMember(workspaceId, callerId);
+    if (memErr) return { ok: false, error: memErr, status: 403 };
+    return { ok: true, row };
+  }
+  // workspace-scoped
+  const adminErr = await requireAdmin(workspaceId, callerId);
+  if (adminErr) return { ok: false, error: adminErr, status: 403 };
+  return { ok: true, row };
+}
+
 // ─── GitHub Copilot Accounts ──────────────────────────────
 
 // GET /workspaces/:workspaceId/ai-settings/copilot-accounts
+//
+// Returns the workspace-shared accounts plus the caller's own personal
+// accounts. Other members' personal accounts are never disclosed.
 aiSettingsCopilotRoutes.get("/:workspaceId/ai-settings/copilot-accounts", async (c) => {
   const workspaceId = c.req.param("workspaceId");
   const userId = c.get("userId");
@@ -41,13 +80,20 @@ aiSettingsCopilotRoutes.get("/:workspaceId/ai-settings/copilot-accounts", async 
   const err = await requireMember(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
-  const accounts = await aiSettings.listCopilotAccounts(workspaceId);
+  const accounts = await aiSettings.listCopilotAccounts(workspaceId, userId);
   return c.json({ data: accounts });
 });
 
 const addCopilotAccountSchema = z.object({
   label: z.string().min(1).max(100),
   githubToken: z.string().min(1),
+  /**
+   * 'user' (default): personal — only the caller can see/use it.
+   * 'workspace': shared with the whole workspace (admin-only).
+   * Default biases toward privacy so a client that omits scope doesn't
+   * accidentally publish a member's personal token to the workspace.
+   */
+  scope: z.enum(["workspace", "user"]).default("user"),
 });
 
 // POST /workspaces/:workspaceId/ai-settings/copilot-accounts
@@ -57,10 +103,14 @@ aiSettingsCopilotRoutes.post(
   async (c) => {
     const workspaceId = c.req.param("workspaceId");
     const userId = c.get("userId");
-    const { label, githubToken } = c.req.valid("json");
+    const { label, githubToken, scope } = c.req.valid("json");
 
-    const err = await requireAdmin(workspaceId, userId);
-    if (err) return c.json({ error: err }, 403);
+    // Authorization is scope-aware: admins to share with the workspace,
+    // any member to add their own personal account.
+    const authErr = scope === "workspace"
+      ? await requireAdmin(workspaceId, userId)
+      : await requireMember(workspaceId, userId);
+    if (authErr) return c.json({ error: authErr }, 403);
 
     // Validate the token by fetching the GitHub user
     let ghUser: { login: string; id: number };
@@ -96,6 +146,8 @@ aiSettingsCopilotRoutes.post(
         githubId: String(ghUser.id),
         token: githubToken,
         addedBy: userId,
+        scope,
+        ownerUserId: scope === "user" ? userId : null,
       });
 
       const { encrypted_token, ...safe } = account;
@@ -125,8 +177,8 @@ aiSettingsCopilotRoutes.patch(
     const userId = c.get("userId");
     const body = c.req.valid("json");
 
-    const err = await requireAdmin(workspaceId, userId);
-    if (err) return c.json({ error: err }, 403);
+    const auth = await authorizeCopilotAccountMutation(workspaceId, accountId, userId);
+    if (!auth.ok) return c.json({ error: auth.error }, auth.status);
 
     const updated = await aiSettings.updateCopilotAccount(accountId, {
       label: body.label,
@@ -147,8 +199,8 @@ aiSettingsCopilotRoutes.delete("/:workspaceId/ai-settings/copilot-accounts/:id",
   const accountId = c.req.param("id");
   const userId = c.get("userId");
 
-  const err = await requireAdmin(workspaceId, userId);
-  if (err) return c.json({ error: err }, 403);
+  const auth = await authorizeCopilotAccountMutation(workspaceId, accountId, userId);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
 
   const deleted = await aiSettings.deleteCopilotAccount(accountId);
   if (!deleted) return c.json({ error: "Account not found" }, 404);
@@ -162,8 +214,8 @@ aiSettingsCopilotRoutes.post("/:workspaceId/ai-settings/copilot-accounts/:id/val
   const accountId = c.req.param("id");
   const userId = c.get("userId");
 
-  const err = await requireAdmin(workspaceId, userId);
-  if (err) return c.json({ error: err }, 403);
+  const auth = await authorizeCopilotAccountMutation(workspaceId, accountId, userId);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
 
   const token = await aiSettings.getCopilotAccountToken(accountId);
   if (!token) return c.json({ error: "Account not found or invalid" }, 404);

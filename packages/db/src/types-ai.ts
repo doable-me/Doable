@@ -1,4 +1,12 @@
 import type { AiProviderType } from "@doable/shared";
+
+/**
+ * Whether an AI account/provider is shared with the whole workspace
+ * (managed by admins, visible to every member) or owned privately by a
+ * single user (visible/usable only by that user). Migration 072.
+ */
+export type AiAccountScope = "workspace" | "user";
+
 export interface GitHubCopilotAccountRow {
   id: string;
   workspace_id: string;
@@ -8,6 +16,8 @@ export interface GitHubCopilotAccountRow {
   encrypted_token: string;
   is_valid: boolean;
   added_by: string;
+  scope: AiAccountScope;
+  owner_user_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -34,6 +44,8 @@ export interface AiProviderRow {
   default_timeout_ms: number | null;
   is_valid: boolean;
   added_by: string;
+  scope: AiAccountScope;
+  owner_user_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
