@@ -6,6 +6,7 @@ import { sql } from "../../db/index.js";
 import { starQueries } from "@doable/db";
 import { shareTrackingQueries } from "@doable/db";
 import { projectViewQueries } from "@doable/db";
+import { userQueries } from "@doable/db";
 import type { AuthEnv } from "../../middleware/auth.js";
 import { getProjectPath } from "../../ai/project-files.js";
 import { getThumbnailPath } from "../../thumbnails/capture.js";
@@ -21,6 +22,7 @@ const PROJECT_JWT_SECRET =
 const stars = starQueries(sql);
 const shareTracking = shareTrackingQueries(sql);
 const projectViews = projectViewQueries(sql);
+const users = userQueries(sql);
 
 export const projectItemRoutes = new Hono<AuthEnv>();
 
@@ -405,6 +407,100 @@ projectItemRoutes.get("/:id/collaborators", async (c) => {
   `;
 
   return c.json({ data: collaborators });
+});
+
+// ─── Add Project Collaborator ───────────────────────────────
+// BUG-CORPUS-PROJ-005: POST handler was missing — only GET / DELETE were
+// mounted, so `POST /projects/:id/collaborators` returned 404. The TC
+// corpus (testcases/03-projects/TC-PROJ-COLLAB.md TC-PROJ-COLLAB-021..024)
+// documented this endpoint as the canonical add-collaborator path.
+//
+// Contract:
+//   - Caller must have at least workspace `member` role on the project's
+//     workspace (collab-only callers cannot grant access — same as DELETE).
+//   - `email` must resolve to an existing user; otherwise 404.
+//   - Workspace members of this workspace are not added as collaborators
+//     (they already have access); request returns 409.
+//   - Idempotent on `(project_id, user_id)` — a duplicate request returns
+//     409, not a duplicate row.
+const addCollaboratorSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(["owner", "admin", "editor", "viewer"]).default("editor"),
+});
+
+projectItemRoutes.post("/:id/collaborators", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  // Only workspace members (project owners) can grant access — mirrors the
+  // DELETE handler below.  Project_collaborators-only callers get 403.
+  const wsRole = await workspacesQ.getMemberRole(access.project.workspace_id, userId);
+  if (!wsRole) {
+    return c.json({ error: "Only the project owner can add collaborators" }, 403);
+  }
+  if (!isRoleAtLeast(wsRole, "member")) {
+    return c.json({ error: "Viewers cannot add collaborators" }, 403);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const parsed = addCollaboratorSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(
+      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+      400,
+    );
+  }
+
+  const targetUser = await users.findByEmail(parsed.data.email);
+  if (!targetUser) {
+    return c.json({ error: "User not found" }, 404);
+  }
+
+  // If the target is already a workspace member, they already have access —
+  // 409 makes this distinguishable from "user not found" and "already a
+  // collaborator".
+  const targetWsRole = await workspacesQ.getMemberRole(access.project.workspace_id, targetUser.id);
+  if (targetWsRole) {
+    return c.json({ error: "User is already a workspace member with access to this project" }, 409);
+  }
+
+  // Insert with ON CONFLICT so a duplicate add returns the canonical 409.
+  const [inserted] = await sql<{
+    id: string;
+    project_id: string;
+    user_id: string;
+    role: string;
+    added_at: string;
+  }[]>`
+    INSERT INTO project_collaborators (project_id, user_id, role)
+    VALUES (${id}, ${targetUser.id}, ${parsed.data.role})
+    ON CONFLICT (project_id, user_id) DO NOTHING
+    RETURNING id, project_id, user_id, role, added_at
+  `;
+  if (!inserted) {
+    return c.json({ error: "User is already a collaborator on this project" }, 409);
+  }
+
+  return c.json({
+    data: {
+      user_id: inserted.user_id,
+      role: inserted.role,
+      added_at: inserted.added_at,
+      email: targetUser.email,
+      display_name: targetUser.display_name ?? null,
+      avatar_url: targetUser.avatar_url ?? null,
+    },
+  }, 201);
 });
 
 // ─── Remove Project Collaborator ────────────────────────────
