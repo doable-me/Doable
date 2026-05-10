@@ -1,0 +1,981 @@
+tc_id,file,method,path,expected,got,result,note,auth,severity
+TC-AUTH-LOGIN-001,testcases/01-auth/TC-AUTH-LOGIN.md,POST,/auth/login,200,200,PASS,,qa-owner,smoke
+TC-AUTH-LOGIN-002,testcases/01-auth/TC-AUTH-LOGIN.md,POST,/auth/login,401,401,PASS,,qa-owner,smoke
+TC-AUTH-LOGIN-003,testcases/01-auth/TC-AUTH-LOGIN.md,POST,/auth/login,401,400,MISMATCH,expected 401 got 400,qa-owner,high
+TC-AUTH-LOGIN-010,testcases/01-auth/TC-AUTH-LOGIN.md,POST,/auth/login,401,400,MISMATCH,expected 401 got 400,qa-owner,high
+TC-AUTH-LOGIN-012,testcases/01-auth/TC-AUTH-LOGIN.md,POST,/auth/login,429,400,MISMATCH,expected 429 got 400,qa-owner,smoke
+TC-AUTH-LOGIN-039,testcases/01-auth/TC-AUTH-LOGIN.md,GET,/auth/me,200,200,PASS,,qa-owner,smoke
+TC-AUTH-LOGIN-040,testcases/01-auth/TC-AUTH-LOGIN.md,POST,/auth/refresh,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-AUTH-ME-001,testcases/01-auth/TC-AUTH-ME-JWT.md,GET,/auth/me,200,200,PASS,,qa-owner,smoke
+TC-AUTH-ME-002,testcases/01-auth/TC-AUTH-ME-JWT.md,GET,/auth/me.,401,404,AUTH_OK,"close 4xx match (expected=401, got=404)",qa-owner,smoke
+TC-AUTH-ME-016,testcases/01-auth/TC-AUTH-ME-JWT.md,GET,/auth/me.,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-AUTH-ME-017,testcases/01-auth/TC-AUTH-ME-JWT.md,GET,/auth/me.,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-AUTH-ME-021,testcases/01-auth/TC-AUTH-ME-JWT.md,OPTIONS,/auth/me,200,204,MISMATCH,expected 200 got 204,qa-owner,medium
+TC-AUTH-ME-023,testcases/01-auth/TC-AUTH-ME-JWT.md,POST,/auth/me,404,404,PASS,,qa-owner,low
+TC-AUTH-ME-024,testcases/01-auth/TC-AUTH-ME-JWT.md,GET,/auth/me?token=,401,200,MISMATCH,expected 401 got 200,qa-owner,medium
+TC-AUTH-MISC-001,testcases/01-auth/TC-AUTH-MISC.md,OPTIONS,/auth/login,200,204,MISMATCH,expected 200 got 204,qa-owner,smoke
+TC-AUTH-MISC-004,testcases/01-auth/TC-AUTH-MISC.md,OPTIONS,/auth/register.,,204,INFO,no expected_status,qa-owner,medium
+TC-AUTH-MISC-005,testcases/01-auth/TC-AUTH-MISC.md,POST,/auth/login,400,400,PASS,,qa-owner,medium
+TC-AUTH-MISC-006,testcases/01-auth/TC-AUTH-MISC.md,POST,/auth/login,,400,INFO,no expected_status,qa-owner,low
+TC-AUTH-MISC-007,testcases/01-auth/TC-AUTH-MISC.md,POST,/auth/login,413,400,MISMATCH,expected 413 got 400,qa-owner,medium
+TC-AUTH-MISC-008,testcases/01-auth/TC-AUTH-MISC.md,POST,/auth/login/,,308,INFO,no expected_status,qa-owner,low
+TC-AUTH-MISC-009,testcases/01-auth/TC-AUTH-MISC.md,GET,/auth/login.,404,404,PASS,,qa-owner,low
+TC-AUTH-MISC-030,testcases/01-auth/TC-AUTH-MISC.md,POST,/auth//login.,404,404,PASS,,qa-owner,edge
+TC-AUTH-MISC-032,testcases/01-auth/TC-AUTH-MISC.md,POST,/auth/login,200,400,MISMATCH,expected 200 got 400,qa-owner,medium
+TC-AUTH-MISC-034,testcases/01-auth/TC-AUTH-MISC.md,POST,/auth/me,,404,INFO,no expected_status,qa-owner,medium
+TC-AUTH-MISC-035,testcases/01-auth/TC-AUTH-MISC.md,POST,/auth/login,401,400,MISMATCH,expected 401 got 400,qa-owner,high
+TC-AUTH-MISC-037,testcases/01-auth/TC-AUTH-MISC.md,GET,/auth/me,200,200,PASS,,qa-owner,edge
+TC-AUTH-MISC-038,testcases/01-auth/TC-AUTH-MISC.md,POST,/auth/login,400,400,PASS,,qa-owner,edge
+TC-AUTH-OAUTH-001,testcases/01-auth/TC-AUTH-OAUTH.md,GET,/auth/github,302,302,PASS,,qa-owner,smoke
+TC-AUTH-OAUTH-003,testcases/01-auth/TC-AUTH-OAUTH.md,GET,/auth/github,,302,INFO,no expected_status,qa-owner,medium
+TC-AUTH-OAUTH-004,testcases/01-auth/TC-AUTH-OAUTH.md,GET,/auth/github?returnTo=//evil.example.,,302,INFO,no expected_status,qa-owner,high
+TC-AUTH-OAUTH-005,testcases/01-auth/TC-AUTH-OAUTH.md,GET,/auth/github?returnTo=https://evil.example.,,302,INFO,no expected_status,qa-owner,high
+TC-AUTH-OAUTH-007,testcases/01-auth/TC-AUTH-OAUTH.md,GET,/auth/github/callback?state=,302,302,PASS,,qa-owner,high
+TC-AUTH-OAUTH-008,testcases/01-auth/TC-AUTH-OAUTH.md,GET,/auth/github/callback?code=xxx&state=junk.,302,302,PASS,,qa-owner,smoke
+TC-AUTH-OAUTH-018,testcases/01-auth/TC-AUTH-OAUTH.md,GET,/auth/google,302,302,PASS,,qa-owner,smoke
+TC-AUTH-OAUTH-030,testcases/01-auth/TC-AUTH-OAUTH.md,GET,/auth/github/callback?error=access_denied&state=,302,302,PASS,,qa-owner,medium
+TC-AUTH-OAUTH-031,testcases/01-auth/TC-AUTH-OAUTH.md,GET,/auth/github/copilot/callback?code=x&state=,,302,INFO,no expected_status,qa-owner,medium
+TC-AUTH-FORGOT-001,testcases/01-auth/TC-AUTH-PASSWORD-RESET.md,POST,/auth/forgot-password,200,429,MISMATCH,expected 200 got 429,qa-owner,smoke
+TC-AUTH-RESET-001,testcases/01-auth/TC-AUTH-PASSWORD-RESET.md,POST,/auth/reset-password,200,429,MISMATCH,expected 200 got 429,qa-owner,smoke
+TC-AUTH-RESET-012,testcases/01-auth/TC-AUTH-PASSWORD-RESET.md,POST,/auth/login,401,400,MISMATCH,expected 401 got 400,qa-owner,smoke
+TC-AUTH-RESET-013,testcases/01-auth/TC-AUTH-PASSWORD-RESET.md,POST,/auth/login,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-AUTH-REFRESH-001,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/refresh,200,401,AUTH_BLOCK,got 401 but expected 200 — likely needs different role,qa-owner,smoke
+TC-AUTH-REFRESH-002,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/refresh,401,400,MISMATCH,expected 401 got 400,qa-owner,smoke
+TC-AUTH-REFRESH-003,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/refresh,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-AUTH-REFRESH-004,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/refresh,400,400,PASS,,qa-owner,high
+TC-AUTH-REFRESH-011,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/refresh,401,400,MISMATCH,expected 401 got 400,qa-owner,high
+TC-AUTH-REFRESH-014,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/refresh,401,400,MISMATCH,expected 401 got 400,qa-owner,smoke
+TC-AUTH-REFRESH-017,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/refresh,401,400,MISMATCH,expected 401 got 400,qa-owner,smoke
+TC-AUTH-REFRESH-018,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/refresh,401,400,MISMATCH,expected 401 got 400,qa-owner,smoke
+TC-AUTH-LOGOUT-001,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/logout,200,200,PASS,,qa-owner,smoke
+TC-AUTH-LOGOUT-002,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/logout,200,200,PASS,,qa-owner,medium
+TC-AUTH-LOGOUT-004,testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md,POST,/auth/logout,,200,INFO,no expected_status,qa-owner,medium
+TC-AUTH-REGISTER-001,testcases/01-auth/TC-AUTH-REGISTER.md,POST,/auth/register,201,429,MISMATCH,expected 201 got 429,qa-owner,smoke
+TC-AUTH-REGISTER-002,testcases/01-auth/TC-AUTH-REGISTER.md,POST,/auth/register,201,429,MISMATCH,expected 201 got 429,qa-owner,high
+TC-AUTH-REGISTER-003,testcases/01-auth/TC-AUTH-REGISTER.md,POST,/auth/register,409,429,MISMATCH,expected 409 got 429,qa-owner,high
+TC-AUTH-REGISTER-004,testcases/01-auth/TC-AUTH-REGISTER.md,POST,/auth/register,400,429,MISMATCH,expected 400 got 429,qa-owner,high
+TC-AUTH-REGISTER-046,testcases/01-auth/TC-AUTH-REGISTER.md,POST,/auth/register,429,429,PASS,,qa-owner,smoke
+TC-WS-CTX-TENANT-001,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,GET,/workspaces/,,308,INFO,no expected_status,qa-bob,medium
+TC-WS-CTX-TENANT-002,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,GET,/workspaces/,,308,INFO,no expected_status,qa-owner,high
+TC-WS-CTX-TENANT-003,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,GET,/workspaces/:wid/context,,200,INFO,no expected_status,qa-owner,smoke
+TC-WS-CTX-TENANT-004,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,GET,/workspaces/:wid/context,,200,INFO,no expected_status,qa-owner,smoke
+TC-WS-CTX-TENANT-005,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,GET,/workspaces/:wid/context,,200,INFO,no expected_status,qa-owner,medium
+TC-WS-CTX-TENANT-006,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,GET,/workspaces/:wid/context,,200,INFO,no expected_status,qa-owner,medium
+TC-WS-CTX-TENANT-007,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,GET,/workspaces/not-a-uuid/context,,500,INFO,no expected_status,qa-owner,low
+TC-WS-CTX-TENANT-008,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,PUT,/workspaces/:wid/context/foo.md,,400,INFO,no expected_status,qa-bob,high
+TC-WS-CTX-TENANT-009,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,PUT,/workspaces/:wid/context/foo.md,,400,INFO,no expected_status,qa-owner,high
+TC-WS-CTX-TENANT-010,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,PUT,/workspaces/:wid/context/foo.md,,400,INFO,no expected_status,qa-owner,medium
+TC-WS-CTX-TENANT-011,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,PUT,/workspaces/:wid/context/foo.md,,400,INFO,no expected_status,qa-owner,smoke
+TC-WS-CTX-TENANT-012,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,DELETE,/workspaces/:wid/context/foo.md,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-CTX-TENANT-014,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,GET,/user/list,,404,INFO,no expected_status,qa-owner,medium
+TC-WS-CTX-TENANT-015,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,PUT,/user/own-override.md,,404,INFO,no expected_status,qa-owner,medium
+TC-WS-CTX-TENANT-016,testcases/02-workspace/TC-WS-CONTEXT-TENANT.md,PUT,/user/own-override.md,,404,INFO,no expected_status,qa-bob,high
+TC-WS-CRUD-001,testcases/02-workspace/TC-WS-CRUD.md,GET,/workspaces,200,200,PASS,,qa-owner,smoke
+TC-WS-CRUD-002,testcases/02-workspace/TC-WS-CRUD.md,GET,/workspaces,200,200,PASS,,qa-owner,medium
+TC-WS-CRUD-003,testcases/02-workspace/TC-WS-CRUD.md,GET,/workspaces,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-WS-CRUD-004,testcases/02-workspace/TC-WS-CRUD.md,POST,/workspaces,201,201,PASS,,qa-owner,smoke
+TC-WS-CRUD-005,testcases/02-workspace/TC-WS-CRUD.md,POST,/workspaces,201,400,MISMATCH,expected 201 got 400,qa-owner,medium
+TC-WS-CRUD-029,testcases/02-workspace/TC-WS-CRUD.md,GET,/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-WS-CRUD-030,testcases/02-workspace/TC-WS-CRUD.md,GET,/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-WS-CRUD-031,testcases/02-workspace/TC-WS-CRUD.md,GET,/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,medium
+TC-WS-CRUD-032,testcases/02-workspace/TC-WS-CRUD.md,GET,/:id,404,404,PASS,,qa-owner,medium
+TC-WS-CRUD-033,testcases/02-workspace/TC-WS-CRUD.md,PATCH,/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-WS-CRUD-034,testcases/02-workspace/TC-WS-CRUD.md,PATCH,/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-WS-CRUD-035,testcases/02-workspace/TC-WS-CRUD.md,PATCH,/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-CRUD-036,testcases/02-workspace/TC-WS-CRUD.md,PATCH,/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-WS-CRUD-037,testcases/02-workspace/TC-WS-CRUD.md,PATCH,/:id,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-WS-CRUD-038,testcases/02-workspace/TC-WS-CRUD.md,PATCH,/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,low
+TC-WS-CRUD-039,testcases/02-workspace/TC-WS-CRUD.md,PATCH,/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-WS-CRUD-040,testcases/02-workspace/TC-WS-CRUD.md,PATCH,/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-WS-CRUD-041,testcases/02-workspace/TC-WS-CRUD.md,PATCH,/:id,,404,INFO,no expected_status,qa-owner,high
+TC-WS-CRUD-042,testcases/02-workspace/TC-WS-CRUD.md,DELETE,/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-WS-CRUD-043,testcases/02-workspace/TC-WS-CRUD.md,DELETE,/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-WS-CRUD-044,testcases/02-workspace/TC-WS-CRUD.md,DELETE,/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-CRUD-045,testcases/02-workspace/TC-WS-CRUD.md,DELETE,/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,medium
+TC-WS-CRUD-046,testcases/02-workspace/TC-WS-CRUD.md,DELETE,/:id,,404,INFO,no expected_status,qa-owner,medium
+TC-WS-CRUD-047,testcases/02-workspace/TC-WS-CRUD.md,POST,/:id/transfer,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-WS-CRUD-053,testcases/02-workspace/TC-WS-CRUD.md,DELETE,/:id.,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-WS-CRUD-055,testcases/02-workspace/TC-WS-CRUD.md,GET,/workspaces.,,404,INFO,no expected_status,qa-owner,medium
+TC-WS-CRUD-059,testcases/02-workspace/TC-WS-CRUD.md,GET,/plan/,,308,INFO,no expected_status,qa-owner,medium
+TC-WS-CRUD-061,testcases/02-workspace/TC-WS-CRUD.md,POST,/workspaces,,400,INFO,no expected_status,qa-owner,medium
+TC-WS-CRUD-065,testcases/02-workspace/TC-WS-CRUD.md,POST,/workspaces,,400,INFO,no expected_status,qa-owner,high
+TC-WS-INVITES-ALIAS-001,testcases/02-workspace/TC-WS-INVITES-POST-ALIAS.md,POST,/workspaces/:id/invites,,404,INFO,no expected_status,qa-owner,high
+TC-WS-INVITES-ALIAS-002,testcases/02-workspace/TC-WS-INVITES-POST-ALIAS.md,POST,/workspaces/:id/members/invite,,403,INFO,no expected_status,qa-owner,
+TC-WS-INVITES-ALIAS-010,testcases/02-workspace/TC-WS-INVITES-POST-ALIAS.md,POST,/workspaces/not-a-uuid/invites,,404,INFO,no expected_status,qa-owner,
+TC-WS-INVITES-ALIAS-011,testcases/02-workspace/TC-WS-INVITES-POST-ALIAS.md,GET,/workspaces/:id/invites,,403,INFO,no expected_status,qa-owner,
+TC-WS-INV-001,testcases/02-workspace/TC-WS-INVITES.md,POST,/:id/members/invite,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-WS-INV-021,testcases/02-workspace/TC-WS-INVITES.md,GET,/:id/invites,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-INV-022,testcases/02-workspace/TC-WS-INVITES.md,GET,/:id/invites,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-INV-023,testcases/02-workspace/TC-WS-INVITES.md,DELETE,/:id/invites/:inviteId,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-WS-INV-027,testcases/02-workspace/TC-WS-INVITES.md,POST,/workspaces/invite/accept,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-WS-INV-037,testcases/02-workspace/TC-WS-INVITES.md,POST,/:id/invite-link,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-WS-INV-041,testcases/02-workspace/TC-WS-INVITES.md,DELETE,/:id/invites/,200,308,MISMATCH,expected 200 got 308,qa-owner,high
+TC-WS-MEM-001,testcases/02-workspace/TC-WS-MEMBERS.md,GET,/:id/members,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-WS-MEM-002,testcases/02-workspace/TC-WS-MEMBERS.md,GET,/:id/members,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-MEM-003,testcases/02-workspace/TC-WS-MEMBERS.md,GET,/:id/members,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,medium
+TC-WS-MEM-005,testcases/02-workspace/TC-WS-MEMBERS.md,DELETE,/:id/members/:userId,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-WS-MEM-006,testcases/02-workspace/TC-WS-MEMBERS.md,DELETE,/:id/members/:userId,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-MEM-007,testcases/02-workspace/TC-WS-MEMBERS.md,DELETE,/:id/members/:userId,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-WS-MEM-009,testcases/02-workspace/TC-WS-MEMBERS.md,DELETE,/:id/members/,400,308,MISMATCH,expected 400 got 308,qa-owner,high
+TC-WS-MEM-010,testcases/02-workspace/TC-WS-MEMBERS.md,DELETE,/:id/members/,400,308,MISMATCH,expected 400 got 308,qa-owner,high
+TC-WS-MEM-015,testcases/02-workspace/TC-WS-MEMBERS.md,PATCH,/:id/members/:userId,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-WS-MEM-023,testcases/02-workspace/TC-WS-MEMBERS.md,PATCH,/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-WS-MEM-026,testcases/02-workspace/TC-WS-MEMBERS.md,GET,/projects,,200,INFO,no expected_status,qa-owner,medium
+TC-WS-MEM-027,testcases/02-workspace/TC-WS-MEMBERS.md,GET,/workspaces/:id.,403,400,MISMATCH,expected 403 got 400,qa-owner,smoke
+TC-WS-PLAN-006,testcases/02-workspace/TC-WS-PLAN-LIMITS.md,POST,/projects,403,400,MISMATCH,expected 403 got 400,qa-owner,smoke
+TC-WS-PLAN-008,testcases/02-workspace/TC-WS-PLAN-LIMITS.md,GET,/workspaces,,200,INFO,no expected_status,qa-owner,smoke
+TC-WS-ROLE-001,testcases/02-workspace/TC-WS-ROLES.md,GET,/workspaces/,401,308,MISMATCH,expected 401 got 308,qa-owner,smoke
+TC-WS-ROLE-002,testcases/02-workspace/TC-WS-ROLES.md,GET,/workspaces/,403,308,MISMATCH,expected 403 got 308,qa-owner,smoke
+TC-WS-ROLE-003,testcases/02-workspace/TC-WS-ROLES.md,GET,/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-ROLE-004,testcases/02-workspace/TC-WS-ROLES.md,PATCH,/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-WS-ROLE-005,testcases/02-workspace/TC-WS-ROLES.md,DELETE,/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-ROLE-010,testcases/02-workspace/TC-WS-ROLES.md,GET,/:id/members,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-ROLE-011,testcases/02-workspace/TC-WS-ROLES.md,GET,/:id/invites,,404,INFO,no expected_status,qa-owner,medium
+TC-WS-ROLE-012,testcases/02-workspace/TC-WS-ROLES.md,GET,/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-ROLE-013,testcases/02-workspace/TC-WS-ROLES.md,PATCH,/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-ROLE-014,testcases/02-workspace/TC-WS-ROLES.md,DELETE,/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-ROLE-017,testcases/02-workspace/TC-WS-ROLES.md,PATCH,/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-ROLE-025,testcases/02-workspace/TC-WS-ROLES.md,PATCH,/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-ROLE-026,testcases/02-workspace/TC-WS-ROLES.md,DELETE,/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-WS-ROLE-031,testcases/02-workspace/TC-WS-ROLES.md,DELETE,/members/:userId,,404,INFO,no expected_status,qa-owner,high
+TC-WS-ROLE-032,testcases/02-workspace/TC-WS-ROLES.md,GET,/workspaces/,403,308,MISMATCH,expected 403 got 308,qa-owner,high
+TC-WS-ROLE-034,testcases/02-workspace/TC-WS-ROLES.md,PATCH,/workspaces//members/,400,308,MISMATCH,expected 400 got 308,qa-owner,medium
+TC-WS-SET-001,testcases/02-workspace/TC-WS-SETTINGS-AI.md,GET,/workspaces,,200,INFO,no expected_status,qa-owner,smoke
+TC-WS-SET-013,testcases/02-workspace/TC-WS-SETTINGS-AI.md,GET,/ai-settings,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-WS-SET-014,testcases/02-workspace/TC-WS-SETTINGS-AI.md,PATCH,/ai-settings,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-PROJ-COLLABA-001,testcases/03-projects/TC-PROJ-COLLAB-ADD.md,GET,/projects/,,308,INFO,no expected_status,qa-bob,smoke
+TC-PROJ-COLLABA-013,testcases/03-projects/TC-PROJ-COLLAB-ADD.md,POST,/projects/not-a-uuid/collaborators,,404,INFO,no expected_status,qa-owner,low
+TC-PROJ-COLLABA-014,testcases/03-projects/TC-PROJ-COLLAB-ADD.md,GET,/projects/,,308,INFO,no expected_status,qa-owner,medium
+TC-PROJ-COLLAB-001,testcases/03-projects/TC-PROJ-COLLAB.md,GET,/projects/:id/collaborators,200,200,PASS,,qa-owner,smoke
+TC-PROJ-COLLAB-005,testcases/03-projects/TC-PROJ-COLLAB.md,GET,/projects/:id,,200,INFO,no expected_status,qa-owner,high
+TC-PROJ-COLLAB-006,testcases/03-projects/TC-PROJ-COLLAB.md,GET,/projects/:id,,200,INFO,no expected_status,qa-owner,medium
+TC-PROJ-COLLAB-008,testcases/03-projects/TC-PROJ-COLLAB.md,DELETE,/projects/:id/collaborators/,200,308,MISMATCH,expected 200 got 308,qa-owner,smoke
+TC-PROJ-COLLAB-014,testcases/03-projects/TC-PROJ-COLLAB.md,DELETE,/projects/:id/collaborators/notuuid.,404,500,FAIL_5XX,server error 500,qa-owner,low
+TC-PROJ-COLLAB-016,testcases/03-projects/TC-PROJ-COLLAB.md,GET,/projects/:id,,200,INFO,no expected_status,qa-owner,high
+TC-PROJ-COLLAB-017,testcases/03-projects/TC-PROJ-COLLAB.md,PATCH,/projects/:id,200,200,PASS,,qa-owner,high
+TC-PROJ-COLLAB-018,testcases/03-projects/TC-PROJ-COLLAB.md,PUT,/:id/connector-settings,,404,INFO,no expected_status,qa-owner,medium
+TC-PROJ-COLLAB-021,testcases/03-projects/TC-PROJ-COLLAB.md,POST,/:id/collaborators,,404,INFO,no expected_status,qa-owner,smoke
+TC-PROJ-COLLAB-030,testcases/03-projects/TC-PROJ-COLLAB.md,GET,/collaborators,,404,INFO,no expected_status,qa-owner,low
+TC-PROJ-CREATE-001,testcases/03-projects/TC-PROJ-CREATE.md,POST,/projects,201,400,MISMATCH,expected 201 got 400,qa-owner,smoke
+TC-PROJ-CREATE-002,testcases/03-projects/TC-PROJ-CREATE.md,POST,/projects,201,400,MISMATCH,expected 201 got 400,qa-owner,smoke
+TC-PROJ-CREATE-003,testcases/03-projects/TC-PROJ-CREATE.md,GET,/frameworks,,200,INFO,no expected_status,qa-owner,smoke
+TC-PROJ-CREATE-004,testcases/03-projects/TC-PROJ-CREATE.md,POST,/projects,403,400,MISMATCH,expected 403 got 400,qa-owner,high
+TC-PROJ-CREATE-005,testcases/03-projects/TC-PROJ-CREATE.md,POST,/projects,403,400,MISMATCH,expected 403 got 400,qa-owner,medium
+TC-PROJ-CREATE-006,testcases/03-projects/TC-PROJ-CREATE.md,POST,/projects,,400,INFO,no expected_status,qa-owner,medium
+TC-PROJ-CREATE-007,testcases/03-projects/TC-PROJ-CREATE.md,POST,/projects,201,400,MISMATCH,expected 201 got 400,qa-owner,medium
+TC-PROJ-CREATE-008,testcases/03-projects/TC-PROJ-CREATE.md,POST,/projects,,201,INFO,no expected_status,qa-owner,medium
+TC-PROJ-CREATE-008,testcases/03-projects/TC-PROJ-CREATE.md,GET,/projects/:id,400,200,MISMATCH,expected 400 got 200,qa-owner,low
+TC-PROJ-CREATE-008,testcases/03-projects/TC-PROJ-CREATE.md,POST,/projects,201,400,MISMATCH,expected 201 got 400,qa-owner,medium
+TC-PROJ-CREATE-009,testcases/03-projects/TC-PROJ-CREATE.md,POST,/projects,400,400,PASS,,qa-owner,high
+TC-PROJ-CREATE-057,testcases/03-projects/TC-PROJ-CREATE.md,POST,/folders.,201,404,MISMATCH,expected 201 got 404,qa-owner,high
+TC-PROJ-CREATE-066,testcases/03-projects/TC-PROJ-CREATE.md,GET,/projects/:id,,200,INFO,no expected_status,qa-owner,smoke
+TC-PROJ-DELETE-001,testcases/03-projects/TC-PROJ-DELETE.md,DELETE,/projects/:id,200,200,PASS,,qa-owner,smoke
+TC-PROJ-DELETE-007,testcases/03-projects/TC-PROJ-DELETE.md,DELETE,/projects/,404,308,MISMATCH,expected 404 got 308,qa-owner,smoke
+TC-PROJ-DELETE-022,testcases/03-projects/TC-PROJ-DELETE.md,DELETE,/projects/abc.,404,500,FAIL_5XX,server error 500,qa-owner,low
+TC-PROJ-DELETE-023,testcases/03-projects/TC-PROJ-DELETE.md,GET,/projects.,,404,INFO,no expected_status,qa-owner,high
+TC-PROJ-DELETE-025,testcases/03-projects/TC-PROJ-DELETE.md,GET,/editor,404,404,PASS,,qa-owner,high
+TC-PROJ-LIST-001,testcases/03-projects/TC-PROJ-LIST.md,GET,/projects,200,200,PASS,,qa-owner,smoke
+TC-PROJ-LIST-004,testcases/03-projects/TC-PROJ-LIST.md,GET,/projects,,200,INFO,no expected_status,qa-owner,smoke
+TC-PROJ-LIST-044,testcases/03-projects/TC-PROJ-LIST.md,GET,/projects/recently-viewed,,200,INFO,no expected_status,qa-owner,high
+TC-PROJ-LIST-047,testcases/03-projects/TC-PROJ-LIST.md,GET,/projects/recently-viewed,200,200,PASS,,qa-owner,smoke
+TC-PROJ-STAR-001,testcases/03-projects/TC-PROJ-MISC.md,POST,/projects/:id/star,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-PROJ-DUP-001,testcases/03-projects/TC-PROJ-MISC.md,POST,/projects/:id/duplicate,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-PROJ-MOVE-001,testcases/03-projects/TC-PROJ-MISC.md,POST,/projects/:id/move,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-PROJ-VIEW-001,testcases/03-projects/TC-PROJ-MISC.md,POST,/projects/:id/view,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-PROJ-SHARE-STATS-001,testcases/03-projects/TC-PROJ-MISC.md,GET,/projects/:id/share-stats,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-PROJ-CONN-001,testcases/03-projects/TC-PROJ-MISC.md,GET,/projects/:id/connector-settings,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-PROJ-PROXY-TOKEN-001,testcases/03-projects/TC-PROJ-MISC.md,POST,/projects/:id/connector-proxy-token,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-PROJ-NILUUID-001,testcases/03-projects/TC-PROJ-NIL-UUID.md,GET,/projects/00000000-0000-0000-0000-000000000000,,404,INFO,no expected_status,qa-owner,medium
+TC-PROJ-NILUUID-002,testcases/03-projects/TC-PROJ-NIL-UUID.md,PATCH,/projects/00000000-,,500,INFO,no expected_status,qa-owner,medium
+TC-PROJ-NILUUID-003,testcases/03-projects/TC-PROJ-NIL-UUID.md,DELETE,/projects/00000000-,,500,INFO,no expected_status,qa-owner,medium
+TC-PROJ-NILUUID-004,testcases/03-projects/TC-PROJ-NIL-UUID.md,POST,/projects/00000000-,,404,INFO,no expected_status,qa-owner,high
+TC-PROJ-NILUUID-005,testcases/03-projects/TC-PROJ-NIL-UUID.md,GET,/projects/00000000-0000-0000-0000-000000000000,,404,INFO,no expected_status,qa-owner,
+TC-PROJ-NILUUID-006,testcases/03-projects/TC-PROJ-NIL-UUID.md,GET,/projects/00000001-0000-0000-0000-000000000000,,404,INFO,no expected_status,qa-owner,
+TC-PROJ-NILUUID-007,testcases/03-projects/TC-PROJ-NIL-UUID.md,GET,/projects/00000000-,,500,INFO,no expected_status,qa-owner,
+TC-PROJ-NILUUID-008,testcases/03-projects/TC-PROJ-NIL-UUID.md,GET,/projects/00000000-,,500,INFO,no expected_status,qa-owner,
+TC-PROJ-NILUUID-009,testcases/03-projects/TC-PROJ-NIL-UUID.md,GET,/projects/00000000-,,500,INFO,no expected_status,qa-owner,
+TC-PROJ-UPDATE-001,testcases/03-projects/TC-PROJ-UPDATE.md,PATCH,/projects/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-PROJ-UPDATE-007,testcases/03-projects/TC-PROJ-UPDATE.md,PUT,/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-PROJ-UPDATE-032,testcases/03-projects/TC-PROJ-UPDATE.md,PATCH,/projects/,404,308,MISMATCH,expected 404 got 308,qa-owner,smoke
+TC-PROJ-UPDATE-033,testcases/03-projects/TC-PROJ-UPDATE.md,PATCH,/projects/notuuid.,404,500,FAIL_5XX,server error 500,qa-owner,low
+TC-PROJ-UUIDX-001,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,GET,/projects?workspaceId=not-a-uuid,,500,INFO,no expected_status,qa-owner,medium
+TC-PROJ-UUIDX-002,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,GET,/projects?folderId=garbage,,500,INFO,no expected_status,qa-owner,
+TC-PROJ-UUIDX-003,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,GET,/projects?workspaceId=,,200,INFO,no expected_status,qa-owner,
+TC-PROJ-UUIDX-004,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,GET,/projects/abc/versions,,500,INFO,no expected_status,qa-owner,
+TC-PROJ-UUIDX-005,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,POST,/projects/abc/security/scan,,500,INFO,no expected_status,qa-owner,
+TC-PROJ-UUIDX-006,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,GET,/projects/abc/env-vars,,500,INFO,no expected_status,qa-owner,
+TC-PROJ-UUIDX-007,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,GET,/projects/abc/files,,200,INFO,no expected_status,qa-owner,
+TC-PROJ-UUIDX-008,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,POST,/projects/abc/star,,500,INFO,no expected_status,qa-owner,
+TC-PROJ-UUIDX-009,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,GET,/projects/abc/collaborators,,500,INFO,no expected_status,qa-owner,
+TC-PROJ-UUIDX-010,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,GET,/projects/,,308,INFO,no expected_status,qa-owner,
+TC-PROJ-UUIDX-011,testcases/03-projects/TC-PROJ-UUID-VALIDATION-EXTENDED.md,GET,/projects/starred,,200,INFO,no expected_status,qa-owner,
+TC-PROJ-UUID-001,testcases/03-projects/TC-PROJ-UUID-VALIDATION.md,GET,/projects/not-a-uuid,,500,INFO,no expected_status,qa-owner,medium
+TC-PROJ-UUID-002,testcases/03-projects/TC-PROJ-UUID-VALIDATION.md,PATCH,/projects/abc,,500,INFO,no expected_status,qa-owner,low
+TC-PROJ-UUID-003,testcases/03-projects/TC-PROJ-UUID-VALIDATION.md,DELETE,/projects/123,,500,INFO,no expected_status,qa-owner,low
+TC-PROJ-UUID-004,testcases/03-projects/TC-PROJ-UUID-VALIDATION.md,POST,/projects/foo/star,,500,INFO,no expected_status,qa-owner,low
+TC-PROJ-UUID-005,testcases/03-projects/TC-PROJ-UUID-VALIDATION.md,GET,/projects/,,308,INFO,no expected_status,qa-owner,low
+TC-PROJ-UUID-007,testcases/03-projects/TC-PROJ-UUID-VALIDATION.md,GET,/projects/starred,,200,INFO,no expected_status,qa-owner,high
+TC-PROJ-UUID-008,testcases/03-projects/TC-PROJ-UUID-VALIDATION.md,GET,/projects/shared,,200,INFO,no expected_status,qa-owner,high
+TC-PROJ-UUID-009,testcases/03-projects/TC-PROJ-UUID-VALIDATION.md,GET,/projects/recently-viewed,,200,INFO,no expected_status,qa-owner,medium
+TC-PROJ-UUID-010,testcases/03-projects/TC-PROJ-UUID-VALIDATION.md,GET,/projects/abc/api-keys,,500,INFO,no expected_status,qa-owner,low
+TC-EDITOR-FILES-001,testcases/04-editor/TC-EDITOR-FILE-OPS.md,GET,/projects/:id/files,200,200,PASS,,qa-owner,smoke
+TC-EDITOR-FILES-005,testcases/04-editor/TC-EDITOR-FILE-OPS.md,GET,/projects/:id/files/src/index.ts,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-EDITOR-FILES-006,testcases/04-editor/TC-EDITOR-FILE-OPS.md,GET,/projects/:id/files/nope.txt,404,404,PASS,,qa-owner,smoke
+TC-EDITOR-FILES-007,testcases/04-editor/TC-EDITOR-FILE-OPS.md,GET,/projects/:id/files/,400,308,MISMATCH,expected 400 got 308,qa-owner,medium
+TC-EDITOR-PATHTRAV-001,testcases/04-editor/TC-EDITOR-PATH-TRAVERSAL.md,POST,/projects/:id/files,400,400,PASS,,qa-owner,high
+TC-EDITOR-PATHTRAV-003,testcases/04-editor/TC-EDITOR-PATH-TRAVERSAL.md,PUT,/projects/:id/files/%2e%2e%2Fescape.txt,,400,INFO,no expected_status,qa-owner,high
+TC-EDITOR-PATHTRAV-012,testcases/04-editor/TC-EDITOR-PATH-TRAVERSAL.md,PUT,/projects/:id/files/..%2F..%2Fescape.txt,400,400,PASS,,qa-owner,high
+TC-EDITOR-PATHTRAV-013,testcases/04-editor/TC-EDITOR-PATH-TRAVERSAL.md,DELETE,/projects/:id/files/..%2Fescape.txt,400,400,PASS,,qa-owner,high
+TC-EDITOR-PATHTRAV-014,testcases/04-editor/TC-EDITOR-PATH-TRAVERSAL.md,GET,/projects/:id/files/..%2F..%2Fetc%2Fpasswd,400,400,PASS,,qa-owner,high
+TC-EDITOR-PATHTRAV-016,testcases/04-editor/TC-EDITOR-PATH-TRAVERSAL.md,GET,/json,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-PRES-024,testcases/04-editor/TC-EDITOR-PRESENCE.md,GET,/internal/presence/:projectId,,403,INFO,no expected_status,qa-owner,medium
+TC-AI-CHAT-ATTACH-001,testcases/05-ai-chat/TC-AI-CHAT-ATTACH.md,POST,/chat/:sessionId/attachments,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-AI-CHAT-ATTACH-027,testcases/05-ai-chat/TC-AI-CHAT-ATTACH.md,GET,/chat/attachments/:id/download,,404,INFO,no expected_status,qa-owner,high
+TC-AI-CHAT-ATTACH-029,testcases/05-ai-chat/TC-AI-CHAT-ATTACH.md,DELETE,/chat/attachments/:id,204,404,MISMATCH,expected 204 got 404,qa-owner,medium
+TC-AI-CHAT-ATTACH-031,testcases/05-ai-chat/TC-AI-CHAT-ATTACH.md,GET,/chat/attachments?sessionId=,,404,INFO,no expected_status,qa-owner,low
+TC-AI-CHAT-CREDITS-004,testcases/05-ai-chat/TC-AI-CHAT-CREDITS.md,GET,/billing/balance,,400,INFO,no expected_status,qa-owner,smoke
+TC-AI-CHAT-CREDITS-027,testcases/05-ai-chat/TC-AI-CHAT-CREDITS.md,GET,/billing/usage?breakdown=user,,400,INFO,no expected_status,qa-owner,medium
+TC-AI-CHAT-CREDITS-043,testcases/05-ai-chat/TC-AI-CHAT-CREDITS.md,POST,/billing/grant,,404,INFO,no expected_status,qa-owner,medium
+TC-AI-CHAT-HISTORY-001,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,GET,/chat/sessions,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-AI-CHAT-HISTORY-002,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,GET,/chat/sessions?limit=20,,404,INFO,no expected_status,qa-owner,high
+TC-AI-CHAT-HISTORY-006,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,GET,/chat/:id/messages?limit=50,,404,INFO,no expected_status,qa-owner,smoke
+TC-AI-CHAT-HISTORY-012,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,PATCH,/chat/messages/:id,,404,INFO,no expected_status,qa-owner,high
+TC-AI-CHAT-HISTORY-014,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,DELETE,/chat/messages/:id,,404,INFO,no expected_status,qa-owner,medium
+TC-AI-CHAT-HISTORY-016,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,DELETE,/chat/sessions/:id,204,404,MISMATCH,expected 204 got 404,qa-owner,smoke
+TC-AI-CHAT-HISTORY-019,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,POST,/chat/sessions/:id/restore,,404,INFO,no expected_status,qa-owner,medium
+TC-AI-CHAT-HISTORY-021,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,GET,/chat/sessions/:id/export?format=json,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-AI-CHAT-HISTORY-026,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,GET,/chat/search?q=login,,404,INFO,no expected_status,qa-owner,medium
+TC-AI-CHAT-HISTORY-030,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,POST,/chat/sessions/:id/pin,,404,INFO,no expected_status,qa-owner,low
+TC-AI-CHAT-HISTORY-031,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,PATCH,/chat/sessions/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-AI-CHAT-HISTORY-038,testcases/05-ai-chat/TC-AI-CHAT-HISTORY.md,POST,/chat/sessions/bulk-delete,,404,INFO,no expected_status,qa-owner,medium
+TC-AI-CHAT-MODELS-001,testcases/05-ai-chat/TC-AI-CHAT-MODELS.md,GET,/chat/models,,404,INFO,no expected_status,qa-owner,smoke
+TC-AI-CHAT-MODELS-003,testcases/05-ai-chat/TC-AI-CHAT-MODELS.md,PATCH,/chat/sessions/:id,,404,INFO,no expected_status,qa-owner,high
+TC-AI-CHAT-MODELS-015,testcases/05-ai-chat/TC-AI-CHAT-MODELS.md,GET,/workspace/ai-settings,,404,INFO,no expected_status,qa-owner,critical
+TC-AI-CHAT-MODES-004,testcases/05-ai-chat/TC-AI-CHAT-MODES.md,PATCH,/chat/sessions/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-AI-CHAT-MODES-031,testcases/05-ai-chat/TC-AI-CHAT-MODES.md,POST,/chat/sessions/:id/duplicate,,404,INFO,no expected_status,qa-owner,low
+TC-AI-CHAT-MODES-036,testcases/05-ai-chat/TC-AI-CHAT-MODES.md,GET,/chat/modes,,404,INFO,no expected_status,qa-owner,medium
+TC-AI-CHAT-PREVIEW-COUNTER-001,testcases/05-ai-chat/TC-AI-CHAT-PREVIEW-E2E.md,POST,/projects/:id/chat,,400,INFO,no expected_status,qa-owner,smoke
+TC-AI-CHAT-PREVIEW-WAKE-001,testcases/05-ai-chat/TC-AI-CHAT-PREVIEW-WAKE.md,GET,/preview/P/,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-AI-CHAT-PREVIEW-WAKE-002,testcases/05-ai-chat/TC-AI-CHAT-PREVIEW-WAKE.md,GET,/preview/P/,,404,INFO,no expected_status,qa-owner,smoke
+TC-AI-CHAT-PREVIEW-WAKE-003,testcases/05-ai-chat/TC-AI-CHAT-PREVIEW-WAKE.md,GET,/preview/P/,,404,INFO,no expected_status,qa-owner,high
+TC-AI-CHAT-PREVIEW-WAKE-004,testcases/05-ai-chat/TC-AI-CHAT-PREVIEW-WAKE.md,GET,/preview/P/,,404,INFO,no expected_status,qa-owner,high
+TC-AI-CHAT-PREVIEW-WAKE-005,testcases/05-ai-chat/TC-AI-CHAT-PREVIEW-WAKE.md,GET,/preview/,,404,INFO,no expected_status,qa-owner,high
+TC-AI-CHAT-PREVIEW-WAKE-006,testcases/05-ai-chat/TC-AI-CHAT-PREVIEW-WAKE.md,GET,/preview/not-a-uuid/,404,404,PASS,,qa-owner,smoke
+TC-AI-CHAT-PREVIEW-WAKE-007,testcases/05-ai-chat/TC-AI-CHAT-PREVIEW-WAKE.md,GET,/preview/P/,,404,INFO,no expected_status,qa-owner,high
+TC-AI-CHAT-PREVIEW-WAKE-008,testcases/05-ai-chat/TC-AI-CHAT-PREVIEW-WAKE.md,GET,/preview/P/main.tsx,,404,INFO,no expected_status,qa-owner,medium
+TC-AI-CHAT-SEND-001,testcases/05-ai-chat/TC-AI-CHAT-SEND.md,POST,/chat/sessions,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-AI-CHAT-TOOLS-040,testcases/05-ai-chat/TC-AI-CHAT-TOOLS.md,GET,/chat/tools,,404,INFO,no expected_status,qa-owner,low
+TC-BILLING-CREDITS-001,testcases/06-billing/TC-BILLING-CREDITS.md,GET,/billing/balance,,400,INFO,no expected_status,qa-owner,smoke
+TC-BILLING-CREDITS-011,testcases/06-billing/TC-BILLING-CREDITS.md,POST,/billing/grant,,404,INFO,no expected_status,qa-owner,medium
+TC-BILLING-CREDITS-016,testcases/06-billing/TC-BILLING-CREDITS.md,GET,/billing/balance?userId=,,400,INFO,no expected_status,qa-owner,medium
+TC-BILLING-CREDITS-030,testcases/06-billing/TC-BILLING-CREDITS.md,GET,/billing/usage?limit=50,,400,INFO,no expected_status,qa-owner,medium
+TC-BILLING-PLANS-001,testcases/06-billing/TC-BILLING-PLANS.md,GET,/billing/plans,200,200,PASS,,qa-owner,smoke
+TC-BILLING-PLANS-011,testcases/06-billing/TC-BILLING-PLANS.md,GET,/billing/limits,,404,INFO,no expected_status,qa-owner,medium
+TC-BILLING-PLANS-012,testcases/06-billing/TC-BILLING-PLANS.md,GET,/billing/subscription,,404,INFO,no expected_status,qa-owner,smoke
+TC-BILLING-PLANS-019,testcases/06-billing/TC-BILLING-PLANS.md,POST,/billing/upgrade,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-BILLING-PLANS-023,testcases/06-billing/TC-BILLING-PLANS.md,POST,/billing/cancel,,404,INFO,no expected_status,qa-owner,smoke
+TC-BILLING-PLANS-024,testcases/06-billing/TC-BILLING-PLANS.md,POST,/billing/cancel?immediate=true,,404,INFO,no expected_status,qa-owner,medium
+TC-BILLING-PLANS-025,testcases/06-billing/TC-BILLING-PLANS.md,POST,/billing/reactivate,,404,INFO,no expected_status,qa-owner,medium
+TC-BILLING-PLANS-028,testcases/06-billing/TC-BILLING-PLANS.md,POST,/billing/upgrade,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-BILLING-PLANS-044,testcases/06-billing/TC-BILLING-PLANS.md,GET,/billing/limits,,404,INFO,no expected_status,qa-owner,medium
+TC-BILLING-PLANS-049,testcases/06-billing/TC-BILLING-PLANS.md,POST,/billing/pause,,404,INFO,no expected_status,qa-owner,medium
+TC-BILLING-PLANS-050,testcases/06-billing/TC-BILLING-PLANS.md,POST,/billing/resume,,404,INFO,no expected_status,qa-owner,medium
+TC-BILLING-PORTAL-001,testcases/06-billing/TC-BILLING-PORTAL.md,POST,/billing/portal,200,503,FAIL_5XX,server error 503,qa-owner,smoke
+TC-BILLING-PORTAL-010,testcases/06-billing/TC-BILLING-PORTAL.md,GET,/billing/invoices,,400,INFO,no expected_status,qa-owner,smoke
+TC-BILLING-PORTAL-017,testcases/06-billing/TC-BILLING-PORTAL.md,GET,/billing/payment-methods,,404,INFO,no expected_status,qa-owner,medium
+TC-BILLING-TOPUP-001,testcases/06-billing/TC-BILLING-TOPUP.md,GET,/billing/topup/packages,,200,INFO,no expected_status,qa-owner,smoke
+TC-BILLING-TOPUP-002,testcases/06-billing/TC-BILLING-TOPUP.md,POST,/billing/topup,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-BILLING-TOPUP-003,testcases/06-billing/TC-BILLING-TOPUP.md,POST,/billing/topup,,400,INFO,no expected_status,qa-owner,smoke
+TC-BILLING-TOPUP-011,testcases/06-billing/TC-BILLING-TOPUP.md,GET,/billing/topup/history,,404,INFO,no expected_status,qa-owner,medium
+TC-BILLING-WEBHOOK-030,testcases/06-billing/TC-BILLING-WEBHOOK.md,GET,/billing/invoices,,400,INFO,no expected_status,qa-owner,medium
+TC-BILLING-WEBHOOK-039,testcases/06-billing/TC-BILLING-WEBHOOK.md,POST,/billing/portal,,503,INFO,no expected_status,qa-owner,smoke
+TC-INTEG-CONNECT-001,testcases/07-integrations/TC-INTEG-CONNECT.md,GET,/integrations/enhanced-auth/start?slug=github,302,404,MISMATCH,expected 302 got 404,qa-owner,smoke
+TC-INTEG-LIST-001,testcases/07-integrations/TC-INTEG-LIST.md,GET,/integrations,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-INTEG-LIST-010,testcases/07-integrations/TC-INTEG-LIST.md,GET,/integrations/:slug,,404,INFO,no expected_status,qa-owner,smoke
+TC-INTEG-LIST-026,testcases/07-integrations/TC-INTEG-LIST.md,GET,/integrations/connections?workspaceId=,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-INTEG-LIST-027,testcases/07-integrations/TC-INTEG-LIST.md,GET,/integrations/connections?workspaceId=,403,400,MISMATCH,expected 403 got 400,qa-owner,critical
+TC-INTEG-LIST-028,testcases/07-integrations/TC-INTEG-LIST.md,GET,/integrations/connections?workspaceId=,,400,INFO,no expected_status,qa-owner,high
+TC-INTEG-LIST-029,testcases/07-integrations/TC-INTEG-LIST.md,GET,/integrations/connections?workspaceId=,,400,INFO,no expected_status,qa-owner,low
+TC-INTEG-LIST-031,testcases/07-integrations/TC-INTEG-LIST.md,GET,/integrations/connections?workspaceId=,,400,INFO,no expected_status,qa-owner,medium
+TC-INTEG-REVOKE-001,testcases/07-integrations/TC-INTEG-REVOKE.md,DELETE,/integrations/connections/:id,204,404,MISMATCH,expected 204 got 404,qa-owner,smoke
+TC-INTEG-USAGE-008,testcases/07-integrations/TC-INTEG-USAGE.md,GET,/integrations/usage?userId=,,404,INFO,no expected_status,qa-owner,medium
+TC-PUBLISH-CADDY-TUNNEL-018,testcases/08-publish/TC-PUBLISH-CADDY-TUNNEL.md,GET,/robots.txt,,200,INFO,no expected_status,qa-owner,low
+TC-PUBLISH-CADDY-TUNNEL-019,testcases/08-publish/TC-PUBLISH-CADDY-TUNNEL.md,GET,/missing,,404,INFO,no expected_status,qa-owner,low
+TC-PUBLISH-CUSTOM-DOMAIN-026,testcases/08-publish/TC-PUBLISH-CUSTOM-DOMAIN.md,GET,https://www.example.com,,200,INFO,no expected_status,qa-owner,medium
+TC-PUBLISH-CUSTOM-DOMAIN-027,testcases/08-publish/TC-PUBLISH-CUSTOM-DOMAIN.md,GET,http://www.example.com,308,200,MISMATCH,expected 308 got 200,qa-owner,medium
+TC-PUBLISH-CUSTOM-DOMAIN-031,testcases/08-publish/TC-PUBLISH-CUSTOM-DOMAIN.md,GET,/domains?project_id=P,,404,INFO,no expected_status,qa-owner,medium
+TC-PUBLISH-CUSTOM-DOMAIN-032,testcases/08-publish/TC-PUBLISH-CUSTOM-DOMAIN.md,POST,/domains,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,critical
+TC-PUBLISH-CUSTOM-DOMAIN-033,testcases/08-publish/TC-PUBLISH-CUSTOM-DOMAIN.md,DELETE,/domains/,403,308,MISMATCH,expected 403 got 308,qa-owner,critical
+TC-PUBLISH-DEPLOY-036,testcases/08-publish/TC-PUBLISH-DEPLOY.md,DELETE,/deploy/,,308,INFO,no expected_status,qa-owner,high
+TC-PUBLISH-LIFECYCLE-014,testcases/08-publish/TC-PUBLISH-LIFECYCLE.md,POST,/deploy,,404,INFO,no expected_status,qa-owner,medium
+TC-PUBLISH-PREVIEW-PROXY-013,testcases/08-publish/TC-PUBLISH-PREVIEW-PROXY.md,GET,/preview-proxy/,,308,INFO,no expected_status,qa-owner,low
+TC-PUBLISH-PREVIEW-PROXY-021,testcases/08-publish/TC-PUBLISH-PREVIEW-PROXY.md,GET,/preview-proxy/,,308,INFO,no expected_status,qa-owner,medium
+TC-PUBLISH-ROLLBACK-020,testcases/08-publish/TC-PUBLISH-ROLLBACK.md,POST,/deploy/,,308,INFO,no expected_status,qa-owner,medium
+TC-PUBLISH-SUBDOMAIN-025,testcases/08-publish/TC-PUBLISH-SUBDOMAIN.md,POST,/deploy,401,404,AUTH_OK,"close 4xx match (expected=401, got=404)",qa-owner,critical
+TC-PUBLISH-SUBDOMAIN-026,testcases/08-publish/TC-PUBLISH-SUBDOMAIN.md,POST,/deploy,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,critical
+TC-PUBLISH-SUBDOMAIN-039,testcases/08-publish/TC-PUBLISH-SUBDOMAIN.md,POST,/deploy,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-MARKET-CATEGORIES-001,testcases/09-marketplace/TC-MARKET-CATEGORIES-BUNDLES.md,GET,/marketplace/categories,,200,INFO,no expected_status,qa-owner,medium
+TC-MARKET-BUNDLES-025,testcases/09-marketplace/TC-MARKET-CATEGORIES-BUNDLES.md,GET,/marketplace/categories/,,308,INFO,no expected_status,qa-owner,low
+TC-MARKET-INSTALL-009,testcases/09-marketplace/TC-MARKET-INSTALL.md,POST,/marketplace/,,308,INFO,no expected_status,qa-owner,medium
+TC-MARKET-INSTALL-019,testcases/09-marketplace/TC-MARKET-INSTALL.md,POST,/marketplace/,410,308,MISMATCH,expected 410 got 308,qa-owner,high
+TC-MARKET-LIST-035,testcases/09-marketplace/TC-MARKET-LIST.md,GET,/marketplace/feed.json,,404,INFO,no expected_status,qa-owner,low
+TC-MARKET-PUBLISH-LISTING-020,testcases/09-marketplace/TC-MARKET-PUBLISH-LISTING.md,POST,/marketplace/listings,400,400,PASS,,qa-owner,medium
+TC-MARKET-REVIEW-006,testcases/09-marketplace/TC-MARKET-REVIEW.md,DELETE,/marketplace/reviews/,403,308,MISMATCH,expected 403 got 308,qa-owner,critical
+TC-ADMIN-CHAT-019,testcases/10-admin/TC-ADMIN-CHAT.md,DELETE,/admin/chat/:id.,,404,INFO,no expected_status,qa-owner,
+TC-ADMIN-MODERATION-033,testcases/10-admin/TC-ADMIN-MODERATION.md,POST,/admin/marketplace/moderation/queue/{id}/decision,,400,INFO,no expected_status,qa-owner,critical
+TC-ADMIN-MODERATION-035,testcases/10-admin/TC-ADMIN-MODERATION.md,POST,/admin/marketplace/reports/{id}/resolve,,400,INFO,no expected_status,qa-owner,critical
+TC-ADMIN-MODERATION-036,testcases/10-admin/TC-ADMIN-MODERATION.md,POST,/admin/marketplace/reports/{id}/resolve,,400,INFO,no expected_status,qa-owner,critical
+TC-ADMIN-MODERATION-037,testcases/10-admin/TC-ADMIN-MODERATION.md,POST,/marketplace/listings,,400,INFO,no expected_status,qa-owner,critical
+TC-ADMIN-MODERATION-038,testcases/10-admin/TC-ADMIN-MODERATION.md,POST,/admin/marketplace/moderation/queue/{id}/decision,,400,INFO,no expected_status,qa-owner,critical
+TC-ADMIN-MODERATION-039,testcases/10-admin/TC-ADMIN-MODERATION.md,POST,/marketplace/listings/{id}/report,,400,INFO,no expected_status,qa-owner,critical
+TC-ADMIN-PROJECTS-057,testcases/10-admin/TC-ADMIN-PROJECTS.md,DELETE,/admin/projects/,,308,INFO,no expected_status,qa-owner,critical
+TC-ADMIN-PROJECTS-058,testcases/10-admin/TC-ADMIN-PROJECTS.md,PATCH,/projects/,,308,INFO,no expected_status,qa-owner,critical
+TC-SEC-CSRF-001,testcases/11-security/TC-SEC-CSRF-CORS.md,POST,/auth/login,,400,INFO,no expected_status,qa-owner,high
+TC-SEC-CSRF-002,testcases/11-security/TC-SEC-CSRF-CORS.md,POST,/workspaces,401,400,MISMATCH,expected 401 got 400,qa-owner,smoke
+TC-SEC-CSRF-009,testcases/11-security/TC-SEC-CSRF-CORS.md,PATCH,/workspaces,,404,INFO,no expected_status,qa-owner,smoke
+TC-SEC-CSRF-010,testcases/11-security/TC-SEC-CSRF-CORS.md,DELETE,/workspaces,,404,INFO,no expected_status,qa-owner,smoke
+TC-SEC-SQLI-001,testcases/11-security/TC-SEC-INJECTION.md,POST,/workspaces,400,400,PASS,,qa-owner,smoke
+TC-SEC-SQLI-005,testcases/11-security/TC-SEC-INJECTION.md,GET,/workspaces/,403,308,MISMATCH,expected 403 got 308,qa-owner,smoke
+TC-SEC-PROTO-001,testcases/11-security/TC-SEC-INJECTION.md,POST,/auth/register,,429,INFO,no expected_status,qa-owner,high
+TC-SEC-CMD-014,testcases/11-security/TC-SEC-INJECTION.md,POST,/auth/login,413,429,MISMATCH,expected 413 got 429,qa-owner,medium
+TC-SEC-JWT-031,testcases/11-security/TC-SEC-JWT.md,POST,/auth/refresh,401,400,MISMATCH,expected 401 got 400,qa-owner,high
+TC-SEC-RL-023,testcases/11-security/TC-SEC-RATELIMIT.md,POST,/workspaces.,,404,INFO,no expected_status,qa-owner,medium
+TC-SEC-RLS-001,testcases/11-security/TC-SEC-RLS.md,GET,/workspaces/,403,308,MISMATCH,expected 403 got 308,qa-owner,smoke
+TC-SEC-RLS-002,testcases/11-security/TC-SEC-RLS.md,GET,/workspaces/,403,308,MISMATCH,expected 403 got 308,qa-owner,smoke
+TC-SEC-RLS-003,testcases/11-security/TC-SEC-RLS.md,GET,/workspaces/,403,308,MISMATCH,expected 403 got 308,qa-owner,high
+TC-SEC-RLS-004,testcases/11-security/TC-SEC-RLS.md,PATCH,/workspaces/,403,308,MISMATCH,expected 403 got 308,qa-owner,smoke
+TC-SEC-RLS-010,testcases/11-security/TC-SEC-RLS.md,GET,/projects?workspaceId=,403,200,MISMATCH,expected 403 got 200,qa-owner,smoke
+TC-SEC-RLS-013,testcases/11-security/TC-SEC-RLS.md,GET,/chat/,403,308,MISMATCH,expected 403 got 308,qa-owner,smoke
+TC-SEC-RLS-041,testcases/11-security/TC-SEC-RLS.md,GET,/workspaces/,,308,INFO,no expected_status,qa-owner,high
+TC-SEC-RLS-042,testcases/11-security/TC-SEC-RLS.md,GET,/workspaces,,200,INFO,no expected_status,qa-owner,smoke
+TC-SEC-RLS-044,testcases/11-security/TC-SEC-RLS.md,PATCH,/projects/,403,308,MISMATCH,expected 403 got 308,qa-owner,smoke
+TC-SEC-RLS-045,testcases/11-security/TC-SEC-RLS.md,POST,/workspaces.,400,404,MISMATCH,expected 400 got 404,qa-owner,smoke
+TC-SEC-RLS-055,testcases/11-security/TC-SEC-RLS.md,GET,/workspaces,,200,INFO,no expected_status,qa-owner,medium
+TC-SEC-XFF-BYPASS-001,testcases/11-security/TC-SEC-XFF-BYPASS.md,GET,/dev/null,,404,INFO,no expected_status,qa-owner,high
+TC-SEC-XFF-BYPASS-002,testcases/11-security/TC-SEC-XFF-BYPASS.md,GET,/dev/null,,404,INFO,no expected_status,qa-owner,
+TC-SEC-XFF-BYPASS-003,testcases/11-security/TC-SEC-XFF-BYPASS.md,GET,/json,,404,INFO,no expected_status,qa-owner,
+TC-API-ADMIN-001,testcases/12-api/TC-API-ADMIN.md,GET,/admin/users,200,200,PASS,,qa-owner,smoke
+TC-API-ADMIN-002,testcases/12-api/TC-API-ADMIN.md,GET,/admin/users,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-API-ADMIN-003,testcases/12-api/TC-API-ADMIN.md,GET,/admin/users,403,200,MISMATCH,expected 403 got 200,qa-owner,smoke
+TC-API-ADMIN-004,testcases/12-api/TC-API-ADMIN.md,GET,/admin/users,200,200,PASS,,qa-owner,medium
+TC-API-ADMIN-005,testcases/12-api/TC-API-ADMIN.md,GET,/admin/users,200,200,PASS,,qa-owner,medium
+TC-API-ADMIN-006,testcases/12-api/TC-API-ADMIN.md,PUT,/admin/users/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-007,testcases/12-api/TC-API-ADMIN.md,PUT,/admin/users/:id,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-ADMIN-008,testcases/12-api/TC-API-ADMIN.md,PUT,/admin/users/:id,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-ADMIN-009,testcases/12-api/TC-API-ADMIN.md,DELETE,/admin/users/:id,204,404,MISMATCH,expected 204 got 404,qa-owner,high
+TC-API-ADMIN-011,testcases/12-api/TC-API-ADMIN.md,POST,/admin/users/:id/reset-password,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-012,testcases/12-api/TC-API-ADMIN.md,GET,/admin/workspaces,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-ADMIN-013,testcases/12-api/TC-API-ADMIN.md,GET,/admin/workspaces,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-014,testcases/12-api/TC-API-ADMIN.md,GET,/admin/projects,200,200,PASS,,qa-owner,smoke
+TC-API-ADMIN-015,testcases/12-api/TC-API-ADMIN.md,GET,/admin/projects,200,200,PASS,,qa-owner,medium
+TC-API-ADMIN-016,testcases/12-api/TC-API-ADMIN.md,GET,/admin/audit,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-ADMIN-017,testcases/12-api/TC-API-ADMIN.md,GET,/admin/audit,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-018,testcases/12-api/TC-API-ADMIN.md,GET,/admin/audit,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-API-ADMIN-019,testcases/12-api/TC-API-ADMIN.md,GET,/admin/audit/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-020,testcases/12-api/TC-API-ADMIN.md,GET,/admin/audit/:id,404,404,PASS,,qa-owner,medium
+TC-API-ADMIN-021,testcases/12-api/TC-API-ADMIN.md,GET,/admin/traces,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-022,testcases/12-api/TC-API-ADMIN.md,GET,/admin/traces/:traceId,200,400,MISMATCH,expected 200 got 400,qa-owner,medium
+TC-API-ADMIN-023,testcases/12-api/TC-API-ADMIN.md,POST,/admin/tracing/start,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-024,testcases/12-api/TC-API-ADMIN.md,POST,/admin/tracing/stop,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-025,testcases/12-api/TC-API-ADMIN.md,GET,/admin/tracing/status,200,404,MISMATCH,expected 200 got 404,qa-owner,low
+TC-API-ADMIN-026,testcases/12-api/TC-API-ADMIN.md,GET,/admin/plan-limits,200,200,PASS,,qa-owner,smoke
+TC-API-ADMIN-027,testcases/12-api/TC-API-ADMIN.md,PUT,/admin/plan-limits/:plan,200,400,MISMATCH,expected 200 got 400,qa-owner,high
+TC-API-ADMIN-030,testcases/12-api/TC-API-ADMIN.md,GET,/admin/features,200,200,PASS,,qa-owner,medium
+TC-API-ADMIN-031,testcases/12-api/TC-API-ADMIN.md,PUT,/admin/features/:flag,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-033,testcases/12-api/TC-API-ADMIN.md,GET,/admin/frameworks,200,200,PASS,,qa-owner,medium
+TC-API-ADMIN-034,testcases/12-api/TC-API-ADMIN.md,PUT,/admin/frameworks/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-ADMIN-035,testcases/12-api/TC-API-ADMIN.md,POST,/admin/email/send-test,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-037,testcases/12-api/TC-API-ADMIN.md,GET,/admin/ops/queue,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ADMIN-038,testcases/12-api/TC-API-ADMIN.md,POST,/admin/tools/run/:tool,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-ADMIN-049,testcases/12-api/TC-API-ADMIN.md,DELETE,/admin/audit/:id.,405,404,MISMATCH,expected 405 got 404,qa-owner,smoke
+TC-API-ADMIN-050,testcases/12-api/TC-API-ADMIN.md,GET,/audit,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-API-ADMIN-053,testcases/12-api/TC-API-ADMIN.md,POST,/admin/email/send-test,429,404,MISMATCH,expected 429 got 404,qa-owner,medium
+TC-API-ANA-009,testcases/12-api/TC-API-ANALYTICS.md,POST,/analytics/track,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-API-AUTH-001,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,201,429,MISMATCH,expected 201 got 429,qa-owner,smoke
+TC-API-AUTH-002,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,400,429,MISMATCH,expected 400 got 429,qa-owner,high
+TC-API-AUTH-003,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,400,429,MISMATCH,expected 400 got 429,qa-owner,high
+TC-API-AUTH-004,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,400,429,MISMATCH,expected 400 got 429,qa-owner,high
+TC-API-AUTH-005,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,400,429,MISMATCH,expected 400 got 429,qa-owner,high
+TC-API-AUTH-006,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,415,429,MISMATCH,expected 415 got 429,qa-owner,medium
+TC-API-AUTH-007,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,400,429,MISMATCH,expected 400 got 429,qa-owner,medium
+TC-API-AUTH-008,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,201,429,MISMATCH,expected 201 got 429,qa-owner,smoke
+TC-API-AUTH-009,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,400,429,MISMATCH,expected 400 got 429,qa-owner,smoke
+TC-API-AUTH-010,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,201,429,MISMATCH,expected 201 got 429,qa-owner,medium
+TC-API-AUTH-011,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,413,429,MISMATCH,expected 413 got 429,qa-owner,high
+TC-API-AUTH-012,testcases/12-api/TC-API-AUTH.md,POST,/auth/register,,429,INFO,no expected_status,qa-owner,high
+TC-API-AUTH-013,testcases/12-api/TC-API-AUTH.md,POST,/auth/login,200,429,MISMATCH,expected 200 got 429,qa-owner,smoke
+TC-API-AUTH-014,testcases/12-api/TC-API-AUTH.md,POST,/auth/login,401,429,MISMATCH,expected 401 got 429,qa-owner,high
+TC-API-AUTH-015,testcases/12-api/TC-API-AUTH.md,POST,/auth/login,401,429,MISMATCH,expected 401 got 429,qa-owner,high
+TC-API-AUTH-016,testcases/12-api/TC-API-AUTH.md,POST,/auth/login,423,429,MISMATCH,expected 423 got 429,qa-owner,high
+TC-API-AUTH-017,testcases/12-api/TC-API-AUTH.md,POST,/auth/login,,429,INFO,no expected_status,qa-owner,medium
+TC-API-AUTH-018,testcases/12-api/TC-API-AUTH.md,POST,/auth/login,429,429,PASS,,qa-owner,high
+TC-API-AUTH-019,testcases/12-api/TC-API-AUTH.md,GET,/auth/me,200,200,PASS,,qa-owner,smoke
+TC-API-AUTH-020,testcases/12-api/TC-API-AUTH.md,GET,/auth/me,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-API-AUTH-021,testcases/12-api/TC-API-AUTH.md,GET,/auth/me,401,200,MISMATCH,expected 401 got 200,qa-owner,high
+TC-API-AUTH-022,testcases/12-api/TC-API-AUTH.md,GET,/auth/me,401,200,MISMATCH,expected 401 got 200,qa-owner,medium
+TC-API-AUTH-023,testcases/12-api/TC-API-AUTH.md,GET,/auth/me,401,200,MISMATCH,expected 401 got 200,qa-owner,high
+TC-API-AUTH-024,testcases/12-api/TC-API-AUTH.md,GET,/auth/me,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-API-AUTH-025,testcases/12-api/TC-API-AUTH.md,GET,/auth/me,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-API-AUTH-026,testcases/12-api/TC-API-AUTH.md,GET,/auth/me,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-API-AUTH-027,testcases/12-api/TC-API-AUTH.md,GET,/auth/me,401,200,MISMATCH,expected 401 got 200,qa-owner,high
+TC-API-AUTH-028,testcases/12-api/TC-API-AUTH.md,POST,/auth/refresh,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-API-AUTH-029,testcases/12-api/TC-API-AUTH.md,POST,/auth/refresh,401,400,MISMATCH,expected 401 got 400,qa-owner,high
+TC-API-AUTH-030,testcases/12-api/TC-API-AUTH.md,POST,/auth/refresh,400,400,PASS,,qa-owner,medium
+TC-API-AUTH-031,testcases/12-api/TC-API-AUTH.md,POST,/auth/logout,,200,INFO,no expected_status,qa-owner,smoke
+TC-API-AUTH-032,testcases/12-api/TC-API-AUTH.md,POST,/auth/logout,401,200,MISMATCH,expected 401 got 200,qa-owner,medium
+TC-API-AUTH-033,testcases/12-api/TC-API-AUTH.md,POST,/auth/forgot-password,200,429,MISMATCH,expected 200 got 429,qa-owner,high
+TC-API-AUTH-034,testcases/12-api/TC-API-AUTH.md,POST,/auth/forgot-password,200,429,MISMATCH,expected 200 got 429,qa-owner,high
+TC-API-AUTH-035,testcases/12-api/TC-API-AUTH.md,POST,/auth/forgot-password,429,429,PASS,,qa-owner,high
+TC-API-AUTH-036,testcases/12-api/TC-API-AUTH.md,POST,/auth/reset-password,200,429,MISMATCH,expected 200 got 429,qa-owner,smoke
+TC-API-AUTH-037,testcases/12-api/TC-API-AUTH.md,POST,/auth/reset-password,400,429,MISMATCH,expected 400 got 429,qa-owner,high
+TC-API-AUTH-038,testcases/12-api/TC-API-AUTH.md,POST,/auth/reset-password,,429,INFO,no expected_status,qa-owner,high
+TC-API-AUTH-039,testcases/12-api/TC-API-AUTH.md,POST,/auth/reset-password,400,429,MISMATCH,expected 400 got 429,qa-owner,high
+TC-API-AUTH-040,testcases/12-api/TC-API-AUTH.md,POST,/auth/verify-email,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-AUTH-041,testcases/12-api/TC-API-AUTH.md,POST,/auth/verify-email,,404,INFO,no expected_status,qa-owner,medium
+TC-API-AUTH-042,testcases/12-api/TC-API-AUTH.md,POST,/auth/resend-verification,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-AUTH-043,testcases/12-api/TC-API-AUTH.md,POST,/auth/oauth/google,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-API-AUTH-044,testcases/12-api/TC-API-AUTH.md,POST,/auth/oauth/google,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-AUTH-045,testcases/12-api/TC-API-AUTH.md,GET,/auth/oauth/google/callback,400,404,MISMATCH,expected 400 got 404,qa-owner,smoke
+TC-API-AUTH-046,testcases/12-api/TC-API-AUTH.md,GET,/auth/oauth/google/callback,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-AUTH-047,testcases/12-api/TC-API-AUTH.md,POST,/auth/change-password,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-AUTH-048,testcases/12-api/TC-API-AUTH.md,POST,/auth/change-password,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-AUTH-049,testcases/12-api/TC-API-AUTH.md,DELETE,/auth/account,204,404,MISMATCH,expected 204 got 404,qa-owner,high
+TC-API-AUTH-050,testcases/12-api/TC-API-AUTH.md,DELETE,/auth/account,401,404,AUTH_OK,"close 4xx match (expected=401, got=404)",qa-owner,high
+TC-API-AUTH-051,testcases/12-api/TC-API-AUTH.md,GET,/auth/register,404,404,PASS,,qa-owner,low
+TC-API-AUTH-055,testcases/12-api/TC-API-AUTH.md,POST,/auth/login,400,429,MISMATCH,expected 400 got 429,qa-owner,high
+TC-API-AUTH-056,testcases/12-api/TC-API-AUTH.md,POST,/auth/login,400,429,MISMATCH,expected 400 got 429,qa-owner,high
+TC-API-AUTH-057,testcases/12-api/TC-API-AUTH.md,POST,/auth/login,,429,INFO,no expected_status,qa-owner,medium
+TC-API-AUTH-062,testcases/12-api/TC-API-AUTH.md,OPTIONS,/auth/login,204,204,PASS,,qa-owner,smoke
+TC-API-AUTH-063,testcases/12-api/TC-API-AUTH.md,OPTIONS,/auth/login,,204,INFO,no expected_status,qa-owner,smoke
+TC-API-AUTH-064,testcases/12-api/TC-API-AUTH.md,POST,/auth/login.,500,404,MISMATCH,expected 500 got 404,qa-owner,high
+TC-API-BILLING-001,testcases/12-api/TC-API-BILLING.md,GET,/billing/plans,200,200,PASS,,qa-owner,smoke
+TC-API-BILLING-002,testcases/12-api/TC-API-BILLING.md,GET,/billing/subscription,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-BILLING-005,testcases/12-api/TC-API-BILLING.md,POST,/billing/checkout,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-BILLING-009,testcases/12-api/TC-API-BILLING.md,POST,/billing/portal,200,503,FAIL_5XX,server error 503,qa-owner,medium
+TC-API-BILLING-011,testcases/12-api/TC-API-BILLING.md,GET,/billing/invoices,200,400,MISMATCH,expected 200 got 400,qa-owner,medium
+TC-API-BILLING-013,testcases/12-api/TC-API-BILLING.md,POST,/billing/cancel,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-BILLING-015,testcases/12-api/TC-API-BILLING.md,POST,/billing/resume,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-BILLING-016,testcases/12-api/TC-API-BILLING.md,POST,/billing/webhook,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-API-BILLING-021,testcases/12-api/TC-API-BILLING.md,GET,/billing/usage,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-API-BILLING-023,testcases/12-api/TC-API-BILLING.md,GET,/billing/credits,200,400,MISMATCH,expected 200 got 400,qa-owner,medium
+TC-API-BILLING-024,testcases/12-api/TC-API-BILLING.md,POST,/billing/credits/topup,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-BILLING-034,testcases/12-api/TC-API-BILLING.md,POST,/credits/topup,,404,INFO,no expected_status,qa-owner,high
+TC-API-BS-001,testcases/12-api/TC-API-BUILD-STREAM.md,GET,/build-events,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-BS-011,testcases/12-api/TC-API-BUILD-STREAM.md,GET,/build-events/replay,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-CHAT-001,testcases/12-api/TC-API-CHAT.md,POST,/chat/:projectId/messages,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-CHAT-012,testcases/12-api/TC-API-CHAT.md,POST,/regenerate,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-CHAT-014,testcases/12-api/TC-API-CHAT.md,POST,/messages/:mid/stop,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-CHAT-016,testcases/12-api/TC-API-CHAT.md,GET,/sessions,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-CHAT-017,testcases/12-api/TC-API-CHAT.md,GET,/sessions,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-CHAT-018,testcases/12-api/TC-API-CHAT.md,POST,/sessions,201,404,MISMATCH,expected 201 got 404,qa-owner,medium
+TC-API-CHAT-019,testcases/12-api/TC-API-CHAT.md,DELETE,/sessions/:sid,204,404,MISMATCH,expected 204 got 404,qa-owner,medium
+TC-API-CHAT-020,testcases/12-api/TC-API-CHAT.md,DELETE,/sessions/:sid,404,404,PASS,,qa-owner,high
+TC-API-CHAT-021,testcases/12-api/TC-API-CHAT.md,GET,/messages,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-CHAT-022,testcases/12-api/TC-API-CHAT.md,GET,/messages?since=ISO,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-CHAT-023,testcases/12-api/TC-API-CHAT.md,GET,/messages?cursor=invalid,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-CHAT-035,testcases/12-api/TC-API-CHAT.md,GET,/skills/active,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-CHAT-036,testcases/12-api/TC-API-CHAT.md,GET,/skills/active,,404,INFO,no expected_status,qa-owner,medium
+TC-API-CHAT-044,testcases/12-api/TC-API-CHAT.md,PUT,/messages,405,404,MISMATCH,expected 405 got 404,qa-owner,low
+TC-API-CHAT-052,testcases/12-api/TC-API-CHAT.md,POST,/messages,,404,INFO,no expected_status,qa-owner,medium
+TC-API-COMM-001,testcases/12-api/TC-API-COMMUNITY.md,GET,/community/feed,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-COMM-002,testcases/12-api/TC-API-COMMUNITY.md,GET,/community/feed,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-COMM-003,testcases/12-api/TC-API-COMMUNITY.md,GET,/community/posts,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-COMM-004,testcases/12-api/TC-API-COMMUNITY.md,GET,/community/posts/:id,404,404,PASS,,qa-owner,medium
+TC-API-COMM-005,testcases/12-api/TC-API-COMMUNITY.md,POST,/community/posts,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-COMM-022,testcases/12-api/TC-API-COMMUNITY.md,POST,/posts,429,404,MISMATCH,expected 429 got 404,qa-owner,high
+TC-API-COMM-023,testcases/12-api/TC-API-COMMUNITY.md,GET,/community/leaderboard,200,404,MISMATCH,expected 200 got 404,qa-owner,low
+TC-API-COMM-024,testcases/12-api/TC-API-COMMUNITY.md,GET,/community/featured,200,200,PASS,,qa-owner,low
+TC-API-COMM-029,testcases/12-api/TC-API-COMMUNITY.md,POST,/posts,,404,INFO,no expected_status,qa-owner,medium
+TC-API-CONN-001,testcases/12-api/TC-API-CONNECTORS.md,GET,/workspaces/:wid/connectors,200,200,PASS,,qa-owner,smoke
+TC-API-CONN-004,testcases/12-api/TC-API-CONNECTORS.md,POST,/connectors,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-CONN-013,testcases/12-api/TC-API-CONNECTORS.md,GET,/:cid,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-CONN-014,testcases/12-api/TC-API-CONNECTORS.md,GET,/:cid,,404,INFO,no expected_status,qa-owner,smoke
+TC-API-CONN-015,testcases/12-api/TC-API-CONNECTORS.md,PUT,/:cid,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-CONN-016,testcases/12-api/TC-API-CONNECTORS.md,DELETE,/:cid,204,404,MISMATCH,expected 204 got 404,qa-owner,medium
+TC-API-CONN-017,testcases/12-api/TC-API-CONNECTORS.md,POST,/:cid/test,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-CONN-018,testcases/12-api/TC-API-CONNECTORS.md,POST,/:cid/test,502,404,MISMATCH,expected 502 got 404,qa-owner,high
+TC-API-CONN-019,testcases/12-api/TC-API-CONNECTORS.md,GET,/:cid/tools,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-CONN-020,testcases/12-api/TC-API-CONNECTORS.md,POST,/:cid/oauth/start,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-CONN-021,testcases/12-api/TC-API-CONNECTORS.md,GET,/mcp/oauth/callback,400,404,MISMATCH,expected 400 got 404,qa-owner,smoke
+TC-API-CONN-022,testcases/12-api/TC-API-CONNECTORS.md,GET,/mcp/oauth/callback,302,404,MISMATCH,expected 302 got 404,qa-owner,smoke
+TC-API-CTX-001,testcases/12-api/TC-API-CONTEXT.md,GET,/projects/:id/context,200,500,FAIL_5XX,server error 500,qa-owner,smoke
+TC-API-CTX-004,testcases/12-api/TC-API-CONTEXT.md,PUT,/context,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-CTX-006,testcases/12-api/TC-API-CONTEXT.md,POST,/context/files,201,404,MISMATCH,expected 201 got 404,qa-owner,medium
+TC-API-CTX-007,testcases/12-api/TC-API-CONTEXT.md,POST,/context/files,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-CTX-008,testcases/12-api/TC-API-CONTEXT.md,POST,/context/files,422,404,MISMATCH,expected 422 got 404,qa-owner,medium
+TC-API-CTX-009,testcases/12-api/TC-API-CONTEXT.md,DELETE,/context/files/:fid,204,404,MISMATCH,expected 204 got 404,qa-owner,medium
+TC-API-CTX-010,testcases/12-api/TC-API-CONTEXT.md,GET,/context/skills,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-CTX-011,testcases/12-api/TC-API-CONTEXT.md,POST,/context/skills,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-CTX-015,testcases/12-api/TC-API-CONTEXT.md,GET,/context/skill-files,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-CTX-016,testcases/12-api/TC-API-CONTEXT.md,POST,/context/skill-files,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-CTX-019,testcases/12-api/TC-API-CONTEXT.md,GET,/workspaces/:wid/context,200,200,PASS,,qa-owner,smoke
+TC-API-CTX-026,testcases/12-api/TC-API-CONTEXT.md,POST,/context/skills,,404,INFO,no expected_status,qa-owner,medium
+TC-API-DEPLOY-001,testcases/12-api/TC-API-DEPLOY.md,POST,/deploy/:projectId/publish,202,404,MISMATCH,expected 202 got 404,qa-owner,smoke
+TC-API-DEPLOY-007,testcases/12-api/TC-API-DEPLOY.md,POST,/unpublish,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-DEPLOY-009,testcases/12-api/TC-API-DEPLOY.md,GET,/status,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-DEPLOY-010,testcases/12-api/TC-API-DEPLOY.md,GET,/history,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-DEPLOY-011,testcases/12-api/TC-API-DEPLOY.md,GET,/history,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-API-DEPLOY-012,testcases/12-api/TC-API-DEPLOY.md,POST,/rollback/:deployId,202,404,MISMATCH,expected 202 got 404,qa-owner,high
+TC-API-DEPLOY-015,testcases/12-api/TC-API-DEPLOY.md,POST,/build,202,404,MISMATCH,expected 202 got 404,qa-owner,smoke
+TC-API-DEPLOY-018,testcases/12-api/TC-API-DEPLOY.md,GET,/preview-url,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-DEPLOY-021,testcases/12-api/TC-API-DEPLOY.md,GET,/domains,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-DEPLOY-022,testcases/12-api/TC-API-DEPLOY.md,POST,/domains,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-DEPLOY-023,testcases/12-api/TC-API-DEPLOY.md,POST,/domains,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-DEPLOY-024,testcases/12-api/TC-API-DEPLOY.md,POST,/domains,409,404,MISMATCH,expected 409 got 404,qa-owner,smoke
+TC-API-DEPLOY-025,testcases/12-api/TC-API-DEPLOY.md,POST,/domains,201,404,MISMATCH,expected 201 got 404,qa-owner,medium
+TC-API-DEPLOY-026,testcases/12-api/TC-API-DEPLOY.md,POST,/domains,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-DEPLOY-027,testcases/12-api/TC-API-DEPLOY.md,POST,/domains/:id/verify,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-DEPLOY-029,testcases/12-api/TC-API-DEPLOY.md,DELETE,/domains/:id,204,404,MISMATCH,expected 204 got 404,qa-owner,medium
+TC-API-DEPLOY-030,testcases/12-api/TC-API-DEPLOY.md,DELETE,/domains/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-DEPLOY-031,testcases/12-api/TC-API-DEPLOY.md,GET,/domains/:id/dns-records,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-DEPLOY-034,testcases/12-api/TC-API-DEPLOY.md,PUT,/domains,405,404,MISMATCH,expected 405 got 404,qa-owner,low
+TC-API-DEPLOY-035,testcases/12-api/TC-API-DEPLOY.md,POST,/deploy,413,404,MISMATCH,expected 413 got 404,qa-owner,medium
+TC-API-EDITOR-001,testcases/12-api/TC-API-EDITOR.md,GET,/editor/:projectId/files,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-EDITOR-013,testcases/12-api/TC-API-EDITOR.md,PUT,/editor/:id/files/path,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-EDITOR-018,testcases/12-api/TC-API-EDITOR.md,POST,/editor/:id/files,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-EDITOR-021,testcases/12-api/TC-API-EDITOR.md,DELETE,/editor/:id/files/path,204,404,MISMATCH,expected 204 got 404,qa-owner,smoke
+TC-API-EDITOR-023,testcases/12-api/TC-API-EDITOR.md,POST,/editor/:id/save,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-EDITOR-025,testcases/12-api/TC-API-EDITOR.md,GET,/editor/:id/tree,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-EDITOR-027,testcases/12-api/TC-API-EDITOR.md,POST,/editor/:id/rename,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-EDITOR-030,testcases/12-api/TC-API-EDITOR.md,POST,/editor/:id/move,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-EDITOR-046,testcases/12-api/TC-API-EDITOR.md,GET,/tree.,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-EDITOR-049,testcases/12-api/TC-API-EDITOR.md,POST,/save.,409,404,MISMATCH,expected 409 got 404,qa-owner,medium
+TC-API-ENV-001,testcases/12-api/TC-API-ENVIRONMENTS.md,GET,/environments,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-ENV-002,testcases/12-api/TC-API-ENVIRONMENTS.md,POST,/environments,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-ENV-003,testcases/12-api/TC-API-ENVIRONMENTS.md,POST,/environments,409,404,MISMATCH,expected 409 got 404,qa-owner,medium
+TC-API-ENV-004,testcases/12-api/TC-API-ENVIRONMENTS.md,POST,/environments,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-ENV-005,testcases/12-api/TC-API-ENVIRONMENTS.md,POST,/environments,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-ENV-007,testcases/12-api/TC-API-ENVIRONMENTS.md,GET,/environments/:eid,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-ENV-008,testcases/12-api/TC-API-ENVIRONMENTS.md,PUT,/environments/:eid,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ENV-009,testcases/12-api/TC-API-ENVIRONMENTS.md,DELETE,/environments/:eid,204,404,MISMATCH,expected 204 got 404,qa-owner,medium
+TC-API-ENV-011,testcases/12-api/TC-API-ENVIRONMENTS.md,POST,/:eid/skills/attach,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-ENV-012,testcases/12-api/TC-API-ENVIRONMENTS.md,POST,/attach,400,404,MISMATCH,expected 400 got 404,qa-owner,smoke
+TC-API-ENV-013,testcases/12-api/TC-API-ENVIRONMENTS.md,POST,/skills/detach,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ENV-014,testcases/12-api/TC-API-ENVIRONMENTS.md,POST,/attach,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-ENV-015,testcases/12-api/TC-API-ENVIRONMENTS.md,GET,/workspaces/:wid/env-vars,200,200,PASS,,qa-owner,smoke
+TC-API-ENV-019,testcases/12-api/TC-API-ENVIRONMENTS.md,POST,/workspaces/:wid/env-vars,201,400,MISMATCH,expected 201 got 400,qa-owner,smoke
+TC-API-ENV-027,testcases/12-api/TC-API-ENVIRONMENTS.md,POST,/projects/:id/env-vars,201,400,MISMATCH,expected 201 got 400,qa-owner,medium
+TC-API-ENV-028,testcases/12-api/TC-API-ENVIRONMENTS.md,GET,/projects/:id/env-vars,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-ENV-029,testcases/12-api/TC-API-ENVIRONMENTS.md,GET,/env-vars/preview,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-FOLDERS-001,testcases/12-api/TC-API-FOLDERS.md,GET,/folders?workspaceId,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-API-FOLDERS-002,testcases/12-api/TC-API-FOLDERS.md,GET,/folders,400,400,PASS,,qa-owner,high
+TC-API-FOLDERS-003,testcases/12-api/TC-API-FOLDERS.md,GET,/folders,401,400,MISMATCH,expected 401 got 400,qa-owner,smoke
+TC-API-FOLDERS-004,testcases/12-api/TC-API-FOLDERS.md,GET,/folders,403,400,MISMATCH,expected 403 got 400,qa-owner,smoke
+TC-API-FOLDERS-005,testcases/12-api/TC-API-FOLDERS.md,GET,/folders,400,400,PASS,,qa-owner,medium
+TC-API-FOLDERS-006,testcases/12-api/TC-API-FOLDERS.md,POST,/folders,201,400,MISMATCH,expected 201 got 400,qa-owner,smoke
+TC-API-FOLDERS-007,testcases/12-api/TC-API-FOLDERS.md,POST,/folders,400,400,PASS,,qa-owner,high
+TC-API-FOLDERS-008,testcases/12-api/TC-API-FOLDERS.md,POST,/folders,400,400,PASS,,qa-owner,high
+TC-API-FOLDERS-009,testcases/12-api/TC-API-FOLDERS.md,POST,/folders,400,400,PASS,,qa-owner,medium
+TC-API-FOLDERS-010,testcases/12-api/TC-API-FOLDERS.md,POST,/folders,201,400,MISMATCH,expected 201 got 400,qa-owner,low
+TC-API-FOLDERS-011,testcases/12-api/TC-API-FOLDERS.md,POST,/folders,400,400,PASS,,qa-owner,medium
+TC-API-FOLDERS-012,testcases/12-api/TC-API-FOLDERS.md,POST,/folders,400,400,PASS,,qa-owner,high
+TC-API-FOLDERS-013,testcases/12-api/TC-API-FOLDERS.md,GET,/folders/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-FOLDERS-014,testcases/12-api/TC-API-FOLDERS.md,GET,/folders/:id,404,404,PASS,,qa-owner,smoke
+TC-API-FOLDERS-015,testcases/12-api/TC-API-FOLDERS.md,PUT,/folders/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-FOLDERS-016,testcases/12-api/TC-API-FOLDERS.md,PUT,/folders/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-FOLDERS-017,testcases/12-api/TC-API-FOLDERS.md,DELETE,/folders/:id,204,404,MISMATCH,expected 204 got 404,qa-owner,smoke
+TC-API-FOLDERS-018,testcases/12-api/TC-API-FOLDERS.md,DELETE,/folders/:id,409,404,MISMATCH,expected 409 got 404,qa-owner,high
+TC-API-FOLDERS-019,testcases/12-api/TC-API-FOLDERS.md,POST,/folders/:id/move,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-FOLDERS-022,testcases/12-api/TC-API-FOLDERS.md,GET,/folders/:id/children,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-FOLDERS-024,testcases/12-api/TC-API-FOLDERS.md,PATCH,/folders/:id,404,400,MISMATCH,expected 404 got 400,qa-owner,low
+TC-API-FW-001,testcases/12-api/TC-API-FRAMEWORKS.md,GET,/frameworks,200,200,PASS,,qa-owner,smoke
+TC-API-GITHUB-001,testcases/12-api/TC-API-GITHUB.md,GET,/github/install-url,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-GITHUB-003,testcases/12-api/TC-API-GITHUB.md,GET,/github/callback?installation_id=X&state=Y,302,404,MISMATCH,expected 302 got 404,qa-owner,smoke
+TC-API-GITHUB-006,testcases/12-api/TC-API-GITHUB.md,POST,/github/disconnect,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-GITHUB-007,testcases/12-api/TC-API-GITHUB.md,GET,/github/repos,200,200,PASS,,qa-owner,smoke
+TC-API-GITHUB-008,testcases/12-api/TC-API-GITHUB.md,GET,/github/repos,502,200,MISMATCH,expected 502 got 200,qa-owner,medium
+TC-API-GITHUB-009,testcases/12-api/TC-API-GITHUB.md,POST,/github/projects/:id/connect,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-GITHUB-013,testcases/12-api/TC-API-GITHUB.md,POST,/push,202,404,MISMATCH,expected 202 got 404,qa-owner,smoke
+TC-API-GITHUB-017,testcases/12-api/TC-API-GITHUB.md,GET,/status,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-GITHUB-018,testcases/12-api/TC-API-GITHUB.md,POST,/branch,201,404,MISMATCH,expected 201 got 404,qa-owner,medium
+TC-API-GITHUB-021,testcases/12-api/TC-API-GITHUB.md,POST,/github/webhook,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-API-GITHUB-027,testcases/12-api/TC-API-GITHUB.md,GET,/oauth/start,302,404,MISMATCH,expected 302 got 404,qa-owner,smoke
+TC-API-GITHUB-028,testcases/12-api/TC-API-GITHUB.md,GET,/oauth/callback,400,404,MISMATCH,expected 400 got 404,qa-owner,smoke
+TC-API-GITHUB-029,testcases/12-api/TC-API-GITHUB.md,GET,/oauth/callback,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-HEALTH-001,testcases/12-api/TC-API-HEALTH.md,GET,/health,200,200,PASS,,qa-owner,smoke
+TC-API-HEALTH-002,testcases/12-api/TC-API-HEALTH.md,GET,/health,503,200,MISMATCH,expected 503 got 200,qa-owner,high
+TC-API-HEALTH-003,testcases/12-api/TC-API-HEALTH.md,GET,/health,200,200,PASS,,qa-owner,smoke
+TC-API-HEALTH-004,testcases/12-api/TC-API-HEALTH.md,GET,/health,200,200,PASS,,qa-owner,low
+TC-API-HEALTH-005,testcases/12-api/TC-API-HEALTH.md,GET,/health/live,200,200,PASS,,qa-owner,smoke
+TC-API-HEALTH-006,testcases/12-api/TC-API-HEALTH.md,GET,/health/live,200,200,PASS,,qa-owner,high
+TC-API-HEALTH-007,testcases/12-api/TC-API-HEALTH.md,GET,/health/ready,200,200,PASS,,qa-owner,smoke
+TC-API-HEALTH-008,testcases/12-api/TC-API-HEALTH.md,GET,/health/ready,503,200,MISMATCH,expected 503 got 200,qa-owner,high
+TC-API-HEALTH-009,testcases/12-api/TC-API-HEALTH.md,POST,/health,404,404,PASS,,qa-owner,medium
+TC-API-HEALTH-010,testcases/12-api/TC-API-HEALTH.md,PUT,/health/live,404,404,PASS,,qa-owner,low
+TC-API-HEALTH-011,testcases/12-api/TC-API-HEALTH.md,DELETE,/health/ready,404,404,PASS,,qa-owner,low
+TC-API-HEALTH-012,testcases/12-api/TC-API-HEALTH.md,HEAD,/health,200,200,PASS,,qa-owner,medium
+TC-API-HEALTH-013,testcases/12-api/TC-API-HEALTH.md,OPTIONS,/health,204,204,PASS,,qa-owner,medium
+TC-API-HEALTH-014,testcases/12-api/TC-API-HEALTH.md,OPTIONS,/health,,204,INFO,no expected_status,qa-owner,high
+TC-API-HEALTH-015,testcases/12-api/TC-API-HEALTH.md,GET,/health,,200,INFO,no expected_status,qa-owner,medium
+TC-API-HEALTH-016,testcases/12-api/TC-API-HEALTH.md,GET,/health/?ignore=me&debug=1,200,308,MISMATCH,expected 200 got 308,qa-owner,low
+TC-API-HEALTH-017,testcases/12-api/TC-API-HEALTH.md,GET,/health/extra-path,404,404,PASS,,qa-owner,low
+TC-API-HEALTH-018,testcases/12-api/TC-API-HEALTH.md,GET,/health/?q=,,308,INFO,no expected_status,qa-owner,medium
+TC-API-HEALTH-019,testcases/12-api/TC-API-HEALTH.md,GET,/health/,,308,INFO,no expected_status,qa-owner,high
+TC-API-HEALTH-020,testcases/12-api/TC-API-HEALTH.md,GET,/health/,,308,INFO,no expected_status,qa-owner,medium
+TC-API-HEALTH-021,testcases/12-api/TC-API-HEALTH.md,GET,/health/,,308,INFO,no expected_status,qa-owner,low
+TC-API-HEALTH-022,testcases/12-api/TC-API-HEALTH.md,GET,/health/,,308,INFO,no expected_status,qa-owner,medium
+TC-API-HEALTH-023,testcases/12-api/TC-API-HEALTH.md,GET,/health/,,308,INFO,no expected_status,qa-owner,low
+TC-API-HEALTH-024,testcases/12-api/TC-API-HEALTH.md,GET,/health/,,308,INFO,no expected_status,qa-owner,low
+TC-API-HEALTH-025,testcases/12-api/TC-API-HEALTH.md,GET,/health/,,308,INFO,no expected_status,qa-owner,low
+TC-API-HEALTH-026,testcases/12-api/TC-API-HEALTH.md,GET,/health/,,308,INFO,no expected_status,qa-owner,low
+TC-API-HEALTH-028,testcases/12-api/TC-API-HEALTH.md,GET,/health/,,308,INFO,no expected_status,qa-owner,medium
+TC-API-HEALTH-029,testcases/12-api/TC-API-HEALTH.md,GET,/health/,503,308,MISMATCH,expected 503 got 308,qa-owner,high
+TC-API-HEALTH-030,testcases/12-api/TC-API-HEALTH.md,GET,/health/?,200,308,MISMATCH,expected 200 got 308,qa-owner,medium
+TC-API-HEALTH-031,testcases/12-api/TC-API-HEALTH.md,GET,/health/?id=1,200,308,MISMATCH,expected 200 got 308,qa-owner,medium
+TC-API-HEALTH-032,testcases/12-api/TC-API-HEALTH.md,GET,/health/,200,308,MISMATCH,expected 200 got 308,qa-owner,low
+TC-API-INTEG-001,testcases/12-api/TC-API-INTEGRATIONS.md,GET,/integrations/catalog,200,200,PASS,,qa-owner,smoke
+TC-API-INTEG-005,testcases/12-api/TC-API-INTEGRATIONS.md,GET,/connections,401,404,AUTH_OK,"close 4xx match (expected=401, got=404)",qa-owner,smoke
+TC-API-INTEG-006,testcases/12-api/TC-API-INTEGRATIONS.md,GET,/connections,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-INTEG-007,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-INTEG-008,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-INTEG-009,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections,404,404,PASS,,qa-owner,high
+TC-API-INTEG-010,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-INTEG-011,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,medium
+TC-API-INTEG-012,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-INTEG-013,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-INTEG-014,testcases/12-api/TC-API-INTEGRATIONS.md,GET,/connections/:cid,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-INTEG-015,testcases/12-api/TC-API-INTEGRATIONS.md,DELETE,/connections/:cid,204,404,MISMATCH,expected 204 got 404,qa-owner,medium
+TC-API-INTEG-016,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections/:cid/refresh,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-INTEG-017,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections/:cid/test,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-INTEG-018,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections/:cid/test,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-INTEG-019,testcases/12-api/TC-API-INTEGRATIONS.md,GET,/oauth/start,302,404,MISMATCH,expected 302 got 404,qa-owner,smoke
+TC-API-INTEG-020,testcases/12-api/TC-API-INTEGRATIONS.md,GET,/oauth/callback,400,404,MISMATCH,expected 400 got 404,qa-owner,smoke
+TC-API-INTEG-021,testcases/12-api/TC-API-INTEGRATIONS.md,GET,/oauth/callback,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-INTEG-022,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/run/:action,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-INTEG-023,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/run/:action,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-INTEG-024,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/run/:action,504,404,MISMATCH,expected 504 got 404,qa-owner,high
+TC-API-INTEG-025,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/supabase/provision,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-INTEG-027,testcases/12-api/TC-API-INTEGRATIONS.md,GET,/integrations/admin/pieces,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-API-INTEG-028,testcases/12-api/TC-API-INTEGRATIONS.md,GET,/integrations/admin/pieces,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-INTEG-029,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections,400,404,MISMATCH,expected 400 got 404,qa-owner,smoke
+TC-API-INTEG-032,testcases/12-api/TC-API-INTEGRATIONS.md,PATCH,/connections,405,404,MISMATCH,expected 405 got 404,qa-owner,low
+TC-API-INTEG-037,testcases/12-api/TC-API-INTEGRATIONS.md,POST,/connections,,404,INFO,no expected_status,qa-owner,medium
+TC-API-INT-001,testcases/12-api/TC-API-INTERNAL.md,GET,/internal/health,200,403,AUTH_BLOCK,got 403 but expected 200 — likely needs different role,qa-owner,smoke
+TC-API-INT-002,testcases/12-api/TC-API-INTERNAL.md,GET,/internal/health,403,403,PASS,,qa-owner,smoke
+TC-API-INT-006,testcases/12-api/TC-API-INTERNAL.md,POST,/internal/notifications/send,200,403,AUTH_BLOCK,got 403 but expected 200 — likely needs different role,qa-owner,medium
+TC-API-INT-007,testcases/12-api/TC-API-INTERNAL.md,POST,/internal/build/event,200,403,AUTH_BLOCK,got 403 but expected 200 — likely needs different role,qa-owner,smoke
+TC-API-INT-008,testcases/12-api/TC-API-INTERNAL.md,POST,/internal,,403,INFO,no expected_status,qa-owner,smoke
+TC-API-MKT-001,testcases/12-api/TC-API-MARKETPLACE.md,GET,/marketplace/listings,200,200,PASS,,qa-owner,smoke
+TC-API-MKT-004,testcases/12-api/TC-API-MARKETPLACE.md,GET,/marketplace/listings/:slug,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-MKT-005,testcases/12-api/TC-API-MARKETPLACE.md,GET,/listings/:slug,404,404,PASS,,qa-owner,medium
+TC-API-MKT-028,testcases/12-api/TC-API-MARKETPLACE.md,GET,/marketplace/admin/queue,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-MKT-035,testcases/12-api/TC-API-MARKETPLACE.md,PATCH,/listings,405,404,MISMATCH,expected 405 got 404,qa-owner,low
+TC-API-PLAN-001,testcases/12-api/TC-API-PLAN.md,GET,/plan/limits,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PLAN-002,testcases/12-api/TC-API-PLAN.md,GET,/plan/limits,401,404,AUTH_OK,"close 4xx match (expected=401, got=404)",qa-owner,smoke
+TC-API-PLAN-003,testcases/12-api/TC-API-PLAN.md,GET,/plan/usage,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PLAN-004,testcases/12-api/TC-API-PLAN.md,GET,/plan/features,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-PLAN-005,testcases/12-api/TC-API-PLAN.md,POST,/plan/upgrade,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PP-001,testcases/12-api/TC-API-PREVIEW-PROXY.md,GET,/preview/:projectId/,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PROJECTS-WORKSPACE-ROUTING-001,testcases/12-api/TC-API-PROJECTS-WORKSPACE-ROUTING.md,GET,/projects,200,200,PASS,,qa-owner,critical
+TC-API-PROJECTS-WORKSPACE-ROUTING-002,testcases/12-api/TC-API-PROJECTS-WORKSPACE-ROUTING.md,GET,/projects,200,200,PASS,,qa-owner,smoke
+TC-API-PROJECTS-WORKSPACE-ROUTING-003,testcases/12-api/TC-API-PROJECTS-WORKSPACE-ROUTING.md,GET,/tmp/ws-routing-403.json,,404,INFO,no expected_status,qa-owner,critical
+TC-API-PROJECTS-WORKSPACE-ROUTING-004,testcases/12-api/TC-API-PROJECTS-WORKSPACE-ROUTING.md,GET,/projects,200,200,PASS,,qa-owner,smoke
+TC-API-PROJECTS-001,testcases/12-api/TC-API-PROJECTS.md,GET,/projects,200,200,PASS,,qa-owner,smoke
+TC-API-PROJECTS-002,testcases/12-api/TC-API-PROJECTS.md,GET,/projects,200,200,PASS,,qa-owner,smoke
+TC-API-PROJECTS-003,testcases/12-api/TC-API-PROJECTS.md,GET,/projects,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-API-PROJECTS-004,testcases/12-api/TC-API-PROJECTS.md,GET,/projects,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-API-PROJECTS-005,testcases/12-api/TC-API-PROJECTS.md,GET,/projects,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-API-PROJECTS-006,testcases/12-api/TC-API-PROJECTS.md,GET,/projects,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-API-PROJECTS-007,testcases/12-api/TC-API-PROJECTS.md,GET,/projects?archived=true,200,200,PASS,,qa-owner,medium
+TC-API-PROJECTS-008,testcases/12-api/TC-API-PROJECTS.md,GET,/projects?archived=invalid,400,200,MISMATCH,expected 400 got 200,qa-owner,medium
+TC-API-PROJECTS-009,testcases/12-api/TC-API-PROJECTS.md,GET,/projects?folderId=,200,200,PASS,,qa-owner,medium
+TC-API-PROJECTS-010,testcases/12-api/TC-API-PROJECTS.md,GET,/projects?folderId=not-a-uuid,400,500,FAIL_5XX,server error 500,qa-owner,high
+TC-API-PROJECTS-011,testcases/12-api/TC-API-PROJECTS.md,GET,/projects,,200,INFO,no expected_status,qa-owner,medium
+TC-API-PROJECTS-012,testcases/12-api/TC-API-PROJECTS.md,GET,/projects,400,200,MISMATCH,expected 400 got 200,qa-owner,high
+TC-API-PROJECTS-013,testcases/12-api/TC-API-PROJECTS.md,GET,/projects,200,200,PASS,,qa-owner,medium
+TC-API-PROJECTS-014,testcases/12-api/TC-API-PROJECTS.md,GET,/projects?limit=10000,200,200,PASS,,qa-owner,medium
+TC-API-PROJECTS-015,testcases/12-api/TC-API-PROJECTS.md,GET,/projects?limit=-1,400,200,MISMATCH,expected 400 got 200,qa-owner,high
+TC-API-PROJECTS-016,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,201,400,MISMATCH,expected 201 got 400,qa-owner,smoke
+TC-API-PROJECTS-017,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,400,400,PASS,,qa-owner,smoke
+TC-API-PROJECTS-018,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,400,400,PASS,,qa-owner,high
+TC-API-PROJECTS-019,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,400,400,PASS,,qa-owner,medium
+TC-API-PROJECTS-020,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,201,400,MISMATCH,expected 201 got 400,qa-owner,medium
+TC-API-PROJECTS-021,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,400,400,PASS,,qa-owner,smoke
+TC-API-PROJECTS-022,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,403,400,MISMATCH,expected 403 got 400,qa-owner,high
+TC-API-PROJECTS-023,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,403,400,MISMATCH,expected 403 got 400,qa-owner,smoke
+TC-API-PROJECTS-024,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,403,400,MISMATCH,expected 403 got 400,qa-owner,high
+TC-API-PROJECTS-025,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,400,400,PASS,,qa-owner,high
+TC-API-PROJECTS-026,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,413,400,MISMATCH,expected 413 got 400,qa-owner,high
+TC-API-PROJECTS-027,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,400,400,PASS,,qa-owner,medium
+TC-API-PROJECTS-028,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,400,400,PASS,,qa-owner,medium
+TC-API-PROJECTS-029,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,201,400,MISMATCH,expected 201 got 400,qa-owner,smoke
+TC-API-PROJECTS-030,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,415,400,MISMATCH,expected 415 got 400,qa-owner,medium
+TC-API-PROJECTS-031,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PROJECTS-032,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-PROJECTS-033,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id,404,404,PASS,,qa-owner,smoke
+TC-API-PROJECTS-034,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id,404,404,PASS,,qa-owner,smoke
+TC-API-PROJECTS-035,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id,400,404,MISMATCH,expected 400 got 404,qa-owner,smoke
+TC-API-PROJECTS-036,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id,404,404,PASS,,qa-owner,medium
+TC-API-PROJECTS-037,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-API-PROJECTS-038,testcases/12-api/TC-API-PROJECTS.md,PUT,/projects/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PROJECTS-039,testcases/12-api/TC-API-PROJECTS.md,PUT,/projects/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-API-PROJECTS-040,testcases/12-api/TC-API-PROJECTS.md,PUT,/projects/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-PROJECTS-041,testcases/12-api/TC-API-PROJECTS.md,PUT,/projects/:id,400,404,MISMATCH,expected 400 got 404,qa-owner,smoke
+TC-API-PROJECTS-042,testcases/12-api/TC-API-PROJECTS.md,PATCH,/projects/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-PROJECTS-043,testcases/12-api/TC-API-PROJECTS.md,DELETE,/projects/:id,204,404,MISMATCH,expected 204 got 404,qa-owner,smoke
+TC-API-PROJECTS-044,testcases/12-api/TC-API-PROJECTS.md,DELETE,/projects/:id,,404,INFO,no expected_status,qa-owner,medium
+TC-API-PROJECTS-045,testcases/12-api/TC-API-PROJECTS.md,DELETE,/projects/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-PROJECTS-046,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/duplicate,201,404,MISMATCH,expected 201 got 404,qa-owner,high
+TC-API-PROJECTS-047,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/duplicate,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-PROJECTS-048,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/duplicate,404,404,PASS,,qa-owner,medium
+TC-API-PROJECTS-049,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/archive,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-PROJECTS-050,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/archive,200,404,MISMATCH,expected 200 got 404,qa-owner,low
+TC-API-PROJECTS-051,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/unarchive,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-PROJECTS-052,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/move,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-PROJECTS-053,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/move,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-PROJECTS-054,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/star,200,404,MISMATCH,expected 200 got 404,qa-owner,low
+TC-API-PROJECTS-055,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/unstar,200,404,MISMATCH,expected 200 got 404,qa-owner,low
+TC-API-PROJECTS-056,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/star,200,404,MISMATCH,expected 200 got 404,qa-owner,low
+TC-API-PROJECTS-057,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id/files,200,200,PASS,,qa-owner,smoke
+TC-API-PROJECTS-058,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id/files,200,200,PASS,,qa-owner,medium
+TC-API-PROJECTS-059,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/files,201,400,MISMATCH,expected 201 got 400,qa-owner,high
+TC-API-PROJECTS-060,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/files,400,400,PASS,,qa-owner,smoke
+TC-API-PROJECTS-061,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/files,400,400,PASS,,qa-owner,smoke
+TC-API-PROJECTS-062,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/files,413,400,MISMATCH,expected 413 got 400,qa-owner,high
+TC-API-PROJECTS-063,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/files,201,400,MISMATCH,expected 201 got 400,qa-owner,medium
+TC-API-PROJECTS-064,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id/preview-url,200,200,PASS,,qa-owner,smoke
+TC-API-PROJECTS-065,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id/preview-url,200,200,PASS,,qa-owner,medium
+TC-API-PROJECTS-066,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/start,202,404,MISMATCH,expected 202 got 404,qa-owner,smoke
+TC-API-PROJECTS-067,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/start,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-PROJECTS-068,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/stop,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PROJECTS-069,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/restart,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-PROJECTS-070,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id/logs,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-PROJECTS-071,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id/logs,401,404,AUTH_OK,"close 4xx match (expected=401, got=404)",qa-owner,smoke
+TC-API-PROJECTS-072,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/share,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-PROJECTS-073,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/share,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-PROJECTS-074,testcases/12-api/TC-API-PROJECTS.md,GET,/projects/:id/collaborators,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-PROJECTS-075,testcases/12-api/TC-API-PROJECTS.md,POST,/projects/:id/collaborators,201,404,MISMATCH,expected 201 got 404,qa-owner,high
+TC-API-PROJECTS-082,testcases/12-api/TC-API-PROJECTS.md,PATCH,/projects,404,404,PASS,,qa-owner,low
+TC-API-PROJECTS-083,testcases/12-api/TC-API-PROJECTS.md,GET,/projects,200,200,PASS,,qa-owner,low
+TC-API-PROJECTS-084,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,201,400,MISMATCH,expected 201 got 400,qa-owner,low
+TC-API-PROJECTS-085,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,500,400,MISMATCH,expected 500 got 400,qa-owner,medium
+TC-API-PROJECTS-086,testcases/12-api/TC-API-PROJECTS.md,POST,/projects,,400,INFO,no expected_status,qa-owner,medium
+TC-API-PROJECTS-087,testcases/12-api/TC-API-PROJECTS.md,OPTIONS,/projects,204,204,PASS,,qa-owner,smoke
+TC-API-PROV-001,testcases/12-api/TC-API-PROVIDER.md,GET,/ai/provider-catalog,200,200,PASS,,qa-owner,smoke
+TC-API-PROV-005,testcases/12-api/TC-API-PROVIDER.md,POST,/ai/providers/test-connection,401,400,MISMATCH,expected 401 got 400,qa-owner,smoke
+TC-API-PROV-021,testcases/12-api/TC-API-PROVIDER.md,GET,/workspaces/:wid/ai-settings,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PROV-037,testcases/12-api/TC-API-PROVIDER.md,POST,/:id/validate,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PROV-038,testcases/12-api/TC-API-PROVIDER.md,POST,/:id/validate,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-PROV-039,testcases/12-api/TC-API-PROVIDER.md,POST,/:id/discover-models,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PROV-043,testcases/12-api/TC-API-PROVIDER.md,POST,/:id/revoke,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-PROV-053,testcases/12-api/TC-API-PROVIDER.md,PATCH,/providers,405,404,MISMATCH,expected 405 got 404,qa-owner,low
+TC-API-RT-001,testcases/12-api/TC-API-RUNTIME.md,GET,/runtime/status,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-RT-002,testcases/12-api/TC-API-RUNTIME.md,GET,/runtime/status,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-RT-003,testcases/12-api/TC-API-RUNTIME.md,GET,/runtime/status,401,404,AUTH_OK,"close 4xx match (expected=401, got=404)",qa-owner,smoke
+TC-API-RT-005,testcases/12-api/TC-API-RUNTIME.md,POST,/runtime/start,202,404,MISMATCH,expected 202 got 404,qa-owner,smoke
+TC-API-RT-010,testcases/12-api/TC-API-RUNTIME.md,POST,/runtime/stop,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-RT-012,testcases/12-api/TC-API-RUNTIME.md,POST,/runtime/restart,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-RT-013,testcases/12-api/TC-API-RUNTIME.md,GET,/runtime/logs,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-RT-018,testcases/12-api/TC-API-RUNTIME.md,GET,/runtime/metrics,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-RT-019,testcases/12-api/TC-API-RUNTIME.md,GET,/workspaces/:wid/runtime/active,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-RT-021,testcases/12-api/TC-API-RUNTIME.md,PATCH,/runtime/start,405,404,MISMATCH,expected 405 got 404,qa-owner,low
+TC-API-SEC-001,testcases/12-api/TC-API-SECURITY.md,GET,/findings,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-SEC-006,testcases/12-api/TC-API-SECURITY.md,POST,/scan,202,404,MISMATCH,expected 202 got 404,qa-owner,smoke
+TC-API-SEC-007,testcases/12-api/TC-API-SECURITY.md,POST,/scan,429,404,MISMATCH,expected 429 got 404,qa-owner,medium
+TC-API-SEC-008,testcases/12-api/TC-API-SECURITY.md,POST,/scan,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-SKILLS-001,testcases/12-api/TC-API-SKILLS.md,GET,/skills,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-SKILLS-002,testcases/12-api/TC-API-SKILLS.md,GET,/skills?projectId=,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-SKILLS-003,testcases/12-api/TC-API-SKILLS.md,GET,/skills,401,404,AUTH_OK,"close 4xx match (expected=401, got=404)",qa-owner,smoke
+TC-API-SKILLS-004,testcases/12-api/TC-API-SKILLS.md,GET,/skills,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-API-SKILLS-005,testcases/12-api/TC-API-SKILLS.md,GET,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-006,testcases/12-api/TC-API-SKILLS.md,GET,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,smoke
+TC-API-SKILLS-007,testcases/12-api/TC-API-SKILLS.md,GET,/skills/manifest,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-SKILLS-008,testcases/12-api/TC-API-SKILLS.md,POST,/skills,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-SKILLS-009,testcases/12-api/TC-API-SKILLS.md,POST,/skills,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-SKILLS-010,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-011,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-012,testcases/12-api/TC-API-SKILLS.md,POST,/skills,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-SKILLS-013,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-014,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-015,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-API-SKILLS-016,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-017,testcases/12-api/TC-API-SKILLS.md,POST,/skills,201,404,MISMATCH,expected 201 got 404,qa-owner,medium
+TC-API-SKILLS-018,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-019,testcases/12-api/TC-API-SKILLS.md,POST,/skills,201,404,MISMATCH,expected 201 got 404,qa-owner,low
+TC-API-SKILLS-020,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-021,testcases/12-api/TC-API-SKILLS.md,POST,/skills,201,404,MISMATCH,expected 201 got 404,qa-owner,medium
+TC-API-SKILLS-022,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-023,testcases/12-api/TC-API-SKILLS.md,POST,/skills,201,404,MISMATCH,expected 201 got 404,qa-owner,low
+TC-API-SKILLS-024,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-API-SKILLS-025,testcases/12-api/TC-API-SKILLS.md,POST,/skills,401,404,AUTH_OK,"close 4xx match (expected=401, got=404)",qa-owner,smoke
+TC-API-SKILLS-026,testcases/12-api/TC-API-SKILLS.md,POST,/skills,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-API-SKILLS-027,testcases/12-api/TC-API-SKILLS.md,POST,/skills,415,404,MISMATCH,expected 415 got 404,qa-owner,medium
+TC-API-SKILLS-028,testcases/12-api/TC-API-SKILLS.md,POST,/skills,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-029,testcases/12-api/TC-API-SKILLS.md,POST,/skills,413,404,MISMATCH,expected 413 got 404,qa-owner,medium
+TC-API-SKILLS-030,testcases/12-api/TC-API-SKILLS.md,POST,/skills,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-SKILLS-031,testcases/12-api/TC-API-SKILLS.md,POST,/skills,409,404,MISMATCH,expected 409 got 404,qa-owner,high
+TC-API-SKILLS-032,testcases/12-api/TC-API-SKILLS.md,PUT,/skills/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-SKILLS-033,testcases/12-api/TC-API-SKILLS.md,PUT,/skills/:id,404,404,PASS,,qa-owner,smoke
+TC-API-SKILLS-034,testcases/12-api/TC-API-SKILLS.md,PUT,/skills/:id,404,404,PASS,,qa-owner,smoke
+TC-API-SKILLS-035,testcases/12-api/TC-API-SKILLS.md,PUT,/skills/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-API-SKILLS-036,testcases/12-api/TC-API-SKILLS.md,PUT,/skills/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-SKILLS-037,testcases/12-api/TC-API-SKILLS.md,PUT,/skills/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-SKILLS-038,testcases/12-api/TC-API-SKILLS.md,PUT,/skills/:id,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-API-SKILLS-039,testcases/12-api/TC-API-SKILLS.md,PUT,/skills/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-SKILLS-040,testcases/12-api/TC-API-SKILLS.md,DELETE,/skills/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-SKILLS-041,testcases/12-api/TC-API-SKILLS.md,DELETE,/skills/:id,404,404,PASS,,qa-owner,medium
+TC-API-SKILLS-042,testcases/12-api/TC-API-SKILLS.md,DELETE,/skills/:id,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,smoke
+TC-API-SKILLS-045,testcases/12-api/TC-API-SKILLS.md,GET,/skills/:id/files,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-SKILLS-046,testcases/12-api/TC-API-SKILLS.md,GET,/skills/:id/files,404,404,PASS,,qa-owner,smoke
+TC-API-SKILLS-047,testcases/12-api/TC-API-SKILLS.md,GET,/skills/:id/files/:path,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-SKILLS-056,testcases/12-api/TC-API-SKILLS.md,POST,/skills/:id/files,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-SKILLS-069,testcases/12-api/TC-API-SKILLS.md,GET,/rules,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-SKILLS-070,testcases/12-api/TC-API-SKILLS.md,POST,/rules,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-SKILLS-071,testcases/12-api/TC-API-SKILLS.md,POST,/rules,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-072,testcases/12-api/TC-API-SKILLS.md,POST,/rules,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-073,testcases/12-api/TC-API-SKILLS.md,POST,/rules,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-074,testcases/12-api/TC-API-SKILLS.md,POST,/rules,201,404,MISMATCH,expected 201 got 404,qa-owner,low
+TC-API-SKILLS-075,testcases/12-api/TC-API-SKILLS.md,POST,/rules,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-SKILLS-076,testcases/12-api/TC-API-SKILLS.md,POST,/rules,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-API-SKILLS-077,testcases/12-api/TC-API-SKILLS.md,PUT,/rules/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-SKILLS-078,testcases/12-api/TC-API-SKILLS.md,DELETE,/rules/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-SKILLS-080,testcases/12-api/TC-API-SKILLS.md,PATCH,/skills,405,404,MISMATCH,expected 405 got 404,qa-owner,low
+TC-API-SKILLS-081,testcases/12-api/TC-API-SKILLS.md,POST,/skills,,404,INFO,no expected_status,qa-owner,medium
+TC-API-TC-001,testcases/12-api/TC-API-TEAM-CHAT.md,GET,/team-chat/:projectId,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-TC-009,testcases/12-api/TC-API-TEAM-CHAT.md,POST,/:projectId,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-TC-028,testcases/12-api/TC-API-TEAM-CHAT.md,GET,/:projectId/internal,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-TC-044,testcases/12-api/TC-API-TEAM-CHAT.md,PUT,/:projectId/messages/:mid.,404,404,PASS,,qa-owner,medium
+TC-API-TC-045,testcases/12-api/TC-API-TEAM-CHAT.md,DELETE,/:projectId/messages/:mid.,404,404,PASS,,qa-owner,medium
+TC-API-TEMPLATES-001,testcases/12-api/TC-API-TEMPLATES.md,GET,/templates,200,200,PASS,,qa-owner,smoke
+TC-API-TEMPLATES-002,testcases/12-api/TC-API-TEMPLATES.md,GET,/templates,200,200,PASS,,qa-owner,medium
+TC-API-TEMPLATES-003,testcases/12-api/TC-API-TEMPLATES.md,GET,/templates,200,200,PASS,,qa-owner,medium
+TC-API-TEMPLATES-004,testcases/12-api/TC-API-TEMPLATES.md,GET,/templates/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-TEMPLATES-005,testcases/12-api/TC-API-TEMPLATES.md,GET,/templates/:id,404,404,PASS,,qa-owner,smoke
+TC-API-TEMPLATES-007,testcases/12-api/TC-API-TEMPLATES.md,POST,/templates/:id/instantiate,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-TEMPLATES-013,testcases/12-api/TC-API-TEMPLATES.md,POST,/templates,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-TEMPLATES-014,testcases/12-api/TC-API-TEMPLATES.md,POST,/templates,201,404,MISMATCH,expected 201 got 404,qa-owner,medium
+TC-API-TEMPLATES-015,testcases/12-api/TC-API-TEMPLATES.md,POST,/templates,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-TEMPLATES-016,testcases/12-api/TC-API-TEMPLATES.md,POST,/templates,409,404,MISMATCH,expected 409 got 404,qa-owner,medium
+TC-API-TEMPLATES-017,testcases/12-api/TC-API-TEMPLATES.md,PUT,/templates/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-TEMPLATES-018,testcases/12-api/TC-API-TEMPLATES.md,PUT,/templates,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-TEMPLATES-019,testcases/12-api/TC-API-TEMPLATES.md,DELETE,/templates/:id,204,404,MISMATCH,expected 204 got 404,qa-owner,medium
+TC-API-USE-001,testcases/12-api/TC-API-USAGE.md,GET,/usage,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-VERSIONS-001,testcases/12-api/TC-API-VERSIONS.md,GET,/versions,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-VERSIONS-002,testcases/12-api/TC-API-VERSIONS.md,GET,/versions,401,404,AUTH_OK,"close 4xx match (expected=401, got=404)",qa-owner,smoke
+TC-API-VERSIONS-003,testcases/12-api/TC-API-VERSIONS.md,GET,/versions,404,404,PASS,,qa-owner,smoke
+TC-API-VERSIONS-004,testcases/12-api/TC-API-VERSIONS.md,POST,/versions,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-API-VERSIONS-005,testcases/12-api/TC-API-VERSIONS.md,POST,/versions,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-API-VERSIONS-006,testcases/12-api/TC-API-VERSIONS.md,POST,/versions,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-VERSIONS-007,testcases/12-api/TC-API-VERSIONS.md,GET,/versions/:vid,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-VERSIONS-008,testcases/12-api/TC-API-VERSIONS.md,GET,/versions/:vid,404,404,PASS,,qa-owner,high
+TC-API-VERSIONS-009,testcases/12-api/TC-API-VERSIONS.md,POST,/versions/:vid/restore,200,404,MISMATCH,expected 200 got 404,qa-owner,high
+TC-API-VERSIONS-012,testcases/12-api/TC-API-VERSIONS.md,DELETE,/versions/:vid,204,404,MISMATCH,expected 204 got 404,qa-owner,medium
+TC-API-VERSIONS-014,testcases/12-api/TC-API-VERSIONS.md,GET,/versions/:vid/diff,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-VERSIONS-017,testcases/12-api/TC-API-VERSIONS.md,POST,/versions,413,404,MISMATCH,expected 413 got 404,qa-owner,medium
+TC-API-VERSIONS-019,testcases/12-api/TC-API-VERSIONS.md,PATCH,/versions/:vid,405,404,MISMATCH,expected 405 got 404,qa-owner,low
+TC-API-WS-001,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces,200,200,PASS,,qa-owner,smoke
+TC-API-WS-002,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces,401,200,MISMATCH,expected 401 got 200,qa-owner,smoke
+TC-API-WS-003,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces,,200,INFO,no expected_status,qa-owner,high
+TC-API-WS-004,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces,201,400,MISMATCH,expected 201 got 400,qa-owner,smoke
+TC-API-WS-005,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces,400,400,PASS,,qa-owner,smoke
+TC-API-WS-006,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces,409,400,MISMATCH,expected 409 got 400,qa-owner,high
+TC-API-WS-007,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces,400,400,PASS,,qa-owner,high
+TC-API-WS-008,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces,400,400,PASS,,qa-owner,medium
+TC-API-WS-009,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces,400,400,PASS,,qa-owner,medium
+TC-API-WS-010,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces,403,400,MISMATCH,expected 403 got 400,qa-owner,high
+TC-API-WS-011,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/:wid,200,200,PASS,,qa-owner,smoke
+TC-API-WS-012,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/:wid,403,200,MISMATCH,expected 403 got 200,qa-owner,smoke
+TC-API-WS-013,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/:wid,400,200,MISMATCH,expected 400 got 200,qa-owner,high
+TC-API-WS-014,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/:wid,400,200,MISMATCH,expected 400 got 200,qa-owner,smoke
+TC-API-WS-015,testcases/12-api/TC-API-WORKSPACES.md,PUT,/workspaces/:wid,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-WS-016,testcases/12-api/TC-API-WORKSPACES.md,PUT,/workspaces/:wid,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-WS-017,testcases/12-api/TC-API-WORKSPACES.md,PUT,/workspaces/:wid,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,high
+TC-API-WS-018,testcases/12-api/TC-API-WORKSPACES.md,PUT,/workspaces/:wid,409,404,MISMATCH,expected 409 got 404,qa-owner,high
+TC-API-WS-019,testcases/12-api/TC-API-WORKSPACES.md,DELETE,/workspaces/:wid,204,200,MISMATCH,expected 204 got 200,qa-owner,smoke
+TC-API-WS-020,testcases/12-api/TC-API-WORKSPACES.md,DELETE,/workspaces/:wid,403,403,PASS,,qa-owner,smoke
+TC-API-WS-021,testcases/12-api/TC-API-WORKSPACES.md,DELETE,/workspaces/:wid,400,403,AUTH_BLOCK,got 403 but expected 400 — likely needs different role,qa-owner,high
+TC-API-WS-022,testcases/12-api/TC-API-WORKSPACES.md,DELETE,/workspaces/:wid,400,403,AUTH_BLOCK,got 403 but expected 400 — likely needs different role,qa-owner,high
+TC-API-WS-023,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/:wid/members,200,403,AUTH_BLOCK,got 403 but expected 200 — likely needs different role,qa-owner,smoke
+TC-API-WS-024,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/:wid/members,403,403,PASS,,qa-owner,smoke
+TC-API-WS-025,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces/:wid/members,201,404,MISMATCH,expected 201 got 404,qa-owner,high
+TC-API-WS-030,testcases/12-api/TC-API-WORKSPACES.md,PUT,/workspaces/:wid/members/:userId,200,404,MISMATCH,expected 200 got 404,qa-owner,medium
+TC-API-WS-032,testcases/12-api/TC-API-WORKSPACES.md,DELETE,/workspaces/:wid/members/:userId,204,403,AUTH_BLOCK,got 403 but expected 204 — likely needs different role,qa-owner,smoke
+TC-API-WS-035,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces/:wid/leave,204,404,MISMATCH,expected 204 got 404,qa-owner,medium
+TC-API-WS-036,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces/:wid/leave,400,404,MISMATCH,expected 400 got 404,qa-owner,high
+TC-API-WS-037,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces/:wid/transfer,200,403,AUTH_BLOCK,got 403 but expected 200 — likely needs different role,qa-owner,high
+TC-API-WS-039,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/:wid/usage,200,403,AUTH_BLOCK,got 403 but expected 200 — likely needs different role,qa-owner,smoke
+TC-API-WS-040,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/:wid/usage,200,403,AUTH_BLOCK,got 403 but expected 200 — likely needs different role,qa-owner,medium
+TC-API-WS-041,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/:wid/billing/plan,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-API-WS-042,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/:wid/log-filters,200,403,AUTH_BLOCK,got 403 but expected 200 — likely needs different role,qa-owner,medium
+TC-API-WS-043,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces/:wid/log-filters,201,400,MISMATCH,expected 201 got 400,qa-owner,medium
+TC-API-WS-049,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces,400,400,PASS,,qa-owner,smoke
+TC-API-WS-051,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces,,400,INFO,no expected_status,qa-owner,medium
+TC-API-WS-053,testcases/12-api/TC-API-WORKSPACES.md,POST,/members,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-API-WS-059,testcases/12-api/TC-API-WORKSPACES.md,OPTIONS,/workspaces.,204,204,PASS,,qa-owner,smoke
+TC-API-WS-060,testcases/12-api/TC-API-WORKSPACES.md,POST,/workspaces.,500,404,MISMATCH,expected 500 got 404,qa-owner,medium
+TC-API-WS-062,testcases/12-api/TC-API-WORKSPACES.md,GET,/workspaces/.,,308,INFO,no expected_status,qa-owner,low
+TC-WS-AUTH-033,testcases/13-websocket/TC-WS-AUTH.md,POST,/internal/broadcast,403,403,PASS,,qa-owner,high
+TC-WS-AUTH-034,testcases/13-websocket/TC-WS-AUTH.md,POST,/internal/broadcast,,403,INFO,no expected_status,qa-owner,high
+TC-WS-AUTH-035,testcases/13-websocket/TC-WS-AUTH.md,POST,/internal/broadcast,,403,INFO,no expected_status,qa-owner,high
+TC-WS-AUTH-036,testcases/13-websocket/TC-WS-AUTH.md,POST,/internal/yjs/write,,403,INFO,no expected_status,qa-owner,high
+TC-WS-AUTH-037,testcases/13-websocket/TC-WS-AUTH.md,GET,/internal/presence/:id,,403,INFO,no expected_status,qa-owner,high
+TC-MCP-CONNECTOR-INVALID-ID-001,testcases/14-mcp/TC-MCP-CONNECTOR-INVALID-ID.md,GET,/json,,404,INFO,no expected_status,qa-owner,
+TC-MCP-CONNECTOR-INVALID-ID-003,testcases/14-mcp/TC-MCP-CONNECTOR-INVALID-ID.md,GET,/json,400,404,MISMATCH,expected 400 got 404,qa-owner,
+TC-MCP-CONNECTOR-INVALID-ID-007,testcases/14-mcp/TC-MCP-CONNECTOR-INVALID-ID.md,GET,/json,,404,INFO,no expected_status,qa-owner,
+TC-MCP-CONNECTOR-INVALID-ID-008,testcases/14-mcp/TC-MCP-CONNECTOR-INVALID-ID.md,GET,/,404,404,PASS,,qa-owner,
+TC-MCP-CONNECTOR-010,testcases/14-mcp/TC-MCP-CONNECTOR.md,PATCH,/mcp/connectors/:id,,404,INFO,no expected_status,qa-owner,high
+TC-MCP-CONNECTOR-012,testcases/14-mcp/TC-MCP-CONNECTOR.md,DELETE,/mcp/connectors/:id,204,404,MISMATCH,expected 204 got 404,qa-owner,smoke
+TC-MCP-CONNECTOR-022,testcases/14-mcp/TC-MCP-CONNECTOR.md,GET,/mcp/connectors/:id/tools,,404,INFO,no expected_status,qa-owner,smoke
+TC-MCP-CONNECTOR-044,testcases/14-mcp/TC-MCP-CONNECTOR.md,GET,/mcp/connectors/:id/logs?limit=200,,404,INFO,no expected_status,qa-owner,medium
+TC-MCP-CONNECTOR-046,testcases/14-mcp/TC-MCP-CONNECTOR.md,PATCH,/mcp/tools/:id,,404,INFO,no expected_status,qa-owner,high
+TC-MCP-OAUTH-001,testcases/14-mcp/TC-MCP-OAUTH.md,GET,/mcp/connectors/supabase/oauth/start,,404,INFO,no expected_status,qa-owner,smoke
+TC-MCP-OAUTH-002,testcases/14-mcp/TC-MCP-OAUTH.md,GET,/mcp/connectors/supabase/oauth/callback,,404,INFO,no expected_status,qa-owner,smoke
+TC-MCP-OAUTH-012,testcases/14-mcp/TC-MCP-OAUTH.md,DELETE,/mcp/connectors/:id,,404,INFO,no expected_status,qa-owner,high
+TC-MCP-TOOL-001,testcases/14-mcp/TC-MCP-TOOL.md,POST,/mcp/connectors/:id/tools/getRow/invoke,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-MCP-TOOL-017,testcases/14-mcp/TC-MCP-TOOL.md,GET,/mcp/tools/:id,,404,INFO,no expected_status,qa-owner,low
+TC-GH-COMMITS-LOG-012,testcases/15-github/TC-GH-COMMITS-LOG.md,GET,/github/commits?project_id=P,,404,INFO,no expected_status,qa-owner,medium
+TC-GH-TENANT-ISOLATION-001,testcases/15-github/TC-GH-TENANT-ISOLATION.md,GET,/:pid/github/status,404,404,PASS,,qa-owner,high
+TC-GH-TENANT-ISOLATION-002,testcases/15-github/TC-GH-TENANT-ISOLATION.md,GET,/:pid/github/commits,404,404,PASS,,qa-owner,high
+TC-GH-TENANT-ISOLATION-003,testcases/15-github/TC-GH-TENANT-ISOLATION.md,POST,/:pid/github/connect,404,404,PASS,,qa-owner,high
+TC-GH-TENANT-ISOLATION-004,testcases/15-github/TC-GH-TENANT-ISOLATION.md,POST,/:pid/github/push,404,404,PASS,,qa-owner,high
+TC-GH-TENANT-ISOLATION-005,testcases/15-github/TC-GH-TENANT-ISOLATION.md,POST,/:pid/github/pull,404,404,PASS,,qa-owner,high
+TC-GH-TENANT-ISOLATION-006,testcases/15-github/TC-GH-TENANT-ISOLATION.md,POST,/:pid/github/import,404,404,PASS,,qa-owner,high
+TC-GH-TENANT-ISOLATION-007,testcases/15-github/TC-GH-TENANT-ISOLATION.md,POST,/:pid/github/resolve,404,404,PASS,,qa-owner,high
+TC-GH-TENANT-ISOLATION-008,testcases/15-github/TC-GH-TENANT-ISOLATION.md,POST,/:pid/github/abort-merge,404,404,PASS,,qa-owner,high
+TC-GH-TENANT-ISOLATION-009,testcases/15-github/TC-GH-TENANT-ISOLATION.md,DELETE,/:pid/github/connect,404,404,PASS,,qa-owner,critical
+TC-GH-TENANT-ISOLATION-010,testcases/15-github/TC-GH-TENANT-ISOLATION.md,GET,/github/status,200,200,PASS,,qa-owner,medium
+TC-GH-TENANT-ISOLATION-011,testcases/15-github/TC-GH-TENANT-ISOLATION.md,GET,/github/status,200,200,PASS,,qa-owner,medium
+TC-GH-TENANT-ISOLATION-012,testcases/15-github/TC-GH-TENANT-ISOLATION.md,GET,/github/status,200,200,PASS,,qa-owner,low
+TC-GH-TENANT-ISOLATION-013,testcases/15-github/TC-GH-TENANT-ISOLATION.md,GET,/json,200,404,MISMATCH,expected 200 got 404,qa-owner,critical
+TC-GH-TENANT-ISOLATION-014,testcases/15-github/TC-GH-TENANT-ISOLATION.md,GET,/00000000-0000-0000-0000-000000000000/github/status,404,404,PASS,,qa-owner,high
+TC-GH-WEBHOOK-003,testcases/15-github/TC-GH-WEBHOOK.md,POST,/github/webhook,401,400,MISMATCH,expected 401 got 400,qa-owner,critical
+TC-GH-WEBHOOK-009,testcases/15-github/TC-GH-WEBHOOK.md,DELETE,/repos/,,308,INFO,no expected_status,qa-owner,high
+TC-TEMPL-LIST-001,testcases/16-templates/TC-TEMPL-LIST.md,GET,/templates,,200,INFO,no expected_status,qa-owner,critical
+TC-TEMPL-LIST-002,testcases/16-templates/TC-TEMPL-LIST.md,GET,/templates?framework=nextjs,,200,INFO,no expected_status,qa-owner,high
+TC-TEMPL-LIST-003,testcases/16-templates/TC-TEMPL-LIST.md,GET,/templates?category=blog,,200,INFO,no expected_status,qa-owner,medium
+TC-TEMPL-LIST-004,testcases/16-templates/TC-TEMPL-LIST.md,GET,/templates,,200,INFO,no expected_status,qa-owner,medium
+TC-TEMPL-LIST-006,testcases/16-templates/TC-TEMPL-LIST.md,GET,/templates?sort=popular,,200,INFO,no expected_status,qa-owner,low
+TC-TEMPL-LIST-012,testcases/16-templates/TC-TEMPL-LIST.md,GET,/templates,200,200,PASS,,qa-owner,high
+TC-TEMPL-LIST-014,testcases/16-templates/TC-TEMPL-LIST.md,GET,/templates/,,308,INFO,no expected_status,qa-owner,medium
+TC-TEMPL-LIST-016,testcases/16-templates/TC-TEMPL-LIST.md,GET,/templates,,200,INFO,no expected_status,qa-owner,medium
+TC-TEMPL-LIST-019,testcases/16-templates/TC-TEMPL-LIST.md,GET,/templates,,200,INFO,no expected_status,qa-owner,critical
+TC-TEMPL-REGISTRY-002,testcases/16-templates/TC-TEMPL-REGISTRY.md,POST,/admin/templates/refresh,,404,INFO,no expected_status,qa-owner,high
+TC-TEMPL-REGISTRY-003,testcases/16-templates/TC-TEMPL-REGISTRY.md,POST,/admin/templates/refresh,403,404,AUTH_OK,"close 4xx match (expected=403, got=404)",qa-owner,critical
+TC-TEMPL-REGISTRY-012,testcases/16-templates/TC-TEMPL-REGISTRY.md,GET,/static/templates/,200,308,MISMATCH,expected 200 got 308,qa-owner,low
+TC-TEMPL-REGISTRY-017,testcases/16-templates/TC-TEMPL-REGISTRY.md,GET,/admin/templates/status,,404,INFO,no expected_status,qa-owner,low
+TC-TEMPL-THUMBNAILS-013,testcases/16-templates/TC-TEMPL-THUMBNAILS.md,PATCH,/templates/,,308,INFO,no expected_status,qa-owner,low
+TC-FOLDER-CREATE-001,testcases/17-folders/TC-FOLDER-CRUD.md,POST,/folders,201,400,MISMATCH,expected 201 got 400,qa-owner,smoke
+TC-FOLDER-LIST-001,testcases/17-folders/TC-FOLDER-CRUD.md,GET,/folders?workspaceId=,200,400,MISMATCH,expected 200 got 400,qa-owner,smoke
+TC-FOLDER-LIST-002,testcases/17-folders/TC-FOLDER-CRUD.md,GET,/folders.,400,404,MISMATCH,expected 400 got 404,qa-owner,medium
+TC-FOLDER-GET-001,testcases/17-folders/TC-FOLDER-CRUD.md,GET,/folders/:id.,200,500,FAIL_5XX,server error 500,qa-owner,smoke
+TC-FOLDER-UPDATE-001,testcases/17-folders/TC-FOLDER-CRUD.md,PATCH,/folders/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-FOLDER-DELETE-001,testcases/17-folders/TC-FOLDER-CRUD.md,DELETE,/folders/:id.,200,500,FAIL_5XX,server error 500,qa-owner,smoke
+TC-FOLDER-MOVE-001,testcases/17-folders/TC-FOLDER-CRUD.md,PATCH,/projects/:id,,404,INFO,no expected_status,qa-owner,smoke
+TC-VERSIONS-LIST-001,testcases/18-versions/TC-VERSIONS-CRUD.md,GET,/versions/:projectId/versions,200,404,MISMATCH,expected 200 got 404,qa-owner,smoke
+TC-VERSIONS-CREATE-006,testcases/18-versions/TC-VERSIONS-CRUD.md,POST,/versions/auto,201,404,MISMATCH,expected 201 got 404,qa-owner,smoke
+TC-COMMENTS-CRUD-001,testcases/20-design-comments/TC-COMMENTS-CRUD.md,POST,/api/design-comments,201,404,MISMATCH,expected 201 got 404,qa-owner,
+TC-COMMENTS-CRUD-011,testcases/20-design-comments/TC-COMMENTS-CRUD.md,GET,/api/design-comments?project_id=X.,,404,INFO,no expected_status,qa-owner,
+TC-COMMENTS-CRUD-012,testcases/20-design-comments/TC-COMMENTS-CRUD.md,GET,/api/design-comments?project_id=X&file=Y.,,404,INFO,no expected_status,qa-owner,
+TC-COMMENTS-CRUD-013,testcases/20-design-comments/TC-COMMENTS-CRUD.md,PATCH,/api/design-comments/:id,200,404,MISMATCH,expected 200 got 404,qa-owner,
+TC-COMMENTS-MENTIONS-011,testcases/20-design-comments/TC-COMMENTS-MENTIONS.md,POST,/api/design-comments/:id/reactions,201,404,MISMATCH,expected 201 got 404,qa-owner,
+TC-COMMENTS-MENTIONS-013,testcases/20-design-comments/TC-COMMENTS-MENTIONS.md,DELETE,/api/design-comments/:id/reactions/:emoji,,404,INFO,no expected_status,qa-owner,
+TC-COMMENTS-RESOLVE-001,testcases/20-design-comments/TC-COMMENTS-RESOLVE.md,PATCH,/api/design-comments/:id/resolve.,200,404,MISMATCH,expected 200 got 404,qa-owner,
+TC-COMMENTS-RESOLVE-004,testcases/20-design-comments/TC-COMMENTS-RESOLVE.md,PATCH,/api/design-comments/:id/reopen.,,404,INFO,no expected_status,qa-owner,
+TC-COMMENTS-RESOLVE-005,testcases/20-design-comments/TC-COMMENTS-RESOLVE.md,GET,/api/design-comments,,404,INFO,no expected_status,qa-owner,
+TC-DC-VAL-001,testcases/20-design-comments/TC-DC-VALIDATION.md,GET,/json,,404,INFO,no expected_status,qa-owner,high
+TC-DC-VAL-011,testcases/20-design-comments/TC-DC-VALIDATION.md,GET,/json,,404,INFO,no expected_status,qa-owner,medium
+TC-NOTIF-LIST-001,testcases/22-notifications/TC-NOTIF-LIST.md,GET,/api/notifications.,,404,INFO,no expected_status,qa-owner,
+TC-NOTIF-LIST-003,testcases/22-notifications/TC-NOTIF-LIST.md,GET,/api/notifications?read=false,,404,INFO,no expected_status,qa-owner,
+TC-NOTIF-LIST-006,testcases/22-notifications/TC-NOTIF-LIST.md,PATCH,/api/notifications/:id,,404,INFO,no expected_status,qa-owner,
+TC-NOTIF-LIST-008,testcases/22-notifications/TC-NOTIF-LIST.md,POST,/api/notifications/mark-all-read.,,404,INFO,no expected_status,qa-owner,
+TC-NOTIF-LIST-012,testcases/22-notifications/TC-NOTIF-LIST.md,POST,/api/notifications/delete-bulk,,404,INFO,no expected_status,qa-owner,
