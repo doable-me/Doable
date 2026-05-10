@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { sql } from "../db/index.js";
 import { workspaceQueries, userQueries, environmentQueries } from "@doable/db";
@@ -257,10 +257,22 @@ const inviteSchema = z.object({
   role: z.enum(["admin", "member", "viewer"]),
 });
 
-workspaceRoutes.post("/:id/members/invite", requireRole("admin"), async (c) => {
+// Shared handler for both POST mounts. Two paths exist for historical
+// reasons: `/members/invite` is the original, `/invites` is the canonical
+// REST shape documented in TC-WS-INVITES.md (BUG-CORPUS-WS-002 — POST
+// `/invites` previously 404'd because only the GET was mounted under that
+// path). Both POST handlers share this function so behaviour stays
+// identical.
+async function inviteMemberHandler(c: Context<AuthEnv>) {
   const workspaceId = c.req.param("id");
+  if (!workspaceId) return c.json({ error: "Workspace ID required" }, 400);
   const userId = c.get("userId");
-  const body = await c.req.json();
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
   const parsed = inviteSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -312,7 +324,10 @@ workspaceRoutes.post("/:id/members/invite", requireRole("admin"), async (c) => {
   }); // fire-and-forget but log failures
 
   return c.json({ data: invite }, 201);
-});
+}
+
+workspaceRoutes.post("/:id/members/invite", requireRole("admin"), inviteMemberHandler);
+workspaceRoutes.post("/:id/invites", requireRole("admin"), inviteMemberHandler);
 
 // ─── List Pending Invites ──────────────────────────────────
 workspaceRoutes.get("/:id/invites", requireRole("admin"), async (c) => {
