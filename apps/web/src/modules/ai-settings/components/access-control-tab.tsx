@@ -47,8 +47,13 @@ export function AccessControlTab({ defaults, accounts, providers, onUpdate }: Ac
     }
   }, [defaults]);
 
-  const validAccounts = accounts.filter((a) => a.is_valid);
-  const validProviders = providers.filter((p) => p.is_valid);
+  // Workspace enforcement can only target workspace-scoped rows. Personal
+  // accounts/providers are filtered out so admins can't try to point a
+  // workspace-wide enforcement at one (the DB trigger would reject the
+  // INSERT/UPDATE, but the option shouldn't appear in the dropdown).
+  // Migration 072.
+  const validAccounts = accounts.filter((a) => a.is_valid && a.scope === "workspace");
+  const validProviders = providers.filter((p) => p.is_valid && p.scope === "workspace");
 
   const handleSave = async () => {
     setSaving(true);

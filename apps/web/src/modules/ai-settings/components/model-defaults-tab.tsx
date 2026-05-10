@@ -91,7 +91,7 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
             >
               <option value="">Default (gh CLI)</option>
-              {accounts.filter((a) => a.is_valid).map((a) => (
+              {accounts.filter((a) => a.is_valid && a.scope === "workspace").map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.label} (@{a.github_login})
                 </option>
@@ -110,7 +110,7 @@ export function ModelDefaultsTab({ workspaceId, defaults, loading, accounts, pro
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
             >
               <option value="">None (use Copilot)</option>
-              {providers.filter((p) => p.is_valid).map((p) => (
+              {providers.filter((p) => p.is_valid && p.scope === "workspace").map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label} ({p.provider_type})
                 </option>
