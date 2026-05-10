@@ -222,7 +222,10 @@ CREATE POLICY gca_scope_visibility ON github_copilot_accounts
   );
 
 -- Replace the broad workspace_member policy on ai_providers with the same
--- scope-aware shape.
+-- scope-aware shape. ENABLE/FORCE RLS here so this migration is
+-- self-contained: don't assume 071_rls_phase2 has run.
+ALTER TABLE ai_providers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_providers FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS ai_providers_workspace_member ON ai_providers;
 DROP POLICY IF EXISTS ai_providers_scope_visibility ON ai_providers;
 CREATE POLICY ai_providers_scope_visibility ON ai_providers

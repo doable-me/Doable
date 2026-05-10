@@ -5,26 +5,39 @@
 -- when set.
 
 -- ════════════════════════════════════════════════════════════
+-- Helper: SECURITY DEFINER lookup of the workspace ids a user belongs to.
+-- Used by the workspace_members policy to avoid the infinite-recursion trap
+-- that hits when a policy on T self-references T inside its USING clause —
+-- the inner SELECT would itself be RLS-checked, causing
+-- "infinite recursion detected in policy for relation". A SECURITY DEFINER
+-- function bypasses RLS for its body, so the helper can read membership
+-- directly without re-entering the policy.
+-- ════════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION doable_user_workspace_ids(uid uuid) RETURNS SETOF uuid AS $$
+  SELECT workspace_id FROM workspace_members WHERE user_id = uid;
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+-- ════════════════════════════════════════════════════════════
 -- workspace_members — visible only to fellow members of the same workspace
 -- ════════════════════════════════════════════════════════════
 ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_members FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS workspace_members_self_visibility ON workspace_members;
 CREATE POLICY workspace_members_self_visibility ON workspace_members
   USING (
     doable_current_user_id() IS NULL
-    OR EXISTS (
-      SELECT 1 FROM workspace_members wm2
-      WHERE wm2.workspace_id = workspace_members.workspace_id
-        AND wm2.user_id = doable_current_user_id()
-    )
+    OR user_id = doable_current_user_id()
+    OR workspace_id IN (SELECT doable_user_workspace_ids(doable_current_user_id()))
   )
   WITH CHECK (
     doable_current_user_id() IS NULL
-    OR EXISTS (
-      SELECT 1 FROM workspace_members wm2
-      WHERE wm2.workspace_id = workspace_members.workspace_id
-        AND wm2.user_id = doable_current_user_id()
-        AND wm2.role IN ('owner', 'admin')  -- only owners/admins can mutate membership
+    OR workspace_id IN (
+      -- We can self-reference here without recursion because we constrain
+      -- by user_id and role, both small lookups. If recursion ever
+      -- resurfaces in practice, switch this to a second SECURITY DEFINER
+      -- helper that returns admin-workspace ids.
+      SELECT workspace_id FROM workspace_members
+      WHERE user_id = doable_current_user_id() AND role IN ('owner', 'admin')
     )
   );
 
@@ -83,6 +96,7 @@ CREATE POLICY credit_balances_owner_or_workspace_admin ON credit_balances
 -- ════════════════════════════════════════════════════════════
 ALTER TABLE project_api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_api_keys FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS project_api_keys_workspace_member ON project_api_keys;
 CREATE POLICY project_api_keys_workspace_member ON project_api_keys
   USING (
     doable_current_user_id() IS NULL
@@ -100,6 +114,8 @@ CREATE POLICY project_api_keys_workspace_member ON project_api_keys
       JOIN workspace_members wm ON wm.workspace_id = p.workspace_id
       WHERE p.id = project_api_keys.project_id
         AND wm.user_id = doable_current_user_id()
-        AND wm.role IN ('owner', 'admin', 'editor')
+        -- The workspace_role enum has owner | admin | member | viewer (no
+        -- 'editor'). Anyone except viewer can mutate project API keys.
+        AND wm.role IN ('owner', 'admin', 'member')
     )
   );
