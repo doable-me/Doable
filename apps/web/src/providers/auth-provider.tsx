@@ -14,10 +14,12 @@ import {
   apiRegister,
   apiLogout,
   apiGetMe,
+  apiMfaLoginVerify,
   storeTokens,
   clearTokens,
   getStoredTokens,
   refreshAccessToken,
+  isMfaChallenge,
 } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────
@@ -42,11 +44,21 @@ interface RegisterData {
   displayName?: string;
 }
 
+/**
+ * Outcome of `login`. Returns `{ mfaRequired: true, mfaToken }` when the
+ * user has opted into MFA, so callers can render the challenge step
+ * without prematurely treating the user as signed-in.
+ */
+export type LoginResult =
+  | { mfaRequired: false }
+  | { mfaRequired: true; mfaToken: string; expiresIn: number };
+
 export interface AuthContextValue {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (data: LoginData) => Promise<void>;
+  login: (data: LoginData) => Promise<LoginResult>;
+  completeMfaLogin: (args: { mfaToken: string; code: string }) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
   loginAsDemo: () => void;
@@ -174,8 +186,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
-  const login = useCallback(async (data: LoginData) => {
+  const login = useCallback(async (data: LoginData): Promise<LoginResult> => {
     const res = await apiLogin(data);
+    if (isMfaChallenge(res)) {
+      // Don't set user yet — the caller must render the MFA challenge
+      // step and call completeMfaLogin to finish signing in.
+      return { mfaRequired: true, mfaToken: res.mfaToken, expiresIn: res.expiresIn };
+    }
+    const authUser = toAuthUser(res.user);
+    setUser(authUser);
+    storeUser(authUser);
+    return { mfaRequired: false };
+  }, []);
+
+  const completeMfaLogin = useCallback(async (args: { mfaToken: string; code: string }) => {
+    const res = await apiMfaLoginVerify(args);
     const authUser = toAuthUser(res.user);
     setUser(authUser);
     storeUser(authUser);
@@ -232,12 +257,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       isAuthenticated: !!user,
       login,
+      completeMfaLogin,
       register,
       logout,
       loginAsDemo,
       refreshUser,
     }),
-    [user, isLoading, login, register, logout, loginAsDemo, refreshUser]
+    [user, isLoading, login, completeMfaLogin, register, logout, loginAsDemo, refreshUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

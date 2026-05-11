@@ -21,7 +21,7 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
 function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { login, completeMfaLogin, isAuthenticated, isLoading: authLoading } = useAuth();
 
   // Redirect after sign-in (honor returnTo, fall back to dashboard).
   useEffect(() => {
@@ -50,6 +50,12 @@ function LoginPageInner() {
   const [isOAuthLoading, setIsOAuthLoading] = useState<
     "github" | "google" | null
   >(null);
+
+  // MFA challenge state — populated when the API tells us the user has
+  // opted into MFA. While set, we render the TOTP/recovery prompt
+  // instead of the password form.
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
 
   // Restore remembered email
   useEffect(() => {
@@ -85,7 +91,12 @@ function LoginPageInner() {
     }
 
     try {
-      await login({ email, password });
+      const result = await login({ email, password });
+      if (result.mfaRequired) {
+        setMfaToken(result.mfaToken);
+        setIsLoading(false);
+        return;
+      }
       const params = new URLSearchParams(window.location.search);
       const returnTo = params.get("returnTo");
       const urlPrompt = params.get("prompt");
@@ -110,6 +121,42 @@ function LoginPageInner() {
     }
   }
 
+  async function handleMfaSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!mfaToken) return;
+    setError(null);
+    setIsLoading(true);
+    try {
+      await completeMfaLogin({ mfaToken, code: mfaCode });
+      const params = new URLSearchParams(window.location.search);
+      const returnTo = params.get("returnTo");
+      const urlPrompt = params.get("prompt");
+      let target: string;
+      if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+        target = returnTo;
+      } else if (urlPrompt) {
+        target = `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`;
+      } else {
+        target = "/dashboard";
+      }
+      router.push(target);
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "body" in err) {
+        const apiErr = err as { body: { error: string } };
+        setError(apiErr.body.error);
+        // Expired challenge tokens kick the user back to the password step
+        if (apiErr.body.error.toLowerCase().includes("expired")) {
+          setMfaToken(null);
+          setMfaCode("");
+        }
+      } else {
+        setError("Verification failed. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   function handleOAuth(provider: "github" | "google") {
     setIsOAuthLoading(provider);
     setError(null);
@@ -126,6 +173,70 @@ function LoginPageInner() {
   }
 
   const isFormDisabled = isLoading || isOAuthLoading !== null;
+
+  if (mfaToken) {
+    return (
+      <>
+        <h2 className="mb-2 text-center text-xl font-semibold text-[hsl(var(--foreground))]">
+          Two-factor authentication
+        </h2>
+        <p className="mb-6 text-center text-sm text-[hsl(var(--muted-foreground))]">
+          Enter the 6-digit code from your authenticator app, or a recovery code.
+        </p>
+
+        <form onSubmit={handleMfaSubmit} className="space-y-4">
+          {error && (
+            <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">
+              <svg className="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm-.75 4.75a.75.75 0 011.5 0v3a.75.75 0 01-1.5 0v-3zM8 11a1 1 0 110 2 1 1 0 010-2z" />
+              </svg>
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="mfaCode">Verification code</Label>
+            <Input
+              id="mfaCode"
+              type="text"
+              inputMode="text"
+              autoComplete="one-time-code"
+              autoFocus
+              placeholder="123456 or recovery-code"
+              required
+              disabled={isLoading}
+              className="rounded-xl text-center tracking-widest"
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value)}
+            />
+          </div>
+
+          <Button
+            type="submit"
+            className="w-full rounded-xl bg-brand-700 text-white hover:bg-brand-800"
+            disabled={isLoading || mfaCode.length < 6}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Verifying...
+              </>
+            ) : (
+              "Verify and continue"
+            )}
+          </Button>
+
+          <button
+            type="button"
+            onClick={() => { setMfaToken(null); setMfaCode(""); setError(null); }}
+            className="block w-full text-center text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+          >
+            Back to sign in
+          </button>
+        </form>
+      </>
+    );
+  }
 
   return (
     <>

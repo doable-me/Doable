@@ -9,13 +9,13 @@
 import { Hono } from "hono";
 import { sql } from "../db/index.js";
 import { mfaQueries } from "@doable/db/queries/mfa.js";
-import { authMiddleware } from "../middleware/auth.js";
+import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { recordAdminAction } from "../admin/audit-log.js";
 
 const mfa = mfaQueries(sql);
 
-export const adminMfaRoutes = new Hono();
+export const adminMfaRoutes = new Hono<AuthEnv>();
 
 adminMfaRoutes.use("*", authMiddleware, platformAdminMiddleware);
 

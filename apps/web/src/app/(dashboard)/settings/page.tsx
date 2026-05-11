@@ -42,8 +42,6 @@ export default function SettingsPage() {
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [twoFactorEnabled] = useState(false);
-
   const newPasswordStrength = useMemo(() => getPasswordStrength(newPassword), [newPassword]);
 
   const initials = (user?.displayName ?? "U")
@@ -160,7 +158,7 @@ export default function SettingsPage() {
 
       <div className="space-y-6">
         <ProfileSection user={user} displayName={displayName} setDisplayName={setDisplayName} initials={initials} profileSaving={profileSaving} profileSuccess={profileSuccess} onSave={handleProfileSave} />
-        <SecuritySection currentPassword={currentPassword} newPassword={newPassword} confirmPassword={confirmPassword} showCurrentPassword={showCurrentPassword} showNewPassword={showNewPassword} passwordSaving={passwordSaving} passwordSuccess={passwordSuccess} passwordError={passwordError} newPasswordStrength={newPasswordStrength} twoFactorEnabled={twoFactorEnabled} setCurrentPassword={setCurrentPassword} setNewPassword={setNewPassword} setConfirmPassword={setConfirmPassword} setShowCurrentPassword={setShowCurrentPassword} setShowNewPassword={setShowNewPassword} onPasswordChange={handlePasswordChange} />
+        <SecuritySection currentPassword={currentPassword} newPassword={newPassword} confirmPassword={confirmPassword} showCurrentPassword={showCurrentPassword} showNewPassword={showNewPassword} passwordSaving={passwordSaving} passwordSuccess={passwordSuccess} passwordError={passwordError} newPasswordStrength={newPasswordStrength} setCurrentPassword={setCurrentPassword} setNewPassword={setNewPassword} setConfirmPassword={setConfirmPassword} setShowCurrentPassword={setShowCurrentPassword} setShowNewPassword={setShowNewPassword} onPasswordChange={handlePasswordChange} />
 
         <SettingsSection icon={Monitor} title="Active Sessions" description="Devices where you are currently signed in">
           <div className="space-y-3">

@@ -2,16 +2,50 @@ import { Hono } from "hono";
 import { sql } from "../../db/index.js";
 import { authQueries } from "@doable/db/queries/auth.js";
 import { githubQueries } from "@doable/db/queries/github.js";
+import { mfaQueries } from "@doable/db/queries/mfa.js";
 import {
   getGitHubAuthUrl, exchangeGitHubCode, getGitHubCopilotAuthUrl,
   GITHUB_COPILOT_REDIRECT_URI, GITHUB_REPO_REDIRECT_URI,
   getGoogleAuthUrl, exchangeGoogleCode,
 } from "../../lib/oauth.js";
 import {
-  stripHtmlTags, sanitizeUser, issueTokens, ensureWorkspace, FRONTEND_URL,
+  stripHtmlTags, issueTokens, ensureWorkspace, FRONTEND_URL,
 } from "./helpers.js";
+import { signMfaChallengeToken } from "../../lib/jwt.js";
 
 const auth = authQueries(sql);
+const mfa = mfaQueries(sql);
+
+/**
+ * Build the post-OAuth redirect URL. If the user has MFA enabled we send
+ * them to /auth/callback with `mfaToken=...` in the fragment instead of
+ * the real session pair; the frontend forwards them to the MFA challenge
+ * screen. Otherwise we pass real tokens via fragment as before (Bug-105).
+ */
+async function postOauthRedirect(args: {
+  userId: string;
+  email: string;
+  returnTo: string | null;
+}): Promise<string> {
+  const fragParams = new URLSearchParams();
+  let mfaRequired = false;
+  try {
+    mfaRequired = await mfa.hasVerifiedFactor(args.userId);
+  } catch (err) {
+    console.warn("[OAuth] MFA check failed, proceeding without MFA gate:", err);
+  }
+
+  if (mfaRequired) {
+    const mfaToken = await signMfaChallengeToken(args.userId, args.email);
+    fragParams.set("mfaToken", mfaToken);
+  } else {
+    const tokens = await issueTokens(args.userId, args.email);
+    fragParams.set("accessToken", tokens.accessToken);
+    fragParams.set("refreshToken", tokens.refreshToken);
+  }
+  if (args.returnTo) fragParams.set("returnTo", args.returnTo);
+  return `${FRONTEND_URL}/auth/callback#${fragParams.toString()}`;
+}
 
 export const oauthRoutes = new Hono();
 
@@ -64,15 +98,11 @@ oauthRoutes.get("/github/callback", async (c) => {
     // Auto-create personal workspace for new OAuth users
     await ensureWorkspace(user.id, user.display_name, user.email);
 
-    const tokens = await issueTokens(user.id, user.email);
-    // Pass tokens via URL fragment (not query params) so they don't appear in
-    // server logs, Referer headers, or browser history entries (Bug-105).
-    const fragParams = new URLSearchParams({
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-    });
-    if (returnTo) fragParams.set("returnTo", returnTo);
-    return c.redirect(`${FRONTEND_URL}/auth/callback#${fragParams.toString()}`);
+    return c.redirect(await postOauthRedirect({
+      userId: user.id,
+      email: user.email,
+      returnTo,
+    }));
   } catch (err) {
     console.error("[OAuth] GitHub callback error:", err);
     return c.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
@@ -129,14 +159,11 @@ oauthRoutes.get("/google/callback", async (c) => {
       email = googleUser.email;
     }
 
-    const tokens = await issueTokens(userId, email);
-    // Pass tokens via URL fragment (not query params) — Bug-105
-    const fragParams = new URLSearchParams({
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-    });
-    if (returnTo) fragParams.set("returnTo", returnTo);
-    return c.redirect(`${FRONTEND_URL}/auth/callback#${fragParams.toString()}`);
+    return c.redirect(await postOauthRedirect({
+      userId,
+      email,
+      returnTo,
+    }));
   } catch (err) {
     console.error("[OAuth] Google callback error:", err);
     return c.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);

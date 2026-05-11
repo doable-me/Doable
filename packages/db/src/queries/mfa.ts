@@ -138,15 +138,14 @@ export function mfaQueries(sql: postgres.Sql) {
       codeHashes: string[];
     }): Promise<void> {
       await sql.begin(async (tx) => {
-        await tx`DELETE FROM mfa_recovery_codes WHERE user_id = ${args.userId}`;
-        if (args.codeHashes.length === 0) return;
-        const rows = args.codeHashes.map((h) => ({
-          user_id: args.userId,
-          code_hash: h,
-        }));
-        await tx`
-          INSERT INTO mfa_recovery_codes ${tx(rows, "user_id", "code_hash")}
-        `;
+        const txn = tx as unknown as postgres.Sql;
+        await txn`DELETE FROM mfa_recovery_codes WHERE user_id = ${args.userId}`;
+        for (const codeHash of args.codeHashes) {
+          await txn`
+            INSERT INTO mfa_recovery_codes (user_id, code_hash)
+            VALUES (${args.userId}, ${codeHash})
+          `;
+        }
       });
     },
 

@@ -5,7 +5,6 @@ import {
   User,
   Shield,
   Monitor,
-  Lock,
   Sun,
   Moon,
   Loader2,
@@ -34,6 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { BRAND_THEMES, type BrandTheme } from "@/hooks/use-brand-theme";
 import { SettingsSection } from "./settings-helpers";
+import { MfaSection } from "./mfa-section";
 
 // ─── Profile Section ────────────────────────────────────────
 
@@ -121,7 +121,6 @@ export function SecuritySection({
   passwordSuccess,
   passwordError,
   newPasswordStrength,
-  twoFactorEnabled,
   setCurrentPassword,
   setNewPassword,
   setConfirmPassword,
@@ -138,7 +137,6 @@ export function SecuritySection({
   passwordSuccess: boolean;
   passwordError: string | null;
   newPasswordStrength: { score: number; label: string; color: string };
-  twoFactorEnabled: boolean;
   setCurrentPassword: (v: string) => void;
   setNewPassword: (v: string) => void;
   setConfirmPassword: (v: string) => void;
@@ -201,19 +199,7 @@ export function SecuritySection({
           </Button>
         </form>
         <div className="border-t border-border" />
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Lock className="h-4 w-4 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium text-foreground">Two-factor authentication</p>
-              <p className="text-xs text-muted-foreground">Add an extra layer of security to your account</p>
-            </div>
-          </div>
-          <button type="button" className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${twoFactorEnabled ? "bg-brand-700" : "bg-muted"}`} title="Two-factor authentication coming soon">
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${twoFactorEnabled ? "translate-x-6" : "translate-x-1"}`} />
-          </button>
-        </div>
-        <p className="text-xs text-muted-foreground -mt-3 ml-7">Coming soon</p>
+        <MfaSection />
       </div>
     </SettingsSection>
   );

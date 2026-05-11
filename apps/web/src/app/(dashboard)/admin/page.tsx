@@ -39,6 +39,7 @@ import { PlanDefaultsPanel } from "./plan-defaults-panel";
 import { PlanLimitsPanel } from "./plan-limits-panel";
 import { IntegrationsAdminPanel } from "@/modules/integrations/integrations-admin-panel";
 import { FrameworksPanel } from "./frameworks-panel";
+import { AdminMfaPanel } from "./mfa-panel";
 
 // ─── Admin Page ─────────────────────────────────────────────
 
@@ -59,11 +60,11 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "plans" | "thumbnails" | "copilot" | "email" | "integrations">(() => {
+  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "plans" | "thumbnails" | "copilot" | "email" | "integrations" | "mfa">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get("tab");
-      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "plans" || tab === "thumbnails" || tab === "copilot" || tab === "integrations") return tab;
+      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "plans" || tab === "thumbnails" || tab === "copilot" || tab === "integrations" || tab === "mfa") return tab;
       // Legacy redirects
       if (tab === "planLimits" || tab === "planDefaults") return "plans";
     }
@@ -293,6 +294,7 @@ export default function AdminPage() {
           { key: "integrations" as const, label: "Integrations", icon: Plug },
           { key: "plans" as const, label: "Plans", icon: CreditCard },
           { key: "tools" as const, label: "AI Tools", icon: Wrench },
+          { key: "mfa" as const, label: "MFA", icon: ShieldCheck },
           { key: "thumbnails" as const, label: "Thumbnails", icon: ImageIcon },
           { key: "copilot" as const, label: "Sessions", icon: Activity },
           { key: "email" as const, label: "Email", icon: Mail },
@@ -383,6 +385,8 @@ export default function AdminPage() {
 
       {/* AI Tools Tab */}
       {activeTab === "tools" && <ToolsConfigPanel />}
+
+      {activeTab === "mfa" && <AdminMfaPanel />}
 
       {activeTab === "thumbnails" && <ThumbnailsPanel />}
       {activeTab === "copilot" && <CopilotSessionsPanel />}

@@ -19,9 +19,26 @@ export {
   apiGetMe,
   apiForgotPassword,
   apiResetPassword,
+  apiMfaLoginVerify,
   getGitHubLoginUrl,
   getGoogleLoginUrl,
 } from "./api-auth";
+
+export {
+  apiMfaStatus,
+  apiMfaEnrollStart,
+  apiMfaEnrollVerify,
+  apiMfaDisable,
+  apiMfaRegenerateRecoveryCodes,
+  apiAdminListMfaUsers,
+  apiAdminResetUserMfa,
+  isMfaChallenge,
+  type MfaStatus,
+  type MfaEnrollStartResponse,
+  type MfaEnrollVerifyResponse,
+  type MfaChallenge,
+  type AdminMfaUserRow,
+} from "./api-mfa";
 
 export {
   type ApiProject,
