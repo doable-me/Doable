@@ -669,8 +669,13 @@ NEXT_PUBLIC_WS_URL=wss://${WS_DOMAIN}
 NEXT_PUBLIC_APP_URL=https://${DOMAIN}
 WEBENVEOF
 
+  chmod 0600 "${INSTALL_DIR}/.env"
+  chown doable:doable "${INSTALL_DIR}/.env" 2>/dev/null || true
   ok "Environment files created (.env + apps/web/.env.local)"
 fi  # end .env idempotency guard
+# Always enforce .env permissions (idempotent re-run safety)
+chmod 0600 "${INSTALL_DIR}/.env" 2>/dev/null || true
+chown doable:doable "${INSTALL_DIR}/.env" 2>/dev/null || true
 
 # ─── Step 9: Install deps & migrate ──────────────────────────
 info "Step 9/13: Installing dependencies..."
@@ -869,6 +874,22 @@ systemctl restart caddy
 
 ok "Caddy configured on :8080 for *.${DOMAIN} → ${INSTALL_DIR}/sites/"
 
+# ─── Step 11.5: Create non-root service user ─────────────────
+info "Step 11.5/13: Creating 'doable' system user (uid 5000)..."
+getent passwd doable >/dev/null || \
+  useradd --system --no-create-home --shell /usr/sbin/nologin -u 5000 doable
+ok "System user 'doable' (uid 5000) present"
+
+# Chown install dir to doable:doable (skip heavy dirs for speed)
+find "${INSTALL_DIR}" \
+  -not \( -name node_modules -prune \) \
+  -not \( -name .next -prune \) \
+  -not \( -name .turbo -prune \) \
+  -maxdepth 6 \
+  -print0 2>/dev/null | xargs -0 chown doable:doable 2>/dev/null || \
+  chown -R doable:doable "${INSTALL_DIR}" 2>/dev/null || true
+ok "Chowned ${INSTALL_DIR} to doable:doable"
+
 # ─── Step 12: Systemd services ────────────────────────────────
 info "Step 12/13: Creating systemd services..."
 
@@ -885,7 +906,8 @@ Wants=postgresql.service
 
 [Service]
 Type=forking
-User=root
+User=doable
+Group=doable
 WorkingDirectory=${INSTALL_DIR}
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 ExecStart=${INSTALL_DIR}/start.sh
@@ -893,6 +915,19 @@ ExecStop=/usr/bin/tmux kill-session -t doable
 RemainAfterExit=yes
 Restart=on-failure
 RestartSec=10
+AmbientCapabilities=CAP_SETUID CAP_SETGID
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+ReadWritePaths=/root/doable /var/log/doable
 
 [Install]
 WantedBy=multi-user.target
@@ -908,7 +943,8 @@ After=doable.service
 
 [Service]
 Type=oneshot
-User=root
+User=doable
+Group=doable
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=${INSTALL_DIR}/watchdog.sh
 WDEOF
@@ -1217,5 +1253,33 @@ if [ "$MISSING" -gt 0 ]; then
   echo ""
   warn "  ${MISSING} integration(s) are not configured. Doable will run, but those features will return 401/404 to users."
   echo "  Edit /opt/doable/.env to add the missing keys, then restart doable.service."
+fi
+echo ""
+
+# ─── SECURITY POSTURE VERIFY ──────────────────────────────────
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║                 Security Posture Check                   ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo ""
+echo "  ── systemd-analyze security (doable.service) ──"
+systemd-analyze security doable.service 2>/dev/null | tail -2 || \
+  echo "  (systemd-analyze not available or service not loaded yet)"
+echo ""
+echo "  ── .env permissions ──"
+stat -c '%a %U:%G %n' "${INSTALL_DIR}/.env" 2>/dev/null || \
+  echo "  (${INSTALL_DIR}/.env not found)"
+echo ""
+echo "  ── Runtime process users ──"
+ps -eo user,cmd 2>/dev/null | grep -E '(tsx|next-server|node).*(services/(api|web|ws))' | \
+  grep -v grep | head -5 || echo "  (services not started yet)"
+echo ""
+echo "  ── Summary ──"
+ENV_MODE=$(stat -c '%a' "${INSTALL_DIR}/.env" 2>/dev/null || echo "???")
+ENV_OWNER=$(stat -c '%U' "${INSTALL_DIR}/.env" 2>/dev/null || echo "???")
+SVC_USER=$(systemctl show doable.service -p User --value 2>/dev/null || echo "???")
+if [ "$SVC_USER" = "doable" ] && [ "$ENV_OWNER" = "doable" ] && [ "$ENV_MODE" = "600" ]; then
+  ok "NON-ROOT ✓  doable.service runs as 'doable' | .env mode 600 owned by doable"
+else
+  warn "SECURITY POSTURE: svc_user=${SVC_USER} env_owner=${ENV_OWNER} env_mode=${ENV_MODE} — check above"
 fi
 echo ""
