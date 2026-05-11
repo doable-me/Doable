@@ -1,0 +1,1 @@
+Add a move history panel on the right listing each move as 'turn 1: e2-e4' style strings, append new entries on click.

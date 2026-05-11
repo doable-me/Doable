@@ -1,0 +1,1 @@
+Add slide transitions — fade-in animation when slide changes. Use Tailwind transition classes.

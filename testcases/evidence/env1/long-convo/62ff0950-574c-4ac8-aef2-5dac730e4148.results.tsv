@@ -1,0 +1,10 @@
+turn	prompt_excerpt	sse_total_ms	prompt_tokens	completion_tokens	ttft_ms	dur_ms	preview_http	preview_size	edit_file_count	phrase_in_preview
+1	Add an input box and an "Add" button so I can type a new tod	5972	18996	141	2004	4343	200	40838	0	2
+2	Add a checkbox next to each todo so I can mark it done. Stri	4997	19128	133	1504	3811	200	40838	0	0
+0
+3	Add a "Clear completed" button at the bottom that removes do	15171	39531	1018	1542	11032	200	40838	1	0
+0
+4	Show a counter at the top: "N todos remaining" using the cou	21274	41747	1037	2619	14048	200	40838	1	0
+0
+5	Add filter tabs: All / Active / Completed. Default selection	28473	44242	1313	4792	18410	200	40838	1	0
+0

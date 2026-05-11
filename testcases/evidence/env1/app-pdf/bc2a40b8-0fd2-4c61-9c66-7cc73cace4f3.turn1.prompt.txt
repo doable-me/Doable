@@ -1,0 +1,1 @@
+Build an invoice generator. Form has: company name, customer name, list of items (description, qty, unit price), tax %. Below it a 'Generate PDF' button using jsPDF. Add jsPDF to deps.

@@ -1,0 +1,1 @@
+Register a service worker (sw.js) in /public that caches the app shell. Register from main.tsx using navigator.serviceWorker.register.

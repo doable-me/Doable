@@ -1,0 +1,1 @@
+Add a sticky sidebar on /dashboard listing 5 widget cards: Revenue, Users, Sessions, Errors, Latency — each with a placeholder number and trend arrow.

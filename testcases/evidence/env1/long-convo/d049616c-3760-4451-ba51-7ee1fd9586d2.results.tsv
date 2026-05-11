@@ -1,0 +1,17 @@
+turn	prompt_excerpt	sse_total_ms	prompt_tokens	completion_tokens	ttft_ms	dur_ms	preview_http	preview_size	edit_file_count	phrase_in_preview
+1	Add an input box and an "Add" button so I can type a new tod	7562	18967	222	2170	5768	200	40838	0	2
+2	Add a checkbox next to each todo so I can mark it done. Stri	3889	19118	95	1240	2819	200	40838	0	0
+0
+3	Add a "Clear completed" button at the bottom that removes do	14188	-	-	-	-	502	15	0	0
+0
+4	Show a counter at the top: "N todos remaining" using the cou	853	-	-	-	-	200	40838	0	0
+0
+5	Add filter tabs: All / Active / Completed. Default selection	27821	56978	1466	3077	18923	200	40838	2	0
+0
+6	Persist the todos to localStorage so they survive a page rel	22717	41874	1400	3455	17304	200	40838	1	3
+7	Add a delete button (X) on the right of each todo. Clicking 	22548	44920	1545	3623	18350	200	40838	1	1
+8	Add a date stamp showing "Created: YYYY-MM-DD" under each to	20691	47793	1515	2507	17712	200	40838	1	0
+0
+9	Add a "drag to reorder" affordance — show a grip icon (≡	20314	50895	1507	2314	17368	200	40838	1	0
+0
+10	Add a dark/light mode toggle button at the top right that sw	26253	54505	2009	2660	22803	200	40838	1	2

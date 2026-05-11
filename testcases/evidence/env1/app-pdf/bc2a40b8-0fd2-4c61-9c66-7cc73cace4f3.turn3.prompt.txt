@@ -1,0 +1,1 @@
+When clicking Generate PDF, the PDF should include: company header, customer block, item table, subtotal/tax/total computed automatically.

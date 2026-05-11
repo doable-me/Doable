@@ -1,0 +1,1 @@
+Add a 'Reset' button that puts all pieces back to start.

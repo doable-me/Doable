@@ -1,0 +1,1 @@
+Build a 5-slide presentation app. Use a single component that shows one slide at a time. Each slide is a div with text-3xl heading + body text. Add Previous/Next buttons at the bottom; an indicator 'Slide N of 5'. Slides: 1) Welcome to Doable, 2) What is Doable, 3) Features, 4) Pricing, 5) Get Started. Use Tailwind.

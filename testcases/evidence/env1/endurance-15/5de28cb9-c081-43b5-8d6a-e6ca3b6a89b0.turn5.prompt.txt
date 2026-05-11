@@ -1,0 +1,1 @@
+Show captured pieces below the board in two rows (white-captured, black-captured), starting empty.

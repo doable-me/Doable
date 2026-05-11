@@ -1,0 +1,1 @@
+Build a 10x6 editable spreadsheet. Each cell is a contentEditable div (or input) with grid borders. Use Tailwind grid (grid-cols-7 with row-header column). Show A-F as column headers, 1-10 as row numbers.

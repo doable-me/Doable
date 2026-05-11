@@ -1,1 +1,1 @@
-{"success":false,"error":{"issues":[{"received":"foobar","code":"invalid_enum_value","options":["agent","plan","visual-edit"],"path":["mode"],"message":"Invalid enum value. Expected 'agent' | 'plan' | 'visual-edit', received 'foobar'"}],"name":"ZodError"}}
+{"error":"Not Found","path":"/chat/00000000-0000-0000-0000-000000000000/messages"}

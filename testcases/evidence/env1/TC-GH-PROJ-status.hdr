@@ -1,15 +1,14 @@
-HTTP/1.1 200 OK
-Date: Sat, 09 May 2026 18:45:51 GMT
+HTTP/1.1 404 Not Found
+Date: Sat, 09 May 2026 21:42:06 GMT
 Content-Type: application/json
-Content-Length: 157
+Content-Length: 91
 Connection: keep-alive
 access-control-allow-credentials: true
-access-control-allow-origin: https://<env>.doable.me
 cross-origin-opener-policy: same-origin
 cross-origin-resource-policy: same-origin
 origin-agent-cluster: ?1
 referrer-policy: no-referrer
-server-timing: total;dur=3.7;desc="Total Response Time"
+server-timing: total;dur=2.8;desc="Total Response Time"
 strict-transport-security: max-age=15552000; includeSubDomains
 vary: Origin
 x-content-type-options: nosniff
@@ -17,12 +16,12 @@ x-dns-prefetch-control: off
 x-download-options: noopen
 x-frame-options: SAMEORIGIN
 x-permitted-cross-domain-policies: none
-x-request-id: req_63ac5ba999bb43e5
+x-request-id: req_77eef8f2373a45e5
 x-xss-protection: 0
 cf-cache-status: DYNAMIC
 Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=g%2Fghq5E2qGXTZW06HvGhPcVgZofjjPZ4e8KPrUeQw0%2FelKK2RrhhePE1yeJmkCr0DAAN%2BcWZWRiLUNu2olR%2BjVjFx6z3ehIhOz7q6zYLYClFtBkhOIqPly60yK6wN4IfywkTi2Dmig%3D%3D"}]}
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=eJJGVkJM7L2l%2FpzyQEGTyJJf2zXn1wscwyXIu3Ou8vTx9PH%2FucvpEldd2B4jQ0iAKH%2B9DlSrEEKRAfRF9o3qVBYNuzNq2GVUyKbmCzWDWtk%2BrbPrNUgrB963HlZ5GS0CHhtlhlGFnA%3D%3D"}]}
 Server: cloudflare
-CF-RAY: 9f92dd118b67184f-MAA
+CF-RAY: 9f93df41eb8f7ec7-MAA
 alt-svc: h3=":443"; ma=86400
 

@@ -1,0 +1,1 @@
+Build a simple chess game UI: 8x8 board with alternating colors, place all 32 starting pieces using Unicode chess characters. Use Tailwind grid-cols-8.

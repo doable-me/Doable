@@ -1,0 +1,1 @@
+Add keyboard navigation: ArrowRight=next, ArrowLeft=prev, Home=first, End=last.

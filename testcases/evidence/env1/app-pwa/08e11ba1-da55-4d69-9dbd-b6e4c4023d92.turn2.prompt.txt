@@ -1,0 +1,1 @@
+Add a manifest.json in /public with name=Doable Notes, short_name=Notes, start_url=/, display=standalone, theme_color=#000, icons (placeholder PNGs).
