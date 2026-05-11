@@ -82,7 +82,22 @@ export const sql: postgres.Sql = new Proxy(realSql, {
     return Reflect.apply(source, thisArg, args);
   },
   get(target, prop, _receiver): unknown {
-    const source = txAls.getStore() ?? target;
+    const tx = txAls.getStore();
+    // postgres.js transaction objects do not expose `.begin` — nested
+    // transactions inside an existing tx are spelled `.savepoint(fn)`.
+    // Library code (e.g. @doable/db's workspaceQueries.create) calls
+    // `sql.begin(fn)` defensively when no explicit tx is passed. Under
+    // `authMiddlewareWithRls` that runs inside the request's outer tx,
+    // so we transparently translate `.begin` → `.savepoint`, preserving
+    // the outer SET LOCAL doable.current_user_id. Without this the
+    // workspaceQueries.create path 500s with "sql.begin is not a function".
+    if (tx !== undefined && prop === "begin") {
+      const savepoint = Reflect.get(tx as object, "savepoint");
+      if (typeof savepoint === "function") {
+        return (savepoint as Function).bind(tx);
+      }
+    }
+    const source = tx ?? target;
     const value = Reflect.get(source as object, prop);
     return typeof value === "function" ? (value as Function).bind(source) : value;
   },
