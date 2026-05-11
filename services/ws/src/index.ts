@@ -4,6 +4,10 @@
 import { initTracing, getTracer } from "./tracing/instrumentation.js";
 initTracing({ serviceName: "doable-ws" });
 
+// Warn if .env is group/world-readable in production (non-fatal).
+import { checkEnvFilePerms } from "@doable/shared/security/env-perms-check.js";
+checkEnvFilePerms();
+
 import { createServer, type IncomingMessage } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { jwtVerify } from "jose";

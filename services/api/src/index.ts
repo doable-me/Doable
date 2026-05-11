@@ -4,6 +4,10 @@
 import { initTracing } from "./tracing/instrumentation.js";
 initTracing({ serviceName: "doable-api" });
 
+// Warn if .env is group/world-readable in production (non-fatal).
+import { checkEnvFilePerms } from "@doable/shared/security/env-perms-check.js";
+checkEnvFilePerms();
+
 // Register framework adapters into the process-wide registry BEFORE any
 // module that resolves a framework by id is imported (project create, dev
 // start, build, AI file tools). Idempotent.

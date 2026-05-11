@@ -8,7 +8,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./*": "./src/*.ts",
-    "./*.js": "./src/*.ts"
+    "./*.js": "./src/*.ts",
+    "./security/*": "./src/security/*.ts",
+    "./security/*.js": "./src/security/*.ts"
   },
   "scripts": {
     "type-check": "tsc --noEmit",
