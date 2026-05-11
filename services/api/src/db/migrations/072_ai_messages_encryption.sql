@@ -20,6 +20,17 @@ ALTER TABLE ai_messages
 ALTER TABLE ai_messages
   ALTER COLUMN content DROP NOT NULL;
 
+-- Backfill any legacy rows where BOTH content and encrypted_content are
+-- NULL. A handful of `assistant` rows from before the column existed land
+-- in this state (aborted/empty streams that persisted a placeholder row
+-- with content=NULL). Setting content='' keeps them queryable and lets
+-- the XOR CHECK constraint below apply without rejecting existing data.
+-- Idempotent: a re-run finds no matching rows once content='' has been set.
+UPDATE ai_messages
+   SET content = ''
+ WHERE content IS NULL
+   AND encrypted_content IS NULL;
+
 -- Add a CHECK constraint enforcing that exactly one of the two is set.
 DO $$ BEGIN
   IF NOT EXISTS (
