@@ -310,7 +310,27 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       }
     }
 
-    const resp = await fetch(fullUrl, {
+    // Vite returns 504 while its dep-optimizer is still rewriting a module.
+    // For top-level navigations the framework adapter's shouldReloadOnError
+    // branch (below) converts that into a window.location.reload() script —
+    // which works fine when the resource is consumed via a <script> tag.
+    // But for *named* ES-module imports (`import { clsx } from "clsx"`),
+    // the engine checks export bindings BEFORE executing the body, so the
+    // reload script throws "does not provide an export named 'clsx'" and
+    // the importing module dies silently. The cleanest universal fix is to
+    // retry on 504 server-side a few times — vite's optimizer typically
+    // settles in <500ms — and only fall back to the reload script if it
+    // really can't satisfy us.
+    const isJsDep =
+      c.req.method === "GET" &&
+      (/\.(m?js|c?js|tsx?|jsx)(\?|$)/.test(originalPath) ||
+        originalPath.includes("/@vite/") ||
+        originalPath.includes("/@react-refresh") ||
+        originalPath.includes("/@id/") ||
+        originalPath.includes("/@fs/") ||
+        originalPath.includes("/node_modules/"));
+    const maxRetries = isJsDep ? 8 : 0;
+    let resp = await fetch(fullUrl, {
       method: c.req.method,
       headers,
       body:
@@ -318,6 +338,10 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
           ? c.req.raw.body
           : undefined,
     });
+    for (let attempt = 0; attempt < maxRetries && resp.status === 504; attempt++) {
+      await new Promise((r) => setTimeout(r, 250));
+      resp = await fetch(fullUrl, { method: c.req.method, headers });
+    }
 
     // Build response headers — skip hop-by-hop headers
     const hopByHop = new Set([
