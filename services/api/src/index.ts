@@ -44,6 +44,7 @@ import { getOAuthRedirectUri } from "./integrations/oauth2.js";
 import { mountRoutes } from "./routes.js";
 import { tracingMiddleware } from "./tracing/middleware.js";
 import { startTracingRetention } from "./tracing/retention.js";
+import { sandboxBootProbe } from "./sandbox/boot-probe.js";
 
 // ─── Visual Edit Bridge Script ───────────────────────────────
 // This script is loaded by preview iframes at /visual-edit-bridge.js
@@ -326,6 +327,25 @@ app.get("/visual-edit-bridge.js", (c) => {
   c.header("Access-Control-Allow-Origin", "*");
   return c.body(VISUAL_EDIT_BRIDGE_JS);
 });
+
+// ─── Sandbox boot probe (PRD ch 10 — observability) ────────
+// Logs the resolved sandbox matrix and fail-closes in prod/staging
+// when no isolating backend is available. In dev/off the throw is
+// caught so local devs without bubblewrap/psroot can still boot.
+const _hardening = (process.env.DOABLE_HARDENING_LEVEL ?? "dev").trim().toLowerCase();
+if (_hardening === "prod" || _hardening === "staging") {
+  await sandboxBootProbe();
+} else {
+  try {
+    await sandboxBootProbe();
+  } catch (err) {
+    console.warn(
+      `[sandbox] WARNING: boot probe threw in dev/off mode: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+}
 
 // ─── Routes ─────────────────────────────────────────────────
 mountRoutes(app);

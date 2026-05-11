@@ -147,6 +147,8 @@ export interface IntegrationConnection {
   project_id?: string;
   auth_type: AuthType;
   credentials_encrypted: Buffer;
+  /** 'pgp_sym' (legacy ENCRYPTION_KEY) | 'envelope_v1' (per-workspace DEK). */
+  credentials_format?: "pgp_sym" | "envelope_v1";
   display_name?: string;
   status: "active" | "error" | "expired" | "revoked";
   error_message?: string;

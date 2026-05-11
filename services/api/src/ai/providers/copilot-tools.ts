@@ -19,6 +19,7 @@ import { restartDevServer, isRunning } from "../../projects/dev-server.js";
 import { ConfigGuard } from "dovault";
 import { defaultRegistry } from "../../frameworks/registry.js";
 import { sql } from "../../db/index.js";
+import { createBashTool } from "../tools/bash.js";
 
 /**
  * Per-project ConfigGuard. The bare `new ConfigGuard()` only ships
@@ -447,5 +448,8 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         return { success: true, stepId: args.stepId, planId: args.planId, status: "completed" };
       },
     }),
+
+    // PRD ch 13: Doable-owned bash overrides SDK built-in; routes through sandbox orchestrator.
+    createBashTool({ projectId, workspaceId: workspaceId ?? null, userId: userId ?? "", sessionId: projectId }),
   ] as Tool[]);
 }

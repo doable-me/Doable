@@ -714,3 +714,143 @@ pub async fn set_mode_tools(
     }
     Ok(())
 }
+
+// ─── Sandbox ──────────────────────────────────────────────
+//
+// Read-only first pass. Each loader swallows the Postgres "undefined_table"
+// error (SQLSTATE 42P01) so the screen still renders on installations that
+// haven't applied the sandbox migrations yet — instead returning an empty Vec
+// or default settings row.
+
+#[derive(Debug, Default, Clone)]
+pub struct SandboxSettingsRow {
+    pub workspace_id: String,
+    pub sandbox_backend: Option<String>,
+    pub allowed_profile_keys: Vec<String>,
+    pub tool_default_action: Option<String>,
+    pub network_default_action: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SandboxRulesRow {
+    pub id: String,
+    pub rule_type: String,
+    pub pattern: String,
+    pub action: String,
+    pub priority: i32,
+    pub enabled: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SandboxAuditRow {
+    pub started_at: DateTime<Utc>,
+    pub profile_key: String,
+    pub backend_id: String,
+    pub command: String,
+    pub exit_code: Option<i32>,
+    pub oom_killed: bool,
+    pub timed_out: bool,
+    pub duration_ms: Option<i32>,
+}
+
+/// True if the given DB error is "relation does not exist" (42P01).
+fn is_missing_relation(err: &tokio_postgres::Error) -> bool {
+    err.as_db_error()
+        .map(|d| d.code().code() == "42P01")
+        .unwrap_or(false)
+}
+
+pub async fn load_sandbox_settings(
+    client: &Client,
+    workspace_id: &str,
+) -> Result<Option<SandboxSettingsRow>, Box<dyn std::error::Error>> {
+    let res = client
+        .query_opt(
+            "SELECT workspace_id::text, sandbox_backend, allowed_profile_keys,
+                    tool_default_action, network_default_action
+             FROM workspace_sandbox_settings
+             WHERE workspace_id::text = $1",
+            &[&workspace_id],
+        )
+        .await;
+    match res {
+        Ok(Some(r)) => Ok(Some(SandboxSettingsRow {
+            workspace_id: r.get("workspace_id"),
+            sandbox_backend: r.get::<_, Option<String>>("sandbox_backend"),
+            allowed_profile_keys: r
+                .get::<_, Option<Vec<String>>>("allowed_profile_keys")
+                .unwrap_or_default(),
+            tool_default_action: r.get::<_, Option<String>>("tool_default_action"),
+            network_default_action: r.get::<_, Option<String>>("network_default_action"),
+        })),
+        Ok(None) => Ok(None),
+        Err(e) if is_missing_relation(&e) => Ok(None),
+        Err(e) => Err(Box::new(e)),
+    }
+}
+
+pub async fn load_sandbox_rules(
+    client: &Client,
+    workspace_id: &str,
+) -> Result<Vec<SandboxRulesRow>, Box<dyn std::error::Error>> {
+    let res = client
+        .query(
+            "SELECT id::text, rule_type, pattern, action, priority, enabled, reason
+             FROM workspace_sandbox_rules
+             WHERE workspace_id::text = $1
+             ORDER BY priority DESC, rule_type, pattern",
+            &[&workspace_id],
+        )
+        .await;
+    match res {
+        Ok(rows) => Ok(rows
+            .iter()
+            .map(|r| SandboxRulesRow {
+                id: r.get("id"),
+                rule_type: r.get("rule_type"),
+                pattern: r.get("pattern"),
+                action: r.get("action"),
+                priority: r.get::<_, i32>("priority"),
+                enabled: r.get::<_, bool>("enabled"),
+                reason: r.get::<_, Option<String>>("reason"),
+            })
+            .collect()),
+        Err(e) if is_missing_relation(&e) => Ok(Vec::new()),
+        Err(e) => Err(Box::new(e)),
+    }
+}
+
+pub async fn load_sandbox_audit(
+    client: &Client,
+    workspace_id: &str,
+) -> Result<Vec<SandboxAuditRow>, Box<dyn std::error::Error>> {
+    let res = client
+        .query(
+            "SELECT started_at, profile_key, backend_id, command,
+                    exit_code, oom_killed, timed_out, duration_ms
+             FROM audit_sandbox_spawn
+             WHERE workspace_id::text = $1
+             ORDER BY started_at DESC
+             LIMIT 20",
+            &[&workspace_id],
+        )
+        .await;
+    match res {
+        Ok(rows) => Ok(rows
+            .iter()
+            .map(|r| SandboxAuditRow {
+                started_at: r.get("started_at"),
+                profile_key: r.get("profile_key"),
+                backend_id: r.get("backend_id"),
+                command: r.get("command"),
+                exit_code: r.get::<_, Option<i32>>("exit_code"),
+                oom_killed: r.get::<_, bool>("oom_killed"),
+                timed_out: r.get::<_, bool>("timed_out"),
+                duration_ms: r.get::<_, Option<i32>>("duration_ms"),
+            })
+            .collect()),
+        Err(e) if is_missing_relation(&e) => Ok(Vec::new()),
+        Err(e) => Err(Box::new(e)),
+    }
+}

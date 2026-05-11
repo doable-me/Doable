@@ -20,6 +20,7 @@ pub enum Screen {
     CreditsAndPlan,
     ApiKeys,
     ModeTools,
+    Sandbox,
     ServerConfig,
 }
 
@@ -31,6 +32,7 @@ pub const SIDEBAR_ITEMS: &[(Screen, &str)] = &[
     (Screen::CreditsAndPlan, "Credits & Plan"),
     (Screen::ApiKeys, "API Keys"),
     (Screen::ModeTools, "Mode Tools"),
+    (Screen::Sandbox, "Sandbox"),
     (Screen::ServerConfig, "Server Config"),
 ];
 
@@ -246,6 +248,14 @@ pub struct App {
     pub api_keys: Vec<db::ApiKeyRow>,
     pub mode_tools: Vec<db::ModeToolsRow>,
 
+    // sandbox (read-only first pass)
+    pub sandbox_settings: Option<db::SandboxSettingsRow>,
+    pub sandbox_rules: Vec<db::SandboxRulesRow>,
+    pub sandbox_audit: Vec<db::SandboxAuditRow>,
+    /// (backend_id, available, reason). Static list for now — populated in `new`.
+    /// A follow-up pass will probe the host (psroot/bwrap/sandbox-exec) for live availability.
+    pub sandbox_backends: Vec<(String, bool, String)>,
+
     // server config
     pub sc_subview: sc::SubView,
     pub sc_squid: Option<sc::ConfigState<sc::SquidState>>,
@@ -306,6 +316,10 @@ impl App {
             credit_balances: vec![],
             api_keys: vec![],
             mode_tools: vec![],
+            sandbox_settings: None,
+            sandbox_rules: vec![],
+            sandbox_audit: vec![],
+            sandbox_backends: vec![],
             sc_subview: sc::SubView::Squid,
             sc_squid: None,
             sc_cloudflared: None,
@@ -360,6 +374,25 @@ impl App {
             Ok(v) => self.mode_tools = v,
             Err(e) => { self.toast(format!("Failed to load mode tools: {e}"), StatusKind::Error); }
         }
+        // Sandbox: workspace-scoped tables. There is no dedicated
+        // `current_workspace_id` on App yet, so we use the first workspace as
+        // the read-only context. Follow-up will add a workspace picker, mirroring
+        // `ai_ws_idx`. Loaders swallow "missing table" so it's safe pre-migration.
+        let current_workspace_id = self
+            .workspaces
+            .first()
+            .map(|w| w.id.clone())
+            .unwrap_or_default();
+        self.sandbox_settings = db::load_sandbox_settings(&self.client, &current_workspace_id)
+            .await
+            .ok()
+            .flatten();
+        self.sandbox_rules = db::load_sandbox_rules(&self.client, &current_workspace_id)
+            .await
+            .unwrap_or_default();
+        self.sandbox_audit = db::load_sandbox_audit(&self.client, &current_workspace_id)
+            .await
+            .unwrap_or_default();
     }
 
     async fn reload_current(&mut self) {
@@ -413,6 +446,26 @@ impl App {
                     Ok(v) => self.mode_tools = v,
                     Err(e) => { self.toast(format!("Failed to load mode tools: {e}"), StatusKind::Error); }
                 }
+            }
+            Screen::Sandbox => {
+                let current_workspace_id = self
+                    .workspaces
+                    .first()
+                    .map(|w| w.id.clone())
+                    .unwrap_or_default();
+                self.sandbox_settings =
+                    db::load_sandbox_settings(&self.client, &current_workspace_id)
+                        .await
+                        .ok()
+                        .flatten();
+                self.sandbox_rules =
+                    db::load_sandbox_rules(&self.client, &current_workspace_id)
+                        .await
+                        .unwrap_or_default();
+                self.sandbox_audit =
+                    db::load_sandbox_audit(&self.client, &current_workspace_id)
+                        .await
+                        .unwrap_or_default();
             }
         }
     }
@@ -586,6 +639,7 @@ impl App {
             Screen::CreditsAndPlan => self.credit_balances.len(),
             Screen::ApiKeys => self.api_keys.len(),
             Screen::ModeTools => self.mode_tools.len(),
+            Screen::Sandbox => self.sandbox_rules.len(),
         }
     }
 
@@ -941,6 +995,11 @@ impl App {
                 if idx < self.mode_tools.len() {
                     self.open_edit_mode_tools(idx);
                 }
+            }
+            Screen::Sandbox => {
+                // Read-only first pass. PgUp/PgDn navigation is handled by the
+                // generic content_len-driven cursor; Enter is a no-op.
+                let _ = idx;
             }
         }
     }

@@ -249,6 +249,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect) {
         Screen::CreditsAndPlan => render_credits(f, app, table_area),
         Screen::ApiKeys => render_api_keys(f, app, table_area),
         Screen::ModeTools => render_mode_tools(f, app, table_area),
+        Screen::Sandbox => render_sandbox(f, app, table_area),
         Screen::ServerConfig => render_server_config(f, app, table_area),
     }
 
@@ -270,6 +271,7 @@ fn render_content_title(f: &mut Frame, app: &App, area: Rect) {
         Screen::CreditsAndPlan => ("Credits & Plan", app.credit_balances.len()),
         Screen::ApiKeys => ("API Keys", app.api_keys.len()),
         Screen::ModeTools => ("Mode Tools", app.mode_tools.len()),
+        Screen::Sandbox => ("Sandbox", app.sandbox_rules.len()),
         Screen::ServerConfig => ("Server Config", 0),
     };
 
@@ -347,6 +349,9 @@ fn render_content_footer(f: &mut Frame, app: &mut App, area: Rect, has_actions: 
         }
         Screen::ModeTools => {
             "Enter: Edit allowed tools    \u{2191}\u{2193}: Navigate    Esc: Sidebar"
+        }
+        Screen::Sandbox => {
+            "\u{2191}\u{2193}: Navigate rules    Esc: Sidebar    (edit via REST API for now)"
         }
         Screen::ServerConfig => {
             if app.sc_subview == sc::SubView::DbCredentials {
@@ -3065,6 +3070,89 @@ fn render_mode_tools(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_stateful_widget(table, area, &mut app.table_state);
     register_row_clicks(f, app, block, area, app.mode_tools.len());
+}
+
+fn render_sandbox(f: &mut Frame, app: &mut App, area: Rect) {
+    // Compose header info from settings
+    let backend = app
+        .sandbox_settings
+        .as_ref()
+        .and_then(|s| s.sandbox_backend.clone())
+        .unwrap_or_else(|| "auto".to_string());
+    let profiles = app
+        .sandbox_settings
+        .as_ref()
+        .map(|s| s.allowed_profile_keys.join(", "))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "ai-bash, vite-preview, install, build".to_string());
+    let title = format!(
+        " Sandbox — backend={}, profiles={}, rules={}, audit={} ",
+        backend,
+        profiles,
+        app.sandbox_rules.len(),
+        app.sandbox_audit.len()
+    );
+
+    if app.sandbox_rules.is_empty() && app.sandbox_audit.is_empty() {
+        render_empty(
+            f,
+            "No sandbox rules or audit rows. Add a rule via doable admin or wait for the first jailedSpawn.",
+            area,
+        );
+        return;
+    }
+
+    let block = table_block(&title);
+
+    let header = Row::new([
+        Cell::from(" Type"),
+        Cell::from("Pattern"),
+        Cell::from("Action"),
+        Cell::from("Prio"),
+        Cell::from("Enabled"),
+        Cell::from("Reason"),
+    ])
+    .style(sb(c::OVERLAY0).bg(c::SURFACE0))
+    .height(1);
+
+    let rows: Vec<Row> = app
+        .sandbox_rules
+        .iter()
+        .map(|r| {
+            let action_style = if r.action == "deny" {
+                s(c::RED)
+            } else {
+                s(c::GREEN)
+            };
+            let enabled = if r.enabled { "yes" } else { "no" };
+            Row::new([
+                Cell::from(format!(" {}", r.rule_type)).style(sb(c::BLUE)),
+                Cell::from(r.pattern.clone()).style(s(c::TEXT)),
+                Cell::from(r.action.clone()).style(action_style),
+                Cell::from(format!("{}", r.priority)).style(s(c::SUBTEXT0)),
+                Cell::from(enabled).style(s(c::SUBTEXT0)),
+                Cell::from(r.reason.clone().unwrap_or_default()).style(s(c::SUBTEXT0)),
+            ])
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Length(10),
+        Constraint::Min(20),
+        Constraint::Length(8),
+        Constraint::Length(6),
+        Constraint::Length(8),
+        Constraint::Min(20),
+    ];
+
+    let table = Table::new(rows, widths)
+        .block(block.clone())
+        .header(header)
+        .row_highlight_style(highlight_style())
+        .style(s(c::TEXT));
+
+    f.render_stateful_widget(table, area, &mut app.table_state);
+    register_row_clicks(f, app, block, area, app.sandbox_rules.len());
 }
 
 // ─── API Keys / Mode Tools modals ─────────────────────────

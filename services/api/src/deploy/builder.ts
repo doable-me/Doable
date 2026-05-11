@@ -21,6 +21,7 @@ import {
 } from "../build-events/index.js";
 import { xray } from "../integrations/xray.js";
 import { shouldJail, getHardeningLevel } from "../runtime/hardening-level.js";
+import { jailedSpawn } from "../sandbox/orchestrator.js";
 
 const projects = projectQueries(sql);
 
@@ -360,6 +361,59 @@ export async function runBuild(
       stdio: ["ignore", "pipe", "pipe"],
       env: safeEnv,
     });
+
+  // ── Feature flag: DOABLE_SANDBOX_BUILD=1 routes the build through the
+  // profile/backend orchestrator (sandbox/orchestrator.ts) under the "build"
+  // profile. Old code path is unchanged when the flag is off.
+  if (process.env.DOABLE_SANDBOX_BUILD === "1") {
+    const spawnCtx = {
+      projectId: opts?.projectId ?? "<unknown>",
+      workspaceId: workspaceId || null,
+      userId: opts?.userId ?? "",
+      sessionId: "",
+      hardening: getHardeningLevel() as "off" | "dev" | "staging" | "prod",
+    };
+    try {
+      const jr = await jailedSpawn(effectiveCmd, effectiveArgs, spawnCtx, "build");
+      const log = (jr.stdout ?? "") + (jr.stderr ?? "");
+      if (log) onLog?.(log);
+      const durationMs = Date.now() - start;
+      if (jr.exitCode === 0) {
+        onLog?.(`\nBuild completed successfully in ${(durationMs / 1000).toFixed(1)}s\n`);
+        let resolvedOutputDir = outputDir;
+        const outDir = path.join(projectDir, "out");
+        if (existsSync(outDir)) {
+          resolvedOutputDir = outDir;
+        } else if (!existsSync(outputDir)) {
+          onLog?.(`WARN: Expected output at ${outputDir} not found\n`);
+        }
+        return { success: true, outputDir: resolvedOutputDir, log, durationMs };
+      }
+      const error = jr.timedOut
+        ? `Build timed out after ${BUILD_TIMEOUT_MS / 1000}s`
+        : `Build exited with code ${jr.exitCode}`;
+      onLog?.(`\nERROR: ${error}\n`);
+      return {
+        success: false,
+        outputDir,
+        log,
+        durationMs,
+        error,
+        errorCode: "build_failed_compile",
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onLog?.(`\nERROR: ${message}\n`);
+      return {
+        success: false,
+        outputDir,
+        log: "",
+        durationMs: Date.now() - start,
+        error: message,
+        errorCode: "build_failed_compile",
+      };
+    }
+  }
 
   let proc: ChildProcess;
   if (!shouldJail()) {

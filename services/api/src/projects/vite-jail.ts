@@ -6,12 +6,21 @@
  * Layer 3: OS resource limits (systemd cgroups on Linux, V8 heap on Windows)
  */
 
+// Sandbox-migration gap CLOSED behind feature flag DOABLE_SANDBOX_VITE=1.
+// When the flag is set, spawnJailedVite delegates to the orchestrator's
+// jailedSpawnLongRunning under the "vite-preview" profile, which returns
+// { process, pid, shutdown } — giving vite live stdout/stderr streams and
+// a kill handle while flowing through the same profile+backend+composer
+// pipeline as the rest of dovault. When the flag is unset (default), the
+// legacy vault.spawn path remains in place unchanged.
+
 import type { ChildProcess } from "node:child_process";
 import { createVault, Tracer as VaultTracer } from "dovault";
 import type { Vault, JailedProcess } from "dovault";
 import { xray } from "../integrations/xray.js";
 import { shouldJail, getHardeningLevel } from "../runtime/hardening-level.js";
 import { isSandboxWrapperAvailable } from "../runtime/dev-uid-allocator.js";
+import { jailedSpawnLongRunning } from "../sandbox/orchestrator.js";
 
 const SANDBOX_SPAWN_PATH = "/opt/doable/bin/sandbox-spawn";
 
@@ -93,6 +102,49 @@ export interface JailedViteResult {
  * Falls back to raw spawn if dovault throws (e.g. Permission Model unsupported).
  */
 export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<JailedViteResult> {
+  // Feature flag: route vite spawn through the sandbox orchestrator's
+  // long-running entrypoint under the "vite-preview" profile. Default OFF
+  // preserves the legacy vault.spawn behavior. When ON, all profile+backend+
+  // composer resolution (incl. UID drop, seccomp, fs jail) flows through the
+  // orchestrator instead of being hand-stitched here.
+  if (process.env.DOABLE_SANDBOX_VITE === "1") {
+    const hardening = (process.env.DOABLE_HARDENING_LEVEL as
+      | "off"
+      | "dev"
+      | "staging"
+      | "prod"
+      | undefined) ?? "dev";
+    const spawnCtx = {
+      projectId: opts.projectId,
+      workspaceId: null,
+      userId: "",
+      sessionId: opts.projectId,
+      hardening,
+    };
+    const handle = await jailedSpawnLongRunning(
+      opts.execPath,
+      opts.args,
+      spawnCtx,
+      "vite-preview",
+    );
+    xray.recordVaultEvent({
+      projectId: opts.projectId,
+      type: "vault.spawn",
+      data: {
+        pid: handle.pid,
+        backendId: handle.backendId,
+        profileId: handle.profileId,
+        composers: handle.composers,
+        via: "jailedSpawnLongRunning",
+      },
+    });
+    return {
+      process: handle.process,
+      pid: handle.pid ?? -1,
+      kill: () => { void handle.shutdown(); },
+    };
+  }
+
   const cleanEnv: Record<string, string> = {};
 
   // Inherit a minimal allow-list of host env vars so the spawned process

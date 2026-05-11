@@ -1,4 +1,14 @@
 import type postgres from "postgres";
+// Envelope-encryption helpers live in the API package. Importing across
+// workspaces keeps the same wire format used by integration_connections (070)
+// and oauth_apps (074). When DOABLE_ENVELOPE_ENCRYPTION=1, workspace-scoped
+// env_vars write via envelope_v1; project-scoped vars currently lack a
+// workspace_id on the insert path and stay on pgp_sym.
+import { encryptForWorkspace, decryptForWorkspace } from "../../../../services/api/src/lib/envelope-crypto.js";
+
+function useEnvelope(): boolean {
+  return process.env.DOABLE_ENVELOPE_ENCRYPTION === "1";
+}
 
 // ─── Row Types ────────────────────────────────────────────
 
@@ -58,6 +68,29 @@ export function envVarQueries(sql: postgres.Sql) {
       description?: string;
       createdBy: string;
     }): Promise<EnvVarRow> {
+      // Envelope path: workspace-scoped only (DEK derived per workspaceId).
+      // Project-scoped vars still use pgp_sym until they get a stable workspaceId
+      // resolver.
+      if (useEnvelope() && params.scope === "workspace") {
+        const blob = await encryptForWorkspace(params.workspaceId, params.value);
+        const [row] = await sql<EnvVarRow[]>`
+          INSERT INTO env_vars (workspace_id, project_id, scope, key, value_encrypted, credentials_format, is_secret, target, description, created_by)
+          VALUES (
+            ${params.workspaceId},
+            ${params.projectId ?? null},
+            ${params.scope},
+            ${params.key},
+            decode(${blob}, 'base64'),
+            'envelope_v1',
+            ${params.isSecret ?? true},
+            ${params.target ?? "all"},
+            ${params.description ?? ""},
+            ${params.createdBy}
+          )
+          RETURNING id, workspace_id, project_id, scope, key, is_secret, target, description, created_by, created_at, updated_at
+        `;
+        return row!;
+      }
       const [row] = await sql<EnvVarRow[]>`
         INSERT INTO env_vars (workspace_id, project_id, scope, key, value_encrypted, is_secret, target, description, created_by)
         VALUES (
@@ -86,10 +119,32 @@ export function envVarQueries(sql: postgres.Sql) {
     }): Promise<EnvVarRow | null> {
       // Build update dynamically — if value is provided, re-encrypt
       if (params.value !== undefined) {
+        if (useEnvelope()) {
+          const [existing] = await sql<{ workspace_id: string; scope: string }[]>`
+            SELECT workspace_id, scope FROM env_vars WHERE id = ${id}
+          `;
+          if (existing && existing.scope === "workspace") {
+            const blob = await encryptForWorkspace(existing.workspace_id, params.value);
+            const [row] = await sql<EnvVarRow[]>`
+              UPDATE env_vars SET
+                key = COALESCE(${params.key ?? null}, key),
+                value_encrypted = decode(${blob}, 'base64'),
+                credentials_format = 'envelope_v1',
+                is_secret = COALESCE(${params.isSecret ?? null}, is_secret),
+                target = COALESCE(${params.target ?? null}, target),
+                description = COALESCE(${params.description ?? null}, description),
+                updated_at = now()
+              WHERE id = ${id}
+              RETURNING id, workspace_id, project_id, scope, key, is_secret, target, description, created_by, created_at, updated_at
+            `;
+            return row ?? null;
+          }
+        }
         const [row] = await sql<EnvVarRow[]>`
           UPDATE env_vars SET
             key = COALESCE(${params.key ?? null}, key),
             value_encrypted = pgp_sym_encrypt(${params.value}, ${ENCRYPTION_KEY}),
+            credentials_format = 'pgp_sym',
             is_secret = COALESCE(${params.isSecret ?? null}, is_secret),
             target = COALESCE(${params.target ?? null}, target),
             description = COALESCE(${params.description ?? null}, description),
@@ -126,32 +181,62 @@ export function envVarQueries(sql: postgres.Sql) {
       projectId: string,
       target: "development" | "preview" | "production",
     ): Promise<Record<string, string>> {
-      // Get all matching vars (workspace + project), project overrides workspace for same key+target
-      const rows = await sql<EnvVarDecryptedRow[]>`
+      // Auto-detect format on read. envelope_v1 rows decrypt via workspace DEK,
+      // pgp_sym rows via the legacy ENCRYPTION_KEY.
+      const rows = await sql<Array<{
+        key: string;
+        credentials_format: string;
+        envelope_blob: string | null;
+        pgp_value: string | null;
+      }>>`
         SELECT DISTINCT ON (key)
           key,
-          pgp_sym_decrypt(value_encrypted, ${ENCRYPTION_KEY}) as decrypted_value
+          credentials_format,
+          CASE WHEN credentials_format = 'envelope_v1'
+               THEN encode(value_encrypted, 'base64') ELSE NULL END AS envelope_blob,
+          CASE WHEN credentials_format = 'envelope_v1'
+               THEN NULL
+               ELSE pgp_sym_decrypt(value_encrypted, ${ENCRYPTION_KEY}) END AS pgp_value
         FROM env_vars
         WHERE workspace_id = ${workspaceId}
           AND (project_id IS NULL OR project_id = ${projectId})
           AND (target = ${target} OR target = 'all')
         ORDER BY key, project_id NULLS LAST
       `;
-      // project_id NULLS LAST means project-scoped vars come first in DISTINCT ON, overriding workspace vars
       const result: Record<string, string> = {};
       for (const r of rows) {
-        result[r.key] = r.decrypted_value;
+        if (r.credentials_format === "envelope_v1" && r.envelope_blob) {
+          result[r.key] = (await decryptForWorkspace(workspaceId, r.envelope_blob)).toString("utf8");
+        } else if (r.pgp_value !== null) {
+          result[r.key] = r.pgp_value;
+        }
       }
       return result;
     },
 
     // ── Get single var's decrypted value (for non-secret reveal) ──
     async getDecryptedValue(id: string): Promise<string | null> {
-      const [row] = await sql<{ val: string }[]>`
-        SELECT pgp_sym_decrypt(value_encrypted, ${ENCRYPTION_KEY}) as val
+      const [row] = await sql<Array<{
+        credentials_format: string;
+        workspace_id: string;
+        envelope_blob: string | null;
+        pgp_value: string | null;
+      }>>`
+        SELECT
+          credentials_format,
+          workspace_id,
+          CASE WHEN credentials_format = 'envelope_v1'
+               THEN encode(value_encrypted, 'base64') ELSE NULL END AS envelope_blob,
+          CASE WHEN credentials_format = 'envelope_v1'
+               THEN NULL
+               ELSE pgp_sym_decrypt(value_encrypted, ${ENCRYPTION_KEY}) END AS pgp_value
         FROM env_vars WHERE id = ${id}
       `;
-      return row?.val ?? null;
+      if (!row) return null;
+      if (row.credentials_format === "envelope_v1" && row.envelope_blob) {
+        return (await decryptForWorkspace(row.workspace_id, row.envelope_blob)).toString("utf8");
+      }
+      return row.pgp_value;
     },
   };
 }

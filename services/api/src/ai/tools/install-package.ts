@@ -7,6 +7,7 @@ import { linkDoableSdk } from "../../projects/link-sdk.js";
 import { sql } from "../../db/index.js";
 import { getSandboxSettings, listSandboxRules } from "../../sandbox/queries.js";
 import { evaluateSandbox } from "../../sandbox/rule-matcher.js";
+import { jailedSpawn } from "../../sandbox/orchestrator.js";
 
 // Hardcoded floor: these are intrinsically dangerous regardless of workspace
 // policy. Anything else is governed by the workspace sandbox rules
@@ -172,7 +173,12 @@ export const installPackageTool: Tool = {
 
     const args = buildArgs(pm, npmPackages, isDev);
 
-    const result = await runInstall(pm, args, cwd);
+    const result = await runInstall(pm, args, cwd, {
+      projectId: ctx.projectId,
+      workspaceId: workspaceId,
+      userId: ctx.userId,
+      sessionId: ctx.sessionId,
+    });
 
     if (!result.success) {
       return {
@@ -228,11 +234,61 @@ function buildArgs(pm: PackageManager, packages: string[], isDev: boolean): stri
  * after install completes — see the `restartDevServer` call above — and that
  * spawn picks up the vault env via the normal `startDevServer` path.
  */
-function runInstall(
+async function runInstall(
   pm: string,
   args: string[],
   cwd: string,
+  spawnCtx: {
+    projectId: string;
+    workspaceId: string | null;
+    userId: string;
+    sessionId: string;
+  },
 ): Promise<{ success: boolean; output: string; error?: string }> {
+  // Feature flag: DOABLE_SANDBOX_INSTALL=1 routes through the new jailedSpawn
+  // orchestrator. OFF by default — operators flip per host once verified.
+  const useJail = process.env.DOABLE_SANDBOX_INSTALL === "1";
+
+  if (useJail) {
+    try {
+      const hardening = (process.env.DOABLE_HARDENING_LEVEL ?? "dev") as
+        | "off"
+        | "dev"
+        | "staging"
+        | "prod";
+      const result = await jailedSpawn(
+        pm,
+        args,
+        {
+          projectId: spawnCtx.projectId,
+          workspaceId: spawnCtx.workspaceId,
+          userId: spawnCtx.userId,
+          sessionId: spawnCtx.sessionId,
+          hardening,
+        },
+        "install",
+      );
+      const combined = (result.stdout ?? "") + (result.stderr ?? "");
+      const success = result.exitCode === 0 && !result.oomKilled;
+      return {
+        success,
+        output: combined,
+        error: !success
+          ? result.oomKilled
+            ? `${pm} killed (out of memory)`
+            : `${pm} exited with code ${result.exitCode}`
+          : undefined,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        output: "",
+        error: `Failed to run ${pm} via jailedSpawn: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
+  // Legacy path — raw spawn, kept side-by-side for safety.
   return new Promise((resolve) => {
     const child = spawn(pm, args, {
       cwd,

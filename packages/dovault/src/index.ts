@@ -38,6 +38,38 @@ export type {
 
 export type { ResourceBackend } from "./backends/types.js";
 
+// ── SandboxBackend (Wave 1 contract) ──
+export {
+  SandboxBackendRegistry,
+  BackendUnavailableError,
+} from "./backends/sandbox-backend.js";
+export type {
+  SandboxBackend,
+  BackendAvailability,
+  DeclaredLayers,
+  PreflightStep,
+  TeardownStep,
+  BuildSpawnResult,
+} from "./backends/sandbox-backend.js";
+
+export {
+  defaultProfile,
+  compileProfileOverrides,
+  SandboxProfileSchema,
+  ScopeActionSchema,
+  ProcOverlaySchema,
+} from "./profile.js";
+export type {
+  SandboxProfile,
+  ScopeAction,
+  ProcOverlay,
+} from "./profile.js";
+
+export {
+  getSandboxRegistry,
+  __resetSandboxRegistryForTests,
+} from "./sandbox-registry.js";
+
 // Re-export backends for custom composition
 export { DirectBackend } from "./backends/direct.js";
 export { SystemdBackend } from "./backends/systemd.js";
