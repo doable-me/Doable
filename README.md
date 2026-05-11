@@ -88,19 +88,25 @@ pnpm dev                    # Web :3000 | API :4000 | WS :4001
 
 ## Supported AI Providers
 
-Doable works with virtually any AI provider. Bring your own API key:
+> **53+ providers supported out of the box. BYOK (Bring Your Own Key) — use any model you want.**
 
-| Category | Providers |
-|----------|-----------|
-| **Major Cloud** | Anthropic (Claude), OpenAI, Google Gemini, Azure OpenAI, AWS Bedrock, Vertex AI |
-| **GitHub Copilot** | Full Copilot SDK integration — use your Copilot subscription directly |
-| **Specialized** | Groq, Mistral, Cohere, xAI (Grok), DeepSeek, Perplexity, SambaNova |
-| **Aggregators** | OpenRouter (200+ models), Together AI, Fireworks AI, DeepInfra, Unify AI |
-| **Regional** | Moonshot, DashScope, Zhipu, Baidu Qianfan, Volcengine, MiniMax, StepFun, 01.AI, Hunyuan |
-| **Infrastructure** | NVIDIA NIM, Cloudflare Workers AI, Nebius, Scaleway |
-| **Local/Self-Hosted** | Ollama, LM Studio, vLLM, llama.cpp, Jan, LocalAI, GPT4All, and 15+ more |
+Doable ships a full provider catalog (`packages/shared/src/ai/provider-catalog.ts`) with tiered discovery, health checks, and a universal BYOK bridge supporting 3 SDK wire protocols (`openai`, `azure`, `anthropic`) and 6 auth methods. Any OpenAI-compatible endpoint works — set a base URL and key and you're done.
 
-Any OpenAI-compatible endpoint works. Set `OPENAI_BASE_URL` and you're done.
+| Tier | Providers | Count |
+|------|-----------|-------|
+| **Tier 1 — Major Cloud** | OpenAI (GPT-4.1, o3, o4-mini), Anthropic (Claude Opus 4, Sonnet 4), Google AI Studio (Gemini 2.5 Pro/Flash), Azure OpenAI, AWS Bedrock, Google Vertex AI | 6 |
+| **GitHub Copilot** | Full Copilot SDK integration — use your existing Copilot subscription directly as the AI engine | 1 |
+| **Tier 2 — Aggregators** | OpenRouter (200+ models, 28+ free), Together AI, Fireworks AI, Unify AI, OpenCode Zen, OpenCode Go | 6 |
+| **Tier 3 — Specialized** | Groq (free tier), Mistral, Cohere, xAI (Grok), DeepSeek, Perplexity, SambaNova, Novita AI, PPIO | 9 |
+| **Tier 4 — Regional** | Moonshot/Kimi, Alibaba DashScope (Qwen), Zhipu/GLM, Baidu Qianfan (ERNIE), Volcengine/Doubao, MiniMax, StepFun, 01.AI/Yi, Tencent Hunyuan, Cerebras, AI21, Hyperbolic | 12 |
+| **Tier 5 — Infrastructure** | DeepInfra, NVIDIA NIM, Cloudflare Workers AI, Nebius, Scaleway, Infermatic, Lepton AI, OVHcloud | 8 |
+| **Local — Primary** | Ollama, LM Studio, vLLM, llama.cpp, Jan, LocalAI, GPT4All | 7 |
+| **Local — Secondary** | text-generation-webui, KoboldCpp, TGI (HuggingFace), TabbyML, llamafile (Mozilla), Cortex, Docker Model Runner, LMDeploy, SGLang, TabbyAPI, MLC LLM, Aphrodite Engine | 12 |
+| **Local — Frontends** | Msty, Open WebUI, LibreChat | 3 |
+
+**Total: 53+ providers, 19+ local engines, unlimited via BYOK.**
+
+The frontend includes a provider setup wizard, in-editor model picker, and admin model configuration panel (`apps/web/src/modules/ai-settings/`).
 
 ---
 

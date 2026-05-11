@@ -5,6 +5,7 @@ import { sql } from "../../db/index.js";
 import { authQueries } from "@doable/db/queries/auth.js";
 import { userQueries } from "@doable/db/queries/users.js";
 import { securityQueries } from "@doable/db/queries/security.js";
+import { mfaQueries } from "@doable/db/queries/mfa.js";
 import { verifyRefreshToken, signAccessToken, signRefreshToken } from "../../lib/jwt.js";
 import { authMiddleware } from "../../middleware/auth.js";
 import { sendTemplatedEmail } from "../../lib/email.js";
@@ -14,10 +15,12 @@ import {
   loginRateLimiter, registerRateLimiter, forgotPasswordRateLimiter, resetPasswordRateLimiter,
   issueTokens, ensureWorkspace, FRONTEND_URL,
 } from "./helpers.js";
+import { issueMfaChallenge } from "./mfa.js";
 
 const auth = authQueries(sql);
 const users = userQueries(sql);
 const securityDb = securityQueries(sql);
+const mfa = mfaQueries(sql);
 
 export const coreAuthRoutes = new Hono();
 
@@ -66,6 +69,18 @@ coreAuthRoutes.post("/login", loginRateLimiter, async (c) => {
 
   const valid = await argon2.verify(user.password_hash, password);
   if (!valid) return c.json({ error: "Invalid email or password" }, 401);
+
+  // If the user opted into MFA, issue a short-lived challenge token
+  // instead of real session tokens. The frontend exchanges it at
+  // /auth/mfa/verify by submitting a TOTP code or recovery code.
+  try {
+    if (await mfa.hasVerifiedFactor(user.id)) {
+      const challenge = await issueMfaChallenge(user.id, user.email);
+      return c.json(challenge);
+    }
+  } catch (err) {
+    console.warn("[Auth] MFA check failed, falling through to plain login:", err);
+  }
 
   const tokens = await issueTokens(user.id, user.email);
   return c.json({ user: sanitizeUser(user), tokens });

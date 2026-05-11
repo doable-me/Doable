@@ -344,6 +344,55 @@ export async function decryptForWorkspace(
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 }
 
+// ─── User-scoped helpers (no workspace DEK) ────────────────────────────
+
+/**
+ * Encrypt a short, user-scoped secret (e.g. a TOTP shared secret) directly
+ * with the master KEK — no per-workspace DEK layer. The blob format is
+ * a deliberately simpler variant of the workspace blob:
+ *
+ *   [0]      HEADER_VERSION_KEK (0x10)
+ *   [1..12]  iv (12 bytes)
+ *   [13..28] auth tag (16 bytes)
+ *   [29..]   ciphertext
+ *
+ * This is appropriate for items that are not workspace-owned (per-user
+ * MFA factors, account-recovery state). Rotating these requires re-encryp
+ * during a KEK rotation flow, just like workspace DEK wrap rotation.
+ */
+const HEADER_VERSION_KEK = 0x10;
+
+export function encryptWithKek(plaintext: string | Buffer): string {
+  const kek = loadKek();
+  const iv = randomBytes(IV_BYTES);
+  const cipher = createCipheriv("aes-256-gcm", kek, iv);
+  const data = typeof plaintext === "string" ? Buffer.from(plaintext, "utf8") : plaintext;
+  const ciphertext = Buffer.concat([cipher.update(data), cipher.final()]);
+  const tag = cipher.getAuthTag();
+
+  const header = Buffer.from([HEADER_VERSION_KEK]);
+  return Buffer.concat([header, iv, tag, ciphertext]).toString("base64");
+}
+
+export function decryptWithKek(blob: string): Buffer {
+  const buf = Buffer.from(blob, "base64");
+  if (buf.length < 1 + IV_BYTES + TAG_BYTES) {
+    throw new Error("[envelope-crypto] KEK ciphertext blob too short.");
+  }
+  const version = buf[0]!;
+  if (version !== HEADER_VERSION_KEK) {
+    throw new Error(`[envelope-crypto] Unsupported KEK blob version 0x${version.toString(16)}.`);
+  }
+  const iv = buf.subarray(1, 1 + IV_BYTES);
+  const tag = buf.subarray(1 + IV_BYTES, 1 + IV_BYTES + TAG_BYTES);
+  const ciphertext = buf.subarray(1 + IV_BYTES + TAG_BYTES);
+
+  const kek = loadKek();
+  const decipher = createDecipheriv("aes-256-gcm", kek, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+}
+
 // ─── Test-only hook ────────────────────────────────────────────────────
 
 /**

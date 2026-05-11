@@ -68,3 +68,45 @@ export async function verifyRefreshToken(
   });
   return payload as unknown as RefreshTokenPayload;
 }
+
+// ─── MFA challenge token ────────────────────────────────────────────
+//
+// Issued by /auth/login (and the OAuth callback) when the user has a
+// verified MFA factor. The frontend exchanges it for a real session by
+// calling /auth/mfa/verify with the TOTP code or a recovery code.
+// Short-lived (5 min) and scope-locked via the `purpose` claim so a
+// stolen mfa challenge can't be used as a session.
+
+export interface MfaChallengeTokenPayload {
+  sub: string;
+  purpose: "mfa_challenge";
+  email: string;
+  iat: number;
+  exp: number;
+}
+
+export async function signMfaChallengeToken(
+  userId: string,
+  email: string,
+): Promise<string> {
+  return new jose.SignJWT({ email, purpose: "mfa_challenge" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setIssuer(JWT_ISSUER)
+    .setIssuedAt()
+    .setExpirationTime("5m")
+    .sign(JWT_SECRET);
+}
+
+export async function verifyMfaChallengeToken(
+  token: string,
+): Promise<MfaChallengeTokenPayload> {
+  const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
+    issuer: JWT_ISSUER,
+  });
+  const p = payload as unknown as MfaChallengeTokenPayload;
+  if (p.purpose !== "mfa_challenge") {
+    throw new Error("Not an MFA challenge token");
+  }
+  return p;
+}
