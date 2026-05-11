@@ -83,7 +83,18 @@ rollback() {
     rm -f "${DROPIN_FILE}"
     rmdir --ignore-fail-on-non-empty "${DROPIN_DIR}" 2>/dev/null || true
     systemctl daemon-reload 2>/dev/null || true
-    warn "Drop-in removed. doable.service reverts to its original (root) configuration."
+
+    # The doable-owned tmux session is in a PrivateTmp namespace invisible
+    # to root's ExecStop. If we leave it running, the post-rollback
+    # systemctl restart will see a zombie owning api/ws ports and the new
+    # root tmux will either no-op or fail. Reap the orphan explicitly,
+    # then restart cleanly.
+    pkill -9 -u "${SVC_USER}" -f 'tmux.*new-session.*-s doable' 2>/dev/null || true
+    pkill -9 -u "${SVC_USER}" -f 'tsx watch.*services/(api|ws)' 2>/dev/null || true
+    sleep 2
+    systemctl restart "${SERVICE_NAME}" 2>/dev/null || true
+
+    warn "Drop-in removed; orphan tmux reaped; service restarted as root."
     warn "Investigate the failure above before re-running with --apply."
   else
     warn "Script exited with rc=${rc} before any irreversible changes were made."
@@ -205,15 +216,19 @@ fi
 #          next service restart and are large; chowning them is wasteful
 #          and would add minutes on a real install.
 # -------------------------------------------------------------------
-phase "Step 4/9  Chown ${APP_DIR} → ${SVC_USER}:${SVC_USER} (skipping node_modules)"
+phase "Step 4/9  Chown ${APP_DIR} → ${SVC_USER}:${SVC_USER} (full recursive)"
 
+# Earlier versions of this script pruned '*/node_modules' from the chown
+# to save time. That broke web rebuilds because `.next/standalone/.../
+# node_modules/next` is a real (non-symlink) tree owned by root from
+# deploy-prod.sh, and `next build` later tries to unlink it as doable.
+# Cheaper to chown everything (~30s on a 1GB tree) than to debug the
+# resulting EACCES at 2am.
 if [[ "${APPLY}" -eq 1 ]]; then
-  find "${APP_DIR}" \
-    -path '*/node_modules' -prune \
-    -o -exec chown "${SVC_USER}:${SVC_USER}" {} +
-  ok "Chowned ${APP_DIR} to ${SVC_USER}:${SVC_USER} (node_modules skipped)."
+  chown -R "${SVC_USER}:${SVC_USER}" "${APP_DIR}"
+  ok "Chowned ${APP_DIR} recursively to ${SVC_USER}:${SVC_USER}."
 else
-  dry "find ${APP_DIR} -path '*/node_modules' -prune -o -exec chown ${SVC_USER}:${SVC_USER} {} +"
+  dry "chown -R ${SVC_USER}:${SVC_USER} ${APP_DIR}"
 fi
 
 # -------------------------------------------------------------------
