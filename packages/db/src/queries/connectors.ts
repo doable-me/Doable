@@ -1,9 +1,7 @@
 import type postgres from "postgres";
+import { getEncryptionKey } from "../secrets.js";
 
-// Mirrors the fallback used in services/api/src/integrations/credential-vault.ts
-// and packages/db/src/queries/env-vars.ts. Keeping it duplicated avoids a
-// cross-package import (this file lives in @doable/db, the vault in services/api).
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
+const ENCRYPTION_KEY = getEncryptionKey();
 
 // ─── Row Types ────────────────────────────────────────────
 

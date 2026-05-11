@@ -5,6 +5,7 @@ import type postgres from "postgres";
 // env_vars write via envelope_v1; project-scoped vars currently lack a
 // workspace_id on the insert path and stay on pgp_sym.
 import { encryptForWorkspace, decryptForWorkspace } from "../../../../services/api/src/lib/envelope-crypto.js";
+import { getEncryptionKey } from "../secrets.js";
 
 function useEnvelope(): boolean {
   return process.env.DOABLE_ENVELOPE_ENCRYPTION === "1";
@@ -34,7 +35,7 @@ export interface EnvVarDecryptedRow extends EnvVarRow {
 // ─── Queries ──────────────────────────────────────────────
 
 export function envVarQueries(sql: postgres.Sql) {
-  const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
+  const ENCRYPTION_KEY = getEncryptionKey();
 
   return {
     // ── List (never returns decrypted values) ──────────────

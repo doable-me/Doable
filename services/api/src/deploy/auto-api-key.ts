@@ -15,8 +15,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { sql } from "../db/index.js";
 import { generateProjectApiKey } from "../routes/connector-proxy.js";
-
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
+import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
 /**
  * Scan project source files for MCP tool calls and return list of tool names used.

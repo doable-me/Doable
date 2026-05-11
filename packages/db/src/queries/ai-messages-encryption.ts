@@ -12,8 +12,9 @@
  */
 
 import type postgres from "postgres";
+import { getEncryptionKey } from "../secrets.js";
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
+const ENCRYPTION_KEY = getEncryptionKey();
 
 /** Whether app-layer encryption of ai_messages.content is currently enabled. */
 export function isMessageEncryptionEnabled(): boolean {

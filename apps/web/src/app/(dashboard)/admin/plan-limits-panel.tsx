@@ -175,6 +175,7 @@ export function PlanLimitsPanel() {
           const row = limits.find((l) => l.plan === planKey);
           if (!row) return null;
           const display = PLAN_DISPLAY[planKey];
+          if (!display) return null;
           const isEditing = editPlan === planKey;
           const isSaving = saving === planKey;
 

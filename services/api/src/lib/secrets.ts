@@ -35,5 +35,14 @@ export const ENCRYPTION_KEY = requireSecret("ENCRYPTION_KEY");
 /** Shared secret for API ↔ WS internal communication. */
 export const INTERNAL_SECRET = requireSecret("INTERNAL_SECRET");
 
+/**
+ * HS256 signing key for short-lived project JWTs (connector-proxy, preview).
+ * Falls back to JWT_SECRET so existing deployments keep working — both are
+ * validated in prod by `requireSecret`, so the chain never resolves to a
+ * hardcoded literal.
+ */
+export const PROJECT_JWT_SECRET =
+  process.env.PROJECT_JWT_SECRET ?? JWT_SECRET;
+
 /** JWT issuer claim. */
 export const JWT_ISSUER = process.env.JWT_ISSUER ?? "doable";

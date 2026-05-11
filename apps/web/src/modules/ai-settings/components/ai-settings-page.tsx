@@ -85,8 +85,9 @@ export function AiSettingsPage() {
 
   // If current tab isn't visible (e.g. non-admin), fall back to first available
   useEffect(() => {
-    if (tabs.length > 0 && !tabs.some((t) => t.key === activeTab)) {
-      setActiveTab(tabs[0].key);
+    const first = tabs[0];
+    if (first && !tabs.some((t) => t.key === activeTab)) {
+      setActiveTab(first.key);
     }
   }, [isPlatformAdmin]);
 
