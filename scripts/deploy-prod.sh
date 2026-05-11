@@ -22,7 +22,11 @@
 
 set -eo pipefail
 
-HOST="${DEPLOY_HOST:-root@167.71.235.230}"
+#
+# IMPORTANT: doable's public URL (doable.me) goes through Cloudflare and
+# does NOT carry SSH. The SSH target is the bare-DNS sibling `do.fid.pw`,
+# which resolves directly to the origin server. Never SSH via doable.me.
+HOST="${DEPLOY_HOST:-root@do.fid.pw}"
 KEY="${DEPLOY_KEY:-$HOME/.ssh/itdept_staging}"
 
 ssh -i "$KEY" -o BatchMode=yes "$HOST" "
