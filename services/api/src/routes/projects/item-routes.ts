@@ -13,11 +13,7 @@ import { getThumbnailPath } from "../../thumbnails/capture.js";
 import { stopDevServer } from "../../projects/dev-server.js";
 import { projects, workspacesQ, requireProjectAccess, isRoleAtLeast, validateProjectIdParam } from "./helpers.js";
 import { signProjectJwt } from "../../auth/project-jwt.js";
-
-const PROJECT_JWT_SECRET =
-  process.env.PROJECT_JWT_SECRET ??
-  process.env.JWT_SECRET ??
-  "DEVELOPMENT_PROJECT_JWT_SECRET_DO_NOT_USE_IN_PROD";
+import { PROJECT_JWT_SECRET } from "../../lib/secrets.js";
 
 const stars = starQueries(sql);
 const shareTracking = shareTrackingQueries(sql);

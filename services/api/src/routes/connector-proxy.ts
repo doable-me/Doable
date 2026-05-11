@@ -46,6 +46,7 @@ import { getProjectPath } from "../projects/file-manager.js";
 import { connectorQueries } from "@doable/db";
 import { getConnectorManager } from "../mcp/connector-manager.js";
 import type { McpConnectorConfig } from "../mcp/types.js";
+import { PROJECT_JWT_SECRET } from "../lib/secrets.js";
 
 export const connectorProxyRoutes = new Hono();
 
@@ -54,11 +55,6 @@ export const connectorProxyRoutes = new Hono();
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_JWT = 600;     // per project per minute (preview)
 const RATE_LIMIT_MAX_API_KEY = 1200; // per project per minute (deployed, server key)
-
-const PROJECT_JWT_SECRET =
-  process.env.PROJECT_JWT_SECRET ??
-  process.env.JWT_SECRET ??
-  "DEVELOPMENT_PROJECT_JWT_SECRET_DO_NOT_USE_IN_PROD";
 
 // ─── In-memory state ────────────────────────────────────
 

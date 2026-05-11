@@ -1,7 +1,8 @@
 import type postgres from "postgres";
 import type { GitHubConnectionRow, GitHubCommitRow, GitHubUserTokenRow } from "../types.js";
+import { getEncryptionKey } from "../secrets.js";
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
+const ENCRYPTION_KEY = getEncryptionKey();
 
 export function githubQueries(sql: postgres.Sql) {
   return {

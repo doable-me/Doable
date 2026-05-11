@@ -16,58 +16,6 @@ import { buildZipBuffer } from "../../lib/zip.js";
 
 export const devServerFileRoutes = new Hono<AuthEnv>();
 
-// ─── GET /projects/:id/debug-env ─ Debug env resolution ─────
-devServerFileRoutes.get("/projects/:id/debug-env", async (c) => {
-  const projectId = c.req.param("id");
-  const uid = c.get("userId");
-  try {
-    const { resolveProjectEnvVars } = await import("../../env/resolve.js");
-    const { resolveVaultEnv } = await import("../../env/vault-bridge.js");
-    const { ENCRYPTION_KEY } = await import("../../lib/secrets.js");
-    const { projectQueries } = await import("@doable/db");
-    const { sql } = await import("../../db/index.js");
-    const projects = projectQueries(sql);
-    const project = await projects.findById(projectId);
-    const wsId = project?.workspace_id;
-    
-    // Direct vault call
-    let vaultResult: any = null;
-    let vaultError: string | null = null;
-    if (wsId && uid) {
-      try {
-        vaultResult = await resolveVaultEnv(wsId, projectId, uid);
-      } catch (err) {
-        vaultError = String(err);
-      }
-    }
-    
-    // Call the actual resolver and catch the error
-    let env: Record<string, string> = {};
-    let resolveError: string | null = null;
-    try {
-      env = await resolveProjectEnvVars(projectId, "development", undefined, uid);
-    } catch (err) {
-      resolveError = String(err);
-    }
-    
-    return c.json({ 
-      keys: Object.keys(env), 
-      count: Object.keys(env).length, 
-      userId: uid,
-      workspaceId: wsId,
-      projectFound: !!project,
-      encKeyPrefix: ENCRYPTION_KEY.substring(0, 8),
-      envEncKey: (process.env.ENCRYPTION_KEY ?? '').substring(0, 8),
-      vaultKeys: vaultResult ? Object.keys(vaultResult.env) : null,
-      vaultManifest: vaultResult?.manifest?.map((m: any) => m.integrationId) ?? null,
-      vaultError,
-      resolveError,
-    });
-  } catch (err) {
-    return c.json({ error: String(err) }, 500);
-  }
-});
-
 // ─── GET /projects/:id/preview-url ─ Get dev server URL ─────
 
 devServerFileRoutes.get("/projects/:id/preview-url", async (c) => {

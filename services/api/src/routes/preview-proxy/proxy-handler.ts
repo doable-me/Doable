@@ -13,6 +13,7 @@ import { sql } from "../../db/index.js";
 import { defaultRegistry } from "../../frameworks/registry.js";
 import type { FrameworkAdapter } from "../../frameworks/types.js";
 import { signProjectJwt } from "../../auth/project-jwt.js";
+import { PROJECT_JWT_SECRET } from "../../lib/secrets.js";
 import {
   RETRY_HTML,
   getStorageNamespaceSnippet,
@@ -24,11 +25,6 @@ const publicApiUrl =
   process.env.NEXT_PUBLIC_API_URL ??
   process.env.CORS_ORIGINS?.split(",")[0]?.replace(/\/$/, "") ??
   `http://localhost:${process.env.API_PORT ?? "4000"}`;
-
-const PROJECT_JWT_SECRET =
-  process.env.PROJECT_JWT_SECRET ??
-  process.env.JWT_SECRET ??
-  "DEVELOPMENT_PROJECT_JWT_SECRET_DO_NOT_USE_IN_PROD";
 
 export const previewRoutes = new Hono();
 

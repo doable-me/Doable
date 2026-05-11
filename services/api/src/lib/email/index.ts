@@ -54,7 +54,7 @@ interface DbEmailConfig {
  */
 async function loadProviderFromDb(sql: postgres.Sql): Promise<EmailProvider | null> {
   try {
-    const encKey = process.env.ENCRYPTION_KEY ?? "doable-dev-encryption-key";
+    const { ENCRYPTION_KEY: encKey } = await import("../secrets.js");
     const [row] = await sql<DbEmailConfig[]>`
       SELECT provider, from_address,
              pgp_sym_decrypt(credentials_encrypted, ${encKey})::text as credentials_decrypted
