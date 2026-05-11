@@ -880,7 +880,7 @@ if ! getent passwd doable >/dev/null; then
   # When uid > SYS_UID_MAX (default 999), useradd's auto-group allocation
   # fails. Pre-create the group with an explicit gid so useradd can attach.
   getent group doable >/dev/null || groupadd --system -g 5000 doable
-  useradd --system --no-create-home --shell /usr/sbin/nologin -u 5000 -g doable doable
+  useradd --system --no-create-home --shell /bin/bash -u 5000 -g doable doable
 fi
 ok "System user 'doable' (uid 5000) present"
 

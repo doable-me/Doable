@@ -154,7 +154,20 @@ if getent passwd "${SVC_USER}" >/dev/null 2>&1; then
   if [[ "${EXISTING_UID}" != "${SVC_UID}" ]]; then
     err "User '${SVC_USER}' already exists with uid=${EXISTING_UID}, expected ${SVC_UID}. Resolve manually."
   fi
-  ok "User '${SVC_USER}' already exists with uid=${SVC_UID} — skipping useradd."
+  # Earlier versions of this script created the user with /usr/sbin/nologin,
+  # which breaks tmux send-keys (start.sh spawns shells inside the tmux
+  # session). Repair the shell idempotently so re-run on an older box works.
+  EXISTING_SHELL="$(getent passwd "${SVC_USER}" | cut -d: -f7)"
+  if [[ "${EXISTING_SHELL}" != "/bin/bash" ]]; then
+    if [[ "${APPLY}" -eq 1 ]]; then
+      usermod --shell /bin/bash "${SVC_USER}"
+      ok "Updated '${SVC_USER}' shell: ${EXISTING_SHELL} → /bin/bash."
+    else
+      dry "usermod --shell /bin/bash ${SVC_USER}  (current: ${EXISTING_SHELL})"
+    fi
+  else
+    ok "User '${SVC_USER}' already exists with uid=${SVC_UID}, shell=/bin/bash — OK."
+  fi
 else
   if [[ "${APPLY}" -eq 1 ]]; then
     # When uid > SYS_UID_MAX (default 999), useradd's auto-group allocation
@@ -163,12 +176,12 @@ else
     if ! getent group "${SVC_USER}" >/dev/null 2>&1; then
       groupadd --system -g "${SVC_UID}" "${SVC_USER}"
     fi
-    useradd --system --no-create-home --shell /usr/sbin/nologin \
+    useradd --system --no-create-home --shell /bin/bash \
       -u "${SVC_UID}" -g "${SVC_USER}" "${SVC_USER}"
-    ok "Created system user '${SVC_USER}' (uid=${SVC_UID}, shell=/usr/sbin/nologin)."
+    ok "Created system user '${SVC_USER}' (uid=${SVC_UID}, shell=/bin/bash)."
   else
     dry "groupadd --system -g ${SVC_UID} ${SVC_USER}"
-    dry "useradd --system --no-create-home --shell /usr/sbin/nologin -u ${SVC_UID} -g ${SVC_USER} ${SVC_USER}"
+    dry "useradd --system --no-create-home --shell /bin/bash -u ${SVC_UID} -g ${SVC_USER} ${SVC_USER}"
   fi
 fi
 
@@ -394,7 +407,7 @@ cat <<VERIFY
 
   3. OS account exists and is locked-down:
      getent passwd ${SVC_USER}
-     # Expect: ${SVC_USER}:x:${SVC_UID}:${SVC_UID}::/nonexistent:/usr/sbin/nologin
+     # Expect: ${SVC_USER}:x:${SVC_UID}:${SVC_UID}::/nonexistent:/bin/bash
 
   4. Per-project sandbox UID drop still works (open a project preview in UI, then):
      ps -ef | grep -E 'vite.*projects/' | grep -v grep
