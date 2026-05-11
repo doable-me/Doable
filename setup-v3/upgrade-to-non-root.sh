@@ -205,17 +205,15 @@ fi
 #          next service restart and are large; chowning them is wasteful
 #          and would add minutes on a real install.
 # -------------------------------------------------------------------
-phase "Step 4/9  Chown ${APP_DIR} → ${SVC_USER}:${SVC_USER} (skipping node_modules/.next/.turbo)"
+phase "Step 4/9  Chown ${APP_DIR} → ${SVC_USER}:${SVC_USER} (skipping node_modules)"
 
 if [[ "${APPLY}" -eq 1 ]]; then
   find "${APP_DIR}" \
     -path '*/node_modules' -prune \
-    -o -path '*/.next' -prune \
-    -o -path '*/.turbo' -prune \
     -o -exec chown "${SVC_USER}:${SVC_USER}" {} +
-  ok "Chowned ${APP_DIR} to ${SVC_USER}:${SVC_USER} (node_modules/.next/.turbo skipped)."
+  ok "Chowned ${APP_DIR} to ${SVC_USER}:${SVC_USER} (node_modules skipped)."
 else
-  dry "find ${APP_DIR} -path '*/node_modules' -prune -o -path '*/.next' -prune -o -path '*/.turbo' -prune -o -exec chown ${SVC_USER}:${SVC_USER} {} +"
+  dry "find ${APP_DIR} -path '*/node_modules' -prune -o -exec chown ${SVC_USER}:${SVC_USER} {} +"
 fi
 
 # -------------------------------------------------------------------
@@ -372,6 +370,19 @@ else
 fi
 
 if [[ "${DO_RESTART}" -eq 1 ]]; then
+  # Pre-flight: kill any orphan 'doable' tmux session, regardless of owner.
+  #
+  # Why: switching User= changes the PrivateTmp namespace of the spawned
+  # tmux, so a tmux session created under the OLD user is invisible to
+  # ExecStop running under the NEW user. Result: orphan tmux survives
+  # `systemctl restart`, holds api/ws sockets, and the new tmux can't
+  # bind (or the new start.sh's `tmux kill-session -t doable` finds
+  # nothing in its own namespace and proceeds to create a duplicate).
+  for owner in root "${SVC_USER}"; do
+    pkill -9 -u "${owner}" -f 'tmux.*new-session.*-s doable' 2>/dev/null || true
+  done
+  sleep 1
+
   systemctl restart "${SERVICE_NAME}"
 
   # api/ws come up in ~10s (tsx watch, no build). web rebuilds via
