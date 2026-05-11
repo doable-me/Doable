@@ -701,9 +701,16 @@ done
 
 ok "Dependencies installed & database migrated"
 
-# Build Next.js production bundle
+# Build Next.js production bundle.
+# Force a clean .next + .turbo before each build — Next 16's Turbopack
+# caches compiled SSR chunks under .next/server/chunks/. A failed first
+# build (e.g. from a stale global-error.tsx) leaves broken chunks the
+# next build will happily re-use, producing the misleading
+# "Cannot read properties of null (reading 'useContext')" prerender
+# error on a re-run even after the source was fixed.
 info "Building Next.js..."
 cd "$INSTALL_DIR/apps/web"
+rm -rf .next .turbo
 pnpm build
 cd "$INSTALL_DIR"
 ok "Next.js built"

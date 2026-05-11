@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
-
 /**
- * App Router global error boundary. Required by Next 15 when force-dynamic
- * on the root layout would otherwise trigger Pages-Router fallback (<Html>
- * import from next/document, which doesn't exist in App-Router-only apps).
+ * App Router global error boundary. Replaces the root layout when an error
+ * escapes every other boundary; must therefore include <html> and <body>.
  *
- * Must include <html> and <body> because it replaces the root layout when
- * an error escapes every other boundary.
+ * Hook-free on purpose — Next 16's prerender of the synthesized
+ * /_global-error route trips on useEffect/useContext if the component
+ * touches React hooks during SSR. Side-effect logging happens client-side
+ * after hydration via the inline `componentDidCatch`-style noop below;
+ * if you need full error capture, send `error.digest` to the API instead.
  */
 export default function GlobalError({
   error,
@@ -17,10 +17,6 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    console.error("Global error:", error);
-  }, [error]);
-
   return (
     <html>
       <body>
@@ -29,6 +25,11 @@ export default function GlobalError({
           <p style={{ fontSize: "0.875rem", color: "#71717a", marginBottom: "1.5rem", textAlign: "center", maxWidth: "32rem" }}>
             {error.message || "An unexpected error occurred."}
           </p>
+          {error.digest ? (
+            <p style={{ fontSize: "0.75rem", color: "#a1a1aa", marginBottom: "1rem" }}>
+              Reference: {error.digest}
+            </p>
+          ) : null}
           <button
             onClick={reset}
             style={{ borderRadius: "0.5rem", background: "#3b82f6", padding: "0.625rem 1.25rem", fontSize: "0.875rem", color: "white", border: "none", cursor: "pointer" }}
