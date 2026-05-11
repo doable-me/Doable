@@ -563,7 +563,7 @@ projectItemRoutes.put("/:id/connector-settings", async (c) => {
 
   const access = await requireProjectAccess(id, userId);
   if (!access) return c.json({ error: "Not found" }, 404);
-  if (!isRoleAtLeast(access.role, "editor")) {
+  if (!isRoleAtLeast(access.role, "member")) {
     return c.json({ error: "Insufficient permissions" }, 403);
   }
 

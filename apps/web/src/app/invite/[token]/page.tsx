@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
@@ -10,7 +10,7 @@ import { apiAcceptWorkspaceInvite, ApiError } from "@/lib/api";
 
 type Status = "loading" | "accepting" | "success" | "error" | "needs-auth";
 
-export default function AcceptInvitePage() {
+function AcceptInvitePageInner() {
   const params = useParams<{ token: string }>();
   const search = useSearchParams();
   const router = useRouter();
@@ -134,5 +134,13 @@ export default function AcceptInvitePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function AcceptInvitePage() {
+  return (
+    <Suspense fallback={null}>
+      <AcceptInvitePageInner />
+    </Suspense>
   );
 }

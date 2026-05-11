@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { apiAddCopilotAccount } from "@/lib/api";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 
-export default function CopilotOAuthCallback() {
+function CopilotOAuthCallbackInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [status, setStatus] = useState<"processing" | "success" | "error">("processing");
@@ -65,5 +65,13 @@ export default function CopilotOAuthCallback() {
         </>
       )}
     </div>
+  );
+}
+
+export default function CopilotOAuthCallback() {
+  return (
+    <Suspense fallback={null}>
+      <CopilotOAuthCallbackInner />
+    </Suspense>
   );
 }

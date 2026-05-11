@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, memo } from "react";
+import { useState, useRef, useCallback, useEffect, memo, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, apiGetShareStats, apiListCollaborators, apiRemoveCollaborator, type ApiEffectiveAiConfig, type ApiAiProvider, type ApiCollaborator } from "@/lib/api";
@@ -1657,7 +1657,7 @@ function nowTimestamp(): string {
 }
 
 // ─── Component ──────────────────────────────────────────────
-export default function EditorPage() {
+function EditorPageInner() {
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -7127,5 +7127,13 @@ export default function EditorPage() {
     )}
     </>
     </CollaborationProvider>
+  );
+}
+
+export default function EditorPage() {
+  return (
+    <Suspense fallback={null}>
+      <EditorPageInner />
+    </Suspense>
   );
 }

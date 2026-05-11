@@ -153,7 +153,7 @@ projectApiKeyRoutes.patch("/:id/api-keys/:keyId", async (c) => {
     `UPDATE project_api_keys SET ${setClauses}
      WHERE id = $1 AND project_id = $2 AND revoked_at IS NULL
      RETURNING id, allowed_tools, allowed_origins, label`,
-    [keyId, projectId, ...values]
+    [keyId, projectId, ...values] as never[]
   );
 
   if (!updated) return c.json({ error: "Key not found or already revoked" }, 404);

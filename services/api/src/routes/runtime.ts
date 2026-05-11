@@ -63,7 +63,7 @@ runtimeRoutes.get("/projects/:id/runtime", async (c) => {
 
   // Touch last_active_at so idle detection knows the user is engaged.
   // Fire-and-forget — don't block the response.
-  if (rows[0].state === "running") {
+  if (rows[0] && rows[0].state === "running") {
     sql`UPDATE project_runtime SET last_active_at = now() WHERE project_id = ${id}`.catch(() => {});
   }
 

@@ -6,7 +6,7 @@
  * Reads filters from URL search params (set by the SearchForm). Calls the
  * backend search endpoint and renders a results table linking to detail pages.
  */
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Activity, Loader2, ShieldCheck } from "lucide-react";
@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { SearchForm } from "./_components/search-form";
 import { ResultsTable, type TraceRow } from "./_components/results-table";
 
-export default function AdminTracePage() {
+function AdminTracePageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { isPlatformAdmin, loading: adminLoading } = usePlatformAdmin();
@@ -104,5 +104,13 @@ export default function AdminTracePage() {
         <ResultsTable traces={traces} loading={loading} />
       </div>
     </div>
+  );
+}
+
+export default function AdminTracePage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminTracePageInner />
+    </Suspense>
   );
 }

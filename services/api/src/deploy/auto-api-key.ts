@@ -65,12 +65,12 @@ async function scanDirectory(dir: string, tools: Set<string>, depth = 0): Promis
         const mcpCallRegex = /\.mcp\.call\(\s*["'`]([^"'`]+)["'`]/g;
         let match;
         while ((match = mcpCallRegex.exec(content)) !== null) {
-          tools.add(match[1]);
+          tools.add(match[1]!);
         }
         // Also match integrations.run("integration_id", "action_name")
         const intRegex = /\.integrations\.run\(\s*["'`]([^"'`]+)["'`]\s*,\s*["'`]([^"'`]+)["'`]/g;
         while ((match = intRegex.exec(content)) !== null) {
-          tools.add(`${match[1]}/${match[2]}`);
+          tools.add(`${match[1]!}/${match[2]!}`);
         }
       } catch {
         // skip unreadable files

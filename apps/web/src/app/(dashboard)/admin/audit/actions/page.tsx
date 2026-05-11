@@ -5,7 +5,7 @@
  * against the audit surface (and any other action recorded via
  * `recordAdminAction`).
  */
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, History, Loader2, Search, ShieldCheck, X } from "lucide-react";
@@ -32,7 +32,7 @@ type ActionRow = {
   user_agent: string | null;
 };
 
-export default function AdminAuditActionsPage() {
+function AdminAuditActionsPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { isPlatformAdmin, loading: adminLoading } = usePlatformAdmin();
@@ -121,6 +121,14 @@ export default function AdminAuditActionsPage() {
         <ActionsTable rows={rows} loading={loading} />
       </div>
     </div>
+  );
+}
+
+export default function AdminAuditActionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminAuditActionsPageInner />
+    </Suspense>
   );
 }
 

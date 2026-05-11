@@ -8,6 +8,12 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+// Opt entire app out of static generation. Pages use runtime env, per-user
+// auth, and search params — static prerender fails without them at build time.
+// Pair with app/global-error.tsx so Next stops synthesising the Pages-Router
+// `<Html>` fallback that breaks pure App-Router apps under force-dynamic.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Doable | Dream it. Do it. Done.",
   description:

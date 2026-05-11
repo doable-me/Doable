@@ -7,7 +7,7 @@
  * text, click into a session for the full transcript, and review the trail
  * of admin actions. Every read here is itself recorded in `admin_audit_log`.
  */
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -52,7 +52,7 @@ type AuditStats = {
   sessions_24h: number;
 };
 
-export default function AdminAuditPage() {
+function AdminAuditPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { isPlatformAdmin, loading: adminLoading } = usePlatformAdmin();
@@ -191,6 +191,14 @@ export default function AdminAuditPage() {
         <ConversationTable rows={conversations} loading={loading && !error} />
       </div>
     </div>
+  );
+}
+
+export default function AdminAuditPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminAuditPageInner />
+    </Suspense>
   );
 }
 

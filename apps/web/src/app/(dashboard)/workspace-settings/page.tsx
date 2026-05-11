@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -55,7 +55,7 @@ function SettingsSection({ title, description, children }: { title: string; desc
 
 // ─── Main Page ───────────────────────────────────────────
 
-export default function WorkspaceSettingsPage() {
+function WorkspaceSettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading: authLoading, isAuthenticated } = useAuth();
@@ -423,5 +423,13 @@ export default function WorkspaceSettingsPage() {
         </SettingsSection>
       )}
     </div>
+  );
+}
+
+export default function WorkspaceSettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <WorkspaceSettingsPageInner />
+    </Suspense>
   );
 }

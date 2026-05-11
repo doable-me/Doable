@@ -22,6 +22,30 @@ if [ "$CONTAINER_MODE" = "1" ]; then
   info "Running in CONTAINER_MODE — host-only steps will be skipped."
 fi
 
+# ─── Auto-tmux wrap (crash-safe forensics) ─────────────────────
+# Re-exec inside a tmux session named `doable-setup` so the pane stays
+# open after the script exits — successes AND failures retain full
+# scrollback for forensics. Operators can attach with:
+#   tmux a -t doable-setup
+# Opt-out: set DOABLE_NO_TMUX=1. Skipped in CONTAINER_MODE (no tty)
+# and when already inside tmux ($TMUX set).
+if [ "$CONTAINER_MODE" != "1" ] \
+  && [ -z "${TMUX:-}" ] \
+  && [ "${DOABLE_NO_TMUX:-0}" != "1" ] \
+  && command -v tmux >/dev/null 2>&1 \
+  && [ -t 0 ] || [ -n "${DOABLE_FORCE_TMUX:-}" ]; then
+  if command -v tmux >/dev/null 2>&1 && [ -z "${TMUX:-}" ]; then
+    SCRIPT_PATH="$(readlink -f "$0")"
+    LOG_PATH="${DOABLE_SETUP_LOG:-/root/doable-setup.log}"
+    info "Re-executing inside tmux session 'doable-setup' (log: ${LOG_PATH})."
+    info "  Attach:  tmux a -t doable-setup"
+    info "  Opt out: DOABLE_NO_TMUX=1 $SCRIPT_PATH"
+    tmux kill-session -t doable-setup 2>/dev/null || true
+    exec tmux new-session -s doable-setup \
+      "bash -c '${SCRIPT_PATH} 2>&1 | tee ${LOG_PATH}; echo; echo ===SETUP EXITED===; exec bash'"
+  fi
+fi
+
 # ─── Pre-flight checks ─────────────────────────────────────────
 [[ $EUID -ne 0 ]] && err "This script must be run as root"
 [[ ! -f /etc/os-release ]] && err "Cannot detect OS"
@@ -318,8 +342,13 @@ if [ "$CONTAINER_MODE" != "1" ]; then
   # Services bind to 127.0.0.1 only. Never expose 3000/4000/4001/8080 to the public.
 
   # ── Safety verification before enabling UFW ──
-  # Verify SSH rule is actually in the ruleset before enabling
-  if ! ufw status | grep -qE "22/tcp.*ALLOW"; then
+  # Verify SSH rule is actually in the ruleset before enabling.
+  # IMPORTANT: when UFW is inactive, `ufw status` does NOT list pending
+  # rules — only `ufw show added` does. Check both so the safety probe
+  # works for fresh boxes (UFW inactive, rule freshly added a few
+  # lines above) as well as re-runs (UFW already active).
+  if ! ufw status | grep -qE "22/tcp.*ALLOW" \
+    && ! ufw show added | grep -qE "22/tcp"; then
     err "SAFETY ABORT: SSH rule not found in UFW rules. Refusing to enable firewall."
   fi
 
@@ -975,6 +1004,90 @@ if [ -x "${INSTALL_DIR}/scripts/setup-build-proxy.sh" ] || [ -f "${INSTALL_DIR}/
   bash "${INSTALL_DIR}/scripts/setup-build-proxy.sh" || warn "setup-build-proxy.sh failed — BUILD_HTTP_PROXY won't work until you fix Squid manually"
 else
   warn "scripts/setup-build-proxy.sh not found in repo — skipping Squid install"
+fi
+
+# ─── Step 12.6: Sandbox MAC profile + privileged helpers ─────
+# Per SandboxAgnosticSandboxingPRD ch 08, the sandbox composer layer (see
+# packages/dovault/src/composers/) layers AppArmor + bind-mount helpers on
+# top of the chosen backend (psroot / bubblewrap / systemd / sandbox-exec).
+# We install the MAC profile and the privileged-helper stubs here so a
+# fresh box gets the same isolation matrix without manual ops work.
+if [ "$CONTAINER_MODE" != "1" ]; then
+  info "Step 12.6/13: Installing AppArmor profile + sandbox helpers..."
+
+  # — AppArmor —
+  if ! command -v apparmor_parser &>/dev/null; then
+    apt-get install -y apparmor apparmor-utils 2>&1 | tail -2
+  fi
+  if [ -f "${INSTALL_DIR}/deploy/apparmor/doable-ai-bash" ]; then
+    install -m 0644 -o root -g root \
+      "${INSTALL_DIR}/deploy/apparmor/doable-ai-bash" \
+      /etc/apparmor.d/doable-ai-bash
+    if apparmor_parser -r /etc/apparmor.d/doable-ai-bash 2>&1 | tee /tmp/aa.log; then
+      ok "AppArmor profile 'doable-ai-bash' loaded"
+    else
+      warn "apparmor_parser failed: $(tail -1 /tmp/aa.log) — profile staged but inactive"
+    fi
+  else
+    warn "deploy/apparmor/doable-ai-bash missing in repo — skipping MAC profile install"
+  fi
+
+  # — Bind-mount helper for proc-mask + etc-synth composers —
+  # The composers stage synthetic /proc and /etc files in
+  # `<projectPath>/.sandbox/...` and ask this helper to bind-mount them
+  # into the running jail's mount-ns. Wrapper restricts the allowed
+  # operations to bind-mount + umount inside the project tree so it can
+  # be granted NOPASSWD sudo to the API user without becoming a footgun.
+  mkdir -p /opt/doable/bin
+  cat > /opt/doable/bin/sandbox-mount <<'WRAPPER'
+#!/bin/bash
+# Privileged helper invoked by packages/dovault/src/composers/mount-helper.ts.
+# Restricted to bind-mount + umount under /data/projects/* and /tmp/doable-*.
+# Called as: sandbox-mount bind <src> <dst> [ro|rw]
+#            sandbox-mount umount <dst>
+set -euo pipefail
+op="${1:-}"; shift || true
+case "$op" in
+  bind)
+    src="${1:?missing src}"; dst="${2:?missing dst}"; mode="${3:-ro}"
+    case "$src" in /data/projects/*|/tmp/doable-*|/var/lib/doable/*) ;;
+      *) echo "[sandbox-mount] src $src not in allowed roots" >&2; exit 2 ;;
+    esac
+    mount --bind "$src" "$dst"
+    [ "$mode" = "ro" ] && mount -o remount,ro,bind "$dst" || true
+    ;;
+  umount)
+    dst="${1:?missing dst}"
+    umount "$dst"
+    ;;
+  *)
+    echo "Usage: sandbox-mount bind <src> <dst> [ro|rw] | umount <dst>" >&2
+    exit 2
+    ;;
+esac
+WRAPPER
+  chmod 0755 /opt/doable/bin/sandbox-mount
+  chown root:root /opt/doable/bin/sandbox-mount
+
+  # — sudoers grant for the sandbox helpers —
+  # NOPASSWD sudo for sandbox-mount and sandbox-spawn (installed by
+  # dev-uid-allocator's setup-v3 flow). API process can drop privileges
+  # but still bind-mount + setpriv via these wrappers.
+  cat > /etc/sudoers.d/doable-sandbox <<'SUDO'
+# Doable sandbox helpers — NOPASSWD for the composer + dev-uid-allocator.
+# Owned by root, mode 0440 (enforced by visudo).
+Cmnd_Alias DOABLE_SANDBOX = /opt/doable/bin/sandbox-mount, /opt/doable/bin/sandbox-spawn, /usr/bin/chown -R [0-9]*\:[0-9]* /opt/doable/projects/*
+ALL ALL=(root) NOPASSWD: DOABLE_SANDBOX
+SUDO
+  chmod 0440 /etc/sudoers.d/doable-sandbox
+  if visudo -c -f /etc/sudoers.d/doable-sandbox >/dev/null 2>&1; then
+    ok "sandbox helpers installed at /opt/doable/bin/ + NOPASSWD sudoers"
+  else
+    err "Invalid sudoers file /etc/sudoers.d/doable-sandbox — removing for safety"
+    rm -f /etc/sudoers.d/doable-sandbox
+  fi
+else
+  echo "[SKIP-CONTAINER] Step 12.6/13: AppArmor + sandbox helpers (kernel-level, runs on host)"
 fi
 
 # ─── Step 13: Start everything ────────────────────────────────

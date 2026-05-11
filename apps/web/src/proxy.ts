@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
  * localhost origin) are always accessible.  Google/GitHub OAuth callbacks redirect
  * to localhost, so that's the canonical origin.
  */
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const host = req.headers.get("host") ?? "";
   if (host.startsWith("127.0.0.1")) {
     const url = req.nextUrl.clone();

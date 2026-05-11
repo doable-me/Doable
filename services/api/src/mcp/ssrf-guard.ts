@@ -22,7 +22,7 @@ const PRIVATE_IPV6_PREFIXES = ["::1", "fe80:", "fc00:", "fd00:", "::ffff:127.", 
 
 function ip4ToNum(ip: string): number {
   const parts = ip.split(".");
-  return ((+parts[0] << 24) | (+parts[1] << 16) | (+parts[2] << 8) | +parts[3]) >>> 0;
+  return ((+parts[0]! << 24) | (+parts[1]! << 16) | (+parts[2]! << 8) | +parts[3]!) >>> 0;
 }
 
 function isPrivateIPv4(ip: string): boolean {
