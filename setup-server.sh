@@ -80,6 +80,7 @@ if [ "$CONTAINER_MODE" = "1" ]; then
   GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}"
   ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
   OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+  PUBLISH_PREFIX="${PUBLISH_PREFIX:-do-}"
   STRIPE_SECRET_KEY="${STRIPE_SECRET_KEY:-}"
   STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-}"
   CONFIRM="y"
@@ -92,6 +93,9 @@ else
 
   read -rp "WebSocket subdomain [ws]: " WS_SUB
   WS_SUB="${WS_SUB:-ws}"
+
+  read -rp "Publish subdomain prefix (e.g., do- for prod, dev- for dev) [do-]: " PUBLISH_PREFIX
+  PUBLISH_PREFIX="${PUBLISH_PREFIX:-do-}"
 
   read -rp "GitHub repo (owner/repo) [doable-me/doable]: " REPO
   REPO="${REPO:-doable-me/doable}"
@@ -128,6 +132,7 @@ info "Configuration:"
 echo "  Domain:     https://${DOMAIN}"
 echo "  API:        https://${API_DOMAIN}"
 echo "  WebSocket:  wss://${WS_DOMAIN}"
+echo "  Prefix:     ${PUBLISH_PREFIX}"
 echo "  Repo:       ${REPO}"
 echo ""
 if [ "$CONTAINER_MODE" != "1" ]; then
@@ -569,6 +574,10 @@ PROJECTS_ROOT=${INSTALL_DIR}/services/api/projects
 DOABLE_PROJECTS_DIR=${INSTALL_DIR}/services/api/projects
 SITES_DIR=${INSTALL_DIR}/sites
 DOABLE_DOMAIN=${DOMAIN}
+PUBLISH_SUBDOMAIN_PREFIX=${PUBLISH_PREFIX}
+
+# ─── Cloudflare DNS (appended by Step 10 after tunnel creation) ────
+# CLOUDFLARED_TUNNEL_ID, CF_API_TOKEN, CF_ZONE_ID are written below.
 
 # ─── Environment ───────────────────────────────────────────
 NODE_ENV=development
@@ -683,6 +692,17 @@ if [ "$CONTAINER_MODE" != "1" ]; then
 
   ok "Cloudflare authenticated"
 
+  # Extract Cloudflare API token and Zone ID from cert.pem (written by `tunnel login`)
+  CF_CERT_JSON=$(grep -v '^-' /root/.cloudflared/cert.pem | base64 -d 2>/dev/null || true)
+  CF_API_TOKEN=$(echo "$CF_CERT_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('apiToken',''))" 2>/dev/null || true)
+  CF_ZONE_ID=$(echo "$CF_CERT_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('zoneID',''))" 2>/dev/null || true)
+  if [[ -n "$CF_API_TOKEN" && -n "$CF_ZONE_ID" ]]; then
+    ok "Extracted Cloudflare API token and Zone ID from cert.pem"
+  else
+    warn "Could not extract CF credentials from cert.pem — per-deploy DNS records will not be created automatically."
+    warn "Set CF_API_TOKEN and CF_ZONE_ID in .env manually if needed."
+  fi
+
   # Create tunnel
   TUNNEL_NAME="doable-$(echo "$DOMAIN" | tr '.' '-')"
   EXISTING_TUNNEL=$(cloudflared tunnel list -o json 2>/dev/null | python3 -c "
@@ -703,12 +723,28 @@ for t in tunnels:
     ok "Created tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
   fi
 
-  # DNS routes (including wildcard for published sites)
-  for HOSTNAME in "$DOMAIN" "$API_DOMAIN" "$WS_DOMAIN" "*.${DOMAIN}"; do
+  # DNS routes for base domain, API, and WebSocket.
+  # NOTE: No wildcard *.doable.me route — each deploy creates its own
+  # per-hostname CNAME via the Cloudflare API so multiple servers
+  # (prod, dev, staging) can coexist under the same domain.
+  for HOSTNAME in "$DOMAIN" "$API_DOMAIN" "$WS_DOMAIN"; do
     cloudflared tunnel route dns "$TUNNEL_NAME" "$HOSTNAME" 2>&1 | grep -v "already exists" || true
   done
 
-  ok "DNS routes configured for ${DOMAIN}, ${API_DOMAIN}, ${WS_DOMAIN}, *.${DOMAIN}"
+  ok "DNS routes configured for ${DOMAIN}, ${API_DOMAIN}, ${WS_DOMAIN}"
+
+  # Append Cloudflare DNS credentials to .env (token extracted from cert.pem
+  # OAuth flow, tunnel ID from tunnel create — neither existed at Step 8).
+  cat >> "${INSTALL_DIR}/.env" << CFEOF
+
+# ─── Cloudflare DNS (auto-populated by setup-server.sh) ─────
+# Used by the deploy pipeline to create per-site CNAME records.
+# API token comes from \`cloudflared tunnel login\` OAuth flow.
+CLOUDFLARED_TUNNEL_ID=${TUNNEL_ID}
+CF_API_TOKEN=${CF_API_TOKEN:-}
+CF_ZONE_ID=${CF_ZONE_ID:-}
+CFEOF
+  ok "Cloudflare credentials appended to .env"
 
   # Tunnel config
   CREDS_FILE=$(find /root/.cloudflared -name "${TUNNEL_ID}.json" 2>/dev/null | head -1)

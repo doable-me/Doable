@@ -1,5 +1,5 @@
 import { mkdir, cp, rm, readdir, stat } from "node:fs/promises";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
@@ -354,13 +354,13 @@ export class DoableCloudAdapter implements DeployAdapter {
       environment,
     );
 
-    // Optional: register a specific DNS CNAME for this hostname on the
-    // configured Cloudflare tunnel. Only runs when CLOUDFLARED_TUNNEL_ID
-    // env var is set (used on dev so dev-{slug}.doable.me overrides the
-    // wildcard *.doable.me CNAME that points at the prod tunnel). Errors
-    // are non-fatal — the file copy already succeeded.
-    if (process.env.CLOUDFLARED_TUNNEL_ID) {
-      await registerCloudflaredDns(
+    // Register a DNS CNAME for this hostname on the configured Cloudflare
+    // tunnel via the Cloudflare API. Runs on every server that sets
+    // CLOUDFLARED_TUNNEL_ID + CF_API_TOKEN + CF_ZONE_ID, so each
+    // environment's published sites resolve to its own tunnel.
+    // Errors are non-fatal — the file copy already succeeded.
+    if (process.env.CLOUDFLARED_TUNNEL_ID && process.env.CF_API_TOKEN) {
+      await registerCloudflareDns(
         process.env.CLOUDFLARED_TUNNEL_ID,
         hostname,
       ).catch((err) => {
@@ -473,26 +473,64 @@ function formatBytes(bytes: number): string {
 }
 
 /**
- * Add a per-publish DNS CNAME pointing the given hostname at our Cloudflare
- * tunnel. Idempotent — `cloudflared tunnel route dns` updates an existing
- * record in place. Resolves on success, rejects on non-zero exit.
+ * Add a per-publish DNS CNAME via the Cloudflare API so the published
+ * hostname resolves to our tunnel. Idempotent — if a record with the
+ * same name already exists, it is updated in place.
+ *
+ * Requires env vars: CF_API_TOKEN, CF_ZONE_ID, CLOUDFLARED_TUNNEL_ID.
  */
-function registerCloudflaredDns(
+async function registerCloudflareDns(
   tunnelId: string,
   hostname: string,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("cloudflared", ["tunnel", "route", "dns", tunnelId, hostname], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let err = "";
-    proc.stderr.on("data", (d: Buffer) => { err += d.toString(); });
-    proc.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`cloudflared exit ${code}: ${err.trim()}`));
-    });
-    proc.on("error", reject);
+  const apiToken = process.env.CF_API_TOKEN;
+  const zoneId = process.env.CF_ZONE_ID;
+  if (!apiToken || !zoneId) {
+    throw new Error("CF_API_TOKEN and CF_ZONE_ID are required for DNS registration");
+  }
+
+  const target = `${tunnelId}.cfargotunnel.com`;
+  const base = `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`;
+  const headers = {
+    Authorization: `Bearer ${apiToken}`,
+    "Content-Type": "application/json",
+  };
+
+  // Check if record already exists
+  const search = await fetch(`${base}?type=CNAME&name=${hostname}`, { headers });
+  const searchData = (await search.json()) as { result?: { id: string; content: string }[] };
+  const existing = searchData.result?.[0];
+
+  if (existing) {
+    // Update if target changed
+    if (existing.content !== target) {
+      const resp = await fetch(`${base}/${existing.id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ content: target, proxied: true }),
+      });
+      if (!resp.ok) {
+        throw new Error(`CF API PATCH failed (${resp.status}): ${await resp.text()}`);
+      }
+    }
+    return;
+  }
+
+  // Create new record
+  const resp = await fetch(base, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      type: "CNAME",
+      name: hostname,
+      content: target,
+      proxied: true,
+      ttl: 1,
+    }),
   });
+  if (!resp.ok) {
+    throw new Error(`CF API POST failed (${resp.status}): ${await resp.text()}`);
+  }
 }
 
 // ── Subdomain generation ─────────────────────────────────
