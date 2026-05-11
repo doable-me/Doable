@@ -269,6 +269,13 @@ DROPIN_CONTENT="# Managed by upgrade-to-non-root.sh — do not edit by hand.
 User=${SVC_USER}
 Group=${SVC_USER}
 
+# Give the service a HOME that exists and is writable. doable user was
+# created with --no-create-home, so /home/doable does NOT exist on disk;
+# pnpm/turbo/next would otherwise try to write caches there and fail.
+# /root/doable is in ReadWritePaths and owned by doable, so caches land
+# in /root/doable/.cache, /root/doable/.local, etc.
+Environment=HOME=${APP_DIR}
+
 # CAP_SETUID + CAP_SETGID: required so the api process can exec setpriv
 # to drop into per-project sandbox UIDs (dev-uid pool 10001–65000).
 # CapabilityBoundingSet clamps the inherited cap set to exactly these two —
@@ -366,18 +373,38 @@ fi
 
 if [[ "${DO_RESTART}" -eq 1 ]]; then
   systemctl restart "${SERVICE_NAME}"
-  ok "Restarted ${SERVICE_NAME}. Waiting 8 s for startup..."
-  sleep 8
 
-  # Detect API port from .env, defaulting to 3001.
-  API_PORT="$(grep -E '^(API_)?PORT=' "${ENV_FILE}" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-  API_PORT="${API_PORT:-3001}"
+  # api/ws come up in ~10s (tsx watch, no build). web rebuilds via
+  # `pnpm --filter web build` on every start.sh invocation and takes
+  # 30-90s. Probe both ports with a polling loop instead of a single
+  # sleep, so we trigger the EXIT-trap rollback only if the service
+  # *fails*, not when it's merely slow.
+  API_PORT="${API_PORT:-$(grep -E '^(API_)?PORT=' "${ENV_FILE}" 2>/dev/null | head -1 | cut -d= -f2- || echo 4000)}"
+  WEB_PORT="${WEB_PORT:-3000}"
+  DEADLINE=$(( $(date +%s) + 120 ))
+  API_OK=0; WEB_OK=0
 
-  if curl -fsS --max-time 5 "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1; then
-    ok "Health check passed: http://127.0.0.1:${API_PORT}/health → 200 OK."
-  else
-    warn "Health check did not return 200 within 5 s. Check: journalctl -u ${SERVICE_NAME} -n 50 --no-pager"
-    warn "If the service is still starting, wait a moment and retry the health check manually."
+  ok "Restarted ${SERVICE_NAME}. Polling ${API_PORT}+${WEB_PORT} for up to 120 s..."
+  while [[ $(date +%s) -lt ${DEADLINE} ]]; do
+    if [[ "${API_OK}" -eq 0 ]] && curl -fsS --max-time 3 "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1; then
+      API_OK=1
+      ok "api  :${API_PORT}/health → 200"
+    fi
+    if [[ "${WEB_OK}" -eq 0 ]] && curl -fsS --max-time 3 -o /dev/null "http://127.0.0.1:${WEB_PORT}/" 2>/dev/null; then
+      WEB_OK=1
+      ok "web  :${WEB_PORT}/ → 200"
+    fi
+    if [[ "${API_OK}" -eq 1 && "${WEB_OK}" -eq 1 ]]; then
+      ok "Both services healthy."
+      break
+    fi
+    sleep 3
+  done
+
+  if [[ "${API_OK}" -ne 1 || "${WEB_OK}" -ne 1 ]]; then
+    warn "Health check timed out after 120 s: api_ok=${API_OK} web_ok=${WEB_OK}."
+    warn "Check: journalctl -u ${SERVICE_NAME} -n 80 --no-pager"
+    exit 1   # triggers EXIT-trap rollback
   fi
 fi
 
