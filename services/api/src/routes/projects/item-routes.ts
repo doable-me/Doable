@@ -114,8 +114,11 @@ projectItemRoutes.get("/:id", async (c) => {
 });
 
 // ─── Update Project ─────────────────────────────────────────
+/** Strip HTML/script tags from user-supplied names to prevent stored XSS */
+const safeName = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
 const updateSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
+  name: z.string().min(1).max(100).transform(safeName).pipe(z.string().min(1)).optional(),
   description: z.string().max(500).optional(),
   status: z.enum(["creating", "draft", "published", "error"]).optional(),
   visibility: z.enum(["public", "private"]).optional(),

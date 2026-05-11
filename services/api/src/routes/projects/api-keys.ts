@@ -59,14 +59,14 @@ projectApiKeyRoutes.post("/:id/api-keys", async (c) => {
   }>().catch(() => ({ tier: undefined, label: undefined, allowed_tools: undefined, allowed_origins: undefined }));
   const tier = body.tier === "server" ? "server" : "client";
   const label = body.label ?? null;
-  const allowedTools = Array.isArray(body.allowed_tools) ? JSON.stringify(body.allowed_tools) : null;
-  const allowedOrigins = Array.isArray(body.allowed_origins) ? JSON.stringify(body.allowed_origins) : null;
+  const allowedTools = Array.isArray(body.allowed_tools) ? body.allowed_tools : null;
+  const allowedOrigins = Array.isArray(body.allowed_origins) ? body.allowed_origins : null;
 
   const { key, hash, prefix } = generateProjectApiKey(tier);
 
   await sql`
     INSERT INTO project_api_keys (project_id, key_hash, key_prefix, tier, label, created_by, allowed_tools, allowed_origins)
-    VALUES (${projectId}, ${hash}, ${prefix}, ${tier}, ${label}, ${userId}, ${allowedTools}::jsonb, ${allowedOrigins}::jsonb)
+    VALUES (${projectId}, ${hash}, ${prefix}, ${tier}, ${label}, ${userId}, ${allowedTools}, ${allowedOrigins})
   `;
 
   // Return the full key — this is the ONLY time it's shown
@@ -124,12 +124,12 @@ projectApiKeyRoutes.patch("/:id/api-keys/:keyId", async (c) => {
   const values: unknown[] = [];
 
   if ("allowed_tools" in body) {
-    const val = Array.isArray(body.allowed_tools) ? JSON.stringify(body.allowed_tools) : null;
+    const val = Array.isArray(body.allowed_tools) ? body.allowed_tools : null;
     updates.push("allowed_tools");
     values.push(val);
   }
   if ("allowed_origins" in body) {
-    const val = Array.isArray(body.allowed_origins) ? JSON.stringify(body.allowed_origins) : null;
+    const val = Array.isArray(body.allowed_origins) ? body.allowed_origins : null;
     updates.push("allowed_origins");
     values.push(val);
   }

@@ -154,8 +154,11 @@ projectListRoutes.get("/", async (c) => {
 });
 
 // ─── Create Project ─────────────────────────────────────────
+/** Strip HTML/script tags from user-supplied names to prevent stored XSS */
+const safeName = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
 const createSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: z.string().min(1).max(100).transform(safeName).pipe(z.string().min(1, "Name cannot be empty after sanitization")),
   slug: z.string().min(SLUG_MIN_LENGTH).max(SLUG_MAX_LENGTH).regex(SLUG_REGEX).optional(),
   description: z.string().max(500).optional(),
   templateId: z.string().uuid().optional(),

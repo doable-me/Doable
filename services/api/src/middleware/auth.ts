@@ -32,7 +32,8 @@ export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
   try {
     const payload = await verifyAccessToken(token);
 
-    if (!payload.sub || !payload.email) {
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!payload.sub || !payload.email || !UUID_RE.test(payload.sub)) {
       return c.json({ error: "Invalid token payload" }, 401);
     }
 

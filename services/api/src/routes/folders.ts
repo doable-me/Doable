@@ -32,9 +32,12 @@ folderRoutes.get("/", async (c) => {
 });
 
 // ─── Create Folder ──────────────────────────────────────────
+/** Strip HTML/script tags from user-supplied names to prevent stored XSS */
+const safeName = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
 const createSchema = z.object({
   workspaceId: z.string().uuid(),
-  name: z.string().min(1).max(100),
+  name: z.string().min(1).max(100).transform(safeName).pipe(z.string().min(1, "Name cannot be empty after sanitization")),
   parentId: z.string().uuid().optional(),
   position: z.number().int().min(0).optional(),
 });
@@ -77,7 +80,7 @@ folderRoutes.get("/:id", async (c) => {
 
 // ─── Update Folder ──────────────────────────────────────────
 const updateSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
+  name: z.string().min(1).max(100).transform(safeName).pipe(z.string().min(1)).optional(),
   parentId: z.string().uuid().nullable().optional(),
   position: z.number().int().min(0).optional(),
 });

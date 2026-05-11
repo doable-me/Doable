@@ -75,8 +75,11 @@ workspaceRoutes.get("/", async (c) => {
 });
 
 // ─── Create Workspace ───────────────────────────────────────
+/** Strip HTML/script tags from user-supplied names to prevent stored XSS */
+const safeName = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
 const createSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: z.string().min(1).max(100).transform(safeName).pipe(z.string().min(1, "Name cannot be empty after sanitization")),
   slug: z.string().min(SLUG_MIN_LENGTH).max(SLUG_MAX_LENGTH).regex(SLUG_REGEX),
   description: z.string().max(500).optional(),
   environmentId: z.string().uuid().optional(),
@@ -163,7 +166,7 @@ workspaceRoutes.get("/:id", requireRole("viewer"), async (c) => {
 
 // ─── Update Workspace ───────────────────────────────────────
 const updateSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
+  name: z.string().min(1).max(100).transform(safeName).pipe(z.string().min(1)).optional(),
   description: z.string().max(500).optional(),
   avatarUrl: z.string().url().optional(),
 });
