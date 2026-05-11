@@ -22,6 +22,18 @@ export const projectFileRoutes = new Hono<AuthEnv>();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
+// Hono's `/projects/:id/*` pattern matches `/projects/starred` (with `*`
+// expanding to the empty string), which incorrectly routed sibling list
+// endpoints into this file-CRUD middleware chain and rejected them with
+// `{error:"Invalid project id"}`. Skip the validators when :id is one of
+// the reserved collection names that projectListRoutes owns.
+const RESERVED_LIST_SEGMENTS = new Set([
+  "starred",
+  "shared",
+  "recently-viewed",
+  "trash",
+]);
+
 projectFileRoutes.use("/projects/:id/*", authMiddleware);
 
 // BUG-CORPUS-PROJ-003: reject non-UUID :id with 400 (instead of skipping
@@ -33,6 +45,10 @@ projectFileRoutes.use("/projects/:id/*", authMiddleware);
 // stops getting reachable through the file CRUD path.
 projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   const projectId = c.req.param("id");
+  if (projectId && RESERVED_LIST_SEGMENTS.has(projectId.toLowerCase())) {
+    await next();
+    return;
+  }
   if (!projectId || !UUID_RE.test(projectId) || projectId.toLowerCase() === NIL_UUID) {
     return c.json({ error: "Invalid project id" }, 400);
   }
@@ -42,6 +58,10 @@ projectFileRoutes.use("/projects/:id/*", async (c, next) => {
 // ─── Auto-join: add user as collaborator ONLY if project link sharing is enabled ──
 projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   const projectId = c.req.param("id");
+  if (projectId && RESERVED_LIST_SEGMENTS.has(projectId.toLowerCase())) {
+    await next();
+    return;
+  }
   // UUID guard already applied at the top mount; defense-in-depth.
   if (!UUID_RE.test(projectId)) { return c.json({ error: "Invalid project id" }, 400); }
   const userId = c.get("userId");
@@ -84,6 +104,10 @@ projectFileRoutes.use("/projects/:id/*", async (c, next) => {
 // Returns 404 "Project not found" to avoid leaking project existence.
 projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   const projectId = c.req.param("id");
+  if (projectId && RESERVED_LIST_SEGMENTS.has(projectId.toLowerCase())) {
+    await next();
+    return;
+  }
   // UUID guard already applied at the top mount; defense-in-depth.
   if (!UUID_RE.test(projectId)) { return c.json({ error: "Invalid project id" }, 400); }
   const userId = c.get("userId");

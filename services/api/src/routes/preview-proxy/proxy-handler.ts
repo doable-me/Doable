@@ -368,10 +368,47 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
         "img-src * data: blob:",
         "connect-src *",
         "media-src * data: blob:",
-        "frame-ancestors 'self' https://*.doable.me http://localhost:* http://127.0.0.1:*",
+        // CSP wildcards don't match the parent domain (`*.doable.me` won't
+        // allow `doable.me` itself), so when the editor is hosted on the
+        // apex (NEXT_PUBLIC_APP_URL=https://doable.me) the iframe was being
+        // blocked. List the apex explicitly + the wildcard for subdomains.
+        // The apex domain is read from DOABLE_DOMAIN so this stays correct
+        // for any environment (doable.me, staging.doable.me, etc).
+        `frame-ancestors 'self' https://${process.env.DOABLE_DOMAIN ?? "doable.me"} https://*.${process.env.DOABLE_DOMAIN ?? "doable.me"} http://localhost:* http://127.0.0.1:*`,
         "object-src 'none'",
       ].join("; "),
     );
+
+    // Vite sometimes returns `Content-Type: text/html` for JS modules under
+    // /@vite/, /@react-refresh, or paths with explicit script extensions
+    // (observed against vite 5.4 — root cause is vite's own mime-detection,
+    // not the proxy). Browsers refuse to execute those as modules, so the
+    // iframe ends up blank. Override content-type for these paths BEFORE the
+    // HTML injection branch so they pass through as plain JS instead of
+    // being treated as documents.
+    //
+    // IMPORTANT: only do this for *successful* responses. Vite returns 504
+    // for deps that are still being re-optimized; the framework adapter's
+    // shouldReloadOnError branch (below) converts those into a reload
+    // script. If we short-circuited 504s here, the iframe would receive an
+    // empty 200 body and the app would silently fail to mount.
+    const looksLikeJsPath =
+      /\.(m?js|c?js|tsx?|jsx)(\?|$)/.test(originalPath) ||
+      originalPath.includes("/@vite/") ||
+      originalPath.includes("/@react-refresh") ||
+      originalPath.includes("/@id/") ||
+      originalPath.includes("/@fs/") ||
+      originalPath.includes("/node_modules/");
+    if (looksLikeJsPath && resp.ok && resp.body) {
+      responseHeaders.set(
+        "content-type",
+        "application/javascript; charset=utf-8",
+      );
+      return new Response(resp.body, {
+        status: resp.status,
+        headers: responseHeaders,
+      });
+    }
 
     // Inject scripts into HTML responses — STREAMING.
     // Buffer only until we find the next injection marker, then flush and

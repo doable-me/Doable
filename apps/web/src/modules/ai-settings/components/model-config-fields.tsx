@@ -88,6 +88,7 @@ export function InlineConfigFields({
   providerModelsLoading,
   onRefreshModels,
   onAddProviderClick,
+  scopeFilter,
 }: {
   state: ModelSectionState;
   onChange: (state: ModelSectionState) => void;
@@ -99,10 +100,18 @@ export function InlineConfigFields({
   providerModelsLoading: boolean;
   onRefreshModels?: () => void;
   onAddProviderClick?: () => void;
+  // "workspace" hides personal providers — required for the workspace-defaults
+  // sections, which the DB rejects from referencing scope='user' rows. Default
+  // "all" applies to personal overrides where personal providers are valid.
+  scopeFilter?: "all" | "workspace";
 }) {
   const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-  const validAccounts = accounts.filter((a) => a.is_valid);
-  const validProviders = providers.filter((p) => p.is_valid);
+  const validAccounts = accounts.filter(
+    (a) => a.is_valid && (scopeFilter === "workspace" ? a.scope === "workspace" : true),
+  );
+  const validProviders = providers.filter(
+    (p) => p.is_valid && (scopeFilter === "workspace" ? p.scope === "workspace" : true),
+  );
 
   const [customModelMode, setCustomModelMode] = useState(false);
 
@@ -373,6 +382,7 @@ export function ModelSection({
         providerModelsLoading={providerModelsLoading}
         onRefreshModels={onRefreshModels}
         onAddProviderClick={onAddProviderClick}
+        scopeFilter="workspace"
       />
     </div>
   );

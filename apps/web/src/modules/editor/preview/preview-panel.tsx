@@ -290,7 +290,10 @@ export function PreviewPanel() {
             onLoad={onLoadWithHmrReset}
             onError={handleError}
             className="h-full w-full border-0"
-            sandbox="allow-scripts allow-forms allow-popups allow-modals allow-fullscreen"
+            // allow-same-origin: required so user apps that use localStorage
+            // don't crash in the iframe (opaque-origin Storage throws and the
+            // in-memory polyfill can't redefine the non-configurable getter).
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-fullscreen"
             title="Project preview"
           />
         </div>

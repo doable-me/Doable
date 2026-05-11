@@ -6443,7 +6443,13 @@ function EditorPageInner() {
                     src={previewUrl}
                     className="h-full w-full border-0"
                     title="App Preview"
-                    sandbox="allow-scripts allow-forms allow-popups allow-modals"
+                    // allow-same-origin is required: without it the iframe gets
+                    // an opaque origin and accessing window.localStorage throws
+                    // SecurityError, which crashes any user app that touches
+                    // it on mount (the in-memory polyfill in the injected
+                    // namespacing script can't redefine the non-configurable
+                    // window.localStorage getter in modern Chrome).
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
                   />
                   {/* Runtime metrics overlay — bottom-right of preview pane.
                       Reads from /projects/:id/runtime/metrics; degrades to

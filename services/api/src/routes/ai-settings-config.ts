@@ -109,28 +109,48 @@ aiSettingsConfigRoutes.put(
     const err = await requireAdmin(workspaceId, userId);
     if (err) return c.json({ error: err }, 403);
 
-    const settings = await aiSettings.upsertSettings({
-      workspaceId,
-      defaultSource: body.defaultSource,
-      defaultCopilotAccountId: body.defaultCopilotAccountId,
-      defaultCopilotModel: body.defaultCopilotModel,
-      defaultProviderId: body.defaultProviderId,
-      defaultProviderModel: body.defaultProviderModel,
-      suggestionSource: body.suggestionSource,
-      suggestionCopilotAccountId: body.suggestionCopilotAccountId,
-      suggestionCopilotModel: body.suggestionCopilotModel,
-      suggestionProviderId: body.suggestionProviderId,
-      suggestionProviderModel: body.suggestionProviderModel,
-      enforceAi: body.enforceAi,
-      enforcedCopilotAccountId: body.enforcedCopilotAccountId,
-      enforcedProviderId: body.enforcedProviderId,
-      enforcedModel: body.enforcedModel,
-      showModelSelector: body.showModelSelector,
-      defaultFrameworkId: body.defaultFrameworkId,
-      updatedBy: userId,
-    });
+    try {
+      const settings = await aiSettings.upsertSettings({
+        workspaceId,
+        defaultSource: body.defaultSource,
+        defaultCopilotAccountId: body.defaultCopilotAccountId,
+        defaultCopilotModel: body.defaultCopilotModel,
+        defaultProviderId: body.defaultProviderId,
+        defaultProviderModel: body.defaultProviderModel,
+        suggestionSource: body.suggestionSource,
+        suggestionCopilotAccountId: body.suggestionCopilotAccountId,
+        suggestionCopilotModel: body.suggestionCopilotModel,
+        suggestionProviderId: body.suggestionProviderId,
+        suggestionProviderModel: body.suggestionProviderModel,
+        enforceAi: body.enforceAi,
+        enforcedCopilotAccountId: body.enforcedCopilotAccountId,
+        enforcedProviderId: body.enforcedProviderId,
+        enforcedModel: body.enforcedModel,
+        showModelSelector: body.showModelSelector,
+        defaultFrameworkId: body.defaultFrameworkId,
+        updatedBy: userId,
+      });
 
-    return c.json({ data: settings });
+      return c.json({ data: settings });
+    } catch (e) {
+      // The DB enforces that workspace defaults reference workspace-scoped
+      // providers/accounts (not personal ones), since personal rows aren't
+      // visible to other members. Surface this as a 400 with a clear,
+      // user-actionable message instead of bubbling a generic 500.
+      const msg = (e as Error)?.message ?? "";
+      if (/must reference a workspace-scoped/i.test(msg)) {
+        return c.json(
+          {
+            error: "invalid_provider_scope",
+            message:
+              "Workspace defaults can only use workspace-shared providers or GitHub accounts. " +
+              "Add a workspace-shared provider in the Connections tab, or set this as a Personal Override instead.",
+          },
+          400,
+        );
+      }
+      throw e;
+    }
   }
 );
 

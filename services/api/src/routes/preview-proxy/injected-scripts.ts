@@ -64,7 +64,7 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
   function fetchTokenDirect() {
     var pid = null;
     // Extract project ID from URL path: /preview/:projectId/...
-    var m = window.location.pathname.match(/^\/preview\/([0-9a-f-]{36})\//i);
+    var m = window.location.pathname.match(/^\\/preview\\/([0-9a-f-]{36})\\//i);
     if (m) pid = m[1];
     if (!pid) {
       var meta = document.querySelector('meta[name="doable-project-id"]');

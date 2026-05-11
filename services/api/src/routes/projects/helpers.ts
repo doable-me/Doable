@@ -42,9 +42,26 @@ export function isProjectIdValid(id: string | undefined): boolean {
  *   `"projectId"` for routers that capture the id under a different name
  *   (e.g. versions, env-vars, file-routes).
  */
+// Sibling collection routes mounted next to /:id (in projectListRoutes).
+// When Hono's TrieRouter sees /projects/starred it can route the *handler*
+// to the specific /starred route in projectListRoutes, but the middleware
+// from projectItemRoutes.use("/:id", ...) still fires because :id matches
+// "starred". Without this skip-list, calls to /projects/starred etc. were
+// being rejected with `{error:"Invalid project id"}` 400.
+const RESERVED_LIST_SEGMENTS = new Set([
+  "starred",
+  "shared",
+  "recently-viewed",
+  "trash",
+]);
+
 export function validateProjectIdParam(paramName: string = "id") {
   return createMiddleware<AuthEnv>(async (c, next) => {
     const id = c.req.param(paramName);
+    if (id && RESERVED_LIST_SEGMENTS.has(id.toLowerCase())) {
+      await next();
+      return;
+    }
     if (!id || !UUID_REGEX.test(id) || id.toLowerCase() === NIL_UUID) {
       return c.json({ error: "Invalid project id" }, 400);
     }
