@@ -6,8 +6,10 @@
  * Must run AFTER authMiddleware (which sets userId on the context).
  * Uses SET LOCAL inside a transaction for request-scoped isolation.
  */
+import type postgres from "postgres";
 import { createMiddleware } from "hono/factory";
-import { sql } from "../db/index.js";
+import { sql, txAls } from "../db/index.js";
+import { authMiddleware, type AuthEnv } from "./auth.js";
 import { recordSpan } from "../integrations/xray.js";
 
 /**
@@ -73,3 +75,42 @@ export async function withRls<T>(
     throw err;
   }
 }
+
+/**
+ * Combined auth + RLS middleware. Verifies the JWT (via `authMiddleware`)
+ * and then opens a request-scoped Postgres transaction with
+ * `SET LOCAL "doable.current_user_id" = '<uuid>'` so the RLS policies
+ * defined in migration 045 take effect for every `sql\`...\`` call
+ * executed during the request. The tx is stashed in `txAls` and the
+ * `sql` Proxy in db/index.ts dispatches to it transparently — callsites
+ * don't need to change.
+ *
+ * Mount this in place of `authMiddleware` on route groups whose tables
+ * are covered by RLS policies (workspaces, projects, integrations,
+ * github). DO NOT mount on streaming endpoints (chat/AI/SSE) — each
+ * request holds a DB connection for its full duration, and a streamed
+ * response can run for minutes, which would exhaust the pool.
+ *
+ * Anonymous requests (`userId === "anonymous"`) skip the tx — the RLS
+ * policies fall through their "current user unset → all rows visible"
+ * branch, preserving backward compatibility.
+ */
+export const authMiddlewareWithRls = createMiddleware<AuthEnv>(async (c, next) => {
+  return authMiddleware(c, async () => {
+    const userId = c.get("userId");
+    if (!userId || userId === "anonymous") {
+      await next();
+      return;
+    }
+    // userId is a UUID from a verified JWT (authMiddleware checked it). We
+    // still single-quote-escape as defense-in-depth — `SET LOCAL` does not
+    // support bound parameters in postgres.js.
+    const escapedUserId = userId.replace(/'/g, "''");
+    await sql.begin(async (tx) => {
+      await tx.unsafe(`SET LOCAL "doable.current_user_id" = '${escapedUserId}'`);
+      await txAls.run(tx as unknown as postgres.Sql, async () => {
+        await next();
+      });
+    });
+  });
+});

@@ -2,7 +2,8 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { sql } from "../db/index.js";
 import { workspaceQueries, userQueries, environmentQueries } from "@doable/db";
-import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { type AuthEnv } from "../middleware/auth.js";
+import { authMiddlewareWithRls } from "../middleware/rls.js";
 import { requireRole } from "../middleware/workspace-role.js";
 import { SLUG_REGEX, SLUG_MIN_LENGTH, SLUG_MAX_LENGTH, PLAN_LIMITS, type WorkspacePlan } from "@doable/shared";
 import { sendTemplatedEmail } from "../lib/email.js";
@@ -14,8 +15,10 @@ const envs = environmentQueries(sql);
 
 export const workspaceRoutes = new Hono<AuthEnv>();
 
-// All workspace routes require authentication
-workspaceRoutes.use("*", authMiddleware);
+// Auth + per-request RLS context. Sets `doable.current_user_id` for the
+// duration of each request so migrations 045/071/076 enforce row-level
+// visibility on workspace_members, projects, users, etc.
+workspaceRoutes.use("*", authMiddlewareWithRls);
 
 // ─── List User's Workspaces (with member count + credits) ───
 workspaceRoutes.get("/", async (c) => {

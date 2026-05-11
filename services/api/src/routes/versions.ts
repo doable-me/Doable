@@ -103,8 +103,8 @@ versionRoutes.post("/:projectId/versions/undo", async (c) => {
 // ─── List versions (dual-path: git or legacy DB) ──────────
 versionRoutes.get("/:projectId/versions", async (c) => {
   const projectId = c.req.param("projectId");
-  const page = parseInt(c.req.query("page") ?? "1", 10);
-  const pageSize = parseInt(c.req.query("pageSize") ?? "20", 10);
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(Math.max(parseInt(c.req.query("pageSize") ?? "20", 10) || 20, 1), 100);
 
   try {
     // Check if project uses git-based versioning

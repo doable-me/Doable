@@ -4,7 +4,8 @@ import * as githubSync from "../../github/sync.js";
 import { processWebhook } from "../../github/webhook.js";
 import { sql } from "../../db/index.js";
 import { githubQueries } from "@doable/db/queries/github.js";
-import { authMiddleware, type AuthEnv } from "../../middleware/auth.js";
+import { type AuthEnv } from "../../middleware/auth.js";
+import { authMiddlewareWithRls as authMiddleware } from "../../middleware/rls.js";
 import { getProjectPath } from "../../ai/project-files.js";
 import { requireProjectAccess } from "../projects/helpers.js";
 
@@ -188,8 +189,8 @@ githubProjectRoutes.get("/:projectId/github/status", async (c) => {
 // ─── Commit history ─────────────────────────────────────────
 githubProjectRoutes.get("/:projectId/github/commits", async (c) => {
   const projectId = c.req.param("projectId");
-  const page = parseInt(c.req.query("page") ?? "1", 10);
-  const pageSize = parseInt(c.req.query("pageSize") ?? "20", 10);
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(Math.max(parseInt(c.req.query("pageSize") ?? "20", 10) || 20, 1), 100);
 
   try {
     const result = await githubSync.getCommitHistory(projectId, { page, pageSize });

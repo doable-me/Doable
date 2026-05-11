@@ -65,7 +65,7 @@ adminOpsRoutes.post("/migrate-to-git", async (c) => {
 // ─── Thumbnail Management ─────────────────────────────────
 
 adminOpsRoutes.get("/thumbnail-logs", async (c) => {
-  const limit = parseInt(c.req.query("limit") ?? "50", 10);
+  const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "50", 10) || 50, 1), 500);
   try {
     const logs = await sql`
       SELECT tl.id, tl.project_id, tl.project_name, tl.status, tl.preview_url,

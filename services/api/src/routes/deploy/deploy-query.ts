@@ -41,8 +41,8 @@ deployQueryRoutes.get("/:projectId/history", async (c) => {
     return c.json({ error: "Project not found" }, 404);
   }
 
-  const page = parseInt(c.req.query("page") ?? "1", 10);
-  const pageSize = parseInt(c.req.query("pageSize") ?? "20", 10);
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(Math.max(parseInt(c.req.query("pageSize") ?? "20", 10) || 20, 1), 100);
   const environment = c.req.query("environment");
 
   const { rows, total } = await deployments.listByProject(projectId, {
@@ -71,8 +71,8 @@ deployQueryRoutes.get("/:projectId/deployments", async (c) => {
     return c.json({ error: "Project not found" }, 404);
   }
 
-  const page = parseInt(c.req.query("page") ?? "1", 10);
-  const pageSize = parseInt(c.req.query("pageSize") ?? "20", 10);
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(Math.max(parseInt(c.req.query("pageSize") ?? "20", 10) || 20, 1), 100);
   const environment = c.req.query("environment");
 
   const { rows, total } = await deployments.listByProject(projectId, {

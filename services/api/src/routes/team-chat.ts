@@ -18,7 +18,7 @@ teamChatRoutes.get("/:projectId/internal", async (c) => {
   if (secret !== INTERNAL_SECRET) return c.json({ error: "Forbidden" }, 403);
 
   const projectId = c.req.param("projectId");
-  const limit = parseInt(c.req.query("limit") ?? "50", 10);
+  const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "50", 10) || 50, 1), 200);
   const messages = await teamChat.getHistory(projectId, limit);
   return c.json({ data: messages });
 });
@@ -50,7 +50,7 @@ teamChatRoutes.use("/*", authMiddleware);
 // GET /team-chat/:projectId — load chat history
 teamChatRoutes.get("/:projectId", async (c) => {
   const projectId = c.req.param("projectId");
-  const limit = parseInt(c.req.query("limit") ?? "50", 10);
+  const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "50", 10) || 50, 1), 200);
 
   const project = await projects.findById(projectId);
   if (!project) return c.json({ error: "Project not found" }, 404);

@@ -84,7 +84,7 @@ usageRoutes.get("/platform/usage/users", async (c) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const from = parseDateParam(c.req.query("from"), monthStart);
     const to = parseDateParam(c.req.query("to"), now);
-    const limit = parseInt(c.req.query("limit") ?? "50", 10);
+    const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "50", 10) || 50, 1), 200);
 
     const users = await usageService.getPlatformUserBreakdown(from, to, limit);
     return c.json({ data: users });
@@ -431,7 +431,7 @@ usageRoutes.get("/:workspaceId/usage/top-consumers", async (c) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const from = parseDateParam(c.req.query("from"), monthStart);
     const to = parseDateParam(c.req.query("to"), now);
-    const limit = parseInt(c.req.query("limit") ?? "10", 10);
+    const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "10", 10) || 10, 1), 100);
 
     const consumers = await usageService.getTopTokenConsumers(workspaceId, from, to, limit);
     return c.json({ data: consumers });

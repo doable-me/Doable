@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import * as githubClient from "../../github/client.js";
 import { sql } from "../../db/index.js";
 import { githubQueries } from "@doable/db/queries/github.js";
-import { authMiddleware, type AuthEnv } from "../../middleware/auth.js";
+import { type AuthEnv } from "../../middleware/auth.js";
+import { authMiddlewareWithRls as authMiddleware } from "../../middleware/rls.js";
 
 const db = githubQueries(sql);
 

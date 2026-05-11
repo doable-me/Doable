@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -37,7 +38,7 @@ const dbDebug = (
 // `tracedQuery(name, sqlText, () => sql`…`)` from `./traced.js` so they emit
 // OTel `db <name>` spans and feed `traceQuery()` stats. The raw `sql` export
 // remains untraced by design — wrapping all 28 query files is Phase C.
-export const sql: postgres.Sql = DATABASE_URL
+const realSql: postgres.Sql = DATABASE_URL
   ? postgres(DATABASE_URL, {
       max: poolSize,
       idle_timeout: 20,
@@ -60,6 +61,33 @@ export const sql: postgres.Sql = DATABASE_URL
       },
     }) as postgres.Sql);
 
+// Request-scoped transaction store. When the RLS-aware auth middleware
+// (`authMiddlewareWithRls` in ../middleware/rls.ts) opens a per-request
+// transaction and sets `SET LOCAL "doable.current_user_id"`, it stashes
+// the tx here. The `sql` Proxy below then dispatches all template-tag
+// calls and method access to the tx for the duration of the request,
+// so callers don't have to know about RLS — they just keep writing
+// `await sql`SELECT ...`` and Postgres sees the session variable set.
+export const txAls = new AsyncLocalStorage<postgres.Sql>();
+
+// Proxy over the real postgres.js client. Routes to the ALS-stored tx
+// when one is set (i.e., inside an RLS-scoped request); otherwise the
+// raw pool. Keeps the public `sql` API identical so the 100+ existing
+// callsites are unaffected. `this` is bound to the underlying source so
+// postgres.js internals that rely on `this` keep working.
+export const sql: postgres.Sql = new Proxy(realSql, {
+  apply(target, thisArg, args: unknown[]): unknown {
+    const tx = txAls.getStore();
+    const source = (tx ?? target) as unknown as (...a: unknown[]) => unknown;
+    return Reflect.apply(source, thisArg, args);
+  },
+  get(target, prop, _receiver): unknown {
+    const source = txAls.getStore() ?? target;
+    const value = Reflect.get(source as object, prop);
+    return typeof value === "function" ? (value as Function).bind(source) : value;
+  },
+}) as postgres.Sql;
+
 /**
  * Run a health check query against the database.
  */
@@ -76,7 +104,7 @@ export async function checkDbHealth(): Promise<boolean> {
  * Gracefully close the database connection pool.
  */
 export async function closeDb(): Promise<void> {
-  await sql.end({ timeout: 5 });
+  await realSql.end({ timeout: 5 });
 }
 
 // Graceful shutdown

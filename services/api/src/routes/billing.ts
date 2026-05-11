@@ -321,8 +321,8 @@ billingRoutes.get("/usage", async (c) => {
     return c.json({ error: "workspaceId query param required" }, 400);
   }
 
-  const page = parseInt(c.req.query("page") ?? "1", 10);
-  const pageSize = parseInt(c.req.query("pageSize") ?? "20", 10);
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(Math.max(parseInt(c.req.query("pageSize") ?? "20", 10) || 20, 1), 100);
 
   try {
     const { rows, total } = await billing.getUsageHistory(workspaceId, {
