@@ -37,7 +37,7 @@ export function dispatchSSEEvent(
   const store = useEditorStore.getState();
 	  // DEBUG: log every non-delta SSE type so we can verify pipeline
   if (parsed.type !== "text_delta" && parsed.type !== "thinking" && parsed.type !== "keep_alive") {
-    // eslint-disable-next-line no-console
+     
     console.warn("[SSE]", parsed.type, parsed.data);
   }
   // ─── Text streaming ──────────────────────────────────────

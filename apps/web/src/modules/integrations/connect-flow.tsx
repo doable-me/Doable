@@ -82,7 +82,7 @@ export function ConnectFlow({
     if (open && item?.authType === "none") {
       void handleNoAuthConnect();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, item?.authType]);
 
   const handleNoAuthConnect = useCallback(async () => {

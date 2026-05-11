@@ -114,7 +114,7 @@ export function useDashboard() {
     window.history.replaceState({}, "", url.toString());
     setPrompt(urlPrompt);
     setTimeout(() => { handleSubmit(urlPrompt); }, 50);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   useEffect(() => {

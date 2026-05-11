@@ -3113,7 +3113,7 @@ function EditorPageInner() {
         }
       } catch { /* ignore */ }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [resolvedProjectId]);
 
   // Auto-send prompt from dashboard navigation.
@@ -3393,7 +3393,7 @@ function EditorPageInner() {
     setTimeout(() => {
       sendMessage(prompt!, storedAttachments, urlMode === "plan" ? "plan" : undefined);
     }, 100);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [resolvedProjectId]);
 
   // Handle panel resize

@@ -162,7 +162,16 @@ export function EditorModelSelector({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // When disabled (enforcement active), render a locked indicator
+  const allModels = models.length > 0 ? models : DEFAULT_MODELS;
+  const copilotModels = allModels.filter((m) => m.group === "copilot");
+  const customModels = allModels.filter((m) => m.group === "custom");
+
+  // Group custom models by provider
+  const providerGroups = useMemo(() => groupByProvider(customModels), [customModels]);
+  const hasProviderGroups = providerGroups.length > 0 && providerGroups.some((g) => g.models.length > 0);
+
+  // When disabled (enforcement active), render a locked indicator.
+  // Must come AFTER all hook calls to keep hook order stable across renders.
   if (disabled) {
     return (
       <div className="flex items-center gap-1.5 rounded-full border border-border px-2.5 h-7 text-[12px] text-muted-foreground cursor-not-allowed">
@@ -171,14 +180,6 @@ export function EditorModelSelector({
       </div>
     );
   }
-
-  const allModels = models.length > 0 ? models : DEFAULT_MODELS;
-  const copilotModels = allModels.filter((m) => m.group === "copilot");
-  const customModels = allModels.filter((m) => m.group === "custom");
-
-  // Group custom models by provider
-  const providerGroups = useMemo(() => groupByProvider(customModels), [customModels]);
-  const hasProviderGroups = providerGroups.length > 0 && providerGroups.some((g) => g.models.length > 0);
 
   const displayLabel = selectedModelId || "Auto";
 

@@ -143,8 +143,6 @@ export const PlanProgress = memo(function PlanProgress({
   onSkipStep,
   compact = false,
 }: PlanProgressProps) {
-  if (compact) return <CompactPlanProgress plan={plan} />;
-
   const sortedSteps = useMemo(
     () => [...plan.steps].sort((a, b) => a.order - b.order),
     [plan.steps]
@@ -158,6 +156,9 @@ export const PlanProgress = memo(function PlanProgress({
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     return { completedCount: done, percentage: pct };
   }, [plan.steps]);
+
+  // Early return AFTER hooks to keep hook order stable across renders.
+  if (compact) return <CompactPlanProgress plan={plan} />;
 
   return (
     <div className="rounded-lg border border-border bg-muted/30">

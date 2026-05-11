@@ -123,7 +123,7 @@ export function ChatPanel() {
 
   useEffect(() => {
     loadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [projectId]);
 
   useEffect(() => {

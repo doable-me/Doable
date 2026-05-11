@@ -22,12 +22,12 @@ export function TracingInit(): null {
           mod.initBrowserTracing();
         } catch (err) {
           // Tracing must never break the app.
-          // eslint-disable-next-line no-console
+           
           console.warn("[tracing] init failed:", err);
         }
       })
       .catch((err) => {
-        // eslint-disable-next-line no-console
+         
         console.warn("[tracing] dynamic import failed:", err);
       });
 
