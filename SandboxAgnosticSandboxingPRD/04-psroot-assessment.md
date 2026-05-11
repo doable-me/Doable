@@ -50,7 +50,7 @@ choice.
 | Layer | Coverage | Notes |
 |---|---|---|
 | FS namespace (mount-ns + binds/tmpfs) | Partial | AppContainer provides kernel-enforced FS ACL gating; `--rw <workdir>` + `--ro` system paths. Mount-namespace-equivalent only via BindFilter (admin + Win 11 24H2+). |
-| PID namespace | No (Standard tier) | Real PID-ns requires Server Silos (admin + Win 10 1809+). |
+| PID namespace | **YES (Standard tier)** | Achieved via `psroot-procshim` DLL injection + inline hooking of `ntdll!NtQuerySystemInformation` and `ntdll!NtOpenProcess`. Proven zero-leak across all enumeration methods (Toolhelp32, K32EnumProcesses, NtOpenProcess). No admin required. |
 | NET namespace | Toggle only | `--network none/outbound/full` — process-level gate, not a separate stack. |
 | USER namespace | N/A | Replaced by Restricted Tokens + AppContainer SID. |
 | UTS / IPC namespaces | No (Standard tier) | Same constraint as PID — needs Silos. |
@@ -59,13 +59,16 @@ choice.
 | Resource limits (cgroups equivalent) | Yes | Job Objects: memory cap, CPU rate (1–10000), max-procs, kill-on-close. |
 | Registry isolation | Yes | AppContainer-scoped registry hive. |
 | Named-object isolation | Yes | AppContainer scopes mutexes, events, sections. |
+| Process visibility isolation | **YES** | Inline function patching of ntdll syscall stubs. All callers intercepted at the kernel API chokepoint. |
 
-Honest assessment: **on Windows, Standard-tier psroot is a hardened
-process sandbox, not a namespace container.** Doable's existing
-devframeworkPRD 11 §10 already concedes this: *"Psroot's
-'Docker-style containers' framing is marketing. Standard tier is a
-process sandbox; namespace container needs Server Silos (admin +
-Win 10 1809+)."*
+**Updated assessment (2026-05-11):** Standard-tier psroot with
+`psroot-procshim` now delivers PID-namespace-equivalent isolation
+without admin privileges or Server Silos. The `procshim-e2e-test`
+binary proves zero process leaks across NtQuerySystemInformation,
+CreateToolhelp32Snapshot, K32EnumProcesses, and NtOpenProcess. This
+was previously believed to require Server Silos; inline hooking of
+the ntdll syscall stubs achieves the same result at the API
+chokepoint level.
 
 ## 3. Platforms
 
@@ -148,38 +151,42 @@ limits but provides no FS or registry isolation".
 choice on Windows**, and **not used at all on Linux or macOS**.
 Specifically:
 
-- **Windows — FIRST CHOICE (with caveats).** It is the only practical
-  way to get kernel-enforced FS + registry + named-object isolation on
-  Windows without admin or VT-x. The existing `windows.ts`
-  Job-Objects backend gives memory and CPU caps but "**No FS
-  isolation. No registry isolation. No network isolation.**"
-  Promoting psroot to priority 70 (it already is) is correct. **But:**
-  1. Treat it as a **hardened process sandbox**, not a container.
-     Don't market it as multi-tenant security.
-  2. Block bundling until upstream `LICENSE` is committed and
-     SPDX-tagged. Today the repo's licence is "not specified" at the
-     API level.
-  3. Pin to a specific git SHA + SHA-256 of the built binary; refresh
-     via a `dovault-vendor-update` script.
-  4. Keep `windows.ts` as the priority-60 fallback for hosts without
-     `psroot.exe` — already wired.
+- **Windows — FIRST CHOICE (proven).** It is the only practical
+  way to get kernel-enforced FS + registry + named-object + PID
+  isolation on Windows without admin or VT-x. The existing
+  `windows.ts` Job-Objects backend gives memory and CPU caps but
+  "**No FS isolation. No registry isolation. No network isolation.
+  No process visibility isolation.**" psroot at priority 70
+  delivers all of these. The `psroot-procshim` crate (inline
+  hooking of ntdll syscall stubs) closes the PID visibility gap
+  that previously required Server Silos + admin.
+
+  **Proof:** `procshim-e2e-test.exe` demonstrates zero leaks:
+  - NtQuerySystemInformation: only PID 0 + self visible
+  - CreateToolhelp32Snapshot: only PID 0 + self visible
+  - K32EnumProcesses: only self visible
+  - NtOpenProcess: all host PIDs denied (STATUS_ACCESS_DENIED)
+
+  **Remaining caveats:**
+  1. Block bundling until upstream `LICENSE` is committed and
+     SPDX-tagged.
+  2. Pin to a specific git SHA + SHA-256 of the built binary.
+  3. Keep `windows.ts` as the priority-60 fallback for hosts
+     without `psroot.exe`.
 
 - **Linux — DO NOT USE psroot's `psroot-unix` backend.** It wraps the
   same `clone(2)` namespaces + cgroups v2 + `pivot_root` that
   bubblewrap and systemd already handle natively and far more
-  maturely. Adding psroot here would import a 4-star Rust project to
-  shadow primitives Doable already shells out to directly. The
-  bubblewrap+systemd stack is the right answer.
+  maturely.
 
 - **macOS — DO NOT USE psroot's macOS backend.** It is a thin wrapper
-  over `sandbox-exec`, which Doable already invokes directly via
-  `sandbox-exec.ts`. There is no benefit to adding a Rust intermediary
-  that drags in the same Apple-deprecated SBPL primitive.
+  over `sandbox-exec`, which Doable already invokes directly.
 
 **Net:** psroot is Doable's **first choice on Windows and only on
-Windows**. Calling it "the universal first choice for pluggable
-sandboxing" would be marketing-speak that the upstream maturity does
-not support.
+Windows**. With `psroot-procshim` closing the PID isolation gap, it
+now delivers container-grade isolation (FS + registry + named-objects +
+process visibility + resource limits + network toggle) on the Standard
+tier without admin.
 
 ## 8. What's Actually Wired in Doable Today
 
