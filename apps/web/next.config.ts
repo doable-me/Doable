@@ -5,7 +5,6 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@doable/shared"],
   typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
   experimental: {
     serverActions: {
       bodySizeLimit: "2mb",

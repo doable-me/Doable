@@ -10,7 +10,7 @@
  * Transport: Calls the proxy over internal network (127.0.0.1), not public URL.
  */
 
-import type { DoableClient, DoableSDKConfig, IntegrationCallResult, AvailableIntegration } from "./index.js";
+import type { DoableClient, IntegrationCallResult, AvailableIntegration, McpCallResult, McpTool } from "./index.js";
 
 export interface ServerClientConfig {
   /** Project API key. Defaults to process.env.DOABLE_PROJECT_KEY */
@@ -99,18 +99,77 @@ export function createServerClient(config?: ServerClientConfig): DoableClient {
         }
       },
 
-      async list(): Promise<AvailableIntegration[]> {
+      async list(): Promise<{ success: boolean; data: AvailableIntegration[]; error: { code: string; message: string } | null }> {
         const url = `${proxyUrl}/available`;
         const headers: Record<string, string> = {};
         if (apiKey) headers["authorization"] = `Bearer ${apiKey}`;
         if (projectId) headers["x-doable-project-id"] = projectId;
         try {
           const res = await fetch(url, { headers });
-          if (!res.ok) return [];
+          if (!res.ok) {
+            return { success: false, data: [], error: { code: "HTTP_ERROR", message: `HTTP ${res.status}` } };
+          }
           const body = await res.json();
-          return body.integrations ?? [];
-        } catch {
-          return [];
+          return { success: true, data: body.integrations ?? [], error: null };
+        } catch (err) {
+          return { success: false, data: [], error: { code: "NETWORK_ERROR", message: err instanceof Error ? err.message : "Failed to list integrations" } };
+        }
+      },
+    },
+
+    mcp: {
+      async call<T = unknown>(
+        toolName: string,
+        args?: Record<string, unknown>,
+      ): Promise<McpCallResult<T>> {
+        const url = `${proxyUrl}/mcp/${encodeURIComponent(toolName)}`;
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        if (apiKey) headers["authorization"] = `Bearer ${apiKey}`;
+        if (projectId) headers["x-doable-project-id"] = projectId;
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ args: args ?? {} }),
+          });
+          const json = await res.json();
+          if (json.success !== undefined) {
+            return {
+              success: json.success,
+              data: json.success ? (json.data ?? json.output ?? null) : null,
+              error: json.success ? null : { code: json.error?.code ?? "UNKNOWN", message: json.error?.detail ?? json.error?.message ?? "Unknown error" },
+              meta: json.meta ?? { connectorName: "", toolName, durationMs: 0 },
+            };
+          }
+          return { success: true, data: json as T, error: null, meta: { connectorName: "", toolName, durationMs: 0 } };
+        } catch (err) {
+          return {
+            success: false,
+            data: null,
+            error: { code: "NETWORK_ERROR", message: err instanceof Error ? err.message : "Network request failed" },
+            meta: null,
+          };
+        }
+      },
+
+      async list(): Promise<{ success: boolean; data: McpTool[]; error: { code: string; message: string } | null }> {
+        const url = `${proxyUrl}/mcp/available`;
+        const headers: Record<string, string> = {};
+        if (apiKey) headers["authorization"] = `Bearer ${apiKey}`;
+        if (projectId) headers["x-doable-project-id"] = projectId;
+        try {
+          const res = await fetch(url, { headers });
+          if (!res.ok) {
+            return { success: false, data: [], error: { code: "HTTP_ERROR", message: `HTTP ${res.status}` } };
+          }
+          const body = await res.json();
+          const tools: McpTool[] = (body.tools ?? []).map((t: Record<string, string>) => ({
+            ...t,
+            name: t.fullName ?? t.name ?? "",
+          }));
+          return { success: true, data: tools, error: null };
+        } catch (err) {
+          return { success: false, data: [], error: { code: "NETWORK_ERROR", message: err instanceof Error ? err.message : "Failed to list MCP tools" } };
         }
       },
     },

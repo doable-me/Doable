@@ -71,8 +71,9 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
     apiFetch<{ data: Array<{ id: string; name: string }> }>("/workspaces")
       .then((res) => {
         setWorkspaces(res.data);
-        if (res.data.length > 0 && !selectedWorkspaceId) {
-          setSelectedWorkspaceId(res.data[0].id);
+        const first = res.data[0];
+        if (first && !selectedWorkspaceId) {
+          setSelectedWorkspaceId(first.id);
         }
       })
       .catch(() => {});

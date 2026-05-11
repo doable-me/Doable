@@ -66,7 +66,7 @@ export interface ChatMessage {
   senderName?: string;
   senderId?: string;
   attachments?: Array<{
-    type: "image" | "text" | "pdf" | "code";
+    type: "image" | "text" | "pdf" | "code" | "document";
     name: string;
     mimeType: string;
     preview?: string;
