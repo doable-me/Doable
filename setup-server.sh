@@ -876,8 +876,12 @@ ok "Caddy configured on :8080 for *.${DOMAIN} → ${INSTALL_DIR}/sites/"
 
 # ─── Step 11.5: Create non-root service user ─────────────────
 info "Step 11.5/13: Creating 'doable' system user (uid 5000)..."
-getent passwd doable >/dev/null || \
-  useradd --system --no-create-home --shell /usr/sbin/nologin -u 5000 doable
+if ! getent passwd doable >/dev/null; then
+  # When uid > SYS_UID_MAX (default 999), useradd's auto-group allocation
+  # fails. Pre-create the group with an explicit gid so useradd can attach.
+  getent group doable >/dev/null || groupadd --system -g 5000 doable
+  useradd --system --no-create-home --shell /usr/sbin/nologin -u 5000 -g doable doable
+fi
 ok "System user 'doable' (uid 5000) present"
 
 # Chown install dir to doable:doable (skip heavy dirs for speed)

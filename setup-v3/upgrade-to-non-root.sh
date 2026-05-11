@@ -157,10 +157,18 @@ if getent passwd "${SVC_USER}" >/dev/null 2>&1; then
   ok "User '${SVC_USER}' already exists with uid=${SVC_UID} — skipping useradd."
 else
   if [[ "${APPLY}" -eq 1 ]]; then
-    useradd --system --no-create-home --shell /usr/sbin/nologin -u "${SVC_UID}" "${SVC_USER}"
+    # When uid > SYS_UID_MAX (default 999), useradd's auto-group allocation
+    # fails because it searches only the system GID range. Pre-create the
+    # group with an explicit gid so useradd can attach without auto-alloc.
+    if ! getent group "${SVC_USER}" >/dev/null 2>&1; then
+      groupadd --system -g "${SVC_UID}" "${SVC_USER}"
+    fi
+    useradd --system --no-create-home --shell /usr/sbin/nologin \
+      -u "${SVC_UID}" -g "${SVC_USER}" "${SVC_USER}"
     ok "Created system user '${SVC_USER}' (uid=${SVC_UID}, shell=/usr/sbin/nologin)."
   else
-    dry "useradd --system --no-create-home --shell /usr/sbin/nologin -u ${SVC_UID} ${SVC_USER}"
+    dry "groupadd --system -g ${SVC_UID} ${SVC_USER}"
+    dry "useradd --system --no-create-home --shell /usr/sbin/nologin -u ${SVC_UID} -g ${SVC_USER} ${SVC_USER}"
   fi
 fi
 
