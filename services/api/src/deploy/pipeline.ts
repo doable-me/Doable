@@ -9,6 +9,7 @@ import {
   DoableCloudAdapter,
   generateSubdomain,
   computeSitePublishLocation,
+  registerCloudflareDns,
 } from "./adapters/doable-cloud.js";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { nodeStandaloneAdapter } from "../runtime/adapters/node-standalone.js";
@@ -146,6 +147,24 @@ export async function runPipeline(
           err instanceof Error ? err.message : err,
         );
       }
+    }
+
+    // ── 2c. Pre-register DNS BEFORE build ────────────────
+    // Create the Cloudflare CNAME now so DNS propagates during the
+    // 30-60s build. By the time the user clicks the deploy URL,
+    // their ISP will have already resolved the hostname.
+    if (process.env.CLOUDFLARED_TUNNEL_ID && process.env.CF_API_TOKEN) {
+      const earlyLoc = computeSitePublishLocation(subdomain, environment);
+      registerCloudflareDns(
+        process.env.CLOUDFLARED_TUNNEL_ID,
+        earlyLoc.hostname,
+      ).catch((err) => {
+        console.warn(
+          `[pipeline] Early DNS registration failed for ${earlyLoc.hostname}:`,
+          err instanceof Error ? err.message : err,
+        );
+      });
+      // Fire-and-forget — don't await; let it run in parallel with the build
     }
 
     // ── 3. Build ─────────────────────────────────────────

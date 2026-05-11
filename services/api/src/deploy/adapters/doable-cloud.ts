@@ -479,7 +479,7 @@ function formatBytes(bytes: number): string {
  *
  * Requires env vars: CF_API_TOKEN, CF_ZONE_ID, CLOUDFLARED_TUNNEL_ID.
  */
-async function registerCloudflareDns(
+export async function registerCloudflareDns(
   tunnelId: string,
   hostname: string,
 ): Promise<void> {
