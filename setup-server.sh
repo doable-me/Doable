@@ -679,6 +679,17 @@ DOABLE_HARDENING_LEVEL=prod
 # (profile + backend + composers) instead of the legacy vault.spawn path.
 DOABLE_SANDBOX_VITE=1
 
+# ─── Puppeteer Chrome cache (for project thumbnails) ────────
+# The thumbnails/capture.ts service uses puppeteer.launch() with no
+# explicit executablePath, so it falls back to puppeteer's per-user
+# cache lookup at $HOME/.cache/puppeteer. Our service runs as the
+# `doable` user (HOME=/home/doable), so without this override puppeteer
+# looks in /home/doable/.cache/puppeteer and reports "Could not find
+# Chrome (ver ...)". Pin a shared, world-readable cache dir so a single
+# `npx puppeteer browsers install chrome` run during setup-server.sh
+# is found by the runtime user.
+PUPPETEER_CACHE_DIR=/var/cache/doable/puppeteer
+
 # ─── Build-time outbound proxy (Wave 29) ────────────────────
 # Routes every build (npm install, pip install, etc.) through Squid
 # with the allow-list at /etc/squid/conf.d/doable-allowlist.conf.
@@ -1038,7 +1049,23 @@ mkdir -p /etc/doable/apps
 # ("Can't find source path /var/cache/doable/npm") and every preview-url
 # request times out at the orchestrator's 90s readiness deadline.
 mkdir -p /var/cache/doable/npm
+mkdir -p /var/cache/doable/puppeteer
 chown -R doable:doable /var/cache/doable
+
+# Install Chrome for puppeteer (thumbnails). Runs as the doable user
+# with PUPPETEER_CACHE_DIR set so the binary lands in the shared cache
+# and the runtime API process finds it via the .env override emitted
+# above. Skipped quietly if puppeteer fails (offline install, npm
+# registry blocked, etc.) — thumbnails will degrade gracefully.
+if command -v npx >/dev/null 2>&1; then
+  info "Installing Chrome for puppeteer thumbnails..."
+  if sudo -u doable HOME=/home/doable PUPPETEER_CACHE_DIR=/var/cache/doable/puppeteer \
+      sh -c 'cd /tmp && npx -y puppeteer@24.39.1 browsers install chrome' >/dev/null 2>&1; then
+    ok "Chrome installed at /var/cache/doable/puppeteer (thumbnails enabled)"
+  else
+    warn "puppeteer chrome install failed — thumbnails will be unavailable until you run 'sudo -u doable PUPPETEER_CACHE_DIR=/var/cache/doable/puppeteer npx -y puppeteer browsers install chrome' manually"
+  fi
+fi
 
 cat > /etc/systemd/system/doable-app@.service << APPSVCEOF
 [Unit]
