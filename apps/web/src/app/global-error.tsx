@@ -9,7 +9,15 @@
  * touches React hooks during SSR. Side-effect logging happens client-side
  * after hydration via the inline `componentDidCatch`-style noop below;
  * if you need full error capture, send `error.digest` to the API instead.
+ *
+ * Next 16 + Turbopack additionally crashes the /_global-error prerender
+ * with "Cannot read properties of null (reading 'useContext')" inside
+ * <__next_viewport_boundary__> even when this component is hook-free.
+ * Marking the boundary as dynamic skips static generation of the synthetic
+ * error page (which is fine — error UI is only rendered at runtime anyway).
  */
+export const dynamic = "force-dynamic";
+
 export default function GlobalError({
   error,
   reset,
