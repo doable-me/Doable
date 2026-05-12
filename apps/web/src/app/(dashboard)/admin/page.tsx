@@ -59,6 +59,7 @@ export default function AdminPage() {
     setUserRole,
     setUserPlan,
     setUserCredits,
+    bulkUpdateUsers,
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
@@ -132,6 +133,8 @@ export default function AdminPage() {
 
   async function handleBulkApply(userIds: string[], payload: BulkApplyPayload) {
     let modelOk = 0, modelFail = 0, quotaOk = 0, quotaFail = 0;
+    let roleUpdated = 0, planUpdated = 0;
+    let rolePlanFailed = false;
 
     // Build a quick lookup for existing credit totals
     const byId = new Map(allocations.map((a) => [a.user_id, a]));
@@ -163,12 +166,27 @@ export default function AdminPage() {
       }
     }
 
+    if (payload.role || payload.plan) {
+      try {
+        const res = await bulkUpdateUsers(userIds, { role: payload.role, plan: payload.plan }) as { data?: { roleUpdated?: number; planUpdated?: number } };
+        roleUpdated = res?.data?.roleUpdated ?? 0;
+        planUpdated = res?.data?.planUpdated ?? 0;
+      } catch {
+        rolePlanFailed = true;
+      }
+    }
+
     await loadAllocations();
 
     const parts: string[] = [];
     if (payload.model) parts.push(`model: ${modelOk} ok${modelFail ? `, ${modelFail} failed` : ""}`);
     if (payload.addQuota) parts.push(`quota: ${quotaOk} ok${quotaFail ? `, ${quotaFail} failed` : ""}`);
-    const allFailed = (payload.model && modelOk === 0 && modelFail > 0) || (payload.addQuota && quotaOk === 0 && quotaFail > 0);
+    if (payload.role) parts.push(rolePlanFailed ? `role: failed` : `role: ${roleUpdated} updated`);
+    if (payload.plan) parts.push(rolePlanFailed ? `plan: failed` : `plan: ${planUpdated} updated`);
+    const allFailed =
+      (payload.model && modelOk === 0 && modelFail > 0) ||
+      (payload.addQuota && quotaOk === 0 && quotaFail > 0) ||
+      ((payload.role || payload.plan) && rolePlanFailed && !payload.model && !payload.addQuota);
     addToast(allFailed ? "error" : "success", `Bulk applied to ${userIds.length} users — ${parts.join(" · ")}`);
   }
 

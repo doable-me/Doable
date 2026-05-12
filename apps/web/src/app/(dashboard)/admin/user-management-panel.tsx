@@ -563,6 +563,8 @@ export interface BulkApplyPayload {
     monthly: number;
     rollover: number;
   };
+  role?: string;
+  plan?: string;
 }
 
 function BulkAllocateModal({
@@ -570,6 +572,7 @@ function BulkAllocateModal({
   workspaceId,
   accounts,
   providers,
+  currentUserId,
   onClose,
   onApply,
 }: {
@@ -577,11 +580,14 @@ function BulkAllocateModal({
   workspaceId: string | null;
   accounts: ApiGitHubCopilotAccount[];
   providers: ApiAiProvider[];
+  currentUserId: string;
   onClose: () => void;
   onApply: (userIds: string[], payload: BulkApplyPayload) => Promise<void>;
 }) {
   const [applyModel, setApplyModel] = useState(true);
   const [applyQuota, setApplyQuota] = useState(false);
+  const [applyRole, setApplyRole] = useState(false);
+  const [applyPlan, setApplyPlan] = useState(false);
 
   const [source, setSource] = useState<"copilot" | "custom">("copilot");
   const [copilotAccountId, setCopilotAccountId] = useState("");
@@ -592,6 +598,11 @@ function BulkAllocateModal({
   const [addDaily, setAddDaily] = useState(0);
   const [addMonthly, setAddMonthly] = useState(0);
   const [addRollover, setAddRollover] = useState(0);
+
+  const [role, setRole] = useState<string>("member");
+  const [plan, setPlan] = useState<string>("free");
+
+  const selfInSelection = selectedUsers.some(u => u.user_id === currentUserId);
 
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -604,11 +615,13 @@ function BulkAllocateModal({
   const { models: providerModelList, loading: loadingProviderModels } =
     useProviderModels(workspaceId, providerId);
 
+  const roleBlockedBySelf = applyRole && selfInSelection;
   const canApply =
-    (applyModel || applyQuota) &&
+    (applyModel || applyQuota || applyRole || applyPlan) &&
     (!applyModel ||
       (source === "copilot" ? !!copilotModel : !!providerId)) &&
-    (!applyQuota || addDaily > 0 || addMonthly > 0 || addRollover > 0);
+    (!applyQuota || addDaily > 0 || addMonthly > 0 || addRollover > 0) &&
+    !roleBlockedBySelf;
 
   async function handleApply() {
     if (!canApply) return;
@@ -624,6 +637,12 @@ function BulkAllocateModal({
     }
     if (applyQuota) {
       payload.addQuota = { daily: addDaily, monthly: addMonthly, rollover: addRollover };
+    }
+    if (applyRole) {
+      payload.role = role;
+    }
+    if (applyPlan) {
+      payload.plan = plan;
     }
     setSaving(true);
     setProgress({ done: 0, total: selectedUsers.length });
@@ -653,7 +672,7 @@ function BulkAllocateModal({
             <UsersIcon className="h-5 w-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-foreground">Bulk Allocate AI Settings</h3>
+            <h3 className="text-sm font-semibold text-foreground">Bulk Edit Users</h3>
             <p className="text-xs text-muted-foreground truncate">
               {selectedUsers.length} user{selectedUsers.length !== 1 ? "s" : ""}
               {previewNames && <>: <span className="text-muted-foreground">{previewNames}{remaining > 0 ? ` +${remaining} more` : ""}</span></>}
@@ -783,6 +802,63 @@ function BulkAllocateModal({
                 <p className="text-[10px] text-muted-foreground mt-2">
                   These amounts are <span className="text-foreground font-medium">added</span> to each selected user's current totals (not replaced).
                 </p>
+              </div>
+            )}
+          </div>
+
+          {/* Section: Role */}
+          <div className="rounded-lg border border-border bg-muted">
+            <label className="flex items-center gap-2 px-4 py-3 border-b border-border cursor-pointer">
+              <input
+                type="checkbox"
+                checked={applyRole}
+                onChange={e => setApplyRole(e.target.checked)}
+                className="h-4 w-4 rounded border-input bg-background text-brand-500 focus:ring-brand-500"
+              />
+              <Shield className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground">Set Platform Role</span>
+              <span className="text-[11px] text-muted-foreground ml-auto">Replaces each user's role</span>
+            </label>
+            {applyRole && (
+              <div className="px-4 py-4 space-y-2">
+                <select
+                  value={role}
+                  onChange={e => setRole(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
+                >
+                  {WORKSPACE_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                </select>
+                {selfInSelection && (
+                  <p className="text-[11px] text-red-400">
+                    You're in the selection. Deselect yourself before changing roles in bulk — you can't change your own platform role.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Section: Plan */}
+          <div className="rounded-lg border border-border bg-muted">
+            <label className="flex items-center gap-2 px-4 py-3 border-b border-border cursor-pointer">
+              <input
+                type="checkbox"
+                checked={applyPlan}
+                onChange={e => setApplyPlan(e.target.checked)}
+                className="h-4 w-4 rounded border-input bg-background text-brand-500 focus:ring-brand-500"
+              />
+              <Crown className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground">Set Workspace Plan</span>
+              <span className="text-[11px] text-muted-foreground ml-auto">Replaces each user's plan</span>
+            </label>
+            {applyPlan && (
+              <div className="px-4 py-4">
+                <select
+                  value={plan}
+                  onChange={e => setPlan(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
+                >
+                  {WORKSPACE_PLANS.map(p => <option key={p} value={p}>{PLAN_LABELS[p]}</option>)}
+                </select>
               </div>
             )}
           </div>
@@ -939,7 +1015,7 @@ export function UserManagementPanel({
             onClick={() => setBulkOpen(true)}
             className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 transition-colors"
           >
-            <Plus className="h-3.5 w-3.5" /> Bulk Allocate AI / Quota
+            <Plus className="h-3.5 w-3.5" /> Bulk Edit
           </button>
         </div>
       )}
@@ -1076,6 +1152,7 @@ export function UserManagementPanel({
           workspaceId={workspaceId}
           accounts={accounts}
           providers={providers}
+          currentUserId={currentUserId}
           onClose={() => setBulkOpen(false)}
           onApply={async (userIds, payload) => {
             await onBulkApply(userIds, payload);
