@@ -459,13 +459,17 @@ else
 fi
 
 # ── fail2ban: configure SSH jail ──
+# Debian 12 with systemd-journald no longer writes /var/log/auth.log by
+# default — the file-based backend silently aborts the jail with
+# "Have not found any log file for sshd jail". Use the systemd backend
+# so fail2ban tails the journal directly.
 if [ "$CONTAINER_MODE" != "1" ]; then
   cat > /etc/fail2ban/jail.local << F2BEOF
 [sshd]
 enabled = true
 port = ssh
 filter = sshd
-logpath = /var/log/auth.log
+backend = systemd
 maxretry = 5
 bantime = 3600
 findtime = 600
