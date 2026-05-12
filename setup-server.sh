@@ -1015,6 +1015,15 @@ if ! getent passwd doable >/dev/null; then
   getent group doable >/dev/null || groupadd --system -g 5000 doable
   useradd --system --no-create-home --shell /bin/bash -u 5000 -g doable doable
 fi
+# useradd --no-create-home means /home/doable does NOT exist. systemd's
+# doable.service references both /home/doable and /var/log/doable in its
+# ReadWritePaths= directive. If either is missing at unit-start time the
+# namespace setup fails with exit 226/NAMESPACE before start.sh ever
+# runs ("Failed at step NAMESPACE spawning /root/doable/start.sh").
+# Create them now with the right ownership so the unit boots cleanly.
+mkdir -p /home/doable /var/log/doable
+chown doable:doable /home/doable /var/log/doable
+chmod 0755 /home/doable /var/log/doable
 ok "System user 'doable' (uid 5000) present"
 
 # Chown install dir to doable:doable (skip heavy dirs for speed)
