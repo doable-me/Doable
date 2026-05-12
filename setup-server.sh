@@ -121,15 +121,20 @@ if [ -z "${PRESEED_ENV_LOADED:-}" ] && [ -f "${INSTALL_DIR_PRE}/.env" ]; then
     DOMAIN="${NEXT_PUBLIC_APP_URL#https://}"
     DOMAIN="${DOMAIN%/}"
   fi
-  if [ -z "${API_SUB:-}" ] && [ -n "${NEXT_PUBLIC_API_URL:-}" ]; then
+  if [ -n "${NEXT_PUBLIC_API_URL:-}" ]; then
     api_host="${NEXT_PUBLIC_API_URL#https://}"
     api_host="${api_host%/}"
-    API_SUB="${api_host%%.*}"
+    : "${API_SUB:=${api_host%%.*}}"
+    # Honor the full hostname from .env so multi-level DOMAINs
+    # (dev.doable.me → dev-api.doable.me) survive intact and don't get
+    # mis-computed as dev-api.dev.doable.me by `${API_SUB}.${DOMAIN}`.
+    : "${API_DOMAIN:=${api_host}}"
   fi
-  if [ -z "${WS_SUB:-}" ] && [ -n "${NEXT_PUBLIC_WS_URL:-}" ]; then
+  if [ -n "${NEXT_PUBLIC_WS_URL:-}" ]; then
     ws_host="${NEXT_PUBLIC_WS_URL#wss://}"
     ws_host="${ws_host%/}"
-    WS_SUB="${ws_host%%.*}"
+    : "${WS_SUB:=${ws_host%%.*}}"
+    : "${WS_DOMAIN:=${ws_host}}"
   fi
   if [ -z "${DB_PASS:-}" ] && [ -n "${DATABASE_URL:-}" ]; then
     # DATABASE_URL shape: postgres://doable:<pass>@localhost:5432/doable
@@ -196,8 +201,12 @@ else
   read -rp "Stripe Webhook Secret: " STRIPE_WEBHOOK_SECRET
 fi
 
-API_DOMAIN="${API_SUB}.${DOMAIN}"
-WS_DOMAIN="${WS_SUB}.${DOMAIN}"
+# Honor API_DOMAIN/WS_DOMAIN already derived from NEXT_PUBLIC_* — only fall
+# back to the dot-prefix convention when nothing was pre-staged. Required so
+# multi-level DOMAINs (e.g. dev.doable.me) keep dev-api.doable.me and don't
+# get rewritten to dev-api.dev.doable.me.
+API_DOMAIN="${API_DOMAIN:-${API_SUB}.${DOMAIN}}"
+WS_DOMAIN="${WS_DOMAIN:-${WS_SUB}.${DOMAIN}}"
 JWT_SECRET=$(openssl rand -hex 32)
 ENCRYPTION_KEY=$(openssl rand -hex 32)
 INTERNAL_SECRET=$(openssl rand -hex 16)
@@ -881,9 +890,27 @@ if [ "$CONTAINER_MODE" != "1" ]; then
     warn "Set CF_API_TOKEN and CF_ZONE_ID in .env manually if needed."
   fi
 
-  # Create tunnel
-  TUNNEL_NAME="doable-$(echo "$DOMAIN" | tr '.' '-')"
-  EXISTING_TUNNEL=$(cloudflared tunnel list -o json 2>/dev/null | python3 -c "
+  # Reuse a pre-staged tunnel when .env declares CLOUDFLARED_TUNNEL_ID AND the
+  # matching credentials JSON is already on disk (rescue/restore scenarios where
+  # the tunnel exists in the CF account under a name that doesn't match the
+  # DOMAIN-derived default — e.g. tunnel `doable-dev` for DOMAIN=dev.doable.me).
+  TUNNEL_NAME=""
+  TUNNEL_ID=""
+  if [[ -n "${CLOUDFLARED_TUNNEL_ID:-}" ]] && [[ -f "/root/.cloudflared/${CLOUDFLARED_TUNNEL_ID}.json" ]]; then
+    TUNNEL_ID="${CLOUDFLARED_TUNNEL_ID}"
+    TUNNEL_NAME=$(cloudflared tunnel list -o json 2>/dev/null | python3 -c "
+import sys, json
+for t in json.load(sys.stdin):
+    if t.get('id') == '${TUNNEL_ID}':
+        print(t['name']); break
+" 2>/dev/null || true)
+    TUNNEL_NAME="${TUNNEL_NAME:-doable-$(echo "$DOMAIN" | tr '.' '-')}"
+    ok "Reusing pre-staged tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
+  fi
+
+  if [[ -z "$TUNNEL_ID" ]]; then
+    TUNNEL_NAME="doable-$(echo "$DOMAIN" | tr '.' '-')"
+    EXISTING_TUNNEL=$(cloudflared tunnel list -o json 2>/dev/null | python3 -c "
 import sys, json
 tunnels = json.load(sys.stdin)
 for t in tunnels:
@@ -892,13 +919,14 @@ for t in tunnels:
         break
 " 2>/dev/null || true)
 
-  if [[ -n "$EXISTING_TUNNEL" ]]; then
-    TUNNEL_ID="$EXISTING_TUNNEL"
-    ok "Using existing tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
-  else
-    TUNNEL_OUTPUT=$(cloudflared tunnel create "$TUNNEL_NAME" 2>&1)
-    TUNNEL_ID=$(echo "$TUNNEL_OUTPUT" | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-    ok "Created tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
+    if [[ -n "$EXISTING_TUNNEL" ]]; then
+      TUNNEL_ID="$EXISTING_TUNNEL"
+      ok "Using existing tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
+    else
+      TUNNEL_OUTPUT=$(cloudflared tunnel create "$TUNNEL_NAME" 2>&1)
+      TUNNEL_ID=$(echo "$TUNNEL_OUTPUT" | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+      ok "Created tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
+    fi
   fi
 
   # DNS routes for base domain, API, and WebSocket.
@@ -1091,9 +1119,9 @@ RestrictSUIDSGID=true
 RestrictNamespaces=false
 LockPersonality=true
 # /home/doable is required for pnpm/Next.js cache when the runtime user is
-# `doable` (default home is /home/doable; useradd --no-create-home leaves
-# the directory missing, but `setup-server.sh` creates it below). Without
-# /home/doable in ReadWritePaths, ProtectHome=read-only blocks $HOME writes.
+# 'doable' (default home is /home/doable; useradd --no-create-home leaves
+# the directory missing, but setup-server.sh creates it below). Without
+# /home/doable in ReadWritePaths, ProtectHome=read-only blocks HOME writes.
 ReadWritePaths=/root/doable /var/log/doable /home/doable /data/projects /data/sites
 
 [Install]
@@ -1231,7 +1259,18 @@ APPTGTEOF
 
 # Cloudflared service
 if [ "$CONTAINER_MODE" != "1" ]; then
-  cloudflared service install 2>/dev/null || true
+  # `cloudflared service install` refuses with "Possible conflicting
+  # configuration" when BOTH /root/.cloudflared/config.yml and
+  # /etc/cloudflared/config.yml exist. The script always writes its own
+  # at /root/.cloudflared/config.yml at Step 10, so any pre-staged or
+  # restored /etc/cloudflared/config.yml is redundant — remove it so the
+  # service install picks up the right path.
+  if [ -f /root/.cloudflared/config.yml ] && [ -f /etc/cloudflared/config.yml ]; then
+    rm -f /etc/cloudflared/config.yml
+  fi
+  cloudflared service install 2>/dev/null || \
+    cloudflared --config /root/.cloudflared/config.yml service install 2>/dev/null || \
+    true
 fi
 
 systemctl daemon-reload
@@ -1240,7 +1279,9 @@ if [ "$CONTAINER_MODE" = "1" ]; then
   # cloudflared transitively in some setups — enable only what we have.
   systemctl enable doable.service doable-watchdog.timer doable-apps.target 2>/dev/null || true
 else
-  systemctl enable doable.service doable-watchdog.timer cloudflared doable-apps.target 2>/dev/null
+  systemctl enable doable.service doable-watchdog.timer cloudflared doable-apps.target 2>/dev/null || \
+    systemctl enable doable.service doable-watchdog.timer doable-apps.target 2>/dev/null || \
+    true
 fi
 
 ok "Systemd services created and enabled (app + watchdog timer + tunnel + per-app template)"
@@ -1332,6 +1373,29 @@ WRAPPER
   else
     warn "setup-v3/sandbox-spawn missing in repo — preview/dev-server jails will run as the API user (no UID drop)"
   fi
+
+  # — Polkit rule: let `doable` invoke systemd-run --scope —
+  # dev-server-start.ts and vite-jail.ts wrap each preview spawn in a
+  # transient systemd scope for cgroup + seccomp isolation. Without an
+  # explicit polkit grant the call fails with "Failed to start transient
+  # scope unit: Interactive authentication required" and every preview
+  # request returns 503, blocking previews and thumbnails. The grant is
+  # scoped to the doable user only, on a non-interactive bus, so it doesn't
+  # expand the attack surface beyond what dovault already needs.
+  mkdir -p /etc/polkit-1/rules.d
+  cat > /etc/polkit-1/rules.d/50-doable-systemd.rules <<'POLKIT'
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.systemd1.manage-units" ||
+         action.id == "org.freedesktop.systemd1.manage-unit-files" ||
+         action.id == "org.freedesktop.systemd1.reload-daemon") &&
+        subject.user == "doable") {
+        return polkit.Result.YES;
+    }
+});
+POLKIT
+  chmod 0644 /etc/polkit-1/rules.d/50-doable-systemd.rules
+  systemctl reload polkit 2>/dev/null || systemctl restart polkit 2>/dev/null || true
+  ok "Polkit rule installed (doable user can systemd-run transient scopes)"
 
   # — sudoers grant for the sandbox helpers —
   # NOPASSWD sudo for sandbox-mount and sandbox-spawn (installed by
