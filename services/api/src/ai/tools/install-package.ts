@@ -8,16 +8,11 @@ import { sql } from "../../db/index.js";
 import { getSandboxSettings, listSandboxRules } from "../../sandbox/queries.js";
 import { evaluateSandbox } from "../../sandbox/rule-matcher.js";
 import { jailedSpawn } from "../../sandbox/orchestrator.js";
+import { loadSystemRules } from "../../sandbox/system-rules.js";
 
-// Hardcoded floor: these are intrinsically dangerous regardless of workspace
-// policy. Anything else is governed by the workspace sandbox rules
-// (Migration 073). A workspace admin can deny additional packages by
-// adding rule_type='tool', pattern='<package>', action='deny'.
-const BLOCKED_PACKAGES = new Set([
-  "eval",
-  "child_process",
-  "fs-extra-unsafe",
-]);
+// Blocked packages are now loaded from the sandbox_system_rules table
+// (Migration 080, scope='global', rule_type='package'). Manage via
+// `doable admin` CLI/TUI. Fallback defaults are in system-rules.ts.
 
 /**
  * Look up the workspace id for a project. Returns null if the project
@@ -89,9 +84,11 @@ export const installPackageTool: Tool = {
       };
     }
 
-    // Validate package names against the hardcoded floor + workspace
-    // sandbox rules. Migration 073 introduced workspace_sandbox_rules so
-    // an admin can deny additional packages without a code change.
+    // Validate package names against system-level blocked packages (DB)
+    // and workspace sandbox rules. System rules come from
+    // sandbox_system_rules (Migration 080). Workspace rules come from
+    // workspace_sandbox_rules (Migration 073).
+    const sys = await loadSystemRules();
     const workspaceId = await getWorkspaceIdForProject(ctx.projectId);
     const sandboxSettings = workspaceId
       ? await getSandboxSettings(workspaceId)
@@ -100,7 +97,7 @@ export const installPackageTool: Tool = {
 
     for (const pkg of packages) {
       const name = pkg.replace(/@[\d^~>=<.*]+$/, ""); // Strip version
-      if (BLOCKED_PACKAGES.has(name)) {
+      if (sys.blockedPackages.has(name)) {
         return {
           success: false,
           output: "",

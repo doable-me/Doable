@@ -182,7 +182,7 @@ export async function jailedSpawn(
     const rest = plan.argv.slice(1);
     const child = cpSpawn(bin, rest, {
       cwd: plan.projectPath,
-      env: { ...process.env, ...plan.env },
+      env: plan.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -286,7 +286,7 @@ export async function jailedSpawnLongRunning(
   const rest = plan.argv.slice(1);
   const child = cpSpawn(bin, rest, {
     cwd: plan.projectPath,
-    env: { ...process.env, ...plan.env },
+    env: plan.env,
     stdio: "pipe",
   });
 

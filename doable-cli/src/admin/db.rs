@@ -854,3 +854,233 @@ pub async fn load_sandbox_audit(
         Err(e) => Err(Box::new(e)),
     }
 }
+
+// ─── Sandbox write operations ─────────────────────────────
+
+/// Insert a new sandbox rule. Returns the generated UUID.
+pub async fn insert_sandbox_rule(
+    client: &Client,
+    workspace_id: &str,
+    rule_type: &str,
+    pattern: &str,
+    action: &str,
+    priority: i32,
+    reason: Option<&str>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let row = client
+        .query_one(
+            "INSERT INTO workspace_sandbox_rules
+                (workspace_id, rule_type, pattern, action, priority, enabled, reason)
+             VALUES ($1::uuid, $2, $3, $4, $5, true, $6)
+             RETURNING id::text",
+            &[&workspace_id, &rule_type, &pattern, &action, &priority, &reason],
+        )
+        .await?;
+    Ok(row.get::<_, String>("id"))
+}
+
+/// Update an existing sandbox rule.
+pub async fn update_sandbox_rule(
+    client: &Client,
+    rule_id: &str,
+    rule_type: &str,
+    pattern: &str,
+    action: &str,
+    priority: i32,
+    reason: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    client
+        .execute(
+            "UPDATE workspace_sandbox_rules
+             SET rule_type = $2, pattern = $3, action = $4,
+                 priority = $5, reason = $6, updated_at = now()
+             WHERE id::text = $1",
+            &[&rule_id, &rule_type, &pattern, &action, &priority, &reason],
+        )
+        .await?;
+    Ok(())
+}
+
+/// Toggle the enabled/disabled state of a sandbox rule.
+pub async fn toggle_sandbox_rule(
+    client: &Client,
+    rule_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let row = client
+        .query_one(
+            "UPDATE workspace_sandbox_rules
+             SET enabled = NOT enabled, updated_at = now()
+             WHERE id::text = $1
+             RETURNING enabled",
+            &[&rule_id],
+        )
+        .await?;
+    Ok(row.get::<_, bool>("enabled"))
+}
+
+/// Delete a sandbox rule.
+pub async fn delete_sandbox_rule(
+    client: &Client,
+    rule_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    client
+        .execute(
+            "DELETE FROM workspace_sandbox_rules WHERE id::text = $1",
+            &[&rule_id],
+        )
+        .await?;
+    Ok(())
+}
+
+/// Upsert workspace sandbox settings (backend, profiles, default actions).
+pub async fn upsert_sandbox_settings(
+    client: &Client,
+    workspace_id: &str,
+    sandbox_backend: Option<&str>,
+    tool_default_action: Option<&str>,
+    network_default_action: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    client
+        .execute(
+            "INSERT INTO workspace_sandbox_settings
+                (workspace_id, sandbox_backend, tool_default_action, network_default_action)
+             VALUES ($1::uuid, $2, $3, $4)
+             ON CONFLICT (workspace_id) DO UPDATE SET
+                sandbox_backend = EXCLUDED.sandbox_backend,
+                tool_default_action = EXCLUDED.tool_default_action,
+                network_default_action = EXCLUDED.network_default_action,
+                updated_at = now()",
+            &[&workspace_id, &sandbox_backend, &tool_default_action, &network_default_action],
+        )
+        .await?;
+    Ok(())
+}
+
+// ─── System-level sandbox rules (Migration 080) ───────────────────────
+
+#[derive(Debug, Clone)]
+pub struct SystemRuleRow {
+    pub id: String,
+    pub scope: String,
+    pub rule_type: String,
+    pub pattern: String,
+    pub action: String,
+    pub priority: i32,
+    pub is_floor: bool,
+    pub enabled: bool,
+    pub description: Option<String>,
+}
+
+/// Load all system-level sandbox rules, ordered by scope/type/priority.
+pub async fn load_system_rules(
+    client: &Client,
+) -> Result<Vec<SystemRuleRow>, Box<dyn std::error::Error>> {
+    let rows = client
+        .query(
+            "SELECT id, scope, rule_type, pattern, action, priority, is_floor, enabled,
+                    description
+             FROM sandbox_system_rules
+             ORDER BY scope, rule_type, priority ASC, created_at ASC",
+            &[],
+        )
+        .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            let id: uuid::Uuid = r.get("id");
+            SystemRuleRow {
+                id: id.to_string(),
+                scope: r.get("scope"),
+                rule_type: r.get("rule_type"),
+                pattern: r.get("pattern"),
+                action: r.get("action"),
+                priority: r.get("priority"),
+                is_floor: r.get("is_floor"),
+                enabled: r.get("enabled"),
+                description: r.get("description"),
+            }
+        })
+        .collect())
+}
+
+/// Insert a new system-level sandbox rule. Returns the new UUID.
+pub async fn insert_system_rule(
+    client: &Client,
+    scope: &str,
+    rule_type: &str,
+    pattern: &str,
+    action: &str,
+    priority: i32,
+    is_floor: bool,
+    description: Option<&str>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let row = client
+        .query_one(
+            "INSERT INTO sandbox_system_rules
+                (scope, rule_type, pattern, action, priority, is_floor, description)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id",
+            &[&scope, &rule_type, &pattern, &action, &priority, &is_floor, &description],
+        )
+        .await?;
+    let id: uuid::Uuid = row.get("id");
+    Ok(id.to_string())
+}
+
+/// Update an existing system-level sandbox rule.
+pub async fn update_system_rule(
+    client: &Client,
+    rule_id: &str,
+    scope: &str,
+    rule_type: &str,
+    pattern: &str,
+    action: &str,
+    priority: i32,
+    is_floor: bool,
+    description: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let id = uuid::Uuid::parse_str(rule_id)?;
+    client
+        .execute(
+            "UPDATE sandbox_system_rules
+             SET scope = $2, rule_type = $3, pattern = $4, action = $5,
+                 priority = $6, is_floor = $7, description = $8, updated_at = now()
+             WHERE id = $1",
+            &[&id, &scope, &rule_type, &pattern, &action, &priority, &is_floor, &description],
+        )
+        .await?;
+    Ok(())
+}
+
+/// Toggle a system-level sandbox rule enabled/disabled. Returns new state.
+pub async fn toggle_system_rule(
+    client: &Client,
+    rule_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let id = uuid::Uuid::parse_str(rule_id)?;
+    let row = client
+        .query_one(
+            "UPDATE sandbox_system_rules
+             SET enabled = NOT enabled, updated_at = now()
+             WHERE id = $1
+             RETURNING enabled",
+            &[&id],
+        )
+        .await?;
+    Ok(row.get("enabled"))
+}
+
+/// Delete a system-level sandbox rule.
+pub async fn delete_system_rule(
+    client: &Client,
+    rule_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let id = uuid::Uuid::parse_str(rule_id)?;
+    client
+        .execute(
+            "DELETE FROM sandbox_system_rules WHERE id = $1",
+            &[&id],
+        )
+        .await?;
+    Ok(())
+}

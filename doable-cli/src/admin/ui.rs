@@ -10,6 +10,8 @@ use ratatui::{
 
 use crate::admin::app::{
     App, ClickTarget, Focus, Modal, Screen, StatusKind, ADD_ROLES, ROLES, SIDEBAR_ITEMS,
+    SANDBOX_RULE_TYPES, SANDBOX_ACTIONS, SANDBOX_BACKENDS,
+    SYSTEM_RULE_SCOPES, SYSTEM_RULE_TYPES,
 };
 use crate::admin::server_config as sc;
 
@@ -250,6 +252,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect) {
         Screen::ApiKeys => render_api_keys(f, app, table_area),
         Screen::ModeTools => render_mode_tools(f, app, table_area),
         Screen::Sandbox => render_sandbox(f, app, table_area),
+        Screen::SystemRules => render_system_rules(f, app, table_area),
         Screen::ServerConfig => render_server_config(f, app, table_area),
     }
 
@@ -272,6 +275,7 @@ fn render_content_title(f: &mut Frame, app: &App, area: Rect) {
         Screen::ApiKeys => ("API Keys", app.api_keys.len()),
         Screen::ModeTools => ("Mode Tools", app.mode_tools.len()),
         Screen::Sandbox => ("Sandbox", app.sandbox_rules.len()),
+        Screen::SystemRules => ("System Rules", app.system_rules.len()),
         Screen::ServerConfig => ("Server Config", 0),
     };
 
@@ -351,7 +355,10 @@ fn render_content_footer(f: &mut Frame, app: &mut App, area: Rect, has_actions: 
             "Enter: Edit allowed tools    \u{2191}\u{2193}: Navigate    Esc: Sidebar"
         }
         Screen::Sandbox => {
-            "\u{2191}\u{2193}: Navigate rules    Esc: Sidebar    (edit via REST API for now)"
+            "a: Add rule    e/Enter: Edit    d: Delete    t: Toggle    s: Settings    \u{2191}\u{2193}: Navigate    Esc: Sidebar"
+        }
+        Screen::SystemRules => {
+            "a: Add    e/Enter: Edit    d: Delete    t: Toggle    \u{2191}\u{2193}: Navigate    Esc: Sidebar"
         }
         Screen::ServerConfig => {
             if app.sc_subview == sc::SubView::DbCredentials {
@@ -953,6 +960,80 @@ fn render_modal(f: &mut Frame, app: &mut App, screen: Rect) {
             let succ = *success;
             let msg = message.clone();
             render_modal_rotate_result(f, screen, succ, &msg);
+        }
+        Modal::EditSandboxRule {
+            idx, rule_type_idx, pattern, action_idx, priority, reason,
+            field, cursor, error,
+        } => {
+            let i = *idx;
+            let rti = *rule_type_idx;
+            let p = pattern.clone();
+            let ai = *action_idx;
+            let pr = priority.clone();
+            let re = reason.clone();
+            let fi = *field;
+            let cu = *cursor;
+            let e = error.clone();
+            render_modal_edit_sandbox_rule(f, app, screen, i, rti, &p, ai, &pr, &re, fi, cu, e.as_deref());
+        }
+        Modal::ConfirmSandboxRuleRemove { idx, btn } => {
+            let i = *idx;
+            let b = *btn;
+            let desc = app
+                .sandbox_rules
+                .get(i)
+                .map(|r| format!("{} {} {}", r.rule_type, r.action, r.pattern))
+                .unwrap_or_else(|| "(unknown)".into());
+            render_modal_confirm_simple(
+                f, app, screen,
+                " Delete Sandbox Rule ",
+                &format!("Delete rule: {desc}?"),
+                "Cancel", "Delete", b,
+            );
+        }
+        Modal::EditSandboxSettings {
+            backend_idx, tool_action_idx, net_action_idx, field,
+        } => {
+            let bi = *backend_idx;
+            let ti = *tool_action_idx;
+            let ni = *net_action_idx;
+            let fi = *field;
+            render_modal_edit_sandbox_settings(f, app, screen, bi, ti, ni, fi);
+        }
+        Modal::EditSystemRule {
+            idx, scope_idx, rule_type_idx, pattern, action_idx,
+            priority, is_floor, description, field, cursor, error,
+        } => {
+            let (i, si, rti, p, ai, pr, fl, d, fi, cu) = (
+                *idx, *scope_idx, *rule_type_idx, pattern.clone(),
+                *action_idx, priority.clone(), *is_floor, description.clone(),
+                *field, *cursor,
+            );
+            let e = error.as_deref().map(|s| s.to_owned());
+            render_modal_edit_system_rule(
+                f, app, screen, i, si, rti, &p,
+                ai, &pr, fl, &d, fi, cu,
+                e.as_deref(),
+            );
+        }
+        Modal::ConfirmSystemRuleRemove { idx, btn } => {
+            let i = *idx;
+            let b = *btn;
+            let desc = if i < app.system_rules.len() {
+                format!("{} {} ({})",
+                    app.system_rules[i].scope,
+                    app.system_rules[i].pattern,
+                    app.system_rules[i].rule_type,
+                )
+            } else {
+                "?".to_string()
+            };
+            render_modal_confirm_simple(
+                f, app, screen,
+                " Delete System Rule ",
+                &format!("Delete system rule: {desc}?"),
+                "Cancel", "Delete", b,
+            );
         }
     }
 }
@@ -3096,7 +3177,7 @@ fn render_sandbox(f: &mut Frame, app: &mut App, area: Rect) {
     if app.sandbox_rules.is_empty() && app.sandbox_audit.is_empty() {
         render_empty(
             f,
-            "No sandbox rules or audit rows. Add a rule via doable admin or wait for the first jailedSpawn.",
+            "No sandbox rules yet. Press 'a' to add a rule, 's' to configure settings.",
             area,
         );
         return;
@@ -3155,7 +3236,407 @@ fn render_sandbox(f: &mut Frame, app: &mut App, area: Rect) {
     register_row_clicks(f, app, block, area, app.sandbox_rules.len());
 }
 
-// ─── API Keys / Mode Tools modals ─────────────────────────
+// ─── Sandbox modals ───────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+fn render_modal_edit_sandbox_rule(
+    f: &mut Frame,
+    app: &mut App,
+    screen: Rect,
+    idx: Option<usize>,
+    rule_type_idx: usize,
+    pattern: &str,
+    action_idx: usize,
+    priority: &str,
+    reason: &str,
+    field: usize,
+    cursor: usize,
+    error: Option<&str>,
+) {
+    let title = if idx.is_some() { " Edit Sandbox Rule " } else { " Add Sandbox Rule " };
+    let w = 72u16;
+    let h = if error.is_some() { 20u16 } else { 19u16 };
+    let area = centered(w, h, screen);
+    f.render_widget(Clear, area);
+    let block = modal_block(title);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let fields = [
+        ("Type", 0usize),
+        ("Pattern", 1),
+        ("Action", 2),
+        ("Priority", 3),
+        ("Reason", 4),
+    ];
+
+    let mut y = inner.y + 1;
+
+    for &(label, fi) in &fields {
+        let is_active = fi == field;
+        let label_style = if is_active { sb(c::BLUE) } else { s(c::OVERLAY0) };
+
+        // Label
+        let lbl = Paragraph::new(Span::styled(format!(" {label}:"), label_style))
+            .style(Style::default().bg(c::MANTLE));
+        f.render_widget(lbl, Rect { x: inner.x, y, width: inner.width, height: 1 });
+        y += 1;
+
+        let input_x = inner.x + 2;
+        let input_w = inner.width.saturating_sub(3);
+
+        match fi {
+            0 => {
+                // Rule type selector: ◀ tool ▶
+                let rt = SANDBOX_RULE_TYPES[rule_type_idx];
+                let sel_text = format!("  ◀ {rt} ▶  ");
+                let sel_style = if is_active {
+                    Style::default().fg(c::BASE).bg(c::BLUE)
+                } else {
+                    Style::default().fg(c::TEXT).bg(c::SURFACE0)
+                };
+                let sel = Paragraph::new(Span::styled(sel_text, sel_style));
+                f.render_widget(sel, Rect { x: input_x, y, width: input_w, height: 1 });
+            }
+            2 => {
+                // Action selector: ◀ allow ▶
+                let act = SANDBOX_ACTIONS[action_idx];
+                let sel_text = format!("  ◀ {act} ▶  ");
+                let (fg, bg) = if act == "deny" { (c::BASE, c::RED) } else { (c::BASE, c::GREEN) };
+                let sel_style = if is_active {
+                    Style::default().fg(fg).bg(bg)
+                } else {
+                    Style::default().fg(c::TEXT).bg(c::SURFACE0)
+                };
+                let sel = Paragraph::new(Span::styled(sel_text, sel_style));
+                f.render_widget(sel, Rect { x: input_x, y, width: input_w, height: 1 });
+            }
+            1 | 3 | 4 => {
+                // Text input
+                let text = match fi {
+                    1 => pattern,
+                    3 => priority,
+                    _ => reason,
+                };
+                if is_active {
+                    let cur = cursor.min(text.len());
+                    let before = &text[..cur];
+                    let after = &text[cur..];
+                    let line = Line::from(vec![
+                        Span::styled(before, s(c::TEXT)),
+                        Span::styled("\u{2502}", sb(c::BLUE)),
+                        Span::styled(after, s(c::TEXT)),
+                    ]);
+                    let inp = Paragraph::new(line).style(Style::default().bg(c::SURFACE0));
+                    f.render_widget(inp, Rect { x: input_x, y, width: input_w, height: 1 });
+                } else {
+                    let placeholder = match fi {
+                        1 => "e.g. install:@evil/* or registry.npmjs.org",
+                        3 => "e.g. 100",
+                        _ => "(optional)",
+                    };
+                    let display = if text.is_empty() { placeholder } else { text };
+                    let sty = if text.is_empty() { s(c::OVERLAY0) } else { s(c::TEXT) };
+                    let inp = Paragraph::new(Span::styled(display, sty))
+                        .style(Style::default().bg(c::SURFACE0));
+                    f.render_widget(inp, Rect { x: input_x, y, width: input_w, height: 1 });
+                }
+            }
+            _ => {}
+        }
+        y += 1;
+    }
+
+    // Error line
+    if let Some(e) = error {
+        y += 1;
+        let err = Paragraph::new(Span::styled(format!(" ⚠ {e}"), s(c::RED)))
+            .style(Style::default().bg(c::MANTLE));
+        f.render_widget(err, Rect { x: inner.x, y, width: inner.width, height: 1 });
+    }
+
+    // Hint
+    let hint_y = inner.y + inner.height.saturating_sub(2);
+    let hint = Paragraph::new(Span::styled(
+        " Tab: Next field   ←/→: Cycle option   Enter: Save   Esc: Cancel",
+        s(c::OVERLAY0),
+    ))
+    .style(Style::default().bg(c::MANTLE));
+    f.render_widget(hint, Rect { x: inner.x, y: hint_y, width: inner.width, height: 1 });
+}
+
+fn render_modal_edit_sandbox_settings(
+    f: &mut Frame,
+    _app: &mut App,
+    screen: Rect,
+    backend_idx: usize,
+    tool_action_idx: usize,
+    net_action_idx: usize,
+    field: usize,
+) {
+    let w = 64u16;
+    let h = 15u16;
+    let area = centered(w, h, screen);
+    f.render_widget(Clear, area);
+    let block = modal_block(" Sandbox Settings ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let fields: &[(&str, &[&str], usize)] = &[
+        ("Backend", SANDBOX_BACKENDS, backend_idx),
+        ("Tool Default Action", SANDBOX_ACTIONS, tool_action_idx),
+        ("Network Default Action", SANDBOX_ACTIONS, net_action_idx),
+    ];
+
+    let mut y = inner.y + 1;
+
+    for (fi, &(label, choices, idx)) in fields.iter().enumerate() {
+        let is_active = fi == field;
+        let label_style = if is_active { sb(c::BLUE) } else { s(c::OVERLAY0) };
+
+        let lbl = Paragraph::new(Span::styled(format!(" {label}:"), label_style))
+            .style(Style::default().bg(c::MANTLE));
+        f.render_widget(lbl, Rect { x: inner.x, y, width: inner.width, height: 1 });
+        y += 1;
+
+        let val = choices[idx];
+        let sel_text = format!("  ◀ {val} ▶  ");
+        let sel_style = if is_active {
+            Style::default().fg(c::BASE).bg(c::BLUE)
+        } else {
+            Style::default().fg(c::TEXT).bg(c::SURFACE0)
+        };
+        let sel = Paragraph::new(Span::styled(sel_text, sel_style));
+        f.render_widget(sel, Rect { x: inner.x + 2, y, width: inner.width.saturating_sub(3), height: 1 });
+        y += 2;
+    }
+
+    let hint_y = inner.y + inner.height.saturating_sub(2);
+    let hint = Paragraph::new(Span::styled(
+        " Tab/↕: Next field   ←/→: Cycle   Enter: Save   Esc: Cancel",
+        s(c::OVERLAY0),
+    ))
+    .style(Style::default().bg(c::MANTLE));
+    f.render_widget(hint, Rect { x: inner.x, y: hint_y, width: inner.width, height: 1 });
+}
+
+// ─── System Rules screen ──────────────────────────────────
+
+fn render_system_rules(f: &mut Frame, app: &mut App, area: Rect) {
+    if app.system_rules.is_empty() {
+        render_empty(
+            f,
+            "No system rules found. Press 'a' to add a rule. Run migration 080 if table is missing.",
+            area,
+        );
+        return;
+    }
+
+    let header = Row::new(vec![
+        Cell::from(Span::styled("Scope", sb(c::LAVENDER))),
+        Cell::from(Span::styled("Type", sb(c::LAVENDER))),
+        Cell::from(Span::styled("Pattern", sb(c::LAVENDER))),
+        Cell::from(Span::styled("Action", sb(c::LAVENDER))),
+        Cell::from(Span::styled("Pri", sb(c::LAVENDER))),
+        Cell::from(Span::styled("Floor", sb(c::LAVENDER))),
+        Cell::from(Span::styled("On", sb(c::LAVENDER))),
+        Cell::from(Span::styled("Description", sb(c::LAVENDER))),
+    ])
+    .height(1)
+    .style(Style::default().bg(c::SURFACE0));
+
+    let sel = app.table_state.selected().unwrap_or(usize::MAX);
+    let rows: Vec<Row> = app
+        .system_rules
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let bg = if i == sel { c::SURFACE1 } else { c::BASE };
+            let action_fg = if r.action == "deny" { c::RED } else { c::GREEN };
+            let floor_fg = if r.is_floor { c::YELLOW } else { c::OVERLAY0 };
+            let enabled_fg = if r.enabled { c::GREEN } else { c::OVERLAY0 };
+            Row::new(vec![
+                Cell::from(Span::styled(&r.scope, s(c::BLUE))),
+                Cell::from(Span::styled(&r.rule_type, s(c::TEAL))),
+                Cell::from(Span::styled(&r.pattern, s(c::TEXT))),
+                Cell::from(Span::styled(&r.action, s(action_fg))),
+                Cell::from(Span::styled(r.priority.to_string(), s(c::OVERLAY0))),
+                Cell::from(Span::styled(if r.is_floor { "✓" } else { "" }, s(floor_fg))),
+                Cell::from(Span::styled(if r.enabled { "✓" } else { "✗" }, s(enabled_fg))),
+                Cell::from(Span::styled(
+                    r.description.as_deref().unwrap_or(""),
+                    s(c::OVERLAY0),
+                )),
+            ])
+            .style(Style::default().bg(bg))
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Length(20),
+        Constraint::Length(9),
+        Constraint::Min(18),
+        Constraint::Length(6),
+        Constraint::Length(4),
+        Constraint::Length(6),
+        Constraint::Length(3),
+        Constraint::Min(20),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::TOP)
+        .border_style(Style::default().fg(c::SURFACE0));
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(block)
+        .row_highlight_style(Style::default().bg(c::SURFACE1));
+
+    f.render_stateful_widget(table, area, &mut app.table_state);
+    register_row_clicks(f, app, Block::default(), area, app.system_rules.len());
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_modal_edit_system_rule(
+    f: &mut Frame,
+    _app: &mut App,
+    screen: Rect,
+    _idx: Option<usize>,
+    scope_idx: usize,
+    rule_type_idx: usize,
+    pattern: &str,
+    action_idx: usize,
+    priority: &str,
+    is_floor: bool,
+    description: &str,
+    field: usize,
+    cursor: usize,
+    error: Option<&str>,
+) {
+    let title = if _idx.is_some() { " Edit System Rule " } else { " Add System Rule " };
+    let w = 76u16;
+    let h = if error.is_some() { 25u16 } else { 24u16 };
+    let area = centered(w, h, screen);
+    f.render_widget(Clear, area);
+    let block = modal_block(title);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Fields: 0=scope(sel), 1=rule_type(sel), 2=pattern(text),
+    //         3=action(sel), 4=priority(text), 5=is_floor(toggle), 6=description(text)
+    let fields: &[(&str, u8)] = &[
+        ("Scope", 0),      // selector
+        ("Type", 0),       // selector
+        ("Pattern", 1),    // text
+        ("Action", 0),     // selector
+        ("Priority", 1),   // text
+        ("Hard Floor", 2), // toggle
+        ("Description", 1),// text
+    ];
+
+    let mut y = inner.y;
+
+    for (fi, &(label, kind)) in fields.iter().enumerate() {
+        let is_active = fi == field;
+        let label_style = if is_active { sb(c::BLUE) } else { s(c::OVERLAY0) };
+
+        let lbl = Paragraph::new(Span::styled(format!(" {label}:"), label_style))
+            .style(Style::default().bg(c::MANTLE));
+        f.render_widget(lbl, Rect { x: inner.x, y, width: inner.width, height: 1 });
+        y += 1;
+
+        let input_x = inner.x + 2;
+        let input_w = inner.width.saturating_sub(3);
+
+        match kind {
+            0 => {
+                // Selector
+                let val = match fi {
+                    0 => SYSTEM_RULE_SCOPES[scope_idx],
+                    1 => SYSTEM_RULE_TYPES[rule_type_idx],
+                    3 => SANDBOX_ACTIONS[action_idx],
+                    _ => "?",
+                };
+                let sel_text = format!("  ◀ {val} ▶  ");
+                let (fg, bg) = if fi == 3 && val == "deny" {
+                    (c::BASE, c::RED)
+                } else if fi == 3 {
+                    (c::BASE, c::GREEN)
+                } else if is_active {
+                    (c::BASE, c::BLUE)
+                } else {
+                    (c::TEXT, c::SURFACE0)
+                };
+                let sel_style = Style::default().fg(fg).bg(bg);
+                let sel = Paragraph::new(Span::styled(sel_text, sel_style));
+                f.render_widget(sel, Rect { x: input_x, y, width: input_w, height: 1 });
+            }
+            1 => {
+                // Text input
+                let text = match fi {
+                    2 => pattern,
+                    4 => priority,
+                    _ => description,
+                };
+                if is_active {
+                    let cur = cursor.min(text.len());
+                    let before = &text[..cur];
+                    let after = &text[cur..];
+                    let line = Line::from(vec![
+                        Span::styled(before, s(c::TEXT)),
+                        Span::styled("\u{2502}", sb(c::BLUE)),
+                        Span::styled(after, s(c::TEXT)),
+                    ]);
+                    let inp = Paragraph::new(line).style(Style::default().bg(c::SURFACE0));
+                    f.render_widget(inp, Rect { x: input_x, y, width: input_w, height: 1 });
+                } else {
+                    let placeholder = match fi {
+                        2 => "e.g. registry.npmjs.org or ptrace",
+                        4 => "e.g. 100",
+                        _ => "(optional description)",
+                    };
+                    let display = if text.is_empty() { placeholder } else { text };
+                    let sty = if text.is_empty() { s(c::OVERLAY0) } else { s(c::TEXT) };
+                    let inp = Paragraph::new(Span::styled(display, sty))
+                        .style(Style::default().bg(c::SURFACE0));
+                    f.render_widget(inp, Rect { x: input_x, y, width: input_w, height: 1 });
+                }
+            }
+            2 => {
+                // Boolean toggle
+                let val_text = if is_floor { "  ◀ Yes ▶  " } else { "  ◀ No ▶  " };
+                let toggle_style = if is_active {
+                    if is_floor {
+                        Style::default().fg(c::BASE).bg(c::YELLOW)
+                    } else {
+                        Style::default().fg(c::BASE).bg(c::BLUE)
+                    }
+                } else {
+                    Style::default().fg(c::TEXT).bg(c::SURFACE0)
+                };
+                let sel = Paragraph::new(Span::styled(val_text, toggle_style));
+                f.render_widget(sel, Rect { x: input_x, y, width: input_w, height: 1 });
+            }
+            _ => {}
+        }
+        y += 1;
+    }
+
+    // Error line
+    if let Some(e) = error {
+        let err = Paragraph::new(Span::styled(format!(" ⚠ {e}"), s(c::RED)))
+            .style(Style::default().bg(c::MANTLE));
+        f.render_widget(err, Rect { x: inner.x, y, width: inner.width, height: 1 });
+    }
+
+    // Hint
+    let hint_y = inner.y + inner.height.saturating_sub(2);
+    let hint = Paragraph::new(Span::styled(
+        " Tab: Next field   ←/→: Cycle/toggle   Enter: Save   Esc: Cancel",
+        s(c::OVERLAY0),
+    ))
+    .style(Style::default().bg(c::MANTLE));
+    f.render_widget(hint, Rect { x: inner.x, y: hint_y, width: inner.width, height: 1 });
+}
 
 fn render_modal_text_input(
     f: &mut Frame,

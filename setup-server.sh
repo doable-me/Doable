@@ -246,6 +246,13 @@ if ! command -v cloudflared &>/dev/null; then
   apt-get update -qq && apt-get install -y cloudflared
 fi
 
+# Bubblewrap — container-like sandbox for AI bash tool + Vite dev servers.
+# Without bwrap the sandbox falls back to systemd-only (cgroup limits but
+# NO PID namespace, NO filesystem jail, NO network isolation).
+if ! command -v bwrap &>/dev/null; then
+  apt-get install -y bubblewrap
+fi
+
 # Bring all installed packages to current security patches
 DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
@@ -644,6 +651,17 @@ GOOGLE_EMAIL_USER=
 # Controls jailing across build (next build), dev-server (vite dev),
 # and production systemd unit. Values: full | relaxed | off.
 DOABLE_HARDENING=full
+
+# ─── Sandbox orchestrator hardening level ────────────────────
+# Controls the jailedSpawn orchestrator's fail-closed behavior.
+# "prod" blocks non-isolating backends (direct, noop).
+# Must match the environment — set to "prod" on production servers.
+DOABLE_HARDENING_LEVEL=prod
+
+# ─── Sandbox Vite feature flag ──────────────────────────────
+# Route Vite dev server spawns through the full sandbox orchestrator
+# (profile + backend + composers) instead of the legacy vault.spawn path.
+DOABLE_SANDBOX_VITE=1
 
 # ─── Build-time outbound proxy (Wave 29) ────────────────────
 # Routes every build (npm install, pip install, etc.) through Squid

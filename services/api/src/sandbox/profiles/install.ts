@@ -11,15 +11,10 @@
 import type { SandboxProfile } from "../../../../../packages/dovault/src/profile.js";
 import type { SpawnContext } from "../orchestrator.js";
 import { getProjectPath } from "../../ai/project-files.js";
-import {
-  MB,
-  GB,
-  NPM_CACHE_DIR,
-  HIGH_CVE_SYSCALL_DENY,
-  HARD_FLOOR_NET_DENY,
-} from "./constants.js";
+import type { SystemRules } from "../system-rules.js";
+import { MB, GB, NPM_CACHE_DIR } from "./constants.js";
 
-export function installProfile(ctx: SpawnContext): SandboxProfile {
+export function installProfile(ctx: SpawnContext, sys: SystemRules): SandboxProfile {
   return {
     id: "install",
     fs: {
@@ -77,7 +72,7 @@ export function installProfile(ctx: SpawnContext): SandboxProfile {
     syscalls: {
       capsKeep: [],
       seccompDefault: "errno",
-      seccompDeny: [...HIGH_CVE_SYSCALL_DENY],
+      seccompDeny: [...sys.syscallFloors],
     },
     limits: {
       memBytes: 1 * GB,
@@ -88,13 +83,8 @@ export function installProfile(ctx: SpawnContext): SandboxProfile {
     },
     network: {
       defaultAction: "deny",
-      allow: [
-        "registry.npmjs.org",
-        "registry.yarnpkg.com",
-        "pypi.org",
-        "files.pythonhosted.org",
-      ],
-      deny: [...HARD_FLOOR_NET_DENY],
+      allow: sys.profileNetworkAllows("install"),
+      deny: [...sys.networkFloors, ...sys.profileNetworkDenies("install")],
     },
     env: {
       allowlist: ["PATH", "LANG", "HOME"],

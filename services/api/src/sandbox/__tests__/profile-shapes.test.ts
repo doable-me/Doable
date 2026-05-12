@@ -23,7 +23,7 @@ import {
   installProfile,
   buildProfile,
 } from "../profiles/index.js";
-import { HIGH_CVE_SYSCALL_DENY } from "../profiles/constants.js";
+import { loadSystemRules, type SystemRules } from "../system-rules.js";
 import type { SpawnContext } from "../orchestrator.js";
 
 function makeCtx(overrides: Partial<SpawnContext> = {}): SpawnContext {
@@ -39,7 +39,7 @@ function makeCtx(overrides: Partial<SpawnContext> = {}): SpawnContext {
 
 interface NamedProfile {
   name: string;
-  factory: (ctx: SpawnContext) => SandboxProfile;
+  factory: (ctx: SpawnContext, sys: SystemRules) => SandboxProfile;
 }
 
 const CATALOG: NamedProfile[] = [
@@ -51,9 +51,15 @@ const CATALOG: NamedProfile[] = [
 
 // ───────────────────────── schema validation ─────────────────────────
 
+let sys: SystemRules;
+test("load system rules for subsequent tests", async () => {
+  sys = await loadSystemRules();
+  assert.ok(sys, "system rules loaded");
+});
+
 for (const { name, factory } of CATALOG) {
   test(`profile "${name}" validates against SandboxProfileSchema`, () => {
-    const profile = factory(makeCtx());
+    const profile = factory(makeCtx(), sys);
     const result = SandboxProfileSchema.safeParse(profile);
     if (!result.success) {
       assert.fail(
@@ -71,14 +77,14 @@ for (const { name, factory } of CATALOG) {
 // ───────────────────────── high-CVE syscall denylist ─────────────────────────
 
 for (const { name, factory } of CATALOG) {
-  test(`profile "${name}" includes the full HIGH_CVE_SYSCALL_DENY set in seccompDeny`, () => {
-    const profile = factory(makeCtx());
+  test(`profile "${name}" includes the full syscall deny set in seccompDeny`, () => {
+    const profile = factory(makeCtx(), sys);
     // Each catalog profile defines seccompDeny — the floor must be present.
     assert.ok(
       Array.isArray(profile.syscalls.seccompDeny),
       `profile "${name}" missing syscalls.seccompDeny`,
     );
-    for (const sysc of HIGH_CVE_SYSCALL_DENY) {
+    for (const sysc of sys.syscallFloors) {
       assert.ok(
         profile.syscalls.seccompDeny.includes(sysc),
         `profile "${name}" missing high-CVE syscall "${sysc}" in seccompDeny`,
@@ -91,7 +97,7 @@ for (const { name, factory } of CATALOG) {
 
 for (const { name, factory } of CATALOG) {
   test(`profile "${name}" emits a well-formed synthetic /etc/passwd (7 colon-separated fields per line)`, () => {
-    const profile = factory(makeCtx());
+    const profile = factory(makeCtx(), sys);
     const passwd = profile.fs.etcSynth["/etc/passwd"];
     assert.ok(
       typeof passwd === "string" && passwd.length > 0,

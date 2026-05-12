@@ -11,12 +11,8 @@
 import type { SandboxProfile } from "../../../../../packages/dovault/src/profile.js";
 import type { SpawnContext } from "../orchestrator.js";
 import { getProjectPath } from "../../ai/project-files.js";
-import {
-  MB,
-  NPM_CACHE_DIR,
-  HIGH_CVE_SYSCALL_DENY,
-  HARD_FLOOR_NET_DENY,
-} from "./constants.js";
+import type { SystemRules } from "../system-rules.js";
+import { MB, NPM_CACHE_DIR } from "./constants.js";
 
 function perProjectUid(projectId: string): number {
   // Derive per-project uid (9000-9999) so two tenants' preview processes
@@ -25,7 +21,7 @@ function perProjectUid(projectId: string): number {
   return 9000 + (first % 1000);
 }
 
-export function vitePreviewProfile(ctx: SpawnContext): SandboxProfile {
+export function vitePreviewProfile(ctx: SpawnContext, sys: SystemRules): SandboxProfile {
   const uid = perProjectUid(ctx.projectId);
 
   return {
@@ -84,7 +80,7 @@ export function vitePreviewProfile(ctx: SpawnContext): SandboxProfile {
     syscalls: {
       capsKeep: [],
       seccompDefault: "errno",
-      seccompDeny: [...HIGH_CVE_SYSCALL_DENY],
+      seccompDeny: [...sys.syscallFloors],
     },
     limits: {
       memBytes: 512 * MB,
@@ -95,16 +91,8 @@ export function vitePreviewProfile(ctx: SpawnContext): SandboxProfile {
     },
     network: {
       defaultAction: "deny",
-      allow: [
-        "registry.npmjs.org",
-        "registry.yarnpkg.com",
-        "esm.sh",
-        "unpkg.com",
-        "cdn.jsdelivr.net",
-        "fonts.googleapis.com",
-        "fonts.gstatic.com",
-      ],
-      deny: [...HARD_FLOOR_NET_DENY],
+      allow: sys.profileNetworkAllows("vite-preview"),
+      deny: [...sys.networkFloors, ...sys.profileNetworkDenies("vite-preview")],
     },
     env: {
       allowlist: ["PATH", "LANG", "LC_ALL", "HOME", "TERM", "NODE_ENV"],

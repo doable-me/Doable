@@ -8,14 +8,14 @@
  * Per SandboxAgnosticSandboxingPRD/10-config-management.md
  * ("Defaults vs. overrides" + "Hard floors operators cannot disable"):
  *   - Workspace rules can ONLY tighten — never loosen.
- *   - HARD_FLOOR_NET_DENY entries are always reapplied.
+ *   - Network floor entries from sandbox_system_rules are always reapplied.
  *   - If the profile id is not in the workspace's allowed_profile_keys,
  *     resolution fails closed.
  */
 
 import { sql } from "../db/index.js";
 import type { SandboxProfile } from "../../../../packages/dovault/src/profile.js";
-import { HARD_FLOOR_NET_DENY } from "./profiles/constants.js";
+import { loadSystemRules } from "./system-rules.js";
 
 // ───────────────────────── types ─────────────────────────
 
@@ -114,13 +114,13 @@ export async function loadWorkspaceSandboxState(
  * 3. rule_type=bash and rule_type=tool deny rules are NOT enforced here —
  *    tool-level enforcement lives in the AI tool handler, not the
  *    sandbox profile (TODO: surface via a future `toolDenylist` field).
- * 4. HARD_FLOOR_NET_DENY entries are reappended unconditionally so a
- *    workspace policy can never remove them.
+ * 4. Network floor entries from sandbox_system_rules (is_floor=true) are
+ *    reappended unconditionally so a workspace policy can never remove them.
  */
-export function applyWorkspaceRules(
+export async function applyWorkspaceRules(
   profile: SandboxProfile,
   state: WorkspaceSandboxState,
-): SandboxProfile {
+): Promise<SandboxProfile> {
   const allowed = state.settings.allowed_profile_keys;
   if (allowed.length > 0 && !allowed.includes(profile.id)) {
     throw new Error(`Workspace policy prohibits profile ${profile.id}`);
@@ -139,8 +139,9 @@ export function applyWorkspaceRules(
     // not here. SandboxProfile has no toolDenylist field yet.
   }
 
-  // Hard floor: re-append regardless of what workspace policy did.
-  for (const floor of HARD_FLOOR_NET_DENY) {
+  // Hard floor: load from DB and re-append regardless of workspace policy.
+  const sys = await loadSystemRules();
+  for (const floor of sys.networkFloors) {
     denySet.add(floor);
   }
 

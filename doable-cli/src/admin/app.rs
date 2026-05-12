@@ -21,6 +21,7 @@ pub enum Screen {
     ApiKeys,
     ModeTools,
     Sandbox,
+    SystemRules,
     ServerConfig,
 }
 
@@ -33,6 +34,7 @@ pub const SIDEBAR_ITEMS: &[(Screen, &str)] = &[
     (Screen::ApiKeys, "API Keys"),
     (Screen::ModeTools, "Mode Tools"),
     (Screen::Sandbox, "Sandbox"),
+    (Screen::SystemRules, "System Rules"),
     (Screen::ServerConfig, "Server Config"),
 ];
 
@@ -154,6 +156,53 @@ pub enum Modal {
         balance_idx: usize,
         btn: usize,
     },
+    // ── Sandbox modals ──
+    /// Add or edit a sandbox rule. `idx = None` ⇒ add new rule.
+    /// `field`: 0 = rule_type, 1 = pattern, 2 = action, 3 = priority, 4 = reason
+    EditSandboxRule {
+        idx: Option<usize>,
+        rule_type_idx: usize, // index into SANDBOX_RULE_TYPES
+        pattern: String,
+        action_idx: usize,    // 0 = allow, 1 = deny
+        priority: String,
+        reason: String,
+        field: usize,         // current focused field (0..4)
+        cursor: usize,        // cursor within current text field
+        error: Option<String>,
+    },
+    /// Confirm removal of a sandbox rule.
+    ConfirmSandboxRuleRemove {
+        idx: usize,
+        btn: usize,
+    },
+    /// Edit workspace sandbox settings (backend, tool/network default action).
+    EditSandboxSettings {
+        backend_idx: usize,  // index into SANDBOX_BACKENDS
+        tool_action_idx: usize, // 0 = allow, 1 = deny
+        net_action_idx: usize,  // 0 = allow, 1 = deny
+        field: usize,           // 0 = backend, 1 = tool_default, 2 = net_default
+    },
+    // ── System Rules modals ──
+    /// Add or edit a system-level sandbox rule. `idx = None` ⇒ add new.
+    /// field: 0=scope, 1=rule_type, 2=pattern, 3=action, 4=priority, 5=is_floor, 6=description
+    EditSystemRule {
+        idx: Option<usize>,
+        scope_idx: usize,
+        rule_type_idx: usize,
+        pattern: String,
+        action_idx: usize,
+        priority: String,
+        is_floor: bool,
+        description: String,
+        field: usize,
+        cursor: usize,
+        error: Option<String>,
+    },
+    /// Confirm removal of a system-level sandbox rule.
+    ConfirmSystemRuleRemove {
+        idx: usize,
+        btn: usize,
+    },
     // ── API Keys / Mode Tools modals ──
     /// Edit the comma-separated allowed_origins list for a project API key.
     EditApiKeyOrigins {
@@ -202,6 +251,20 @@ pub enum Modal {
 }
 
 pub const PLATFORM_ROLES: &[&str] = &["owner", "admin", "member", "viewer"];
+
+pub const SANDBOX_RULE_TYPES: &[&str] = &["tool", "network", "bash", "read"];
+pub const SANDBOX_ACTIONS: &[&str] = &["allow", "deny"];
+pub const SANDBOX_BACKENDS: &[&str] = &["auto", "bubblewrap", "systemd", "psroot", "sandbox-exec", "none"];
+
+// System rule scopes and types
+pub const SYSTEM_RULE_SCOPES: &[&str] = &[
+    "global",
+    "profile:ai-bash",
+    "profile:vite-preview",
+    "profile:install",
+    "profile:build",
+];
+pub const SYSTEM_RULE_TYPES: &[&str] = &["network", "syscall", "package"];
 
 // ─── Click targets (populated during render) ─────────────
 
@@ -255,6 +318,9 @@ pub struct App {
     /// (backend_id, available, reason). Static list for now — populated in `new`.
     /// A follow-up pass will probe the host (psroot/bwrap/sandbox-exec) for live availability.
     pub sandbox_backends: Vec<(String, bool, String)>,
+
+    // system-level sandbox rules (Migration 080)
+    pub system_rules: Vec<db::SystemRuleRow>,
 
     // server config
     pub sc_subview: sc::SubView,
@@ -320,6 +386,7 @@ impl App {
             sandbox_rules: vec![],
             sandbox_audit: vec![],
             sandbox_backends: vec![],
+            system_rules: vec![],
             sc_subview: sc::SubView::Squid,
             sc_squid: None,
             sc_cloudflared: None,
@@ -391,6 +458,9 @@ impl App {
             .await
             .unwrap_or_default();
         self.sandbox_audit = db::load_sandbox_audit(&self.client, &current_workspace_id)
+            .await
+            .unwrap_or_default();
+        self.system_rules = db::load_system_rules(&self.client)
             .await
             .unwrap_or_default();
     }
@@ -466,6 +536,11 @@ impl App {
                     db::load_sandbox_audit(&self.client, &current_workspace_id)
                         .await
                         .unwrap_or_default();
+            }
+            Screen::SystemRules => {
+                self.system_rules = db::load_system_rules(&self.client)
+                    .await
+                    .unwrap_or_default();
             }
         }
     }
@@ -640,6 +715,7 @@ impl App {
             Screen::ApiKeys => self.api_keys.len(),
             Screen::ModeTools => self.mode_tools.len(),
             Screen::Sandbox => self.sandbox_rules.len(),
+            Screen::SystemRules => self.system_rules.len(),
         }
     }
 
@@ -821,6 +897,17 @@ impl App {
                     if i < self.api_keys.len() { self.open_edit_api_key_tools(i); }
                 }
             }
+            // Sandbox shortcuts: a=add, d=delete, e/Enter=edit, t=toggle, s=settings
+            KeyCode::Char('a') if self.screen == Screen::Sandbox => self.sandbox_open_add(),
+            KeyCode::Char('d') if self.screen == Screen::Sandbox => self.sandbox_open_delete(),
+            KeyCode::Char('e') if self.screen == Screen::Sandbox => self.sandbox_open_edit(),
+            KeyCode::Char('t') if self.screen == Screen::Sandbox => self.sandbox_toggle_rule().await,
+            KeyCode::Char('s') if self.screen == Screen::Sandbox => self.sandbox_open_settings(),
+            // System Rules shortcuts: a=add, d=delete, e/Enter=edit, t=toggle
+            KeyCode::Char('a') if self.screen == Screen::SystemRules => self.sysrule_open_add(),
+            KeyCode::Char('d') if self.screen == Screen::SystemRules => self.sysrule_open_delete(),
+            KeyCode::Char('e') if self.screen == Screen::SystemRules => self.sysrule_open_edit(),
+            KeyCode::Char('t') if self.screen == Screen::SystemRules => self.sysrule_toggle().await,
             _ => {}
         }
     }
@@ -997,9 +1084,16 @@ impl App {
                 }
             }
             Screen::Sandbox => {
-                // Read-only first pass. PgUp/PgDn navigation is handled by the
-                // generic content_len-driven cursor; Enter is a no-op.
-                let _ = idx;
+                // Enter = edit the selected rule
+                if idx < self.sandbox_rules.len() {
+                    self.sandbox_open_edit();
+                }
+            }
+            Screen::SystemRules => {
+                // Enter = edit the selected system rule
+                if idx < self.system_rules.len() {
+                    self.sysrule_open_edit();
+                }
             }
         }
     }
@@ -1451,6 +1545,11 @@ impl App {
             Modal::ConfirmRotateDbPassword { .. } => 24,
             Modal::RotateInProgress { .. } => 25,
             Modal::RotateResult { .. } => 26,
+            Modal::EditSandboxRule { .. } => 27,
+            Modal::ConfirmSandboxRuleRemove { .. } => 28,
+            Modal::EditSandboxSettings { .. } => 29,
+            Modal::EditSystemRule { .. } => 30,
+            Modal::ConfirmSystemRuleRemove { .. } => 31,
         });
 
         match modal_ref_type {
@@ -1481,6 +1580,11 @@ impl App {
             Some(24) => self.modal_confirm_rotate_db_password(key).await,
             Some(25) => { /* RotateInProgress: ignore keys; runs to completion */ }
             Some(26) => self.modal_rotate_result(key).await,
+            Some(27) => self.modal_edit_sandbox_rule(key).await,
+            Some(28) => self.modal_confirm_sandbox_rule_remove(key).await,
+            Some(29) => self.modal_edit_sandbox_settings(key).await,
+            Some(30) => self.modal_edit_system_rule(key).await,
+            Some(31) => self.modal_confirm_system_rule_remove(key).await,
             _ => {}
         }
     }
@@ -3071,5 +3175,597 @@ impl App {
                 "Password rotated. Your existing admin connection is still valid; if it drops, restart `doable admin --remote ...` to use the new credentials."
                     .into(),
         });
+    }
+
+    // ── Sandbox rule management ─────────────────────────
+
+    fn sandbox_workspace_id(&self) -> String {
+        self.workspaces
+            .first()
+            .map(|w| w.id.clone())
+            .unwrap_or_default()
+    }
+
+    fn sandbox_open_add(&mut self) {
+        self.modal = Some(Modal::EditSandboxRule {
+            idx: None,
+            rule_type_idx: 0, // "tool"
+            pattern: String::new(),
+            action_idx: 1,    // "deny" (safer default)
+            priority: "100".into(),
+            reason: String::new(),
+            field: 1,         // start on pattern field
+            cursor: 0,
+            error: None,
+        });
+        self.focus = Focus::Modal;
+    }
+
+    fn sandbox_open_edit(&mut self) {
+        let idx = match self.table_state.selected() {
+            Some(i) if i < self.sandbox_rules.len() => i,
+            _ => return,
+        };
+        let r = &self.sandbox_rules[idx];
+        let rt_idx = SANDBOX_RULE_TYPES.iter().position(|t| *t == r.rule_type).unwrap_or(0);
+        let act_idx = if r.action == "deny" { 1 } else { 0 };
+        self.modal = Some(Modal::EditSandboxRule {
+            idx: Some(idx),
+            rule_type_idx: rt_idx,
+            pattern: r.pattern.clone(),
+            action_idx: act_idx,
+            priority: r.priority.to_string(),
+            reason: r.reason.clone().unwrap_or_default(),
+            field: 1, // start on pattern
+            cursor: r.pattern.len(),
+            error: None,
+        });
+        self.focus = Focus::Modal;
+    }
+
+    fn sandbox_open_delete(&mut self) {
+        let idx = match self.table_state.selected() {
+            Some(i) if i < self.sandbox_rules.len() => i,
+            _ => return,
+        };
+        self.modal = Some(Modal::ConfirmSandboxRuleRemove { idx, btn: 0 });
+        self.focus = Focus::Modal;
+    }
+
+    async fn sandbox_toggle_rule(&mut self) {
+        let idx = match self.table_state.selected() {
+            Some(i) if i < self.sandbox_rules.len() => i,
+            _ => return,
+        };
+        let rule_id = self.sandbox_rules[idx].id.clone();
+        match db::toggle_sandbox_rule(&self.client, &rule_id).await {
+            Ok(new_enabled) => {
+                self.sandbox_rules[idx].enabled = new_enabled;
+                let state = if new_enabled { "enabled" } else { "disabled" };
+                self.toast(format!("Rule {} {state}", &rule_id[..8]), StatusKind::Success);
+            }
+            Err(e) => self.toast(format!("Error: {e}"), StatusKind::Error),
+        }
+    }
+
+    fn sandbox_open_settings(&mut self) {
+        let settings = self.sandbox_settings.as_ref();
+        let backend_str = settings
+            .and_then(|s| s.sandbox_backend.as_deref())
+            .unwrap_or("auto");
+        let backend_idx = SANDBOX_BACKENDS
+            .iter()
+            .position(|b| *b == backend_str)
+            .unwrap_or(0);
+        let tool_act = settings
+            .and_then(|s| s.tool_default_action.as_deref())
+            .unwrap_or("allow");
+        let tool_idx = if tool_act == "deny" { 1 } else { 0 };
+        let net_act = settings
+            .and_then(|s| s.network_default_action.as_deref())
+            .unwrap_or("deny");
+        let net_idx = if net_act == "deny" { 1 } else { 0 };
+        self.modal = Some(Modal::EditSandboxSettings {
+            backend_idx,
+            tool_action_idx: tool_idx,
+            net_action_idx: net_idx,
+            field: 0,
+        });
+        self.focus = Focus::Modal;
+    }
+
+    async fn modal_edit_sandbox_rule(&mut self, key: KeyEvent) {
+        let (idx, mut rt_idx, mut pattern, mut act_idx, mut priority, mut reason, mut field, mut cursor, _err) =
+            match self.modal.take() {
+                Some(Modal::EditSandboxRule {
+                    idx, rule_type_idx, pattern, action_idx, priority, reason, field, cursor, error,
+                }) => (idx, rule_type_idx, pattern, action_idx, priority, reason, field, cursor, error),
+                other => {
+                    self.modal = other;
+                    return;
+                }
+            };
+
+        match key.code {
+            KeyCode::Tab => {
+                field = (field + 1) % 5;
+                // Reset cursor for text fields
+                cursor = match field {
+                    1 => pattern.len(),
+                    3 => priority.len(),
+                    4 => reason.len(),
+                    _ => 0,
+                };
+            }
+            KeyCode::BackTab => {
+                field = if field == 0 { 4 } else { field - 1 };
+                cursor = match field {
+                    1 => pattern.len(),
+                    3 => priority.len(),
+                    4 => reason.len(),
+                    _ => 0,
+                };
+            }
+            // Selector fields (rule_type, action)
+            KeyCode::Left | KeyCode::Right if field == 0 => {
+                let delta: isize = if key.code == KeyCode::Left { -1 } else { 1 };
+                rt_idx = ((rt_idx as isize + delta).rem_euclid(SANDBOX_RULE_TYPES.len() as isize)) as usize;
+            }
+            KeyCode::Left | KeyCode::Right if field == 2 => {
+                act_idx = 1 - act_idx;
+            }
+            // Text editing for pattern (1), priority (3), reason (4)
+            KeyCode::Char(c) if field == 1 || field == 3 || field == 4 => {
+                let text = match field {
+                    1 => &mut pattern,
+                    3 => &mut priority,
+                    _ => &mut reason,
+                };
+                text.insert(cursor, c);
+                cursor += 1;
+            }
+            KeyCode::Backspace if field == 1 || field == 3 || field == 4 => {
+                let text = match field {
+                    1 => &mut pattern,
+                    3 => &mut priority,
+                    _ => &mut reason,
+                };
+                if cursor > 0 {
+                    cursor -= 1;
+                    text.remove(cursor);
+                }
+            }
+            KeyCode::Delete if field == 1 || field == 3 || field == 4 => {
+                let text = match field {
+                    1 => &mut pattern,
+                    3 => &mut priority,
+                    _ => &mut reason,
+                };
+                if cursor < text.len() {
+                    text.remove(cursor);
+                }
+            }
+            KeyCode::Left if field == 1 || field == 3 || field == 4 => {
+                cursor = cursor.saturating_sub(1);
+            }
+            KeyCode::Right if field == 1 || field == 3 || field == 4 => {
+                let text = match field {
+                    1 => &pattern,
+                    3 => &priority,
+                    _ => &reason,
+                };
+                if cursor < text.len() {
+                    cursor += 1;
+                }
+            }
+            KeyCode::Home if field == 1 || field == 3 || field == 4 => cursor = 0,
+            KeyCode::End if field == 1 || field == 3 || field == 4 => {
+                let text = match field {
+                    1 => &pattern,
+                    3 => &priority,
+                    _ => &reason,
+                };
+                cursor = text.len();
+            }
+            KeyCode::Enter => {
+                // Validate
+                let trimmed = pattern.trim().to_string();
+                if trimmed.is_empty() {
+                    self.modal = Some(Modal::EditSandboxRule {
+                        idx, rule_type_idx: rt_idx, pattern, action_idx: act_idx,
+                        priority, reason, field, cursor,
+                        error: Some("Pattern is required".into()),
+                    });
+                    return;
+                }
+                let prio: i32 = match priority.trim().parse() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        self.modal = Some(Modal::EditSandboxRule {
+                            idx, rule_type_idx: rt_idx, pattern, action_idx: act_idx,
+                            priority, reason, field, cursor,
+                            error: Some("Priority must be a number".into()),
+                        });
+                        return;
+                    }
+                };
+                let rule_type = SANDBOX_RULE_TYPES[rt_idx];
+                let action = SANDBOX_ACTIONS[act_idx];
+                let reason_opt = if reason.trim().is_empty() { None } else { Some(reason.trim()) };
+
+                let ws_id = self.sandbox_workspace_id();
+                if let Some(i) = idx {
+                    // Update existing
+                    let rule_id = self.sandbox_rules[i].id.clone();
+                    match db::update_sandbox_rule(
+                        &self.client, &rule_id, rule_type, &trimmed, action, prio, reason_opt,
+                    ).await {
+                        Ok(()) => {
+                            self.toast(format!("Rule updated: {rule_type} {action} {trimmed}"), StatusKind::Success);
+                        }
+                        Err(e) => {
+                            self.toast(format!("Error: {e}"), StatusKind::Error);
+                        }
+                    }
+                } else {
+                    // Insert new
+                    match db::insert_sandbox_rule(
+                        &self.client, &ws_id, rule_type, &trimmed, action, prio, reason_opt,
+                    ).await {
+                        Ok(_id) => {
+                            self.toast(format!("Rule added: {rule_type} {action} {trimmed}"), StatusKind::Success);
+                        }
+                        Err(e) => {
+                            self.toast(format!("Error: {e}"), StatusKind::Error);
+                        }
+                    }
+                }
+                // Reload rules
+                self.sandbox_rules = db::load_sandbox_rules(&self.client, &ws_id)
+                    .await
+                    .unwrap_or_default();
+                self.clamp_selection();
+                self.modal = None;
+                self.focus = Focus::Content;
+                return;
+            }
+            _ => {}
+        }
+
+        self.modal = Some(Modal::EditSandboxRule {
+            idx, rule_type_idx: rt_idx, pattern, action_idx: act_idx,
+            priority, reason, field, cursor, error: None,
+        });
+    }
+
+    async fn modal_confirm_sandbox_rule_remove(&mut self, key: KeyEvent) {
+        let (idx, btn) = match &self.modal {
+            Some(Modal::ConfirmSandboxRuleRemove { idx, btn }) => (*idx, *btn),
+            _ => return,
+        };
+        match key.code {
+            KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
+                self.modal = Some(Modal::ConfirmSandboxRuleRemove { idx, btn: 1 - btn });
+            }
+            KeyCode::Enter => {
+                if btn == 1 {
+                    // Confirm delete
+                    let rule_id = self.sandbox_rules[idx].id.clone();
+                    let pattern = self.sandbox_rules[idx].pattern.clone();
+                    match db::delete_sandbox_rule(&self.client, &rule_id).await {
+                        Ok(()) => {
+                            self.toast(format!("Rule deleted: {pattern}"), StatusKind::Success);
+                            let ws_id = self.sandbox_workspace_id();
+                            self.sandbox_rules = db::load_sandbox_rules(&self.client, &ws_id)
+                                .await
+                                .unwrap_or_default();
+                            self.clamp_selection();
+                        }
+                        Err(e) => self.toast(format!("Error: {e}"), StatusKind::Error),
+                    }
+                }
+                self.modal = None;
+                self.focus = Focus::Content;
+            }
+            _ => {}
+        }
+    }
+
+    async fn modal_edit_sandbox_settings(&mut self, key: KeyEvent) {
+        let (mut b_idx, mut t_idx, mut n_idx, mut field) = match &self.modal {
+            Some(Modal::EditSandboxSettings {
+                backend_idx, tool_action_idx, net_action_idx, field,
+            }) => (*backend_idx, *tool_action_idx, *net_action_idx, *field),
+            _ => return,
+        };
+        match key.code {
+            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
+                field = (field + 1) % 3;
+            }
+            KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => {
+                field = if field == 0 { 2 } else { field - 1 };
+            }
+            KeyCode::Left | KeyCode::Right => {
+                match field {
+                    0 => {
+                        let delta: isize = if key.code == KeyCode::Left { -1 } else { 1 };
+                        b_idx = ((b_idx as isize + delta).rem_euclid(SANDBOX_BACKENDS.len() as isize)) as usize;
+                    }
+                    1 => t_idx = 1 - t_idx,
+                    2 => n_idx = 1 - n_idx,
+                    _ => {}
+                }
+            }
+            KeyCode::Enter => {
+                let ws_id = self.sandbox_workspace_id();
+                let backend = if SANDBOX_BACKENDS[b_idx] == "auto" { None } else { Some(SANDBOX_BACKENDS[b_idx]) };
+                let tool_act = Some(SANDBOX_ACTIONS[t_idx]);
+                let net_act = Some(SANDBOX_ACTIONS[n_idx]);
+                match db::upsert_sandbox_settings(
+                    &self.client, &ws_id, backend, tool_act, net_act,
+                ).await {
+                    Ok(()) => {
+                        self.toast("Sandbox settings saved".into(), StatusKind::Success);
+                        self.sandbox_settings =
+                            db::load_sandbox_settings(&self.client, &ws_id)
+                                .await
+                                .ok()
+                                .flatten();
+                    }
+                    Err(e) => self.toast(format!("Error: {e}"), StatusKind::Error),
+                }
+                self.modal = None;
+                self.focus = Focus::Content;
+                return;
+            }
+            _ => {}
+        }
+        self.modal = Some(Modal::EditSandboxSettings {
+            backend_idx: b_idx,
+            tool_action_idx: t_idx,
+            net_action_idx: n_idx,
+            field,
+        });
+    }
+
+    // ── System Rules CRUD helpers ──────────────────────────
+
+    fn sysrule_open_add(&mut self) {
+        self.modal = Some(Modal::EditSystemRule {
+            idx: None,
+            scope_idx: 0,
+            rule_type_idx: 0,
+            pattern: String::new(),
+            action_idx: 1, // deny by default
+            priority: "100".into(),
+            is_floor: false,
+            description: String::new(),
+            field: 0,
+            cursor: 0,
+            error: None,
+        });
+        self.focus = Focus::Modal;
+    }
+
+    fn sysrule_open_edit(&mut self) {
+        let idx = match self.table_state.selected() {
+            Some(i) if i < self.system_rules.len() => i,
+            _ => return,
+        };
+        let r = &self.system_rules[idx];
+        let scope_idx = SYSTEM_RULE_SCOPES.iter().position(|s| *s == r.scope).unwrap_or(0);
+        let rule_type_idx = SYSTEM_RULE_TYPES.iter().position(|t| *t == r.rule_type).unwrap_or(0);
+        let action_idx = SANDBOX_ACTIONS.iter().position(|a| *a == r.action).unwrap_or(0);
+        self.modal = Some(Modal::EditSystemRule {
+            idx: Some(idx),
+            scope_idx,
+            rule_type_idx,
+            pattern: r.pattern.clone(),
+            action_idx,
+            priority: r.priority.to_string(),
+            is_floor: r.is_floor,
+            description: r.description.clone().unwrap_or_default(),
+            field: 0,
+            cursor: 0,
+            error: None,
+        });
+        self.focus = Focus::Modal;
+    }
+
+    fn sysrule_open_delete(&mut self) {
+        let idx = match self.table_state.selected() {
+            Some(i) if i < self.system_rules.len() => i,
+            _ => return,
+        };
+        self.modal = Some(Modal::ConfirmSystemRuleRemove { idx, btn: 0 });
+        self.focus = Focus::Modal;
+    }
+
+    async fn sysrule_toggle(&mut self) {
+        let idx = match self.table_state.selected() {
+            Some(i) if i < self.system_rules.len() => i,
+            _ => return,
+        };
+        let rule_id = self.system_rules[idx].id.clone();
+        match db::toggle_system_rule(&self.client, &rule_id).await {
+            Ok(new_state) => {
+                let label = if new_state { "enabled" } else { "disabled" };
+                self.toast(format!("System rule {label}"), StatusKind::Success);
+                self.system_rules = db::load_system_rules(&self.client)
+                    .await
+                    .unwrap_or_default();
+            }
+            Err(e) => self.toast(format!("Toggle error: {e}"), StatusKind::Error),
+        }
+    }
+
+    async fn modal_edit_system_rule(&mut self, key: KeyEvent) {
+        let (
+            mut idx, mut scope_idx, mut rtype_idx, mut pattern,
+            mut action_idx, mut priority, mut is_floor, mut desc,
+            mut field, mut cursor, mut error,
+        ) = match &self.modal {
+            Some(Modal::EditSystemRule {
+                idx, scope_idx, rule_type_idx, pattern, action_idx,
+                priority, is_floor, description, field, cursor, error,
+            }) => (
+                *idx, *scope_idx, *rule_type_idx, pattern.clone(),
+                *action_idx, priority.clone(), *is_floor, description.clone(),
+                *field, *cursor, error.clone(),
+            ),
+            _ => return,
+        };
+
+        // 7 fields: 0=scope(sel), 1=rule_type(sel), 2=pattern(text),
+        //           3=action(sel), 4=priority(text), 5=is_floor(toggle), 6=description(text)
+        match key.code {
+            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j')
+                if !matches!(field, 2 | 4 | 6) || key.code == KeyCode::Tab =>
+            {
+                field = (field + 1) % 7;
+                cursor = match field {
+                    2 => pattern.len(),
+                    4 => priority.len(),
+                    6 => desc.len(),
+                    _ => 0,
+                };
+            }
+            KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k')
+                if !matches!(field, 2 | 4 | 6) || key.code == KeyCode::BackTab =>
+            {
+                field = if field == 0 { 6 } else { field - 1 };
+                cursor = match field {
+                    2 => pattern.len(),
+                    4 => priority.len(),
+                    6 => desc.len(),
+                    _ => 0,
+                };
+            }
+            KeyCode::Left => match field {
+                0 => scope_idx = if scope_idx == 0 { SYSTEM_RULE_SCOPES.len() - 1 } else { scope_idx - 1 },
+                1 => rtype_idx = if rtype_idx == 0 { SYSTEM_RULE_TYPES.len() - 1 } else { rtype_idx - 1 },
+                3 => action_idx = 1 - action_idx,
+                5 => is_floor = !is_floor,
+                2 => { if cursor > 0 { cursor -= 1; } }
+                4 => { if cursor > 0 { cursor -= 1; } }
+                6 => { if cursor > 0 { cursor -= 1; } }
+                _ => {}
+            }
+            KeyCode::Right => match field {
+                0 => scope_idx = (scope_idx + 1) % SYSTEM_RULE_SCOPES.len(),
+                1 => rtype_idx = (rtype_idx + 1) % SYSTEM_RULE_TYPES.len(),
+                3 => action_idx = 1 - action_idx,
+                5 => is_floor = !is_floor,
+                2 => { if cursor < pattern.len() { cursor += 1; } }
+                4 => { if cursor < priority.len() { cursor += 1; } }
+                6 => { if cursor < desc.len() { cursor += 1; } }
+                _ => {}
+            }
+            KeyCode::Char(c) if matches!(field, 2 | 4 | 6) => {
+                let text = match field {
+                    2 => &mut pattern,
+                    4 => &mut priority,
+                    _ => &mut desc,
+                };
+                text.insert(cursor, c);
+                cursor += 1;
+                error = None;
+            }
+            KeyCode::Backspace if matches!(field, 2 | 4 | 6) && cursor > 0 => {
+                let text = match field {
+                    2 => &mut pattern,
+                    4 => &mut priority,
+                    _ => &mut desc,
+                };
+                cursor -= 1;
+                text.remove(cursor);
+                error = None;
+            }
+            KeyCode::Enter => {
+                // Validate
+                if pattern.trim().is_empty() {
+                    error = Some("Pattern cannot be empty".into());
+                } else if priority.trim().parse::<i32>().is_err() {
+                    error = Some("Priority must be a number".into());
+                } else {
+                    let scope = SYSTEM_RULE_SCOPES[scope_idx];
+                    let rtype = SYSTEM_RULE_TYPES[rtype_idx];
+                    let action = SANDBOX_ACTIONS[action_idx];
+                    let prio = priority.trim().parse::<i32>().unwrap();
+                    let desc_opt = if desc.trim().is_empty() { None } else { Some(desc.trim()) };
+
+                    let result = if let Some(i) = idx {
+                        let rid = self.system_rules[i].id.clone();
+                        db::update_system_rule(
+                            &self.client, &rid, scope, rtype, pattern.trim(),
+                            action, prio, is_floor, desc_opt,
+                        ).await
+                    } else {
+                        db::insert_system_rule(
+                            &self.client, scope, rtype, pattern.trim(),
+                            action, prio, is_floor, desc_opt,
+                        ).await.map(|_| ())
+                    };
+
+                    match result {
+                        Ok(()) => {
+                            let verb = if idx.is_some() { "updated" } else { "added" };
+                            self.toast(format!("System rule {verb}"), StatusKind::Success);
+                            self.system_rules = db::load_system_rules(&self.client)
+                                .await
+                                .unwrap_or_default();
+                        }
+                        Err(e) => self.toast(format!("Error: {e}"), StatusKind::Error),
+                    }
+                    self.modal = None;
+                    self.focus = Focus::Content;
+                    return;
+                }
+            }
+            _ => {}
+        }
+        self.modal = Some(Modal::EditSystemRule {
+            idx,
+            scope_idx,
+            rule_type_idx: rtype_idx,
+            pattern,
+            action_idx,
+            priority,
+            is_floor,
+            description: desc,
+            field,
+            cursor,
+            error,
+        });
+    }
+
+    async fn modal_confirm_system_rule_remove(&mut self, key: KeyEvent) {
+        let (idx, mut btn) = match &self.modal {
+            Some(Modal::ConfirmSystemRuleRemove { idx, btn }) => (*idx, *btn),
+            _ => return,
+        };
+        match key.code {
+            KeyCode::Left | KeyCode::Right | KeyCode::Tab => btn = 1 - btn,
+            KeyCode::Enter => {
+                if btn == 1 && idx < self.system_rules.len() {
+                    let rule_id = self.system_rules[idx].id.clone();
+                    match db::delete_system_rule(&self.client, &rule_id).await {
+                        Ok(()) => {
+                            self.toast("System rule deleted".into(), StatusKind::Success);
+                            self.system_rules = db::load_system_rules(&self.client)
+                                .await
+                                .unwrap_or_default();
+                            self.clamp_selection();
+                        }
+                        Err(e) => self.toast(format!("Delete error: {e}"), StatusKind::Error),
+                    }
+                }
+                self.modal = None;
+                self.focus = Focus::Content;
+                return;
+            }
+            _ => {}
+        }
+        self.modal = Some(Modal::ConfirmSystemRuleRemove { idx, btn });
     }
 }

@@ -11,14 +11,10 @@
 import type { SandboxProfile } from "../../../../../packages/dovault/src/profile.js";
 import type { SpawnContext } from "../orchestrator.js";
 import { getProjectPath } from "../../ai/project-files.js";
-import {
-  MB,
-  NPM_CACHE_DIR,
-  HIGH_CVE_SYSCALL_DENY,
-  HARD_FLOOR_NET_DENY,
-} from "./constants.js";
+import type { SystemRules } from "../system-rules.js";
+import { MB, NPM_CACHE_DIR } from "./constants.js";
 
-export function aiBashProfile(ctx: SpawnContext): SandboxProfile {
+export function aiBashProfile(ctx: SpawnContext, sys: SystemRules): SandboxProfile {
   return {
     id: "ai-bash",
     fs: {
@@ -79,7 +75,7 @@ export function aiBashProfile(ctx: SpawnContext): SandboxProfile {
     syscalls: {
       capsKeep: [],
       seccompDefault: "errno",
-      seccompDeny: [...HIGH_CVE_SYSCALL_DENY],
+      seccompDeny: [...sys.syscallFloors],
     },
     limits: {
       memBytes: 256 * MB,
@@ -90,14 +86,8 @@ export function aiBashProfile(ctx: SpawnContext): SandboxProfile {
     },
     network: {
       defaultAction: "deny",
-      allow: [
-        "registry.npmjs.org",
-        "api.anthropic.com",
-        "api.openai.com",
-        "ghcr.io",
-        "github.com",
-      ],
-      deny: [...HARD_FLOOR_NET_DENY],
+      allow: sys.profileNetworkAllows("ai-bash"),
+      deny: [...sys.networkFloors, ...sys.profileNetworkDenies("ai-bash")],
     },
     env: {
       allowlist: ["PATH", "LANG", "LC_ALL", "HOME", "TERM"],

@@ -33,7 +33,7 @@ import {
 } from "../../../../../packages/dovault/src/sandbox-registry.js";
 import { BackendUnavailableError } from "../../../../../packages/dovault/src/backends/sandbox-backend.js";
 import { applyWorkspaceRules } from "../workspace-rules.js";
-import { HARD_FLOOR_NET_DENY } from "../profiles/constants.js";
+import { loadSystemRules } from "../system-rules.js";
 import type { SpawnContext } from "../orchestrator.js";
 import type { SandboxProfile } from "../../../../../packages/dovault/src/profile.js";
 
@@ -130,9 +130,10 @@ test("DOABLE_SANDBOX_BACKEND=bogusname -> resolveBackend throws BackendUnavailab
 
 // ───────────────────────── hard-floor reapplication ─────────────────────────
 
-test("applyWorkspaceRules re-appends HARD_FLOOR_NET_DENY even when profile.deny is empty and no workspace rules exist", async () => {
+test("applyWorkspaceRules re-appends network floor denies even when profile.deny is empty and no workspace rules exist", async () => {
   const ctx = makeCtx({ workspaceId: "00000000-0000-0000-0000-0000000000c0" });
   const base = await resolveProfile("ai-bash", ctx);
+  const sys = await loadSystemRules();
 
   // Forcibly empty the deny list to prove the hard floor is not relying on
   // the profile catalog: a workspace must NEVER be able to remove these.
@@ -144,7 +145,7 @@ test("applyWorkspaceRules re-appends HARD_FLOOR_NET_DENY even when profile.deny 
     },
   };
 
-  const tightened = applyWorkspaceRules(emptied, {
+  const tightened = await applyWorkspaceRules(emptied, {
     settings: {
       sandbox_backend: null,
       allowed_profile_keys: [], // empty == "no restriction"
@@ -152,7 +153,7 @@ test("applyWorkspaceRules re-appends HARD_FLOOR_NET_DENY even when profile.deny 
     rules: [],
   });
 
-  for (const floor of HARD_FLOOR_NET_DENY) {
+  for (const floor of sys.networkFloors) {
     assert.ok(
       tightened.network.deny.includes(floor),
       `hard floor "${floor}" missing from network.deny: ${JSON.stringify(tightened.network.deny)}`,

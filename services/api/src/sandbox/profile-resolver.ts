@@ -25,6 +25,7 @@ import {
   loadWorkspaceSandboxState,
   applyWorkspaceRules,
 } from "./workspace-rules.js";
+import { loadSystemRules } from "./system-rules.js";
 
 // ───────────────────────── override map ─────────────────────────
 
@@ -47,10 +48,13 @@ export async function resolveProfile(
   profileKey: ProfileKey,
   ctx: SpawnContext,
 ): Promise<SandboxProfile> {
+  // 0. Load system-level rules from DB (cached 60s).
+  const sys = await loadSystemRules();
+
   // 1. Look up catalog factory; fall back to defaultProfile if unknown.
   const factory = profileCatalog[profileKey];
   const base: SandboxProfile = factory
-    ? factory(ctx)
+    ? factory(ctx, sys)
     : defaultProfile(String(profileKey), ctx.projectId);
 
   // 2. Apply any workspace/runtime overrides registered in the map.
@@ -62,5 +66,5 @@ export async function resolveProfile(
   const workspaceState = await loadWorkspaceSandboxState(ctx.workspaceId);
   if (!workspaceState) return afterOverride;
 
-  return applyWorkspaceRules(afterOverride, workspaceState);
+  return await applyWorkspaceRules(afterOverride, workspaceState);
 }
