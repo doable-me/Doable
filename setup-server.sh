@@ -1055,16 +1055,29 @@ chown -R doable:doable /var/cache/doable
 # Install Chrome for puppeteer (thumbnails). Runs as the doable user
 # with PUPPETEER_CACHE_DIR set so the binary lands in the shared cache
 # and the runtime API process finds it via the .env override emitted
-# above. Skipped quietly if puppeteer fails (offline install, npm
-# registry blocked, etc.) — thumbnails will degrade gracefully.
-if command -v npx >/dev/null 2>&1; then
+# above. Uses the workspace's already-installed puppeteer (via pnpm
+# exec) instead of npx-fetching a pinned version — this avoids 150MB
+# of redundant download and keeps the chrome version in lockstep with
+# services/api/package.json. stderr tees to /var/log so a failed
+# install is debuggable instead of silent. A post-install smoke check
+# fails loudly if the chrome binary isn't where we expect it.
+if [ -d "${INSTALL_DIR}/services/api/node_modules/puppeteer" ]; then
   info "Installing Chrome for puppeteer thumbnails..."
+  PUPP_LOG=/var/log/doable-setup-puppeteer.log
   if sudo -u doable HOME=/home/doable PUPPETEER_CACHE_DIR=/var/cache/doable/puppeteer \
-      sh -c 'cd /tmp && npx -y puppeteer@24.39.1 browsers install chrome' >/dev/null 2>&1; then
-    ok "Chrome installed at /var/cache/doable/puppeteer (thumbnails enabled)"
+      sh -c "cd ${INSTALL_DIR}/services/api && pnpm exec puppeteer browsers install chrome" \
+      >"$PUPP_LOG" 2>&1; then
+    # Verify the binary actually landed before declaring success.
+    if find /var/cache/doable/puppeteer/chrome -name chrome -type f -executable 2>/dev/null | grep -q .; then
+      ok "Chrome installed at /var/cache/doable/puppeteer (thumbnails enabled)"
+    else
+      warn "puppeteer reported success but chrome binary not found under /var/cache/doable/puppeteer/chrome — see $PUPP_LOG"
+    fi
   else
-    warn "puppeteer chrome install failed — thumbnails will be unavailable until you run 'sudo -u doable PUPPETEER_CACHE_DIR=/var/cache/doable/puppeteer npx -y puppeteer browsers install chrome' manually"
+    warn "puppeteer chrome install failed — see $PUPP_LOG. Re-run manually: sudo -u doable PUPPETEER_CACHE_DIR=/var/cache/doable/puppeteer pnpm --filter @doable/api exec puppeteer browsers install chrome"
   fi
+else
+  warn "Skipping Chrome install — ${INSTALL_DIR}/services/api/node_modules/puppeteer not present (did pnpm install fail above?). Thumbnails will be unavailable."
 fi
 
 cat > /etc/systemd/system/doable-app@.service << APPSVCEOF
