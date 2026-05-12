@@ -511,7 +511,12 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE doable TO doable;" &>
 ok "Database ready (user: doable, db: doable)"
 
 # ─── Step 6: GitHub CLI auth ──────────────────────────────────
-if [ "$CONTAINER_MODE" != "1" ]; then
+# Only needed if we'll actually clone the repo in Step 7. When the repo
+# was pre-staged (e.g. operators tar-extracted it during bulk
+# provisioning), skip the gh install + auth entirely so non-interactive
+# deploys don't fail on `gh auth status`.
+PRESTAGED_REPO_DIR="${INSTALL_DIR:-/root/doable}"
+if [ "$CONTAINER_MODE" != "1" ] && [ ! -f "${PRESTAGED_REPO_DIR}/package.json" ]; then
   info "Step 6/13: GitHub authentication..."
 
   if ! command -v gh &>/dev/null; then
@@ -527,7 +532,7 @@ if [ "$CONTAINER_MODE" != "1" ]; then
     echo "  Then re-run this script."
     echo ""
     if [ "${NON_INTERACTIVE:-0}" = "1" ] || ! [ -t 0 ]; then
-      err "GitHub auth required and non-interactive mode active. Pre-stage the repo at ${INSTALL_DIR} (e.g. tar-extract) or run 'gh auth login' as root before re-running setup-server.sh."
+      err "GitHub auth required and non-interactive mode active. Pre-stage the repo at ${PRESTAGED_REPO_DIR} (e.g. tar-extract) or run 'gh auth login' as root before re-running setup-server.sh."
     fi
     read -rp "Authenticate now? [Y/n]: " GH_AUTH
     if [[ "${GH_AUTH,,}" != "n" ]]; then
@@ -538,8 +543,10 @@ if [ "$CONTAINER_MODE" != "1" ]; then
   fi
 
   ok "GitHub CLI authenticated"
-else
+elif [ "$CONTAINER_MODE" = "1" ]; then
   echo "[SKIP-CONTAINER] Step 6/13: GitHub CLI auth (container ships repo via Docker COPY)"
+else
+  info "Step 6/13: Repo already pre-staged at ${PRESTAGED_REPO_DIR} — skipping GitHub auth"
 fi
 
 # ─── Step 7: Clone repo ───────────────────────────────────────
