@@ -13,6 +13,12 @@ export interface DeployInput {
    * builder's --base flag.
    */
   basePath?: string;
+  /**
+   * When true, the adapter MUST NOT make per-publish DNS API calls. Set by
+   * the pipeline when the platform admin has chosen DNS_MODE=wildcard
+   * (admin-managed wildcard CNAME covers the hostname).
+   */
+  skipDnsRegistration?: boolean;
 }
 
 export interface DeployResult {

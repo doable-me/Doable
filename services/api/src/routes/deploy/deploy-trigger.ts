@@ -14,9 +14,15 @@ import {
 } from "../../deploy/adapters/doable-cloud.js";
 import { rm } from "node:fs/promises";
 import { emitActivity } from "../../lib/activity.js";
+import {
+  platformSettingQueries,
+  PLATFORM_SETTING_KEYS,
+  parseDnsMode,
+} from "@doable/db";
 
 const projects = projectQueries(sql);
 const deployments = deploymentQueries(sql);
+const platformSettings = platformSettingQueries(sql);
 
 export const deployTriggerRoutes = new Hono<AuthEnv>();
 
@@ -210,16 +216,24 @@ deployTriggerRoutes.delete("/:projectId/publish", async (c) => {
   let dnsError: string | null = null;
   let filesError: string | null = null;
 
-  // Delete CNAMEs for both production and preview. deleteCloudflareDns
-  // silently no-ops if CF env vars are unset or the record is already gone.
-  try {
-    await Promise.all([
-      deleteCloudflareDns(prodLoc.hostname),
-      deleteCloudflareDns(previewLoc.hostname),
-    ]);
-  } catch (err) {
-    dnsError = err instanceof Error ? err.message : String(err);
-    console.warn(`[unpublish] DNS cleanup failed for ${projectId}:`, dnsError);
+  // Resolve the platform's DNS mode. In wildcard mode there is no
+  // per-publish CNAME to remove — the admin-managed wildcard CNAME stays
+  // in place and the hostname will simply 404 once the on-disk site dir
+  // is gone.
+  const dnsMode = parseDnsMode(await platformSettings.get(PLATFORM_SETTING_KEYS.DNS_MODE));
+
+  if (dnsMode === "per_publish") {
+    // Delete CNAMEs for both production and preview. deleteCloudflareDns
+    // silently no-ops if CF env vars are unset or the record is already gone.
+    try {
+      await Promise.all([
+        deleteCloudflareDns(prodLoc.hostname),
+        deleteCloudflareDns(previewLoc.hostname),
+      ]);
+    } catch (err) {
+      dnsError = err instanceof Error ? err.message : String(err);
+      console.warn(`[unpublish] DNS cleanup failed for ${projectId}:`, dnsError);
+    }
   }
 
   // Remove on-disk site directories. Continue even if one removal fails so

@@ -1,12 +1,18 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { sql } from "../db/index.js";
-import { featureFlagQueries } from "@doable/db";
+import {
+  featureFlagQueries,
+  platformSettingQueries,
+  PLATFORM_SETTING_KEYS,
+  parseDnsMode,
+} from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { WORKSPACE_PLANS, WORKSPACE_ROLES } from "@doable/shared";
 
 const featureFlags = featureFlagQueries(sql);
+const platformSettings = platformSettingQueries(sql);
 
 export const adminFeatureRoutes = new Hono<AuthEnv>();
 
@@ -78,6 +84,49 @@ adminFeatureRoutes.delete("/features/:key", async (c) => {
   const deleted = await featureFlags.delete(c.req.param("key"));
   if (!deleted) return c.json({ error: "Feature not found" }, 404);
   return c.json({ ok: true });
+});
+
+// ─── DNS Mode ──────────────────────────────────────────────
+// GET /admin/dns-mode  → { mode, defaulted }
+//   "defaulted: true" means no row exists yet and the server is using the
+//   built-in per-publish default.
+// PUT /admin/dns-mode  { mode: 'per_publish' | 'wildcard' }
+//   Upserts the platform_settings row. Returns 503 if the underlying
+//   migration (081) hasn't been applied yet — read still works (returns
+//   default), but writes can't be persisted.
+adminFeatureRoutes.get("/dns-mode", async (c) => {
+  const raw = await platformSettings.get(PLATFORM_SETTING_KEYS.DNS_MODE);
+  return c.json({
+    mode: parseDnsMode(raw),
+    defaulted: raw === null,
+  });
+});
+
+const dnsModeSchema = z.object({
+  mode: z.enum(["per_publish", "wildcard"]),
+});
+
+adminFeatureRoutes.put("/dns-mode", async (c) => {
+  const body = await c.req.json();
+  const parsed = dnsModeSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  const userId = c.get("userId");
+  try {
+    await platformSettings.set(
+      PLATFORM_SETTING_KEYS.DNS_MODE,
+      parsed.data.mode,
+      userId,
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Most common cause: migration 081 not applied yet.
+    return c.json(
+      { error: "Failed to persist DNS mode. Has migration 081 been applied?", detail: msg },
+      503,
+    );
+  }
+  return c.json({ mode: parsed.data.mode });
 });
 
 // ─── User Overrides ────────────────────────────────────────

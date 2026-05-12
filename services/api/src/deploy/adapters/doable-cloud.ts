@@ -359,7 +359,12 @@ export class DoableCloudAdapter implements DeployAdapter {
     // CLOUDFLARED_TUNNEL_ID + CF_API_TOKEN + CF_ZONE_ID, so each
     // environment's published sites resolve to its own tunnel.
     // Errors are non-fatal — the file copy already succeeded.
-    if (process.env.CLOUDFLARED_TUNNEL_ID && process.env.CF_API_TOKEN) {
+    // Skipped when the pipeline tells us a wildcard CNAME is in play.
+    if (
+      !input.skipDnsRegistration &&
+      process.env.CLOUDFLARED_TUNNEL_ID &&
+      process.env.CF_API_TOKEN
+    ) {
       await registerCloudflareDns(
         process.env.CLOUDFLARED_TUNNEL_ID,
         hostname,

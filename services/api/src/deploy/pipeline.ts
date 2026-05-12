@@ -3,6 +3,11 @@ import { sql } from "../db/index.js";
 import { deploymentQueries } from "@doable/db/queries/deployments";
 import { projectQueries } from "@doable/db/queries/projects";
 import { workspaceQueries } from "@doable/db/queries/workspaces";
+import {
+  platformSettingQueries,
+  PLATFORM_SETTING_KEYS,
+  parseDnsMode,
+} from "@doable/db";
 import { runBuild, type BuildLogCallback, type BuildErrorCode } from "./builder.js";
 import type { DeployAdapter } from "./adapter.js";
 import {
@@ -25,6 +30,17 @@ import { linkDoableSdk } from "../projects/link-sdk.js";
 const deployments = deploymentQueries(sql);
 const projects = projectQueries(sql);
 const workspaces = workspaceQueries(sql);
+const platformSettings = platformSettingQueries(sql);
+
+/**
+ * Resolve the configured DNS mode. Returns "per_publish" if the
+ * platform_settings table is missing or no value is set, so behaviour is
+ * unchanged on installs that haven't opted in.
+ */
+async function getDnsMode(): Promise<"per_publish" | "wildcard"> {
+  const raw = await platformSettings.get(PLATFORM_SETTING_KEYS.DNS_MODE);
+  return parseDnsMode(raw);
+}
 
 // ─── Adapter Registry ──────────────────────────────────────
 const adapters: Record<string, DeployAdapter> = {
@@ -153,7 +169,17 @@ export async function runPipeline(
     // Create the Cloudflare CNAME now so DNS propagates during the
     // 30-60s build. By the time the user clicks the deploy URL,
     // their ISP will have already resolved the hostname.
-    if (process.env.CLOUDFLARED_TUNNEL_ID && process.env.CF_API_TOKEN) {
+    //
+    // Skipped when the platform admin has configured DNS_MODE=wildcard:
+    // an admin-managed wildcard CNAME (e.g. *.doable.me) is expected to
+    // already cover the published hostname, so no per-publish API call
+    // is needed (and the CF API token may not even be set).
+    const dnsMode = await getDnsMode();
+    if (
+      dnsMode === "per_publish" &&
+      process.env.CLOUDFLARED_TUNNEL_ID &&
+      process.env.CF_API_TOKEN
+    ) {
       const earlyLoc = computeSitePublishLocation(subdomain, environment);
       registerCloudflareDns(
         process.env.CLOUDFLARED_TUNNEL_ID,
@@ -224,6 +250,7 @@ export async function runPipeline(
       buildOutputDir: buildResult.outputDir,
       environment,
       basePath: publishLoc.basePath,
+      skipDnsRegistration: dnsMode === "wildcard",
     });
     const deployTimeMs = Date.now() - deployStart;
 

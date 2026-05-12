@@ -42,6 +42,7 @@ import { IntegrationsAdminPanel } from "@/modules/integrations/integrations-admi
 import { FrameworksPanel } from "./frameworks-panel";
 import { AdminMfaPanel } from "./mfa-panel";
 import { SignupsPanel } from "./signups-panel";
+import { DnsConfigPanel } from "./dns-config-panel";
 
 // ─── Admin Page ─────────────────────────────────────────────
 
@@ -339,6 +340,9 @@ export default function AdminPage() {
       {/* Feature Flags Tab */}
       {activeTab === "features" && (
         <div className="space-y-6">
+          {/* DNS for published sites */}
+          <DnsConfigPanel />
+
           {/* Framework Controls */}
           <FrameworksPanel />
 
