@@ -150,6 +150,10 @@ WS_DOMAIN="${WS_SUB}.${DOMAIN}"
 JWT_SECRET=$(openssl rand -hex 32)
 ENCRYPTION_KEY=$(openssl rand -hex 32)
 INTERNAL_SECRET=$(openssl rand -hex 16)
+# 32 raw bytes, base64-encoded → 44 chars. Master KEK for envelope-crypto;
+# wraps per-workspace DEKs and encrypts user-scoped MFA secrets. Once set,
+# do not rotate without re-encrypting every workspace_keys row.
+DOABLE_KEK=$(openssl rand -base64 32)
 
 echo ""
 info "Configuration:"
@@ -537,6 +541,9 @@ JWT_REFRESH_TOKEN_EXPIRES_IN=7d
 # ─── Encryption / Internal Auth ──────────────────────────────
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 INTERNAL_SECRET=${INTERNAL_SECRET}
+# Master Key-Encryption-Key for envelope crypto (per-workspace DEKs + MFA).
+# Rotating this orphans every workspace_keys row — treat as permanent.
+DOABLE_KEK=${DOABLE_KEK}
 
 # ─── API Server ─────────────────────────────────────────────
 API_PORT=4000

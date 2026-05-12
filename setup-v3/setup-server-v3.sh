@@ -660,6 +660,12 @@ if [ ! -f "${ENV_FILE}" ]; then
   ENCRYPTION_KEY="$(openssl rand -hex 32)"
   INTERNAL_SECRET="$(openssl rand -hex 32)"
   PROJECT_JWT_SECRET="$(openssl rand -hex 32)"
+  # 32 raw bytes -> 44-char base64. Master KEK for envelope-crypto: wraps
+  # per-workspace DEKs and encrypts user-scoped MFA secrets. Once a workspace
+  # writes its first encrypted row, DOABLE_KEK becomes permanent — rotating
+  # it orphans every workspace_keys row. Treated like JWT_SECRET above: the
+  # outer `if [ ! -f "${ENV_FILE}" ]` guard prevents rerun rotation.
+  DOABLE_KEK="$(openssl rand -base64 32)"
 
   # servertodo/10 §3c — peer auth via Unix socket removes the password from
   # the connection string entirely; node-postgres parses host=... as socket.
@@ -698,6 +704,9 @@ JWT_REFRESH_TOKEN_EXPIRES_IN=7d
 # Encryption / Internal Auth
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 INTERNAL_SECRET=${INTERNAL_SECRET}
+# Master KEK (envelope-crypto) — wraps per-workspace DEKs + MFA secrets.
+# Do not rotate after first encrypted write.
+DOABLE_KEK=${DOABLE_KEK}
 
 # API Server (loopback only — Cloudflare Tunnel proxies in)
 API_PORT=4000
