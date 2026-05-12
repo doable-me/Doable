@@ -1032,6 +1032,14 @@ WTEOF
 
 mkdir -p /etc/doable/apps
 
+# Shared npm cache directory bind-mounted into every preview jail. The
+# vite-preview sandbox profile ro-binds /var/cache/doable/npm into the
+# bwrap'd /.npm-cache. Without this directory bwrap refuses to spawn
+# ("Can't find source path /var/cache/doable/npm") and every preview-url
+# request times out at the orchestrator's 90s readiness deadline.
+mkdir -p /var/cache/doable/npm
+chown -R doable:doable /var/cache/doable
+
 cat > /etc/systemd/system/doable-app@.service << APPSVCEOF
 [Unit]
 Description=Doable user app %i
