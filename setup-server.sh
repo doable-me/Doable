@@ -103,11 +103,47 @@ else
 fi
 
 # ─── Gather configuration ──────────────────────────────────────
-if [ "$CONTAINER_MODE" = "1" ]; then
-  # Non-interactive: fall back to env-var defaults. Domain is `localhost`
-  # since the container has no Cloudflare Tunnel — host port-forwarding
-  # exposes the services. Empty OAuth/AI keys are fine; users add them
-  # later by editing /var/lib/doable/.env (mounted volume) and restarting.
+# If a pre-staged .env already exists at the install path, source it so
+# values flow into the prompts as defaults (and the rest of the script).
+# This lets operators run setup-server.sh non-interactively on fresh
+# servers by copying a master .env into place first — no clicking
+# through 14 prompts on each of 100 deploys.
+INSTALL_DIR_PRE="${INSTALL_DIR:-/root/doable}"
+if [ -z "${PRESEED_ENV_LOADED:-}" ] && [ -f "${INSTALL_DIR_PRE}/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "${INSTALL_DIR_PRE}/.env" 2>/dev/null || true
+  set +a
+  PRESEED_ENV_LOADED=1
+  # Derive DOMAIN + sub-domains from the pre-existing URLs in .env so the
+  # prompt loop doesn't have to ask for them.
+  if [ -z "${DOMAIN:-}" ] && [ -n "${NEXT_PUBLIC_APP_URL:-}" ]; then
+    DOMAIN="${NEXT_PUBLIC_APP_URL#https://}"
+    DOMAIN="${DOMAIN%/}"
+  fi
+  if [ -z "${API_SUB:-}" ] && [ -n "${NEXT_PUBLIC_API_URL:-}" ]; then
+    api_host="${NEXT_PUBLIC_API_URL#https://}"
+    api_host="${api_host%/}"
+    API_SUB="${api_host%%.*}"
+  fi
+  if [ -z "${WS_SUB:-}" ] && [ -n "${NEXT_PUBLIC_WS_URL:-}" ]; then
+    ws_host="${NEXT_PUBLIC_WS_URL#wss://}"
+    ws_host="${ws_host%/}"
+    WS_SUB="${ws_host%%.*}"
+  fi
+  if [ -z "${DB_PASS:-}" ] && [ -n "${DATABASE_URL:-}" ]; then
+    # DATABASE_URL shape: postgres://doable:<pass>@localhost:5432/doable
+    DB_PASS="${DATABASE_URL#postgres://doable:}"
+    DB_PASS="${DB_PASS%@*}"
+  fi
+fi
+
+# Non-interactive mode: triggered explicitly by NON_INTERACTIVE=1, by
+# CONTAINER_MODE=1, or whenever stdin is not a TTY (so piped/cron/CI
+# invocations don't block on read). Required for 100-server bulk
+# deployments — accept whatever defaults the caller pre-staged.
+NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
+if [ "$CONTAINER_MODE" = "1" ] || [ "$NON_INTERACTIVE" = "1" ] || ! [ -t 0 ]; then
   DOMAIN="${DOMAIN:-localhost}"
   API_SUB="${API_SUB:-api}"
   WS_SUB="${WS_SUB:-ws}"
