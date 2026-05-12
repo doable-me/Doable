@@ -50,7 +50,22 @@ fi
 [[ $EUID -ne 0 ]] && err "This script must be run as root"
 [[ ! -f /etc/os-release ]] && err "Cannot detect OS"
 source /etc/os-release
-[[ "$ID" != "ubuntu" ]] && err "This script is designed for Ubuntu (detected: $ID)"
+[[ "$ID" != "ubuntu" && "$ID" != "debian" ]] && err "This script supports Ubuntu and Debian only (detected: $ID)"
+
+# Add PostgreSQL Global Development Group (PGDG) apt repo on Debian — the
+# stock Debian repo ships PG15, but the doable stack pins to PG16 (pgvector
+# is much easier to install on 16). On Ubuntu the default repos already
+# ship PG16 since 24.04, so we only enable PGDG on Debian.
+if [[ "$ID" == "debian" ]]; then
+  if ! grep -q "apt.postgresql.org" /etc/apt/sources.list.d/pgdg.list 2>/dev/null; then
+    install -d /usr/share/postgresql-common/pgdg
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+      -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+    echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release; echo "$VERSION_CODENAME")-pgdg main" \
+      > /etc/apt/sources.list.d/pgdg.list
+    apt-get update -qq
+  fi
+fi
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
@@ -212,7 +227,8 @@ fi
 apt-get install -y \
   libatk1.0-0 libatk-bridge2.0-0 libcups2 libatspi2.0-0 \
   libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-  libgbm1 libcairo2 libpango-1.0-0 libasound2t64 \
+  libgbm1 libcairo2 libpango-1.0-0 \
+  libasound2t64 libasound2 \
   libxshmfence1 libnspr4 libnss3 libdrm2 libxkbcommon0 \
   fonts-liberation 2>/dev/null || true
 
@@ -938,7 +954,7 @@ Type=forking
 User=doable
 Group=doable
 WorkingDirectory=${INSTALL_DIR}
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=${INSTALL_DIR}/start.sh
 ExecStop=/usr/bin/tmux kill-session -t doable
 RemainAfterExit=yes
@@ -946,7 +962,13 @@ Restart=on-failure
 RestartSec=10
 AmbientCapabilities=CAP_SETUID CAP_SETGID
 CapabilityBoundingSet=CAP_SETUID CAP_SETGID
-NoNewPrivileges=true
+# NoNewPrivileges MUST be false. The API uses sudo -n to invoke the
+# sandbox-spawn setuid helper for per-project UID drop. NoNewPrivileges=true
+# would neuter sudo's setuid bit, so dev-uid-allocator's sudo probe fails,
+# the API falls back to running vite as the API user, and the layered
+# isolation degrades. Compensation: the sudoers rule is locked down to the
+# specific helper paths in /etc/sudoers.d/doable-sandbox.
+NoNewPrivileges=false
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
@@ -954,9 +976,16 @@ ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-RestrictNamespaces=true
+# RestrictNamespaces MUST be false. The sandbox layer uses bubblewrap which
+# calls clone(CLONE_NEWUSER|CLONE_NEWNS|CLONE_NEWPID|CLONE_NEWNET); blocking
+# those clone() flags here would kill every preview/build sandbox spawn.
+RestrictNamespaces=false
 LockPersonality=true
-ReadWritePaths=/root/doable /var/log/doable
+# /home/doable is required for pnpm/Next.js cache when the runtime user is
+# `doable` (default home is /home/doable; useradd --no-create-home leaves
+# the directory missing, but `setup-server.sh` creates it below). Without
+# /home/doable in ReadWritePaths, ProtectHome=read-only blocks $HOME writes.
+ReadWritePaths=/root/doable /var/log/doable /home/doable /data/projects /data/sites
 
 [Install]
 WantedBy=multi-user.target
@@ -1141,15 +1170,32 @@ WRAPPER
   chmod 0755 /opt/doable/bin/sandbox-mount
   chown root:root /opt/doable/bin/sandbox-mount
 
+  # — Privileged setpriv wrapper for per-project UID drop —
+  # Validates uid range (10001-65000), project_id (canonical UUID), and the
+  # command (must be /usr/bin/node OR under <project_path>/node_modules/.bin)
+  # then setpriv --reuid/--regid/--clear-groups and exec. Sole privileged op.
+  # The canonical source lives at setup-v3/sandbox-spawn — we copy it and
+  # rewrite PROJECTS_PREFIX to match INSTALL_DIR so paths align with this
+  # install (the upstream default is /opt/doable/services/api/projects).
+  if [ -f "${INSTALL_DIR}/setup-v3/sandbox-spawn" ]; then
+    sed "s|^PROJECTS_PREFIX=.*|PROJECTS_PREFIX=\"${INSTALL_DIR}/services/api/projects\"|" \
+      "${INSTALL_DIR}/setup-v3/sandbox-spawn" > /opt/doable/bin/sandbox-spawn
+    chmod 0755 /opt/doable/bin/sandbox-spawn
+    chown root:root /opt/doable/bin/sandbox-spawn
+    ok "sandbox-spawn helper installed (PROJECTS_PREFIX=${INSTALL_DIR}/services/api/projects)"
+  else
+    warn "setup-v3/sandbox-spawn missing in repo — preview/dev-server jails will run as the API user (no UID drop)"
+  fi
+
   # — sudoers grant for the sandbox helpers —
   # NOPASSWD sudo for sandbox-mount and sandbox-spawn (installed by
   # dev-uid-allocator's setup-v3 flow). API process can drop privileges
   # but still bind-mount + setpriv via these wrappers.
-  cat > /etc/sudoers.d/doable-sandbox <<'SUDO'
+  cat > /etc/sudoers.d/doable-sandbox <<SUDO
 # Doable sandbox helpers — NOPASSWD for the composer + dev-uid-allocator.
 # Owned by root, mode 0440 (enforced by visudo).
-Cmnd_Alias DOABLE_SANDBOX = /opt/doable/bin/sandbox-mount, /opt/doable/bin/sandbox-spawn, /usr/bin/chown -R [0-9]*\:[0-9]* /opt/doable/projects/*
-ALL ALL=(root) NOPASSWD: DOABLE_SANDBOX
+Cmnd_Alias DOABLE_SANDBOX = /opt/doable/bin/sandbox-mount, /opt/doable/bin/sandbox-spawn, /usr/bin/chown -R [0-9]*\:[0-9]* ${INSTALL_DIR}/services/api/projects/*, /usr/bin/chown -R [0-9]*\:[0-9]* /opt/doable/projects/*
+doable ALL=(root) NOPASSWD: DOABLE_SANDBOX
 SUDO
   chmod 0440 /etc/sudoers.d/doable-sandbox
   if visudo -c -f /etc/sudoers.d/doable-sandbox >/dev/null 2>&1; then

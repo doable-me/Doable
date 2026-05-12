@@ -9,6 +9,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Force the full system PATH including sbin dirs. Debian's /etc/profile
+# rewrites PATH based on UID (root gets sbin dirs, non-root doesn't), which
+# clobbered the systemd Environment=PATH for our doable runtime user — the
+# dovault `mac-profile` composer then failed with `spawn apparmor_parser
+# ENOENT` because apparmor_parser lives in /usr/sbin. Export it here so the
+# tmux session and every descendant inherits a complete PATH.
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 # Ensure all scripts are executable (git on Windows can strip +x)
 chmod +x watchdog.sh start.sh setup-server.sh 2>/dev/null || true
 
@@ -35,7 +43,7 @@ tmux send-keys -t "$SESSION:api" "pnpm dev:api" Enter
 # The `postbuild` script in apps/web/package.json copies .next/static and public/
 # into the standalone output automatically — no manual step required.
 tmux new-window -t "$SESSION" -n "web" -c "$(pwd)/apps/web"
-tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && pnpm --filter web build && PORT=3000 HOSTNAME=${WEB_HOSTNAME} node .next/standalone/apps/web/server.js" Enter
+tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && rm -rf .next .turbo && pnpm --filter web build && PORT=3000 HOSTNAME=${WEB_HOSTNAME} node .next/standalone/apps/web/server.js" Enter
 
 # WS — WebSocket server with tsx watch
 tmux new-window -t "$SESSION" -n "ws" -c "$(pwd)"
