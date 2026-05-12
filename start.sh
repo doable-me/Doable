@@ -52,7 +52,14 @@ tmux send-keys -t "$SESSION:api" "pnpm dev:api" Enter
 #   sudo -n chown -R doable\:doable INSTALL_DIR/apps/web/.next
 #   sudo -n chown -R doable\:doable INSTALL_DIR/apps/web/.turbo
 tmux new-window -t "$SESSION" -n "web" -c "$(pwd)/apps/web"
-tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && (sudo -n chown -R doable:doable $(pwd)/apps/web/.next 2>/dev/null || true) && (sudo -n chown -R doable:doable $(pwd)/apps/web/.turbo 2>/dev/null || true) && rm -rf .next .turbo && pnpm --filter web build && PORT=3000 HOSTNAME=${WEB_HOSTNAME} node .next/standalone/apps/web/server.js" Enter
+# Skip the rebuild when an existing standalone server.js is on disk. Next 16
+# Turbopack races inside the PrivateTmp/PrivateUsers namespace of doable.service
+# and intermittently aborts with
+#   ENOENT: ... .next/static/<hash>/_buildManifest.js.tmp.<id>
+# wiping the .next that Step 9 of setup-server.sh just produced. The standalone
+# server is self-contained, so on plain restarts we run it directly. Force a
+# rebuild by removing apps/web/.next/standalone before invoking start.sh.
+tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && (sudo -n chown -R doable:doable $(pwd)/apps/web/.next 2>/dev/null || true) && (sudo -n chown -R doable:doable $(pwd)/apps/web/.turbo 2>/dev/null || true) && { [ -f .next/standalone/apps/web/server.js ] || { rm -rf .next .turbo && pnpm --filter web build; }; } && PORT=3000 HOSTNAME=${WEB_HOSTNAME} node .next/standalone/apps/web/server.js" Enter
 
 # WS — WebSocket server with tsx watch
 tmux new-window -t "$SESSION" -n "ws" -c "$(pwd)"
