@@ -960,8 +960,12 @@ ExecStop=/usr/bin/tmux kill-session -t doable
 RemainAfterExit=yes
 Restart=on-failure
 RestartSec=10
-AmbientCapabilities=CAP_SETUID CAP_SETGID
-CapabilityBoundingSet=CAP_SETUID CAP_SETGID
+# AmbientCapabilities=CAP_SETUID CAP_SETGID was previously set so the API
+# could drop privileges via setpriv. We removed it because bwrap's own
+# "unexpected capabilities but not setuid" guard refuses to run as a child
+# of a process that holds permitted caps without bwrap itself being setuid
+# — that killed every DOABLE_SANDBOX_VITE=1 spawn with empty stderr.
+# Sudo's own setuid bit still handles elevation for sandbox-spawn invocation.
 # NoNewPrivileges MUST be false. The API uses sudo -n to invoke the
 # sandbox-spawn setuid helper for per-project UID drop. NoNewPrivileges=true
 # would neuter sudo's setuid bit, so dev-uid-allocator's sudo probe fails,
