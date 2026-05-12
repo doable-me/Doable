@@ -1194,7 +1194,12 @@ WRAPPER
   cat > /etc/sudoers.d/doable-sandbox <<SUDO
 # Doable sandbox helpers — NOPASSWD for the composer + dev-uid-allocator.
 # Owned by root, mode 0440 (enforced by visudo).
-Cmnd_Alias DOABLE_SANDBOX = /opt/doable/bin/sandbox-mount, /opt/doable/bin/sandbox-spawn, /usr/bin/chown -R [0-9]*\:[0-9]* ${INSTALL_DIR}/services/api/projects/*, /usr/bin/chown -R [0-9]*\:[0-9]* /opt/doable/projects/*
+# - sandbox-mount, sandbox-spawn: setuid helpers for the dovault composer
+# - chown -R <uid>:<uid> projects/*: per-project ownership flip for UID drop
+# - chown -R doable:doable apps/web/.next, .turbo: self-heal stale root-owned
+#   Next.js artifacts at start.sh boot (prevents "rm: Permission denied" silent
+#   build failure that surfaces externally as 502 on /dashboard).
+Cmnd_Alias DOABLE_SANDBOX = /opt/doable/bin/sandbox-mount, /opt/doable/bin/sandbox-spawn, /usr/bin/chown -R [0-9]*\:[0-9]* ${INSTALL_DIR}/services/api/projects/*, /usr/bin/chown -R [0-9]*\:[0-9]* /opt/doable/projects/*, /usr/bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.next, /usr/bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.turbo, /bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.next, /bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.turbo
 doable ALL=(root) NOPASSWD: DOABLE_SANDBOX
 SUDO
   chmod 0440 /etc/sudoers.d/doable-sandbox

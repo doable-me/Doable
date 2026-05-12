@@ -121,9 +121,28 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
       sessionId: opts.projectId,
       hardening,
     };
+
+    // The vite-preview profile binds the project's host rootDir to `/work`
+    // inside the jail. Framework adapters generate args with HOST absolute
+    // paths (e.g. `/root/doable/services/api/projects/<id>/node_modules/vite/bin/vite.js`)
+    // because they don't know about sandbox-internal paths. Rewrite any
+    // arg that starts with the project's host path so it resolves to the
+    // jail path. This is safe: vite-preview's `--chdir /work` already
+    // gives us a stable bind target, and we don't rewrite args that
+    // don't belong to this project.
+    const hostPrefix = opts.cwd;
+    const jailPrefix = "/work";
+    const rewriteArg = (a: string): string => {
+      if (a === hostPrefix) return jailPrefix;
+      if (a.startsWith(hostPrefix + "/")) {
+        return jailPrefix + a.slice(hostPrefix.length);
+      }
+      return a;
+    };
+    const jailedArgs = opts.args.map(rewriteArg);
     const handle = await jailedSpawnLongRunning(
       opts.execPath,
-      opts.args,
+      jailedArgs,
       spawnCtx,
       "vite-preview",
     );

@@ -15,7 +15,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -102,8 +102,20 @@ export class BubblewrapBackend implements SandboxBackend {
     args: string[],
     _cwd: string,
   ): BuildSpawnResult {
-    const unshareFlag =
-      "--unshare-all" + (profile.ns.net === "host" ? " --share-net" : "");
+    // Network namespace handling:
+    //   - "none": fully isolated (no network at all)
+    //   - "host": share host network entirely
+    //   - "egress-allowlist": share host network so the API can reach the
+    //     dev server's listener, with egress restrictions enforced
+    //     externally by host-level nftables rules per sandbox UID (see
+    //     setup-server.sh nft chain for UID range 10001-65000).
+    // A fully isolated netns would make 127.0.0.1:<port> unreachable from
+    // the API process, breaking the preview proxy. Each flag is a separate
+    // argv element (bwrap does not parse space-joined options).
+    const shareNet = profile.ns.net === "host" || profile.ns.net === "egress-allowlist";
+    const unshareFlags: string[] = shareNet
+      ? ["--unshare-all", "--share-net"]
+      : ["--unshare-all"];
 
     // Stable temp dir for synthetic files — preflight step creates them.
     const synthDir = join(
@@ -122,9 +134,20 @@ export class BubblewrapBackend implements SandboxBackend {
         "--ro-bind", join(synthDir, "uptime"), "/proc/uptime",
         "--ro-bind", join(synthDir, "loadavg"), "/proc/loadavg",
       );
-      // Mask additional /proc paths the profile wants hidden.
+      // Mask additional /proc paths the profile wants hidden. These are
+      // FILES under /proc (e.g. /proc/version, /proc/kallsyms), so we mask
+      // by ro-binding /dev/null on top — `--tmpfs` fails with "Not a
+      // directory" because tmpfs requires a directory mount point.
+      //
+      // procfs refuses file creation, so bwrap can only bind ONTO an
+      // already-existing /proc entry. Some profile entries reference
+      // per-PID paths (e.g. /proc/mountinfo is actually /proc/<pid>/mountinfo
+      // and absent at the top level) — skip them if missing on the host
+      // rather than aborting the whole spawn.
       for (const p of po.mask ?? []) {
-        procOverlayFlags.push("--tmpfs", p);
+        if (existsSync(p)) {
+          procOverlayFlags.push("--ro-bind", "/dev/null", p);
+        }
       }
     }
 
@@ -162,7 +185,7 @@ export class BubblewrapBackend implements SandboxBackend {
     const argv: string[] = [
       "bwrap",
       "--die-with-parent",
-      unshareFlag,
+      ...unshareFlags,
       "--new-session",
       ...envFlags,
       "--bind",

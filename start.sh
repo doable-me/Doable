@@ -42,8 +42,17 @@ tmux send-keys -t "$SESSION:api" "pnpm dev:api" Enter
 # Web — Next.js production server (build then start with standalone output)
 # The `postbuild` script in apps/web/package.json copies .next/static and public/
 # into the standalone output automatically — no manual step required.
+#
+# Self-heal root-owned artifacts: setup-server.sh skips .next/.turbo in its
+# chown step (perf), so any manual root build (debugging, ad-hoc pnpm run as
+# root) leaves stale files that the doable user cannot remove. Without
+# sudo-chown first, `rm -rf .next .turbo` errors silently, build aborts,
+# port 3000 stays down — surfaced to users as bad gateway on /dashboard.
+# The sudoers entry installed by setup-server.sh allows exactly:
+#   sudo -n chown -R doable\:doable INSTALL_DIR/apps/web/.next
+#   sudo -n chown -R doable\:doable INSTALL_DIR/apps/web/.turbo
 tmux new-window -t "$SESSION" -n "web" -c "$(pwd)/apps/web"
-tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && rm -rf .next .turbo && pnpm --filter web build && PORT=3000 HOSTNAME=${WEB_HOSTNAME} node .next/standalone/apps/web/server.js" Enter
+tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && (sudo -n chown -R doable:doable $(pwd)/apps/web/.next 2>/dev/null || true) && (sudo -n chown -R doable:doable $(pwd)/apps/web/.turbo 2>/dev/null || true) && rm -rf .next .turbo && pnpm --filter web build && PORT=3000 HOSTNAME=${WEB_HOSTNAME} node .next/standalone/apps/web/server.js" Enter
 
 # WS — WebSocket server with tsx watch
 tmux new-window -t "$SESSION" -n "ws" -c "$(pwd)"
