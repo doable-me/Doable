@@ -838,10 +838,18 @@ ok "Dependencies installed & database migrated"
 # next build will happily re-use, producing the misleading
 # "Cannot read properties of null (reading 'useContext')" prerender
 # error on a re-run even after the source was fixed.
+#
+# Pin NODE_ENV=production for the build subprocess only. The script's
+# own environment may have NODE_ENV=development from a sourced .env
+# (the runtime is intentionally development so dev-server tooling
+# applies), and Next.js prerender behaves erratically when invoked with
+# a non-standard NODE_ENV — emits "non-standard NODE_ENV" warnings and
+# can crash /_global-error static generation. The runtime keeps using
+# the .env value once start.sh boots services.
 info "Building Next.js..."
 cd "$INSTALL_DIR/apps/web"
 rm -rf .next .turbo
-pnpm build
+env -u NODE_ENV NODE_ENV=production pnpm build
 cd "$INSTALL_DIR"
 ok "Next.js built"
 
