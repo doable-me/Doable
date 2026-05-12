@@ -7,6 +7,12 @@ import { sql } from "../../db/index.js";
 import { projectQueries } from "@doable/db/queries/projects";
 import { deploymentQueries } from "@doable/db/queries/deployments";
 import { runPipeline } from "../../deploy/pipeline.js";
+import {
+  computeSitePublishLocation,
+  deleteCloudflareDns,
+  getPublishedSiteDir,
+} from "../../deploy/adapters/doable-cloud.js";
+import { rm } from "node:fs/promises";
 import { emitActivity } from "../../lib/activity.js";
 
 const projects = projectQueries(sql);
@@ -166,6 +172,85 @@ deployTriggerRoutes.post("/:projectId/stream", async (c) => {
     }
 
     await sendEvent("done", {});
+  });
+});
+
+// ─── DELETE /deploy/:projectId/publish ───────────────────────
+// Take down a published site. Removes the on-disk Caddy directory, deletes
+// the per-publish Cloudflare CNAME (idempotent), and clears the project's
+// published_url + status. The `subdomain` column is intentionally NOT
+// cleared so a future republish reuses the same URL.
+deployTriggerRoutes.delete("/:projectId/publish", async (c) => {
+  const projectId = c.req.param("projectId");
+  const userId = c.get("userId");
+
+  const project = await projects.findById(projectId);
+  if (!project) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  if (!project.subdomain) {
+    return c.json({ error: "Project is not published" }, 409);
+  }
+
+  // Block concurrent deploys — unpublish on top of an in-flight build
+  // would leave the system in an inconsistent state.
+  const inFlight = await deployments.findInProgress(projectId);
+  if (inFlight) {
+    return c.json(
+      { error: "A deployment is in progress; wait for it to finish before unpublishing", deploymentId: inFlight.id },
+      409,
+    );
+  }
+
+  const subdomain = project.subdomain;
+  const prodLoc = computeSitePublishLocation(subdomain, "production");
+  const previewLoc = computeSitePublishLocation(subdomain, "preview");
+
+  let dnsError: string | null = null;
+  let filesError: string | null = null;
+
+  // Delete CNAMEs for both production and preview. deleteCloudflareDns
+  // silently no-ops if CF env vars are unset or the record is already gone.
+  try {
+    await Promise.all([
+      deleteCloudflareDns(prodLoc.hostname),
+      deleteCloudflareDns(previewLoc.hostname),
+    ]);
+  } catch (err) {
+    dnsError = err instanceof Error ? err.message : String(err);
+    console.warn(`[unpublish] DNS cleanup failed for ${projectId}:`, dnsError);
+  }
+
+  // Remove on-disk site directories. Continue even if one removal fails so
+  // the DB state still gets cleared.
+  for (const env of ["production", "preview"] as const) {
+    try {
+      await rm(getPublishedSiteDir(subdomain, env), { recursive: true, force: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[unpublish] Failed to remove ${env} site dir for ${projectId}:`, msg);
+      filesError = filesError ? `${filesError}; ${msg}` : msg;
+    }
+  }
+
+  await projects.update(projectId, { publishedUrl: null, status: "draft" });
+
+  emitActivity(sql, {
+    projectId,
+    userId,
+    eventType: "unpublish",
+    summary: `unpublished ${prodLoc.url}`,
+    metadata: { previousUrl: prodLoc.url, subdomain },
+  });
+
+  return c.json({
+    data: {
+      subdomain,
+      removedHostnames: [prodLoc.hostname, previewLoc.hostname],
+      dnsError,
+      filesError,
+    },
   });
 });
 

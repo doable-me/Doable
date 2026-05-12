@@ -533,6 +533,50 @@ export async function registerCloudflareDns(
   }
 }
 
+/**
+ * Inverse of {@link registerCloudflareDns}: deletes the per-publish CNAME so
+ * the published hostname stops resolving. Silently no-ops when the record is
+ * absent so unpublish is idempotent (repeated calls don't error).
+ *
+ * Requires env vars: CF_API_TOKEN, CF_ZONE_ID.
+ */
+export async function deleteCloudflareDns(hostname: string): Promise<void> {
+  const apiToken = process.env.CF_API_TOKEN;
+  const zoneId = process.env.CF_ZONE_ID;
+  if (!apiToken || !zoneId) return;
+
+  const base = `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`;
+  const headers = {
+    Authorization: `Bearer ${apiToken}`,
+    "Content-Type": "application/json",
+  };
+
+  const search = await fetch(`${base}?type=CNAME&name=${hostname}`, { headers });
+  if (!search.ok) {
+    throw new Error(`CF API GET failed (${search.status}): ${await search.text()}`);
+  }
+  const searchData = (await search.json()) as { result?: { id: string }[] };
+  const existing = searchData.result?.[0];
+  if (!existing) return;
+
+  const resp = await fetch(`${base}/${existing.id}`, { method: "DELETE", headers });
+  if (!resp.ok) {
+    throw new Error(`CF API DELETE failed (${resp.status}): ${await resp.text()}`);
+  }
+}
+
+/**
+ * Resolve the on-disk directory served by Caddy for a given publish.
+ * Mirrors the layout produced by {@link DoableCloudAdapter.deploy}.
+ */
+export function getPublishedSiteDir(
+  subdomain: string,
+  environment: "production" | "preview",
+): string {
+  const { siteSubdomain } = computeSitePublishLocation(subdomain, environment);
+  return path.join(SITES_DIR, siteSubdomain);
+}
+
 // ── Subdomain generation ─────────────────────────────────
 const RANDOM_SUFFIX_LEN = 5;
 

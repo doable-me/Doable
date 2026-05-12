@@ -118,7 +118,7 @@ export function projectQueries(sql: postgres.Sql) {
         status: ProjectStatus;
         visibility: ProjectVisibility;
         githubRepoUrl: string;
-        publishedUrl: string;
+        publishedUrl: string | null;
         subdomain: string;
         thumbnailUrl: string;
         folderId: string | null;

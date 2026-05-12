@@ -2051,6 +2051,11 @@ function EditorPageInner() {
         if (res.data.visibility) {
           setProjectVisibility(res.data.visibility === "public" ? "public" : "private");
         }
+        const persistedUrl = (res.data as { published_url?: string | null }).published_url ?? null;
+        if (persistedUrl) {
+          setPublishedUrl(persistedUrl);
+          setPublishStatus("success");
+        }
       })
       .catch(console.error);
     // Record view for recently-viewed tracking (fire-and-forget)
@@ -4332,6 +4337,40 @@ function EditorPageInner() {
     }
   }, [resolvedProjectId, projectVisibility]);
 
+  // Unpublish project — calls DELETE /deploy/:projectId/publish and resets local state.
+  const [unpublishing, setUnpublishing] = useState(false);
+  const handleUnpublish = useCallback(async () => {
+    if (!resolvedProjectId) return;
+    const ok = window.confirm(
+      "Take down the live site? The URL will stop working immediately. You can republish anytime to bring it back at the same URL.",
+    );
+    if (!ok) return;
+    setUnpublishing(true);
+    try {
+      const res = await fetch(`${API_URL}/deploy/${resolvedProjectId}/publish`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(),
+        },
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({ error: "Unpublish failed" })) as { error?: string };
+        setPublishError(errJson.error ?? "Unpublish failed");
+        setPublishStatus("error");
+        return;
+      }
+      setPublishedUrl(null);
+      setPublishStatus("idle");
+      setPublishModalOpen(false);
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : "Unpublish failed");
+      setPublishStatus("error");
+    } finally {
+      setUnpublishing(false);
+    }
+  }, [resolvedProjectId]);
+
   // Publish project
   const handlePublish = useCallback(async () => {
     setPublishStatus("building");
@@ -5115,9 +5154,8 @@ function EditorPageInner() {
           {/* Deploy */}
           <button
             onClick={() => {
-              setPublishStatus("idle");
+              setPublishStatus(publishedUrl ? "success" : "idle");
               setPublishError(null);
-              setPublishedUrl(null);
               setPublishModalOpen(true);
             }}
             className="flex h-7 items-center gap-1.5 rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-3 text-sm font-medium text-white shadow-lg shadow-brand-900/30 hover:brightness-110 transition-all"
@@ -6924,6 +6962,18 @@ function EditorPageInner() {
                     </button>
                   </div>
                 )}
+                <button
+                  onClick={handleUnpublish}
+                  disabled={unpublishing}
+                  className="mt-5 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-red-400 transition-colors disabled:opacity-50"
+                  title="Remove the live site and free the URL"
+                >
+                  {unpublishing ? (
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Taking down…</>
+                  ) : (
+                    <><XCircle className="h-3.5 w-3.5" /> Take down this site</>
+                  )}
+                </button>
               </div>
             )}
 
