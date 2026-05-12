@@ -766,20 +766,41 @@ CHAT_THINKING_LOOP_ABORT_MS=180000
 CHAT_THINKING_LOOP_GRACE_MS=15000
 ENVEOF
 
-# Next.js needs NEXT_PUBLIC_* in its own directory
+  chmod 0600 "${INSTALL_DIR}/.env"
+  chown doable:doable "${INSTALL_DIR}/.env" 2>/dev/null || true
+  ok "Environment files created (.env)"
+fi  # end .env idempotency guard
+# Always enforce .env permissions (idempotent re-run safety)
+chmod 0600 "${INSTALL_DIR}/.env" 2>/dev/null || true
+chown doable:doable "${INSTALL_DIR}/.env" 2>/dev/null || true
+
+# Always (re)write apps/web/.env.local — must NOT be gated on the .env
+# idempotency check above, because a pre-staged .env that triggered the
+# reuse branch would leave apps/web/.env.local missing, and `next build`
+# then prerenders with empty NEXT_PUBLIC_* envs (crashes /_global-error
+# with "Cannot read properties of null (reading 'useContext')").
+# Derive DOMAIN/API_DOMAIN/WS_DOMAIN from the live .env to stay in sync.
+if [ -z "${DOMAIN:-}" ] || [ -z "${API_DOMAIN:-}" ] || [ -z "${WS_DOMAIN:-}" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "${INSTALL_DIR}/.env" 2>/dev/null || true
+  set +a
+  # Recompute API/WS domains from NEXT_PUBLIC_* if still unset
+  : "${DOMAIN:=${NEXT_PUBLIC_APP_URL#https://}}"
+  DOMAIN="${DOMAIN%/}"
+  api_host="${NEXT_PUBLIC_API_URL#https://}"
+  api_host="${api_host%/}"
+  : "${API_DOMAIN:=${api_host}}"
+  ws_host="${NEXT_PUBLIC_WS_URL#wss://}"
+  ws_host="${ws_host%/}"
+  : "${WS_DOMAIN:=${ws_host}}"
+fi
 cat > "${INSTALL_DIR}/apps/web/.env.local" << WEBENVEOF
 NEXT_PUBLIC_API_URL=https://${API_DOMAIN}
 NEXT_PUBLIC_WS_URL=wss://${WS_DOMAIN}
 NEXT_PUBLIC_APP_URL=https://${DOMAIN}
 WEBENVEOF
-
-  chmod 0600 "${INSTALL_DIR}/.env"
-  chown doable:doable "${INSTALL_DIR}/.env" 2>/dev/null || true
-  ok "Environment files created (.env + apps/web/.env.local)"
-fi  # end .env idempotency guard
-# Always enforce .env permissions (idempotent re-run safety)
-chmod 0600 "${INSTALL_DIR}/.env" 2>/dev/null || true
-chown doable:doable "${INSTALL_DIR}/.env" 2>/dev/null || true
+chown doable:doable "${INSTALL_DIR}/apps/web/.env.local" 2>/dev/null || true
 
 # ─── Step 9: Install deps & migrate ──────────────────────────
 info "Step 9/13: Installing dependencies..."
