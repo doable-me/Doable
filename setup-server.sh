@@ -214,7 +214,7 @@ echo "  WebSocket:  wss://${WS_DOMAIN}"
 echo "  Prefix:     ${PUBLISH_PREFIX}"
 echo "  Repo:       ${REPO}"
 echo ""
-if [ "$CONTAINER_MODE" != "1" ]; then
+if [ "$CONTAINER_MODE" != "1" ] && [ "${NON_INTERACTIVE:-0}" != "1" ] && [ -t 0 ]; then
   read -rp "Proceed? [Y/n]: " CONFIRM
   [[ "${CONFIRM,,}" == "n" ]] && exit 0
 fi
@@ -526,6 +526,9 @@ if [ "$CONTAINER_MODE" != "1" ]; then
     echo "  Run: gh auth login"
     echo "  Then re-run this script."
     echo ""
+    if [ "${NON_INTERACTIVE:-0}" = "1" ] || ! [ -t 0 ]; then
+      err "GitHub auth required and non-interactive mode active. Pre-stage the repo at ${INSTALL_DIR} (e.g. tar-extract) or run 'gh auth login' as root before re-running setup-server.sh."
+    fi
     read -rp "Authenticate now? [Y/n]: " GH_AUTH
     if [[ "${GH_AUTH,,}" != "n" ]]; then
       gh auth login
@@ -547,7 +550,13 @@ if [ "$CONTAINER_MODE" != "1" ] && [ ! -f "$INSTALL_DIR/package.json" ]; then
 
   if [[ -d "$INSTALL_DIR" ]]; then
     warn "Directory $INSTALL_DIR already exists."
-    read -rp "Remove and re-clone? [y/N]: " RECLONE
+    if [ "${NON_INTERACTIVE:-0}" = "1" ] || ! [ -t 0 ]; then
+      # Non-interactive: preserve the existing tree (default = N).
+      info "Non-interactive mode — preserving existing ${INSTALL_DIR}"
+      RECLONE="n"
+    else
+      read -rp "Remove and re-clone? [y/N]: " RECLONE
+    fi
     if [[ "${RECLONE,,}" == "y" ]]; then
       rm -rf "$INSTALL_DIR"
       gh repo clone "$REPO" "$INSTALL_DIR"
