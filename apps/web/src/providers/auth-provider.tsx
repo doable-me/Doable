@@ -20,6 +20,7 @@ import {
   getStoredTokens,
   refreshAccessToken,
   isMfaChallenge,
+  isPendingSignup,
 } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────
@@ -53,13 +54,22 @@ export type LoginResult =
   | { mfaRequired: false }
   | { mfaRequired: true; mfaToken: string; expiresIn: number };
 
+/**
+ * Outcome of `register`. When signup approvals are enabled, the API
+ * returns `{ pending: true, message }` instead of issuing tokens; the
+ * signup page must render the message instead of redirecting.
+ */
+export type RegisterResult =
+  | { pending: false }
+  | { pending: true; message: string };
+
 export interface AuthContextValue {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (data: LoginData) => Promise<LoginResult>;
   completeMfaLogin: (args: { mfaToken: string; code: string }) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
+  register: (data: RegisterData) => Promise<RegisterResult>;
   logout: () => Promise<void>;
   loginAsDemo: () => void;
   /** Re-fetch the current user from /auth/me (used after OAuth callback) */
@@ -206,11 +216,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     storeUser(authUser);
   }, []);
 
-  const register = useCallback(async (data: RegisterData) => {
+  const register = useCallback(async (data: RegisterData): Promise<RegisterResult> => {
     const res = await apiRegister(data);
+    if (isPendingSignup(res)) {
+      // Approvals are on — no tokens issued, no user state. Caller shows
+      // the message and stops at the signup page.
+      return { pending: true, message: res.message };
+    }
     const authUser = toAuthUser(res.user);
     setUser(authUser);
     storeUser(authUser);
+    return { pending: false };
   }, []);
 
   const logout = useCallback(async () => {

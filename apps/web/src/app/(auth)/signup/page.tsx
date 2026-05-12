@@ -48,6 +48,7 @@ export default function SignupPage() {
     "github" | "google" | null
   >(null);
   const [emailTouched, setEmailTouched] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 
   const strength = useMemo(() => getPasswordStrength(password), [password]);
   const criteria = useMemo(() => getPasswordCriteria(password), [password]);
@@ -82,11 +83,18 @@ export default function SignupPage() {
     setIsLoading(true);
 
     try {
-      await register({
+      const result = await register({
         email,
         password,
         displayName: displayName || undefined,
       });
+      if (result.pending) {
+        // Signup approvals are on — render the admin-customized message
+        // instead of redirecting. No tokens were issued.
+        setPendingMessage(result.message);
+        setIsLoading(false);
+        return;
+      }
       const params = new URLSearchParams(window.location.search);
       const returnTo = params.get("returnTo");
       const urlPrompt = params.get("prompt");
@@ -127,6 +135,25 @@ export default function SignupPage() {
   }
 
   const isFormDisabled = isLoading || isOAuthLoading !== null;
+
+  if (pendingMessage) {
+    return (
+      <>
+        <h2 className="mb-3 text-center text-xl font-semibold text-[hsl(var(--foreground))]">
+          You&apos;re on the list
+        </h2>
+        <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 text-sm leading-relaxed text-[hsl(var(--foreground))] whitespace-pre-wrap">
+          {pendingMessage}
+        </div>
+        <p className="mt-6 text-center text-sm text-[hsl(var(--muted-foreground))]">
+          Already approved?{" "}
+          <Link href="/login" className="font-medium text-brand-700 hover:underline">
+            Sign in
+          </Link>
+        </p>
+      </>
+    );
+  }
 
   return (
     <>

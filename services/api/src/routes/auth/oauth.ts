@@ -3,6 +3,7 @@ import { sql } from "../../db/index.js";
 import { authQueries } from "@doable/db/queries/auth.js";
 import { githubQueries } from "@doable/db/queries/github.js";
 import { mfaQueries } from "@doable/db/queries/mfa.js";
+import { signupApprovalQueries } from "@doable/db/queries/signup-approval.js";
 import {
   getGitHubAuthUrl, exchangeGitHubCode, getGitHubCopilotAuthUrl,
   GITHUB_COPILOT_REDIRECT_URI, GITHUB_REPO_REDIRECT_URI,
@@ -15,6 +16,44 @@ import { signMfaChallengeToken } from "../../lib/jwt.js";
 
 const auth = authQueries(sql);
 const mfa = mfaQueries(sql);
+const signupApproval = signupApprovalQueries(sql);
+
+/**
+ * For OAuth callbacks: figure out the approval status the user should have
+ * AFTER the upsert. We must decide BEFORE calling createOrUpdateOAuthUser
+ * so that brand-new users get persisted as 'pending' when approvals are on.
+ * Existing users keep whatever status they already had.
+ */
+async function resolveOauthApprovalStatus(email: string): Promise<"approved" | "pending"> {
+  const existing = await auth.findUserByEmail(email).catch(() => undefined);
+  if (existing) return existing.approval_status === "pending" ? "pending" : "approved";
+  const cfg = await signupApproval.getConfig().catch(() => ({ enabled: false, pending_message: "" }));
+  return cfg.enabled ? "pending" : "approved";
+}
+
+/**
+ * Returns a redirect URL when the OAuth user's account is blocked from
+ * signing in (pending or rejected). Returns null if they should proceed.
+ */
+async function maybePendingRedirect(userId: string): Promise<string | null> {
+  let status: string | undefined;
+  try {
+    const [row] = await sql<{ approval_status: string }[]>`
+      SELECT approval_status FROM users WHERE id = ${userId}
+    `;
+    status = row?.approval_status;
+  } catch { /* ignore */ }
+  if (status === "pending") {
+    const cfg = await signupApproval.getConfig();
+    const params = new URLSearchParams({ pending: "1", message: cfg.pending_message });
+    return `${FRONTEND_URL}/login?${params.toString()}`;
+  }
+  if (status === "rejected") {
+    const params = new URLSearchParams({ error: "ACCOUNT_DENIED", message: "Your signup was not approved." });
+    return `${FRONTEND_URL}/login?${params.toString()}`;
+  }
+  return null;
+}
 
 /**
  * Build the post-OAuth redirect URL. If the user has MFA enabled we send
@@ -90,10 +129,20 @@ oauthRoutes.get("/github/callback", async (c) => {
     const { user: ghUser } = await exchangeGitHubCode(code);
     if (!ghUser.email) return c.redirect(`${FRONTEND_URL}/login?error=no_email`);
 
+    if (await signupApproval.isEmailBlocked(ghUser.email)) {
+      return c.redirect(`${FRONTEND_URL}/login?error=ACCOUNT_DENIED&message=${encodeURIComponent("This email address cannot be registered.")}`);
+    }
+
+    const approvalStatus = await resolveOauthApprovalStatus(ghUser.email);
+
     const user = await auth.createOrUpdateOAuthUser({
       email: ghUser.email, displayName: stripHtmlTags(ghUser.name ?? ghUser.login),
       avatarUrl: ghUser.avatar_url, githubId: String(ghUser.id),
+      approvalStatus,
     });
+
+    const blocked = await maybePendingRedirect(user.id);
+    if (blocked) return c.redirect(blocked);
 
     // Auto-create personal workspace for new OAuth users
     await ensureWorkspace(user.id, user.display_name, user.email);
@@ -140,16 +189,25 @@ oauthRoutes.get("/google/callback", async (c) => {
   try {
     const { user: googleUser } = await exchangeGoogleCode(code);
 
+    if (await signupApproval.isEmailBlocked(googleUser.email)) {
+      return c.redirect(`${FRONTEND_URL}/login?error=ACCOUNT_DENIED&message=${encodeURIComponent("This email address cannot be registered.")}`);
+    }
+
     // Try database first, fall back to direct JWT if DB is unavailable
     let userId: string;
     let email: string;
     try {
+      const approvalStatus = await resolveOauthApprovalStatus(googleUser.email);
       const user = await auth.createOrUpdateOAuthUser({
         email: googleUser.email, displayName: stripHtmlTags(googleUser.name),
         avatarUrl: googleUser.picture, googleId: googleUser.sub,
+        approvalStatus,
       });
       userId = user.id;
       email = user.email;
+
+      const blocked = await maybePendingRedirect(user.id);
+      if (blocked) return c.redirect(blocked);
 
       // Auto-create personal workspace for new OAuth users
       await ensureWorkspace(userId, user.display_name, user.email);

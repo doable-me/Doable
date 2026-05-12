@@ -16,6 +16,7 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "Access was denied. Please try again.",
   missing_code: "Authentication code was missing. Please try again.",
   no_email: "No email address associated with your account. Please try again.",
+  ACCOUNT_DENIED: "Your signup was not approved.",
 };
 
 function LoginPageInner() {
@@ -57,6 +58,11 @@ function LoginPageInner() {
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState("");
 
+  // Surfaced when an unapproved user tries to log in (admin enabled
+  // signup approvals and hasn't approved this account yet). Replaces
+  // the form entirely with the admin-customized pending message.
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+
   // Restore remembered email
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -67,14 +73,19 @@ function LoginPageInner() {
     }
   }, []);
 
-  // Pick up error from OAuth callback redirect
+  // Pick up error from OAuth callback redirect, including the pending
+  // approval gate (OAuth users hit this via redirect, not the form).
   useEffect(() => {
+    const pendingParam = searchParams.get("pending");
+    const messageParam = searchParams.get("message");
+    if (pendingParam === "1" && messageParam) {
+      setPendingMessage(messageParam);
+      return;
+    }
     const errorParam = searchParams.get("error");
     if (errorParam) {
-      setError(
-        OAUTH_ERROR_MESSAGES[errorParam] ??
-          `Authentication error: ${errorParam}`
-      );
+      const fallback = messageParam ?? `Authentication error: ${errorParam}`;
+      setError(OAUTH_ERROR_MESSAGES[errorParam] ?? fallback);
     }
   }, [searchParams]);
 
@@ -111,8 +122,14 @@ function LoginPageInner() {
       router.push(target);
     } catch (err: unknown) {
       if (err && typeof err === "object" && "body" in err) {
-        const apiErr = err as { body: { error: string } };
-        setError(apiErr.body.error);
+        const apiErr = err as { body: { error: string; message?: string } };
+        if (apiErr.body.error === "PENDING_APPROVAL") {
+          setPendingMessage(apiErr.body.message ?? "Your signup is awaiting approval.");
+        } else if (apiErr.body.error === "ACCOUNT_DENIED") {
+          setError(apiErr.body.message ?? "Your signup was not approved.");
+        } else {
+          setError(apiErr.body.error);
+        }
       } else {
         setError("Something went wrong. Please try again.");
       }
@@ -173,6 +190,26 @@ function LoginPageInner() {
   }
 
   const isFormDisabled = isLoading || isOAuthLoading !== null;
+
+  if (pendingMessage) {
+    return (
+      <>
+        <h2 className="mb-3 text-center text-xl font-semibold text-[hsl(var(--foreground))]">
+          You&apos;re on the list
+        </h2>
+        <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 text-sm leading-relaxed text-[hsl(var(--foreground))] whitespace-pre-wrap">
+          {pendingMessage}
+        </div>
+        <button
+          type="button"
+          onClick={() => { setPendingMessage(null); setError(null); }}
+          className="mt-6 block w-full text-center text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+        >
+          Back to sign in
+        </button>
+      </>
+    );
+  }
 
   if (mfaToken) {
     return (

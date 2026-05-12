@@ -48,13 +48,28 @@ export async function apiMfaLoginVerify(args: {
   return res;
 }
 
+export interface PendingSignupResponse {
+  pending: true;
+  message: string;
+}
+
+export function isPendingSignup(res: unknown): res is PendingSignupResponse {
+  return (
+    typeof res === "object" &&
+    res !== null &&
+    "pending" in res &&
+    (res as { pending?: unknown }).pending === true
+  );
+}
+
 export async function apiRegister(
   data: RegisterRequest
-): Promise<AuthResponse> {
-  const res = await apiFetch<AuthResponse>("/auth/register", {
+): Promise<AuthResponse | PendingSignupResponse> {
+  const res = await apiFetch<AuthResponse | PendingSignupResponse>("/auth/register", {
     method: "POST",
     body: JSON.stringify(data),
   });
+  if (isPendingSignup(res)) return res;
   storeTokens(res.tokens);
   return res;
 }

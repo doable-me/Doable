@@ -23,6 +23,7 @@ export interface UserRow {
   google_id: string | null;
   is_platform_admin: boolean;
   platform_role: string;
+  approval_status: "approved" | "pending" | "rejected";
   created_at: Date;
   updated_at: Date;
 }

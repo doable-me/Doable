@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   Plug,
   CreditCard,
+  UserCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ import { PlanLimitsPanel } from "./plan-limits-panel";
 import { IntegrationsAdminPanel } from "@/modules/integrations/integrations-admin-panel";
 import { FrameworksPanel } from "./frameworks-panel";
 import { AdminMfaPanel } from "./mfa-panel";
+import { SignupsPanel } from "./signups-panel";
 
 // ─── Admin Page ─────────────────────────────────────────────
 
@@ -60,11 +62,11 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "plans" | "thumbnails" | "copilot" | "email" | "integrations" | "mfa">(() => {
+  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "plans" | "thumbnails" | "copilot" | "email" | "integrations" | "mfa" | "signups">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get("tab");
-      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "plans" || tab === "thumbnails" || tab === "copilot" || tab === "integrations" || tab === "mfa") return tab;
+      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "plans" || tab === "thumbnails" || tab === "copilot" || tab === "integrations" || tab === "mfa" || tab === "signups") return tab;
       // Legacy redirects
       if (tab === "planLimits" || tab === "planDefaults") return "plans";
     }
@@ -290,6 +292,7 @@ export default function AdminPage() {
       <div className="flex items-center gap-1 mb-6 border-b border-border pb-px overflow-x-auto">
         {([
           { key: "features" as const, label: "Feature Flags", icon: Settings2 },
+          { key: "signups" as const, label: "Signups", icon: UserCheck },
           { key: "users" as const, label: "Users & AI", icon: Users },
           { key: "integrations" as const, label: "Integrations", icon: Plug },
           { key: "plans" as const, label: "Plans", icon: CreditCard },
@@ -387,6 +390,7 @@ export default function AdminPage() {
       {activeTab === "tools" && <ToolsConfigPanel />}
 
       {activeTab === "mfa" && <AdminMfaPanel />}
+      {activeTab === "signups" && <SignupsPanel />}
 
       {activeTab === "thumbnails" && <ThumbnailsPanel />}
       {activeTab === "copilot" && <CopilotSessionsPanel />}

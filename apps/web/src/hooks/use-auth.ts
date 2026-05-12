@@ -13,7 +13,7 @@ export function useAuth(): AuthContextValue {
       isAuthenticated: false,
       login: async () => ({ mfaRequired: false as const }),
       completeMfaLogin: async () => {},
-      register: async () => {},
+      register: async () => ({ pending: false as const }),
       logout: async () => {},
       loginAsDemo: () => {},
       refreshUser: async () => {},

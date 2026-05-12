@@ -31,3 +31,4 @@ export * from "./queries/mode-tools.js";
 export * from "./queries/platform-ai-defaults.js";
 export * from "./queries/design-comments.js";
 export * from "./queries/mfa.js";
+export * from "./queries/signup-approval.js";

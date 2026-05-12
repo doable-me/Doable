@@ -6,6 +6,7 @@ import { authQueries } from "@doable/db/queries/auth.js";
 import { userQueries } from "@doable/db/queries/users.js";
 import { securityQueries } from "@doable/db/queries/security.js";
 import { mfaQueries } from "@doable/db/queries/mfa.js";
+import { signupApprovalQueries } from "@doable/db/queries/signup-approval.js";
 import { verifyRefreshToken, signAccessToken, signRefreshToken } from "../../lib/jwt.js";
 import { authMiddleware } from "../../middleware/auth.js";
 import { sendTemplatedEmail } from "../../lib/email.js";
@@ -21,6 +22,7 @@ const auth = authQueries(sql);
 const users = userQueries(sql);
 const securityDb = securityQueries(sql);
 const mfa = mfaQueries(sql);
+const signupApproval = signupApprovalQueries(sql);
 
 export const coreAuthRoutes = new Hono();
 
@@ -41,8 +43,27 @@ coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {
   const existing = await auth.findUserByEmail(email);
   if (existing) return c.json({ error: "An account with this email already exists" }, 409);
 
+  // Blocklist takes precedence over the approval toggle — a blocked email
+  // can never sign up again, even if approvals are currently off.
+  if (await signupApproval.isEmailBlocked(email)) {
+    return c.json({ error: "This email address cannot be registered." }, 403);
+  }
+
+  const approvalConfig = await signupApproval.getConfig();
+  const approvalStatus = approvalConfig.enabled ? "pending" : "approved";
+
   const passwordHash = await argon2.hash(password, ARGON2_OPTS);
-  const user = await auth.createUser({ email, passwordHash, displayName: sanitizedName });
+  const user = await auth.createUser({ email, passwordHash, displayName: sanitizedName, approvalStatus });
+
+  if (approvalStatus === "pending") {
+    // Don't auto-create the workspace yet and don't issue tokens. The user
+    // sees the custom pending message; admin must approve before they can
+    // log in. Skip the welcome email — they'll get one on approval (future).
+    return c.json({
+      pending: true,
+      message: approvalConfig.pending_message,
+    }, 201);
+  }
 
   // Auto-create personal workspace so the user isn't blocked on first login
   await ensureWorkspace(user.id, user.display_name, user.email);
@@ -69,6 +90,14 @@ coreAuthRoutes.post("/login", loginRateLimiter, async (c) => {
 
   const valid = await argon2.verify(user.password_hash, password);
   if (!valid) return c.json({ error: "Invalid email or password" }, 401);
+
+  if (user.approval_status === "pending") {
+    const cfg = await signupApproval.getConfig();
+    return c.json({ error: "PENDING_APPROVAL", message: cfg.pending_message }, 403);
+  }
+  if (user.approval_status === "rejected") {
+    return c.json({ error: "ACCOUNT_DENIED", message: "Your signup was not approved." }, 403);
+  }
 
   // If the user opted into MFA, issue a short-lived challenge token
   // instead of real session tokens. The frontend exchanges it at

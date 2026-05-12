@@ -22,6 +22,8 @@ export {
   apiMfaLoginVerify,
   getGitHubLoginUrl,
   getGoogleLoginUrl,
+  isPendingSignup,
+  type PendingSignupResponse,
 } from "./api-auth";
 
 export {

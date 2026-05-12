@@ -43,16 +43,18 @@ export function authQueries(sql: postgres.Sql) {
       avatarUrl?: string;
       githubId?: string;
       googleId?: string;
+      approvalStatus?: "approved" | "pending" | "rejected";
     }): Promise<UserRow> {
       const [user] = await sql<UserRow[]>`
-        INSERT INTO users (email, password_hash, display_name, avatar_url, github_id, google_id)
+        INSERT INTO users (email, password_hash, display_name, avatar_url, github_id, google_id, approval_status)
         VALUES (
           ${data.email.toLowerCase()},
           ${data.passwordHash ?? null},
           ${data.displayName ?? null},
           ${data.avatarUrl ?? null},
           ${data.githubId ?? null},
-          ${data.googleId ?? null}
+          ${data.googleId ?? null},
+          ${data.approvalStatus ?? "approved"}
         )
         RETURNING *
       `;
@@ -83,6 +85,7 @@ export function authQueries(sql: postgres.Sql) {
       avatarUrl?: string;
       githubId?: string;
       googleId?: string;
+      approvalStatus?: "approved" | "pending" | "rejected";
     }): Promise<UserRow> {
       // Try to find by provider ID first
       let existing: UserRow | undefined;
