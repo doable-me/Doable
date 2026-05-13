@@ -308,3 +308,21 @@
 | TC-INTERNAL-002 | 2026-05-08T06:07:35Z | INFO | got=403 exp= — GET /internal/yjs/something without internal secret · {"error":"Forbidden"} |
 | TC-DNS-API-001 | 2026-05-08T06:07:35Z | INFO | got=200 exp= — GET https://staging-api.doable.me works · {"status":"healthy","timestamp":"2026-05-08T06:07:35.253Z","version":"0.1.0","uptime":5099.10551045,"checks":{"database":{"status":"up","latencyMs":1},"memory":{"rssBytes":277471232,"heapUsedBytes":105304024,"heapTotalBy |
 | TC-DNS-WS-001 | 2026-05-08T06:07:36Z | INFO | got=404 exp= — GET https://staging-ws.doable.me serves WS HTTP probe · Not Found |
+## 2026-05-13 -- Ralph R9 dev run (https://dev-api.doable.me)
+| Test ID | UTC | Result | Description (evidence) |
+|---------|-----|--------|------------------------|
+| TC-001 | 2026-05-13T18:14:04Z | PASS | GET /health -> HTTP 200 |
+| TC-002 | 2026-05-13T18:14:04Z | PASS | GET /auth/me (owner token) -> HTTP 200 |
+| TC-003 | 2026-05-13T18:14:04Z | PASS | GET /auth/me (no auth) -> HTTP 401 |
+| TC-004 | 2026-05-13T18:14:04Z | PASS | GET /auth/me (malformed) -> HTTP 401 |
+| TC-005 | 2026-05-13T18:14:04Z | PASS | GET /workspaces (owner) -> HTTP 200 |
+| TC-006 | 2026-05-13T18:14:04Z | PASS | GET /projects?workspaceId=... -> HTTP 200 |
+| TC-007 | 2026-05-13T18:14:04Z | FAIL | GET /templates -> HTTP 401 [testcases/evidence/dev/TC-007.body] |
+| TC-008 | 2026-05-13T18:14:04Z | PASS | GET /marketplace/listings -> HTTP 200 |
+| TC-009 | 2026-05-13T18:14:04Z | PASS | POST /projects (vite-react) -> HTTP 201 |
+| TC-010 | 2026-05-13T18:14:04Z | INFO | GET /projects/:id (skipped) |
+| TC-011 | 2026-05-13T18:14:04Z | FAIL | GET /billing/usage -> HTTP 400 [testcases/evidence/dev/TC-011.body] |
+
+**Summary**: 8 PASS, 2 FAIL, 1 INFO (11 probes)
+**Project Created**: 9c521376-d56e-48d0-8bc5-c387ac20f83a
+
