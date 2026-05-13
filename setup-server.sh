@@ -939,9 +939,22 @@ for t in tunnels:
 
   ok "DNS routes configured for ${DOMAIN}, ${API_DOMAIN}, ${WS_DOMAIN}"
 
-  # Append Cloudflare DNS credentials to .env (token extracted from cert.pem
-  # OAuth flow, tunnel ID from tunnel create — neither existed at Step 8).
-  cat >> "${INSTALL_DIR}/.env" << CFEOF
+  # Upsert Cloudflare DNS credentials into .env (token extracted from
+  # cert.pem OAuth flow, tunnel ID from tunnel create — neither existed
+  # at Step 8). Re-runs of setup-server.sh used to `cat >>` this block
+  # unconditionally, leaving duplicate CLOUDFLARED_TUNNEL_ID / CF_API_TOKEN
+  # / CF_ZONE_ID lines (and duplicated comment headers). Strip any prior
+  # block first so each key appears exactly once.
+  ENV_FILE="${INSTALL_DIR}/.env"
+  sed -i \
+    -e '/^# .*Cloudflare DNS.*auto-populated/d' \
+    -e '/^# Used by the deploy pipeline to create per-site CNAME/d' \
+    -e '/^# API token comes from .cloudflared tunnel login./d' \
+    -e '/^CLOUDFLARED_TUNNEL_ID=/d' \
+    -e '/^CF_API_TOKEN=/d' \
+    -e '/^CF_ZONE_ID=/d' \
+    "$ENV_FILE"
+  cat >> "$ENV_FILE" << CFEOF
 
 # ─── Cloudflare DNS (auto-populated by setup-server.sh) ─────
 # Used by the deploy pipeline to create per-site CNAME records.
@@ -950,7 +963,7 @@ CLOUDFLARED_TUNNEL_ID=${TUNNEL_ID}
 CF_API_TOKEN=${CF_API_TOKEN:-}
 CF_ZONE_ID=${CF_ZONE_ID:-}
 CFEOF
-  ok "Cloudflare credentials appended to .env"
+  ok "Cloudflare credentials upserted in .env (single block, idempotent)"
 
   # Tunnel config
   CREDS_FILE=$(find /root/.cloudflared -name "${TUNNEL_ID}.json" 2>/dev/null | head -1)

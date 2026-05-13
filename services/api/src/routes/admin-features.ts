@@ -146,11 +146,7 @@ interface DnsDiagnostics {
   canAutoSetup: boolean;
   reason: "ok" | "no-cf-creds" | "no-tunnel-id" | "no-publish-domain" | "free-plan-multilevel" | "zone-lookup-failed";
   message: string;
-  multiServerNote: string;
 }
-
-const MULTI_SERVER_NOTE =
-  "A *.<domain> CNAME points to exactly one tunnel — running multiple doable servers on the same domain requires Cloudflare Advanced Certificate Manager so each environment can have its own multi-level wildcard (e.g. *.staging.example.com and *.prod.example.com).";
 
 function computeDnsDiagnostics(
   zone: Awaited<ReturnType<typeof getZoneInfo>>,
@@ -198,7 +194,6 @@ function computeDnsDiagnostics(
     canAutoSetup,
     reason,
     message,
-    multiServerNote: MULTI_SERVER_NOTE,
   };
 }
 
@@ -211,7 +206,37 @@ adminFeatureRoutes.get("/dns-mode/diagnostics", async (c) => {
   return c.json(computeDnsDiagnostics(zone, existing));
 });
 
+const autoWildcardSchema = z.object({
+  // Optional override of *.${DOABLE_DOMAIN}. Must start with "*." and live
+  // inside the CF zone the server is configured against (validated below
+  // against the live zoneName from getZoneInfo so we can't be tricked into
+  // attempting cross-zone records the CF API would reject anyway).
+  wildcardHostname: z.string().regex(/^\*\.[a-z0-9.-]+$/).optional(),
+  // When true, the operator asserts they have Advanced Certificate Manager
+  // active on this zone. The cfut_* token from `cloudflared tunnel login`
+  // cannot read /ssl/certificate_packs (lacks Zone Settings: Read), so
+  // hasAcm auto-detection silently returns false even for paid ACM zones.
+  // This override skips the multi-level gate so those operators can proceed.
+  acmOverride: z.boolean().optional(),
+});
+
 adminFeatureRoutes.post("/dns-mode/auto-wildcard", async (c) => {
+  let body: { wildcardHostname?: string; acmOverride?: boolean } = {};
+  // Empty body is allowed (round 1 behavior — no params). Parse only if
+  // Content-Type indicates JSON and the body has bytes.
+  if (c.req.header("content-type")?.includes("application/json")) {
+    try {
+      const raw = await c.req.json();
+      const parsed = autoWildcardSchema.safeParse(raw);
+      if (!parsed.success) {
+        return c.json({ error: parsed.error.flatten(), reason: "invalid-body" }, 400);
+      }
+      body = parsed.data;
+    } catch {
+      // Empty/missing body — treat as no overrides.
+    }
+  }
+
   const zone = await getZoneInfo();
   const publishDomain = process.env.DOABLE_DOMAIN ?? "";
   const existing = publishDomain
@@ -219,22 +244,52 @@ adminFeatureRoutes.post("/dns-mode/auto-wildcard", async (c) => {
     : { exists: false, target: null as string | null };
   const diagnostics = computeDnsDiagnostics(zone, existing);
 
+  // Resolve effective wildcard target. Default to the diagnostics-recommended
+  // value; honor the operator's override when supplied.
+  const effectiveWildcard = body.wildcardHostname ?? diagnostics.recommendedWildcard;
+
+  // Cross-zone refusal: the requested wildcard must end with .<zoneName>
+  // (or exactly equal *.<zoneName>). Cloudflare itself would refuse, but
+  // returning a clean 400 here gives the panel a much better error.
+  if (zone.acmReady && zone.zoneName) {
+    const bare = effectiveWildcard.slice(2); // drop "*."
+    const inZone = bare === zone.zoneName || bare.endsWith(`.${zone.zoneName}`);
+    if (!inZone) {
+      return c.json(
+        {
+          error: `Wildcard ${effectiveWildcard} is not inside zone ${zone.zoneName}. Pick a hostname like *.${zone.zoneName} or *.<sub>.${zone.zoneName}.`,
+          reason: "wildcard-out-of-zone",
+          diagnostics,
+        },
+        400,
+      );
+    }
+  }
+
+  // Multi-level gating: still blocks unless the operator overrides. The
+  // other diagnostics gates (no-cf-creds, no-tunnel-id, no-publish-domain,
+  // zone-lookup-failed) are not bypassable since they reflect real missing
+  // state, not API blind spots.
   if (!diagnostics.canAutoSetup) {
-    return c.json(
-      { error: diagnostics.message, reason: diagnostics.reason, diagnostics },
-      400,
-    );
+    const isOverridable = diagnostics.reason === "free-plan-multilevel" && body.acmOverride;
+    if (!isOverridable) {
+      return c.json(
+        { error: diagnostics.message, reason: diagnostics.reason, diagnostics },
+        400,
+      );
+    }
   }
 
   const tunnelId = process.env.CLOUDFLARED_TUNNEL_ID;
   if (!tunnelId) {
-    // Defensive: diagnostics should already have flagged this.
+    // Defensive: diagnostics should already have flagged this (no-tunnel-id),
+    // and that gate is not overridable.
     return c.json({ error: "CLOUDFLARED_TUNNEL_ID missing", reason: "no-tunnel-id" }, 400);
   }
 
   let cnameResult: Awaited<ReturnType<typeof ensureWildcardCname>>;
   try {
-    cnameResult = await ensureWildcardCname(tunnelId, diagnostics.recommendedWildcard);
+    cnameResult = await ensureWildcardCname(tunnelId, effectiveWildcard);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return c.json({ error: `Failed to create wildcard CNAME: ${msg}` }, 502);
@@ -257,6 +312,7 @@ adminFeatureRoutes.post("/dns-mode/auto-wildcard", async (c) => {
     target: cnameResult.target,
     created: cnameResult.created,
     updated: cnameResult.updated,
+    acmOverrideApplied: body.acmOverride === true && diagnostics.reason === "free-plan-multilevel",
     diagnostics,
   });
 });
