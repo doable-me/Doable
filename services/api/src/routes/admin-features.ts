@@ -150,6 +150,10 @@ interface ZoneWildcard {
 interface DnsDiagnostics {
   zoneName: string;
   plan: string;
+  /** "enabled" | "absent" | "undetectable" — see cloudflare-zone-info.ts. */
+  acmStatus: "enabled" | "absent" | "undetectable";
+  /** Convenience boolean, true iff acmStatus === "enabled". Kept for callers
+   * that only care about the gate decision. */
   hasAcm: boolean;
   publishDomain: string;
   domainDepth: number;
@@ -201,6 +205,7 @@ function computeDnsDiagnostics(
   return {
     zoneName: zone.zoneName,
     plan: zone.plan,
+    acmStatus: zone.acmStatus,
     hasAcm: zone.hasAcm,
     publishDomain,
     domainDepth,

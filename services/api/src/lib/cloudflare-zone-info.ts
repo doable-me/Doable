@@ -23,19 +23,38 @@
 
 export type CloudflarePlan = "free" | "pro" | "business" | "enterprise" | "unknown";
 
+/**
+ * ACM detection has three honest states:
+ *   - "enabled":     the certificate_packs endpoint returned at least one
+ *                    pack of type="advanced" — ACM is definitely on.
+ *   - "absent":      endpoint returned 200 but no advanced packs — ACM is
+ *                    definitely off.
+ *   - "undetectable": endpoint returned 403/9109 (or any failure) — the
+ *                    cfut_* token from `cloudflared tunnel login` lacks
+ *                    "SSL and Certificates: Read" scope on most zones, so
+ *                    we genuinely cannot tell. Different from "absent":
+ *                    the operator may very well have paid ACM, we just
+ *                    can't see it. The admin panel surfaces this honestly
+ *                    and routes operators to the manual ACM override.
+ */
+export type AcmStatus = "enabled" | "absent" | "undetectable";
+
 export interface ZoneInfo {
   zoneName: string;
   plan: CloudflarePlan;
+  /** Three-state ACM detection — see {@link AcmStatus}. */
+  acmStatus: AcmStatus;
   /**
-   * True when at least one active certificate pack of type "advanced"
-   * exists on the zone — i.e. the zone has Advanced Certificate Manager
-   * issuing custom certs that can cover multi-level wildcards.
+   * Convenience flag for gate logic: true iff acmStatus === "enabled".
+   * "undetectable" is treated as not-enabled for blocking decisions; the
+   * UI exposes an explicit override for that case.
    */
   hasAcm: boolean;
   /**
-   * True when CF API responded successfully. False when env vars are
-   * missing or any API call errored — callers should read `error` for
-   * the human-readable reason.
+   * True when CF API responded successfully for the zone lookup. False
+   * when env vars are missing or the zone GET errored — callers should
+   * read `error` for the human-readable reason. Independent of ACM
+   * detection (which is allowed to fail in a 403-undetectable way).
    */
   acmReady: boolean;
   error?: string;
@@ -85,6 +104,7 @@ export async function getZoneInfo(): Promise<ZoneInfo> {
     return {
       zoneName: "",
       plan: "unknown",
+      acmStatus: "undetectable",
       hasAcm: false,
       acmReady: false,
       error:
@@ -108,6 +128,7 @@ export async function getZoneInfo(): Promise<ZoneInfo> {
       return {
         zoneName: "",
         plan: "unknown",
+        acmStatus: "undetectable",
         hasAcm: false,
         acmReady: false,
         error: `Cloudflare zone lookup failed: ${msg}`,
@@ -119,15 +140,24 @@ export async function getZoneInfo(): Promise<ZoneInfo> {
     return {
       zoneName: "",
       plan: "unknown",
+      acmStatus: "undetectable",
       hasAcm: false,
       acmReady: false,
       error: `Cloudflare zone lookup error: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 
-  // Detect Advanced Certificate Manager: list active certificate packs and
-  // look for at least one of type "advanced".
-  let hasAcm = false;
+  // Detect Advanced Certificate Manager. Three outcomes:
+  //   200 + data.success + has advanced pack  → "enabled"
+  //   200 + data.success + no advanced pack   → "absent"
+  //   anything else (403/9109, network error) → "undetectable"
+  //
+  // The "undetectable" branch is the common case on doable installs: the
+  // `cloudflared tunnel login` OAuth token only carries DNS:Edit + tunnel
+  // scopes — NOT "SSL and Certificates: Read" — so CF returns 9109 here.
+  // The admin panel renders that state honestly and routes operators to
+  // the manual ACM override checkbox instead of pretending ACM is off.
+  let acmStatus: AcmStatus = "undetectable";
   try {
     const resp = await fetch(
       `${CF_API_BASE}/zones/${zoneId}/ssl/certificate_packs?status=active`,
@@ -135,14 +165,11 @@ export async function getZoneInfo(): Promise<ZoneInfo> {
     );
     const data = (await resp.json()) as CertPackResponse;
     if (resp.ok && data.success && Array.isArray(data.result)) {
-      hasAcm = data.result.some((p) => p.type === "advanced");
+      acmStatus = data.result.some((p) => p.type === "advanced") ? "enabled" : "absent";
     }
-    // A 4xx/5xx here is non-fatal — we still know the plan; just leave
-    // hasAcm=false. The diagnostics endpoint surfaces this as "can't do
-    // multi-level" rather than a hard failure.
   } catch {
-    // Same — treat as "ACM not detected".
+    // Network error — stays "undetectable", honest about not knowing.
   }
 
-  return { zoneName, plan, hasAcm, acmReady: true };
+  return { zoneName, plan, acmStatus, hasAcm: acmStatus === "enabled", acmReady: true };
 }

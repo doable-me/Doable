@@ -29,6 +29,7 @@ interface ZoneWildcard {
 interface DnsDiagnostics {
   zoneName: string;
   plan: string;
+  acmStatus: "enabled" | "absent" | "undetectable";
   hasAcm: boolean;
   publishDomain: string;
   domainDepth: number;
@@ -253,7 +254,26 @@ export function DnsConfigPanel() {
             <span className="text-muted-foreground">Zone:</span>
             <code className="font-mono text-foreground">{diagnostics.zoneName || "—"}</code>
             <span className="rounded bg-secondary px-1.5 py-0.5 text-foreground/80">{planLabel(diagnostics.plan)}</span>
-            <span className={`rounded px-1.5 py-0.5 ${diagnostics.hasAcm ? "bg-emerald-500/10 text-emerald-400" : "bg-secondary text-muted-foreground"}`}>{diagnostics.hasAcm ? "ACM detected" : "ACM not detected"}</span>
+            <span
+              className={`rounded px-1.5 py-0.5 ${
+                diagnostics.acmStatus === "enabled"
+                  ? "bg-emerald-500/10 text-emerald-400"
+                  : diagnostics.acmStatus === "absent"
+                    ? "bg-secondary text-muted-foreground"
+                    : "bg-amber-500/10 text-amber-400"
+              }`}
+              title={
+                diagnostics.acmStatus === "undetectable"
+                  ? "The cloudflared OAuth token has DNS:Edit scope but not SSL/Certificates:Read — we can't see ACM packs. If you have ACM, tick the override below to bypass detection."
+                  : undefined
+              }
+            >
+              {diagnostics.acmStatus === "enabled"
+                ? "ACM enabled"
+                : diagnostics.acmStatus === "absent"
+                  ? "No ACM"
+                  : "ACM status unknown"}
+            </span>
             <span className="text-muted-foreground">Publish domain:</span>
             <code className="font-mono text-foreground">{diagnostics.publishDomain || "—"}</code>
             {diagnostics.existingWildcard && (
