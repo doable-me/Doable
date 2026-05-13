@@ -160,13 +160,16 @@ export async function resolveSession(
   return sessionId!;
 }
 
-/** Persist session to database. Returns dbSessionId. */
+/** Persist session to database. Returns dbSessionId. Throws on failure
+ * so the caller can abort instead of silently streaming a "ghost" turn
+ * whose user/assistant messages never make it to ai_messages (see R11
+ * root-cause #3). */
 export async function persistSessionToDb(
   projectId: string,
   userId: string,
   mode: string,
   sessionId: string | undefined,
-): Promise<string | undefined> {
+): Promise<string> {
   try {
     const [dbSession] = await sql`
       SELECT id FROM ai_sessions
@@ -180,15 +183,34 @@ export async function persistSessionToDb(
       }
       return dbSession.id;
     }
+
+    // Look up the project's workspace_id so the new ai_sessions row is
+    // workspace-scoped (RLS-ready). ai_sessions.project_id was loosened
+    // to text in migration 008 — guard against non-uuid project ids
+    // (legacy / frontend-generated) by treating them as workspace-less.
+    const isUuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId);
+    let workspaceId: string | null = null;
+    if (isUuidLike) {
+      const [wsRow] = await sql<{ workspace_id: string | null }[]>`
+        SELECT workspace_id FROM projects WHERE id = ${projectId}::uuid
+      `;
+      workspaceId = wsRow?.workspace_id ?? null;
+    }
+
     const [newSession] = await sql`
-      INSERT INTO ai_sessions (project_id, user_id, mode, copilot_session_id)
-      VALUES (${projectId}, ${userId}, ${mode}, ${sessionId ?? null})
+      INSERT INTO ai_sessions (project_id, user_id, workspace_id, mode, copilot_session_id)
+      VALUES (${projectId}, ${userId}, ${workspaceId}, ${mode}, ${sessionId ?? null})
       RETURNING id
     `;
-    return newSession?.id;
+    if (!newSession?.id) {
+      throw new Error("ai_sessions INSERT returned no row");
+    }
+    return newSession.id;
   } catch (e) {
-    console.warn("[Chat] DB session lookup failed:", e);
-    return undefined;
+    console.error("[Chat] ai_sessions persist failed — turn will NOT be recorded:", e);
+    // Re-throw so send-handler aborts cleanly instead of streaming a
+    // "ghost" turn that never lands in chat_history.
+    throw e instanceof Error ? e : new Error(String(e));
   }
 }
 

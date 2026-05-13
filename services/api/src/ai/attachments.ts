@@ -294,9 +294,13 @@ export async function processAttachments(
             );
             console.log(`[Attachments] Extracted PDF "${name}" (${textContent.length} chars)`);
           } else {
-            const tempPath = saveToTempFile(base64, name, mime);
-            fileAttachments.push({ type: "file", path: tempPath, displayName: name });
-            console.log(`[Attachments] Saved PDF "${name}" to ${tempPath} (no text extracted; fallback)`);
+            // pdf-parse returned empty text (likely a scanned / image-only PDF).
+            // The Copilot SDK does NOT server-side-extract PDF binaries, so forwarding
+            // the raw file via fileAttachments[] is worse than useless — the model
+            // would treat the binary path as opaque metadata. Drop it with an
+            // explanatory note instead.
+            notes.push(`\n\n[Attached PDF: ${name} — pdf-parse returned 0 chars (likely image-only/scanned). Ask the user to provide a text version or describe the contents.]`);
+            console.warn(`[Attachments] PDF "${name}" yielded 0 chars from pdf-parse; not forwarding to SDK`);
           }
         } catch (err) {
           console.error(`[Attachments] Failed to process PDF "${name}":`, err);
@@ -350,9 +354,29 @@ export async function processAttachments(
     );
   }
 
-  // Build the augmented prompt:
-  // original message → file content sections → notes
-  const augmentedPrompt = userPrompt + fileSections.join("") + notes.join("");
+  // Build the augmented prompt.
+  //
+  // When the user has attached documents, wrap them in unambiguous delimiters
+  // and RE-ECHO the user prompt AFTER the doc block. Two reasons:
+  //   1. Long attached docs (50 000-char PDF SRSes etc.) drown a short user
+  //      directive at position 0; the model's last-token attention sees the
+  //      tail of the PDF, not the build instruction.
+  //   2. The thin "--- Attached file: <name> ---" marker was mis-classified by
+  //      MiniMax / o-series models as "a tagged file" (metadata) rather than
+  //      user-supplied build content. A loud === ATTACHED DOCUMENTS === fence
+  //      is harder to mistake.
+  //
+  // No attachments → pure passthrough, no behavior change.
+  const hasInlinedDocs = fileSections.length > 0;
+  const docFrame = hasInlinedDocs
+    ? "\n\n========== ATTACHED DOCUMENTS (use these to fulfill the user's request) =========="
+      + fileSections.join("")
+      + "\n========== END OF ATTACHED DOCUMENTS =========="
+      + "\n\n========== USER REQUEST (REPEATED — execute this against the documents above) =========="
+      + `\n${userPrompt}`
+      + "\n========== END OF USER REQUEST =========="
+    : "";
+  const augmentedPrompt = userPrompt + docFrame + notes.join("");
 
   return { augmentedPrompt, fileAttachments };
 }
