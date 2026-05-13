@@ -539,6 +539,108 @@ export async function registerCloudflareDns(
 }
 
 /**
+ * Idempotent wildcard CNAME creator. Used by the admin auto-wildcard flow.
+ *
+ *   - Looks up an existing CNAME with name=wildcardName (e.g. "*.doable.me").
+ *   - If absent, POSTs a new CNAME pointing at <tunnelId>.cfargotunnel.com.
+ *   - If present with the wrong target, PATCHes it to the correct one.
+ *
+ * Returns `{created, updated, hostname, target}` so callers can surface
+ * whether they actually changed Cloudflare state or just reconfirmed it.
+ *
+ * Requires env vars: CF_API_TOKEN, CF_ZONE_ID.
+ */
+export async function ensureWildcardCname(
+  tunnelId: string,
+  wildcardName: string,
+): Promise<{ created: boolean; updated: boolean; hostname: string; target: string }> {
+  const apiToken = process.env.CF_API_TOKEN;
+  const zoneId = process.env.CF_ZONE_ID;
+  if (!apiToken || !zoneId) {
+    throw new Error("CF_API_TOKEN and CF_ZONE_ID are required for wildcard CNAME creation");
+  }
+
+  const target = `${tunnelId}.cfargotunnel.com`;
+  const base = `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`;
+  const headers = {
+    Authorization: `Bearer ${apiToken}`,
+    "Content-Type": "application/json",
+  };
+
+  // Cloudflare's record-name index is case-insensitive but stores the literal
+  // input. Encode the asterisk so the URL is unambiguous.
+  const search = await fetch(
+    `${base}?type=CNAME&name=${encodeURIComponent(wildcardName)}`,
+    { headers },
+  );
+  if (!search.ok) {
+    throw new Error(`CF API GET failed (${search.status}): ${await search.text()}`);
+  }
+  const searchData = (await search.json()) as { result?: { id: string; content: string }[] };
+  const existing = searchData.result?.[0];
+
+  if (existing) {
+    if (existing.content === target) {
+      return { created: false, updated: false, hostname: wildcardName, target };
+    }
+    const resp = await fetch(`${base}/${existing.id}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ content: target, proxied: true }),
+    });
+    if (!resp.ok) {
+      throw new Error(`CF API PATCH failed (${resp.status}): ${await resp.text()}`);
+    }
+    return { created: false, updated: true, hostname: wildcardName, target };
+  }
+
+  const resp = await fetch(base, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      type: "CNAME",
+      name: wildcardName,
+      content: target,
+      proxied: true,
+      ttl: 1,
+    }),
+  });
+  if (!resp.ok) {
+    throw new Error(`CF API POST failed (${resp.status}): ${await resp.text()}`);
+  }
+  return { created: true, updated: false, hostname: wildcardName, target };
+}
+
+/**
+ * Look up the currently-configured wildcard CNAME for a given base, if any.
+ * Used by the diagnostics endpoint so the admin panel can show "wildcard
+ * already exists pointing at <target>" without forcing a write.
+ */
+export async function lookupWildcardCname(
+  wildcardName: string,
+): Promise<{ exists: boolean; target: string | null }> {
+  const apiToken = process.env.CF_API_TOKEN;
+  const zoneId = process.env.CF_ZONE_ID;
+  if (!apiToken || !zoneId) return { exists: false, target: null };
+
+  const base = `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`;
+  const headers = { Authorization: `Bearer ${apiToken}` };
+  try {
+    const resp = await fetch(
+      `${base}?type=CNAME&name=${encodeURIComponent(wildcardName)}`,
+      { headers },
+    );
+    if (!resp.ok) return { exists: false, target: null };
+    const data = (await resp.json()) as { result?: { content: string }[] };
+    const existing = data.result?.[0];
+    if (!existing) return { exists: false, target: null };
+    return { exists: true, target: existing.content };
+  } catch {
+    return { exists: false, target: null };
+  }
+}
+
+/**
  * Inverse of {@link registerCloudflareDns}: deletes the per-publish CNAME so
  * the published hostname stops resolving. Silently no-ops when the record is
  * absent so unpublish is idempotent (repeated calls don't error).

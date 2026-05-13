@@ -10,6 +10,8 @@ import {
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { WORKSPACE_PLANS, WORKSPACE_ROLES } from "@doable/shared";
+import { getZoneInfo } from "../lib/cloudflare-zone-info.js";
+import { ensureWildcardCname, lookupWildcardCname } from "../deploy/adapters/doable-cloud.js";
 
 const featureFlags = featureFlagQueries(sql);
 const platformSettings = platformSettingQueries(sql);
@@ -127,6 +129,136 @@ adminFeatureRoutes.put("/dns-mode", async (c) => {
     );
   }
   return c.json({ mode: parsed.data.mode });
+});
+
+// ─── DNS Auto-wildcard Diagnostics & Setup ─────────────────
+// GET  /admin/dns-mode/diagnostics  → zone capability + canAutoSetup
+// POST /admin/dns-mode/auto-wildcard → create wildcard CNAME + persist mode
+
+interface DnsDiagnostics {
+  zoneName: string;
+  plan: string;
+  hasAcm: boolean;
+  publishDomain: string;
+  domainDepth: number;
+  recommendedWildcard: string;
+  existingWildcard: { hostname: string; target: string } | null;
+  canAutoSetup: boolean;
+  reason: "ok" | "no-cf-creds" | "no-tunnel-id" | "no-publish-domain" | "free-plan-multilevel" | "zone-lookup-failed";
+  message: string;
+  multiServerNote: string;
+}
+
+const MULTI_SERVER_NOTE =
+  "A *.<domain> CNAME points to exactly one tunnel — running multiple doable servers on the same domain requires Cloudflare Advanced Certificate Manager so each environment can have its own multi-level wildcard (e.g. *.staging.example.com and *.prod.example.com).";
+
+function computeDnsDiagnostics(
+  zone: Awaited<ReturnType<typeof getZoneInfo>>,
+  existing: Awaited<ReturnType<typeof lookupWildcardCname>>,
+): DnsDiagnostics {
+  const publishDomain = process.env.DOABLE_DOMAIN ?? "";
+  const tunnelId = process.env.CLOUDFLARED_TUNNEL_ID ?? "";
+  const domainDepth = publishDomain ? publishDomain.split(".").length : 0;
+  const recommendedWildcard = publishDomain ? `*.${publishDomain}` : "";
+
+  let reason: DnsDiagnostics["reason"] = "ok";
+  let message = "Ready to auto-configure a wildcard CNAME for this zone.";
+  let canAutoSetup = true;
+
+  if (!publishDomain) {
+    canAutoSetup = false;
+    reason = "no-publish-domain";
+    message = "DOABLE_DOMAIN is not set; cannot determine the wildcard to create.";
+  } else if (!zone.acmReady) {
+    canAutoSetup = false;
+    reason = zone.error?.includes("not set") ? "no-cf-creds" : "zone-lookup-failed";
+    message = zone.error ?? "Cloudflare zone lookup failed.";
+  } else if (!tunnelId) {
+    canAutoSetup = false;
+    reason = "no-tunnel-id";
+    message = "CLOUDFLARED_TUNNEL_ID is not set. Run setup-server.sh after `cloudflared tunnel login` to provision a tunnel.";
+  } else if (domainDepth > 2 && !zone.hasAcm) {
+    // Publish domain like "staging.doable.me" needs *.staging.doable.me which
+    // Universal SSL does not cover. Require ACM before we offer auto-setup.
+    canAutoSetup = false;
+    reason = "free-plan-multilevel";
+    message = `Publish domain ${publishDomain} is multi-level. Free Universal SSL only covers <zone> and *.<zone>; multi-level wildcards (${recommendedWildcard}) require Cloudflare Advanced Certificate Manager (ACM) on this zone. Enable ACM in the Cloudflare dashboard (SSL/TLS → Edge Certificates), then return here to auto-configure.`;
+  }
+
+  return {
+    zoneName: zone.zoneName,
+    plan: zone.plan,
+    hasAcm: zone.hasAcm,
+    publishDomain,
+    domainDepth,
+    recommendedWildcard,
+    existingWildcard: existing.exists
+      ? { hostname: recommendedWildcard, target: existing.target ?? "" }
+      : null,
+    canAutoSetup,
+    reason,
+    message,
+    multiServerNote: MULTI_SERVER_NOTE,
+  };
+}
+
+adminFeatureRoutes.get("/dns-mode/diagnostics", async (c) => {
+  const zone = await getZoneInfo();
+  const publishDomain = process.env.DOABLE_DOMAIN ?? "";
+  const existing = publishDomain
+    ? await lookupWildcardCname(`*.${publishDomain}`)
+    : { exists: false, target: null as string | null };
+  return c.json(computeDnsDiagnostics(zone, existing));
+});
+
+adminFeatureRoutes.post("/dns-mode/auto-wildcard", async (c) => {
+  const zone = await getZoneInfo();
+  const publishDomain = process.env.DOABLE_DOMAIN ?? "";
+  const existing = publishDomain
+    ? await lookupWildcardCname(`*.${publishDomain}`)
+    : { exists: false, target: null as string | null };
+  const diagnostics = computeDnsDiagnostics(zone, existing);
+
+  if (!diagnostics.canAutoSetup) {
+    return c.json(
+      { error: diagnostics.message, reason: diagnostics.reason, diagnostics },
+      400,
+    );
+  }
+
+  const tunnelId = process.env.CLOUDFLARED_TUNNEL_ID;
+  if (!tunnelId) {
+    // Defensive: diagnostics should already have flagged this.
+    return c.json({ error: "CLOUDFLARED_TUNNEL_ID missing", reason: "no-tunnel-id" }, 400);
+  }
+
+  let cnameResult: Awaited<ReturnType<typeof ensureWildcardCname>>;
+  try {
+    cnameResult = await ensureWildcardCname(tunnelId, diagnostics.recommendedWildcard);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Failed to create wildcard CNAME: ${msg}` }, 502);
+  }
+
+  const userId = c.get("userId");
+  try {
+    await platformSettings.set(PLATFORM_SETTING_KEYS.DNS_MODE, "wildcard", userId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      { error: "Wildcard CNAME created but failed to persist DNS mode. Has migration 081 been applied?", detail: msg },
+      503,
+    );
+  }
+
+  return c.json({
+    mode: "wildcard" as const,
+    wildcardHostname: cnameResult.hostname,
+    target: cnameResult.target,
+    created: cnameResult.created,
+    updated: cnameResult.updated,
+    diagnostics,
+  });
 });
 
 // ─── User Overrides ────────────────────────────────────────

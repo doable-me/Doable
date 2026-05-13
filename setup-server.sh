@@ -981,6 +981,66 @@ ingress:
 CFGEOF
 
   ok "Tunnel config written"
+
+  # ─── Auto-wildcard DNS setup (DNS_MODE=wildcard) ─────────────
+  # Default per_publish keeps current behaviour (deploy pipeline creates
+  # one CNAME per publish). DNS_MODE=wildcard creates *.${DOMAIN} CNAME
+  # once, persists dns_mode='wildcard' in platform_settings so the
+  # pipeline skips per-publish CF API calls, and warns when the chosen
+  # publish domain is multi-level (Universal SSL only covers one level
+  # deep — multi-level needs Advanced Certificate Manager).
+  DNS_MODE="${DNS_MODE:-per_publish}"
+  if [[ "$DNS_MODE" == "wildcard" ]]; then
+    if [[ -z "$CF_API_TOKEN" || -z "$CF_ZONE_ID" || -z "$TUNNEL_ID" ]]; then
+      warn "DNS_MODE=wildcard requested but CF_API_TOKEN / CF_ZONE_ID / TUNNEL_ID not all set — skipping wildcard auto-setup."
+    else
+      # Warn but don't abort on multi-level publish domain. Universal SSL
+      # covers <zone> + *.<zone>; *.staging.doable.me needs ACM.
+      DOMAIN_LABEL_COUNT=$(echo "$DOMAIN" | tr '.' '\n' | wc -l)
+      if [[ "$DOMAIN_LABEL_COUNT" -gt 2 ]]; then
+        warn "DOMAIN=${DOMAIN} is multi-level. *.${DOMAIN} is NOT covered by free Universal SSL — enable Cloudflare Advanced Certificate Manager on the zone, or browsers will fail with SSL_VERSION_OR_CIPHER_MISMATCH on published sites."
+      fi
+
+      WILDCARD_NAME="*.${DOMAIN}"
+      WILDCARD_TARGET="${TUNNEL_ID}.cfargotunnel.com"
+      CF_API="https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records"
+      # Look up existing CNAME (idempotent re-run safety). asterisk URL-encoded.
+      EXISTING_ID=$(curl -fsS -H "Authorization: Bearer ${CF_API_TOKEN}" \
+        "${CF_API}?type=CNAME&name=%2A.${DOMAIN}" 2>/dev/null \
+        | python3 -c "import sys,json; r=json.load(sys.stdin).get('result',[]); print(r[0]['id'] if r else '')" 2>/dev/null || true)
+      if [[ -n "$EXISTING_ID" ]]; then
+        EXISTING_TARGET=$(curl -fsS -H "Authorization: Bearer ${CF_API_TOKEN}" \
+          "${CF_API}/${EXISTING_ID}" 2>/dev/null \
+          | python3 -c "import sys,json; print(json.load(sys.stdin).get('result',{}).get('content',''))" 2>/dev/null || true)
+        if [[ "$EXISTING_TARGET" == "$WILDCARD_TARGET" ]]; then
+          ok "Wildcard CNAME ${WILDCARD_NAME} already points to ${WILDCARD_TARGET}"
+        else
+          curl -fsS -X PATCH -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${CF_API}/${EXISTING_ID}" \
+            -d "{\"content\":\"${WILDCARD_TARGET}\",\"proxied\":true}" >/dev/null \
+            && ok "Updated wildcard CNAME ${WILDCARD_NAME} → ${WILDCARD_TARGET}" \
+            || warn "Failed to update wildcard CNAME via CF API"
+        fi
+      else
+        curl -fsS -X POST -H "Authorization: Bearer ${CF_API_TOKEN}" \
+          -H "Content-Type: application/json" \
+          "${CF_API}" \
+          -d "{\"type\":\"CNAME\",\"name\":\"${WILDCARD_NAME}\",\"content\":\"${WILDCARD_TARGET}\",\"proxied\":true,\"ttl\":1}" >/dev/null \
+          && ok "Created wildcard CNAME ${WILDCARD_NAME} → ${WILDCARD_TARGET}" \
+          || warn "Failed to create wildcard CNAME via CF API"
+      fi
+
+      # Persist dns_mode='wildcard' in platform_settings so the deploy
+      # pipeline skips per-publish CF API calls. Migration 081 already
+      # ran in Step 9. ON CONFLICT makes this idempotent.
+      PGPASSWORD="${DB_PASS}" psql -h localhost -U doable -d doable -c \
+        "INSERT INTO platform_settings (key, value) VALUES ('dns_mode', 'wildcard') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();" \
+        >/dev/null 2>&1 \
+        && ok "Persisted dns_mode='wildcard' in platform_settings" \
+        || warn "Failed to persist dns_mode='wildcard' — admin UI can still toggle it later"
+    fi
+  fi
 else
   echo "[SKIP-CONTAINER] Step 10/13: Cloudflare Tunnel (host operator runs cloudflared on Docker host or via reverse proxy in front of container)"
   TUNNEL_NAME="container-mode"
@@ -1268,8 +1328,13 @@ if [ "$CONTAINER_MODE" != "1" ]; then
   if [ -f /root/.cloudflared/config.yml ] && [ -f /etc/cloudflared/config.yml ]; then
     rm -f /etc/cloudflared/config.yml
   fi
-  cloudflared service install 2>/dev/null || \
-    cloudflared --config /root/.cloudflared/config.yml service install 2>/dev/null || \
+  # Log stderr instead of /dev/null so the next time cloudflared service
+  # install regresses we have a forensic trail. The fallback chain still
+  # ends in `|| true` so a missing systemd target later in this step
+  # (cloudflared.service) is what surfaces the failure to the operator.
+  CF_INSTALL_LOG=/var/log/doable-setup-cloudflared.log
+  cloudflared service install 2>>"$CF_INSTALL_LOG" || \
+    cloudflared --config /root/.cloudflared/config.yml service install 2>>"$CF_INSTALL_LOG" || \
     true
 fi
 
@@ -1386,8 +1451,7 @@ WRAPPER
   cat > /etc/polkit-1/rules.d/50-doable-systemd.rules <<'POLKIT'
 polkit.addRule(function(action, subject) {
     if ((action.id == "org.freedesktop.systemd1.manage-units" ||
-         action.id == "org.freedesktop.systemd1.manage-unit-files" ||
-         action.id == "org.freedesktop.systemd1.reload-daemon") &&
+         action.id == "org.freedesktop.systemd1.manage-unit-files") &&
         subject.user == "doable") {
         return polkit.Result.YES;
     }
