@@ -373,11 +373,22 @@ app.onError((err, c) => {
     return c.json({ error: "Invalid JSON in request body" }, 400);
   }
   console.error(`[ERROR] ${c.req.method} ${c.req.path}:`, err);
+  // Sanitize 5xx envelopes: never echo Postgres constraint names, query
+  // fragments, or stack frames to API clients. The raw error is logged
+  // above for operators. In development we still surface a generic
+  // hint (the JS error class name) to help local debugging without
+  // leaking schema details like `users_email_key`.
+  const errAny = err as { code?: unknown } | null;
+  const isPgError =
+    typeof errAny?.code === "string" && /^[0-9A-Z]{5}$/.test(errAny.code);
+  const devHint =
+    process.env.NODE_ENV === "development" && !isPgError
+      ? err.constructor?.name ?? "Error"
+      : undefined;
   return c.json(
     {
       error: "Internal Server Error",
-      message:
-        process.env.NODE_ENV === "development" ? err.message : undefined,
+      message: devHint,
     },
     500
   );
