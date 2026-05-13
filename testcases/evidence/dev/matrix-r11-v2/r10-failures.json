@@ -1,0 +1,219 @@
+[
+  {
+    "group": "auth",
+    "route": "/auth/password-reset",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "empty",
+    "expect": [
+      400,
+      401,
+      415,
+      422,
+      429
+    ],
+    "description": "POST /auth/password-reset as qa-owner (empty payload)",
+    "id": "A00105",
+    "actual": 404,
+    "durationMs": 375,
+    "bodyHead": "{\"error\":\"Not Found\",\"path\":\"/auth/password-reset\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/password-reset",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "invalid-shape",
+    "expect": [
+      400,
+      401,
+      415,
+      422,
+      429
+    ],
+    "description": "POST /auth/password-reset as qa-owner (invalid-shape payload)",
+    "id": "A00106",
+    "actual": 404,
+    "durationMs": 247,
+    "bodyHead": "{\"error\":\"Not Found\",\"path\":\"/auth/password-reset\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/password-reset",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "junk",
+    "expect": [
+      400,
+      401,
+      415,
+      422,
+      429
+    ],
+    "description": "POST /auth/password-reset as qa-owner (junk payload)",
+    "id": "A00107",
+    "actual": 404,
+    "durationMs": 317,
+    "bodyHead": "{\"error\":\"Not Found\",\"path\":\"/auth/password-reset\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/password-reset",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "oversized",
+    "expect": [
+      400,
+      401,
+      413,
+      415,
+      422,
+      429,
+      500
+    ],
+    "description": "POST /auth/password-reset as qa-owner (oversized payload)",
+    "id": "A00108",
+    "actual": 404,
+    "durationMs": 535,
+    "bodyHead": "{\"error\":\"Not Found\",\"path\":\"/auth/password-reset\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/mfa/enroll/start",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "empty",
+    "expect": [
+      200,
+      400,
+      409
+    ],
+    "description": "POST /auth/mfa/enroll/start as qa-owner",
+    "id": "A00126",
+    "actual": 429,
+    "durationMs": 309,
+    "bodyHead": "{\"error\":\"Too many requests, please try again later.\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/mfa/enroll/start",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "empty",
+    "expect": [
+      400,
+      401,
+      415,
+      422
+    ],
+    "description": "POST /auth/mfa/enroll/start as qa-owner (empty payload)",
+    "id": "A00133",
+    "actual": 500,
+    "durationMs": 241,
+    "bodyHead": "{\"error\":\"Internal Server Error\",\"message\":\"[envelope-crypto] DOABLE_KEK is not set. Provide a base64-encoded 32-byte key in the API process env.\"}",
+    "classification": "SERVER-5XX"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/mfa/enroll/start",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "invalid-shape",
+    "expect": [
+      400,
+      401,
+      415,
+      422
+    ],
+    "description": "POST /auth/mfa/enroll/start as qa-owner (invalid-shape payload)",
+    "id": "A00134",
+    "actual": 429,
+    "durationMs": 286,
+    "bodyHead": "{\"error\":\"Too many requests, please try again later.\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/mfa/enroll/start",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "junk",
+    "expect": [
+      400,
+      401,
+      415,
+      422
+    ],
+    "description": "POST /auth/mfa/enroll/start as qa-owner (junk payload)",
+    "id": "A00135",
+    "actual": 500,
+    "durationMs": 239,
+    "bodyHead": "{\"error\":\"Internal Server Error\",\"message\":\"[envelope-crypto] DOABLE_KEK is not set. Provide a base64-encoded 32-byte key in the API process env.\"}",
+    "classification": "SERVER-5XX"
+  },
+  {
+    "group": "rls",
+    "route": "/projects/22222222-2222-2222-2222-222222222222/files",
+    "verb": "GET",
+    "auth": "qa-owner",
+    "payloadClass": "none",
+    "expect": [
+      400,
+      401,
+      403,
+      404
+    ],
+    "description": "GET /projects/22222222-2222-2222-2222-222222222222/files (rls negative) as qa-owner",
+    "id": "A00404",
+    "actual": 200,
+    "durationMs": 234,
+    "bodyHead": "{\"data\":[]}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/password-reset",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "empty",
+    "expect": [
+      400,
+      401,
+      415,
+      422,
+      429,
+      500
+    ],
+    "description": "POST /auth/password-reset (no Content-Type) as qa-owner",
+    "id": "A00420",
+    "actual": 404,
+    "durationMs": 283,
+    "bodyHead": "{\"error\":\"Not Found\",\"path\":\"/auth/password-reset\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/mfa/enroll/start",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "empty",
+    "expect": [
+      400,
+      401,
+      415,
+      422,
+      500
+    ],
+    "description": "POST /auth/mfa/enroll/start (no Content-Type) as qa-owner",
+    "id": "A00424",
+    "actual": 429,
+    "durationMs": 298,
+    "bodyHead": "{\"error\":\"Too many requests, please try again later.\"}",
+    "classification": "UNEXPECTED-STATUS"
+  }
+]

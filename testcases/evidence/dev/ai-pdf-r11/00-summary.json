@@ -1,0 +1,28 @@
+{
+  "project_id": "8db9082b-2df1-4cff-9786-a14b10906aa3",
+  "project_name": "R11 PDF Attach Test 2026-05-13T19-51-51",
+  "framework": "vite-react",
+  "pdf_size_bytes": 2370740,
+  "pdf_b64_size_chars": 3160988,
+  "T_project_create_ms": 1104,
+  "T_chat_post_status": 200,
+  "T_first_event_ms": 3249,
+  "t_kinds_first_ms": {
+    "T_thinking_first_ms": 3249,
+    "T_status_first_ms": 3249,
+    "T_keep_alive_first_ms": 13243,
+    "T_tool_call_first_ms": 24301,
+    "T_tool_result_first_ms": 24365,
+    "T_thinking_block_end_first_ms": 24381,
+    "T_done_first_ms": 44206,
+    "T_version_created_first_ms": 45780,
+    "T_usage_first_ms": 45794,
+    "T_done-sentinel_first_ms": 45794
+  },
+  "n_sse_events": 129,
+  "T_total_ms": 45794,
+  "augmented_prompt_length": 0,
+  "pdf_text_detected_in_prompt": false,
+  "app_tsx_length": 2556,
+  "app_tsx_snippet": "import { useState, useEffect } from \"react\";\n\nconst phrases = [\n  \"Dream it. Build it.\",\n  \"Ideas become reality here.\",\n  \"Your canvas awaits.\",\n  \"Let's create something amazing.\",\n  \"From zero to wow.\",\n];\n\nfunction DoableLogo({ className = \"\" }: { className?: string }) {\n  return (\n    <svg viewBox=\"0 0 40 40\" fill=\"none\" className={className}>\n      <rect width=\"40\" height=\"40\" rx=\"10\" className=\"fill-[#F97316]\">\n        <animate attributeName=\"rx\" values=\"10;14;10\" dur=\"3s\" repeatCount=\"indefinite\" />\n      </rect>\n      <text x=\"50%\" y=\"54%\" dominantBaseline=\"middle\" textAnchor=\"middle\" className=\"fill-white\" style={{ fontSize: \"22px\", fontWeight: 700, fontFamily: \"system-ui\" }}>\n        D\n      </text>\n    </svg>\n  );\n}\n\nexport default function App() {\n  const [phraseIndex, setPhraseIndex] = useState(0);\n  const [opacity, setOpacity] = useState(1);\n\n  useEffect(() => {\n    const interval = setInterval(() => {\n      setOpacity(0);\n      setTimeout(() => {\n        setPhraseIndex((i) => (i + 1) % phrases.length);\n        setOpacity(1);\n      }, 400);\n    }, 3500);\n    return () => clearInterval(interval);\n  }, []);\n\n  return (\n    <div className=\"flex min-h-screen items-center"
+}

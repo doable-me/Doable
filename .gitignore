@@ -105,3 +105,6 @@ testcases/99-runlog/**/*.start
 
 # OMC plugin per-dir state
 .omc/
+
+# R10 QA evidence tokens (contains JWTs)
+testcases/evidence/dev/_tokens.json
