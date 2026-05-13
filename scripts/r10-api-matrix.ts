@@ -73,13 +73,24 @@ interface Result extends Assertion {
 
 // ---------- payload shapes ----------
 const PAYLOADS = {
-  none:           undefined,
-  empty:          "{}",
-  "valid-shape":  null,             // route-specific, filled in below
   "invalid-shape": '{"__bad":1}',
-  oversized:      JSON.stringify({ x: "A".repeat(1024 * 1024) }), // 1 MB
-  junk:           "@@@not-json@@@",
+  oversized:       JSON.stringify({ x: "A".repeat(1024 * 1024) }), // 1 MB
+  junk:            "@@@not-json@@@",
 } as const;
+
+// Auth routes that share IP-scoped rate limiters (5/hour register, 10/15min
+// login, 3/hour forgot-password). Used in negative-payload + header-fuzz
+// generators so 429 is accepted under load.
+const RATE_LIMITED_PATHS = new Set([
+  "/auth/register",
+  "/auth/login",
+  "/auth/forgot-password",
+  "/auth/password-reset",
+  "/auth/refresh",
+]);
+
+// Routes intentionally returning 200 even for invalid auth/payload.
+const IDEMPOTENT_PATHS = new Set(["/auth/logout"]);
 
 // ---------- route catalog ----------
 //
@@ -265,12 +276,8 @@ function buildAssertions(): Assertion[] {
     // 2. negative payload variants for write verbs (anon + qa-owner)
     if (r.verb !== "GET" && r.verb !== "DELETE") {
       const writeRoles: AuthRole[] = ["anon", "qa-owner"];
-      // Rate-limited public auth routes — accept 429 as a valid response under fuzz load
-      const rateLimited = r.path === "/auth/register" || r.path === "/auth/login"
-        || r.path === "/auth/forgot-password" || r.path === "/auth/password-reset"
-        || r.path === "/auth/refresh";
-      // Logout is intentionally idempotent — 200 even for invalid payloads
-      const idempotent = r.path === "/auth/logout";
+      const rateLimited = RATE_LIMITED_PATHS.has(r.path);
+      const idempotent = IDEMPOTENT_PATHS.has(r.path);
       for (const role of writeRoles) {
         for (const pc of ["empty", "invalid-shape", "junk", "oversized"] as const) {
           let expect: number[];
@@ -366,17 +373,12 @@ function buildAssertions(): Assertion[] {
     }
   }
 
-  // 6. method-fuzz: try OPTIONS preflight on every route (verb=OPTIONS as POST)
-  //    — skipped to keep matrix grounded in declared verbs; covered by wrong-verb.
-
-  // 7. header-fuzz on a sample of write routes: send POST without Content-Type
+  // 6. header-fuzz on a sample of write routes: send POST without Content-Type
   const sampleHeaderFuzz = ROUTES.filter(r => r.verb !== "GET" && r.verb !== "DELETE").slice(0, 8);
   for (const r of sampleHeaderFuzz) {
     if (ROUTES_ONLY.length && !ROUTES_ONLY.includes(r.group)) continue;
-    const isRateLimited = r.path === "/auth/register" || r.path === "/auth/login"
-      || r.path === "/auth/forgot-password" || r.path === "/auth/password-reset"
-      || r.path === "/auth/refresh";
-    const isIdempotent = r.path === "/auth/logout";
+    const isRateLimited = RATE_LIMITED_PATHS.has(r.path);
+    const isIdempotent = IDEMPOTENT_PATHS.has(r.path);
     for (const role of ["anon", "qa-owner"] as const) {
       let expect: number[];
       if (isIdempotent) {
@@ -470,26 +472,18 @@ async function runAssertion(a: Assertion, tokens: Partial<Record<AuthRole, strin
     headers["Authorization"] = `Bearer ${tk}`;
   }
 
-  // Body construction
   let body: BodyInit | undefined;
-  let setCT = true;
   if (a.verb !== "GET" && a.verb !== "DELETE") {
-    if (a.payloadClass === "none") {
-      // skip
-    } else if (a.payloadClass === "empty") {
+    if (a.payloadClass === "empty") {
       body = "{}";
     } else if (a.payloadClass === "valid-shape") {
       const route = ROUTES.find(r => r.path === a.route && r.verb === a.verb);
       body = JSON.stringify(route?.validBody ?? {});
-    } else if (a.payloadClass === "invalid-shape") {
-      body = PAYLOADS["invalid-shape"];
-    } else if (a.payloadClass === "oversized") {
-      body = PAYLOADS.oversized;
-    } else if (a.payloadClass === "junk") {
-      body = PAYLOADS.junk;
+    } else if (a.payloadClass === "invalid-shape" || a.payloadClass === "oversized" || a.payloadClass === "junk") {
+      body = PAYLOADS[a.payloadClass];
     }
     // header-fuzz: description ending in "(no Content-Type)" → drop CT
-    if (a.description.includes("(no Content-Type)")) setCT = false;
+    const setCT = !a.description.includes("(no Content-Type)");
     if (setCT) headers["Content-Type"] = "application/json";
   }
 
@@ -528,8 +522,7 @@ async function runAssertion(a: Assertion, tokens: Partial<Record<AuthRole, strin
 
 function classify(status: number, expected: number[]): Classification {
   if (expected.includes(status)) {
-    // Best-fit label
-    if (status === 401 && expected.includes(401)) return status >= 200 && status < 300 ? "PASS" : "EXPECTED-401";
+    if (status === 401) return "EXPECTED-401";
     if (status === 403) return "EXPECTED-403";
     if (status === 400) return "EXPECTED-400";
     if (status === 404) return "EXPECTED-404";
