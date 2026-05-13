@@ -74,26 +74,34 @@ export async function getEffectiveCfApiToken(): Promise<string | undefined> {
 export async function getCfApiTokenSource(): Promise<{
   source: "platform_settings" | "env" | "none";
   tokenSuffix: string;
+  /** True when platform_settings had a non-empty value that failed to
+   * decrypt (e.g. KEK mismatch after backup restore). The panel uses this
+   * to surface a "re-paste" prompt instead of silently treating the
+   * resolver's env-fallback as the operator's intent. */
+  decryptFailed: boolean;
 }> {
+  let decryptFailed = false;
   try {
     const stored = await platformSettings.get(PLATFORM_SETTING_KEYS.CF_API_TOKEN);
     if (stored && stored.length > 0) {
       try {
         const value = decryptPlatformValue(stored);
         if (value.length > 0) {
-          return { source: "platform_settings", tokenSuffix: value.slice(-4) };
+          return { source: "platform_settings", tokenSuffix: value.slice(-4), decryptFailed: false };
         }
       } catch {
-        // Decrypt failed — pretend the DB row is unset; the resolver also
-        // falls back to env in this case.
+        // Stored ciphertext exists but won't decrypt under the current
+        // KEK. Flag it so the panel can prompt for re-paste; the resolver
+        // continues to env so DNS ops keep working.
+        decryptFailed = true;
       }
     }
   } catch {
-    // Same fall-through.
+    // platform_settings table missing — leave decryptFailed=false.
   }
   const envValue = process.env.CF_API_TOKEN;
   if (envValue && envValue.length > 0) {
-    return { source: "env", tokenSuffix: envValue.slice(-4) };
+    return { source: "env", tokenSuffix: envValue.slice(-4), decryptFailed };
   }
-  return { source: "none", tokenSuffix: "" };
+  return { source: "none", tokenSuffix: "", decryptFailed };
 }

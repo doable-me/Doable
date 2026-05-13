@@ -8,6 +8,7 @@ interface CfTokenStatus {
   source: "platform_settings" | "env" | "none";
   tokenSuffix: string;
   hasSslScope: boolean;
+  decryptFailed: boolean;
 }
 
 type DnsMode = "per_publish" | "wildcard";
@@ -135,6 +136,9 @@ export function DnsConfigPanel() {
         }
         if (tokenRes.status === "fulfilled") {
           setCfTokenStatus(tokenRes.value);
+          // Auto-expand the section when the stored ciphertext can't be
+          // decrypted — operator needs to re-paste or remove the stale row.
+          if (tokenRes.value.decryptFailed) setTokenSectionOpen(true);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -147,6 +151,7 @@ export function DnsConfigPanel() {
     try {
       const fresh = await apiFetch<CfTokenStatus>("/admin/dns-mode/cf-token");
       setCfTokenStatus(fresh);
+      if (fresh.decryptFailed) setTokenSectionOpen(true);
     } catch {
       // non-fatal — leave whatever's there
     }
@@ -563,6 +568,17 @@ export function DnsConfigPanel() {
 
         {tokenSectionOpen && (
           <div className="mt-2 space-y-2">
+            {cfTokenStatus?.decryptFailed && (
+              <p className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-400 leading-relaxed">
+                <AlertCircle className="h-3.5 w-3.5 mt-px shrink-0" />
+                <span>
+                  <span className="font-medium">KEK mismatch.</span>{" "}
+                  The stored token can&apos;t be decrypted under the current{" "}
+                  <code className="font-mono">DOABLE_KEK</code> (likely a backup restore with a stale{" "}
+                  <code className="font-mono">.env</code>). The cert.pem fallback is keeping DNS ops working, but ACM detection is degraded. Re-paste the token below, or click <span className="font-medium">Remove override</span> to drop the stale row.
+                </span>
+              </p>
+            )}
             <p className="text-[11px] text-muted-foreground leading-relaxed">
               <span className="font-medium text-foreground">Strictly optional.</span>{" "}
               DNS auto-configure, wildcard create/delete, and per-publish CNAMEs all work fine with the cert.pem token from{" "}
@@ -608,7 +624,7 @@ export function DnsConfigPanel() {
                 {tokenSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                 Verify & save
               </button>
-              {cfTokenStatus?.source === "platform_settings" && (
+              {(cfTokenStatus?.source === "platform_settings" || cfTokenStatus?.decryptFailed) && (
                 <button
                   type="button"
                   onClick={removeCfToken}

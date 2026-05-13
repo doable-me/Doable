@@ -511,24 +511,20 @@ adminFeatureRoutes.delete("/dns-mode/cf-token", async (c) => {
 });
 
 adminFeatureRoutes.get("/dns-mode/cf-token", async (c) => {
-  const { source, tokenSuffix } = await getCfApiTokenSource();
-  // Probe SSL scope so the panel can show whether ACM detection currently works.
+  const { source, tokenSuffix, decryptFailed } = await getCfApiTokenSource();
+  // hasSslScope is derived from acmStatus — if getZoneInfo can probe
+  // certificate_packs, the token has SSL:Read.
   let hasSslScope = false;
   const zoneId = process.env.CF_ZONE_ID;
   if (source !== "none" && zoneId) {
     try {
-      // The effective token isn't returned here, but we can re-derive its
-      // "works for ACM?" answer by reading the latest /diagnostics path:
-      // if zone lookup succeeds AND certificate_packs probe also succeeds,
-      // the token has SSL:Read. We can't directly use the resolver's value
-      // without re-fetching it; reuse getZoneInfo's logic by re-running.
       const zone = await getZoneInfo();
       hasSslScope = zone.acmStatus !== "undetectable";
     } catch {
       hasSslScope = false;
     }
   }
-  return c.json({ source, tokenSuffix, hasSslScope });
+  return c.json({ source, tokenSuffix, hasSslScope, decryptFailed });
 });
 
 // ─── User Overrides ────────────────────────────────────────
