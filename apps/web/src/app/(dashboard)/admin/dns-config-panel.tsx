@@ -41,6 +41,10 @@ interface DnsDiagnostics {
   publishDomain: string;
   domainDepth: number;
   recommendedWildcard: string;
+  /** Hostname the operator actually persisted via re-verify (e.g.
+   * "*.dev.doable.me"). Null when nothing's been persisted — the panel
+   * then falls back to recommendedWildcard for pre-fill. */
+  configuredWildcard: string | null;
   existingWildcard: { hostname: string; target: string } | null;
   allWildcards: ZoneWildcard[];
   canAutoSetup: boolean;
@@ -128,9 +132,13 @@ export function DnsConfigPanel() {
         }
         if (diagRes.status === "fulfilled") {
           setDiagnostics(diagRes.value);
-          // Pre-fill the wildcard input with the server-recommended value
-          // so users on free + apex still get a one-click experience.
-          setWildcardHostname(diagRes.value.recommendedWildcard);
+          // Pre-fill the wildcard input with the persisted hostname if the
+          // operator has previously re-verified one (round-8 persistence);
+          // otherwise fall back to the server-recommended *.${DOABLE_DOMAIN}
+          // so first-time users on free + apex still get a one-click experience.
+          setWildcardHostname(
+            diagRes.value.configuredWildcard ?? diagRes.value.recommendedWildcard,
+          );
         } else {
           setDiagnosticsError(diagRes.reason instanceof Error ? diagRes.reason.message : "Failed to load DNS diagnostics");
         }
@@ -341,7 +349,10 @@ export function DnsConfigPanel() {
             <code className="font-mono text-foreground">{diagnostics.publishDomain || "—"}</code>
             {diagnostics.existingWildcard && (
               <span className="inline-flex items-center gap-1 text-emerald-400">
-                <CheckCircle2 className="h-3.5 w-3.5" /> {diagnostics.existingWildcard.hostname} → {diagnostics.existingWildcard.target}
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <code className="font-mono">{diagnostics.existingWildcard.hostname}</code>
+                {" → "}
+                <code className="font-mono">{diagnostics.existingWildcard.target}</code>
               </span>
             )}
           </div>

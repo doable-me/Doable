@@ -48,8 +48,9 @@ export function platformSettingQueries(sql: postgres.Sql) {
  * keys (current: dns_mode) stay plaintext so SQL inspection during
  * debugging shows the actual value.
  *
- *   - DNS_MODE       — plaintext, low sensitivity (publish routing flag)
- *   - CF_API_TOKEN   — SENSITIVE, must be encrypted at rest
+ *   - DNS_MODE              — plaintext, low sensitivity (publish routing flag)
+ *   - DNS_WILDCARD_HOSTNAME — plaintext, low sensitivity (hostname only)
+ *   - CF_API_TOKEN          — SENSITIVE, must be encrypted at rest
  */
 export const PLATFORM_SETTING_KEYS = {
   /**
@@ -66,6 +67,15 @@ export const PLATFORM_SETTING_KEYS = {
    * means Cloudflare ACM is enabled on the zone.
    */
   DNS_MODE: "dns_mode",
+  /**
+   * The actual wildcard hostname the admin configured via the /admin DNS
+   * panel (e.g. "*.doable.me" or "*.dev.doable.me"). Persisted after a
+   * successful auto-wildcard CF API write so the UI can reflect the operator's
+   * real intent on subsequent loads — distinct from `*.${DOABLE_DOMAIN}`,
+   * which is only the server's *recommendation*. Unset (or empty) means
+   * the convention-based recommendedWildcard is still the source of truth.
+   */
+  DNS_WILDCARD_HOSTNAME: "dns_wildcard_hostname",
   /**
    * Optional broader-scope Cloudflare API token, overriding the cfut_* one
    * extracted from /root/.cloudflared/cert.pem. The cert.pem token has

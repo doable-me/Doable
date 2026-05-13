@@ -159,8 +159,18 @@ interface DnsDiagnostics {
   publishDomain: string;
   domainDepth: number;
   recommendedWildcard: string;
-  /** Legacy single-hostname lookup keyed on *.${publishDomain}. Round-3 keeps
-   * it for back-compat; new callers should prefer `allWildcards`. */
+  /**
+   * The wildcard hostname the operator actually configured via the panel,
+   * persisted in platform_settings.dns_wildcard_hostname after a successful
+   * auto-wildcard write. Null when nothing has been persisted yet — in that
+   * case the panel should treat recommendedWildcard as the operator's
+   * implicit choice and existingWildcard falls back to the legacy
+   * *.${publishDomain} lookup.
+   */
+  configuredWildcard: string | null;
+  /** Single-hostname lookup result. Hostname is the configuredWildcard when
+   * set, otherwise the legacy *.${publishDomain} convention so existing
+   * deployments don't regress. */
   existingWildcard: { hostname: string; target: string } | null;
   /** All wildcard CNAMEs currently on the zone (any name starting with '*'). */
   allWildcards: ZoneWildcard[];
@@ -173,6 +183,7 @@ function computeDnsDiagnostics(
   zone: Awaited<ReturnType<typeof getZoneInfo>>,
   existing: Awaited<ReturnType<typeof lookupWildcardCname>>,
   allWildcards: ZoneWildcard[],
+  configuredWildcard: string | null,
 ): DnsDiagnostics {
   const publishDomain = process.env.DOABLE_DOMAIN ?? "";
   const tunnelId = process.env.CLOUDFLARED_TUNNEL_ID ?? "";
@@ -211,8 +222,9 @@ function computeDnsDiagnostics(
     publishDomain,
     domainDepth,
     recommendedWildcard,
+    configuredWildcard,
     existingWildcard: existing.exists
-      ? { hostname: recommendedWildcard, target: existing.target ?? "" }
+      ? { hostname: configuredWildcard ?? recommendedWildcard, target: existing.target ?? "" }
       : null,
     allWildcards,
     canAutoSetup,
@@ -221,16 +233,30 @@ function computeDnsDiagnostics(
   };
 }
 
+/** Resolve the hostname to use for the single-hostname lookup. Persisted
+ * dns_wildcard_hostname wins; falls back to the convention so deployments
+ * that pre-date round 8 still see *.${DOABLE_DOMAIN} surfaced. */
+async function resolveLookupHostname(publishDomain: string): Promise<{
+  hostname: string;
+  configured: string | null;
+}> {
+  const raw = await platformSettings.get(PLATFORM_SETTING_KEYS.DNS_WILDCARD_HOSTNAME);
+  const configured = raw && raw.startsWith("*.") ? raw : null;
+  const hostname = configured ?? (publishDomain ? `*.${publishDomain}` : "");
+  return { hostname, configured };
+}
+
 adminFeatureRoutes.get("/dns-mode/diagnostics", async (c) => {
   const zone = await getZoneInfo();
   const publishDomain = process.env.DOABLE_DOMAIN ?? "";
+  const { hostname: lookupHostname, configured } = await resolveLookupHostname(publishDomain);
   const [existing, allWildcards] = await Promise.all([
-    publishDomain
-      ? lookupWildcardCname(`*.${publishDomain}`)
+    lookupHostname
+      ? lookupWildcardCname(lookupHostname)
       : Promise.resolve({ exists: false, target: null as string | null }),
     listZoneWildcards(),
   ]);
-  return c.json(computeDnsDiagnostics(zone, existing, allWildcards));
+  return c.json(computeDnsDiagnostics(zone, existing, allWildcards, configured));
 });
 
 const autoWildcardSchema = z.object({
@@ -309,6 +335,23 @@ adminFeatureRoutes.delete("/dns-mode/wildcard", async (c) => {
       404,
     );
   }
+
+  // If the deleted wildcard matches the persisted hostname, clear the
+  // setting so /diagnostics no longer surfaces a stale "configured" value.
+  // Best-effort: a failure here doesn't turn a successful CF delete into a 500.
+  try {
+    const stored = await platformSettings.get(PLATFORM_SETTING_KEYS.DNS_WILDCARD_HOSTNAME);
+    if (stored && stored === body.hostname) {
+      const userId = c.get("userId");
+      await platformSettings.set(PLATFORM_SETTING_KEYS.DNS_WILDCARD_HOSTNAME, "", userId);
+    }
+  } catch (err) {
+    console.warn(
+      "[admin/dns-mode/wildcard] Failed to clear persisted dns_wildcard_hostname after CF delete:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   return c.json({ hostname: body.hostname, deleted: true });
 });
 
@@ -331,13 +374,14 @@ adminFeatureRoutes.post("/dns-mode/auto-wildcard", async (c) => {
 
   const zone = await getZoneInfo();
   const publishDomain = process.env.DOABLE_DOMAIN ?? "";
+  const { hostname: lookupHostname, configured } = await resolveLookupHostname(publishDomain);
   const [existing, allWildcards] = await Promise.all([
-    publishDomain
-      ? lookupWildcardCname(`*.${publishDomain}`)
+    lookupHostname
+      ? lookupWildcardCname(lookupHostname)
       : Promise.resolve({ exists: false, target: null as string | null }),
     listZoneWildcards(),
   ]);
-  const diagnostics = computeDnsDiagnostics(zone, existing, allWildcards);
+  const diagnostics = computeDnsDiagnostics(zone, existing, allWildcards, configured);
 
   // Resolve effective wildcard target. Default to the diagnostics-recommended
   // value; honor the operator's override when supplied.
@@ -393,6 +437,14 @@ adminFeatureRoutes.post("/dns-mode/auto-wildcard", async (c) => {
   const userId = c.get("userId");
   try {
     await platformSettings.set(PLATFORM_SETTING_KEYS.DNS_MODE, "wildcard", userId);
+    // Persist the hostname the operator actually configured so /diagnostics
+    // can surface it (and the panel can pre-fill the input) on reload —
+    // without this, the UI keeps showing the *.${DOABLE_DOMAIN} convention.
+    await platformSettings.set(
+      PLATFORM_SETTING_KEYS.DNS_WILDCARD_HOSTNAME,
+      cnameResult.hostname,
+      userId,
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return c.json(
