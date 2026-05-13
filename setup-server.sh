@@ -603,6 +603,30 @@ info "Step 8/13: Writing environment files..."
 # host re-runs.
 if [ -f "${INSTALL_DIR}/.env" ]; then
   ok "Reusing existing .env at ${INSTALL_DIR}/.env (secrets preserved)"
+
+  # Back-fill DOABLE_KEK on pre-R9 installs. The envelope-crypto master KEK
+  # was introduced after the bulk of secret-gen here, so older .env files
+  # exist that pre-date the line above. Without it the API throws 500 on
+  # any MFA enroll, KEK-encrypted column decrypt, or workspace DEK fetch.
+  # Rules:
+  #   - DOABLE_KEK= present and non-empty → leave alone (rotating bricks data)
+  #   - DOABLE_KEK= present but empty    → fill in + warn the operator
+  #   - line missing entirely            → append generated key
+  if grep -qE '^DOABLE_KEK=.+' "${INSTALL_DIR}/.env"; then
+    ok "DOABLE_KEK already set in existing .env (preserving)"
+  elif grep -qE '^DOABLE_KEK=$' "${INSTALL_DIR}/.env"; then
+    NEW_KEK=$(openssl rand -base64 32)
+    sed -i "s|^DOABLE_KEK=$|DOABLE_KEK=${NEW_KEK}|" "${INSTALL_DIR}/.env"
+    warn "DOABLE_KEK was present but empty in ${INSTALL_DIR}/.env — filled with a freshly generated 32-byte base64 key. If any encrypted rows exist they may be unreadable."
+  else
+    NEW_KEK=$(openssl rand -base64 32)
+    {
+      printf '\n# Master Key-Encryption-Key for envelope crypto (per-workspace DEKs + MFA).\n'
+      printf '# Back-filled by setup-server.sh idempotent re-run — DO NOT rotate after first encrypted write.\n'
+      printf 'DOABLE_KEK=%s\n' "${NEW_KEK}"
+    } >> "${INSTALL_DIR}/.env"
+    warn "DOABLE_KEK was missing from ${INSTALL_DIR}/.env — appended a freshly generated 32-byte base64 key. Restart the API service to pick it up."
+  fi
 else
 
 # Bind addresses: bare-metal binds to 127.0.0.1 and Cloudflare Tunnel proxies

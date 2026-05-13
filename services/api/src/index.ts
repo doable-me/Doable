@@ -8,6 +8,25 @@ initTracing({ serviceName: "doable-api" });
 import { checkEnvFilePerms } from "@doable/shared/security/env-perms-check.js";
 checkEnvFilePerms();
 
+// Fail-closed at boot if DOABLE_KEK is missing/malformed. Without this guard
+// the API would start fine and only 500 on the first MFA enroll / KEK-decrypt
+// path — exactly the R10 evidence from 2026-05-14. Eagerly calling loadKek()
+// surfaces "not set", "not valid base64", and "wrong length" at startup
+// instead of in user-facing requests. Skipped in test (loadKek auto-generates
+// an ephemeral KEK when NODE_ENV=test).
+if (process.env.NODE_ENV !== "test") {
+  const { loadKek } = await import("./lib/envelope-crypto.js");
+  try {
+    loadKek();
+  } catch (e) {
+    console.error(`[api] FATAL: ${(e as Error).message}`);
+    console.error(
+      "[api] Generate one with: openssl rand -base64 32 → DOABLE_KEK=... in services/api/.env",
+    );
+    process.exit(1);
+  }
+}
+
 // Register framework adapters into the process-wide registry BEFORE any
 // module that resolves a framework by id is imported (project create, dev
 // start, build, AI file tools). Idempotent.
