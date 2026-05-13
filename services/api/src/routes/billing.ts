@@ -5,6 +5,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { sql } from "../db/index.js";
 import { billingQueries } from "@doable/db/queries/billing";
 import { creditQueries } from "@doable/db/queries/credits";
+import { workspaceQueries } from "@doable/db/queries/workspaces";
 import {
   PLANS,
   getPlanById,
@@ -18,6 +19,7 @@ import { PLAN_LIMITS } from "@doable/shared";
 
 const billing = billingQueries(sql);
 const creditsDb = creditQueries(sql);
+const workspaces = workspaceQueries(sql);
 
 export const billingRoutes = new Hono<AuthEnv>();
 
@@ -314,15 +316,33 @@ billingRoutes.get("/credits/usage", async (c) => {
 });
 
 // ─── GET /billing/usage ────────────────────────────────────
-// Legacy workspace-level usage (kept for backwards compatibility)
+// Legacy workspace-level usage (kept for backwards compatibility).
+// When no workspaceId is supplied, default to the caller's primary workspace
+// (most-recently-updated workspace they're a member of). If the caller is
+// not a member of any workspace, respond with an empty paginated result —
+// matching the staging contract where `GET /billing/usage` with no params
+// returns `{ data: [], pagination: {...} }` (BUG-API-BILLING-USAGE-PARAMS-001).
 billingRoutes.get("/usage", async (c) => {
-  const workspaceId = c.req.query("workspaceId");
-  if (!workspaceId) {
-    return c.json({ error: "workspaceId query param required" }, 400);
-  }
+  const userId = c.get("userId");
+  let workspaceId = c.req.query("workspaceId");
 
   const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
   const pageSize = Math.min(Math.max(parseInt(c.req.query("pageSize") ?? "20", 10) || 20, 1), 100);
+
+  if (!workspaceId) {
+    try {
+      const memberships = await workspaces.getUserWorkspaces(userId);
+      workspaceId = memberships[0]?.id;
+    } catch (err: any) {
+      console.error("[Billing] getUserWorkspaces error:", err?.message ?? err);
+    }
+    if (!workspaceId) {
+      return c.json({
+        data: [],
+        pagination: { total: 0, page, pageSize, totalPages: 0 },
+      });
+    }
+  }
 
   try {
     const { rows, total } = await billing.getUsageHistory(workspaceId, {
