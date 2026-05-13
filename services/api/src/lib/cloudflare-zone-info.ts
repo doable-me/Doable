@@ -17,9 +17,12 @@
  *      ACM since the base wildcard *.doable.me cert won't reach two
  *      levels deep).
  *
- * Reads CF_API_TOKEN + CF_ZONE_ID from process.env. Never throws —
+ * Reads the effective CF API token via getEffectiveCfApiToken (which prefers
+ * the admin-set platform_settings.cf_api_token override, falling back to
+ * process.env.CF_API_TOKEN) and CF_ZONE_ID from process.env. Never throws —
  * returns a structured error so callers can decide how to surface.
  */
+import { getEffectiveCfApiToken } from "./cloudflare-token.js";
 
 export type CloudflarePlan = "free" | "pro" | "business" | "enterprise" | "unknown";
 
@@ -97,7 +100,7 @@ function planFromLegacyId(legacyId: string | undefined): CloudflarePlan {
  * NOT treat a missing zone as a thrown exception.
  */
 export async function getZoneInfo(): Promise<ZoneInfo> {
-  const apiToken = process.env.CF_API_TOKEN;
+  const apiToken = await getEffectiveCfApiToken();
   const zoneId = process.env.CF_ZONE_ID;
 
   if (!apiToken || !zoneId) {

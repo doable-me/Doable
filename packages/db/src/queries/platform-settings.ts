@@ -53,6 +53,16 @@ export const PLATFORM_SETTING_KEYS = {
    * means Cloudflare ACM is enabled on the zone.
    */
   DNS_MODE: "dns_mode",
+  /**
+   * Optional broader-scope Cloudflare API token, overriding the cfut_* one
+   * extracted from /root/.cloudflared/cert.pem. The cert.pem token has
+   * DNS:Edit + tunnel scopes only, which is enough for everything EXCEPT
+   * ACM detection (which requires SSL/Certificates:Read). When the operator
+   * pastes a broader token via /admin, we store it here and the runtime
+   * resolver prefers it over process.env.CF_API_TOKEN. Leaving this unset
+   * is the default — every other DNS feature works fine without it.
+   */
+  CF_API_TOKEN: "cf_api_token",
 } as const;
 
 export type DnsMode = "per_publish" | "wildcard";

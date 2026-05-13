@@ -11,6 +11,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { WORKSPACE_PLANS, WORKSPACE_ROLES } from "@doable/shared";
 import { getZoneInfo } from "../lib/cloudflare-zone-info.js";
+import { getCfApiTokenSource } from "../lib/cloudflare-token.js";
 import {
   ensureWildcardCname,
   lookupWildcardCname,
@@ -409,6 +410,119 @@ adminFeatureRoutes.post("/dns-mode/auto-wildcard", async (c) => {
     acmOverrideApplied: body.acmOverride === true && diagnostics.reason === "free-plan-multilevel",
     diagnostics,
   });
+});
+
+// ─── Optional Cloudflare API token override (R5) ───────────
+// The cfut_* token from `cloudflared tunnel login` carries DNS:Edit +
+// tunnel scopes only — enough for everything except ACM detection (which
+// returns 9109 Unauthorized on /ssl/certificate_packs). Operators who
+// want accurate ACM detection can paste a custom CF token with broader
+// scopes; it's stored in platform_settings and the resolver prefers it
+// over process.env.CF_API_TOKEN. Strictly optional — every DNS feature
+// works fine without it.
+
+const setCfTokenSchema = z.object({
+  token: z.string().min(20),
+});
+
+adminFeatureRoutes.post("/dns-mode/cf-token", async (c) => {
+  let body: { token: string };
+  try {
+    const raw = await c.req.json();
+    const parsed = setCfTokenSchema.safeParse(raw);
+    if (!parsed.success) {
+      return c.json({ error: parsed.error.flatten(), reason: "invalid-body" }, 400);
+    }
+    body = parsed.data;
+  } catch {
+    return c.json({ error: "Body must be JSON {token:'...'}", reason: "invalid-body" }, 400);
+  }
+
+  // Probe 1: /user/tokens/verify must succeed.
+  const verifyHeaders = { Authorization: `Bearer ${body.token}` };
+  try {
+    const resp = await fetch("https://api.cloudflare.com/client/v4/user/tokens/verify", {
+      headers: verifyHeaders,
+    });
+    const data = (await resp.json()) as { success?: boolean };
+    if (!resp.ok || !data.success) {
+      return c.json({ error: "Cloudflare rejected the token", reason: "token-invalid" }, 400);
+    }
+  } catch (err) {
+    return c.json({ error: `Could not reach Cloudflare to verify: ${err instanceof Error ? err.message : String(err)}`, reason: "token-invalid" }, 400);
+  }
+
+  // Probe 2: the whole point — token must have SSL/Certificates:Read scope.
+  // Refuse to persist a token that doesn't fix the very gap it's meant to.
+  const zoneId = process.env.CF_ZONE_ID;
+  if (!zoneId) {
+    return c.json({ error: "CF_ZONE_ID is not set on this server", reason: "no-cf-creds" }, 400);
+  }
+  try {
+    const resp = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${zoneId}/ssl/certificate_packs?status=active`,
+      { headers: verifyHeaders },
+    );
+    const data = (await resp.json()) as { success?: boolean; result?: { type: string }[] };
+    if (!resp.ok || !data.success) {
+      return c.json({
+        error: "Token verified but lacks SSL/Certificates:Read on this zone — without it ACM still can't be detected, so we won't persist. Edit the token in Cloudflare and add Zone → SSL and Certificates → Read.",
+        reason: "token-missing-ssl-scope",
+      }, 400);
+    }
+    const acmStatus = Array.isArray(data.result) && data.result.some((p) => p.type === "advanced")
+      ? "enabled"
+      : "absent";
+
+    const userId = c.get("userId");
+    try {
+      await platformSettings.set(PLATFORM_SETTING_KEYS.CF_API_TOKEN, body.token, userId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json(
+        { error: "Token validated but persisting failed. Has migration 081 been applied?", detail: msg },
+        503,
+      );
+    }
+    return c.json({ persisted: true, acmStatus });
+  } catch (err) {
+    return c.json({ error: `SSL scope probe failed: ${err instanceof Error ? err.message : String(err)}`, reason: "token-invalid" }, 400);
+  }
+});
+
+adminFeatureRoutes.delete("/dns-mode/cf-token", async (c) => {
+  const userId = c.get("userId");
+  try {
+    // Set to empty so the resolver treats it as unset and falls through to env.
+    // Using set(...,"") instead of a DELETE keeps the audit trail (updated_by/at).
+    await platformSettings.set(PLATFORM_SETTING_KEYS.CF_API_TOKEN, "", userId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "Failed to clear override. Has migration 081 been applied?", detail: msg }, 503);
+  }
+  const fallbackSource = process.env.CF_API_TOKEN ? "env" : "none";
+  return c.json({ reverted: true, fallbackSource });
+});
+
+adminFeatureRoutes.get("/dns-mode/cf-token", async (c) => {
+  const { source, tokenSuffix } = await getCfApiTokenSource();
+  // Probe SSL scope so the panel can show whether ACM detection currently works.
+  let hasSslScope = false;
+  const zoneId = process.env.CF_ZONE_ID;
+  if (source !== "none" && zoneId) {
+    try {
+      // The effective token isn't returned here, but we can re-derive its
+      // "works for ACM?" answer by reading the latest /diagnostics path:
+      // if zone lookup succeeds AND certificate_packs probe also succeeds,
+      // the token has SSL:Read. We can't directly use the resolver's value
+      // without re-fetching it; reuse getZoneInfo's logic by re-running.
+      const zone = await getZoneInfo();
+      hasSslScope = zone.acmStatus !== "undetectable";
+    } catch {
+      hasSslScope = false;
+    }
+  }
+  return c.json({ source, tokenSuffix, hasSslScope });
 });
 
 // ─── User Overrides ────────────────────────────────────────

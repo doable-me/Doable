@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import type { DeployAdapter, DeployInput, DeployResult } from "../adapter.js";
+import { getEffectiveCfApiToken } from "../../lib/cloudflare-token.js";
 
 /**
  * Sites directory: where published static sites are served from.
@@ -360,10 +361,11 @@ export class DoableCloudAdapter implements DeployAdapter {
     // environment's published sites resolve to its own tunnel.
     // Errors are non-fatal — the file copy already succeeded.
     // Skipped when the pipeline tells us a wildcard CNAME is in play.
+    const cfToken = await getEffectiveCfApiToken();
     if (
       !input.skipDnsRegistration &&
       process.env.CLOUDFLARED_TUNNEL_ID &&
-      process.env.CF_API_TOKEN
+      cfToken
     ) {
       await registerCloudflareDns(
         process.env.CLOUDFLARED_TUNNEL_ID,
@@ -488,7 +490,7 @@ export async function registerCloudflareDns(
   tunnelId: string,
   hostname: string,
 ): Promise<void> {
-  const apiToken = process.env.CF_API_TOKEN;
+  const apiToken = await getEffectiveCfApiToken();
   const zoneId = process.env.CF_ZONE_ID;
   if (!apiToken || !zoneId) {
     throw new Error("CF_API_TOKEN and CF_ZONE_ID are required for DNS registration");
@@ -554,7 +556,7 @@ export async function ensureWildcardCname(
   tunnelId: string,
   wildcardName: string,
 ): Promise<{ created: boolean; updated: boolean; hostname: string; target: string }> {
-  const apiToken = process.env.CF_API_TOKEN;
+  const apiToken = await getEffectiveCfApiToken();
   const zoneId = process.env.CF_ZONE_ID;
   if (!apiToken || !zoneId) {
     throw new Error("CF_API_TOKEN and CF_ZONE_ID are required for wildcard CNAME creation");
@@ -619,7 +621,7 @@ export async function ensureWildcardCname(
 export async function lookupWildcardCname(
   wildcardName: string,
 ): Promise<{ exists: boolean; target: string | null }> {
-  const apiToken = process.env.CF_API_TOKEN;
+  const apiToken = await getEffectiveCfApiToken();
   const zoneId = process.env.CF_ZONE_ID;
   if (!apiToken || !zoneId) return { exists: false, target: null };
 
@@ -653,7 +655,7 @@ export async function lookupWildcardCname(
  * Requires env vars: CF_API_TOKEN, CF_ZONE_ID.
  */
 export async function deleteCloudflareDns(hostname: string): Promise<boolean> {
-  const apiToken = process.env.CF_API_TOKEN;
+  const apiToken = await getEffectiveCfApiToken();
   const zoneId = process.env.CF_ZONE_ID;
   if (!apiToken || !zoneId) return false;
 
@@ -690,7 +692,7 @@ export async function deleteCloudflareDns(hostname: string): Promise<boolean> {
 export async function listZoneWildcards(): Promise<
   Array<{ hostname: string; target: string; proxied: boolean; modifiedOn: string }>
 > {
-  const apiToken = process.env.CF_API_TOKEN;
+  const apiToken = await getEffectiveCfApiToken();
   const zoneId = process.env.CF_ZONE_ID;
   if (!apiToken || !zoneId) return [];
 

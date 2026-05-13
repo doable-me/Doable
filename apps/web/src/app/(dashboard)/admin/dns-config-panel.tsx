@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Globe, Loader2, CheckCircle2, AlertCircle, Sparkles, Trash2 } from "lucide-react";
+import { Globe, Loader2, CheckCircle2, AlertCircle, Sparkles, Trash2, KeyRound, ChevronDown, ChevronRight } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+
+interface CfTokenStatus {
+  source: "platform_settings" | "env" | "none";
+  tokenSuffix: string;
+  hasSslScope: boolean;
+}
 
 type DnsMode = "per_publish" | "wildcard";
 
@@ -96,13 +102,21 @@ export function DnsConfigPanel() {
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // Optional CF token override (R5).
+  const [cfTokenStatus, setCfTokenStatus] = useState<CfTokenStatus | null>(null);
+  const [tokenSectionOpen, setTokenSectionOpen] = useState(false);
+  const [pastedToken, setPastedToken] = useState("");
+  const [tokenSaving, setTokenSaving] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [modeRes, diagRes] = await Promise.allSettled([
+        const [modeRes, diagRes, tokenRes] = await Promise.allSettled([
           apiFetch<DnsModeResponse>("/admin/dns-mode"),
           apiFetch<DnsDiagnostics>("/admin/dns-mode/diagnostics"),
+          apiFetch<CfTokenStatus>("/admin/dns-mode/cf-token"),
         ]);
         if (cancelled) return;
         if (modeRes.status === "fulfilled") {
@@ -119,12 +133,56 @@ export function DnsConfigPanel() {
         } else {
           setDiagnosticsError(diagRes.reason instanceof Error ? diagRes.reason.message : "Failed to load DNS diagnostics");
         }
+        if (tokenRes.status === "fulfilled") {
+          setCfTokenStatus(tokenRes.value);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, []);
+
+  async function refreshTokenStatus() {
+    try {
+      const fresh = await apiFetch<CfTokenStatus>("/admin/dns-mode/cf-token");
+      setCfTokenStatus(fresh);
+    } catch {
+      // non-fatal — leave whatever's there
+    }
+  }
+
+  async function saveCfToken() {
+    const trimmed = pastedToken.trim();
+    if (!trimmed) return;
+    setTokenSaving(true);
+    setTokenError(null);
+    try {
+      await apiFetch("/admin/dns-mode/cf-token", {
+        method: "POST",
+        body: JSON.stringify({ token: trimmed }),
+      });
+      setPastedToken("");
+      await Promise.all([refreshTokenStatus(), refreshDiagnostics()]);
+    } catch (err) {
+      setTokenError(err instanceof Error ? err.message : "Failed to save token");
+    } finally {
+      setTokenSaving(false);
+    }
+  }
+
+  async function removeCfToken() {
+    setTokenSaving(true);
+    setTokenError(null);
+    try {
+      await apiFetch("/admin/dns-mode/cf-token", { method: "DELETE" });
+      await Promise.all([refreshTokenStatus(), refreshDiagnostics()]);
+    } catch (err) {
+      setTokenError(err instanceof Error ? err.message : "Failed to remove token");
+    } finally {
+      setTokenSaving(false);
+    }
+  }
 
   const hostnameError = diagnostics
     ? validateWildcard(wildcardHostname, diagnostics.zoneName)
@@ -479,6 +537,97 @@ export function DnsConfigPanel() {
           </ul>
         </div>
       )}
+
+      <div className="border-t border-border px-4 py-2.5">
+        <button
+          type="button"
+          onClick={() => setTokenSectionOpen((v) => !v)}
+          className="flex w-full items-center gap-2 text-left text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          {tokenSectionOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          <KeyRound className="h-3.5 w-3.5" />
+          <span className="font-medium">Cloudflare API token (optional)</span>
+          <span className="ml-2 text-muted-foreground">
+            {cfTokenStatus?.source === "platform_settings"
+              ? `Using custom token ****${cfTokenStatus.tokenSuffix}`
+              : cfTokenStatus?.source === "env"
+                ? `Using cert.pem OAuth token ****${cfTokenStatus.tokenSuffix}`
+                : "No CF token configured"}
+          </span>
+          {cfTokenStatus?.hasSslScope && (
+            <span className="ml-auto inline-flex items-center gap-1 text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" /> ACM scope OK
+            </span>
+          )}
+        </button>
+
+        {tokenSectionOpen && (
+          <div className="mt-2 space-y-2">
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground">Strictly optional.</span>{" "}
+              DNS auto-configure, wildcard create/delete, and per-publish CNAMEs all work fine with the cert.pem token from{" "}
+              <code className="font-mono">cloudflared tunnel login</code> alone. Adding a custom token only unlocks accurate ACM detection so the badge above can flip from{" "}
+              <span className="text-amber-400">ACM status unknown</span> to <span className="text-emerald-400">ACM enabled</span> or{" "}
+              <span className="text-muted-foreground">No ACM</span>.
+            </p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              <a
+                href="https://dash.cloudflare.com/profile/api-tokens"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-300 underline hover:text-blue-200"
+              >
+                Open Cloudflare API Tokens
+              </a>
+              {" "}→ Create Token → Create Custom Token. Add exactly these zone permissions:
+            </p>
+            <ul className="ml-4 list-disc text-[11px] text-muted-foreground leading-relaxed">
+              <li>Zone → DNS → <span className="text-foreground">Edit</span></li>
+              <li>Zone → Zone → <span className="text-foreground">Read</span></li>
+              <li>Zone → SSL and Certificates → <span className="text-foreground">Read</span></li>
+            </ul>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Scope to your specific zone (<code className="font-mono">{zoneName}</code>) under "Zone Resources". Then paste the token here.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={pastedToken}
+                onChange={(e) => setPastedToken(e.target.value)}
+                placeholder="Paste a Cloudflare API token…"
+                disabled={tokenSaving}
+                className="flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-foreground focus:border-blue-500 focus:outline-none disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={saveCfToken}
+                disabled={!pastedToken.trim() || tokenSaving}
+                className="inline-flex items-center gap-1 rounded-md border border-blue-500 bg-blue-500/10 px-2.5 py-1 text-[11px] font-medium text-blue-300 hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:border-border disabled:bg-secondary disabled:text-muted-foreground"
+              >
+                {tokenSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                Verify & save
+              </button>
+              {cfTokenStatus?.source === "platform_settings" && (
+                <button
+                  type="button"
+                  onClick={removeCfToken}
+                  disabled={tokenSaving}
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed"
+                >
+                  Remove override
+                </button>
+              )}
+            </div>
+            {tokenError && (
+              <p className="flex items-start gap-1.5 text-[11px] text-red-400">
+                <AlertCircle className="h-3.5 w-3.5 mt-px shrink-0" />
+                <span>{tokenError}</span>
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
       {diagnostics && (
         <div className="border-t border-border bg-secondary/30 px-4 py-2.5">

@@ -21,6 +21,7 @@ import { nodeStandaloneAdapter } from "../runtime/adapters/node-standalone.js";
 import { pythonAsgiAdapter } from "../runtime/adapters/python-asgi.js";
 import { staticFilesAdapter } from "../runtime/adapters/static-files.js";
 import { allocateProcessPort } from "../runtime/port-allocator.js";
+import { getEffectiveCfApiToken } from "../lib/cloudflare-token.js";
 import { addProcessRoute, caddyAdminAvailable } from "../runtime/caddy-admin.js";
 import type { RuntimeAdapter, RuntimeContext } from "../runtime/types.js";
 import { getProjectPath } from "../ai/project-files.js";
@@ -175,10 +176,11 @@ export async function runPipeline(
     // already cover the published hostname, so no per-publish API call
     // is needed (and the CF API token may not even be set).
     const dnsMode = await getDnsMode();
+    const cfToken = await getEffectiveCfApiToken();
     if (
       dnsMode === "per_publish" &&
       process.env.CLOUDFLARED_TUNNEL_ID &&
-      process.env.CF_API_TOKEN
+      cfToken
     ) {
       const earlyLoc = computeSitePublishLocation(subdomain, environment);
       registerCloudflareDns(
