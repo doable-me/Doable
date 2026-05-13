@@ -11,7 +11,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { WORKSPACE_PLANS, WORKSPACE_ROLES } from "@doable/shared";
 import { getZoneInfo } from "../lib/cloudflare-zone-info.js";
-import { getCfApiTokenSource } from "../lib/cloudflare-token.js";
+import { getCfApiTokenSource, encryptPlatformValue } from "../lib/cloudflare-token.js";
 import {
   ensureWildcardCname,
   lookupWildcardCname,
@@ -476,7 +476,13 @@ adminFeatureRoutes.post("/dns-mode/cf-token", async (c) => {
 
     const userId = c.get("userId");
     try {
-      await platformSettings.set(PLATFORM_SETTING_KEYS.CF_API_TOKEN, body.token, userId);
+      // Encrypt at rest so DB backups + read-only access can't extract a
+      // usable token. See encryptPlatformValue for the wire format.
+      await platformSettings.set(
+        PLATFORM_SETTING_KEYS.CF_API_TOKEN,
+        encryptPlatformValue(body.token),
+        userId,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return c.json(

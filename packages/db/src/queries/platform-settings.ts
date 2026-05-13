@@ -38,6 +38,19 @@ export function platformSettingQueries(sql: postgres.Sql) {
 // ─── Well-known keys ────────────────────────────────────────
 // Centralized so route handlers and pipeline read/write the same string.
 
+/**
+ * Well-known keys for the platform_settings table.
+ *
+ * **Sensitivity convention** (security): values for keys marked SENSITIVE
+ * below MUST be wrapped via `encryptPlatformValue()` from
+ * services/api/src/lib/cloudflare-token.ts before being passed to `set()`,
+ * and unwrapped via `decryptPlatformValue()` after `get()`. Non-sensitive
+ * keys (current: dns_mode) stay plaintext so SQL inspection during
+ * debugging shows the actual value.
+ *
+ *   - DNS_MODE       — plaintext, low sensitivity (publish routing flag)
+ *   - CF_API_TOKEN   — SENSITIVE, must be encrypted at rest
+ */
 export const PLATFORM_SETTING_KEYS = {
   /**
    * DNS provisioning mode for published sites.

@@ -17,13 +17,49 @@
  */
 import { sql } from "../db/index.js";
 import { platformSettingQueries, PLATFORM_SETTING_KEYS } from "@doable/db";
+import { encryptWithKek, decryptWithKek } from "./envelope-crypto.js";
 
 const platformSettings = platformSettingQueries(sql);
 
+// ─── At-rest encryption for sensitive platform_settings values ─────────
+// Sensitive keys (cf_api_token) are stored as `enc:v1:<base64>`. The base64
+// payload is a HEADER_VERSION_KEK envelope from envelope-crypto.ts so DOABLE_KEK
+// rotation goes through the existing path. Non-sensitive keys (dns_mode) stay
+// plaintext — encrypting them adds no value and makes debugging harder.
+//
+// The prefix is the discriminator: when get() returns a string that does NOT
+// start with `enc:v1:`, we assume it's legacy plaintext and return it as-is.
+// This makes the rollout backward-compatible: any pre-existing rows
+// (including on dodev) keep working without a migration.
+const ENC_PREFIX = "enc:v1:";
+
+export function encryptPlatformValue(plaintext: string): string {
+  return ENC_PREFIX + encryptWithKek(plaintext);
+}
+
+export function decryptPlatformValue(stored: string): string {
+  if (!stored.startsWith(ENC_PREFIX)) return stored;
+  return decryptWithKek(stored.slice(ENC_PREFIX.length)).toString("utf8");
+}
+
 export async function getEffectiveCfApiToken(): Promise<string | undefined> {
   try {
-    const override = await platformSettings.get(PLATFORM_SETTING_KEYS.CF_API_TOKEN);
-    if (override && override.length > 0) return override;
+    const stored = await platformSettings.get(PLATFORM_SETTING_KEYS.CF_API_TOKEN);
+    if (stored && stored.length > 0) {
+      try {
+        const value = decryptPlatformValue(stored);
+        if (value.length > 0) return value;
+      } catch (err) {
+        // Decrypt failure means the DB row was encrypted under a different
+        // KEK (rotation, restore-from-backup with stale .env) OR corrupted.
+        // Don't throw — log and fall through to env so the cert.pem token
+        // still works.
+        console.warn(
+          "[cf-token] Failed to decrypt platform_settings.cf_api_token; falling back to env.",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
   } catch {
     // platform_settings table missing (pre-migration 081) — fall through.
   }
@@ -40,9 +76,17 @@ export async function getCfApiTokenSource(): Promise<{
   tokenSuffix: string;
 }> {
   try {
-    const override = await platformSettings.get(PLATFORM_SETTING_KEYS.CF_API_TOKEN);
-    if (override && override.length > 0) {
-      return { source: "platform_settings", tokenSuffix: override.slice(-4) };
+    const stored = await platformSettings.get(PLATFORM_SETTING_KEYS.CF_API_TOKEN);
+    if (stored && stored.length > 0) {
+      try {
+        const value = decryptPlatformValue(stored);
+        if (value.length > 0) {
+          return { source: "platform_settings", tokenSuffix: value.slice(-4) };
+        }
+      } catch {
+        // Decrypt failed — pretend the DB row is unset; the resolver also
+        // falls back to env in this case.
+      }
     }
   } catch {
     // Same fall-through.
