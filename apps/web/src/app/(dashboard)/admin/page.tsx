@@ -20,6 +20,7 @@ import {
   Plug,
   CreditCard,
   UserCheck,
+  Globe,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -64,11 +65,11 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "plans" | "thumbnails" | "copilot" | "email" | "integrations" | "mfa" | "signups">(() => {
+  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "plans" | "thumbnails" | "copilot" | "email" | "integrations" | "mfa" | "signups" | "dns">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get("tab");
-      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "plans" || tab === "thumbnails" || tab === "copilot" || tab === "integrations" || tab === "mfa" || tab === "signups") return tab;
+      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "plans" || tab === "thumbnails" || tab === "copilot" || tab === "integrations" || tab === "mfa" || tab === "signups" || tab === "dns") return tab;
       // Legacy redirects
       if (tab === "planLimits" || tab === "planDefaults") return "plans";
     }
@@ -311,6 +312,7 @@ export default function AdminPage() {
       <div className="flex items-center gap-1 mb-6 border-b border-border pb-px overflow-x-auto">
         {([
           { key: "features" as const, label: "Feature Flags", icon: Settings2 },
+          { key: "dns" as const, label: "DNS", icon: Globe },
           { key: "signups" as const, label: "Signups", icon: UserCheck },
           { key: "users" as const, label: "Users & AI", icon: Users },
           { key: "integrations" as const, label: "Integrations", icon: Plug },
@@ -340,9 +342,6 @@ export default function AdminPage() {
       {/* Feature Flags Tab */}
       {activeTab === "features" && (
         <div className="space-y-6">
-          {/* DNS for published sites */}
-          <DnsConfigPanel />
-
           {/* Framework Controls */}
           <FrameworksPanel />
 
@@ -356,6 +355,13 @@ export default function AdminPage() {
               <p className="text-sm text-muted-foreground text-center py-8">No feature flags configured.</p>
             )}
           </div>
+        </div>
+      )}
+
+      {/* DNS Tab — wildcard CNAME, custom token, etc. */}
+      {activeTab === "dns" && (
+        <div className="space-y-6">
+          <DnsConfigPanel />
         </div>
       )}
 

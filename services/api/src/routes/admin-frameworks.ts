@@ -35,8 +35,12 @@ async function getEnabledFrameworksFromDb(): Promise<string[]> {
       return (parsed as string[]).filter((id) => ALL_FRAMEWORKS.some((f) => f.id === id));
     }
   }
-  // Fallback to env var
-  const env = process.env.DOABLE_ENABLED_FRAMEWORKS ?? "vite-react,nextjs-app";
+  // Fallback to env var. Default ships with only vite-react enabled so
+  // fresh installs don't expose Next.js full-stack until the admin
+  // explicitly opts in via /admin → DNS / Frameworks. (Next.js standalone
+  // mode requires per-project process supervision + the SSR runtime
+  // adapters; better to start minimal and let admins flip it on.)
+  const env = process.env.DOABLE_ENABLED_FRAMEWORKS ?? "vite-react";
   return env.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
