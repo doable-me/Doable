@@ -11,7 +11,12 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { WORKSPACE_PLANS, WORKSPACE_ROLES } from "@doable/shared";
 import { getZoneInfo } from "../lib/cloudflare-zone-info.js";
-import { ensureWildcardCname, lookupWildcardCname } from "../deploy/adapters/doable-cloud.js";
+import {
+  ensureWildcardCname,
+  lookupWildcardCname,
+  listZoneWildcards,
+  deleteCloudflareDns,
+} from "../deploy/adapters/doable-cloud.js";
 
 const featureFlags = featureFlagQueries(sql);
 const platformSettings = platformSettingQueries(sql);
@@ -135,6 +140,13 @@ adminFeatureRoutes.put("/dns-mode", async (c) => {
 // GET  /admin/dns-mode/diagnostics  → zone capability + canAutoSetup
 // POST /admin/dns-mode/auto-wildcard → create wildcard CNAME + persist mode
 
+interface ZoneWildcard {
+  hostname: string;
+  target: string;
+  proxied: boolean;
+  modifiedOn: string;
+}
+
 interface DnsDiagnostics {
   zoneName: string;
   plan: string;
@@ -142,7 +154,11 @@ interface DnsDiagnostics {
   publishDomain: string;
   domainDepth: number;
   recommendedWildcard: string;
+  /** Legacy single-hostname lookup keyed on *.${publishDomain}. Round-3 keeps
+   * it for back-compat; new callers should prefer `allWildcards`. */
   existingWildcard: { hostname: string; target: string } | null;
+  /** All wildcard CNAMEs currently on the zone (any name starting with '*'). */
+  allWildcards: ZoneWildcard[];
   canAutoSetup: boolean;
   reason: "ok" | "no-cf-creds" | "no-tunnel-id" | "no-publish-domain" | "free-plan-multilevel" | "zone-lookup-failed";
   message: string;
@@ -151,6 +167,7 @@ interface DnsDiagnostics {
 function computeDnsDiagnostics(
   zone: Awaited<ReturnType<typeof getZoneInfo>>,
   existing: Awaited<ReturnType<typeof lookupWildcardCname>>,
+  allWildcards: ZoneWildcard[],
 ): DnsDiagnostics {
   const publishDomain = process.env.DOABLE_DOMAIN ?? "";
   const tunnelId = process.env.CLOUDFLARED_TUNNEL_ID ?? "";
@@ -191,6 +208,7 @@ function computeDnsDiagnostics(
     existingWildcard: existing.exists
       ? { hostname: recommendedWildcard, target: existing.target ?? "" }
       : null,
+    allWildcards,
     canAutoSetup,
     reason,
     message,
@@ -200,10 +218,13 @@ function computeDnsDiagnostics(
 adminFeatureRoutes.get("/dns-mode/diagnostics", async (c) => {
   const zone = await getZoneInfo();
   const publishDomain = process.env.DOABLE_DOMAIN ?? "";
-  const existing = publishDomain
-    ? await lookupWildcardCname(`*.${publishDomain}`)
-    : { exists: false, target: null as string | null };
-  return c.json(computeDnsDiagnostics(zone, existing));
+  const [existing, allWildcards] = await Promise.all([
+    publishDomain
+      ? lookupWildcardCname(`*.${publishDomain}`)
+      : Promise.resolve({ exists: false, target: null as string | null }),
+    listZoneWildcards(),
+  ]);
+  return c.json(computeDnsDiagnostics(zone, existing, allWildcards));
 });
 
 const autoWildcardSchema = z.object({
@@ -218,6 +239,71 @@ const autoWildcardSchema = z.object({
   // hasAcm auto-detection silently returns false even for paid ACM zones.
   // This override skips the multi-level gate so those operators can proceed.
   acmOverride: z.boolean().optional(),
+});
+
+// DELETE /admin/dns-mode/wildcard removes a specific wildcard CNAME from the
+// configured CF zone. Used by the admin panel so operators can free a
+// wildcard (e.g. *.doable.me) before a different doable server claims it.
+// In-zone validation: the hostname's base (after the leading "*.") must
+// equal the zone name or be a subdomain of it — refusing cross-zone targets
+// the CF token might happen to accept on multi-zone accounts.
+const deleteWildcardSchema = z.object({
+  hostname: z.string().regex(/^\*\.[a-z0-9.-]+$/),
+});
+
+adminFeatureRoutes.delete("/dns-mode/wildcard", async (c) => {
+  let body: { hostname: string };
+  try {
+    const raw = await c.req.json();
+    const parsed = deleteWildcardSchema.safeParse(raw);
+    if (!parsed.success) {
+      return c.json({ error: parsed.error.flatten(), reason: "invalid-body" }, 400);
+    }
+    body = parsed.data;
+  } catch {
+    return c.json({ error: "Request body must be JSON with {hostname:'*.foo.com'}", reason: "invalid-body" }, 400);
+  }
+
+  if (!body.hostname.startsWith("*.")) {
+    return c.json({ error: "Hostname must start with '*.'", reason: "not-wildcard" }, 400);
+  }
+
+  const zone = await getZoneInfo();
+  if (!zone.acmReady || !zone.zoneName) {
+    // Reuse the existing not-ready reason mapping — caller can't act on
+    // wildcards without zone access.
+    return c.json(
+      { error: zone.error ?? "Cloudflare zone lookup failed", reason: "zone-lookup-failed" },
+      400,
+    );
+  }
+  const bare = body.hostname.slice(2);
+  const inZone = bare === zone.zoneName || bare.endsWith(`.${zone.zoneName}`);
+  if (!inZone) {
+    return c.json(
+      {
+        error: `Wildcard ${body.hostname} is not inside zone ${zone.zoneName}.`,
+        reason: "wildcard-out-of-zone",
+      },
+      400,
+    );
+  }
+
+  let deleted: boolean;
+  try {
+    deleted = await deleteCloudflareDns(body.hostname);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Failed to delete wildcard CNAME: ${msg}` }, 502);
+  }
+
+  if (!deleted) {
+    return c.json(
+      { error: `No CNAME found for ${body.hostname} on zone ${zone.zoneName}`, hostname: body.hostname, reason: "not-found" },
+      404,
+    );
+  }
+  return c.json({ hostname: body.hostname, deleted: true });
 });
 
 adminFeatureRoutes.post("/dns-mode/auto-wildcard", async (c) => {
@@ -239,10 +325,13 @@ adminFeatureRoutes.post("/dns-mode/auto-wildcard", async (c) => {
 
   const zone = await getZoneInfo();
   const publishDomain = process.env.DOABLE_DOMAIN ?? "";
-  const existing = publishDomain
-    ? await lookupWildcardCname(`*.${publishDomain}`)
-    : { exists: false, target: null as string | null };
-  const diagnostics = computeDnsDiagnostics(zone, existing);
+  const [existing, allWildcards] = await Promise.all([
+    publishDomain
+      ? lookupWildcardCname(`*.${publishDomain}`)
+      : Promise.resolve({ exists: false, target: null as string | null }),
+    listZoneWildcards(),
+  ]);
+  const diagnostics = computeDnsDiagnostics(zone, existing, allWildcards);
 
   // Resolve effective wildcard target. Default to the diagnostics-recommended
   // value; honor the operator's override when supplied.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Globe, Loader2, CheckCircle2, AlertCircle, Sparkles } from "lucide-react";
+import { Globe, Loader2, CheckCircle2, AlertCircle, Sparkles, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 
 type DnsMode = "per_publish" | "wildcard";
@@ -17,9 +17,14 @@ type DnsReason =
   | "no-tunnel-id"
   | "no-publish-domain"
   | "free-plan-multilevel"
-  | "zone-lookup-failed"
-  | "wildcard-out-of-zone"
-  | "invalid-body";
+  | "zone-lookup-failed";
+
+interface ZoneWildcard {
+  hostname: string;
+  target: string;
+  proxied: boolean;
+  modifiedOn: string;
+}
 
 interface DnsDiagnostics {
   zoneName: string;
@@ -29,6 +34,7 @@ interface DnsDiagnostics {
   domainDepth: number;
   recommendedWildcard: string;
   existingWildcard: { hostname: string; target: string } | null;
+  allWildcards: ZoneWildcard[];
   canAutoSetup: boolean;
   reason: DnsReason;
   message: string;
@@ -84,6 +90,10 @@ export function DnsConfigPanel() {
   // Custom-wildcard inputs (US-002).
   const [wildcardHostname, setWildcardHostname] = useState<string>("");
   const [acmOverride, setAcmOverride] = useState<boolean>(false);
+
+  // Per-row delete state (R3 US-003). null = no row in confirm mode.
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +164,15 @@ export function DnsConfigPanel() {
     }
   }
 
+  async function refreshDiagnostics() {
+    try {
+      const fresh = await apiFetch<DnsDiagnostics>("/admin/dns-mode/diagnostics");
+      setDiagnostics(fresh);
+    } catch (err) {
+      setDiagnosticsError(err instanceof Error ? err.message : "Failed to refresh diagnostics");
+    }
+  }
+
   async function runAutoWildcard() {
     if (!buttonEnabled) return;
     setAutoSetupRunning(true);
@@ -172,11 +191,30 @@ export function DnsConfigPanel() {
       setMode("wildcard");
       setDefaulted(false);
       setSavedAt(Date.now());
-      setDiagnostics(res.diagnostics);
+      // Refresh from server so allWildcards reflects the freshly-created record
+      // (the snapshot in res.diagnostics was taken BEFORE the CNAME was made).
+      await refreshDiagnostics();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Auto-configure failed");
     } finally {
       setAutoSetupRunning(false);
+    }
+  }
+
+  async function deleteWildcard(hostname: string) {
+    setDeleting(hostname);
+    setError(null);
+    try {
+      await apiFetch("/admin/dns-mode/wildcard", {
+        method: "DELETE",
+        body: JSON.stringify({ hostname }),
+      });
+      await refreshDiagnostics();
+      setConfirmingDelete(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to delete ${hostname}`);
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -350,6 +388,77 @@ export function DnsConfigPanel() {
           )}
         </div>
       </div>
+
+      {mode === "wildcard" && diagnostics && diagnostics.allWildcards.length === 0 && (
+        <div className="border-t border-border bg-amber-500/10 px-4 py-2.5">
+          <p className="flex items-start gap-1.5 text-[11px] text-amber-400 leading-relaxed">
+            <AlertCircle className="h-3.5 w-3.5 mt-px shrink-0" />
+            <span>
+              <span className="font-medium">No wildcard CNAME currently active on this zone.</span>{" "}
+              Publishes will fail until you auto-configure one above, or switch back to per-publish mode.
+            </span>
+          </p>
+        </div>
+      )}
+
+      {diagnostics && diagnostics.allWildcards.length > 0 && (
+        <div className="border-t border-border px-4 py-3">
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Existing wildcards on {diagnostics.zoneName || "this zone"}
+          </h4>
+          <ul className="space-y-1.5">
+            {diagnostics.allWildcards.map((w) => {
+              const isConfirming = confirmingDelete === w.hostname;
+              const isDeleting = deleting === w.hostname;
+              return (
+                <li
+                  key={w.hostname}
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary/30 px-2.5 py-1.5 text-[11px]"
+                >
+                  <code className="font-mono text-foreground">{w.hostname}</code>
+                  <span className="text-muted-foreground">→</span>
+                  <code className="font-mono text-muted-foreground">{w.target}</code>
+                  <span className="text-[10px] text-muted-foreground">{w.modifiedOn.slice(0, 10)}</span>
+                  <div className="ml-auto flex items-center gap-1.5">
+                    {isConfirming ? (
+                      <>
+                        <span className="text-amber-400">Delete {w.hostname}? Publishes pointing to it stop resolving.</span>
+                        <button
+                          type="button"
+                          onClick={() => deleteWildcard(w.hostname)}
+                          disabled={isDeleting}
+                          className="inline-flex items-center gap-1 rounded-md border border-red-500 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed"
+                        >
+                          {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingDelete(null)}
+                          disabled={isDeleting}
+                          className="inline-flex items-center rounded-md border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-secondary/70 disabled:cursor-not-allowed"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingDelete(w.hostname)}
+                        disabled={deleting !== null}
+                        className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {diagnostics && (
         <div className="border-t border-border bg-secondary/30 px-4 py-2.5">

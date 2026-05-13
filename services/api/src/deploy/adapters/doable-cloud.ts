@@ -645,12 +645,17 @@ export async function lookupWildcardCname(
  * the published hostname stops resolving. Silently no-ops when the record is
  * absent so unpublish is idempotent (repeated calls don't error).
  *
+ * Returns true when an existing record was actually deleted, false when no
+ * matching record was found (idempotent no-op). Callers that need to
+ * distinguish 404 from 200 (admin delete UI) use the return value; the
+ * unpublish path ignores it.
+ *
  * Requires env vars: CF_API_TOKEN, CF_ZONE_ID.
  */
-export async function deleteCloudflareDns(hostname: string): Promise<void> {
+export async function deleteCloudflareDns(hostname: string): Promise<boolean> {
   const apiToken = process.env.CF_API_TOKEN;
   const zoneId = process.env.CF_ZONE_ID;
-  if (!apiToken || !zoneId) return;
+  if (!apiToken || !zoneId) return false;
 
   const base = `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`;
   const headers = {
@@ -658,17 +663,56 @@ export async function deleteCloudflareDns(hostname: string): Promise<void> {
     "Content-Type": "application/json",
   };
 
-  const search = await fetch(`${base}?type=CNAME&name=${hostname}`, { headers });
+  const search = await fetch(`${base}?type=CNAME&name=${encodeURIComponent(hostname)}`, { headers });
   if (!search.ok) {
     throw new Error(`CF API GET failed (${search.status}): ${await search.text()}`);
   }
   const searchData = (await search.json()) as { result?: { id: string }[] };
   const existing = searchData.result?.[0];
-  if (!existing) return;
+  if (!existing) return false;
 
   const resp = await fetch(`${base}/${existing.id}`, { method: "DELETE", headers });
   if (!resp.ok) {
     throw new Error(`CF API DELETE failed (${resp.status}): ${await resp.text()}`);
+  }
+  return true;
+}
+
+/**
+ * Enumerate all wildcard CNAMEs on the configured zone. One CF API call,
+ * filters in memory by `name.startsWith('*')`. Used by the admin diagnostics
+ * endpoint so the panel can list every wildcard the operator might want to
+ * delete (not just the one matching *.${DOABLE_DOMAIN}).
+ *
+ * Returns an empty array when CF creds are missing or any error occurs —
+ * never throws.
+ */
+export async function listZoneWildcards(): Promise<
+  Array<{ hostname: string; target: string; proxied: boolean; modifiedOn: string }>
+> {
+  const apiToken = process.env.CF_API_TOKEN;
+  const zoneId = process.env.CF_ZONE_ID;
+  if (!apiToken || !zoneId) return [];
+
+  const base = `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`;
+  const headers = { Authorization: `Bearer ${apiToken}` };
+  try {
+    const resp = await fetch(`${base}?type=CNAME&per_page=200`, { headers });
+    if (!resp.ok) return [];
+    const data = (await resp.json()) as {
+      result?: { name: string; content: string; proxied: boolean; modified_on: string }[];
+    };
+    if (!Array.isArray(data.result)) return [];
+    return data.result
+      .filter((r) => r.name.startsWith("*"))
+      .map((r) => ({
+        hostname: r.name,
+        target: r.content,
+        proxied: r.proxied,
+        modifiedOn: r.modified_on,
+      }));
+  } catch {
+    return [];
   }
 }
 
