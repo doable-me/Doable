@@ -8,7 +8,7 @@
  * Writes evidence to testcases/evidence/dev/ai-counter-r11/.
  */
 
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const API = process.env.API ?? "https://dev-api.doable.me";
@@ -25,8 +25,6 @@ function now() { return new Date().toISOString(); }
 interface Ev { ts: string; tdelta_ms: number; kind: string; preview: string; }
 
 async function main() {
-  const T0 = Date.now();
-
   // 1. Create project
   const projRes = await fetch(`${API}/projects`, {
     method: "POST",
