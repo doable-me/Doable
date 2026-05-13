@@ -1,0 +1,284 @@
+[
+  {
+    "ts": "2026-05-13T19:57:18.347Z",
+    "tdelta_ms": 354,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\"Preparing workspace...\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:18.348Z",
+    "tdelta_ms": 355,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Creating project files...\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:18.349Z",
+    "tdelta_ms": 356,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\"Creating project scaffold...\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:18.349Z",
+    "tdelta_ms": 356,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Installing dependencies...\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:18.349Z",
+    "tdelta_ms": 356,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\" Installing dependencies...\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:18.686Z",
+    "tdelta_ms": 693,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving react… (1 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:19.492Z",
+    "tdelta_ms": 1499,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving @vitejs%2fplugin-react… (2 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:20.344Z",
+    "tdelta_ms": 2351,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving @tailwindcss%2fnode… (3 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:21.175Z",
+    "tdelta_ms": 3182,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving @jridgewell%2fresolve-uri… (4 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:21.340Z",
+    "tdelta_ms": 3347,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"thinking\",\"message\":\"Thinking…\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:21.343Z",
+    "tdelta_ms": 3350,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving @jridgewell%2fresolve-uri… (4 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:21.984Z",
+    "tdelta_ms": 3991,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving @esbuild%2fopenbsd-arm64… (5 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:22.790Z",
+    "tdelta_ms": 4797,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving @babel%2fplugin-transform-typeof-symbol… (6 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:23.609Z",
+    "tdelta_ms": 5616,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving @babel%2fhelper-remap-async-to-generator… (7 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:24.341Z",
+    "tdelta_ms": 6348,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"thinking\",\"message\":\"Thinking…\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:24.343Z",
+    "tdelta_ms": 6350,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving @babel%2fhelper-remap-async-to-generator… (7 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:24.416Z",
+    "tdelta_ms": 6423,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving cross-spawn… (8 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:25.247Z",
+    "tdelta_ms": 7254,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Resolving crypto-random-string… (9 packages)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:26.333Z",
+    "tdelta_ms": 8340,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Installing packages… (8s)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:27.343Z",
+    "tdelta_ms": 9350,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"thinking\",\"message\":\"Thinking…\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:27.344Z",
+    "tdelta_ms": 9351,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Installing packages… (8s)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:28.073Z",
+    "tdelta_ms": 10080,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Installed 367 packages\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:28.159Z",
+    "tdelta_ms": 10166,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"scaffolding\",\"message\":\"Dependencies installed (10s)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:28.159Z",
+    "tdelta_ms": 10166,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\" done (10s)\\n\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:28.159Z",
+    "tdelta_ms": 10166,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"dev-server\",\"message\":\"Starting dev server...\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:28.159Z",
+    "tdelta_ms": 10166,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\" Starting dev server...\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:28.340Z",
+    "tdelta_ms": 10347,
+    "kind": "keep_alive",
+    "preview": "{\"type\":\"keep_alive\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:30.083Z",
+    "tdelta_ms": 12090,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"dev-server\",\"message\":\"Dev server ready (2s)\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:30.083Z",
+    "tdelta_ms": 12090,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\" ready (2s)\\n\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:30.083Z",
+    "tdelta_ms": 12090,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\" Connecting to AI model...\\n\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:30.083Z",
+    "tdelta_ms": 12090,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"thinking\",\"message\":\"Connecting to AI...\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:30.160Z",
+    "tdelta_ms": 12167,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"connecting\",\"message\":\"Connecting to AI...\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:30.346Z",
+    "tdelta_ms": 12353,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"thinking\",\"message\":\"Thinking…\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:31.142Z",
+    "tdelta_ms": 13149,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"thinking\",\"message\":\"Waiting for AI model to respond...\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:31.146Z",
+    "tdelta_ms": 13153,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"thinking\",\"message\":\"AI is writing code...\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:33.342Z",
+    "tdelta_ms": 15349,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"thinking\",\"message\":\"Thinking…\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:34.833Z",
+    "tdelta_ms": 16840,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\"\\nThe user\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:35.397Z",
+    "tdelta_ms": 17404,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\" sent a message that just contains `$P$G` which appears to be a garbled or partial\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:35.896Z",
+    "tdelta_ms": 17903,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\" message. This could be:\\n1. A copy-paste error from the user\\n2. An accidental message\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:36.366Z",
+    "tdelta_ms": 18373,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\" send\\n3. Some kind of test message\\n\\nI should respond helpfully and ask what they'd like me to help with, since this\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:37.042Z",
+    "tdelta_ms": 19049,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\" doesn't seem to be a specific request.\\n\\n\\nHey! Looks like that message might have gotten cut off — `$\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:37.516Z",
+    "tdelta_ms": 19523,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\"P$G` doesn't quite parse as a request.\\n\\nWhat are you looking to build today? Whether it's a feature, a page, a full\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:37.822Z",
+    "tdelta_ms": 19829,
+    "kind": "thinking",
+    "preview": "{\"type\":\"thinking\",\"data\":\" app, or just an idea you're kicking around, I'm ready to help.\"}"
+  },
+  {
+    "ts": "2026-05-13T19:57:37.861Z",
+    "tdelta_ms": 19868,
+    "kind": "done",
+    "preview": "{\"type\":\"done\",\"data\":{}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:37.880Z",
+    "tdelta_ms": 19887,
+    "kind": "usage",
+    "preview": "{\"type\":\"usage\",\"data\":{\"promptTokens\":17287,\"completionTokens\":138,\"thinkingTokens\":0,\"cacheCreationTokens\":0,\"cacheReadTokens\":0,\"totalTokens\":17425,\"toolCallCount\":0,\"estimatedCostUsd\":0,\"durationM"
+  },
+  {
+    "ts": "2026-05-13T19:57:37.880Z",
+    "tdelta_ms": 19887,
+    "kind": "status",
+    "preview": "{\"type\":\"status\",\"data\":{\"phase\":\"complete\",\"message\":\"Done\"}}"
+  },
+  {
+    "ts": "2026-05-13T19:57:37.880Z",
+    "tdelta_ms": 19887,
+    "kind": "done-sentinel",
+    "preview": "\"[DONE]\""
+  }
+]
