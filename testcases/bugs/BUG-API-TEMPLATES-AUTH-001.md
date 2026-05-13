@@ -1,13 +1,18 @@
-# BUG-API-TEMPLATES-AUTH-001 — GET /templates returns 401; should be public
+# BUG-API-TEMPLATES-AUTH-001 — INVALID: 401 is intentional (BUG-WS-003 fix)
 
-**Severity:** low
-**Status:** OPEN
+**Severity:** low → INVALID
+**Status:** INVALID — intentional security tightening; not a regression
 **Target:** https://dev-api.doable.me/templates
 **Found:** 2026-05-13 by Ralph R9 (dev smoke test)
-**Baseline:** staging 2026-05-08 returned 200 on same endpoint
+**Resolved (as INVALID):** 2026-05-13, same round, after deeper trace by opus debugger
 
-## Summary
-The `/templates` endpoint on dev returns `401 Unauthorized` for unauthenticated requests. Historical baseline (staging 2026-05-08 RUNLOG) shows the same request returned `200` with a list of available templates. This is a **regression or middleware misconfiguration**: the endpoint was previously public and should remain public.
+## TL;DR — Invalid bug
+The 401 on `/templates` is **intentional**, not a regression. Commit `3f99f80` (2026-05-10, "Auth gate (BUG-WS-003)") in `services/api/src/routes/templates.ts:24-25` explicitly added `templateRoutes.use("/", authMiddleware)` to close an information-disclosure vulnerability — the unauthed listing was returning full `codeFiles` (template source code) to anyone. The staging 2026-05-08 baseline that showed 200 is from BEFORE the fix and represents the vulnerable state.
+
+If templates need to be publicly discoverable (signup/marketing flows), the correct fix is a **new, sanitized public listing endpoint** that strips `codeFiles` and returns metadata only (id, name, description, category, tags, previewImageUrl, isOfficial). Out of scope for R9. File a separate feature ticket if needed.
+
+## Original symptom (kept for history)
+The `/templates` endpoint on dev returns `401 Unauthorized` for unauthenticated requests. Historical baseline (staging 2026-05-08 RUNLOG) showed `200` — but that baseline predates the BUG-WS-003 fix.
 
 ## Reproduction
 ```bash
