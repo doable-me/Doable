@@ -828,6 +828,30 @@ else
   chown "${APP_USER}:${APP_GROUP}" "${ENV_FILE}"
   chmod 0600 "${ENV_FILE}"
   ok "Reusing existing ${ENV_FILE} (perms re-asserted: 600 ${APP_USER}:${APP_GROUP})"
+
+  # Back-fill DOABLE_KEK on pre-R9 installs. envelope-crypto's master KEK
+  # was added after this script's initial cut; older .env files are missing
+  # it and any MFA enroll / KEK-decrypt path then 500s. Rotate-safe rules:
+  #   - DOABLE_KEK=<value> non-empty → preserve (rotating bricks data)
+  #   - DOABLE_KEK=           empty   → fill + warn
+  #   - line absent                    → append + warn
+  if grep -qE '^DOABLE_KEK=.+' "${ENV_FILE}"; then
+    ok "DOABLE_KEK already set in existing .env (preserving)"
+  elif grep -qE '^DOABLE_KEK=$' "${ENV_FILE}"; then
+    NEW_KEK="$(openssl rand -base64 32)"
+    sed -i "s|^DOABLE_KEK=$|DOABLE_KEK=${NEW_KEK}|" "${ENV_FILE}"
+    warn "DOABLE_KEK was present but empty in ${ENV_FILE} — filled with a freshly generated 32-byte base64 key. Encrypted rows written before this point may now be unreadable."
+  else
+    NEW_KEK="$(openssl rand -base64 32)"
+    {
+      printf '\n# Master KEK (envelope-crypto) — back-filled by setup-server-v3 idempotent re-run.\n'
+      printf '# Wraps per-workspace DEKs + MFA secrets. Do not rotate after first encrypted write.\n'
+      printf 'DOABLE_KEK=%s\n' "${NEW_KEK}"
+    } >> "${ENV_FILE}"
+    chown "${APP_USER}:${APP_GROUP}" "${ENV_FILE}"
+    chmod 0600 "${ENV_FILE}"
+    warn "DOABLE_KEK was missing from ${ENV_FILE} — appended a freshly generated 32-byte base64 key. Restart the API to pick it up."
+  fi
 fi
 
 # Verify that the .env is NOT readable by a sandbox-range UID.
