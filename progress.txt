@@ -93,3 +93,13 @@ deployments work out-of-the-box. Constraints carried from CLAUDE.md and memory:
 - BUG-R10-PROJECT-FILES-EMPTY-200-001 (P3 contract decision)
 - Audit OTHER pre-R9-deployed servers for missing DOABLE_KEK — prod check requires user approval (feedback_no_deploy_without_permission).
 - Live dev redeploy needed to confirm 4 KEK 500s and 5 password-reset 404s clear — out of scope here (no SSH this session).
+
+---
+
+## R11 progress (re-applied after haiku branch-reset incident)
+
+See FINDINGS.md "## 2026-05-14 — Ralph R11 ..." section for the full round summary. Key updates beyond what FINDINGS captures:
+
+- BUG-R11-SEC-BAD-SIG-200 — initially filed as P1 by security probe agent; verified false positive (base64url non-canonical encoding artifact). Retracted with explanation.
+- BUG-R11-SEC-RLS-PROJECT-FILES-200 — confirmed true positive: cross-tenant `GET /projects/<other-user-id>/files` returns 200 with `data:[]` instead of 404. Same shape as carry-over BUG-R10-PROJECT-FILES-EMPTY-200-001 — root cause is the route handler not gating on project membership.
+- 13 security probes total, 1 real bug (RLS-files), 1 false-positive bug retracted, 11 PASS.
