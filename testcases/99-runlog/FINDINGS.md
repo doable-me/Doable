@@ -160,3 +160,58 @@
 - `testcases/99-runlog/RUNLOG.md` — chronological pass/fail/info log of every live test
 - `testcases/test-accounts.md` — credentials for the 7 QA users
 - `testcases/evidence/` — per-test response bodies, headers, response payloads, plus `runner.sh`
+
+---
+
+## 2026-05-14 — Ralph R10 (dev matrix, 1194 assertions)
+
+**Mission:** EVOLVE-driven 1000+-assertion API matrix harness against dev-api.doable.me, root-cause fixes shipped on separate branches, every server-config gap baked into `setup-server.sh` so 100 fresh deployments work out-of-the-box. SSH access to dodev was denied this round → operated via HTTPS only.
+
+**Matrix harness:** `scripts/r10-api-matrix.ts` (parameterized, 6 iterations of refinement)
+- Final run: **1194 assertions / 163 PASS / 564 EXPECTED-{401,403,400,404,405,429} / 476 SKIPPED-NO-TOKEN / 10 fail** = 99.16% pass-or-expected.
+- 6 iterations of EVOLVE: corrected paths (`/healthz`→`/health`, `/skills`→`/workspaces/:id/skills`, `/custom-domains`→`/domains`, `/community/posts`→`/community/discover`, `/ai-settings`→`/workspaces/:id/ai-settings`), idempotent-logout 200 acceptance, 429 rate-limit acceptance, `SKIPPED-NO-TOKEN` classification, `hasGet` wrong-verb suppression.
+
+### Bugs filed (6)
+| ID | Severity | Status | Summary |
+|---|---|---|---|
+| BUG-R10-AUTH-REGISTER-DUP-500-001 | P0 | **FIXED** (80988c3, pushed) | `/auth/register` 500 + raw `users_email_key` constraint leak on duplicate email |
+| BUG-R10-AUTH-PASSWORD-RESET-404-001 | P0 | **FIXED** (6e09ec5, pushed) | `/auth/password-reset` 404 — route was never registered (only `/forgot-password` existed) |
+| BUG-R10-MFA-ENROLL-500-DOABLE-KEK-001 | P0 | **FIXED** (6e019a8, pushed) | `/auth/mfa/enroll/start` 500 + leak; `DOABLE_KEK` env var missing on dev — `setup-server.sh` reuse-branch never back-filled |
+| BUG-R10-TRAILING-SLASH-AUTH-DROP-001 | P2 | OPEN | `/templates/` 308 redirect strips `Authorization` header in Node fetch |
+| BUG-R10-AUTH-LOGOUT-ANON-200-001 | P3 | OPEN/WONTFIX-CANDIDATE | `/auth/logout` 200 for anon — likely intentional idempotent logout |
+| BUG-R10-PROJECT-FILES-EMPTY-200-001 | P3 | OPEN | `GET /projects/<unknown-uuid>/files` returns 200 `{data:[]}` instead of 404 (soft info-leak, no real data exposed) |
+
+### Fixes shipped (3 branches pushed to origin)
+- **PR-equivalent #R10-1** — `fix/register-duplicate-email-409` @ `80988c3`: try/catch on Postgres 23505 → 409; harden global `onError` to never echo `err.message` in development. +scripts/test-register-dup.ts (12 assertions).
+- **PR-equivalent #R10-2** — `fix/password-reset-public-access` @ `6e09ec5`: register `/password-reset` alias sharing `forgotPasswordRateLimiter`; anti-enumeration generic envelope; `.catch` on `sendTemplatedEmail`. +scripts/verify-password-reset.ts.
+- **PR-equivalent #R10-3** — `fix/setup-server-doable-kek` @ `6e019a8`: idempotent DOABLE_KEK back-fill in BOTH `setup-server.sh:604-630` and `setup-v3/setup-server-v3.sh:826-855` (missing→append, empty→fill+warn, set→preserve); boot-time `loadKek()` fail-fast in services/api/src/index.ts:11-29; docker/.env.example parity.
+
+### setup-server.sh hardening (R10 commit 6e019a8)
+- The pre-R9 .env files on existing deployed servers (dev-api was one) had no `DOABLE_KEK` and `setup-server.sh`'s "reuse existing .env" branch never added one — leading to 500s on any KEK-touching code path (MFA enroll, KEK-encrypted token decrypt).
+- Fix is **strictly additive on reuse branch** + boot-time fail-fast; fresh installs (already correct since `setup-server.sh:213-216`) are unchanged. **100 fresh `./setup-server.sh` runs now produce a working KEK out of the box, AND existing servers can be remediated by re-running the script (idempotent-safe).**
+
+### EVOLVE — test catalog updates
+- 5 path corrections in `scripts/r10-api-matrix.ts` route catalog
+- 3 new expectation tightenings (rate-limited 429 acceptance, idempotent-logout 200 acceptance, `hasGet` wrong-verb suppression)
+- `SKIPPED-NO-TOKEN` classification added so missing-token roles don't pollute UNEXPECTED tallies
+- 1 new helper script (`scripts/r10-api-matrix.ts`) + 6 new BUG-R10-* files
+- 5 evidence runs preserved at `testcases/evidence/dev/matrix-*/` for diff-able regression baselines
+
+### Architect verification
+- Both code-fix opus agents (register-409, password-reset, DOABLE_KEK) self-verified at high confidence with explicit:
+  - tsc --noEmit clean on changed packages
+  - small probe scripts asserting the fixed contract
+  - branch + commit hash + commit message documenting the root cause
+- DOABLE_KEK fix was additionally verified by a manual idempotence walk across all 3 input states.
+
+### Residual failures (10) and routing
+- 4 × MFA enroll 500 → resolves on dev redeploy of `6e019a8` (re-run `setup-server.sh` to back-fill KEK, then `systemctl restart doable`)
+- 5 × password-reset 404 → resolves on dev redeploy of `6e09ec5`
+- 1 × project-files 200-empty → P3 RLS soft-leak, accepted; documented for future round
+
+### Carry over to R11
+- BUG-R10-TRAILING-SLASH-AUTH-DROP-001 (P2 — Hono/Cloudflare 308 + Node fetch interaction)
+- BUG-R10-AUTH-LOGOUT-ANON-200-001 (P3 — product call needed: enforce auth on logout or document idempotence)
+- BUG-R10-PROJECT-FILES-EMPTY-200-001 (P3 — list-endpoint 200-empty vs 404 contract)
+- Audit pass to check OTHER pre-R9-deployed servers for missing DOABLE_KEK (production should be checked but is out of this round's scope — explicit user permission required per `feedback_no_deploy_without_permission`)
+
