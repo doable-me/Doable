@@ -390,9 +390,17 @@ adminOpsRoutes.delete("/dev-servers/:projectId", async (c) => {
 // state (draft / published), framework, owner, last activity — and joins
 // per-project metrics where a project_runtime row exists.
 adminOpsRoutes.get("/projects", async (c) => {
-  const search = c.req.query("search")?.slice(0, 100) ?? "";
-  const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10) || 100, 500);
-  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
+  const search = (c.req.query("q") ?? c.req.query("search") ?? "").slice(0, 100);
+  const page = Math.max(parseInt(c.req.query("page") ?? "1", 10) || 1, 1);
+  const per = Math.min(parseInt(c.req.query("per") ?? c.req.query("limit") ?? "100", 10) || 100, 500);
+  const limit = per;
+  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, (page - 1) * per);
+  const sortField = c.req.query("sort") ?? "updated_at";
+  const sortDir = (c.req.query("dir") ?? "desc").toLowerCase() === "asc" ? "ASC" : "DESC";
+  const allowedSorts: Record<string, string> = {
+    name: "p.name", updated_at: "p.updated_at", created_at: "p.created_at", status: "p.status",
+  };
+  const orderCol = allowedSorts[sortField] ?? "p.updated_at";
 
   let rows: {
     project_id: string;
@@ -411,8 +419,8 @@ adminOpsRoutes.get("/projects", async (c) => {
     created_at: Date;
     updated_at: Date;
   }[];
+  const searchPattern = `%${search}%`;
   try {
-    const searchPattern = `%${search}%`;
     rows = await sql<typeof rows>`
       SELECT
         p.id AS project_id, p.name AS project_name, p.slug AS project_slug,
@@ -445,7 +453,7 @@ adminOpsRoutes.get("/projects", async (c) => {
           u.email ILIKE ${searchPattern} OR
           p.framework_id ILIKE ${searchPattern}
         )
-      ORDER BY p.updated_at DESC
+      ORDER BY ${sql.unsafe(orderCol)} ${sql.unsafe(sortDir)}
       LIMIT ${limit} OFFSET ${offset}
     `;
   } catch (e) {
@@ -455,7 +463,21 @@ adminOpsRoutes.get("/projects", async (c) => {
     }, 500);
   }
 
-  const totalRow = await sql<{ c: number }[]>`SELECT COUNT(*)::int AS c FROM projects WHERE deleted_at IS NULL`;
+  const totalRow = await sql<{ c: number }[]>`
+    SELECT COUNT(*)::int AS c
+    FROM projects p
+    JOIN workspaces w ON w.id = p.workspace_id
+    LEFT JOIN users u ON u.id = w.owner_id
+    WHERE p.deleted_at IS NULL
+      AND (
+        ${search} = '' OR
+        p.name ILIKE ${searchPattern} OR
+        p.slug ILIKE ${searchPattern} OR
+        w.name ILIKE ${searchPattern} OR
+        u.email ILIKE ${searchPattern} OR
+        p.framework_id ILIKE ${searchPattern}
+      )
+  `;
   const total = totalRow[0]?.c ?? 0;
 
   return c.json({
@@ -481,6 +503,8 @@ adminOpsRoutes.get("/projects", async (c) => {
       total,
       limit,
       offset,
+      page,
+      meta: { total, page, per, pages: Math.ceil(total / per) },
     },
   });
 });
