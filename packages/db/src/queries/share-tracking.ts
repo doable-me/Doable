@@ -33,6 +33,15 @@ export function shareTrackingQueries(sql: postgres.Sql) {
 
       // Union of: projects visited via share link + projects where user is
       // a collaborator but NOT a workspace member.
+      //
+      // BUG-WS-003: The previous version used `SELECT DISTINCT p.*` which
+      // crashes on Postgres when `projects` contains non-comparable column
+      // types (jsonb columns like `connector_settings` added in migration
+      // 054 don't have a default equality operator usable by DISTINCT,
+      // causing the API process to surface a 502 via Cloudflare). The fix
+      // selects the project ids via a deduped subquery, then joins back to
+      // `projects` for the full row payload. This avoids DISTINCT over the
+      // full row and is more performant for paginated reads.
       const [countResult] = await sql<[{ count: string }]>`
         SELECT count(DISTINCT p.id)::text
         FROM projects p
@@ -58,21 +67,31 @@ export function shareTrackingQueries(sql: postgres.Sql) {
       `;
 
       const rows = await sql<ProjectRow[]>`
-        SELECT DISTINCT p.*,
-          COALESCE(slv.last_visited_at, pc.added_at, p.updated_at) AS _sort_date
-        FROM projects p
-        LEFT JOIN share_link_visits slv
-          ON slv.project_id = p.id AND slv.visitor_user_id = ${userId}
-        LEFT JOIN project_collaborators pc
-          ON pc.project_id = p.id AND pc.user_id = ${userId}
-        WHERE p.deleted_at IS NULL
-          AND (slv.id IS NOT NULL OR pc.id IS NOT NULL)
-          -- Exclude projects from user's own workspaces
-          AND NOT EXISTS (
-            SELECT 1 FROM workspace_members wm
-            WHERE wm.workspace_id = p.workspace_id AND wm.user_id = ${userId}
-          )
-        ORDER BY _sort_date DESC
+        WITH shared_ids AS (
+          SELECT
+            p.id,
+            MAX(GREATEST(
+              COALESCE(slv.last_visited_at, 'epoch'::timestamptz),
+              COALESCE(pc.added_at, 'epoch'::timestamptz),
+              p.updated_at
+            )) AS sort_date
+          FROM projects p
+          LEFT JOIN share_link_visits slv
+            ON slv.project_id = p.id AND slv.visitor_user_id = ${userId}
+          LEFT JOIN project_collaborators pc
+            ON pc.project_id = p.id AND pc.user_id = ${userId}
+          WHERE p.deleted_at IS NULL
+            AND (slv.id IS NOT NULL OR pc.id IS NOT NULL)
+            AND NOT EXISTS (
+              SELECT 1 FROM workspace_members wm
+              WHERE wm.workspace_id = p.workspace_id AND wm.user_id = ${userId}
+            )
+          GROUP BY p.id
+        )
+        SELECT p.*
+        FROM shared_ids s
+        JOIN projects p ON p.id = s.id
+        ORDER BY s.sort_date DESC
         LIMIT ${pageSize} OFFSET ${offset}
       `;
 
