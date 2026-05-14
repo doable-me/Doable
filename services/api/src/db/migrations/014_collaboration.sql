@@ -50,12 +50,34 @@ CREATE INDEX IF NOT EXISTS idx_activity_events_project ON activity_events (proje
 CREATE TABLE IF NOT EXISTS notifications (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    project_id      uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    type            text NOT NULL,
+    project_id      uuid REFERENCES projects(id) ON DELETE CASCADE,
+    type            text,
     title           text NOT NULL,
     body            text,
     source_id       uuid,
     read_at         timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now()
 );
+-- Migrate existing notifications table if it has the old schema (workspace_id/is_read)
+DO $$
+BEGIN
+    -- Add new columns if missing
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='notifications' AND column_name='read_at') THEN
+        ALTER TABLE notifications ADD COLUMN read_at timestamptz;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='notifications' AND column_name='project_id') THEN
+        ALTER TABLE notifications ADD COLUMN project_id uuid REFERENCES projects(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='notifications' AND column_name='type') THEN
+        -- migrate 'kind' -> 'type' if kind exists, else add type
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='notifications' AND column_name='kind') THEN
+            ALTER TABLE notifications RENAME COLUMN kind TO type;
+        ELSE
+            ALTER TABLE notifications ADD COLUMN type text;
+        END IF;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='notifications' AND column_name='source_id') THEN
+        ALTER TABLE notifications ADD COLUMN source_id uuid;
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, read_at NULLS FIRST, created_at DESC);
