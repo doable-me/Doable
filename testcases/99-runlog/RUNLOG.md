@@ -32,6 +32,39 @@
 | TC-WS-LIST-002 | 2026-05-08T05:44:15Z | PASS | got=401 exp=401 — GET /workspaces unauth returns 401 · {"error":"Missing or invalid Authorization header"} |
 | TC-WS-LIST-003 | 2026-05-08T05:44:15Z | PASS | got=200 exp=200 — GET /workspaces with member token returns own ws · {"data":[{"id":"e0eb30b8-5078-4180-bde9-de8dde600384","name":"QA member's workspace","slug":"qa-member","description":null,"avatar_url":null,"owner_id":"ff9c6e4d-5081-4ed3-a46d-2f1ad046ec4c","plan":"pro","created_at":"20 |
 | TC-WEB-LANDING-001 | 2026-05-08T05:44:17Z | PASS | got=200 exp=200 — GET / public landing 200 · <!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossor |
+| TC-NOTIF-LIST-001a | 2026-05-14T18:25:00Z | PASS | got=400 exp=400 — GET /notifications no workspaceId -> 400 validation error |
+| TC-NOTIF-LIST-001b | 2026-05-14T18:25:01Z | PASS | got=200 exp=200 — GET /notifications?workspaceId=c1083c8a -> 200 {data:[]} |
+| TC-NOTIF-LIST-002 | 2026-05-14T18:25:02Z | PASS | got=403 exp=403 — admin2 cannot see owner workspace notifications |
+| TC-NOTIF-LIST-003 | 2026-05-14T18:25:03Z | PASS | got=200 exp=200 — GET /notifications?unreadOnly=true -> 200 with data |
+| TC-NOTIF-LIST-UNREAD | 2026-05-14T18:25:04Z | PASS | got=200 exp=200 — GET /notifications/unread-count -> {count:0} |
+| TC-NOTIF-LIST-008 | 2026-05-14T18:25:05Z | PASS | got=204 exp=204 — POST /notifications/read-all -> 204 |
+| TC-NOTIF-LIST-007 | 2026-05-14T18:25:06Z | PASS | got=404 exp=404 — POST /notifications/fake-id/read -> 404 |
+| TC-NOTIF-UNAUTH | 2026-05-14T18:25:07Z | PASS | got=401 exp=401 — GET /notifications no token -> 401 |
+| TC-ANALYTICS-OVERVIEW-001 | 2026-05-14T18:26:00Z | PASS | got=200 exp=200 — GET /analytics/projects/:id/overview -> 200 with visitors/pageViews/sessions |
+| TC-ANALYTICS-DASHBOARD-002 | 2026-05-14T18:26:01Z | PASS | got=401 exp=401 — GET /analytics overview no auth -> 401 |
+| TC-ANALYTICS-OVERVIEW-FAKE | 2026-05-14T18:26:02Z | PASS | got=404 exp=404 — GET /analytics overview fake project -> 404 |
+| TC-ANALYTICS-DASHBOARD-019 | 2026-05-14T18:26:03Z | FAIL | got=200 exp=403/404 — admin2 can read owner's project analytics without membership — BUG: 2026-05-14-analytics-001 |
+| TC-ANALYTICS-TIMESERIES | 2026-05-14T18:26:04Z | PASS | got=200 exp=200 — GET /analytics timeseries 7d -> 200 {data:[]} |
+| TC-ANALYTICS-PAGE-VIEWS-001 | 2026-05-14T18:26:05Z | PASS | got=200 exp=200 — GET /analytics pageviews -> 200 {data:[]} |
+| TC-ANALYTICS-EVENTS-001 | 2026-05-14T18:26:06Z | PASS | got=200 exp=200 — GET /analytics events -> 200 {data:[]} |
+| TC-ANALYTICS-PAGES | 2026-05-14T18:26:07Z | PASS | got=200 exp=200 — GET /analytics top pages -> 200 {data:[]} |
+| TC-ANALYTICS-REFERRERS | 2026-05-14T18:26:08Z | PASS | got=200 exp=200 — GET /analytics referrers -> 200 {data:[]} |
+| TC-ANALYTICS-DEVICES | 2026-05-14T18:26:09Z | PASS | got=200 exp=200 — GET /analytics devices -> 200 {data:[]} |
+| TC-ANALYTICS-REALTIME | 2026-05-14T18:26:10Z | PASS | got=200 exp=200 — GET /analytics realtime -> 200 {activeVisitors,pages} |
+| TC-ANALYTICS-SETTINGS-GET | 2026-05-14T18:26:11Z | PASS | got=200 exp=200 — GET /analytics settings -> 200 {enabled,trackingSnippet} |
+| TC-ANALYTICS-SETTINGS-PUT | 2026-05-14T18:26:12Z | PASS | got=200 exp=200 — PUT /analytics settings enabled=true -> 200 |
+| TC-ANALYTICS-SETTINGS-INVALID | 2026-05-14T18:26:13Z | PASS | got=400 exp=400 — PUT /analytics settings enabled=string -> 400 validation |
+| TC-ANALYTICS-SCRIPT | 2026-05-14T18:26:14Z | PASS | got=200 exp=200 — GET /analytics/script.js -> 200 JS tracking script |
+| TC-ANALYTICS-EVENTS-001-TRACK | 2026-05-14T18:26:15Z | PASS | got=204 exp=204 — POST /analytics/track page_view -> 204 |
+| TC-ANALYTICS-TRACK-INVALID | 2026-05-14T18:26:16Z | PASS | got=400 exp=400 — POST /analytics/track missing fields -> 400 |
+| TC-ANALYTICS-TRACK-FAKE-PROJ | 2026-05-14T18:26:17Z | PASS | got=400 exp=400 — POST /analytics/track fake projectId -> 400 |
+| TC-ANALYTICS-TRACK-BATCH | 2026-05-14T18:26:18Z | PASS | got=204 exp=204 — POST /analytics/track batch 2 events -> 204 |
+| TC-THUMB-GEN-001-NOTEXIST | 2026-05-14T18:27:00Z | PASS | got=404 exp=404 — GET /thumbnails/:id.png no thumbnail -> 404 Cache-Control: no-store |
+| TC-THUMB-FORMAT | 2026-05-14T18:27:01Z | PASS | got=400 exp=400 — GET /thumbnails/:id.jpg -> 400 only .png supported |
+| TC-THUMB-GEN-REGEN-NOSERVER | 2026-05-14T18:27:02Z | PASS | got=400 exp=400 — POST /thumbnails/:id/regenerate no dev server -> 400 |
+| TC-THUMB-REGEN-NOAUTH | 2026-05-14T18:27:03Z | PASS | got=401 exp=401 — POST /thumbnails/:id/regenerate no auth -> 401 |
+| TC-THUMB-GEN-039 | 2026-05-14T18:27:04Z | PASS | got=404 exp=not-401 — GET /thumbnails/:id.png no auth -> 404 (public endpoint, no auth required) |
+| TC-THUMB-GEN-027 | 2026-05-14T18:27:05Z | FAIL | code-check — Puppeteer --no-sandbox hardcoded unconditionally in capture.ts — BUG: 2026-05-14-analytics-002 |
 | TC-WEB-LOGIN-001 | 2026-05-08T05:44:18Z | PASS | got=200 exp=200 — GET /login form 200 · <!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossor |
 | TC-WEB-SIGNUP-001 | 2026-05-08T05:44:19Z | PASS | got=200 exp=200 — GET /signup form 200 · <!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossor |
 | TC-WEB-FORGOT-001 | 2026-05-08T05:44:20Z | PASS | got=200 exp=200 — GET /forgot-password 200 · <!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossor |
@@ -67,6 +100,58 @@
 | TC-ADMIN-RBAC-001 | 2026-05-08T05:45:31Z | PASS | got=403 exp=403 — Non-admin to /admin/users returns 403 · {"error":"Platform admin access required"} |
 | TC-ADMIN-RBAC-002 | 2026-05-08T05:45:31Z | PASS | got=403 exp=403 — Non-admin to /admin/projects returns 403 · {"error":"Platform admin access required"} |
 | TC-ADMIN-RBAC-003 | 2026-05-08T05:45:32Z | PASS | got=403 exp=403 — Non-admin to /admin/audit returns 403 · {"error":"Platform admin access required"} |
+
+## DEV — Billing + Marketplace batch (2026-05-14)
+
+**Target:** https://dev.doable.me  
+**API:** https://dev-api.doable.me  
+**Run date:** 2026-05-14  
+**Tester:** QA Tester Agent (Claude Sonnet)  
+**Stripe:** NOT bypassed — real Stripe checkout URLs returned  
+**Test users:** owner-pro@doable.me (pro workspace), owner-free@doable.me (free workspace)  
+**Results file:** testcases/evidence/dev/batch-2026-05-14/billing-marketplace-results.json  
+**Bugs filed:** 14 (8 billing, 6 marketplace)  
+
+| Test ID | Run timestamp (UTC) | Result | Description |
+|---------|---------------------|--------|-------------|
+| TC-BILLING-PLANS-001 | 2026-05-14T17:00:00Z | PASS | GET /billing/plans returns 200 with 3 plans (free, pro, business) |
+| TC-BILLING-PLANS-004 | 2026-05-14T17:01:00Z | FAIL | GET /billing/plans missing enterprise plan with contactSales=true — BUG-2026-05-14-BILLING-008 |
+| TC-BILLING-PLANS-006 | 2026-05-14T17:01:30Z | FAIL | Plan schema missing storageMb, priceCents, interval fields — BUG-2026-05-14-BILLING-008 |
+| TC-BILLING-PLANS-012 | 2026-05-14T17:02:00Z | FAIL | GET /billing/subscription returns 404 Not Found — BUG-2026-05-14-BILLING-004 |
+| TC-BILLING-PLANS-015 | 2026-05-14T17:02:30Z | FAIL | GET /billing/limits returns 404 Not Found — BUG-2026-05-14-BILLING-004 |
+| TC-BILLING-PLANS-020 | 2026-05-14T17:03:00Z | FAIL | POST /billing/cancel returns 404 Not Found — BUG-2026-05-14-BILLING-004 |
+| TC-BILLING-PLANS-025 | 2026-05-14T17:03:30Z | FAIL | POST /billing/upgrade returns 404 Not Found — BUG-2026-05-14-BILLING-004 |
+| TC-BILLING-PLANS-036 | 2026-05-14T17:04:00Z | FAIL | /pricing page shows 404 "Page not found" — BUG-2026-05-14-BILLING-007 |
+| TC-BILLING-CREDITS-001 | 2026-05-14T17:05:00Z | PASS | GET /billing/balance with valid workspaceId returns 200 with credit data |
+| TC-BILLING-CREDITS-002 | 2026-05-14T17:05:30Z | FAIL | GET /billing/balance accepts any workspaceId — cross-tenant data leak — BUG-2026-05-14-BILLING-002 |
+| TC-BILLING-CREDITS-005 | 2026-05-14T17:06:00Z | FAIL | UI shows -400/100 monthly credits (negative/wrong value) — BUG-2026-05-14-BILLING-001 |
+| TC-BILLING-CREDITS-010 | 2026-05-14T17:06:30Z | FAIL | POST /billing/grant returns 404 Not Found — BUG-2026-05-14-BILLING-004 |
+| TC-BILLING-CREDITS-011 | 2026-05-14T17:07:00Z | FAIL | POST /billing/revoke returns 404 Not Found — BUG-2026-05-14-BILLING-004 |
+| TC-BILLING-PORTAL-001 | 2026-05-14T17:08:00Z | PASS | GET /billing/portal returns 200 with Stripe portal URL |
+| TC-BILLING-PORTAL-005 | 2026-05-14T17:08:30Z | FAIL | Manage Subscription CTA navigates to /usage not /billing/portal — BUG-2026-05-14-BILLING-003 |
+| TC-BILLING-PORTAL-010 | 2026-05-14T17:09:00Z | FAIL | GET /billing/invoices returns 404 Not Found — BUG-2026-05-14-BILLING-004 |
+| TC-BILLING-PORTAL-015 | 2026-05-14T17:09:30Z | FAIL | GET /billing/payment-methods returns 404 Not Found — BUG-2026-05-14-BILLING-004 |
+| TC-BILLING-TOPUP-001 | 2026-05-14T17:10:00Z | PASS | GET /billing/topup/packages returns 200 with package list |
+| TC-BILLING-TOPUP-005 | 2026-05-14T17:10:30Z | PASS | POST /billing/topup returns 200 with Stripe checkout URL |
+| TC-BILLING-TOPUP-015 | 2026-05-14T17:11:00Z | FAIL | GET /billing/topup/history returns 404 Not Found — BUG-2026-05-14-BILLING-004 |
+| TC-BILLING-WEBHOOK-001 | 2026-05-14T17:12:00Z | PASS | POST /billing/webhook missing sig header returns 400 "Missing stripe-signature header" |
+| TC-BILLING-WEBHOOK-003 | 2026-05-14T17:12:30Z | PASS | POST /billing/webhook invalid sig returns 400 "Webhook verification failed" |
+| TC-BILLING-WEBHOOK-008 | 2026-05-14T17:13:00Z | FAIL | POST /billing/webhook with event body returns 502 Bad Gateway — BUG-2026-05-14-BILLING-005 |
+| TC-BILLING-AUTH-RATELIMIT | 2026-05-14T17:14:00Z | FAIL | Login rate limit shows "Something went wrong" not rate-limit message — BUG-2026-05-14-BILLING-006 |
+| TC-MARKET-LIST-001 | 2026-05-14T17:20:00Z | FAIL | GET /marketplace anonymous returns 401 (not public) — BUG-2026-05-14-MARKETPLACE-002 |
+| TC-MARKET-LIST-002 | 2026-05-14T17:20:30Z | PASS | GET /marketplace/listings with auth returns 200 with empty array |
+| TC-MARKET-LIST-005 | 2026-05-14T17:21:00Z | PASS | GET /marketplace/listings?search=test returns 200 with empty results |
+| TC-MARKET-LIST-010 | 2026-05-14T17:21:30Z | PASS | GET /marketplace/listings?sort=popular returns 200 |
+| TC-MARKET-LIST-011 | 2026-05-14T17:22:00Z | PASS | GET /marketplace/listings?sort=newest returns 200 |
+| TC-MARKET-LIST-012 | 2026-05-14T17:22:30Z | PASS | GET /marketplace/listings?sort=rating returns 200 |
+| TC-MARKET-LIST-013 | 2026-05-14T17:23:00Z | FAIL | sort=most_installed returns 400/empty (API uses popular/newest/rating not most_installed/highest_rated) |
+| TC-MARKET-LIST-035 | 2026-05-14T17:23:30Z | FAIL | GET /marketplace/feed.json returns 401 (should be public) — BUG-2026-05-14-MARKETPLACE-003 |
+| TC-MARKET-CATEGORIES-001 | 2026-05-14T17:24:00Z | PASS | GET /marketplace/categories returns 200 with category list |
+| TC-MARKET-BUNDLES-001 | 2026-05-14T17:24:30Z | FAIL | GET /marketplace/bundles returns 404 Not Found — BUG-2026-05-14-MARKETPLACE-006 |
+| TC-MARKET-INSTALL-001 | 2026-05-14T17:25:00Z | FAIL | POST /marketplace/install nonexistent ID returns 500 (should 404) — BUG-2026-05-14-MARKETPLACE-001 |
+| TC-MARKET-REVIEW-001 | 2026-05-14T17:26:00Z | FAIL | POST /marketplace/reviews returns 404 Not Found — BUG-2026-05-14-MARKETPLACE-004 |
+| TC-MARKET-REVIEW-002 | 2026-05-14T17:26:30Z | FAIL | GET /marketplace/listings/:id/reviews returns 404 Not Found — BUG-2026-05-14-MARKETPLACE-004 |
+| TC-MARKET-MODERATION-001 | 2026-05-14T17:27:00Z | FAIL | POST /marketplace/reports returns 404 Not Found — BUG-2026-05-14-MARKETPLACE-005 |
 | TC-ADMIN-RBAC-004 | 2026-05-08T05:45:32Z | PASS | got=403 exp=403 — Non-admin to /admin/moderation returns 403 · {"error":"Platform admin access required"} |
 | TC-ADMIN-RBAC-005 | 2026-05-08T05:45:33Z | PASS | got=403 exp=403 — Non-admin to /admin/runtime returns 403 · {"error":"Platform admin access required"} |
 | TC-ADMIN-RBAC-006 | 2026-05-08T05:45:33Z | PASS | got=403 exp=403 — Non-admin to /admin/plan-limits returns 403 · {"error":"Platform admin access required"} |
@@ -326,3 +411,373 @@
 **Summary**: 8 PASS, 2 FAIL, 1 INFO (11 probes)
 **Project Created**: 9c521376-d56e-48d0-8bc5-c387ac20f83a
 
+---
+
+## Run: Collaborative Multi-User Testing — 2026-05-14
+
+**Target:** https://dev.doable.me
+**API:** https://dev-api.doable.me
+**WS:** https://dev-ws.doable.me
+**Run timestamp:** 2026-05-14T17:00:00Z–17:45:00Z
+**Tester:** claude-sonnet-4-6 (QA Tester agent)
+**User A (Chrome):** owner-pro@doable.me
+**User B (Playwright):** ws-member@doable.me
+**Focus:** Design mode, cursor presence, live editing, shared preview, workspace sharing, AI chat collaboration
+
+| Test ID | Run timestamp (UTC) | Result | Description |
+|---------|---------------------|--------|-------------|
+| TC-COLLAB-WEB-HEALTH | 2026-05-14T17:30:00Z | PASS | GET dev.doable.me → 200 OK, frontend loads |
+| TC-COLLAB-WS-HEALTH | 2026-05-14T17:30:00Z | PASS | GET dev-ws.doable.me/health → 200 OK |
+| TC-COLLAB-API-HEALTH | 2026-05-14T17:30:00Z | FAIL | GET dev-api.doable.me/health → 502 Bad Gateway — API server down [BUG-COLLAB-002] |
+| TC-COLLAB-LOGIN-A | 2026-05-14T17:35:00Z | FAIL | owner-pro login via Chrome → 429 rate limit then 502 [BUG-COLLAB-001, BUG-COLLAB-002] |
+| TC-COLLAB-LOGIN-B | 2026-05-14T17:35:00Z | FAIL | ws-member login via Playwright → 502 "Something went wrong" [BUG-COLLAB-002, BUG-COLLAB-003] |
+| TC-COLLAB-RATE-LIMIT-UX | 2026-05-14T17:35:00Z | FAIL | Rate limit message has no retry-after time [BUG-COLLAB-001] |
+| TC-COLLAB-PREVIEW-WS | 2026-05-14T17:40:00Z | FAIL | wss://dev-api.doable.me/preview/{id}/ → 502, retries infinitely [BUG-COLLAB-004] |
+| TC-COLLAB-RUNTIME-METRICS | 2026-05-14T17:40:00Z | FAIL | GET /projects/{id}/runtime/metrics → 404, client polls in tight loop [BUG-COLLAB-005] |
+| TC-COLLAB-GITHUB-STATUS | 2026-05-14T17:40:00Z | FAIL | GET /{projectId}/github/status → 404 [BUG-COLLAB-006] |
+| TC-COLLAB-DESIGN-MODE | 2026-05-14T17:45:00Z | BLOCKED | Cannot test — API 502 blocks login [BUG-COLLAB-002] |
+| TC-COLLAB-CURSOR-PRESENCE | 2026-05-14T17:45:00Z | BLOCKED | Cannot test — API 502 blocks login [BUG-COLLAB-002] |
+| TC-COLLAB-LIVE-EDIT | 2026-05-14T17:45:00Z | BLOCKED | Cannot test — API 502 blocks login [BUG-COLLAB-002] |
+| TC-COLLAB-SHARED-PREVIEW | 2026-05-14T17:45:00Z | BLOCKED | Cannot test — API 502 + preview WS 502 [BUG-COLLAB-002, BUG-COLLAB-004] |
+| TC-COLLAB-WORKSPACE-SHARE | 2026-05-14T17:45:00Z | BLOCKED | Cannot test — API 502 blocks login [BUG-COLLAB-002] |
+| TC-COLLAB-AI-CHAT-MULTI | 2026-05-14T17:45:00Z | BLOCKED | Cannot test — API 502 blocks login [BUG-COLLAB-002] |
+
+**Summary**: 2 PASS, 6 FAIL, 0 INFO, 7 BLOCKED (15 probes)
+**Root cause**: dev-api.doable.me returning 502 on all endpoints — API server is down
+**Bugs filed**: BUG-COLLAB-001 through BUG-COLLAB-006 (6 bugs)
+**Evidence**: testcases/evidence/dev/batch-2026-05-14/collab-results.json
+
+| TC-WS-CRUD-001 | 2026-05-14T17:33:00Z | PASS | GET /workspaces lists user workspaces — 200 {data:[{plan:'pro',userRole:'owner',memberCount:1,credits:{...}}]} |
+| TC-WS-CRUD-003 | 2026-05-14T17:33:00Z | PASS | GET /workspaces no Bearer => 401 |
+| TC-WS-CRUD-004 | 2026-05-14T17:33:19Z | PASS | POST /workspaces happy path — 201 {slug:'qa-test-ws-001',plan:'free'} |
+| TC-WS-CRUD-006 | 2026-05-14T17:33:20Z | PASS | POST missing name => 400 Validation failed |
+| TC-WS-CRUD-007 | 2026-05-14T17:33:20Z | PASS | POST missing slug => 400 Validation failed |
+| TC-WS-CRUD-010 | 2026-05-14T17:33:21Z | PASS | POST name empty => 400 |
+| TC-WS-CRUD-011 | 2026-05-14T17:33:21Z | PASS | POST slug length 2 => 400 |
+| TC-WS-CRUD-015 | 2026-05-14T17:33:21Z | PASS | POST slug uppercase => 400 |
+| TC-WS-CRUD-016 | 2026-05-14T17:33:21Z | PASS | POST slug starts with hyphen => 400 |
+| TC-WS-CRUD-017 | 2026-05-14T17:33:21Z | PASS | POST slug ends with hyphen => 400 |
+| TC-WS-CRUD-022 | 2026-05-14T17:33:22Z | PASS | POST duplicate slug => 409 |
+| TC-WS-CRUD-029 | 2026-05-14T17:33:22Z | PASS | GET /:id returns workspace — 200 |
+| TC-WS-CRUD-030 | 2026-05-14T17:33:23Z | PASS | GET /:id non-member => 403 Not a member |
+| TC-WS-CRUD-031 | 2026-05-14T17:33:23Z | PASS | GET non-existent UUID => 403 (membership check first) |
+| TC-WS-CRUD-032 | 2026-05-14T17:33:23Z | PASS | GET malformed UUID => 400 Invalid workspace id |
+| TC-WS-CRUD-033 | 2026-05-14T17:33:56Z | PASS | PATCH /:id name (owner) => 200 updated |
+| TC-WS-CRUD-037 | 2026-05-14T17:33:57Z | PASS | PATCH avatarUrl invalid => 400 Invalid url |
+| TC-WS-CRUD-038 | 2026-05-14T17:33:57Z | PASS | PATCH {} => 200 no-op |
+| TC-WS-CRUD-039 | 2026-05-14T17:33:57Z | PASS | PATCH slug field ignored (not in schema) |
+| TC-WS-CRUD-040 | 2026-05-14T17:33:58Z | PASS | PATCH owner_id ignored silently |
+| TC-WS-CRUD-042 | 2026-05-14T17:38:30Z | PASS | DELETE workspace from owner => 200 {deleted:true} |
+| TC-WS-CRUD-046 | 2026-05-14T17:38:31Z | PASS | DELETE idempotent — second => 403 |
+| TC-WS-CRUD-048 | 2026-05-14T17:39:20Z | PASS | Transfer to non-member => 400/403 |
+| TC-WS-CRUD-049 | 2026-05-14T17:39:20Z | PASS | Transfer when caller not owner => 403 |
+| TC-WS-CRUD-050 | 2026-05-14T17:39:21Z | PASS | Transfer non-uuid newOwnerId => 400 |
+| TC-WS-MEM-001 | 2026-05-14T17:33:58Z | PASS | GET /:id/members lists members — 200 |
+| TC-WS-MEM-004 | 2026-05-14T17:33:59Z | PASS | Member listing has no password_hash |
+| TC-WS-MEM-009 | 2026-05-14T17:38:32Z | PASS | DELETE self => 400 Cannot remove yourself |
+| TC-WS-MEM-018 | 2026-05-14T17:38:33Z | PASS | PATCH change own role => 400 |
+| TC-WS-MEM-019 | 2026-05-14T17:38:33Z | PASS | PATCH role=owner => 400 |
+| TC-WS-INV-001 | 2026-05-14T17:34:42Z | PASS | Admin invites by email (pro plan) => 201 with token |
+| TC-WS-INV-005 | 2026-05-14T17:34:43Z | PASS | Invite missing email => 400 |
+| TC-WS-INV-006 | 2026-05-14T17:34:43Z | PASS | Invite invalid email => 400 |
+| TC-WS-INV-008 | 2026-05-14T17:34:43Z | PASS | Invite role=owner => 400 enum error |
+| TC-WS-INV-009 | 2026-05-14T17:35:10Z | PASS | Invite existing member => 409 |
+| TC-WS-INV-021 | 2026-05-14T17:35:11Z | PASS | GET /:id/invites (admin+) => 200 list |
+| TC-WS-INV-023 | 2026-05-14T17:39:00Z | PASS | DELETE invite revokes it => {revoked:true} |
+| TC-WS-INV-028 | 2026-05-14T17:39:10Z | FAIL | Accept invite with wrong-email user — no email match check; owner-pro accepted viewer invite, demoted own role. BUG filed: 2026-05-14-workspace-001.md |
+| TC-WS-INV-030 | 2026-05-14T17:39:11Z | PASS | Accept revoked invite => 400 |
+| TC-WS-INV-032 | 2026-05-14T17:35:12Z | PASS | Accept malformed token => 400 |
+| TC-WS-INV-033 | 2026-05-14T17:35:12Z | PASS | Accept missing token => 400 |
+| TC-WS-INV-035 | 2026-05-14T17:35:12Z | PASS | Accept SQL injection token => 400 safe |
+| TC-WS-INV-036 | 2026-05-14T17:34:44Z | PASS | Accept unauthenticated => 401 |
+| TC-WS-INV-037 | 2026-05-14T17:35:52Z | PASS | Shareable invite link create => 201 with __invite_link__ email |
+| TC-WS-INV-039 | 2026-05-14T17:35:52Z | PASS | Shareable invite link role=owner => 400 |
+| TC-WS-PLAN-001 | 2026-05-14T17:35:20Z | PASS | Free plan cannot exceed 1 member => 403 with limit message |
+| TC-WS-PLAN-008 | 2026-05-14T17:38:34Z | PASS | plan field present in workspace listing |
+| TC-WS-ROLE-001 | 2026-05-14T17:38:35Z | PASS | Anonymous => 401 |
+| TC-WS-ROLE-002 | 2026-05-14T17:39:22Z | PASS | Logged-in non-member => 403 Not a member |
+| TC-PROJ-CREATE-001 | 2026-05-14T17:36:23Z | PASS | Create project vite-react default => 201 status:draft visibility:private |
+| TC-PROJ-CREATE-004 | 2026-05-14T17:36:25Z | PASS | Disabled framework (django) => 403 |
+| TC-PROJ-CREATE-008b | 2026-05-14T17:36:26Z | FAIL | Missing workspaceId silently picks workspace => 201 (should be 400). BUG: 2026-05-14-workspace-002.md |
+| TC-PROJ-CREATE-008c | 2026-05-14T17:36:26Z | PASS | GET /projects/not-a-uuid => 400-equivalent Invalid project id |
+| TC-PROJ-CREATE-009 | 2026-05-14T17:36:27Z | PASS | Empty name => 400 |
+| TC-PROJ-CREATE-034 | 2026-05-14T17:36:27Z | PASS | Non-member workspaceId => 403 |
+| TC-PROJ-CREATE-039 | 2026-05-14T17:38:10Z | PASS | Free plan project limit (3) enforced => 403 |
+| TC-PROJ-CREATE-063 | 2026-05-14T17:36:28Z | PASS | Unauthenticated => 401 |
+| TC-PROJ-CREATE-066 | 2026-05-14T17:36:26Z | INFO | Status immediately 'draft' at 3s poll — creating state not captured |
+| TC-PROJ-CREATE-068 | 2026-05-14T17:36:26Z | PASS | Default visibility is private |
+| TC-PROJ-LIST-015 | 2026-05-14T17:37:00Z | PASS | Filter status=draft — all results are draft |
+| TC-PROJ-LIST-018 | 2026-05-14T17:37:01Z | PASS | Invalid status filter => 400 |
+| TC-PROJ-LIST-020 | 2026-05-14T17:37:01Z | PASS | Search by name works |
+| TC-PROJ-LIST-025 | 2026-05-14T17:37:02Z | PASS | Search SQL injection safe |
+| TC-PROJ-LIST-032 | 2026-05-14T17:37:02Z | PASS | workspaceId non-member => 403 |
+| TC-PROJ-LIST-037 | 2026-05-14T17:37:02Z | PASS | Unauthenticated => 401 |
+| TC-PROJ-LIST-047 | 2026-05-14T17:39:25Z | PASS | /recently-viewed not mistaken for /:id => 200 |
+| TC-PROJ-LIST-048 | 2026-05-14T17:39:25Z | PASS | /starred not mistaken for /:id => 200 |
+| TC-PROJ-LIST-049 | 2026-05-14T17:39:25Z | FAIL | /projects/shared => 502 Bad Gateway (crash). BUG: 2026-05-14-workspace-003.md |
+| TC-PROJ-UPDATE-001 | 2026-05-14T17:37:03Z | PASS | Owner updates name => 200 |
+| TC-PROJ-UPDATE-016 | 2026-05-14T17:37:04Z | PASS | Status draft=>published => 200 |
+| TC-PROJ-UPDATE-020 | 2026-05-14T17:37:04Z | PASS | Invalid status => 400 |
+| TC-PROJ-UPDATE-021 | 2026-05-14T17:37:04Z | PASS | visibility=>public => 200 |
+| TC-PROJ-UPDATE-032 | 2026-05-14T17:37:05Z | PASS | Project not found => 404 |
+| TC-PROJ-UPDATE-038 | 2026-05-14T17:37:05Z | PASS | workspace_id ignored in PATCH |
+| TC-PROJ-DELETE-001 | 2026-05-14T17:38:00Z | PASS | Owner deletes project => 200 {deleted:true} |
+| TC-PROJ-DELETE-007 | 2026-05-14T17:38:01Z | PASS | Project not found => 404 |
+| TC-PROJ-DELETE-008 | 2026-05-14T17:38:01Z | PASS | Already-deleted => 404 |
+| TC-PROJ-DELETE-021 | 2026-05-14T17:38:02Z | PASS | Unauthenticated => 401 |
+| TC-PROJ-COLLAB-001 | 2026-05-14T17:38:02Z | PASS | List collaborators => 200 {data:[]} |
+| TC-API-502 | 2026-05-14T17:42:00Z | FAIL | dev-api.doable.me 502 all endpoints from 17:42 UTC — likely triggered by /projects/shared crash. BUG: 2026-05-14-workspace-004.md |
+
+---
+
+## Dev Run — 2026-05-14 (GitHub + Versions + Folders)
+
+**Target:** https://dev.doable.me
+**API:** https://dev-api.doable.me
+**Tester:** QA Tester Agent (Claude Sonnet 4.6)
+**Run date:** 2026-05-14
+**Account:** owner-pro@doable.me / TestPass123!
+**Evidence:** testcases/evidence/dev/batch-2026-05-14/github-versions-results.json
+**Bugs filed:** 11 (github-001..003, versions-001..002, folder-001..006)
+
+### Summary
+
+| Feature | Cases Run | Pass | Fail | Skip |
+|---------|-----------|------|------|------|
+| GitHub | 13 | 4 | 6 | 3 |
+| Versions | 19 | 15 | 4 | 0 |
+| Folders | 21 | 13 | 8 | 0 |
+| **Total** | **53** | **32** | **18** | **3** |
+
+### Key Findings
+
+**GitHub (Critical)**
+- BUG-GH-001: `/auth/github/repo/start` → 500 for all callers (repo connect flow broken)
+- BUG-GH-002: Editor "Connect GitHub" button redirects to /usage (wrong route wired)
+- BUG-GH-003: `/github/connect`, `/projects/:id/github/commits`, `/push`, `/pull`, `/github/import` all 404 — routes not registered; GitHub sync has no backend
+
+**Versions (Medium)**
+- BUG-VER-001: GET `/projects/:id/versions/auto` → 500 UUID parse error (route conflict)
+- BUG-VER-002: Restore with invalid SHA → 500 (should be 404)
+
+**Folders (High/Medium)**
+- BUG-FOLDER-001: parentId=self allowed → cycle created (no cycle detection)
+- BUG-FOLDER-002: parentId from different workspace → 500 (should be 400)
+- BUG-FOLDER-003: color field silently ignored (schema gap)
+- BUG-FOLDER-004: GET /workspaces/:id/folders returns 200 for non-member (should be 403)
+- BUG-FOLDER-005: GET/PATCH/DELETE /folders/:id IDOR — no workspace membership check
+- BUG-FOLDER-006: PATCH /projects/:id with folderId → 403 "Viewers cannot edit projects" for project owner (role resolution bug)
+
+### Environment Notes
+
+- Rate limiter exhausted at session start (10 req/15min); waited for clearance
+- Dev API returned 502 for ~10 minutes mid-session; resumed after recovery
+- Token refreshed via coordinator-provided pre-generated token
+
+
+## Dev API Batch Run — 2026-05-14
+
+| Test ID | Run timestamp (UTC) | Result | Description |
+|---------|---------------------|--------|-------------|
+| TC-API-HEALTH-001 | 2026-05-14T17:31:00Z | FAIL | GET /health/ returns 308 redirect; GET /health returns 200 — trailing slash inconsistency |
+| TC-API-HEALTH-005 | 2026-05-14T17:31:00Z | PASS | GET /health/live returns 200 |
+| TC-API-HEALTH-007 | 2026-05-14T17:31:00Z | PASS | GET /health/ready returns 200 |
+| TC-API-AUTH-019 | 2026-05-14T17:32:00Z | PASS | GET /auth/me with valid token returns 200 |
+| TC-API-AUTH-020 | 2026-05-14T17:32:00Z | PASS | GET /auth/me no auth returns 401 |
+| TC-API-AUTH-026 | 2026-05-14T17:32:00Z | PASS | alg:none JWT rejected 401 |
+| TC-API-AUTH-028 | 2026-05-14T17:32:00Z | PASS | POST /auth/refresh with valid token returns 200 |
+| TC-API-PROJECTS-021 | 2026-05-14T17:33:00Z | FAIL | POST /projects with framework='cobol' returns 201, stored as vite-react — BUG-API-002 |
+| TC-API-PROJECTS-033 | 2026-05-14T17:34:00Z | FAIL | GET /projects/valid-nonexistent-uuid returns 400 not 404 — BUG-API-003 |
+| TC-API-PROJECTS-043 | 2026-05-14T17:34:00Z | FAIL | DELETE /projects/:id returns 200 not 204 — BUG-API-004 |
+| TC-API-PROJECTS-049 | 2026-05-14T17:36:00Z | FAIL | POST /projects/:id/archive returns 404 — BUG-API-005 |
+| TC-API-PROJECTS-073 | 2026-05-14T17:37:00Z | FAIL | POST /projects/:id/share returns 404 — BUG-API-006 |
+| TC-API-PROJECTS-015 | 2026-05-14T17:37:00Z | FAIL | GET /projects?limit=-1 returns 200 not 400 — BUG-API-023 |
+| TC-API-WS-015 | 2026-05-14T17:35:00Z | FAIL | PUT /workspaces/:wid returns 404 — BUG-API-007 |
+| TC-API-WS-019 | 2026-05-14T17:52:00Z | FAIL | DELETE /workspaces/:wid returns 200 not 204 — BUG-API-009 |
+| TC-API-WS-025 | 2026-05-14T17:50:00Z | FAIL | POST /workspaces/:wid/members returns 404 — BUG-API-008 |
+| TC-API-WS-041 | 2026-05-14T17:32:00Z | FAIL | GET /workspaces/:wid/billing/plan returns 404 — BUG-API-010 |
+| TC-API-ADMIN-004 | 2026-05-14T17:53:00Z | FAIL | GET /admin/users?email= filter ignored, returns all users — BUG-API-011 |
+| TC-API-ADMIN-012 | 2026-05-14T17:51:00Z | FAIL | GET /admin/workspaces returns 404 — BUG-API-012 |
+| TC-API-ADMIN-016 | 2026-05-14T17:51:00Z | FAIL | GET /admin/audit returns 404 — BUG-API-012 |
+| TC-API-INTEG-006 | 2026-05-14T17:35:00Z | FAIL | GET /integrations/connections requires undocumented workspaceId — BUG-API-013 |
+| TC-API-INTEG-027 | 2026-05-14T17:35:00Z | FAIL | GET /integrations/admin/pieces returns 404 not 403 for non-admin — BUG-API-014 |
+| TC-API-PROV-001 | 2026-05-14T17:37:00Z | FAIL | GET /ai/provider-catalog requires auth; spec says public — BUG-API-015 |
+| TC-API-PROV-002 | 2026-05-14T17:55:00Z | PASS | ETag 304 caching works on provider-catalog |
+| TC-API-PROV-021 | 2026-05-14T17:37:00Z | FAIL | GET /workspaces/:wid/ai-settings returns 404 — BUG-API-016 |
+| TC-API-GITHUB-001 | 2026-05-14T17:37:00Z | FAIL | GET /github/install-url returns 404 — BUG-API-017 |
+| TC-API-GITHUB-027 | 2026-05-14T17:38:00Z | FAIL | GET /github/oauth/start returns 404 — BUG-API-017 |
+| TC-API-FOLDERS-002 | 2026-05-14T17:49:00Z | FAIL | GET /folders without workspaceId returns 200 not 400 — BUG-API-018 |
+| TC-API-DEPLOY-001 | 2026-05-14T17:50:00Z | FAIL | POST /deploy/:id/publish on empty project returns 500 — BUG-API-019 |
+| TC-API-DEPLOY-021 | 2026-05-14T17:50:00Z | FAIL | GET /domains returns 404 — BUG-API-020 |
+| TC-API-CHAT-016 | 2026-05-14T17:50:00Z | FAIL | GET /chat/:pid/sessions returns 404 — BUG-API-021 |
+| TC-API-THUMB-001 | 2026-05-14T17:50:00Z | FAIL | GET /thumbnails/:id returns 400 'Only .png thumbnails supported' — BUG-API-022 |
+
+## Dev batch: AUTH + SECURITY — 2026-05-14
+
+**Target web:** https://dev.doable.me  
+**Target API:** https://dev-api.doable.me  
+**Target WS:** wss://dev-ws.doable.me  
+**Tester:** qa-tester agent (claude-sonnet-4-6)  
+**Run date:** 2026-05-14  
+**Accounts:** owner-pro@doable.me / outsider@doable.me / TestPass123!  
+**Evidence:** testcases/evidence/dev/batch-2026-05-14/auth-security-results.json  
+**Bugs filed:** BUG-011 through BUG-018 (testcases/bugs/2026-05-14-auth-security-*.md)
+
+### Summary
+- Total executed: 89
+- PASS: 58
+- FAIL: 10
+- BLOCKED: 19 (login/register/forgot/reset rate limits exhausted mid-run)
+- INFO: 2
+
+### FAILs
+| Test ID | Description | Bug |
+|---------|-------------|-----|
+| TC-AUTH-LOGIN-049 | expiresIn:900 in body but JWT exp-iat=14400 (4h) | BUG-011 |
+| TC-AUTH-REGISTER-057 | Same token lifetime mismatch on register | BUG-011 |
+| TC-SEC-CORS-001 | CORS: credentials:true returned for disallowed origins | BUG-012 |
+| TC-AUTH-MISC-012 | No Cache-Control: no-store on auth responses | BUG-013 |
+| TC-SEC-STORAGE-001 | Tokens in localStorage (XSS risk) | BUG-014 |
+| TC-AUTH-LOGOUT-005 | Access token not cleared on logout | BUG-015 |
+| TC-SEC-HEADERS-003 | CSP allows unsafe-eval and unsafe-inline | BUG-016 |
+| TC-SEC-WS-001 | WS accepts evil.example origin (CSWSH) | BUG-017 |
+| TC-AUTH-RATE-LIMIT-012 | 429 has no Retry-After header | BUG-018 |
+| TC-AUTH-LOGIN-037 | Content-Type header check inconclusive (curl -I quirk) | recheck needed |
+
+### BLOCKEDs (rate-limited)
+Login RL (10/15min), Register RL (5/1h), Forgot RL (3/1h), Reset RL (5/1h) all exhausted during smoke pass. Affected: TC-AUTH-LOGIN-008/009, TC-AUTH-REGISTER-017/021/030/031/040/043, TC-AUTH-FORGOT-001/002/004/005, TC-AUTH-RESET-004/006/007/008/009, TC-AUTH-ME-009.
+
+### XFF Bypass Regression
+TC-SEC-XFF-BYPASS-001/002 CONFIRMED FIXED — rotating XFF returns 429 correctly (cf-connecting-ip keying works).
+
+| TC-AUTH-LOGIN-001 | 2026-05-14T16:00:00Z | PASS | Login with valid credentials returns 200 + tokens |
+| TC-AUTH-LOGIN-002 | 2026-05-14T16:00:00Z | PASS | Login wrong password → 401 no enumeration |
+| TC-AUTH-LOGIN-003 | 2026-05-14T16:00:00Z | PASS | Login unknown email → 401 same message |
+| TC-AUTH-LOGIN-049 | 2026-05-14T16:05:00Z | FAIL | JWT exp-iat=14400 vs expiresIn=900 — BUG-011 |
+| TC-AUTH-REFRESH-001 | 2026-05-14T16:10:00Z | PASS | Refresh with valid token → 200 new pair |
+| TC-AUTH-REFRESH-002 | 2026-05-14T16:10:00Z | PASS | Old rotated refresh → 401 revoked |
+| TC-AUTH-LOGOUT-001 | 2026-05-14T16:15:00Z | PASS | Logout with valid token → 200 |
+| TC-AUTH-LOGOUT-005 | 2026-05-14T16:15:00Z | FAIL | Access token persists in localStorage post-logout — BUG-015 |
+| TC-SEC-WS-001 | 2026-05-14T16:30:00Z | FAIL | WS 101 for evil.example origin — BUG-017 |
+| TC-SEC-XFF-BYPASS-001 | 2026-05-14T16:35:00Z | PASS | XFF rotation blocked, 429 on 4th request |
+| TC-SEC-XFF-BYPASS-002 | 2026-05-14T16:35:00Z | PASS | Login XFF rotation blocked correctly |
+
+## Dev batch — 2026-05-14 Publish + Deploy + Runtime (browser QA via Chrome MCP)
+
+**Target:** https://dev.doable.me  **API:** https://dev-api.doable.me  
+**Account:** owner-pro@doable.me  **Evidence:** testcases/evidence/dev/batch-2026-05-14/publish-deploy-results.json
+
+| Test ID | Run timestamp (UTC) | Result | Description |
+|---------|---------------------|--------|-------------|
+| TC-API-HEALTH-DEV-001 | 2026-05-14T17:45:12Z | PASS | GET /health → 200 healthy, DB up latency=1ms, uptime=8.8s |
+| TC-PUBLISH-SUBDOMAIN-025 | 2026-05-14T17:46:00Z | PASS | POST /projects/{id}/publish no auth → 401 Missing or invalid Authorization header |
+| TC-PUBLISH-SUBDOMAIN-026 | 2026-05-14T17:46:00Z | PASS | POST /projects/{id}/publish no auth → 401 (same as 025 variant) |
+| TC-PUBLISH-LIFECYCLE-001 | 2026-05-14T17:50:00Z | PASS | Deploy button opens Deploy Project modal with Live/Test environment selector |
+| TC-DEPLOY-ENV-SWITCH | 2026-05-14T17:50:30Z | PASS | Clicking Test option changes button to "Deploy to Test", Live deselects |
+| TC-DEPLOY-LIFECYCLE-001 | 2026-05-14T17:51:00Z | FAIL | Deploy to Live: POST /projects/{id}/publish → 404; UI shows ENOENT /var/lib/doable-sites missing — BUG-2026-05-14-publish-001 |
+| TC-DEPLOY-TEST-ENV | 2026-05-14T17:52:00Z | FAIL | Deploy to Test: build progress shown (Preparing files→Building project→Deploying to preview) then fails with same ENOENT — BUG-2026-05-14-publish-001 |
+| TC-PUBLISH-SUBDOMAIN-001 | 2026-05-14T17:47:00Z | FAIL | GET /projects/{id} for published project: subdomain=null, published_url=null despite status=published — BUG-2026-05-14-publish-002 |
+| TC-PUBLISH-SUBDOMAIN-002 | 2026-05-14T17:51:00Z | PASS | Generated subdomain follows dev-<slug> pattern (dev-vite-updated-zpnwx seen in error) |
+| TC-PUBLISH-LIFECYCLE-025 | 2026-05-14T17:48:00Z | PARTIAL | Dashboard shows Published badge on project card but no live URL chip — BUG-2026-05-14-publish-003 |
+| TC-BILLING-CREDITS-DISPLAY | 2026-05-14T17:46:30Z | FAIL | Monthly Credits shows -400/100 used (negative value) — BUG-2026-05-14-publish-004 |
+| TC-AUTH-LOGIN-RATE-LIMIT | 2026-05-14T17:35:00Z | FAIL | 429 on login after 10 attempts, Retry-After header not exposed in CORS — BUG-2026-05-14-publish-005 |
+| TC-API-HEALTH-DEV-002 | 2026-05-14T17:58:37Z | FAIL | GET /health → 502 Bad Gateway (API server crashed/down) — BUG-2026-05-14-publish-006 |
+| TC-DASHBOARD-NAV-001 | 2026-05-14T17:46:00Z | FAIL | /dashboard intermittently redirects to /billing or /usage — BUG-2026-05-14-publish-007 |
+| TC-RUNTIME-VITE-PREVIEW | 2026-05-14T17:50:00Z | PASS | Editor preview pane renders project correctly (Doable branded app visible) |
+| TC-RUNTIME-METRICS | 2026-05-14T17:50:00Z | PASS | GET /projects/{id}/runtime/metrics → 200, polling every ~5s |
+
+## Dev Batch � 2026-05-14 MCP + Integrations
+
+| Test ID | Run timestamp (UTC) | Result | Description |
+|---------|---------------------|--------|-------------|
+| TC-API-INFRA-001 | 2026-05-14T17:37Z | FAIL | dev-api crash loop during session � 502 repeatedly, 5-11s recovery windows. BUG-001 |
+| TC-MCP-CONNECTOR-001 | 2026-05-14T17:51Z | PASS | List connectors returns 200 with 4 built-in MCP App connectors |
+| TC-MCP-CONNECTOR-002 | 2026-05-14T17:51Z | PASS | All 4 built-ins present: Markdown/PDF/Presentation/Spreadsheet Builder |
+| TC-MCP-CONNECTOR-004 | 2026-05-14T17:51Z | FAIL | stdio transport blocked for user-created connectors (403) |
+| TC-MCP-CONNECTOR-005 | 2026-05-14T17:51Z | PASS | streamable_http connector created (HTTP 201) |
+| TC-MCP-CONNECTOR-006 | 2026-05-14T17:56Z | PASS | http_sse connector created (HTTP 201) |
+| TC-MCP-CONNECTOR-009 | 2026-05-14T17:51Z | FAIL | http:// URL accepted for HTTP connector � BUG-007 |
+| TC-MCP-CONNECTOR-010 | 2026-05-14T17:54Z | PASS | PATCH connector update works |
+| TC-MCP-CONNECTOR-012 | 2026-05-14T17:51Z | PASS | DELETE user-created connector works |
+| TC-MCP-CONNECTOR-013 | 2026-05-14T17:51Z | FAIL | Built-in connector deletable � BUG-002 |
+| TC-MCP-CONNECTOR-014 | 2026-05-14T17:55Z | FAIL | PATCH enabled=false no effect � BUG-010 |
+| TC-MCP-CONNECTOR-022 | 2026-05-14T17:54Z | PASS | listTools for active stdio connector returns 200 with 2 tools |
+| TC-MCP-CONNECTOR-022-http | 2026-05-14T17:54Z | FAIL | listTools for inactive HTTP connector returns 500 � BUG-008 |
+| TC-MCP-CONNECTOR-026 | 2026-05-14T17:55Z | PASS | Cross-tenant connector access returns 403 |
+| TC-MCP-CONNECTOR-040 | 2026-05-14T17:55Z | FAIL | Audit log endpoint not found |
+| TC-MCP-CONNECTOR-044 | 2026-05-14T17:55Z | FAIL | Debug logs endpoint returns 404 |
+| TC-MCP-CONNECTOR-053 | 2026-05-14T17:56Z | PASS | server_env_encrypted not in GET response |
+| TC-MCP-CONNECTOR-INVALID-ID-001 | 2026-05-14T17:51Z | PASS | Bogus id returns 400 |
+| TC-MCP-CONNECTOR-INVALID-ID-002 | 2026-05-14T17:51Z | PARTIAL | Trailing slash bogus returns 308 not 400 |
+| TC-MCP-CONNECTOR-INVALID-ID-003 | 2026-05-14T17:54Z | PASS | PATCH bogus returns 400 |
+| TC-MCP-CONNECTOR-INVALID-ID-004 | 2026-05-14T17:54Z | PASS | DELETE bogus returns 400 |
+| TC-MCP-CONNECTOR-INVALID-ID-005 | 2026-05-14T17:54Z | PASS | /tools bogus returns 400 |
+| TC-MCP-CONNECTOR-INVALID-ID-006 | 2026-05-14T17:55Z | PASS | Bogus workspaceId returns 400 |
+| TC-MCP-CONNECTOR-INVALID-ID-007 | 2026-05-14T17:55Z | PASS | discover literal not blocked by UUID guard |
+| TC-MCP-CONNECTOR-INVALID-ID-008 | 2026-05-14T17:51Z | PASS | Valid UUID nonexistent returns 404 |
+| TC-MCP-APPS-RUNTIME-001 | 2026-05-14T17:59Z | FAIL | mcp_ui_resource not emitted on dev � BUG-013 |
+| TC-MCP-OAUTH-014 | 2026-05-14T17:55Z | PASS | No tokens in GET connector response |
+| TC-MCP-OAUTH-038 | 2026-05-14T17:55Z | PASS | Invalid JWT returns 401 |
+| TC-MCP-OAUTH-039 | 2026-05-14T17:57Z | PASS | Expired JWT returns 401 |
+| TC-INTEG-LIST-001 | 2026-05-14T17:51Z | FAIL | GET /integrations returns 404 � BUG-004 |
+| TC-INTEG-LIST-004 | 2026-05-14T17:56Z | PASS | Category filter works with underscore names |
+| TC-INTEG-LIST-005 | 2026-05-14T17:57Z | FAIL | authType filter not working |
+| TC-INTEG-LIST-006 | 2026-05-14T17:56Z | FAIL | ?q= search not working � BUG-005 |
+| TC-INTEG-LIST-009 | 2026-05-14T17:57Z | PASS | Categories array in catalog response |
+| TC-INTEG-LIST-010 | 2026-05-14T17:51Z | PASS | Detail by slug returns 200 |
+| TC-INTEG-LIST-011 | 2026-05-14T17:55Z | FAIL | No connectUrl in integration detail |
+| TC-INTEG-LIST-020 | 2026-05-14T17:51Z | FAIL | Only 533 integrations not 630+ |
+| TC-INTEG-LIST-022 | 2026-05-14T17:57Z | PASS | Gzip compression enabled |
+| TC-INTEG-LIST-023 | 2026-05-14T17:55Z | PASS | No XSS in catalog |
+| TC-INTEG-LIST-026 | 2026-05-14T17:51Z | PASS | Connections endpoint returns 200 |
+| TC-INTEG-LIST-027 | 2026-05-14T17:51Z | PASS | Cross-tenant connections returns 403 |
+| TC-INTEG-LIST-038 | 2026-05-14T17:39Z | PASS | Anon access returns 401 |
+| TC-INTEG-LIST-039 | 2026-05-14T17:57Z | FAIL | Catalog 849ms > 500ms SLA � BUG-009 |
+| TC-INTEG-LIST-040 | 2026-05-14T17:51Z | PASS | Bad slug returns 404 |
+| TC-INTEG-CONNECT-001 | 2026-05-14T17:55Z | FAIL | enhanced-auth/start returns 404 � BUG-003 |
+| TC-INTEG-PROXY-001 | 2026-05-14T17:57Z | FAIL | connector-proxy 404 � BUG-012 |
+| TC-INTEG-REVOKE-001 | 2026-05-14T17:57Z | PASS | Revoke route exists, correct 404 for nonexistent |
+| TC-EDITOR-CORS-001 | 2026-05-14T17:59Z | FAIL | Editor CORS errors on 502 � BUG-011 |
+| TC-AI-CHAT-SEND-001 | 2026-05-14T18:00:00Z | PASS | Agent mode SSE stream works; events: thinking, status, tool_call, tool_result, done, usage; model: MiniMax-M2.7-highspeed |
+| TC-AI-CHAT-SEND-002 | 2026-05-14T18:03:00Z | PASS | Plan mode emits plan event with structured steps; keep_alive heartbeats present; create_plan tool used |
+| TC-AI-CHAT-SEND-003 | 2026-05-14T17:57:00Z | FAIL | "chat" mode not accepted - only agent/plan/visual-edit valid; HTTP 400 ZodError. BUG-011 |
+| TC-AI-CHAT-SEND-004 | 2026-05-14T17:57:00Z | PASS | Empty content rejected HTTP 400 ZodError |
+| TC-AI-CHAT-SEND-005 | 2026-05-14T17:57:00Z | PASS | Whitespace-only content rejected HTTP 400 |
+| TC-AI-CHAT-SEND-006 | 2026-05-14T18:10:00Z | PASS | Content >100000 chars rejected HTTP 400 (limit=100000 not 200000 per spec) |
+| TC-AI-CHAT-SEND-007 | 2026-05-14T18:10:00Z | PASS | Missing mode defaults to agent; stream succeeds |
+| TC-AI-CHAT-SEND-008 | 2026-05-14T17:57:00Z | PASS | Invalid mode "foobar" rejected HTTP 400 ZodError |
+| TC-AI-CHAT-SEND-010 | 2026-05-14T17:57:00Z | PASS | Non-existent projectId HTTP 400 "Invalid project id" |
+| TC-AI-CHAT-SEND-011 | 2026-05-14T18:01:00Z | PASS | Cross-tenant access blocked HTTP 404 for outsider token |
+| TC-AI-CHAT-SEND-012 | 2026-05-14T17:57:00Z | PASS | Unauthenticated request HTTP 401 |
+| TC-AI-CHAT-SEND-015 | 2026-05-14T18:01:00Z | PARTIAL | Tool events present (tool_call, tool_result) but no session_start or delta events - different naming than spec. BUG-013 |
+| TC-AI-CHAT-SEND-016 | 2026-05-14T18:03:00Z | PASS | keep_alive events observed in plan mode stream |
+| TC-AI-CHAT-SEND-017 | 2026-05-14T18:05:00Z | FAIL | done event has empty data {}; no messageId or creditsUsed. BUG-014 |
+| TC-AI-CHAT-SEND-022 | 2026-05-14T18:10:00Z | PARTIAL | 3 concurrent sends all 502 (server blocks concurrent); not 409 as spec implies |
+| TC-AI-CHAT-SEND-033 | 2026-05-14T17:59:00Z | PASS | XSS content stored verbatim; parameterized queries protect DB |
+| TC-AI-CHAT-SEND-034 | 2026-05-14T17:59:00Z | PASS | SQL injection stored as text; no DB impact |
+| TC-AI-CHAT-SEND-035 | 2026-05-14T18:10:00Z | FAIL | Emoji stored as ?????? — UTF-8 encoding corruption. BUG-015 |
+| TC-AI-CHAT-SEND-040 | 2026-05-14T18:10:00Z | PASS | x-request-id header present in response |
+| TC-AI-CHAT-SEND-044 | 2026-05-14T18:15:00Z | FAIL | Idempotency-Key not honored; duplicate messages created. BUG-016 |
+| TC-AI-CHAT-SEND-047 | 2026-05-14T17:59:00Z | PASS | CORS preflight 204; correct allow-origin/methods headers |
+| TC-AI-CHAT-MODES-001 | 2026-05-14T18:01:00Z | PASS | Agent mode tool calls work; list_files, read_file tools dispatched |
+| TC-AI-CHAT-MODES-002 | 2026-05-14T18:03:00Z | PASS | Plan mode emits structured plan; create_plan tool used |
+| TC-AI-CHAT-MODES-004 | 2026-05-14T18:10:00Z | FAIL | PATCH /projects/:id/chat/session 404; endpoint not implemented. BUG-017 |
+| TC-AI-CHAT-MODES-036 | 2026-05-14T18:10:00Z | FAIL | GET /chat/modes 404 on all paths. BUG-018 |
+| TC-AI-CHAT-CREDITS-001 | 2026-05-14T18:05:00Z | FAIL | 26 sends; usage log shows 26 entries but dailyRemaining unchanged. BUG-019 |
+| TC-AI-CHAT-CREDITS-004 | 2026-05-14T18:00:00Z | PASS | Free plan dailyMax=5; Pro plan dailyMax=50, monthlyMax=500 |
+| TC-AI-CHAT-CREDITS-009 | 2026-05-14T18:10:00Z | FAIL | monthlyRemaining=0 workspace still processes sends; no 429. BUG-020 |
+| TC-AI-CHAT-CREDITS-023 | 2026-05-14T18:10:00Z | FAIL | Usage log has null for prompt_tokens, completion_tokens, model. BUG-021 |
+| TC-AI-CHAT-CREDITS-027 | 2026-05-14T18:10:00Z | PASS | GET /billing/usage returns per-user credit consumption entries |
+| TC-AI-CHAT-CREDITS-028 | 2026-05-14T18:00:00Z | PASS | GET /billing/balance returns dailyRemaining/Max, monthlyRemaining/Max, topupRemaining, planType |
+| TC-AI-CHAT-HISTORY-001 | 2026-05-14T18:01:00Z | PASS | GET /projects/:id/chat/history returns messages sorted ascending |
+| TC-AI-CHAT-HISTORY-002 | 2026-05-14T18:15:00Z | PASS | limit=2 pagination works; hasMore=true when more exist |
+| TC-AI-CHAT-HISTORY-009 | 2026-05-14T18:10:00Z | PARTIAL | Schema has all fields but missing metadata obj; spec requires metadata.mode. BUG-022 |
+| TC-AI-CHAT-HISTORY-010 | 2026-05-14T18:10:00Z | PASS | Tool calls present as structured objects in history |
+| TC-AI-CHAT-HISTORY-016 | 2026-05-14T18:08:00Z | PASS | DELETE /projects/:id/chat clears history; returns {cleared:true} HTTP 200 |
+| TC-AI-CHAT-HISTORY-021 | 2026-05-14T18:10:00Z | FAIL | Export endpoint not found (404 all paths). BUG-023 |
+| TC-AI-CHAT-HISTORY-026 | 2026-05-14T18:10:00Z | FAIL | Search endpoint not found (404 all paths). BUG-024 |
+| TC-AI-CHAT-HISTORY-031 | 2026-05-14T18:10:00Z | FAIL | PATCH /chat/session 404; session rename not implemented. BUG-017 |
+| TC-AI-CHAT-HISTORY-044 | 2026-05-14T18:10:00Z | PASS | Messages visible immediately in history after stream done |
+| TC-AI-CHAT-MODELS-001 | 2026-05-14T18:00:00Z | FAIL | GET /ai/models returns "Not authenticated" for all users. BUG-025 |
+| TC-AI-CHAT-MODELS-003 | 2026-05-14T18:10:00Z | FAIL | PATCH session model 404; model switching not implemented. BUG-017 |
+| TC-AI-CHAT-owner-role | 2026-05-14T17:58:00Z | FAIL | owner-pro has viewer role in own pro workspace; cannot use AI chat. BUG-026 |

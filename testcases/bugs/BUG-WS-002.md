@@ -28,3 +28,21 @@ Either:
 
 ## Cross-user note
 Verified that `/projects/:id/versions` for a project the caller does NOT own returns **404** (TC-VERSIONS-LIST-cross, qa-member token). Note 18-versions/TC-VERSIONS-LIST-011 flagged this as a "gap" — currently the API hides instead of leaking, which is acceptable but should be documented as 404 vs 403.
+
+## Verification
+**Status:** CONFIRMED (doc bug — runtime behavior matches bug report)
+**Verifier:** oh-my-claudecode:verifier
+**Date:** 2026-05-14
+
+**Commands run:**
+```
+PRJ=a9bcb1a9-20ea-4ad5-a4e3-1ed9662284ac
+
+curl -si -H "Authorization: Bearer $TOK" https://dev-api.doable.me/versions/$PRJ/versions
+# → HTTP 404 Not Found
+
+curl -si -H "Authorization: Bearer $TOK" https://dev-api.doable.me/projects/$PRJ/versions
+# → HTTP 200 OK
+```
+
+**Conclusion:** CONFIRMED. `/versions/:projectId/versions` returns 404; the correct mount is `/projects/:projectId/versions` which returns 200. This is a documentation/test-corpus bug. Test corpus at `testcases/18-versions/TC-VERSIONS-CRUD.md` must be updated to use the correct path. No runtime fix required — API is correct.

@@ -27,3 +27,17 @@ Internal-error responses on user-supplied path values are noisy in logs and can 
 
 ## Suggested fix
 Add UUID validation at the route boundary (zod path param) and return 400 `{"error":"Invalid workspace id"}`.
+
+## Verification
+**Status:** CANNOT-REPRODUCE
+**Verifier:** oh-my-claudecode:verifier
+**Date:** 2026-05-14
+
+**Command run:**
+```
+curl -si -H "Authorization: Bearer $TOK" https://dev-api.doable.me/workspaces/not-a-uuid
+```
+
+**Actual response:** `HTTP/1.1 400 Bad Request` — `{"error":"Invalid workspace id"}`
+
+**Conclusion:** The fix is already in production on dev. The route now correctly validates the UUID path param and returns 400 with a descriptive error. Bug is resolved — no escalation needed.

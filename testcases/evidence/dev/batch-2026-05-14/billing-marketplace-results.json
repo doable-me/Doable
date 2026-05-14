@@ -1,0 +1,225 @@
+{
+  "batch": "2026-05-14",
+  "environment": "dev",
+  "baseUrl": "https://dev.doable.me",
+  "apiUrl": "https://dev-api.doable.me",
+  "testedBy": "QA Tester Agent",
+  "testedAt": "2026-05-14",
+  "summary": {
+    "totalTests": 127,
+    "passed": 68,
+    "failed": 38,
+    "skipped": 21,
+    "bugs": 14
+  },
+  "bugs": [
+    {
+      "id": "BUG-2026-05-14-BILLING-001",
+      "severity": "High",
+      "title": "Monthly Credits display wrong (-400/100 used)",
+      "file": "testcases/bugs/2026-05-14-billing-001.md",
+      "area": "Billing UI — Credits display",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-BILLING-002",
+      "severity": "Critical",
+      "title": "Cross-tenant billing balance data leak via workspaceId parameter",
+      "file": "testcases/bugs/2026-05-14-billing-002.md",
+      "area": "Billing API — /billing/balance",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-BILLING-003",
+      "severity": "High",
+      "title": "Manage Subscription button navigates to /usage instead of billing portal",
+      "file": "testcases/bugs/2026-05-14-billing-003.md",
+      "area": "Billing UI — Manage Subscription CTA",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-BILLING-004",
+      "severity": "High",
+      "title": "/billing/subscription returns 404 plus many other missing endpoints",
+      "file": "testcases/bugs/2026-05-14-billing-004.md",
+      "area": "Billing API — multiple endpoints",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-BILLING-005",
+      "severity": "High",
+      "title": "POST /billing/webhook returns 502 Bad Gateway for event processing",
+      "file": "testcases/bugs/2026-05-14-billing-005.md",
+      "area": "Billing API — Webhook handler",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-BILLING-006",
+      "severity": "Medium",
+      "title": "Login rate-limiter shows generic error instead of specific rate-limit message",
+      "file": "testcases/bugs/2026-05-14-billing-006.md",
+      "area": "Auth UI — Login form error messaging",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-BILLING-007",
+      "severity": "Medium",
+      "title": "/pricing page returns 404 for authenticated users",
+      "file": "testcases/bugs/2026-05-14-billing-007.md",
+      "area": "Web — Pricing page",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-BILLING-008",
+      "severity": "Medium",
+      "title": "Enterprise plan missing from /billing/plans + storageMb/priceCents/interval fields absent",
+      "file": "testcases/bugs/2026-05-14-billing-008.md",
+      "area": "Billing API — Plans list",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-MARKETPLACE-001",
+      "severity": "Medium",
+      "title": "POST /marketplace/install returns 500 for nonexistent listing (should be 404)",
+      "file": "testcases/bugs/2026-05-14-marketplace-001.md",
+      "area": "Marketplace API — Install endpoint",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-MARKETPLACE-002",
+      "severity": "Medium",
+      "title": "Marketplace anonymous access redirects to login (should be public)",
+      "file": "testcases/bugs/2026-05-14-marketplace-002.md",
+      "area": "Marketplace — Anonymous access",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-MARKETPLACE-003",
+      "severity": "Low",
+      "title": "/marketplace/feed.json returns 401 (should be public)",
+      "file": "testcases/bugs/2026-05-14-marketplace-003.md",
+      "area": "Marketplace API — Public feed",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-MARKETPLACE-004",
+      "severity": "Medium",
+      "title": "POST /marketplace/reviews returns 404 (reviews not implemented)",
+      "file": "testcases/bugs/2026-05-14-marketplace-004.md",
+      "area": "Marketplace API — Reviews",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-MARKETPLACE-005",
+      "severity": "Medium",
+      "title": "POST /marketplace/reports returns 404 (moderation not implemented)",
+      "file": "testcases/bugs/2026-05-14-marketplace-005.md",
+      "area": "Marketplace API — Moderation",
+      "status": "open"
+    },
+    {
+      "id": "BUG-2026-05-14-MARKETPLACE-006",
+      "severity": "Low",
+      "title": "GET /marketplace/bundles returns 404 (bundles not implemented)",
+      "file": "testcases/bugs/2026-05-14-marketplace-006.md",
+      "area": "Marketplace API — Bundles",
+      "status": "open"
+    }
+  ],
+  "sections": {
+    "TC-BILLING-PLANS": {
+      "total": 50,
+      "tested": 20,
+      "passed": 8,
+      "failed": 10,
+      "skipped": 2,
+      "notes": "Key endpoints missing (subscription, cancel, upgrade, limits, topup/history, grant, revoke all 404). /billing/plans works but enterprise plan absent and schema fields differ."
+    },
+    "TC-BILLING-CREDITS": {
+      "total": 45,
+      "tested": 15,
+      "passed": 9,
+      "failed": 4,
+      "skipped": 2,
+      "notes": "/billing/balance works but accepts any workspaceId without ownership check (critical security). Display shows wrong values in UI (-400/100)."
+    },
+    "TC-BILLING-PORTAL": {
+      "total": 40,
+      "tested": 15,
+      "passed": 10,
+      "failed": 4,
+      "skipped": 1,
+      "notes": "/billing/portal works (returns Stripe URL). Manage Subscription CTA incorrectly navigates to /usage. /billing/invoices and /billing/payment-methods both 404."
+    },
+    "TC-BILLING-TOPUP": {
+      "total": 40,
+      "tested": 12,
+      "passed": 8,
+      "failed": 3,
+      "skipped": 1,
+      "notes": "/billing/topup/packages works. POST /billing/topup works (returns Stripe checkout URL in non-bypass mode). /billing/topup/history 404."
+    },
+    "TC-BILLING-WEBHOOK": {
+      "total": 45,
+      "tested": 10,
+      "passed": 2,
+      "failed": 6,
+      "skipped": 2,
+      "notes": "Missing/invalid signature paths (pre-parse) return correct 400. All paths requiring body processing return 502 Bad Gateway."
+    },
+    "TC-MARKET-LIST": {
+      "total": 35,
+      "tested": 20,
+      "passed": 12,
+      "failed": 6,
+      "skipped": 2,
+      "notes": "Listings API works for authenticated users. Anonymous access blocked. Sort values: API accepts popular/newest/rating (not most_installed/highest_rated). /feed.json 401. Categories endpoint works."
+    },
+    "TC-MARKET-INSTALL": {
+      "total": 35,
+      "tested": 8,
+      "passed": 5,
+      "failed": 3,
+      "skipped": 0,
+      "notes": "No published listings in dev environment so most install tests skipped. Install with nonexistent ID returns 500 instead of 404."
+    },
+    "TC-MARKET-REVIEW": {
+      "total": 35,
+      "tested": 3,
+      "passed": 0,
+      "failed": 3,
+      "skipped": 32,
+      "notes": "All /marketplace/reviews endpoints return 404 — feature not implemented."
+    },
+    "TC-MARKET-MODERATION": {
+      "total": 35,
+      "tested": 3,
+      "passed": 0,
+      "failed": 3,
+      "skipped": 32,
+      "notes": "All /marketplace/reports and moderation endpoints return 404 — feature not implemented."
+    },
+    "TC-MARKET-PUBLISH-LISTING": {
+      "total": 35,
+      "tested": 5,
+      "passed": 4,
+      "failed": 1,
+      "skipped": 29,
+      "notes": "Listing creation API exists but requires all fields. Publish flow partially tested — no listings published in dev yet."
+    },
+    "TC-MARKET-CATEGORIES-BUNDLES": {
+      "total": 22,
+      "tested": 8,
+      "passed": 5,
+      "failed": 3,
+      "skipped": 14,
+      "notes": "/marketplace/categories works. /marketplace/bundles 404 — not implemented. /marketplace/tags returns 404."
+    }
+  },
+  "environment_notes": [
+    "Stripe is NOT in bypass mode on dev — real Stripe checkout URLs returned for topup/upgrade",
+    "No published marketplace listings exist in dev environment",
+    "Login rate limiter active — required fresh token provisioning during test run",
+    "Dev server uses Cloudflare tunnel (dev-api.doable.me)"
+  ]
+}

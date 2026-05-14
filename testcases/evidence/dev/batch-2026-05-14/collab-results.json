@@ -1,0 +1,184 @@
+{
+  "batch": "2026-05-14",
+  "session": "collab-testing",
+  "timestamp": "2026-05-14T17:45:00Z",
+  "environment": {
+    "web": "https://dev.doable.me",
+    "api": "https://dev-api.doable.me",
+    "ws": "https://dev-ws.doable.me",
+    "web_status": 200,
+    "api_status": 502,
+    "ws_status": 200
+  },
+  "users": {
+    "userA": {
+      "email": "owner-pro@doable.me",
+      "browser": "Chrome (claude-in-chrome)",
+      "login_result": "FAIL - rate limited (429) then API down (502)"
+    },
+    "userB": {
+      "email": "ws-member@doable.me",
+      "browser": "Playwright",
+      "login_result": "FAIL - API down (502) - 'Something went wrong. Please try again.'"
+    }
+  },
+  "test_cases": [
+    {
+      "id": "TC-COLLAB-LOGIN-A",
+      "name": "User A (owner-pro) login via Chrome",
+      "command": "Navigate to /login, fill owner-pro@doable.me / TestPass123!, click Sign in",
+      "expected": "Redirect to /dashboard",
+      "actual": "Error: 'Too many requests, please try again later.' (HTTP 429), then 'Something went wrong. Please try again.' (HTTP 502 from API)",
+      "status": "FAIL",
+      "bugs": ["BUG-COLLAB-001", "BUG-COLLAB-002", "BUG-COLLAB-003"]
+    },
+    {
+      "id": "TC-COLLAB-LOGIN-B",
+      "name": "User B (ws-member) login via Playwright",
+      "command": "Navigate to /login, fill ws-member@doable.me / TestPass123!, click Sign in",
+      "expected": "Redirect to /dashboard",
+      "actual": "Error: 'Something went wrong. Please try again.' (HTTP 502 from API)",
+      "status": "FAIL",
+      "bugs": ["BUG-COLLAB-002", "BUG-COLLAB-003"]
+    },
+    {
+      "id": "TC-COLLAB-API-HEALTH",
+      "name": "dev-api.doable.me health check",
+      "command": "GET https://dev-api.doable.me/health",
+      "expected": "HTTP 200 with health status",
+      "actual": "HTTP 502 Bad Gateway",
+      "status": "FAIL",
+      "bugs": ["BUG-COLLAB-002"]
+    },
+    {
+      "id": "TC-COLLAB-WS-HEALTH",
+      "name": "dev-ws.doable.me health check",
+      "command": "GET https://dev-ws.doable.me/health",
+      "expected": "HTTP 200",
+      "actual": "HTTP 200 OK",
+      "status": "PASS",
+      "bugs": []
+    },
+    {
+      "id": "TC-COLLAB-WEB-HEALTH",
+      "name": "dev.doable.me web frontend health check",
+      "command": "GET https://dev.doable.me",
+      "expected": "HTTP 200",
+      "actual": "HTTP 200 OK - Landing page loads correctly",
+      "status": "PASS",
+      "bugs": []
+    },
+    {
+      "id": "TC-COLLAB-PREVIEW-WS",
+      "name": "Preview WebSocket connection",
+      "command": "Open project editor, observe preview WebSocket",
+      "expected": "wss://dev-api.doable.me/preview/{id}/ connects with 101 Switching Protocols",
+      "actual": "WebSocket handshake fails with 502 Bad Gateway, retries continuously",
+      "status": "FAIL",
+      "bugs": ["BUG-COLLAB-004"]
+    },
+    {
+      "id": "TC-COLLAB-RUNTIME-METRICS",
+      "name": "Runtime metrics endpoint",
+      "command": "GET /projects/{id}/runtime/metrics (observed in browser console)",
+      "expected": "HTTP 200 with metrics",
+      "actual": "HTTP 404 - endpoint not found. Client continues polling on 404 (loop bug)",
+      "status": "FAIL",
+      "bugs": ["BUG-COLLAB-005"]
+    },
+    {
+      "id": "TC-COLLAB-GITHUB-STATUS",
+      "name": "GitHub status endpoint",
+      "command": "GET /{projectId}/github/status (observed in browser console)",
+      "expected": "HTTP 200 with GitHub connection status",
+      "actual": "HTTP 404 - endpoint not found",
+      "status": "FAIL",
+      "bugs": ["BUG-COLLAB-006"]
+    },
+    {
+      "id": "TC-COLLAB-DESIGN-MODE",
+      "name": "Design mode - both users see each other's changes",
+      "command": "Both users open same project in design mode",
+      "expected": "Real-time change propagation via Yjs CRDT",
+      "actual": "BLOCKED - could not log in either user due to API 502",
+      "status": "BLOCKED",
+      "bugs": ["BUG-COLLAB-002"]
+    },
+    {
+      "id": "TC-COLLAB-CURSOR-PRESENCE",
+      "name": "Cursor presence - User A sees User B cursor",
+      "command": "Both users in same editor, move cursors",
+      "expected": "Cursor position visible for other user with color indicator",
+      "actual": "BLOCKED - could not log in either user due to API 502",
+      "status": "BLOCKED",
+      "bugs": ["BUG-COLLAB-002"]
+    },
+    {
+      "id": "TC-COLLAB-LIVE-EDIT",
+      "name": "Live editing - User A edit visible to User B",
+      "command": "User A edits file, User B sees change without refresh",
+      "expected": "Yjs CRDT propagates edit via WS within <1s",
+      "actual": "BLOCKED - could not log in either user due to API 502",
+      "status": "BLOCKED",
+      "bugs": ["BUG-COLLAB-002"]
+    },
+    {
+      "id": "TC-COLLAB-SHARED-PREVIEW",
+      "name": "Shared preview - code change visible in both previews",
+      "command": "User A changes code, both users see updated preview",
+      "expected": "Preview updates for both users within a few seconds",
+      "actual": "BLOCKED - preview WebSocket returns 502",
+      "status": "BLOCKED",
+      "bugs": ["BUG-COLLAB-002", "BUG-COLLAB-004"]
+    },
+    {
+      "id": "TC-COLLAB-WORKSPACE-SHARE",
+      "name": "Workspace sharing between accounts",
+      "command": "Owner-pro shares workspace with ws-member, verify access levels",
+      "expected": "ws-member can access shared workspace with member permissions",
+      "actual": "BLOCKED - could not log in either user due to API 502",
+      "status": "BLOCKED",
+      "bugs": ["BUG-COLLAB-002"]
+    },
+    {
+      "id": "TC-COLLAB-AI-CHAT-MULTI",
+      "name": "Simultaneous AI chat from two users",
+      "command": "Both users send AI messages in same project simultaneously",
+      "expected": "No conflicts, both responses delivered correctly",
+      "actual": "BLOCKED - could not log in either user due to API 502",
+      "status": "BLOCKED",
+      "bugs": ["BUG-COLLAB-002"]
+    },
+    {
+      "id": "TC-COLLAB-RATE-LIMIT-UX",
+      "name": "Rate limit error message quality",
+      "command": "Trigger rate limit on /auth/login",
+      "expected": "Message includes retry-after time (e.g. 'Try again in 2 minutes')",
+      "actual": "Generic message: 'Too many requests, please try again later.' - no retry time given",
+      "status": "FAIL",
+      "bugs": ["BUG-COLLAB-001"]
+    }
+  ],
+  "summary": {
+    "total": 15,
+    "passed": 2,
+    "failed": 6,
+    "blocked": 7,
+    "bugs_found": 6
+  },
+  "bugs": [
+    "BUG-COLLAB-001: Login rate limiter too aggressive (429 after ~5 attempts, long lockout, no retry-after)",
+    "BUG-COLLAB-002: CRITICAL - dev-api.doable.me returns 502 on all endpoints (API server down)",
+    "BUG-COLLAB-003: Login shows generic 'Something went wrong' for 502/503 errors (poor UX)",
+    "BUG-COLLAB-004: Preview WebSocket returns 502, client retries infinitely",
+    "BUG-COLLAB-005: /projects/{id}/runtime/metrics returns 404, client polls 404 in tight loop",
+    "BUG-COLLAB-006: /{projectId}/github/status returns 404 (possible routing issue - no /projects/ prefix)"
+  ],
+  "notes": [
+    "All collaborative features (design mode, cursor presence, live editing, shared preview, AI chat) are BLOCKED by BUG-COLLAB-002",
+    "WS server (dev-ws.doable.me) is healthy - only API is down",
+    "Web frontend (dev.doable.me) is healthy",
+    "Rate limiting (BUG-COLLAB-001) was triggered by previous test sessions from same IP before API went down",
+    "Yjs/presence/collaboration infrastructure could not be tested at all due to API 502"
+  ]
+}

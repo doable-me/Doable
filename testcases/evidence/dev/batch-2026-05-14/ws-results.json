@@ -1,0 +1,100 @@
+{
+  "timestamp": "2026-05-14T17:49:51.205Z",
+  "results": [
+    {
+      "id": "TC-WS-AUTH-001",
+      "desc": "Connect with valid JWT → connected message",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-AUTH-002",
+      "desc": "Connect without token → close 4001",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-AUTH-003",
+      "desc": "Empty token → close 4001",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-AUTH-005",
+      "desc": "Garbage token → close 4002",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-AUTH-030",
+      "desc": "Heartbeat → heartbeat_ack response",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-ROOM-001",
+      "desc": "Join room with valid projectId → room:joined",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-ROOM-MEMBERSHIP-001",
+      "desc": "Join arbitrary foreign projectId → FORBIDDEN_ROOM",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-ROOM-006",
+      "desc": "room:leave removes from room",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-ROOM-032",
+      "desc": "Malformed JSON → PARSE_ERROR response",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-AUTH-032",
+      "desc": "GET /health returns 200 with rooms count",
+      "pass": true,
+      "expected": "200 {status:\"ok\", rooms: number}",
+      "actual": "200 {\"status\":\"ok\",\"rooms\":1,\"users\":1}"
+    },
+    {
+      "id": "TC-WS-AUTH-033",
+      "desc": "POST /internal/broadcast without secret → 403",
+      "pass": true,
+      "expected": "403",
+      "actual": "403"
+    },
+    {
+      "id": "TC-WS-AUTH-037",
+      "desc": "GET /internal/presence/:id — no secret enforced (security gap)",
+      "pass": true,
+      "skip": false,
+      "expected": "INFO: check if secret required",
+      "actual": "200 {\"users\":[]}",
+      "securityGap": "POSSIBLE GAP: no auth on /internal/presence"
+    },
+    {
+      "id": "TC-WS-MSG-CHAT-001",
+      "desc": "chat:send broadcasts to room",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-ROOM-015",
+      "desc": "chat:history received after room join",
+      "pass": false,
+      "error": "ws.on is not a function"
+    },
+    {
+      "id": "TC-WS-MSG-CURSOR-001",
+      "desc": "cursor:move excludes sender",
+      "pass": false,
+      "error": "ws.on is not a function"
+    }
+  ]
+}
