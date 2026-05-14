@@ -205,27 +205,30 @@ coreAuthRoutes.get("/me", authMiddleware, async (c) => {
   });
 });
 
-// ─── POST /auth/forgot-password ────────────────────────────
-// Shared handler so /auth/forgot-password and /auth/password-reset
-// (the public "I forgot, please email me a link" entry point used by
-// docs/tests/clients that prefer REST-style naming) behave identically.
-// Both paths MUST be reachable without any Authorization header — a user
-// who has forgotten their password cannot mint a token.
-async function handleForgotPassword(c: Parameters<Parameters<typeof coreAuthRoutes.post>[2]>[0]) {
-  const { email } = (await c.req.json()) as { email?: string };
-  if (!email) return c.json({ error: "Email is required" }, 400);
+// ─── /auth/forgot-password and /auth/password-reset ──────────
+// Inner logic for "I forgot my password, email me a link". Returns a
+// generic envelope so callers cannot use timing or status codes to
+// enumerate registered emails. MUST be reachable without any
+// Authorization header — a user who has forgotten their password
+// cannot mint a token to authenticate the request itself.
+//
+// Generic success message kept identical across success / not-found
+// / mailer-failed paths to preserve the enumeration guard.
+const FORGOT_PASSWORD_GENERIC_MESSAGE = "If an account with that email exists, a reset link has been sent.";
 
-  // Always return success to prevent email enumeration
-  const successMessage = "If an account with that email exists, a reset link has been sent.";
-
+async function processForgotPassword(emailInput: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (typeof emailInput !== "string" || emailInput.length === 0) {
+    return { ok: false, error: "Email is required" };
+  }
   try {
-    const user = await auth.findUserByEmail(email);
+    const user = await auth.findUserByEmail(emailInput);
     if (!user) {
-      // Don't reveal whether the email exists
-      return c.json({ message: successMessage });
+      // Don't reveal whether the email exists — silently succeed.
+      return { ok: true };
     }
 
-    // Generate a secure random reset token
+    // Generate a secure random reset token (raw goes to the user via
+    // email; only the sha256 hash is persisted).
     const rawToken = randomBytes(32).toString("hex");
     const tokenHash = createHash("sha256").update(rawToken).digest("hex");
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
@@ -236,15 +239,13 @@ async function handleForgotPassword(c: Parameters<Parameters<typeof coreAuthRout
       expiresAt,
     });
 
-    // Build the reset URL with the raw token (not the hash)
     const resetUrl = `${FRONTEND_URL}/reset-password?token=${rawToken}`;
     const displayName = user.display_name ?? user.email.split("@")[0] ?? "there";
 
-    // Fire the email but never let a missing SMTP config / transient mailer
-    // failure turn the response into a 5xx — that would leak whether the
-    // address is registered and break the "always-200" enumeration guard.
-    // If SMTP_FROM (or equivalent) is unset, sendTemplatedEmail logs and
-    // returns; the public response stays generic.
+    // Never let a missing SMTP config / transient mailer failure turn
+    // the response into a 5xx — that would leak whether the address is
+    // registered and break the enumeration guard. sendTemplatedEmail
+    // already log-and-noops when no provider is configured.
     await sendTemplatedEmail(user.email, "password-reset", {
       resetUrl,
       userName: displayName,
@@ -253,18 +254,31 @@ async function handleForgotPassword(c: Parameters<Parameters<typeof coreAuthRout
     });
   } catch (err) {
     console.error("[Auth] Forgot password error:", err);
-    // Don't reveal errors to the client
+    // Swallow so we still return the generic success envelope.
   }
-
-  return c.json({ message: successMessage });
+  return { ok: true };
 }
 
-coreAuthRoutes.post("/forgot-password", forgotPasswordRateLimiter, handleForgotPassword);
-// Alias: REST-style "password-reset" name. Must share the same rate
-// limiter so the alias can't be used to bypass the 3/hour cap on
-// /forgot-password. The limiter is keyed per-IP for unauthed requests
-// (see middleware/rate-limit.ts) so calls to either path count together.
-coreAuthRoutes.post("/password-reset", forgotPasswordRateLimiter, handleForgotPassword);
+// ─── POST /auth/forgot-password ────────────────────────────
+coreAuthRoutes.post("/forgot-password", forgotPasswordRateLimiter, async (c) => {
+  const { email } = (await c.req.json()) as { email?: unknown };
+  const result = await processForgotPassword(email);
+  if (!result.ok) return c.json({ error: result.error }, 400);
+  return c.json({ message: FORGOT_PASSWORD_GENERIC_MESSAGE });
+});
+
+// ─── POST /auth/password-reset ─────────────────────────────
+// Alias for /auth/forgot-password using REST-style naming. Shares the
+// SAME rate limiter so the alias can't be used to bypass the 3/hour
+// cap on /forgot-password (limiter is keyed per-IP for unauthed
+// requests — calls to either path count together). MUST be public for
+// the same reason as /forgot-password.
+coreAuthRoutes.post("/password-reset", forgotPasswordRateLimiter, async (c) => {
+  const { email } = (await c.req.json()) as { email?: unknown };
+  const result = await processForgotPassword(email);
+  if (!result.ok) return c.json({ error: result.error }, 400);
+  return c.json({ message: FORGOT_PASSWORD_GENERIC_MESSAGE });
+});
 
 // ─── POST /auth/reset-password ─────────────────────────────
 coreAuthRoutes.post("/reset-password", resetPasswordRateLimiter, async (c) => {
