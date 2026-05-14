@@ -340,6 +340,14 @@ billingRoutes.get("/credits/usage", async (c) => {
   }
 
   const userId = c.get("userId");
+  // BUG-BILLING-002: membership check — prevents cross-tenant data leak
+  const [membership] = await sql<Array<{ id: string }>>`
+    SELECT id FROM workspace_members
+    WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+    LIMIT 1
+  `;
+  if (!membership) return c.json({ error: "Not a member of this workspace" }, 403);
+
   const days = parseInt(c.req.query("days") ?? "30", 10);
 
   try {
@@ -534,7 +542,7 @@ billingRoutes.post("/top-up", async (c) => {
 billingRoutes.get("/subscription", authMiddleware, async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
-  const [ws] = await sql<{ id: string; plan: string }[]>`SELECT id, plan FROM workspaces WHERE id = ${workspaceId} AND deleted_at IS NULL`;
+  const [ws] = await sql<{ id: string; plan: string }[]>`SELECT id, plan FROM workspaces WHERE id = ${workspaceId}`;
   if (!ws) return c.json({ error: "Workspace not found" }, 404);
   const sub = await billing.getSubscription(workspaceId);
   return c.json({ data: { plan: ws.plan, status: sub?.stripe_subscription_id ? "active" : "none", stripeSubscriptionId: sub?.stripe_subscription_id ?? null, currentPeriodEnd: null, cancelAtPeriodEnd: false, mode: process.env.STRIPE_SECRET_KEY ? "stripe" : "bypass" } });
@@ -544,7 +552,7 @@ billingRoutes.get("/subscription", authMiddleware, async (c) => {
 billingRoutes.get("/limits", authMiddleware, async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
-  const [ws] = await sql<{ plan: string }[]>`SELECT plan FROM workspaces WHERE id = ${workspaceId} AND deleted_at IS NULL`;
+  const [ws] = await sql<{ plan: string }[]>`SELECT plan FROM workspaces WHERE id = ${workspaceId}`;
   if (!ws) return c.json({ error: "Workspace not found" }, 404);
   const plan = ws.plan as keyof typeof PLAN_LIMITS;
   return c.json({ data: { plan: ws.plan, limits: PLAN_LIMITS[plan] ?? PLAN_LIMITS.free } });
@@ -569,6 +577,11 @@ billingRoutes.post("/cancel", authMiddleware, async (c) => {
 billingRoutes.get("/topup/history", authMiddleware, async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
+  const userId = c.get("userId");
+  const [membership] = await sql<Array<{ id: string }>>`
+    SELECT id FROM workspace_members WHERE workspace_id = ${workspaceId} AND user_id = ${userId} LIMIT 1
+  `;
+  if (!membership) return c.json({ error: "Not a member of this workspace" }, 403);
   const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10) || 50, 200);
   const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
   const rows = await sql`SELECT id, workspace_id, credits, transaction_type, stripe_session_id, created_at FROM billing_transactions WHERE workspace_id = ${workspaceId} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`.catch(() => []);
@@ -576,7 +589,12 @@ billingRoutes.get("/topup/history", authMiddleware, async (c) => {
 });
 
 // ─── POST /billing/grant ───────────────────────────────────
+// Platform-admin only: grant rollover credits to a workspace
 billingRoutes.post("/grant", authMiddleware, async (c) => {
+  const [caller] = await sql<{ is_platform_admin: boolean }[]>`
+    SELECT is_platform_admin FROM users WHERE id = ${c.get("userId")} LIMIT 1
+  `;
+  if (!caller?.is_platform_admin) return c.json({ error: "Platform admin required" }, 403);
   const body = await c.req.json().catch(() => ({}));
   const { workspaceId, credits } = body as { workspaceId?: string; credits?: number };
   if (!workspaceId || typeof credits !== "number" || credits <= 0) return c.json({ error: "workspaceId and positive credits required" }, 400);
@@ -585,7 +603,12 @@ billingRoutes.post("/grant", authMiddleware, async (c) => {
 });
 
 // ─── POST /billing/revoke ──────────────────────────────────
+// Platform-admin only: revoke rollover credits from a workspace
 billingRoutes.post("/revoke", authMiddleware, async (c) => {
+  const [caller] = await sql<{ is_platform_admin: boolean }[]>`
+    SELECT is_platform_admin FROM users WHERE id = ${c.get("userId")} LIMIT 1
+  `;
+  if (!caller?.is_platform_admin) return c.json({ error: "Platform admin required" }, 403);
   const body = await c.req.json().catch(() => ({}));
   const { workspaceId, credits } = body as { workspaceId?: string; credits?: number };
   if (!workspaceId || typeof credits !== "number" || credits <= 0) return c.json({ error: "workspaceId and positive credits required" }, 400);
