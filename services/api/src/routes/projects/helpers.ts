@@ -62,7 +62,19 @@ export function validateProjectIdParam(paramName: string = "id") {
       await next();
       return;
     }
-    if (!id || !UUID_REGEX.test(id) || id.toLowerCase() === NIL_UUID) {
+    if (!id || !UUID_REGEX.test(id)) {
+      return c.json({ error: "Invalid project id" }, 400);
+    }
+    // BUG-API-003: the nil UUID is a syntactically valid UUID. For GET
+    // requests, return 404 (not found) rather than 400 (malformed input) —
+    // REST convention. For write methods (PATCH/PUT/DELETE/POST) we still
+    // return 400 because BUG-CORPUS-PROJ-004 showed a stub row keyed on the
+    // nil UUID could be silently created/mutated by the chat
+    // `createIfMissing` flow. Keeping writes hard-blocked closes that.
+    if (id.toLowerCase() === NIL_UUID) {
+      if (c.req.method === "GET") {
+        return c.json({ error: "Project not found" }, 404);
+      }
       return c.json({ error: "Invalid project id" }, 400);
     }
     await next();

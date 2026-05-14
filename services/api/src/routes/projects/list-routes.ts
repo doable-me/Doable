@@ -195,9 +195,13 @@ function generateSlug(name: string): string {
 projectListRoutes.post("/", async (c) => {
   const userId = c.get("userId");
   const rawBody = await c.req.json();
-  // Accept snake_case aliases for legacy clients (workspace_id, template_id, folder_id, framework_id).
-  // Without this, zod silently strips unknown keys and the handler falls back to the user's first
-  // workspace (their personal one), which silently mis-routes the project. See BUG-PWA-002.
+  // Accept snake_case + bare aliases for legacy clients (workspace_id,
+  // template_id, folder_id, framework_id, framework). Without this, zod
+  // silently strips unknown keys and the handler falls back to the user's
+  // first workspace (their personal one), which silently mis-routes the
+  // project. See BUG-PWA-002. The `framework` alias is required so that
+  // BUG-API-002 (invalid framework values silently accepted) can validate
+  // — without it, `{"framework":"cobol"}` is dropped before validation.
   const body = (rawBody && typeof rawBody === "object" && !Array.isArray(rawBody))
     ? {
         ...rawBody,
@@ -208,7 +212,8 @@ projectListRoutes.post("/", async (c) => {
         folderId: (rawBody as Record<string, unknown>).folderId
           ?? (rawBody as Record<string, unknown>).folder_id,
         frameworkId: (rawBody as Record<string, unknown>).frameworkId
-          ?? (rawBody as Record<string, unknown>).framework_id,
+          ?? (rawBody as Record<string, unknown>).framework_id
+          ?? (rawBody as Record<string, unknown>).framework,
       }
     : rawBody;
   const parsed = createSchema.safeParse(body);
@@ -263,13 +268,21 @@ projectListRoutes.post("/", async (c) => {
     }
   }
 
-  // Enforce enabled frameworks — reject creation with disabled framework
+  // Enforce enabled frameworks — reject creation with unknown/disabled
+  // framework. BUG-API-002: invalid values like "cobol" were silently
+  // accepted and the project was created with the DB default. Return 400
+  // (validation) so callers can correct the request.
   if (frameworkId) {
     const enabled = getEnabledFrameworkIds();
     if (!enabled.has(frameworkId)) {
       return c.json({
-        error: `Framework "${frameworkId}" is currently disabled by the platform admin.`,
-      }, 403);
+        error: "Validation failed",
+        details: {
+          framework: [
+            `Invalid framework "${frameworkId}". Allowed: ${Array.from(enabled).join(", ")}`,
+          ],
+        },
+      }, 400);
     }
   }
 
