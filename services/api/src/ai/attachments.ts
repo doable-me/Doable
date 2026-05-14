@@ -4,7 +4,9 @@
  * Processes file/image attachments from the chat API before sending to the AI.
  * - Images are saved as temp files and passed via the Copilot SDK's attachments API
  * - Text and code files are inlined into the prompt
- * - PDFs are saved as temp files for the SDK to read
+ * - PDFs are text-extracted via pdf-parse and inlined into the prompt;
+ *   fallback to temp file if extraction yields empty.
+ * - Documents (Word/Excel/CSV/PowerPoint) are text-extracted and inlined into the prompt
  */
 
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
@@ -13,6 +15,7 @@ import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
+import { PDFParse } from "pdf-parse";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -91,6 +94,21 @@ function isDocumentMime(mime: string): boolean {
 function getDocExtension(name: string): string {
   const dot = name.lastIndexOf(".");
   return dot >= 0 ? name.slice(dot).toLowerCase() : "";
+}
+
+/**
+ * Extract text from a PDF buffer using pdf-parse.
+ * Returns "" if parsing fails (caller handles fallback).
+ */
+async function extractPdfText(buffer: Buffer): Promise<string> {
+  try {
+    const parser = new PDFParse({ data: buffer });
+    const result = await parser.getText();
+    return result.text || "";
+  } catch (err) {
+    console.error("[Attachments] pdf-parse failed:", err);
+    return "";
+  }
 }
 
 /**
@@ -265,12 +283,30 @@ export async function processAttachments(
       const base64 = extractBase64(attachment.data);
       if (base64) {
         try {
-          const tempPath = saveToTempFile(base64, name, mime);
-          fileAttachments.push({ type: "file", path: tempPath, displayName: name });
-          console.log(`[Attachments] Saved PDF "${name}" to ${tempPath}`);
+          const buffer = Buffer.from(base64, "base64");
+          const textContent = await extractPdfText(buffer);
+          if (textContent && textContent.length > 0) {
+            const truncated = textContent.length > MAX_TEXT_CHARS
+              ? textContent.slice(0, MAX_TEXT_CHARS) + `\n... [truncated — file exceeds ${MAX_TEXT_CHARS} characters]`
+              : textContent;
+            fileSections.push(
+              `\n\n--- Attached file: ${name} ---\n${truncated}\n--- End of ${name} ---`,
+            );
+            console.log(`[Attachments] Extracted PDF "${name}" (${textContent.length} chars)`);
+          } else {
+            const tempPath = saveToTempFile(base64, name, mime);
+            fileAttachments.push({ type: "file", path: tempPath, displayName: name });
+            console.log(`[Attachments] Saved PDF "${name}" to ${tempPath} (no text extracted; fallback)`);
+          }
         } catch (err) {
-          console.error(`[Attachments] Failed to save PDF "${name}":`, err);
-          notes.push(`\n\n[Attached PDF: ${name} — failed to save for processing]`);
+          console.error(`[Attachments] Failed to process PDF "${name}":`, err);
+          // Best-effort fallback: save to temp file so SDK still sees the file
+          try {
+            const tempPath = saveToTempFile(base64, name, mime);
+            fileAttachments.push({ type: "file", path: tempPath, displayName: name });
+          } catch {
+            notes.push(`\n\n[Attached PDF: ${name} — failed to save for processing]`);
+          }
         }
       } else {
         notes.push(`\n\n[Attached PDF: ${name} — could not decode PDF data]`);
