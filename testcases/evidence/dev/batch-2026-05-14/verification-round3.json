@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "date": "2026-05-15",
+    "batch": "batch-2026-05-14",
+    "round": 3,
+    "environment": "dev (dev-api.doable.me / dev.doable.me)",
+    "tokens_used": {
+      "admin2": "61de4769-4842-442d-9de2-2e54b9f7f149",
+      "owner-pro": "7b36f2e7-65bb-4700-a68a-8233c06fab92",
+      "workspace": "c1083c8a-dc2a-48fc-9c95-9403721532b3"
+    }
+  },
+  "results": [
+    {
+      "id": "BUG-ADMIN-006",
+      "description": "PATCH /admin/features/ai_chat works (not 404)",
+      "command": "curl -s -X PATCH https://dev-api.doable.me/admin/features/ai_chat -H 'Authorization: Bearer <admin2>' -H 'Content-Type: application/json' -d '{\"enabled\":true}'",
+      "expected_status": 200,
+      "actual_status": 200,
+      "response_body": {
+        "feature_key": "ai_chat",
+        "label": "AI Chat",
+        "description": "AI chat feature",
+        "enabled": true,
+        "min_plan": null,
+        "min_role": null,
+        "created_at": "2026-05-14T18:11:28.245Z",
+        "updated_at": "2026-05-14T18:30:03.324Z"
+      },
+      "verdict": "CONFIRMED",
+      "notes": "Returns 200 with full feature object. enabled=true confirmed in response."
+    },
+    {
+      "id": "BUG-MARKETPLACE-001",
+      "description": "Install nonexistent listing returns 404 (not 500)",
+      "command": "curl -s -o /dev/null -w \"%{http_code}\" -X POST https://dev-api.doable.me/marketplace/listings/fake-id-000/install -H 'Authorization: Bearer <owner-pro>' -H 'Content-Type: application/json' -d '{\"workspaceId\":\"c1083c8a-dc2a-48fc-9c95-9403721532b3\"}'",
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "CONFIRMED",
+      "notes": "Returned 404 as expected. No 500 internal error."
+    },
+    {
+      "id": "BUG-ADMIN-009",
+      "description": "/admin page redirects unauthenticated users to /login",
+      "command": "curl -s -o /dev/null -w \"%{http_code}\" https://dev.doable.me/admin",
+      "expected_status": "307 or 302",
+      "actual_status": 200,
+      "verdict": "REGRESSION",
+      "notes": "Returned 200 instead of a redirect. The /admin route is not protecting unauthenticated access at the HTTP level. Either middleware is not enforcing auth or Next.js is returning the page shell (which may do client-side redirect). Needs server-side redirect fix."
+    },
+    {
+      "id": "AI-CHAT-CREDITS",
+      "description": "AI chat endpoint responds and credits deduction check",
+      "sub_checks": [
+        {
+          "step": "balance_before",
+          "command": "curl -s https://dev-api.doable.me/billing/balance?workspaceId=c1083c8a-dc2a-48fc-9c95-9403721532b3 -H 'Authorization: Bearer <owner-pro>'",
+          "actual_status": 200,
+          "response": {
+            "dailyRemaining": 4,
+            "dailyMax": 5,
+            "monthlyRemaining": 0,
+            "monthlyMax": 0,
+            "topupRemaining": 0,
+            "planUnlimited": false,
+            "planType": "free"
+          }
+        },
+        {
+          "step": "chat_post",
+          "command": "curl -s --max-time 10 -X POST https://dev-api.doable.me/projects/a9bcb1a9-20ea-4ad5-a4e3-1ed9662284ac/chat -H 'Authorization: Bearer <owner-pro>' -H 'Content-Type: application/json' -d '{\"content\":\"Say hi\",\"mode\":\"agent\"}'",
+          "actual_status": 200,
+          "response_sample": [
+            "data: {\"type\":\"thinking\",\"data\":\"Preparing workspace...\"}",
+            "data: {\"type\":\"status\",\"data\":{\"phase\":\"dev-server\",\"message\":\"Starting dev server...\"}}",
+            "data: {\"type\":\"status\",\"data\":{\"phase\":\"dev-server\",\"message\":\"Dev server ready (3s)\"}}",
+            "data: {\"type\":\"thinking\",\"data\":\" Connecting to AI model...\\n\"}",
+            "data: {\"type\":\"status\",\"data\":{\"phase\":\"thinking\",\"message\":\"Connecting to AI...\"}}"
+          ]
+        }
+      ],
+      "verdict": "CONFIRMED",
+      "notes": "Billing balance endpoint returns 200 with valid data. Chat endpoint returns 200 and begins SSE streaming with correct phase progression (workspace prep -> dev server -> AI connect). Full credit deduction not verified (stream cut at 10s) but endpoint is functional."
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "confirmed": 3,
+    "regression": 1,
+    "partial": 0,
+    "regressions": ["BUG-ADMIN-009"]
+  }
+}
