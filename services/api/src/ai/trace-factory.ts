@@ -350,7 +350,12 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     hasBearerToken: boolean; wireApi?: string; source: string;
   }): void { push("provider_resolved", provider); }
 
-  function setSessionId(id: string): void { ctx.sessionId = id; }
+  function setSessionId(id: string): void {
+    // Ignore empty / falsy ids so accidental setSessionId("") calls
+    // never blank out a real id mid-turn (see R11 root-cause analysis).
+    if (!id) return;
+    ctx.sessionId = id;
+  }
   function setMessageId(id: string): void { ctx.messageId = id; }
   function setModel(model: string): void { ctx.model = model; }
 

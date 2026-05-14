@@ -514,16 +514,20 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           }
 
           let sessionId = await resolveSession(projectId, userId, sessionKey, mode, modeChanged, resolvedModel, resolvedProvider, resolvedGithubToken, projectPath, systemPrompt, sessionTools, toolProgress, state.traceCollector, stream, skillDirectories);
+          // persistSessionToDb now THROWS on real DB failures (see R11 fix —
+          // it used to swallow errors and return undefined, which caused the
+          // entire user/assistant message pair to be silently dropped). A
+          // returned value here is always a non-empty uuid.
           const dbSessionId = await persistSessionToDb(projectId, userId, mode, sessionId);
-          if (state.usageCollector && dbSessionId) state.usageCollector.setSessionId(dbSessionId);
+          state.usageCollector?.setSessionId(dbSessionId);
 
           const { displayName, color } = await resolveUserDisplay(userId);
-          if (dbSessionId) await saveUserMessage(dbSessionId, displayContent ?? content, userId, displayName, color, attachments);
+          await saveUserMessage(dbSessionId, displayContent ?? content, userId, displayName, color, attachments);
           broadcastToRoom(projectId, { type: "ai:message-sent", userId, displayName, content: content.slice(0, 200), messageId }, userId).catch(() => {});
 
           // ai_active_streams + activeRequests already registered above,
           // before streamSSE opened, to close the refresh-race window.
-          if (dbSessionId) state.assistantMessageId = await preInsertAssistantMessage(dbSessionId);
+          state.assistantMessageId = await preInsertAssistantMessage(dbSessionId);
 
           const unsubToolEvents = onToolEvent(projectId, (toolName, status, args) => {
             if (status === "start") {

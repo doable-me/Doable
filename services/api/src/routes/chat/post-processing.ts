@@ -188,7 +188,10 @@ export async function handleFinalCleanup(
       await stream.writeSSE({ data: JSON.stringify({ type: "usage", data: usage }) });
     }
     if (state.traceCollector) {
-      state.traceCollector.setSessionId("");
+      // Intentionally NOT calling setSessionId("") — that would blank the
+      // SDK session id we want preserved on chat_traces for post-mortem
+      // correlation. The SDK session lifecycle is managed by
+      // projectSessions / ai_sessions, not by the trace context.
       if (state.assistantMessageId) state.traceCollector.setMessageId(state.assistantMessageId);
       state.traceCollector.complete("completed", {
         promptTokens: usage.promptTokens,
@@ -200,7 +203,7 @@ export async function handleFinalCleanup(
       }).catch(() => {});
     }
   } else if (state.traceCollector) {
-    state.traceCollector.setSessionId("");
+    // Same rationale as above — do not wipe session_id on the trace row.
     if (state.assistantMessageId) state.traceCollector.setMessageId(state.assistantMessageId);
     state.traceCollector.complete("completed").catch(() => {});
   }
