@@ -509,6 +509,60 @@ adminOpsRoutes.get("/projects", async (c) => {
   });
 });
 
+// ─── Project detail (platform admin) ──────────────────────
+adminOpsRoutes.get("/projects/:id", async (c) => {
+  const projectId = c.req.param("id");
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(projectId)) return c.json({ error: "Project not found" }, 404);
+
+  const rows = await sql<{
+    project_id: string; project_name: string; project_slug: string;
+    framework_id: string; status: string; visibility: string;
+    workspace_id: string; workspace_name: string; owner_email: string | null;
+    runtime_state: string | null; runtime_kind: string | null; listen_addr: string | null;
+    sessions_count: number; messages_count: number;
+    created_at: Date; updated_at: Date;
+  }[]>`
+    SELECT
+      p.id AS project_id, p.name AS project_name, p.slug AS project_slug,
+      p.framework_id, p.status::text AS status, p.visibility::text AS visibility,
+      w.id AS workspace_id, w.name AS workspace_name, u.email AS owner_email,
+      pr.state AS runtime_state, pr.runtime_kind AS runtime_kind, pr.listen_addr,
+      COALESCE(s.sessions_count, 0) AS sessions_count,
+      COALESCE(m.messages_count, 0) AS messages_count,
+      p.created_at, p.updated_at
+    FROM projects p
+    JOIN workspaces w ON w.id = p.workspace_id
+    LEFT JOIN users u ON u.id = w.owner_id
+    LEFT JOIN project_runtime pr ON pr.project_id = p.id
+    LEFT JOIN (
+      SELECT project_id, COUNT(*)::int AS sessions_count
+      FROM ai_sessions GROUP BY project_id
+    ) s ON s.project_id = p.id::text
+    LEFT JOIN (
+      SELECT s.project_id, COUNT(am.id)::int AS messages_count
+      FROM ai_sessions s
+      LEFT JOIN ai_messages am ON am.session_id = s.id
+      GROUP BY s.project_id
+    ) m ON m.project_id = p.id::text
+    WHERE p.id = ${projectId} AND p.deleted_at IS NULL
+  `;
+
+  const r = rows[0];
+  if (!r) return c.json({ error: "Project not found" }, 404);
+  return c.json({
+    data: {
+      projectId: r.project_id, projectName: r.project_name, projectSlug: r.project_slug,
+      frameworkId: r.framework_id, status: r.status, visibility: r.visibility,
+      workspaceId: r.workspace_id, workspaceName: r.workspace_name, ownerEmail: r.owner_email,
+      runtimeState: r.runtime_state, runtimeKind: r.runtime_kind, listenAddr: r.listen_addr,
+      sessionsCount: r.sessions_count, messagesCount: r.messages_count,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+      sandboxUser: `doable-${r.project_slug}`.slice(0, 32),
+    },
+  });
+});
+
 // ─── Chat sessions list (platform admin) ──────────────────
 adminOpsRoutes.get("/chat-sessions", async (c) => {
   const search = c.req.query("search")?.slice(0, 100) ?? "";
