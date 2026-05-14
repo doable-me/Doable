@@ -2755,6 +2755,21 @@ function EditorPageInner() {
               // Hide synthetic BUILD_DECK user messages from the chat UI
               const isHiddenMsg = m.role === "user" && /^\u{1F3A8}\s*Designing\s/u.test(displayContent);
 
+              // Hydrate attachment chips from server-persisted descriptors so
+              // the chip survives a refresh. Backend stores lightweight metadata
+              // only (no base64 data) — that's fine for display; the AI already
+              // consumed the full payload at send-time.
+              const persistedAttachments = Array.isArray(m.attachments) && m.attachments.length > 0
+                ? (m.attachments as Array<{ type?: string; name?: string; mimeType?: string; fileType?: string }>)
+                    .filter((a) => typeof a?.name === "string")
+                    .map((a) => ({
+                      type: a.mimeType || a.type || "application/octet-stream",
+                      data: "",
+                      name: a.name as string,
+                      ...(a.fileType ? { fileType: a.fileType } : {}),
+                    }))
+                : undefined;
+
               return {
                 id: m.id,
                 role: m.role as "user" | "assistant",
@@ -2765,6 +2780,7 @@ function EditorPageInner() {
                 }),
                 isStreaming: false,
                 ...(isHiddenMsg ? { hidden: true } : {}),
+                ...(persistedAttachments ? { attachments: persistedAttachments } : {}),
                 thinkingContent,
                 toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
                   ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => {
@@ -2849,6 +2865,45 @@ function EditorPageInner() {
         // API load failed — localStorage fallback already loaded
       }
   }, [resolvedProjectId, authUser?.id]);
+
+  // ─── Watchdog: detect silent SSE drops ──
+  // If `isStreaming` stays true but the underlying SSE stream dies without
+  // delivering [DONE]/error to the client (Cloudflare Tunnel idle timeout,
+  // network blip during tab suspend, lost final frame), the optimistic
+  // placeholder is stuck forever — backend persists the assistant row but
+  // loadFromApi short-circuits on `localStreamActiveRef.current === true`.
+  // Poll authoritative server status; when backend confirms the stream is
+  // done, force-finalize on this tab and resync from /chat/history.
+  useEffect(() => {
+    if (!isStreaming || !resolvedProjectId) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const [chatStatusRes, aiStatusRes] = await Promise.all([
+          apiFetch<{ streaming: boolean }>(`/projects/${resolvedProjectId}/chat/status`).catch(() => null),
+          apiFetch<{ active: boolean }>(`/projects/${resolvedProjectId}/ai-status`).catch(() => null),
+        ]);
+        if (cancelled) return;
+        const stillActive = chatStatusRes?.streaming === true || aiStatusRes?.active === true;
+        if (stillActive) return;
+        console.warn("[Chat] Watchdog: backend reports stream done while UI still streaming — force-finalizing");
+        try { abortRef.current?.abort(); } catch { /* ignore */ }
+        localStreamActiveRef.current = false;
+        setIsStreaming(false);
+        setLiveStatus("");
+        setIsFirstGeneration(false);
+        setHasActiveToolCalls(false);
+        try { await loadFromApi(); } catch { /* best effort */ }
+      } catch { /* ignore */ }
+    };
+    const firstId = setTimeout(check, 18_000);
+    const intervalId = setInterval(check, 12_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(firstId);
+      clearInterval(intervalId);
+    };
+  }, [isStreaming, resolvedProjectId, loadFromApi]);
 
   // Load chat history + restore plan + detect active generation on mount
   useEffect(() => {

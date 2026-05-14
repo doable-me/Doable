@@ -507,7 +507,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           if (state.usageCollector && dbSessionId) state.usageCollector.setSessionId(dbSessionId);
 
           const { displayName, color } = await resolveUserDisplay(userId);
-          if (dbSessionId) await saveUserMessage(dbSessionId, displayContent ?? content, userId, displayName, color);
+          if (dbSessionId) await saveUserMessage(dbSessionId, displayContent ?? content, userId, displayName, color, attachments);
           broadcastToRoom(projectId, { type: "ai:message-sent", userId, displayName, content: content.slice(0, 200), messageId }, userId).catch(() => {});
 
           // ai_active_streams + activeRequests already registered above,

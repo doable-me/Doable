@@ -53,7 +53,21 @@ coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {
   const approvalStatus = approvalConfig.enabled ? "pending" : "approved";
 
   const passwordHash = await argon2.hash(password, ARGON2_OPTS);
-  const user = await auth.createUser({ email, passwordHash, displayName: sanitizedName, approvalStatus });
+  let user;
+  try {
+    user = await auth.createUser({ email, passwordHash, displayName: sanitizedName, approvalStatus });
+  } catch (err) {
+    // Belt-and-suspenders: the line-43 pre-check races with concurrent
+    // inserts (and with case-folding inside createUser's .toLowerCase()).
+    // Postgres surfaces the unique-violation as code 23505; map it to a
+    // friendly 409 instead of bubbling the raw constraint name to the
+    // client (which would otherwise leak `users_email_key` via the global
+    // onError handler in dev mode).
+    if ((err as { code?: string } | null)?.code === "23505") {
+      return c.json({ error: "An account with this email already exists" }, 409);
+    }
+    throw err;
+  }
 
   if (approvalStatus === "pending") {
     // Don't auto-create the workspace yet and don't issue tokens. The user
@@ -192,7 +206,12 @@ coreAuthRoutes.get("/me", authMiddleware, async (c) => {
 });
 
 // ─── POST /auth/forgot-password ────────────────────────────
-coreAuthRoutes.post("/forgot-password", forgotPasswordRateLimiter, async (c) => {
+// Shared handler so /auth/forgot-password and /auth/password-reset
+// (the public "I forgot, please email me a link" entry point used by
+// docs/tests/clients that prefer REST-style naming) behave identically.
+// Both paths MUST be reachable without any Authorization header — a user
+// who has forgotten their password cannot mint a token.
+async function handleForgotPassword(c: Parameters<Parameters<typeof coreAuthRoutes.post>[2]>[0]) {
   const { email } = (await c.req.json()) as { email?: string };
   if (!email) return c.json({ error: "Email is required" }, 400);
 
@@ -221,9 +240,16 @@ coreAuthRoutes.post("/forgot-password", forgotPasswordRateLimiter, async (c) => 
     const resetUrl = `${FRONTEND_URL}/reset-password?token=${rawToken}`;
     const displayName = user.display_name ?? user.email.split("@")[0] ?? "there";
 
+    // Fire the email but never let a missing SMTP config / transient mailer
+    // failure turn the response into a 5xx — that would leak whether the
+    // address is registered and break the "always-200" enumeration guard.
+    // If SMTP_FROM (or equivalent) is unset, sendTemplatedEmail logs and
+    // returns; the public response stays generic.
     await sendTemplatedEmail(user.email, "password-reset", {
       resetUrl,
       userName: displayName,
+    }).catch((err) => {
+      console.warn("[Auth] password-reset email dispatch failed (non-fatal):", err);
     });
   } catch (err) {
     console.error("[Auth] Forgot password error:", err);
@@ -231,7 +257,14 @@ coreAuthRoutes.post("/forgot-password", forgotPasswordRateLimiter, async (c) => 
   }
 
   return c.json({ message: successMessage });
-});
+}
+
+coreAuthRoutes.post("/forgot-password", forgotPasswordRateLimiter, handleForgotPassword);
+// Alias: REST-style "password-reset" name. Must share the same rate
+// limiter so the alias can't be used to bypass the 3/hour cap on
+// /forgot-password. The limiter is keyed per-IP for unauthed requests
+// (see middleware/rate-limit.ts) so calls to either path count together.
+coreAuthRoutes.post("/password-reset", forgotPasswordRateLimiter, handleForgotPassword);
 
 // ─── POST /auth/reset-password ─────────────────────────────
 coreAuthRoutes.post("/reset-password", resetPasswordRateLimiter, async (c) => {

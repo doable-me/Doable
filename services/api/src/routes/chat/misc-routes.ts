@@ -189,7 +189,7 @@ export function registerMiscRoutes(app: Hono<AuthEnv>) {
       if (returnAll) {
         const messages = await sql`
           SELECT id, role, ${selectMessageContent(sql)} AS content,
-                 tool_calls, suggestions, tool_actions,
+                 tool_calls, suggestions, tool_actions, attachments,
                  sent_by_user_id, display_name, user_color, created_at,
                  version_sha, had_tool_calls, thinking_content
           FROM ai_messages WHERE session_id = ${dbSession.id}
@@ -203,7 +203,7 @@ export function registerMiscRoutes(app: Hono<AuthEnv>) {
       if (beforeCursor) {
         messages = await sql`
           SELECT id, role, ${selectMessageContent(sql)} AS content,
-                 tool_calls, suggestions, tool_actions,
+                 tool_calls, suggestions, tool_actions, attachments,
                  sent_by_user_id, display_name, user_color, created_at,
                  version_sha, had_tool_calls, thinking_content
           FROM ai_messages
@@ -218,7 +218,7 @@ export function registerMiscRoutes(app: Hono<AuthEnv>) {
         // Get the latest N messages
         messages = await sql`
           SELECT id, role, ${selectMessageContent(sql)} AS content,
-                 tool_calls, suggestions, tool_actions,
+                 tool_calls, suggestions, tool_actions, attachments,
                  sent_by_user_id, display_name, user_color, created_at,
                  version_sha, had_tool_calls, thinking_content
           FROM ai_messages

@@ -11,8 +11,10 @@
 | TC-AI-CHAT-HISTORY.md | Sessions list, pagination, edit/delete/export, search | 45 |
 | TC-AI-CHAT-MODELS.md | Model selection, BYOK, fallback, audit | 40 |
 | TC-AI-CHAT-MULTIPAGE.md | Multi-page React Router app build (5-turn integration) | 5 |
+| TC-AI-CHAT-PDF-SRS-FULL.md | Real SRS PDF → AI-generated domain app; corrupted PDF; empty-prompt guard (R11) | 4 |
+| TC-AI-CHAT-HISTORY-PERSIST.md | Chat history persistence, session_id UUID integrity, multi-turn ordering, pagination (R11) | 5 |
 
-**Total:** 360 cases
+**Total:** 369 cases
 
 ## Conventions
 - Severity tiers: smoke, critical, high, medium, low
