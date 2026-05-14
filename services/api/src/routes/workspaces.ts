@@ -309,8 +309,13 @@ async function inviteMemberHandler(c: Context<AuthEnv>) {
     );
   }
 
-  // Check if user is already a member
-  const existingUser = await users.findByEmail(parsed.data.email);
+  // Check if user is already a member.
+  // BUG-CORPUS-PROJ-005 (same root cause): under authMiddlewareWithRls the
+  // users_workspace_visible RLS policy hides users who don't share a
+  // workspace with the caller — exactly the cohort being invited. Use
+  // the SECURITY DEFINER lookup so the "user already a member" 409 short-
+  // circuit doesn't silently miss known users on RLS-gated routes.
+  const existingUser = await users.findByEmailForInvite(parsed.data.email);
   if (existingUser) {
     const existingRole = await workspaces.getMemberRole(workspaceId, existingUser.id);
     if (existingRole) {
