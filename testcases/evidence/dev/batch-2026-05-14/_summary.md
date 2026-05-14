@@ -43,11 +43,11 @@
 | BUG-AI-019 | AI Chat | Credit balance not decremented after sends | Opus fixing |
 | BUG-AI-020 | AI Chat | Zero monthly credits not enforced | Opus fixing |
 | BUG-AI-015 | AI Chat | Emoji stored as ?????? — UTF-8 corruption | Opus fixing |
-| BUG-MCP-013 | MCP | mcp_ui_resource SSE event not emitted | Queued |
+| BUG-MCP-013 | MCP | mcp_ui_resource SSE event not emitted | Code emits correctly; CF Tunnel may drop — fallback in tool_result |
 | BUG-ADMIN-001/002 | Admin | Search + pagination ignored on /admin/projects | Queued |
-| BUG-ADMIN-005 | Admin | /admin/users missing plan/AI/credits fields | Queued |
+| BUG-ADMIN-005 | Admin | /admin/users missing plan/AI/credits fields | **FIXED** (session 2) |
 | BUG-ADMIN-006 | Admin | PATCH /admin/features fails for underscore keys | Opus fixing |
-| BUG-ADMIN-009 | Admin | /admin accessible without authentication | Opus fixing |
+| BUG-ADMIN-009 | Admin | /admin accessible without authentication | **FIXED** (session 2) — middleware.ts + web restart |
 | BUG-AUTH-017 | Security | WebSocket CSWSH (cross-site hijack) | Queued for Opus |
 
 ## Infrastructure Fixes Applied During Run
@@ -68,6 +68,24 @@
 | ce1637fb | fix(folders.ts): BUG-WS-001/003 |
 | a5f7d75f | fix(next.config.ts): BUG-WS-001/003 |
 | 5f2f497a | test(e2e): 133 evidence + bug files |
+
+## Session 2 Fixes (2026-05-14/15)
+
+| Bug | Description | Commit |
+|-----|-------------|--------|
+| BUG-ADMIN-004 | GET /admin/projects/:id endpoint added | session 2 |
+| BUG-ADMIN-005 | /admin/users enriched with plan/AI/credits fields | session 2 |
+| BUG-ADMIN-009 | /admin auth gate via Next.js middleware.ts | session 2 |
+| BUG-AI-011 | "chat" mode added to chat endpoint + system prompt | session 2 |
+| BUG-API-001 | GET /health/ trailing slash → 200 (not 308 to http://) | 8de423d2 |
+| BUG-API-005 | POST /projects/:id/archive + /unarchive added | a172e882 |
+| BUG-BILLING-001 | credit-display.tsx monthly limits corrected (pro→500, biz→3000) | session 2 |
+| BUG-BILLING-004 | Missing billing endpoints added (subscription, limits, cancel, etc.) | session 2 |
+| BUG-BILLING-005 | Webhook 502 when Stripe disabled — bypass guard added | session 2 |
+| BUG-BILLING-006 | Login 429 shows "Too many attempts. Try again in X sec." | 0990a3a6 |
+| BUG-BILLING-007 | /pricing page created with plan cards + upgrade buttons | session 2 |
+| BUG-BILLING-008 | /billing/plans includes priceCents, contactSales; Enterprise added | session 2 |
+| BUG-MARKETPLACE-003 | GET /marketplace/feed.json public endpoint added | session 2 |
 
 ## Previously Fixed (confirmed working)
 
