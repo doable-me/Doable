@@ -2762,12 +2762,22 @@ function EditorPageInner() {
               const persistedAttachments = Array.isArray(m.attachments) && m.attachments.length > 0
                 ? (m.attachments as Array<{ type?: string; name?: string; mimeType?: string; fileType?: string }>)
                     .filter((a) => typeof a?.name === "string")
-                    .map((a) => ({
-                      type: a.mimeType || a.type || "application/octet-stream",
-                      data: "",
-                      name: a.name as string,
-                      ...(a.fileType ? { fileType: a.fileType } : {}),
-                    }))
+                    .map((a) => {
+                      // Derive the logical file type from fileType, or infer from
+                      // MIME type / name. The backend may store type as a MIME string.
+                      const logicalType = a.fileType
+                        || (a.type && !a.type.includes("/") ? a.type : undefined)
+                        || (a.mimeType?.startsWith("image/") || a.type?.startsWith("image/") ? "image" : undefined)
+                        || (a.mimeType === "application/pdf" || a.type === "application/pdf" || a.name?.endsWith(".pdf") ? "pdf" : undefined)
+                        || "document";
+                      return {
+                        type: logicalType,
+                        fileType: logicalType,
+                        data: "",
+                        name: a.name as string,
+                        mimeType: a.mimeType || a.type || "application/octet-stream",
+                      };
+                    })
                 : undefined;
 
               return {
@@ -5343,14 +5353,18 @@ function EditorPageInner() {
                           >
                             {msg.attachments && msg.attachments.length > 0 && (
                               <div className="flex flex-wrap gap-2 mb-2">
-                                {msg.attachments.map((att, ai) => (
-                                  <img
-                                    key={ai}
-                                    src={att.data}
-                                    alt={att.name}
-                                    className="h-20 w-20 rounded-lg object-cover border border-border"
-                                  />
-                                ))}
+                                {msg.attachments.map((att, ai) => {
+                                  const isImage = att.type === "image" || att.fileType === "image" || (att.type?.startsWith("image/") && att.data);
+                                  if (isImage && att.data) {
+                                    return <img key={ai} src={att.data} alt={att.name} className="h-20 w-20 rounded-lg object-cover border border-border" />;
+                                  }
+                                  return (
+                                    <span key={ai} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 border border-border px-2.5 py-1.5 text-xs text-muted-foreground">
+                                      <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                      <span className="truncate max-w-[120px]">{att.name}</span>
+                                    </span>
+                                  );
+                                })}
                               </div>
                             )}
                             {msg.content}
@@ -5372,14 +5386,18 @@ function EditorPageInner() {
                           <div className="rounded-2xl rounded-br-sm bg-muted px-4 py-2.5 text-[14px] leading-relaxed text-foreground">
                             {msg.attachments && msg.attachments.length > 0 && (
                               <div className="flex flex-wrap gap-2 mb-2">
-                                {msg.attachments.map((att, ai) => (
-                                  <img
-                                    key={ai}
-                                    src={att.data}
-                                    alt={att.name}
-                                    className="h-20 w-20 rounded-lg object-cover border border-border"
-                                  />
-                                ))}
+                                {msg.attachments.map((att, ai) => {
+                                  const isImage = att.type === "image" || att.fileType === "image" || (att.type?.startsWith("image/") && att.data);
+                                  if (isImage && att.data) {
+                                    return <img key={ai} src={att.data} alt={att.name} className="h-20 w-20 rounded-lg object-cover border border-border" />;
+                                  }
+                                  return (
+                                    <span key={ai} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 border border-border px-2.5 py-1.5 text-xs text-muted-foreground">
+                                      <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                      <span className="truncate max-w-[120px]">{att.name}</span>
+                                    </span>
+                                  );
+                                })}
                               </div>
                             )}
                             {msg.content.length > 500 && !expandedUserMsgs.has(msg.id) ? (

@@ -215,11 +215,10 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
       let augmentedContent = content;
       let fileAttachments: Array<{ type: "file"; path: string; displayName?: string }> = [];
-      if (attachments && attachments.length > 0) {
-        const processed = await processAttachments(attachments, content);
-        augmentedContent = processed.augmentedPrompt;
-        fileAttachments = processed.fileAttachments;
-      }
+      // NOTE: attachment processing (PDF text extraction, etc.) is deferred
+      // until inside the SSE stream so we can send early status events to the
+      // client, preventing the "stuck at Building..." appearance.
+      const hasAttachments = attachments && attachments.length > 0;
 
       // Resolve project files as SDK file attachments (relative paths → absolute)
       if (projectFiles && projectFiles.length > 0) {
@@ -416,6 +415,18 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
         try {
           await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: "Preparing workspace..." }) });
+
+          // Process attachments inside the stream so the client sees status
+          // events immediately instead of waiting for PDF extraction to finish.
+          if (hasAttachments) {
+            const attachmentNames = attachments!.map((a: { name?: string }) => a.name || "file").join(", ");
+            await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "thinking", message: `Analyzing ${attachmentNames}...` } }) });
+            const processed = await processAttachments(attachments!, content);
+            augmentedContent = processed.augmentedPrompt;
+            fileAttachments = [...fileAttachments, ...processed.fileAttachments];
+            await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "Attachment processed — setting up project..." } }) });
+          }
+
           await scaffoldAndStartDev(projectId, stream, userId);
           await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Connecting to AI model...\n" }) });
           await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "thinking", message: "Connecting to AI..." } }) });
