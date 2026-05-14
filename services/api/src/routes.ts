@@ -12,7 +12,7 @@ import { customDomainRoutes } from "./routes/custom-domains.js";
 import { contextRoutes, workspaceContextRoutes } from "./routes/context.js";
 import { templateRoutes } from "./routes/templates.js";
 import { versionRoutes } from "./routes/versions.js";
-import { githubRoutes } from "./routes/github.js";
+import { githubRoutes, githubProjectRoutes } from "./routes/github.js";
 import { projectFileRoutes } from "./routes/project-files.js";
 import { previewRoutes } from "./routes/preview-proxy.js";
 import { connectorProxyRoutes } from "./routes/connector-proxy.js";
@@ -92,7 +92,14 @@ app.route("/domains", customDomainRoutes);
 app.route("/projects/:id/context", contextRoutes);
 app.route("/templates", templateRoutes);
 app.route("/projects", versionRoutes);
+// BUG-GH-003 / TC-GH-COMMITS-001: clients (and the spec under
+// testcases/15-github) expect project-scoped GitHub routes at
+// `/projects/:id/github/*`, but historically they were mounted at the bare
+// `/:id/github/*` prefix. Keep the legacy mount for backwards compatibility
+// AND mount the project sub-router under `/projects` so both shapes work.
+// OAuth + user-account routes (no :projectId) stay on the root mount only.
 app.route("/", githubRoutes);
+app.route("/projects", githubProjectRoutes);
 app.route("/thumbnails", thumbnailRoutes);
 app.route("/analytics", analyticsRoutes);
 app.route("/admin", adminRoutes);

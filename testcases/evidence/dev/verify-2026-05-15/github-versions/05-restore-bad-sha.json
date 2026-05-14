@@ -1,0 +1,2 @@
+{"error":"Failed to restore version","message":"git checkout failed: fatal: reference is not a tree: deadbeef1234567890abcdef1234567890abcdef"}
+HTTP 500
