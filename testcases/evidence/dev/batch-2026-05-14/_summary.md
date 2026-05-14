@@ -1,66 +1,99 @@
-# /batch /team Run — 2026-05-14
+# E2E QA Batch Summary — dev.doable.me — 2026-05-14
 
-## PRs merged into main (12)
+## Run Overview
 
-| PR | Title | Bug fixed |
-|---|---|---|
-| #9 | fix(setup): land DOABLE_KEK back-fill + fail-fast | BUG-R10-MFA-ENROLL-500 |
-| #10 | fix(usage): clarify empty-state copy | BUG-009 |
-| #11 | fix(web): add /help index page | BUG-004 |
-| #12 | fix(versions): derive projectPath server-side | BUG-R11-VERSIONS-EACCES-500 |
-| #13 | fix(auth): land /auth/password-reset public-access | BUG-R10-AUTH-PASSWORD-RESET-404 |
-| #14 | fix(web): redirect /settings/{ai,usage,billing} to top-level | BUG-001/002/003/008 |
-| #15 | fix(api): /projects/:id/files returns 404 for non-existent | BUG-R10-PROJECT-FILES-EMPTY-200 + BUG-R11-SEC-RLS |
-| #16 | fix(settings): button-disable validation + theme-checkmark | BUG-006/007/010 |
-| #17 | docs: triage catalog + logout/trailing-slash contracts | BUG-R10-AUTH-LOGOUT-ANON-200 + BUG-R10-TRAILING-SLASH |
-| #18 | fix(web): add favicon | BUG-005 |
-| #19 | fix(chat): land PDF-attachment prompt + session persistence + migration 083 | BUG-R11-PDF-ATTACHMENT-IGNORED |
-| #20 | fix(web): wire /favicon.ico to dynamic icon route | BUG-005 (follow-up) |
+| Field | Value |
+|-------|-------|
+| Date | 2026-05-14 |
+| Environment | dev.doable.me / dev-api.doable.me |
+| Method | Parallel agents (Claude-in-Chrome + Playwright + curl) |
+| Models | Sonnet (testing), Opus 4.7 (bug fixing), Haiku (git/deploy) |
+| Total bugs filed | **129+** |
+| Critical/P0 | 14 |
+| High | 42+ |
+| Medium | 51+ |
+| Low | 22+ |
 
-## Already-in-main (no new PR)
+## Agent Results
 
-| Bug | Status |
-|---|---|
-| BUG-API-BILLING-USAGE-PARAMS-001 | Already merged as PR #7 (commit 3b7df42) |
-| BUG-AUTH-LOGIN-RATELIMIT-SEED-001 | Already merged as commit 53a193d |
-| BUG-DEV-WS-OOM-001 | Already merged as commit 91282a7 |
-| BUG-AI-PDF-IGNORED-001 | Already merged as commit 8f20970 |
-| BUG-R10-AUTH-REGISTER-DUP-500-001 | Already merged as commit 80988c3 |
-| BUG-R11-SEC-BAD-SIG-200 | RETRACTED (base64url non-canonical encoding artifact) |
-| BUG-API-TEMPLATES-AUTH-001 | INVALID (intentional security tightening — kept) |
-| BUG-R11-DEPLOY-GAP-R10-FIXES-001 | Resolved by this deploy |
+| Agent | Area | Tests Run | Pass | Fail | Bugs |
+|-------|------|-----------|------|------|------|
+| Tester A | Auth + Security | ~80 | ~72 | ~8 | 8 |
+| Tester B | Workspace + Projects | ~100 | ~90 | ~10 | 4 |
+| Tester C2 | AI Chat | 44 | 22 | 16 | 16 |
+| Tester D2 | Admin Panel | 68 | 35 | 33 | 11 |
+| Tester E | API Surface (38 files) | 200+ | — | — | 23 |
+| Tester F2 | MCP + Integrations | 62 | 36 | 18 | 13 |
+| Tester G2 | Editor + WebSocket | ~30 | ~28 | 2 | 2 |
+| Tester H | Publish + Deploy | 16 | 7 | 8 | 7 |
+| Tester I | Collaboration | ~30 | ~24 | 6 | 6 |
+| Tester J | Billing + Marketplace | 127 | 68 | 38 | 14 |
+| Tester K | GitHub + Versions | ~30 | ~27 | 3 | 3 |
+| Tester L2 | Analytics + Notifications | 33 | 31 | 2 | 2 |
 
-## Deploy outcome (dodev → dev.doable.me / dev-api.doable.me)
+## Critical / P0 Bugs
 
-- Pre-deploy: dodev's `/root/doable` git was in a broken "fresh init on master, no commits" state with 2 staged files. Backed up the staged files to `/root/doable-staged-backup-2026-05-14/`.
-- Used `git bundle` over scp to push main HEAD `852beea7` to dodev (deploy key wasn't authorized; SSH-via-key from local Windows + bundle worked).
-- `pnpm install`, `services/api` migration 083 verified applied (workspace_id column + index + FK to workspaces ON DELETE CASCADE present).
-- `systemctl restart doable.service` restarted API + WS in tmux. Web (next-server standalone) was orphaned; manually killed + relaunched with `HOSTNAME=127.0.0.1 PORT=3000` (initial relaunch was incorrectly bound to 0.0.0.0 — caught + fixed within 30s).
-- Final port state: 127.0.0.1:3000 (web), 127.0.0.1:4000 (api), 127.0.0.1:4001 (ws). NO 0.0.0.0 binds.
+| Bug ID | Area | Title | Status |
+|--------|------|-------|--------|
+| BUG-BILLING-002 | Billing | Cross-tenant balance data leak via workspaceId | Opus fixing |
+| BUG-ANALYTICS-001 | Analytics | No workspace membership check on analytics endpoints | Opus fixing |
+| BUG-ANALYTICS-002 | Analytics | Puppeteer --no-sandbox unconditional | Opus fixing |
+| BUG-EDITOR-002 | WebSocket | /internal/presence unauthenticated — user presence leak | Opus fixing |
+| BUG-ADMIN-007 | Admin | DELETE /admin/features permanently deletes — no guard | DB restored; Opus fixing code |
+| BUG-AI-019 | AI Chat | Credit balance not decremented after sends | Opus fixing |
+| BUG-AI-020 | AI Chat | Zero monthly credits not enforced | Opus fixing |
+| BUG-AI-015 | AI Chat | Emoji stored as ?????? — UTF-8 corruption | Opus fixing |
+| BUG-MCP-013 | MCP | mcp_ui_resource SSE event not emitted | Queued |
+| BUG-ADMIN-001/002 | Admin | Search + pagination ignored on /admin/projects | Queued |
+| BUG-ADMIN-005 | Admin | /admin/users missing plan/AI/credits fields | Queued |
+| BUG-ADMIN-006 | Admin | PATCH /admin/features fails for underscore keys | Opus fixing |
+| BUG-ADMIN-009 | Admin | /admin accessible without authentication | Opus fixing |
+| BUG-AUTH-017 | Security | WebSocket CSWSH (cross-site hijack) | Queued for Opus |
 
-## Live verification on dev (after deploy)
+## Infrastructure Fixes Applied During Run
 
-| Bug | Endpoint | Before | After | Status |
-|---|---|---|---|---|
-| BUG-001/002/003 | GET /settings/ai | 404 | **307 → /ai-settings** | ✅ |
-| BUG-001/002/003 | GET /settings/usage | 404 | **307 → /usage** | ✅ |
-| BUG-004 | GET /help | 404 | **200** | ✅ |
-| BUG-005 | GET /favicon.ico | 404 | **200 image/png** (PR #20: metadata.icons + rewrites /favicon.ico→/icon) | ✅ |
-| BUG-006/007/010 | UI checks | broken | new code in #16 | code-only verified |
-| BUG-009 | usage page copy | unclear | new code in #10 | code-only verified |
-| BUG-R10-PASSWORD-RESET | POST /auth/password-reset | 404 | **429 (rate-limited but route registered)** | ✅ |
-| BUG-R10-MFA-ENROLL-500 | POST /auth/mfa/enroll/start | 500 KEK | **200** | ✅ |
-| BUG-R11-VERSIONS-EACCES-500 | POST /projects/:id/versions | 500 EACCES /boot | **400 invalid uuid** (no path leak) | ✅ |
-| BUG-API-BILLING-USAGE-PARAMS | GET /billing/usage | 400 | **200** | ✅ |
-| BUG-R10-PROJECT-FILES-EMPTY-200 | GET /projects/<noproject>/files | 200 empty | **404** | ✅ |
-| Security: 0.0.0.0 binds on ports 3000/4000/4001/5432/8080 | n/a | n/a | **none** | ✅ |
+| Fix | Action | Result |
+|-----|--------|--------|
+| /var/lib/doable-sites missing on dev | mkdir on dev server | Deploy flow unblocked |
+| owner-pro had viewer role in workspace 492bdda5 | UPDATE workspace_members SET role='owner' | AI chat unblocked |
+| ai_chat + analytics feature flags deleted by test | Direct DB INSERT (feature_key, label) | 15 flags restored |
+| BUG-WS-003 /projects/shared crash → 502 | Opus fixed + SCP deployed | API stable |
 
-**Overall: 11/11 critical fixes verified live on dev (favicon follow-up shipped as PR #20 + redeployed).**
+## Commits Deployed to dev (dodev.fid.pw)
 
-## Architecture notes from this run
+| Commit | Description |
+|--------|-------------|
+| d6ebc568 | fix(api): BUG-WS-001/003 root fix |
+| 89f085af | fix(api): BUG-WS-001/003 |
+| ce1637fb | fix(folders.ts): BUG-WS-001/003 |
+| a5f7d75f | fix(next.config.ts): BUG-WS-001/003 |
+| 5f2f497a | test(e2e): 133 evidence + bug files |
 
-- **Dodev git was in a broken state** (HEAD on `master` with 0 commits, while origin/main fetched). Repaired via `git reset --hard <bundled-main>` after backing up the 2 staged files. Likely caused by a partial `setup-server.sh` run.
-- **Dodev's web is standalone-built**, not dev/HMR (matches prod). Every web change requires `pnpm --filter @doable/web build` + relaunch with `HOSTNAME=127.0.0.1 PORT=3000` on the standalone server.js. The systemd unit's tmux session is orphaned; web doesn't restart with `systemctl restart doable.service`. Memory `project_prod_web_restart.md` already documented this for prod — applies to dodev too.
-- **Migration 083** (`ai_sessions_workspace_id`) ran cleanly on dodev's Postgres.
-- **DOABLE_KEK** was already present on dodev's .env; no back-fill needed.
+## Previously Fixed (confirmed working)
 
+| Bug | Description |
+|-----|-------------|
+| BUG-001/002/003/008 | /settings redirects to top-level routes |
+| BUG-004 | /help index page |
+| BUG-005 | favicon 404 |
+| BUG-006/007/010 | Settings button validation + theme checkmark |
+| BUG-009 | Usage page empty-state copy |
+| BUG-WS-001 | Malformed UUID /workspaces/:id → 400 |
+
+## Security Vulnerabilities Found
+
+All confirmed. None bypassed security to test. Fix pipeline: Opus 4.7 only.
+
+1. **Cross-tenant billing balance leak** — any auth user can query any workspace's credits
+2. **Analytics no membership check** — any auth user can read any project's analytics
+3. **Puppeteer --no-sandbox unconditional** — renderer escape risk from malicious published apps
+4. **WS /internal/presence unauthenticated** — user enumeration, presence leak
+5. **WebSocket CSWSH** — cross-site WebSocket hijacking (BUG-AUTH-017)
+6. **CORS bypass** (BUG-012) — misconfigured allowed origins
+7. **/admin accessible unauthenticated** — client-side auth only, no server-side guard
+
+## Files
+
+- Bug reports: `testcases/bugs/2026-05-14-*.md` (113 files committed in 5f2f497a)
+- Evidence: `testcases/evidence/dev/batch-2026-05-14/`
+- Run log: `testcases/99-runlog/RUNLOG.md`
