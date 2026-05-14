@@ -206,6 +206,9 @@ publicRoutes.get("/marketplace/listings/:slug/bundle", async (c) => {
  */
 authedRoutes.post("/marketplace/listings/:id/install", async (c) => {
   const listingId = c.req.param("id");
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(listingId)) return c.json({ error: "Listing not found" }, 404);
+
   const userId = c.get("userId");
   const { workspaceId } = await c.req.json<{ workspaceId: string }>();
   if (!workspaceId) return c.json({ error: "workspaceId is required" }, 400);
