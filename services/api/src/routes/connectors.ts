@@ -439,15 +439,42 @@ connectorRoutes.get("/:workspaceId/connectors/:id/tools", async (c) => {
     return c.json({ error: "Connector not found" }, 404);
   }
 
+  // BUG-MCP-008: an inactive/errored HTTP connector previously surfaced an
+  // unhandled 500 here when the remote server was unreachable. Prefer the
+  // cached tool list (populated by the auto-test on create) and otherwise
+  // return a structured 503 with `tools: []` so clients can render an empty
+  // state instead of a generic "Internal Server Error".
+  if (row.status !== "active") {
+    const cache = row.capabilities_cache as { tools?: { list?: Array<{ name: string; description?: string }> } } | null;
+    const cached = cache?.tools?.list ?? [];
+    return c.json(
+      {
+        data: cached,
+        status: row.status,
+        message: `Connector is ${row.status}; returning ${cached.length} cached tool(s).`,
+        ...(row.error_message ? { error: row.error_message } : {}),
+      },
+      cached.length > 0 ? 200 : 503,
+    );
+  }
+
   try {
     const config = rowToConfig(row);
     const manager = getConnectorManager();
     const tools = await manager.getTools(config);
     return c.json({ data: tools });
   } catch (err) {
-    return c.json({
-      error: `Failed to list tools: ${err instanceof Error ? err.message : String(err)}`,
-    }, 500);
+    // BUG-MCP-008: even for "active" connectors, a runtime fetch failure
+    // must be reported as a structured 503 ("connector unreachable"), not 500.
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      {
+        data: [],
+        error: "Connector unreachable",
+        message: msg,
+      },
+      503,
+    );
   }
 });
 
