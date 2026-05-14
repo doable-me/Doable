@@ -128,7 +128,7 @@ const sendMessageSchema = z.object({
   // may contain large injected tool/skill instructions that shouldn't pollute
   // the user-visible transcript). The LLM still receives the full `content`.
   displayContent: z.string().max(4_000).optional(),
-  mode: z.enum(["agent", "plan", "visual-edit"]).default("agent"),
+  mode: z.enum(["agent", "plan", "visual-edit", "chat"]).default("agent"),
   model: z.string().optional(),
   provider: z.object({
     type: z.enum(["openai", "azure", "anthropic"]).optional(),

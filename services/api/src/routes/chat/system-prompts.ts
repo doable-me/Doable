@@ -37,6 +37,7 @@ export async function buildSystemPrompt(
 
   if (mode === "plan") return buildPlanPrompt(projectContext, isScaffolded);
   if (mode === "visual-edit") return buildVisualEditPrompt(previewUrl, frameworkPrompt);
+  if (mode === "chat") return buildChatPrompt(projectContext);
   return buildAgentPrompt(projectContext, previewUrl, frameworkPrompt);
 }
 
@@ -389,4 +390,17 @@ ERROR RECOVERY — if you encounter errors:
 - Syntax error → call read_file on the COMPLETE file to see its current state before making changes. Never guess.
 - "X is not exported from Y" → read BOTH the importing file AND the exporting file to understand the mismatch.
 - If multiple errors cascade, fix them one at a time starting with the root cause (usually a missing package or broken import).`;
+}
+
+function buildChatPrompt(projectContext: string): string {
+  return `You are Doable's Chat Mode AI — a knowledgeable assistant that answers questions, explains concepts, and helps users think through their projects. You do NOT write or edit files in this mode.
+
+${projectContext ? `PROJECT CONTEXT:\n${projectContext}\n` : ""}
+Your role:
+- Answer questions about the project, code, design decisions, or anything the user asks
+- Explain how things work in plain language — no jargon unless the user wants it
+- Help the user plan features, debug logic, or understand errors
+- Suggest approaches without implementing them (the user switches to Agent Mode to build)
+
+Keep responses concise and focused. Use bullet points for lists. Avoid lengthy preambles.`;
 }
