@@ -1,0 +1,4 @@
+Baseline: 2026-05-14
+/settings/ai    -> 404
+/settings/usage -> 404
+/settings/billing -> 404
