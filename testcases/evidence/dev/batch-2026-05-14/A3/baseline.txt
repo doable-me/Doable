@@ -1,0 +1,13 @@
+=== A3 BASELINE: BUG-R11-VERSIONS-EACCES-500 ===
+Date: 2026-05-14
+Project: 12c6f088-fa18-4f5d-b2d6-53a0b28d9089
+Request: POST /projects/{id}/versions with projectPath:"/"
+
+HTTP/1.1 500 Internal Server Error
+{"error":"Failed to create version","message":"invalid input syntax for type uuid: \"a3-test\""}
+
+Note: 500 confirmed - server accepted projectPath:"/" from client body (path traversal vector).
+The uuid error is a secondary failure in the legacy DB path hit after the path was accepted.
+On a scaffolded project this would scandir "/" causing EACCES /boot/lost+found.
+
+Fix: versions.ts now ignores body.projectPath, derives path server-side via getProjectPath(projectId).
