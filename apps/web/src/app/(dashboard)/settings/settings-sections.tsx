@@ -94,7 +94,13 @@ export function ProfileSection({
           <p className="text-xs text-muted-foreground">Contact support to change your email address.</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button type="submit" size="sm" disabled={profileSaving} className="rounded-lg bg-brand-700 text-white hover:bg-brand-800">
+          {/* BUG-006: disable Save when display name is empty/whitespace-only */}
+          <Button
+            type="submit"
+            size="sm"
+            disabled={profileSaving || displayName.trim() === ""}
+            className="rounded-lg bg-brand-700 text-white hover:bg-brand-800"
+          >
             {profileSaving ? (
               <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />Saving...</>
             ) : profileSuccess ? (
@@ -194,7 +200,19 @@ export function SecuritySection({
               <p className="text-xs text-red-400">Passwords do not match</p>
             )}
           </div>
-          <Button type="submit" size="sm" disabled={passwordSaving} className="rounded-lg bg-brand-700 text-white hover:bg-brand-800">
+          {/* BUG-007: disable Update password when fields empty or new/confirm mismatch */}
+          <Button
+            type="submit"
+            size="sm"
+            disabled={
+              passwordSaving ||
+              !currentPassword ||
+              !newPassword ||
+              !confirmPassword ||
+              newPassword !== confirmPassword
+            }
+            className="rounded-lg bg-brand-700 text-white hover:bg-brand-800"
+          >
             {passwordSaving ? (<><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />Updating...</>) : ("Update password")}
           </Button>
         </form>
@@ -237,13 +255,14 @@ export function AppearanceSection({
                   onClick={() => onThemeChange(option.value)}
                   className={`relative flex flex-col items-center gap-2 rounded-xl border p-4 transition-colors ${
                     isActive
-                  ? "border-brand-600 bg-brand-600/10 text-foreground"
+                      ? "border-brand-600 bg-brand-600/10 text-foreground"
                       : "border-border bg-secondary text-muted-foreground hover:border-border hover:text-foreground"
                   }`}
                 >
                   <option.icon className="h-5 w-5" />
                   <span className="text-xs font-medium">{option.label}</span>
-                  {isActive && <Check className="h-3.5 w-3.5 text-brand-600" />}
+                  {/* BUG-010: always render Check in same position; toggle visibility for layout consistency */}
+                  <Check className={`h-3.5 w-3.5 ${isActive ? "text-brand-600" : "invisible"}`} aria-hidden={!isActive} />
                 </button>
               );
             })}
