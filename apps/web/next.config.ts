@@ -27,6 +27,13 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      { source: '/settings/ai', destination: '/ai-settings', permanent: false },
+      { source: '/settings/usage', destination: '/usage', permanent: false },
+      { source: '/settings/billing', destination: '/billing', permanent: false },
+    ];
+  },
   async headers() {
     return [
       {
