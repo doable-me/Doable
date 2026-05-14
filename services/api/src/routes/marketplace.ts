@@ -194,6 +194,30 @@ publicRoutes.get("/marketplace/listings/:slug/bundle", async (c) => {
   });
 });
 
+// ─── Public: JSON feed for aggregators ────────────────────
+
+publicRoutes.get("/marketplace/feed.json", async (c) => {
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10) || 50, 200);
+  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
+  const result = await mkt.browseListings({ sort: "popular", limit, offset });
+  const listings = result.data ?? [];
+  return c.json({
+    version: "1.0",
+    generatedAt: new Date().toISOString(),
+    items: listings.map((l) => ({
+      id: l.id,
+      slug: l.slug,
+      name: l.title,
+      description: l.short_desc,
+      category: l.category_slug,
+      version: l.version,
+      rating: l.avg_rating,
+      installs: l.install_count,
+      publishedAt: l.published_at,
+    })),
+  }, 200, { "Cache-Control": "public, max-age=60" });
+});
+
 // ─── Authed: Install / Uninstall ──────────────────────────
 
 /**
