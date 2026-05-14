@@ -122,8 +122,11 @@ function LoginPageInner() {
       router.push(target);
     } catch (err: unknown) {
       if (err && typeof err === "object" && "body" in err) {
-        const apiErr = err as { body: { error: string; message?: string } };
-        if (apiErr.body.error === "PENDING_APPROVAL") {
+        const apiErr = err as { status?: number; body: { error: string; message?: string }; retryAfter?: number };
+        if (apiErr.status === 429) {
+          const wait = apiErr.retryAfter ? ` Try again in ${apiErr.retryAfter} seconds.` : "";
+          setError(`Too many login attempts.${wait}`);
+        } else if (apiErr.body.error === "PENDING_APPROVAL") {
           setPendingMessage(apiErr.body.message ?? "Your signup is awaiting approval.");
         } else if (apiErr.body.error === "ACCOUNT_DENIED") {
           setError(apiErr.body.message ?? "Your signup was not approved.");

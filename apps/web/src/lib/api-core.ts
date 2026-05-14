@@ -60,7 +60,8 @@ export function clearTokens(): void {
 export class ApiError extends Error {
   constructor(
     public status: number,
-    public body: ApiErrorResponse
+    public body: ApiErrorResponse,
+    public retryAfter?: number
   ) {
     super(body.error);
     this.name = "ApiError";
@@ -150,7 +151,9 @@ export async function apiFetch<T>(
     const body = (await res.json().catch(() => ({
       error: "Request failed",
     }))) as ApiErrorResponse;
-    throw new ApiError(res.status, body);
+    const retryAfterHeader = res.headers.get("retry-after");
+    const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : undefined;
+    throw new ApiError(res.status, body, retryAfter);
   }
 
   return res.json() as Promise<T>;
