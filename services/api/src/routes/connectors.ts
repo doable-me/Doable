@@ -303,6 +303,38 @@ connectorRoutes.delete("/:workspaceId/connectors/:id", async (c) => {
   const err = await requireMember(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
+  // BUG-MCP-002: Built-in MCP Apps (Markdown Builder, PDF Builder, etc.)
+  // are platform-provisioned and must remain immutable. Deletion would
+  // also break `ensureBuiltinConnectorsForWorkspace` invariants. Reject
+  // deletes on any connector whose name matches a builtin provisioned
+  // for this workspace.
+  const existing = await connectors.getConnector(connectorId);
+  if (!existing || existing.workspace_id !== workspaceId) {
+    return c.json({ error: "Connector not found" }, 404);
+  }
+  const [builtinMarker] = await sql<Array<{ builtin_id: string }>>`
+    SELECT wbp.builtin_id
+    FROM workspace_builtin_provisioned wbp
+    JOIN mcp_connectors mc
+      ON mc.workspace_id = wbp.workspace_id
+     AND mc.scope = 'workspace'
+     AND mc.name = ANY(${[
+       "Presentation Builder",
+       "Spreadsheet Builder",
+       "Markdown Builder",
+       "PDF Builder",
+     ]})
+    WHERE mc.id = ${connectorId}
+      AND wbp.workspace_id = ${workspaceId}
+    LIMIT 1
+  `;
+  if (builtinMarker) {
+    return c.json(
+      { error: "Cannot delete built-in connector" },
+      403
+    );
+  }
+
   // Disconnect from runtime if connected
   const manager = getConnectorManager();
   await manager.disconnect(connectorId);

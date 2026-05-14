@@ -143,6 +143,27 @@ workspaceRoutes.post("/invite/accept", async (c) => {
     );
   }
 
+  // BUG-WS-001: Verify the authenticated user's email matches the invited
+  // email before accepting. Without this check, any authenticated user who
+  // obtains an invite token can accept it and join the workspace with the
+  // invited role (potentially demoting themselves in their own workspace).
+  // Shareable invite links (email === '__invite_link__') are intentionally
+  // multi-use and bypass this check.
+  const invite = await workspaces.getInviteByToken(parsed.data.token);
+  if (!invite) {
+    return c.json({ error: "Invalid, expired, or already accepted invite" }, 400);
+  }
+  const isLinkInvite = invite.email === "__invite_link__";
+  if (!isLinkInvite) {
+    const caller = await users.findById(userId);
+    if (!caller || caller.email.toLowerCase() !== invite.email.toLowerCase()) {
+      return c.json(
+        { error: "This invite was not sent to your email address" },
+        403
+      );
+    }
+  }
+
   const result = await workspaces.acceptInvite(parsed.data.token, userId);
 
   if (!result) {

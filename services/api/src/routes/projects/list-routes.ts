@@ -70,28 +70,39 @@ projectListRoutes.get("/shared", async (c) => {
     Math.max(1, parseInt(c.req.query("pageSize") ?? String(DEFAULT_PAGE_SIZE), 10))
   );
 
-  const { rows, total } = await shareTracking.listSharedWithUser(userId, {
-    page,
-    pageSize,
-  });
-
-  const starredIds = await stars.listStarredProjectIds(userId);
-  const starredSet = new Set(starredIds);
-
-  const data = rows.map((p) => ({
-    ...p,
-    starred: starredSet.has(p.id),
-  }));
-
-  return c.json({
-    data,
-    pagination: {
-      total,
+  // BUG-WS-003: wrap in try/catch so any future DB error returns a 500 JSON
+  // body instead of an unhandled rejection that Cloudflare surfaces as 502.
+  try {
+    const { rows, total } = await shareTracking.listSharedWithUser(userId, {
       page,
       pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    },
-  });
+    });
+
+    const starredIds = await stars.listStarredProjectIds(userId);
+    const starredSet = new Set(starredIds);
+
+    const data = rows.map((p) => ({
+      ...p,
+      starred: starredSet.has(p.id),
+    }));
+
+    return c.json({
+      data,
+      pagination: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    });
+  } catch (err) {
+    console.error("[projects/shared] Failed to list shared projects:", err);
+    return c.json({
+      error: "Failed to list shared projects",
+      data: [],
+      pagination: { total: 0, page, pageSize, totalPages: 0 },
+    }, 500);
+  }
 });
 
 // ─── List Projects ──────────────────────────────────────────
@@ -211,13 +222,21 @@ projectListRoutes.post("/", async (c) => {
 
   const { prompt, frameworkId: explicitFrameworkId, ...data } = parsed.data;
 
-  // Resolve workspace — use provided or user's default (require member+ role)
+  // BUG-WS-002: workspaceId is required — silently falling back to the
+  // caller's default workspace mis-routes projects (a user with multiple
+  // workspaces would have their project land in the first one regardless
+  // of intent). Require an explicit workspaceId on the request body.
+  if (!data.workspaceId) {
+    return c.json(
+      { error: "workspaceId is required" },
+      400
+    );
+  }
+
+  // Resolve workspace — require explicit workspaceId with member+ role
   const workspaceId = await getUserWorkspaceIdWithMinRole(userId, "member", data.workspaceId);
   if (!workspaceId) {
-    if (data.workspaceId) {
-      return c.json({ error: "Access denied — requires member role or higher" }, 403);
-    }
-    return c.json({ error: "No workspace found. Please create a workspace first." }, 400);
+    return c.json({ error: "Access denied — requires member role or higher" }, 403);
   }
 
   // Framework resolution chain (only when caller didn't pick explicitly):
