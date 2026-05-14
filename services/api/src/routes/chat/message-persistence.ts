@@ -39,12 +39,23 @@ export async function saveUserMessage(
   userId: string,
   displayName: string,
   color: string,
+  attachments?: ReadonlyArray<{ type: string; name: string; mimeType?: string; fileType?: string; size?: number }>,
 ): Promise<void> {
   try {
     const { column, value } = messageContentColumnAndValue(sql, content);
+    // Store only lightweight attachment descriptors (no base64 data). The AI
+    // consumes the full payload at /chat-POST time; history only needs enough
+    // to re-render the chip on reload.
+    const lightweight = (attachments ?? []).map((a) => ({
+      type: a.type,
+      name: a.name,
+      ...(a.mimeType ? { mimeType: a.mimeType } : {}),
+      ...(a.fileType ? { fileType: a.fileType } : {}),
+      ...(typeof a.size === "number" ? { size: a.size } : {}),
+    }));
     await sql`
-      INSERT INTO ai_messages (session_id, role, ${sql(column)}, sent_by_user_id, display_name, user_color)
-      VALUES (${dbSessionId}, 'user', ${value}, ${userId}, ${displayName}, ${color})
+      INSERT INTO ai_messages (session_id, role, ${sql(column)}, sent_by_user_id, display_name, user_color, attachments)
+      VALUES (${dbSessionId}, 'user', ${value}, ${userId}, ${displayName}, ${color}, ${sql.json(lightweight as any)})
     `;
   } catch (e) {
     console.warn("[Chat] Failed to save user message:", e);

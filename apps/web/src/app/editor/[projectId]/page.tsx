@@ -2755,6 +2755,21 @@ function EditorPageInner() {
               // Hide synthetic BUILD_DECK user messages from the chat UI
               const isHiddenMsg = m.role === "user" && /^\u{1F3A8}\s*Designing\s/u.test(displayContent);
 
+              // Hydrate attachment chips from server-persisted descriptors so
+              // the chip survives a refresh. Backend stores lightweight metadata
+              // only (no base64 data) — that's fine for display; the AI already
+              // consumed the full payload at send-time.
+              const persistedAttachments = Array.isArray(m.attachments) && m.attachments.length > 0
+                ? (m.attachments as Array<{ type?: string; name?: string; mimeType?: string; fileType?: string }>)
+                    .filter((a) => typeof a?.name === "string")
+                    .map((a) => ({
+                      type: a.mimeType || a.type || "application/octet-stream",
+                      data: "",
+                      name: a.name as string,
+                      ...(a.fileType ? { fileType: a.fileType } : {}),
+                    }))
+                : undefined;
+
               return {
                 id: m.id,
                 role: m.role as "user" | "assistant",
@@ -2765,6 +2780,7 @@ function EditorPageInner() {
                 }),
                 isStreaming: false,
                 ...(isHiddenMsg ? { hidden: true } : {}),
+                ...(persistedAttachments ? { attachments: persistedAttachments } : {}),
                 thinkingContent,
                 toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
                   ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => {
