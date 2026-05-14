@@ -1979,6 +1979,7 @@ function EditorPageInner() {
     }
   }, [isStreaming]);
 
+
   // ─── Tick elapsed seconds while a chat stream is active ──
   useEffect(() => {
     if (!isStreaming) {
@@ -2849,6 +2850,45 @@ function EditorPageInner() {
         // API load failed — localStorage fallback already loaded
       }
   }, [resolvedProjectId, authUser?.id]);
+
+  // ─── Watchdog: detect silent SSE drops ──
+  // If `isStreaming` stays true but the underlying SSE stream dies without
+  // delivering [DONE]/error to the client (Cloudflare Tunnel idle timeout,
+  // network blip during tab suspend, lost final frame), the optimistic
+  // placeholder is stuck forever — backend persists the assistant row but
+  // loadFromApi short-circuits on `localStreamActiveRef.current === true`.
+  // Poll authoritative server status; when backend confirms the stream is
+  // done, force-finalize on this tab and resync from /chat/history.
+  useEffect(() => {
+    if (!isStreaming || !resolvedProjectId) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const [chatStatusRes, aiStatusRes] = await Promise.all([
+          apiFetch<{ streaming: boolean }>(`/projects/${resolvedProjectId}/chat/status`).catch(() => null),
+          apiFetch<{ active: boolean }>(`/projects/${resolvedProjectId}/ai-status`).catch(() => null),
+        ]);
+        if (cancelled) return;
+        const stillActive = chatStatusRes?.streaming === true || aiStatusRes?.active === true;
+        if (stillActive) return;
+        console.warn("[Chat] Watchdog: backend reports stream done while UI still streaming — force-finalizing");
+        try { abortRef.current?.abort(); } catch { /* ignore */ }
+        localStreamActiveRef.current = false;
+        setIsStreaming(false);
+        setLiveStatus("");
+        setIsFirstGeneration(false);
+        setHasActiveToolCalls(false);
+        try { await loadFromApi(); } catch { /* best effort */ }
+      } catch { /* ignore */ }
+    };
+    const firstId = setTimeout(check, 18_000);
+    const intervalId = setInterval(check, 12_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(firstId);
+      clearInterval(intervalId);
+    };
+  }, [isStreaming, resolvedProjectId, loadFromApi]);
 
   // Load chat history + restore plan + detect active generation on mount
   useEffect(() => {

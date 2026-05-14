@@ -120,6 +120,19 @@ export function startBridge(
 
   // Fire the SSE fetch immediately — don't await
   startSSEFetch(projectId, prompt, mode, token, attachments, abortController);
+
+  // Safety net: abort orphan bridges that no editor ever consumes (e.g. user
+  // closed the editor tab, project-id mismatch, navigation race). Without
+  // this the SSE response body stays open with transferSize:0, the server
+  // keeps writing into a buffer no client drains, and resources leak for
+  // the lifetime of the tab.
+  setTimeout(() => {
+    if (currentBridge && currentBridge.projectId === projectId && !currentBridge.consumed) {
+      console.warn(`[Bridge] Auto-aborting unconsumed bridge for ${projectId} after 30s`);
+      currentBridge.abortController.abort();
+      currentBridge.isDone = true;
+    }
+  }, 30_000);
 }
 
 /**
