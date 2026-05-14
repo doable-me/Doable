@@ -29,19 +29,27 @@ export function featureFlagQueries(sql: postgres.Sql) {
         description: string | null;
       }>
     ): Promise<FeatureFlagRow | undefined> {
-      const values: Record<string, unknown> = {};
-      if (data.enabled !== undefined) values.enabled = data.enabled;
-      if (data.minPlan !== undefined) values.min_plan = data.minPlan;
-      if (data.minRole !== undefined) values.min_role = data.minRole;
-      if (data.label !== undefined) values.label = data.label;
-      if (data.description !== undefined) values.description = data.description;
-      values.updated_at = sql`now()`;
-
-      if (Object.keys(values).length <= 1) return this.getByKey(key);
+      // BUG-ADMIN-006: previously mixed a raw `sql\`now()\`` fragment into the
+      // values object passed to `sql(values)`, which postgres-js cannot
+      // serialize alongside literal scalars. That silently produced an UPDATE
+      // that matched zero rows, returning undefined → 404 "Feature not found"
+      // for every PATCH /admin/features/:key call. Fixed by using explicit
+      // COALESCE columns so only provided fields change and updated_at is set
+      // via a literal now() that isn't routed through sql(values).
+      const enabledParam = data.enabled === undefined ? null : data.enabled;
+      const minPlanParam = data.minPlan === undefined ? undefined : data.minPlan;
+      const minRoleParam = data.minRole === undefined ? undefined : data.minRole;
+      const labelParam = data.label === undefined ? null : data.label;
+      const descriptionParam = data.description === undefined ? undefined : data.description;
 
       const [flag] = await sql<FeatureFlagRow[]>`
         UPDATE feature_flags
-        SET ${sql(values as Record<string, postgres.SerializableParameter>)}
+        SET enabled = COALESCE(${enabledParam}::boolean, enabled),
+            min_plan = CASE WHEN ${minPlanParam === undefined}::boolean THEN min_plan ELSE ${minPlanParam ?? null} END,
+            min_role = CASE WHEN ${minRoleParam === undefined}::boolean THEN min_role ELSE ${minRoleParam ?? null} END,
+            label = COALESCE(${labelParam}::text, label),
+            description = CASE WHEN ${descriptionParam === undefined}::boolean THEN description ELSE ${descriptionParam ?? null} END,
+            updated_at = now()
         WHERE feature_key = ${key}
         RETURNING *
       `;
