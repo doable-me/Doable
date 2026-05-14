@@ -13,7 +13,7 @@ Coordinator pre-disabled rate limits via `RATE_LIMIT_MAX=0`. XFF-bypass and 5-pe
 | Bug ID | Claim (prior run) | Actual on dev today | Status | Root cause | PR |
 |---|---|---|---|---|---|
 | BUG-AUTH-011 | `expiresIn=900` but JWT exp−iat=14400 | `expiresIn=14400` AND JWT exp−iat=14400 (both match) | PASS — code emits the env-derived TTL on both sides; dev intentionally runs `JWT_ACCESS_TOKEN_EXPIRES_IN=4h`. Recommend operator policy review to shorten to 15m, but the code bug (mismatch) is fixed. | helpers.ts `ACCESS_TOKEN_TTL_SECONDS = parseDurationToSeconds(env)`; core.ts /refresh returns same constant; jwt.ts setExpirationTime reads same env. | — (no code fix needed) |
-| BUG-012 | ACAC=`true` returned for disallowed origins | OPTIONS preflight `Origin: https://evil.example` still returns `Access-Control-Allow-Credentials: true` with no `Access-Control-Allow-Origin` | FIXED in this PR | hono/cors short-circuits OPTIONS with a fresh Response BEFORE downstream middleware runs, so the prior post-cors strip never fired. Fixed by resolving the origin BEFORE cors() in a wrapper middleware and rewriting `c.res` to drop the orphan ACAC header. | https://github.com/computersrmyfriends/doable/pull/NEW |
+| BUG-012 | ACAC=`true` returned for disallowed origins | OPTIONS preflight `Origin: https://evil.example` still returns `Access-Control-Allow-Credentials: true` with no `Access-Control-Allow-Origin` | FIXED in this PR | hono/cors short-circuits OPTIONS with a fresh Response BEFORE downstream middleware runs, so the prior post-cors strip never fired. Fixed by resolving the origin BEFORE cors() in a wrapper middleware and rewriting `c.res` to drop the orphan ACAC header. | https://github.com/doable-me/doable/pull/28 |
 | BUG-013 | No `Cache-Control: no-store` on auth responses | Still no `Cache-Control` header on /auth/login response | OPEN — low severity; documented, not zapped this round. RFC 6749 §5.1 recommendation only. | core.ts /login does not call `c.header("Cache-Control", "no-store")`. | — |
 | BUG-014 | localStorage token storage | localStorage still used (verified via web /login source) | OPEN — design-level migration to HttpOnly cookies; out of scope for a one-PR fix. | apps/web/src/hooks/use-auth.ts persists tokens to localStorage. | — |
 | BUG-015 | Access token not cleared on logout | (UI-side; not retested live this round — needs Playwright trace) | DEFERRED — UI-only fix; tracked separately. | apps/web logout handler. | — |
@@ -81,7 +81,7 @@ Coordinator pre-disabled rate limits via `RATE_LIMIT_MAX=0`. XFF-bypass and 5-pe
 
 ## Summary
 
-FIXES_PASS=10/12  OPEN_ZAPPED=1/1  TC_PASS=20/21  PRS=https://github.com/computersrmyfriends/doable/pull/NEW
+FIXES_PASS=10/12  OPEN_ZAPPED=1/1  TC_PASS=20/21  PRS=https://github.com/doable-me/doable/pull/28
 
 Notes:
 - "FIXES_PASS" counts retest verdicts (10 prior fixes verified working, 2 out-of-scope deferrals BUG-013/BUG-014 remain low-severity OPEN).
