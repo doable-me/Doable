@@ -781,3 +781,48 @@ TC-SEC-XFF-BYPASS-001/002 CONFIRMED FIXED — rotating XFF returns 429 correctly
 | TC-AI-CHAT-MODELS-001 | 2026-05-14T18:00:00Z | FAIL | GET /ai/models returns "Not authenticated" for all users. BUG-025 |
 | TC-AI-CHAT-MODELS-003 | 2026-05-14T18:10:00Z | FAIL | PATCH session model 404; model switching not implemented. BUG-017 |
 | TC-AI-CHAT-owner-role | 2026-05-14T17:58:00Z | FAIL | owner-pro has viewer role in own pro workspace; cannot use AI chat. BUG-026 |
+
+---
+
+## Admin Panel QA Run — 2026-05-14 (dev env)
+
+**Target:** https://dev.doable.me / https://dev-api.doable.me
+**Tester:** qa-tester agent (claude-sonnet-4-6)
+**Session:** qa-admin-1778781200
+**Run date:** 2026-05-14T18:00–18:20 UTC
+**Auth:** Pre-generated JWT tokens (admin2@doable.me, owner-pro@doable.me)
+**Test suite:** testcases/10-admin/ (461 cases across 11 files)
+**Results:** testcases/evidence/dev/batch-2026-05-14/admin-results.json
+
+### Summary
+| Metric | Value |
+|--------|-------|
+| Tests executed | 68 |
+| PASS | 35 |
+| FAIL | 33 |
+| SKIP (route missing) | ~12 |
+| Bugs filed | 11 |
+
+### Bugs Filed
+| Bug ID | Severity | Title |
+|--------|----------|-------|
+| BUG-ADMIN-001 | Critical | /admin/projects search filter not applied — all projects returned |
+| BUG-ADMIN-002 | Critical | /admin/projects pagination not working — same page for all page numbers |
+| BUG-ADMIN-003 | High | /admin/projects sorting not applied — results always same order |
+| BUG-ADMIN-004 | High | /admin/projects/:id returns 404 — project detail missing |
+| BUG-ADMIN-005 | Critical | /admin/users missing plan, AI config, credits fields |
+| BUG-ADMIN-006 | Critical | PATCH /admin/features/ai_chat → 404 — underscore key lookup broken |
+| BUG-ADMIN-007 | Critical/P0 | DELETE /admin/features permanently deletes — data loss, no guard (ai_chat + analytics deleted) |
+| BUG-ADMIN-008 | Critical | Chat, Trace, Audit, Moderation, Runtime, Impersonation routes all 404 |
+| BUG-ADMIN-009 | High/P0 | Web /admin returns HTTP 200 to unauthenticated users |
+| BUG-ADMIN-010 | Medium/P0 | Missing Cache-Control: no-store on admin API responses |
+| BUG-ADMIN-011 | Medium | Plan-limits validation min=1 vs spec says >=0 |
+
+### Key Observations
+- platformAdminMiddleware guard working correctly on all implemented routes (403 for non-admin, 401 for unauthenticated)
+- /admin/dev-servers correctly shows servers bound to 127.0.0.1 only
+- /admin/plan-limits PUT validation working (negative values rejected)
+- /admin/users PATCH role/plan/credits all working with proper enum validation
+- /admin/audit/actions filter by action type working correctly
+- ~60% of specified admin routes not yet implemented (chat, trace, audit, moderation, runtime, impersonation)
+- CRITICAL: ai_chat and analytics feature flags permanently deleted during testing due to BUG-ADMIN-007
