@@ -20,8 +20,8 @@ const PLAN_DAILY_LIMITS: Record<string, number> = {
 
 const PLAN_MONTHLY_LIMITS: Record<string, number> = {
   free: 0,
-  pro: 100,
-  business: 100,
+  pro: 500,
+  business: 3000,
   enterprise: 2_147_483_647,
 };
 
