@@ -1979,7 +1979,6 @@ function EditorPageInner() {
     }
   }, [isStreaming]);
 
-
   // ─── Tick elapsed seconds while a chat stream is active ──
   useEffect(() => {
     if (!isStreaming) {
