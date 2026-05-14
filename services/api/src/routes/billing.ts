@@ -14,6 +14,7 @@ import {
   createCustomer,
   createTopUpSession,
   constructWebhookEvent,
+  cancelSubscription,
 } from "../lib/stripe.js";
 import { PLAN_LIMITS } from "@doable/shared";
 
@@ -514,4 +515,67 @@ billingRoutes.post("/top-up", async (c) => {
   });
 
   return c.json({ data: { url: session.url } });
+});
+
+// ─── GET /billing/subscription ─────────────────────────────
+billingRoutes.get("/subscription", authMiddleware, async (c) => {
+  const workspaceId = c.req.query("workspaceId");
+  if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
+  const [ws] = await sql<{ id: string; plan: string }[]>`SELECT id, plan FROM workspaces WHERE id = ${workspaceId} AND deleted_at IS NULL`;
+  if (!ws) return c.json({ error: "Workspace not found" }, 404);
+  const sub = await billing.getSubscription(workspaceId);
+  return c.json({ data: { plan: ws.plan, status: sub?.stripe_subscription_id ? "active" : "none", stripeSubscriptionId: sub?.stripe_subscription_id ?? null, currentPeriodEnd: null, cancelAtPeriodEnd: false, mode: process.env.STRIPE_SECRET_KEY ? "stripe" : "bypass" } });
+});
+
+// ─── GET /billing/limits ───────────────────────────────────
+billingRoutes.get("/limits", authMiddleware, async (c) => {
+  const workspaceId = c.req.query("workspaceId");
+  if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
+  const [ws] = await sql<{ plan: string }[]>`SELECT plan FROM workspaces WHERE id = ${workspaceId} AND deleted_at IS NULL`;
+  if (!ws) return c.json({ error: "Workspace not found" }, 404);
+  const plan = ws.plan as keyof typeof PLAN_LIMITS;
+  return c.json({ data: { plan: ws.plan, limits: PLAN_LIMITS[plan] ?? PLAN_LIMITS.free } });
+});
+
+// ─── POST /billing/cancel ──────────────────────────────────
+billingRoutes.post("/cancel", authMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const workspaceId = (body as { workspaceId?: string }).workspaceId;
+  if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
+  if (!process.env.STRIPE_SECRET_KEY) {
+    await sql`UPDATE workspaces SET plan = 'free', updated_at = now() WHERE id = ${workspaceId}`;
+    return c.json({ data: { cancelled: true, mode: "bypass" } });
+  }
+  const sub = await billing.getSubscription(workspaceId);
+  if (!sub?.stripe_subscription_id) return c.json({ error: "No active subscription" }, 404);
+  await cancelSubscription(sub.stripe_subscription_id);
+  return c.json({ data: { cancelled: true } });
+});
+
+// ─── GET /billing/topup/history ────────────────────────────
+billingRoutes.get("/topup/history", authMiddleware, async (c) => {
+  const workspaceId = c.req.query("workspaceId");
+  if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10) || 50, 200);
+  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
+  const rows = await sql`SELECT id, workspace_id, credits, transaction_type, stripe_session_id, created_at FROM billing_transactions WHERE workspace_id = ${workspaceId} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`.catch(() => []);
+  return c.json({ data: rows, total: rows.length, limit, offset });
+});
+
+// ─── POST /billing/grant ───────────────────────────────────
+billingRoutes.post("/grant", authMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { workspaceId, credits } = body as { workspaceId?: string; credits?: number };
+  if (!workspaceId || typeof credits !== "number" || credits <= 0) return c.json({ error: "workspaceId and positive credits required" }, 400);
+  await creditsDb.addRolloverCredits(workspaceId, credits);
+  return c.json({ data: { granted: credits, workspaceId } });
+});
+
+// ─── POST /billing/revoke ──────────────────────────────────
+billingRoutes.post("/revoke", authMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { workspaceId, credits } = body as { workspaceId?: string; credits?: number };
+  if (!workspaceId || typeof credits !== "number" || credits <= 0) return c.json({ error: "workspaceId and positive credits required" }, 400);
+  await creditsDb.addRolloverCredits(workspaceId, -credits);
+  return c.json({ data: { revoked: credits, workspaceId } });
 });

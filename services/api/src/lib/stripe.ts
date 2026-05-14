@@ -185,3 +185,7 @@ export function constructWebhookEvent(
 ): Stripe.Event {
   return stripe.webhooks.constructEvent(payload, signature, STRIPE_WEBHOOK_SECRET);
 }
+
+export async function cancelSubscription(subscriptionId: string): Promise<void> {
+  await stripe.subscriptions.cancel(subscriptionId);
+}
