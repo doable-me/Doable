@@ -314,7 +314,8 @@ app.use("*", async (c, next) => {
     // BUG-API-001: behind Cloudflare/Caddy the raw URL is http://127.0.0.1:...
     // Use x-forwarded-proto so the 308 redirect goes to the correct scheme.
     const proto = c.req.header("x-forwarded-proto");
-    if (proto) url.protocol = proto.split(",")[0].trim() + ":";
+    const firstProto = proto?.split(",")[0]?.trim();
+    if (firstProto) url.protocol = firstProto + ":";
     const host = c.req.header("x-forwarded-host") ?? c.req.header("host");
     if (host) url.host = host;
     c.header("Cache-Control", "no-store");
