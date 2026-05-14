@@ -34,6 +34,14 @@ const nextConfig: NextConfig = {
       { source: '/settings/billing', destination: '/billing', permanent: false },
     ];
   },
+  async rewrites() {
+    return [
+      // Bare /favicon.ico requests (crawlers, browsers without <link rel="icon">)
+      // are served by the dynamic icon.tsx route. Standalone build doesn't auto-alias
+      // icon.tsx to /favicon.ico, so we wire it explicitly.
+      { source: '/favicon.ico', destination: '/icon' },
+    ];
+  },
   async headers() {
     return [
       {

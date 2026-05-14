@@ -19,6 +19,12 @@ export const metadata: Metadata = {
   description:
     "Tell AI what you want to do and Doable gets it done. From idea to deployed app in minutes.",
   keywords: ["AI", "app builder", "code generation", "full-stack", "no-code"],
+  icons: {
+    icon: [
+      { url: "/icon", type: "image/png", sizes: "32x32" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+  },
 };
 
 export default function RootLayout({
