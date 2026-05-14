@@ -18,8 +18,9 @@ export interface PlanDefinition {
   id: WorkspacePlan;
   name: string;
   description: string;
-  priceMonthly: number;
-  priceYearly: number;
+  priceMonthly: number | null;
+  priceYearly: number | null;
+  contactSales?: boolean;
   stripePriceIdMonthly: string | null;
   stripePriceIdYearly: string | null;
   features: string[];
@@ -91,6 +92,29 @@ export const PLANS: PlanDefinition[] = [
     monthlyCredits: 3000,
     maxProjects: 100,
     maxMembers: 25,
+  },
+  {
+    id: "enterprise",
+    name: "Enterprise",
+    description: "For large organizations with custom needs",
+    priceMonthly: null,
+    priceYearly: null,
+    stripePriceIdMonthly: null,
+    stripePriceIdYearly: null,
+    features: [
+      "Unlimited projects",
+      "Unlimited AI credits",
+      "Custom domains",
+      "Enterprise analytics",
+      "Unlimited team members",
+      "Priority support",
+      "SLA & dedicated CSM",
+    ],
+    dailyCredits: Infinity,
+    monthlyCredits: Infinity,
+    maxProjects: Infinity,
+    maxMembers: Infinity,
+    contactSales: true,
   },
 ];
 

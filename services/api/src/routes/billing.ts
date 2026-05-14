@@ -33,11 +33,14 @@ billingRoutes.get("/plans", (c) => {
       description: p.description,
       priceMonthly: p.priceMonthly,
       priceYearly: p.priceYearly,
+      priceCents: p.priceMonthly != null ? Math.round(p.priceMonthly * 100) : null,
+      contactSales: p.contactSales ?? false,
       features: p.features,
       dailyCredits: p.dailyCredits,
       monthlyCredits: p.monthlyCredits,
-      maxProjects: p.maxProjects,
-      maxMembers: p.maxMembers,
+      maxProjects: p.maxProjects === Infinity ? null : p.maxProjects,
+      maxMembers: p.maxMembers === Infinity ? null : p.maxMembers,
+      storageMb: p.id === "free" ? 512 : p.id === "pro" ? 25600 : p.id === "business" ? 102400 : null,
     })),
   });
 });
