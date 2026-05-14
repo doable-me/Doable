@@ -9,13 +9,23 @@
 #   - tmux session missing entirely → runs start.sh to recreate it
 #
 # Usage: ./watchdog.sh
-# Logs:  /var/log/doable-watchdog.log
+# Logs:  /var/log/doable/watchdog.log
+#
+# IMPORTANT: doable.service uses PrivateTmp=true, so its tmux socket lives in
+# a private /tmp namespace. This watchdog must run in the same namespace
+# (JoinsNamespaceOf=doable.service in the systemd unit) or `tmux has-session`
+# will always return false and the WS-listener-down path will never fire.
 
 set -uo pipefail
 
 DOABLE_DIR="${DOABLE_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 SESSION="doable"
-LOG="/var/log/doable-watchdog.log"
+# /var/log/doable is created by setup-server.sh chown doable:doable, so the
+# watchdog (User=doable) can write here. Previous path /var/log/doable-watchdog.log
+# lived directly under /var/log (root:syslog 755) and silently failed with
+# "Permission denied" on every tick — see commit history for the dev-ws
+# OOM-then-no-restart incident.
+LOG="/var/log/doable/watchdog.log"
 TIMEOUT=10
 
 log() {
