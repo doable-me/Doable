@@ -9,6 +9,37 @@ import { getTrackingSnippet } from "../../analytics/tracker.js";
 const analytics = analyticsQueries(sql);
 const projects = projectQueries(sql);
 
+/**
+ * BUG-ANALYTICS-001: Verify the caller is a member of the project's
+ * workspace before exposing analytics. Returns a Response (404/403) to
+ * short-circuit the handler, or the project row when access is granted.
+ *
+ * The 404-on-missing return matches the existing `Project not found`
+ * contract; the 403 on non-member protects against cross-workspace
+ * analytics enumeration.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function authorizeProjectAccess(c: any) {
+  const projectId = c.req.param("id");
+  const userId = c.get("userId");
+
+  const project = await projects.findById(projectId);
+  if (!project) {
+    return { error: c.json({ error: "Project not found" }, 404) };
+  }
+
+  const [membership] = await sql<Array<{ id: string }>>`
+    SELECT id FROM workspace_members
+    WHERE workspace_id = ${project.workspace_id} AND user_id = ${userId}
+    LIMIT 1
+  `;
+  if (!membership) {
+    return { error: c.json({ error: "Forbidden" }, 403) };
+  }
+
+  return { project };
+}
+
 // Public URL — used for tracking snippet generation
 const apiUrl =
   process.env.NEXT_PUBLIC_API_URL ??
@@ -52,10 +83,8 @@ dashboardRoutes.get("/projects/:id/overview", async (c) => {
   const projectId = c.req.param("id");
   const range = c.req.query("range");
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   const { startDate, endDate } = parseDateRange(range);
 
@@ -93,10 +122,8 @@ dashboardRoutes.get("/projects/:id/timeseries", async (c) => {
   const projectId = c.req.param("id");
   const range = c.req.query("range");
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   const { startDate, endDate } = parseDateRange(range);
 
@@ -114,10 +141,8 @@ dashboardRoutes.get("/projects/:id/pageviews", async (c) => {
   const projectId = c.req.param("id");
   const range = c.req.query("range");
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   const { startDate, endDate } = parseDateRange(range);
 
@@ -136,10 +161,8 @@ dashboardRoutes.get("/projects/:id/events", async (c) => {
   const range = c.req.query("range");
   const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)));
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   const { startDate, endDate } = parseDateRange(range);
 
@@ -158,10 +181,8 @@ dashboardRoutes.get("/projects/:id/pages", async (c) => {
   const range = c.req.query("range");
   const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") ?? "10", 10)));
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   const { startDate, endDate } = parseDateRange(range);
 
@@ -179,10 +200,8 @@ dashboardRoutes.get("/projects/:id/referrers", async (c) => {
   const projectId = c.req.param("id");
   const range = c.req.query("range");
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   const { startDate, endDate } = parseDateRange(range);
 
@@ -200,10 +219,8 @@ dashboardRoutes.get("/projects/:id/devices", async (c) => {
   const projectId = c.req.param("id");
   const range = c.req.query("range");
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   const { startDate, endDate } = parseDateRange(range);
 
@@ -226,10 +243,8 @@ dashboardRoutes.get("/projects/:id/browsers", async (c) => {
   const projectId = c.req.param("id");
   const range = c.req.query("range");
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   const { startDate, endDate } = parseDateRange(range);
 
@@ -252,10 +267,8 @@ dashboardRoutes.get("/projects/:id/os", async (c) => {
   const projectId = c.req.param("id");
   const range = c.req.query("range");
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   const { startDate, endDate } = parseDateRange(range);
 
@@ -277,10 +290,8 @@ dashboardRoutes.get("/projects/:id/os", async (c) => {
 dashboardRoutes.get("/projects/:id/realtime", async (c) => {
   const projectId = c.req.param("id");
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   try {
     const [activeVisitors, pages] = await Promise.all([
@@ -304,10 +315,8 @@ dashboardRoutes.get("/projects/:id/realtime", async (c) => {
 dashboardRoutes.get("/projects/:id/settings", async (c) => {
   const projectId = c.req.param("id");
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   try {
     const settings = await analytics.getSettings(projectId);
@@ -332,10 +341,8 @@ const settingsSchema = z.object({
 dashboardRoutes.put("/projects/:id/settings", async (c) => {
   const projectId = c.req.param("id");
 
-  const project = await projects.findById(projectId);
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
+  const access = await authorizeProjectAccess(c);
+  if (access.error) return access.error;
 
   const body = await c.req.json();
   const parsed = settingsSchema.safeParse(body);

@@ -33,11 +33,21 @@ let browser: Browser | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (!browser || !browser.connected) {
+    // BUG-ANALYTICS-002: `--no-sandbox` / `--disable-setuid-sandbox` disable
+    // Chromium's process isolation. They are only required when running as
+    // root (where the SUID sandbox helper refuses to start). On non-root
+    // accounts (which is how production should run — see the security sprint
+    // notes) we MUST keep the sandbox enabled.
+    const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+    const launchArgs = ["--disable-gpu"];
+    if (isRoot) {
+      launchArgs.unshift("--no-sandbox", "--disable-setuid-sandbox");
+    }
     // Wrap puppeteer.launch() with a timeout so a missing/broken Chrome
     // binary can't hang forever and permanently block thumbnail captures.
     const launchPromise = puppeteer.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
+      args: launchArgs,
     });
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("Browser launch timed out after 30s")), BROWSER_LAUNCH_TIMEOUT_MS)

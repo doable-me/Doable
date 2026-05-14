@@ -212,6 +212,16 @@ const server = createServer(async (req, res) => {
 
   // Presence REST fallback
   if (req.method === "GET" && req.url?.startsWith("/internal/presence/")) {
+    // BUG-EDITOR-002: this endpoint exposes presence data (user IDs, names,
+    // active files) for any project. Match the same X-Internal-Secret gate
+    // used by /internal/broadcast and /internal/yjs/write — without it,
+    // anyone reachable on dev-ws.doable.me could enumerate collaborators.
+    const secret = req.headers["x-internal-secret"];
+    if (secret !== INTERNAL_SECRET) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
     const projectId = req.url.split("/internal/presence/")[1];
     const room = rooms.get(projectId ?? "");
     const users: PresenceUser[] = room ? room.getPresenceUsers() : [];

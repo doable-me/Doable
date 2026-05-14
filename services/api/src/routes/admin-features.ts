@@ -88,8 +88,36 @@ adminFeatureRoutes.post("/features", async (c) => {
 });
 
 // Delete a feature flag
+// BUG-ADMIN-007: built-in platform features (ai_chat, analytics, billing,
+// publish, etc.) are referenced by code paths and migrations. Deleting them
+// breaks the platform with no API-level restore. Block deletion of any
+// system-owned flag — toggle via PATCH /features/:key { enabled:false }
+// instead.
+const SYSTEM_FEATURE_KEYS = new Set<string>([
+  "ai_chat",
+  "analytics",
+  "billing",
+  "publish",
+  "integrations",
+  "mcp",
+  "templates",
+  "marketplace",
+  "community",
+  "skills",
+]);
+
 adminFeatureRoutes.delete("/features/:key", async (c) => {
-  const deleted = await featureFlags.delete(c.req.param("key"));
+  const key = c.req.param("key");
+  if (SYSTEM_FEATURE_KEYS.has(key)) {
+    return c.json(
+      {
+        error: "System feature flags cannot be deleted",
+        hint: "Use PATCH /admin/features/:key { enabled: false } to disable.",
+      },
+      403,
+    );
+  }
+  const deleted = await featureFlags.delete(key);
   if (!deleted) return c.json({ error: "Feature not found" }, 404);
   return c.json({ ok: true });
 });
