@@ -195,3 +195,15 @@ Source: `services/api/src/routes/auth/core.ts:75-118`.
 - **Steps:** Capture userA's refreshToken, login as userB, POST logout with userA's token.
 - **Expected:** 200 — and userA's token row IS deleted (handler doesn't bind to caller). Document — anyone with a refresh token can revoke that session, which is fine since possessing it means they could also use it.
 - **Severity:** medium
+
+---
+
+## Implementation Notes
+
+### Anon Logout (D1 Contract)
+
+`POST /auth/logout` is intentionally **anon-accessible** and **idempotent**. The route is not wrapped by `authMiddleware` (see `services/api/src/routes/auth/core.ts:155`). The endpoint returns 200 whether or not a valid refresh token is provided, ensuring SDKs can call logout() as a cleanup action even if the session is already expired.
+
+**Why:** Access tokens are stateless JWTs; refresh tokens are server-side revoked. Forcing 401 on logout would break flows where a client has already discarded its session locally. This choice aligns with idempotent API design principles.
+
+**Related:** `services/api/API.md#POST-auth-logout`
