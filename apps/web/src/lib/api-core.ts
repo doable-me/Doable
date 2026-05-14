@@ -12,6 +12,24 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const TOKEN_KEY = "doable_access_token";
 const REFRESH_KEY = "doable_refresh_token";
 
+// BUG-ADMIN-009: server-side rendering can't read localStorage, so the
+// previous client-only auth left protected pages like /admin serving HTML to
+// any visitor. We additionally mirror the access token to a non-HttpOnly
+// cookie so Next.js middleware can gate SSR before any admin markup ships.
+// The cookie is non-HttpOnly because the same JS that owns localStorage owns
+// the cookie — there's no XSS hardening loss vs. the existing setup, and we
+// can't use HttpOnly without a server-side login route. Path=/ + SameSite=Lax
+// keeps it scoped to the app and avoids CSRF on cross-site GET.
+function mirrorTokenCookie(value: string | null): void {
+  if (typeof document === "undefined") return;
+  if (value) {
+    // 7 days to match refresh-token longevity; middleware re-verifies anyway.
+    document.cookie = `${TOKEN_KEY}=${encodeURIComponent(value)}; Path=/; Max-Age=604800; SameSite=Lax`;
+  } else {
+    document.cookie = `${TOKEN_KEY}=; Path=/; Max-Age=0; SameSite=Lax`;
+  }
+}
+
 export function getStoredTokens(): {
   accessToken: string | null;
   refreshToken: string | null;
@@ -28,11 +46,13 @@ export function getStoredTokens(): {
 export function storeTokens(tokens: AuthTokens): void {
   localStorage.setItem(TOKEN_KEY, tokens.accessToken);
   localStorage.setItem(REFRESH_KEY, tokens.refreshToken);
+  mirrorTokenCookie(tokens.accessToken);
 }
 
 export function clearTokens(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  mirrorTokenCookie(null);
 }
 
 // ─── API Error ─────────────────────────────────────────────

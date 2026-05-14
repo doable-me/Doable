@@ -213,6 +213,39 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
         return c.json({ error: "Viewers cannot use AI chat" }, 403);
       }
 
+      // BUG-AI-020: enforce zero-balance before streaming begins. Previously
+      // the credit pre-check did not exist, so workspaces with monthlyMax=0
+      // (or fully-consumed balances) could still trigger a full chat stream
+      // and burn server resources. We pull total_available via the existing
+      // creditQueries helper which already initializes a balance row + handles
+      // daily/monthly auto-reset. Unlimited plans (Number.isFinite=false on
+      // PLAN_LIMITS) bypass this gate; in that case the balance row stores
+      // MAX_INT and total_available remains effectively unbounded.
+      try {
+        const credits = creditQueries(sql);
+        const balance = await credits.getCreditBalance(userId, chatProject.workspace_id);
+        if (balance.total_available <= 0) {
+          return c.json(
+            {
+              error: "Credit balance exhausted",
+              code: "INSUFFICIENT_CREDITS",
+              daily_remaining: balance.daily_remaining,
+              monthly_remaining: balance.monthly_remaining,
+              rollover_credits: balance.rollover_credits,
+              total_available: balance.total_available,
+            },
+            429,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          "[Chat] pre-stream credit check failed:",
+          err instanceof Error ? err.message : err,
+        );
+        // Fall through — do not block on DB hiccups; deduction post-stream
+        // still guards the bulk of the cost.
+      }
+
       let augmentedContent = content;
       let fileAttachments: Array<{ type: "file"; path: string; displayName?: string }> = [];
       // NOTE: attachment processing (PDF text extraction, etc.) is deferred
@@ -732,14 +765,30 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           // can still replay the 'complete' event before it expires.
           flushBuffer(true);
 
-          // Consume 1 credit after successful chat completion
-          if (workspaceId && state.assistantContent) {
+          // BUG-AI-019: previously gated on `state.assistantContent` being
+          // non-empty, which silently skipped deduction for the common case
+          // of a turn whose only output was tool calls (file writes, build
+          // cards, MCP UI resources). That's how 26 sends could land while
+          // daily_remaining dropped by 1. Now we deduct on any successful
+          // turn that produced *some* AI work — either assistant text, real
+          // thinking output, or at least one tool call — and we await the
+          // call so the response really reflects the consumed balance.
+          const didRealWork =
+            !!state.assistantContent ||
+            !!state.assistantThinking ||
+            state.hadToolCalls;
+          if (workspaceId && didRealWork && !thinkingLoopAborted) {
             try {
               const credits = creditQueries(sql);
-              await credits.consumeCredits(userId, workspaceId, 1, {
+              const result = await credits.consumeCredits(userId, workspaceId, 1, {
                 actionType: "chat_message",
                 projectId,
               });
+              if (!result.success) {
+                console.warn(
+                  `[Chat] Credit consumption failed (remaining=${result.remaining}) for user=${userId.slice(0, 8)} ws=${workspaceId.slice(0, 8)}`,
+                );
+              }
             } catch (err) {
               console.warn("[Chat] Failed to consume credit:", err instanceof Error ? err.message : err);
             }
