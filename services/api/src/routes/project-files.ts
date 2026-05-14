@@ -102,6 +102,13 @@ projectFileRoutes.use("/projects/:id/*", async (c, next) => {
 // ─── Authorization: verify the authenticated user can access this project ──
 // Checks workspace membership first, then project_collaborators.
 // Returns 404 "Project not found" to avoid leaking project existence.
+//
+// Existence-disclosure note (BUG-R10-PROJECT-FILES-EMPTY-200-001 /
+// BUG-R11-SEC-RLS-PROJECT-FILES-200): when the project row does not exist,
+// only the scaffold POST is allowed to fall through (it creates the row).
+// All other verbs/paths must 404 — otherwise GET /projects/:id/files would
+// return 200 + empty data for any random UUID, leaking the existence (or
+// not) of every project to anyone who can guess an id.
 projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   const projectId = c.req.param("id");
   if (projectId && RESERVED_LIST_SEGMENTS.has(projectId.toLowerCase())) {
@@ -118,10 +125,20 @@ projectFileRoutes.use("/projects/:id/*", async (c, next) => {
   `;
 
   if (!project) {
-    // Project doesn't exist in DB — allow through for scaffold (which creates the DB record).
-    // The scaffold endpoint handles its own DB record creation.
-    await next();
-    return;
+    // Project doesn't exist in DB. Only POST /projects/:id/scaffold is
+    // allowed through — it creates the project row and filesystem layout.
+    // Every other route (GET/PUT/DELETE files, dev-server controls,
+    // download) must return 404 to avoid leaking project existence via
+    // empty 200 responses.
+    const method = c.req.method.toUpperCase();
+    const path = c.req.path;
+    const isScaffoldPost =
+      method === "POST" && path === `/projects/${projectId}/scaffold`;
+    if (isScaffoldPost) {
+      await next();
+      return;
+    }
+    return c.json({ error: "Project not found" }, 404);
   }
 
   // 1. Workspace member — has access to all projects in the workspace
