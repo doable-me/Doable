@@ -195,10 +195,7 @@ app.use("*", async (c, next) => {
 
 // BUG-ADMIN-010: admin API responses must not be cached by browsers or
 // shared proxies, and the admin panel HTML must never render inside an
-// iframe (no embedding for the platform admin surface). The default
-// secureHeaders() emits `X-Frame-Options: SAMEORIGIN` which is too
-// permissive for /admin/*. Apply tighter rules for the admin namespace
-// after the global secureHeaders() so we override its defaults.
+// iframe (no embedding for the platform admin surface).
 app.use("*", async (c, next) => {
   await next();
   if (c.req.path === "/admin" || c.req.path.startsWith("/admin/")) {
@@ -209,57 +206,37 @@ app.use("*", async (c, next) => {
   }
 });
 
+// Resolve whether a request's Origin is in the allowlist for CORS purposes.
+// Shared by the cors() origin callback and the post-CORS strip below so
+// the two stay in lockstep — a future change to the allowlist logic
+// can never re-introduce the BUG-012 mismatch where ACAC was emitted
+// for origins that did NOT receive an ACAO header.
+function resolveAllowedCorsOrigin(c: { req: { path: string; header(name: string): string | undefined } }, origin: string): string | null {
+  if (c.req.path.startsWith("/preview/")) return "";
+  if (c.req.path.startsWith("/__doable/connector-proxy")) {
+    return origin || "*";
+  }
+
+  const allowed = (process.env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (origin && allowed.includes(origin)) return origin;
+
+  if (allowed.length === 0 && process.env.NODE_ENV !== "production") {
+    if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return origin;
+    if (/^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return origin;
+  }
+
+  return null;
+}
+
 app.use(
   "*",
   cors({
-    origin: (origin, c) => {
-      // Preview proxy routes: the proxy handler manages its own CORS headers
-      // (Access-Control-Allow-Origin: *). Return empty string so the global
-      // CORS middleware does NOT set any Access-Control-Allow-Origin header,
-      // letting the proxy handler's explicit headers take effect.
-      if (c.req.path.startsWith("/preview/")) {
-        return "";
-      }
-
-      // Connector-proxy routes: published apps on *.doable.me subdomains call
-      // the API cross-origin. The connector-proxy OPTIONS handler and auth
-      // (origin binding) handle security; let all origins through here.
-      if (c.req.path.startsWith("/__doable/connector-proxy")) {
-        return origin || "*";
-      }
-
-      // Build the allowlist from env up front so we can decide whether
-      // to apply the dev fallback or strictly enforce.
-      const allowed = (process.env.CORS_ORIGINS ?? "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      // Explicit allowlist match — always honored, in any environment.
-      if (origin && allowed.includes(origin)) {
-        return origin;
-      }
-
-      // Dev convenience: only when the operator has NOT configured
-      // CORS_ORIGINS at all AND we're not running in production, allow
-      // localhost / 127.0.0.1 (any port) so local dev works out of the
-      // box. We deliberately do NOT reflect arbitrary origins here —
-      // reflecting any Origin combined with credentials:true would let
-      // any website read authenticated API responses.
-      if (allowed.length === 0 && process.env.NODE_ENV !== "production") {
-        if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) {
-          return origin;
-        }
-        if (/^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) {
-          return origin;
-        }
-      }
-
-      // Refuse: returning null causes hono/cors to omit the
-      // Access-Control-Allow-Origin header, so the browser blocks
-      // the cross-origin response.
-      return null;
-    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    origin: (origin, c) => resolveAllowedCorsOrigin(c as any, origin),
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization", "x-doable-project-id"],
@@ -270,12 +247,32 @@ app.use(
 // BUG-012: hono/cors emits `Access-Control-Allow-Credentials: true`
 // unconditionally when `credentials: true` is set — even when the origin
 // callback returned `null` and `Access-Control-Allow-Origin` is absent.
-// This violates the principle of minimal disclosure and confuses security
-// scanners. Strip ACAC when ACAO is not present so headers are coherent.
+// On OPTIONS preflight hono/cors short-circuits with a fresh Response
+// before our middleware chain can post-process it, so a post-cors hook
+// never runs. Instead, intercept BEFORE cors() runs: if the request's
+// Origin isn't on the allowlist, attach a finaliser that scrubs any
+// orphan ACAC header from the response. Works for both OPTIONS (where
+// hono/cors emits a new Response inheriting these headers) and real
+// requests (where `await next()` returns through us).
 app.use("*", async (c, next) => {
+  const origin = c.req.header("origin") ?? "";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const resolved = resolveAllowedCorsOrigin(c as any, origin);
+  const originAllowed = resolved !== null && resolved !== "";
   await next();
-  if (!c.res.headers.get("Access-Control-Allow-Origin")) {
-    c.res.headers.delete("Access-Control-Allow-Credentials");
+  if (!originAllowed) {
+    // Strip orphan ACAC headers. Use both c.res.headers (Hono's mutable
+    // headers object) and reset c.res so the wrapped Response that
+    // hono/cors built for OPTIONS preflight no longer carries ACAC.
+    if (c.res.headers.get("Access-Control-Allow-Credentials")) {
+      const cleaned = new Headers(c.res.headers);
+      cleaned.delete("Access-Control-Allow-Credentials");
+      c.res = new Response(c.res.body, {
+        status: c.res.status,
+        statusText: c.res.statusText,
+        headers: cleaned,
+      });
+    }
   }
 });
 
