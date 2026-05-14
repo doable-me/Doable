@@ -160,21 +160,38 @@ versionRoutes.get("/:projectId/versions", async (c) => {
 versionRoutes.post("/:projectId/versions", async (c) => {
   const projectId = c.req.param("projectId");
 
+  // BUG-R11-VERSIONS-EACCES-500-001: previously this handler accepted a
+  // user-supplied `projectPath` and passed it straight to createVersion(),
+  // which fs.scandir'd the entire filesystem when callers sent "/" or "..".
+  // The path MUST be derived server-side from the project ID, exactly as
+  // every other version route does (see GET /:projectId/versions, undo,
+  // auto, restore, diff). The legacy `projectPath` field in the request
+  // body is now ignored for backward compatibility — a deprecation warning
+  // is logged so we can find stale callers.
   const body = await c.req.json<{
     description?: string;
     createdBy: string;
-    projectPath: string;
+    projectPath?: string;
   }>();
 
-  if (!body.createdBy || !body.projectPath) {
-    return c.json(
-      { error: "Missing required fields: createdBy, projectPath" },
-      400
+  if (!body.createdBy) {
+    return c.json({ error: "Missing required field: createdBy" }, 400);
+  }
+
+  if (body.projectPath !== undefined) {
+    console.warn(
+      `[versions] POST /:projectId/versions received deprecated body.projectPath=${JSON.stringify(body.projectPath)} for project ${projectId} — ignoring; path is derived server-side`
     );
   }
 
+  if (!isProjectScaffolded(projectId)) {
+    return c.json({ error: "Project not scaffolded" }, 400);
+  }
+
+  const projectPath = getProjectPath(projectId);
+
   try {
-    const version = await createVersion(projectId, body.projectPath, {
+    const version = await createVersion(projectId, projectPath, {
       description: body.description,
       createdBy: body.createdBy,
     });
@@ -189,7 +206,13 @@ versionRoutes.post("/:projectId/versions", async (c) => {
     return c.json({ data: version }, 201);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    return c.json({ error: "Failed to create version", message }, 500);
+    // Sanitize error envelope: raw err.message can leak internal filesystem
+    // paths (e.g. EACCES on /boot/lost+found). Keep details only in dev.
+    if (process.env.NODE_ENV === "development") {
+      return c.json({ error: "Failed to create version", message }, 500);
+    }
+    console.error(`[versions] createVersion failed for project ${projectId}:`, err);
+    return c.json({ error: "Failed to create version" }, 500);
   }
 });
 
@@ -258,10 +281,20 @@ versionRoutes.post("/:projectId/versions/:versionId/restore", async (c) => {
   const projectId = c.req.param("projectId");
   const versionId = c.req.param("versionId");
 
+  // BUG-R11-VERSIONS-EACCES-500-001 sibling: body.projectPath was previously
+  // honored as a fallback and could traverse outside the project sandbox.
+  // Ignore it server-side; log deprecation. Restore always uses the
+  // server-derived project path.
   const body = await c.req.json<{
     restoredBy: string;
     projectPath?: string;
   }>();
+
+  if (body.projectPath !== undefined) {
+    console.warn(
+      `[versions] POST /:projectId/versions/:versionId/restore received deprecated body.projectPath=${JSON.stringify(body.projectPath)} for project ${projectId} — ignoring; path is derived server-side`
+    );
+  }
 
   try {
     const projectPath = isProjectScaffolded(projectId)
@@ -282,16 +315,18 @@ versionRoutes.post("/:projectId/versions/:versionId/restore", async (c) => {
       }, 201);
     }
 
-    // Legacy DB-based restore
+    // Legacy DB-based restore — require scaffolded project (no user-path fallback).
+    if (!projectPath) {
+      return c.json({ error: "Project not scaffolded" }, 400);
+    }
     if (!body.restoredBy) {
       return c.json({ error: "Missing required field: restoredBy" }, 400);
     }
 
-    const resolvedPath = body.projectPath || (projectPath ?? "");
     const newVersion = await restoreVersion(
       projectId,
       versionId,
-      resolvedPath,
+      projectPath,
       body.restoredBy
     );
 
@@ -299,7 +334,11 @@ versionRoutes.post("/:projectId/versions/:versionId/restore", async (c) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     const status = message.includes("not found") ? 404 : 500;
-    return c.json({ error: "Failed to restore version", message }, status);
+    if (process.env.NODE_ENV === "development") {
+      return c.json({ error: "Failed to restore version", message }, status);
+    }
+    console.error(`[versions] restoreVersion failed for project ${projectId}:`, err);
+    return c.json({ error: "Failed to restore version" }, status);
   }
 });
 
