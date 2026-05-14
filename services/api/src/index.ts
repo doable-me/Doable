@@ -293,10 +293,17 @@ app.use("*", async (c, next) => {
     // a permanent redirect (which Cloudflare/Caddy can cache and which
     // some clients dropped the Authorization header on) from masking
     // an otherwise-valid request.
-    !path.startsWith("/design-comments/")
+    !path.startsWith("/design-comments/") &&
+    path !== "/health/"
   ) {
     const url = new URL(c.req.url);
     url.pathname = path.replace(/\/+$/, "");
+    // BUG-API-001: behind Cloudflare/Caddy the raw URL is http://127.0.0.1:...
+    // Use x-forwarded-proto so the 308 redirect goes to the correct scheme.
+    const proto = c.req.header("x-forwarded-proto");
+    if (proto) url.protocol = proto.split(",")[0].trim() + ":";
+    const host = c.req.header("x-forwarded-host") ?? c.req.header("host");
+    if (host) url.host = host;
     c.header("Cache-Control", "no-store");
     return c.redirect(url.toString(), 308);
   }
