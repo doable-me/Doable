@@ -21,10 +21,67 @@ adminUserRoutes.get("/status", async (c) => {
 
 // ─── User Management ───────────────────────────────────────
 
-// List all users
+// List all users (with plan, AI config, and credit fields)
 adminUserRoutes.get("/users", async (c) => {
-  const users = await featureFlags.listAllUsers();
-  return c.json(users);
+  const search = (c.req.query("search") ?? "").slice(0, 100);
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10) || 100, 500);
+  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
+  const searchPattern = `%${search}%`;
+
+  const rows = await sql<{
+    id: string; email: string; display_name: string | null;
+    is_platform_admin: boolean; platform_role: string | null; created_at: Date;
+    plan: string | null; workspace_id: string | null;
+    ai_source: string | null; model: string | null;
+    daily_credits: number | null; monthly_credits: number | null; rollover_credits: number | null;
+  }[]>`
+    SELECT
+      u.id, u.email, u.display_name, u.is_platform_admin, u.platform_role, u.created_at,
+      w.plan, w.id AS workspace_id,
+      was.default_source AS ai_source, was.default_copilot_model AS model,
+      COALESCE(cb.daily_credits, 0)    AS daily_credits,
+      COALESCE(cb.monthly_credits, 0)  AS monthly_credits,
+      COALESCE(cb.rollover_credits, 0) AS rollover_credits
+    FROM users u
+    LEFT JOIN workspaces w ON w.owner_id = u.id
+    LEFT JOIN workspace_ai_settings was ON was.workspace_id = w.id
+    LEFT JOIN credit_balances cb ON cb.workspace_id = w.id AND cb.user_id = u.id
+    WHERE (
+      ${search} = '' OR
+      u.email ILIKE ${searchPattern} OR
+      u.display_name ILIKE ${searchPattern}
+    )
+    ORDER BY u.created_at DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+
+  const total = search
+    ? (await sql<{ c: number }[]>`
+        SELECT COUNT(*)::int AS c FROM users u
+        WHERE u.email ILIKE ${searchPattern} OR u.display_name ILIKE ${searchPattern}
+      `)[0]?.c ?? 0
+    : (await sql<{ c: number }[]>`SELECT COUNT(*)::int AS c FROM users`)[0]?.c ?? 0;
+
+  return c.json({
+    data: rows.map((u) => ({
+      id: u.id,
+      email: u.email,
+      displayName: u.display_name,
+      isPlatformAdmin: u.is_platform_admin,
+      platformRole: u.platform_role,
+      createdAt: u.created_at,
+      workspaceId: u.workspace_id,
+      plan: u.plan ?? "free",
+      aiSource: u.ai_source,
+      model: u.model,
+      dailyCredits: u.daily_credits ?? 0,
+      monthlyCredits: u.monthly_credits ?? 0,
+      rolloverCredits: u.rollover_credits ?? 0,
+    })),
+    total,
+    limit,
+    offset,
+  });
 });
 
 // Toggle platform admin
