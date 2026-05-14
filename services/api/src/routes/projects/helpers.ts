@@ -87,8 +87,22 @@ export function validateUuidQueryParam(queryName: string, label?: string) {
 
 // ─── Role hierarchy helper ──────────────────────────────────
 const ROLES = WORKSPACE_ROLES as readonly string[];
+
+// BUG-FOLDER-006: `project_collaborators` uses its own role vocabulary
+// (`owner | admin | editor | viewer`) — `editor` is NOT in
+// `WORKSPACE_ROLES` (`viewer | member | admin | owner`). Without
+// normalization, `isRoleAtLeast("editor", "member")` returns `-1 >= 1`
+// (false), which mis-routes project-collaborator editors into the
+// "Viewers cannot edit projects" 403 branch on PATCH /projects/:id.
+// Map `editor` to the workspace-role equivalent `member` before the
+// hierarchy comparison.
+function normalizeRole(role: string): string {
+  if (role === "editor") return "member";
+  return role;
+}
+
 export function isRoleAtLeast(role: string, minRole: WorkspaceRole): boolean {
-  return ROLES.indexOf(role) >= ROLES.indexOf(minRole);
+  return ROLES.indexOf(normalizeRole(role)) >= ROLES.indexOf(minRole);
 }
 
 // ─── Helper: get user's workspace (with membership check) ───

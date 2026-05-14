@@ -1,7 +1,8 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { sql } from "../db/index.js";
 import { folderQueries, workspaceQueries } from "@doable/db";
+import type { FolderRow } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 
 const folders = folderQueries(sql);
@@ -59,22 +60,55 @@ folderRoutes.post("/", async (c) => {
     return c.json({ error: "Not a member of this workspace" }, 403);
   }
 
+  // BUG-FOLDER-002: a parentId from a different workspace caused a 500
+  // (FK/constraint surfaced as an unhandled error). Validate that the
+  // parent belongs to the SAME workspace and return 400 instead.
+  if (parsed.data.parentId) {
+    const parent = await folders.findById(parsed.data.parentId);
+    if (!parent || parent.workspace_id !== parsed.data.workspaceId) {
+      return c.json(
+        { error: "parentId must belong to the same workspace" },
+        400
+      );
+    }
+  }
+
   const folder = await folders.create(parsed.data);
 
   return c.json({ data: folder }, 201);
 });
 
+// BUG-FOLDER-005: GET/PATCH/DELETE /folders/:id had no workspace-membership
+// check — an IDOR vulnerability. Shared helper loads the folder and verifies
+// the caller is a member of the owning workspace, returning 404 (rather than
+// 403) to avoid existence-disclosure. Each handler calls this up front.
+type FolderLoadResult =
+  | { folder: FolderRow; response: null }
+  | { folder: null; response: Response };
+
+async function loadFolderForUser(c: Context<AuthEnv>): Promise<FolderLoadResult> {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+  if (!id) {
+    return { folder: null, response: c.json({ error: "Folder not found" }, 404) };
+  }
+  const folder = await folders.findById(id);
+  if (!folder) {
+    return { folder: null, response: c.json({ error: "Folder not found" }, 404) };
+  }
+  const role = await workspaces.getMemberRole(folder.workspace_id, userId);
+  if (!role) {
+    return { folder: null, response: c.json({ error: "Folder not found" }, 404) };
+  }
+  return { folder, response: null };
+}
+
 // ─── Get Folder ─────────────────────────────────────────────
 folderRoutes.get("/:id", async (c) => {
-  const id = c.req.param("id");
-  const folder = await folders.findById(id);
-
-  if (!folder) {
-    return c.json({ error: "Folder not found" }, 404);
-  }
-
-  const children = await folders.listChildren(id);
-
+  const result = await loadFolderForUser(c);
+  if (result.response) return result.response;
+  const { folder } = result;
+  const children = await folders.listChildren(folder.id);
   return c.json({ data: { ...folder, children } });
 });
 
@@ -86,7 +120,10 @@ const updateSchema = z.object({
 });
 
 folderRoutes.patch("/:id", async (c) => {
-  const id = c.req.param("id");
+  const result = await loadFolderForUser(c);
+  if (result.response) return result.response;
+  const { folder: existing } = result;
+
   const body = await c.req.json();
   const parsed = updateSchema.safeParse(body);
 
@@ -97,7 +134,28 @@ folderRoutes.patch("/:id", async (c) => {
     );
   }
 
-  const folder = await folders.update(id, parsed.data);
+  // BUG-FOLDER-001: cycle detection — a folder cannot be its own parent.
+  // Without this guard, recursive tree traversal in clients/servers can
+  // stack-overflow or infinite-loop.
+  if (parsed.data.parentId !== undefined && parsed.data.parentId === existing.id) {
+    return c.json(
+      { error: "A folder cannot be its own parent" },
+      400
+    );
+  }
+
+  // BUG-FOLDER-002: reject parentId that belongs to a different workspace.
+  if (parsed.data.parentId) {
+    const parent = await folders.findById(parsed.data.parentId);
+    if (!parent || parent.workspace_id !== existing.workspace_id) {
+      return c.json(
+        { error: "parentId must belong to the same workspace" },
+        400
+      );
+    }
+  }
+
+  const folder = await folders.update(existing.id, parsed.data);
 
   if (!folder) {
     return c.json({ error: "Folder not found" }, 404);
@@ -108,12 +166,15 @@ folderRoutes.patch("/:id", async (c) => {
 
 // ─── Delete Folder ──────────────────────────────────────────
 folderRoutes.delete("/:id", async (c) => {
-  const id = c.req.param("id");
-  const deleted = await folders.delete(id);
+  const result = await loadFolderForUser(c);
+  if (result.response) return result.response;
+  const { folder } = result;
+
+  const deleted = await folders.delete(folder.id);
 
   if (!deleted) {
     return c.json({ error: "Folder not found" }, 404);
   }
 
-  return c.json({ data: { id, deleted: true } });
+  return c.json({ data: { id: folder.id, deleted: true } });
 });
