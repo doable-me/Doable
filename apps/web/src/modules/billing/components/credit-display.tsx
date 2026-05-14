@@ -47,7 +47,10 @@ function CreditBar({
   color: string;
 }) {
   const unlimited = isUnlimited(total);
-  const used = total - remaining;
+  // BUG-BILLING-001: clamp `used` at 0 — if the API ever reports remaining
+  // > total (e.g. plan-limit mismatch, top-up credits showing as monthly),
+  // we must never display a negative "used" number like "-400 / 100".
+  const used = Math.max(0, total - remaining);
   const percentage = unlimited ? 0 : total > 0 ? Math.min((used / total) * 100, 100) : 0;
   const isLow = !unlimited && remaining <= Math.ceil(total * 0.2);
 
@@ -94,10 +97,21 @@ export function CreditDisplay({ credits, loading, className }: CreditDisplayProp
     credits.daily_remaining + credits.monthly_remaining + credits.rollover_credits;
   const showUnlimited = isUnlimited(totalAvailable) || isUnlimited(credits.daily_remaining);
 
-  // Determine plan limits — use actual remaining as floor if no plan info
+  // BUG-BILLING-001: Prefer the totals reported by the API (credits.*_total)
+  // over the hardcoded PLAN_*_LIMITS table. When the API reports a different
+  // monthly total than the local table (e.g. after a plan change or top-up),
+  // using the stale local value made `used = total - remaining` go negative
+  // (UI showed "-400 / 100 used"). Fall back to the table only if the API
+  // didn't supply a total.
   const planKey = (credits as any).plan_type ?? "free";
-  const dailyTotal = PLAN_DAILY_LIMITS[planKey] ?? PLAN_DAILY_LIMITS.free ?? 5;
-  const monthlyTotal = PLAN_MONTHLY_LIMITS[planKey] ?? PLAN_MONTHLY_LIMITS.free ?? 0;
+  const dailyTotal =
+    credits.daily_total > 0
+      ? credits.daily_total
+      : PLAN_DAILY_LIMITS[planKey] ?? PLAN_DAILY_LIMITS.free ?? 5;
+  const monthlyTotal =
+    credits.monthly_total > 0
+      ? credits.monthly_total
+      : PLAN_MONTHLY_LIMITS[planKey] ?? PLAN_MONTHLY_LIMITS.free ?? 0;
 
   return (
     <div className={cn("space-y-5 rounded-xl border border-border bg-card p-6", className)}>

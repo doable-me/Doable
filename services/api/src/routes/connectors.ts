@@ -175,6 +175,27 @@ connectorRoutes.post(
     if (body.transportType !== "stdio" && !body.serverUrl) {
       return c.json({ error: "serverUrl is required for HTTP transports" }, 400);
     }
+    // BUG-MCP-007: HTTP-based MCP connectors carry user/workspace credentials
+    // (bearer tokens, API keys, OAuth tokens). Plaintext http:// URLs would
+    // expose them to network attackers. Require https:// for both streamable
+    // HTTP and SSE transports — except for explicit localhost/127.0.0.1 dev.
+    if (
+      (body.transportType === "streamable_http" || body.transportType === "http_sse") &&
+      body.serverUrl
+    ) {
+      try {
+        const u = new URL(body.serverUrl);
+        const isLocal =
+          u.hostname === "localhost" ||
+          u.hostname === "127.0.0.1" ||
+          u.hostname === "::1";
+        if (u.protocol !== "https:" && !isLocal) {
+          return c.json({ error: "MCP server URL must use HTTPS" }, 400);
+        }
+      } catch {
+        return c.json({ error: "Invalid serverUrl" }, 400);
+      }
+    }
     // SECURITY: stdio connectors spawn arbitrary processes on the server.
     // Only server-provisioned builtins (via ensureBuiltinConnectorsForWorkspace)
     // may use stdio transport. User-created connectors are limited to HTTP.

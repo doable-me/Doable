@@ -14,7 +14,7 @@ import {
   registerSchema, loginSchema, refreshSchema, resetPasswordSchema,
   hashToken, sanitizeUser, ARGON2_OPTS, stripHtmlTags,
   loginRateLimiter, registerRateLimiter, forgotPasswordRateLimiter, resetPasswordRateLimiter,
-  issueTokens, ensureWorkspace, FRONTEND_URL,
+  issueTokens, ensureWorkspace, FRONTEND_URL, ACCESS_TOKEN_TTL_SECONDS,
 } from "./helpers.js";
 import { issueMfaChallenge } from "./mfa.js";
 
@@ -158,7 +158,9 @@ coreAuthRoutes.post("/refresh", async (c) => {
 
     return c.json({
       user: sanitizeUser(user),
-      tokens: { accessToken, refreshToken: newRefreshToken, expiresIn: 900 },
+      // BUG-011: `expiresIn` must match the JWT's actual lifetime so clients
+      // can refresh on time. Use the env-derived TTL, not a hardcoded 900.
+      tokens: { accessToken, refreshToken: newRefreshToken, expiresIn: ACCESS_TOKEN_TTL_SECONDS },
     });
   } catch {
     return c.json({ error: "Invalid or expired refresh token" }, 401);

@@ -154,6 +154,17 @@ billingRoutes.get("/balance", async (c) => {
     return c.json({ error: "workspaceId query param required" }, 400);
   }
   const userId = c.get("userId");
+  // BUG-BILLING-002: Verify caller is a member of the target workspace before
+  // returning credit balance — otherwise any authenticated user could probe
+  // any workspace's billing state by guessing/enumerating workspaceId.
+  const [membership] = await sql<Array<{ id: string }>>`
+    SELECT id FROM workspace_members
+    WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+    LIMIT 1
+  `;
+  if (!membership) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
+  }
   try {
     const b = await creditsDb.getCreditBalance(userId, workspaceId);
     return c.json({
@@ -272,6 +283,17 @@ billingRoutes.get("/credits", async (c) => {
   }
 
   const userId = c.get("userId");
+
+  // BUG-BILLING-002: Verify caller is a member of the target workspace before
+  // returning credit balance — prevents cross-tenant data leak.
+  const [membership] = await sql<Array<{ id: string }>>`
+    SELECT id FROM workspace_members
+    WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+    LIMIT 1
+  `;
+  if (!membership) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
+  }
 
   try {
     const balance = await creditsDb.getCreditBalance(userId, workspaceId);

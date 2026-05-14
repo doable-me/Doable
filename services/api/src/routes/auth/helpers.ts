@@ -65,6 +65,37 @@ export const registerRateLimiter = rateLimiter({ windowMs: 60 * 60 * 1000, max: 
 export const forgotPasswordRateLimiter = rateLimiter({ windowMs: 60 * 60 * 1000, max: 3 }); // 3 per hour
 export const resetPasswordRateLimiter = rateLimiter({ windowMs: 60 * 60 * 1000, max: 5 }); // 5 per hour
 
+/**
+ * Parse a duration string (e.g. "15m", "4h", "900s", "14400") into seconds.
+ * Mirrors the format accepted by jose's `setExpirationTime`. Returns 900
+ * (15min) for unrecognised inputs so we never accidentally issue an
+ * unbounded session.
+ *
+ * BUG-011: `expiresIn` was hardcoded to 900 while jose used the
+ * `JWT_ACCESS_TOKEN_EXPIRES_IN` env var (which dev was setting to "4h").
+ * The two values must agree so clients can schedule a refresh correctly.
+ */
+function parseDurationToSeconds(raw: string | undefined): number {
+  if (!raw) return 900;
+  const trimmed = raw.trim();
+  // Plain integer = seconds
+  if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10);
+  // Format: <number><unit>  where unit ∈ s|m|h|d
+  const match = /^(\d+)\s*(s|m|h|d)$/i.exec(trimmed);
+  if (!match) return 900;
+  const n = parseInt(match[1]!, 10);
+  const unit = match[2]!.toLowerCase();
+  if (unit === "s") return n;
+  if (unit === "m") return n * 60;
+  if (unit === "h") return n * 60 * 60;
+  if (unit === "d") return n * 60 * 60 * 24;
+  return 900;
+}
+
+export const ACCESS_TOKEN_TTL_SECONDS = parseDurationToSeconds(
+  process.env.JWT_ACCESS_TOKEN_EXPIRES_IN ?? "15m",
+);
+
 export async function issueTokens(userId: string, email: string) {
   const accessToken = await signAccessToken(userId, email);
   const refreshToken = await signRefreshToken(userId);
@@ -75,7 +106,7 @@ export async function issueTokens(userId: string, email: string) {
   } catch {
     // DB unavailable — tokens still work for stateless JWT validation
   }
-  return { accessToken, refreshToken, expiresIn: 900 };
+  return { accessToken, refreshToken, expiresIn: ACCESS_TOKEN_TTL_SECONDS };
 }
 
 /**
