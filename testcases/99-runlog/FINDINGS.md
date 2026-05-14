@@ -163,6 +163,29 @@
 
 ---
 
+## 2026-05-13 — Ralph R9 (dev)
+
+Target: https://dev.doable.me + https://dev-api.doable.me + https://dev-ws.doable.me
+
+### Bugs filed this round
+- **BUG-DEV-WS-OOM-001** — dev-ws 502 from OOM-killed WS process; watchdog broken by PrivateTmp namespace isolation + permission denied on log write. **Fixed** (commits 91282a7 + manual tmux restart). [link](../bugs/BUG-DEV-WS-OOM-001.md)
+- **BUG-AI-PDF-IGNORED-001** — chat-attached PDFs reach API but no text extraction → model receives 0 chars of PDF body. **Fixed** (commit 8f20970, fix/pdf-attach-text-extraction branch). [link](../bugs/BUG-AI-PDF-IGNORED-001.md)
+- **BUG-API-TEMPLATES-AUTH-001** — GET /templates returns 401 on dev (staging baseline 2026-05-08 returned 200). **Open** (suspected middleware regression). [link](../bugs/BUG-API-TEMPLATES-AUTH-001.md)
+- **BUG-API-BILLING-USAGE-PARAMS-001** — GET /billing/usage returns 400 on dev (staging baseline 2026-05-08 returned 200 w/ empty data). **Open** (suspected new required param or schema strictness). [link](../bugs/BUG-API-BILLING-USAGE-PARAMS-001.md)
+- **BUG-AUTH-LOGIN-RATELIMIT-SEED-001** — bulk QA login during seeding gets 429. **Open** (workaround = client-side backoff in seed script). [link](../bugs/BUG-AUTH-LOGIN-RATELIMIT-SEED-001.md)
+
+### AI chat multi-turn timing (3-turn build)
+See testcases/evidence/dev/timing/multi-turn.csv. Highlights:
+- Turn 1 (project create from dashboard): 45.2s total (preview iframe ready at 13.9s while chat still streaming).
+- Turn 2 (add status filter): 25.8s total; first SSE byte 231ms; first tool 4.0s; last tool 23.0s.
+- Turn 3 (items-remaining counter): 21.1s total; first SSE byte 237ms; first tool 3.2s; last tool 18.4s.
+- Latency consistency: first_sse_ms ~230-240ms across turns 2-3 — backend ready-to-stream is fast and consistent.
+
+### Smoke results
+See testcases/99-runlog/RUNLOG.md (2026-05-13 section appended by another agent). 8/11 PASS, 2 FAIL (templates 401, billing/usage 400), 1 INFO.
+
+---
+
 ## 2026-05-14 — Ralph R10 (dev matrix, 1194 assertions)
 
 **Mission:** EVOLVE-driven 1000+-assertion API matrix harness against dev-api.doable.me, root-cause fixes shipped on separate branches, every server-config gap baked into `setup-server.sh` so 100 fresh deployments work out-of-the-box. SSH access to dodev was denied this round → operated via HTTPS only.

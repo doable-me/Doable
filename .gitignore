@@ -102,6 +102,7 @@ testcases/evidence/**/*.probe.tsv
 testcases/evidence/**/*.preview.html
 testcases/99-runlog/**/*.pid
 testcases/99-runlog/**/*.start
+testcases/evidence/**/_tokens.json
 
 # OMC plugin per-dir state
 .omc/

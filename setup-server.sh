@@ -1208,6 +1208,13 @@ cat > /etc/systemd/system/doable-watchdog.service << WDEOF
 [Unit]
 Description=Doable Watchdog — health check and auto-recovery
 After=doable.service
+# doable.service runs with PrivateTmp=true, so its tmux socket lives in a
+# private /tmp mount namespace. Without JoinsNamespaceOf, the watchdog gets
+# its OWN PrivateTmp (systemd default for User= units) and can never see
+# the tmux socket — every \`tmux has-session\` returns false and the WS
+# auto-restart path is dead. This caused dev-ws.doable.me 502 on 2026-05-13
+# after the inner pnpm dev:ws was OOM-killed and never restarted.
+JoinsNamespaceOf=doable.service
 
 [Service]
 Type=oneshot
@@ -1215,6 +1222,10 @@ User=doable
 Group=doable
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=${INSTALL_DIR}/watchdog.sh
+# Same PrivateTmp scope as doable.service — required for the JoinsNamespaceOf
+# above to actually share /tmp. systemd silently no-ops JoinsNamespaceOf when
+# the joining unit doesn't itself opt into the namespace.
+PrivateTmp=true
 WDEOF
 
 cat > /etc/systemd/system/doable-watchdog.timer << WTEOF
@@ -1565,7 +1576,7 @@ echo "  systemctl restart doable       # Restart the app"
 echo "  systemctl restart cloudflared  # Restart the tunnel"
 echo "  systemctl status doable cloudflared  # Check status"
 echo "  systemctl list-timers doable-watchdog*  # Watchdog timer"
-echo "  tail -f /var/log/doable-watchdog.log    # Watchdog log"
+echo "  tail -f /var/log/doable/watchdog.log    # Watchdog log"
 echo "  ufw status                          # Check firewall rules"
 echo ""
 

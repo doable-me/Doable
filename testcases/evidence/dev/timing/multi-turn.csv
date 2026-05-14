@@ -1,0 +1,4 @@
+turn,prompt_chars,send_t_ms,first_sse_ms,first_tool_ms,last_tool_ms,done_ms,preview_refresh_ms,succeeded,notes
+1,259,0,,,,45185,13913,true,"wrapper installed after stream started; only total+preview-load captured via PerformanceResource entry; project f6ec0d9b-6a45-4568-9832-ebafe8ff1702 created via dashboard send-arrow"
+2,166,0,231,4047,23007,25820,,true,"turn-2 prompt: add status filter (All/Active/Completed) with localStorage persistence"
+3,126,0,237,3205,18386,21132,,true,"turn-3 prompt: items-remaining counter below input row"
