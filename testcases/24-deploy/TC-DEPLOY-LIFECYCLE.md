@@ -218,3 +218,19 @@ Scope: Deployment lifecycle, `deployments` and `deployment_artifacts` tables, bu
 - Pre: Verify deployment row carries trace_id.
 - Expected: chat_traces or traces row linked; admin can view OTel trace for build.
 - Severity: P1
+
+## TC-DEPLOY-LIFECYCLE-043
+- Pre: Server `SITES_DIR` env var points at a path NOT included in the
+  doable.service `ReadWritePaths=` directive (e.g. SITES_DIR=/var/lib/doable-sites
+  while ReadWritePaths only allowlists /data/sites). Reproduces
+  BUG-2026-05-14-publish-001 — systemd's ProtectSystem=strict makes writes
+  outside ReadWritePaths surface as ENOENT during mkdir.
+- Steps: `POST /deploy/:projectId/publish` with valid token + project.
+- Expected: HTTP 503 with body `{ error: "Publishing temporarily unavailable",
+  errorCode: "sites_dir_unwritable" }`. The response MUST NOT contain the raw
+  SITES_DIR path or the words "ENOENT" / "/var/lib/" — the user-facing
+  message is operator-neutral. Server-side, the deployments row is written
+  with errorMessage starting "sites_dir_unwritable:" for audit. Subsequent
+  deploys without operator intervention also return 503 (no flapping back to
+  500). Pre-flight runs before any build work, so durationMs is sub-second.
+- Severity: P0

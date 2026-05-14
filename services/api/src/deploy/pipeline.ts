@@ -15,6 +15,7 @@ import {
   generateSubdomain,
   computeSitePublishLocation,
   registerCloudflareDns,
+  SitesDirUnwritableError,
 } from "./adapters/doable-cloud.js";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { nodeStandaloneAdapter } from "../runtime/adapters/node-standalone.js";
@@ -70,6 +71,16 @@ export interface PipelineInput {
   onBuildLog?: BuildLogCallback;
 }
 
+/**
+ * Closed-set pipeline-level error codes that aren't build failures. Build
+ * errors flow through {@link BuildErrorCode}; deploy/runtime/config failures
+ * use these. Keep narrow so the route layer can map each to a stable HTTP
+ * status without growing a giant switch.
+ */
+export type PipelineErrorCode =
+  | BuildErrorCode
+  | "sites_dir_unwritable";
+
 export interface PipelineResult {
   deploymentId: string;
   url: string;
@@ -80,7 +91,7 @@ export interface PipelineResult {
   durationMs: number;
   error?: string;
   /** Closed-set code surfaced from the build step; absent on success. */
-  errorCode?: BuildErrorCode;
+  errorCode?: PipelineErrorCode;
 }
 
 /**
@@ -321,6 +332,37 @@ export async function runPipeline(
       durationMs: Date.now() - pipelineStart,
     };
   } catch (err) {
+    // SITES_DIR misconfig: don't leak the raw path; bubble a stable
+    // error code the route layer maps to 503 + a friendly message.
+    // BUG-2026-05-14-publish-001.
+    if (err instanceof SitesDirUnwritableError) {
+      console.error(
+        `[pipeline] SITES_DIR not writable for project ${projectId}: ` +
+          `${err.sitesDir} (${err.cause?.message ?? "unknown"})`,
+      );
+      const safeMessage =
+        "Publishing is temporarily unavailable on this server while an " +
+        "operator finishes the storage configuration. Please try again in " +
+        "a few minutes.";
+      onBuildLog?.(`\nERROR: ${safeMessage}\n`);
+      await deployments.updateStatus(deployment.id, "failed", {
+        // Persist the operator-facing detail server-side for audit, but only
+        // surface the safe message to the route caller via PipelineResult.
+        errorMessage: `sites_dir_unwritable: ${err.sitesDir}`,
+      });
+      return {
+        deploymentId: deployment.id,
+        url: "",
+        status: "failed",
+        buildLog: "",
+        buildTimeMs: 0,
+        deployTimeMs: 0,
+        durationMs: Date.now() - pipelineStart,
+        error: safeMessage,
+        errorCode: "sites_dir_unwritable",
+      };
+    }
+
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
     onBuildLog?.(`\nERROR: ${errorMessage}\n`);
 

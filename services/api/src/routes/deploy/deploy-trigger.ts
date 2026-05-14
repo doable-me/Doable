@@ -68,10 +68,14 @@ deployTriggerRoutes.post("/:projectId", async (c) => {
 
   if (result.status === "failed") {
     // BUG-API-019: user-input build failures return 422, not 500.
+    // BUG-2026-05-14-publish-001: storage-misconfig returns 503 (retriable),
+    //   never leaks the raw SITES_DIR path to the end user.
     const isUserError = result.errorCode === "build_failed_compile";
+    const isStorageOutage = result.errorCode === "sites_dir_unwritable";
+    const httpStatus = isStorageOutage ? 503 : isUserError ? 422 : 500;
     return c.json(
       {
-        error: "Deployment failed",
+        error: isStorageOutage ? "Publishing temporarily unavailable" : "Deployment failed",
         errorCode: result.errorCode,
         data: {
           deploymentId: result.deploymentId,
@@ -83,7 +87,7 @@ deployTriggerRoutes.post("/:projectId", async (c) => {
           durationMs: result.durationMs,
         },
       },
-      isUserError ? 422 : 500,
+      httpStatus,
     );
   }
 
@@ -299,10 +303,13 @@ deployTriggerRoutes.post("/:projectId/publish", async (c) => {
     // Entity so monitoring doesn't false-alarm on these. Compile failures
     // (`build_failed_compile`) are user-facing — the user's source code or
     // a missing entry file caused the build to fail.
+    // BUG-2026-05-14-publish-001: storage-misconfig returns 503.
     const isUserError = result.errorCode === "build_failed_compile";
+    const isStorageOutage = result.errorCode === "sites_dir_unwritable";
+    const httpStatus = isStorageOutage ? 503 : isUserError ? 422 : 500;
     return c.json(
       {
-        error: "Deployment failed",
+        error: isStorageOutage ? "Publishing temporarily unavailable" : "Deployment failed",
         errorCode: result.errorCode,
         data: {
           deploymentId: result.deploymentId,
@@ -312,7 +319,7 @@ deployTriggerRoutes.post("/:projectId/publish", async (c) => {
           durationMs: result.durationMs,
         },
       },
-      isUserError ? 422 : 500,
+      httpStatus,
     );
   }
 
@@ -356,9 +363,14 @@ deployTriggerRoutes.post("/:projectId/publish/preview", async (c) => {
   });
 
   if (result.status === "failed") {
+    // BUG-2026-05-14-publish-001: 503 for storage-misconfig, 422 for user
+    // compile failures, 500 otherwise — same mapping as the production path.
+    const isUserError = result.errorCode === "build_failed_compile";
+    const isStorageOutage = result.errorCode === "sites_dir_unwritable";
+    const httpStatus = isStorageOutage ? 503 : isUserError ? 422 : 500;
     return c.json(
       {
-        error: "Preview deployment failed",
+        error: isStorageOutage ? "Publishing temporarily unavailable" : "Preview deployment failed",
         errorCode: result.errorCode,
         data: {
           deploymentId: result.deploymentId,
@@ -368,7 +380,7 @@ deployTriggerRoutes.post("/:projectId/publish/preview", async (c) => {
           durationMs: result.durationMs,
         },
       },
-      500
+      httpStatus,
     );
   }
 
