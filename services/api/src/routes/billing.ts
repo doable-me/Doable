@@ -44,6 +44,10 @@ billingRoutes.get("/plans", (c) => {
 
 // ─── Webhook (no auth, raw body) ───────────────────────────
 billingRoutes.post("/webhook", async (c) => {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return c.json({ received: true, mode: "bypass", skipped: true });
+  }
+
   const signature = c.req.header("stripe-signature");
   if (!signature) {
     return c.json({ error: "Missing stripe-signature header" }, 400);
@@ -58,6 +62,7 @@ billingRoutes.post("/webhook", async (c) => {
     return c.json({ error: "Webhook verification failed" }, 400);
   }
 
+  try {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object;
@@ -131,6 +136,11 @@ billingRoutes.post("/webhook", async (c) => {
       await creditsDb.updateWorkspacePlanCredits(workspaceId, "free");
       break;
     }
+  }
+  } catch (err) {
+    console.error("[Stripe Webhook] Event processing error:", err);
+    // Always return 200 so Stripe doesn't retry endlessly
+    return c.json({ received: true, error: "processing_failed" });
   }
 
   return c.json({ received: true });
