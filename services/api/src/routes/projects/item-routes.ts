@@ -302,6 +302,47 @@ projectItemRoutes.delete("/:id", async (c) => {
   return c.json({ data: { id, deleted: true } });
 });
 
+// ─── Archive / Unarchive Project ───────────────────────────
+projectItemRoutes.post("/:id/archive", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) return c.json({ error: "Project not found" }, 404);
+  if (!isRoleAtLeast(access.role, "admin")) {
+    return c.json({ error: "Only workspace owners and admins can archive projects" }, 403);
+  }
+
+  const [updated] = await sql<{ id: string; status: string }[]>`
+    UPDATE projects
+    SET status = 'archived', deleted_at = now(), updated_at = now()
+    WHERE id = ${id}
+    RETURNING id, status
+  `;
+  if (!updated) return c.json({ error: "Project not found" }, 404);
+  return c.json({ data: { id: updated.id, status: updated.status } });
+});
+
+projectItemRoutes.post("/:id/unarchive", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) return c.json({ error: "Project not found" }, 404);
+  if (!isRoleAtLeast(access.role, "admin")) {
+    return c.json({ error: "Only workspace owners and admins can unarchive projects" }, 403);
+  }
+
+  const [updated] = await sql<{ id: string; status: string }[]>`
+    UPDATE projects
+    SET status = 'draft', deleted_at = NULL, updated_at = now()
+    WHERE id = ${id}
+    RETURNING id, status
+  `;
+  if (!updated) return c.json({ error: "Project not found" }, 404);
+  return c.json({ data: { id: updated.id, status: updated.status } });
+});
+
 // ─── Duplicate Project ──────────────────────────────────────
 projectItemRoutes.post("/:id/duplicate", async (c) => {
   const id = c.req.param("id");
