@@ -67,6 +67,8 @@ deployTriggerRoutes.post("/:projectId", async (c) => {
   });
 
   if (result.status === "failed") {
+    // BUG-API-019: user-input build failures return 422, not 500.
+    const isUserError = result.errorCode === "build_failed_compile";
     return c.json(
       {
         error: "Deployment failed",
@@ -81,7 +83,7 @@ deployTriggerRoutes.post("/:projectId", async (c) => {
           durationMs: result.durationMs,
         },
       },
-      500
+      isUserError ? 422 : 500,
     );
   }
 
@@ -292,6 +294,12 @@ deployTriggerRoutes.post("/:projectId/publish", async (c) => {
   });
 
   if (result.status === "failed") {
+    // BUG-API-019: empty/invalid projects produce build failures that are
+    // user errors (bad input), not server errors. Return 422 Unprocessable
+    // Entity so monitoring doesn't false-alarm on these. Compile failures
+    // (`build_failed_compile`) are user-facing — the user's source code or
+    // a missing entry file caused the build to fail.
+    const isUserError = result.errorCode === "build_failed_compile";
     return c.json(
       {
         error: "Deployment failed",
@@ -304,7 +312,7 @@ deployTriggerRoutes.post("/:projectId/publish", async (c) => {
           durationMs: result.durationMs,
         },
       },
-      500
+      isUserError ? 422 : 500,
     );
   }
 

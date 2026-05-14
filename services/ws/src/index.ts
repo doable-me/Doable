@@ -225,7 +225,45 @@ const server = createServer(async (req, res) => {
 });
 
 // ─── WebSocket Server ───────────────────────────────────
-const wss = new WebSocketServer({ server });
+//
+// BUG-017 (CSWSH): reject WebSocket upgrades from origins that aren't on
+// the allowlist. Without this, any page (e.g. https://evil.example) could
+// open a WS connection using the victim's auth, leading to Cross-Site
+// WebSocket Hijacking. Allowlist is sourced from WS_ALLOWED_ORIGINS (csv).
+// In non-production with no allowlist configured, fall back to allowing
+// localhost / 127.0.0.1 so local dev still works. Same-origin requests
+// (no Origin header — typical of curl/SDK clients with valid tokens) are
+// allowed because they cannot be initiated by a browser cross-origin.
+const WS_ALLOWED_ORIGINS = (process.env.WS_ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function isOriginAllowed(origin: string | undefined): boolean {
+  // No Origin header — non-browser client (curl, SDK). Browsers always
+  // send Origin on WS upgrades, so this is safe.
+  if (!origin) return true;
+  if (WS_ALLOWED_ORIGINS.includes(origin)) return true;
+  // Dev fallback only when operator hasn't configured an allowlist AND
+  // we're not in production.
+  if (WS_ALLOWED_ORIGINS.length === 0 && process.env.NODE_ENV !== "production") {
+    if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true;
+    if (/^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
+  }
+  return false;
+}
+
+const wss = new WebSocketServer({
+  server,
+  verifyClient: (info, done) => {
+    const origin = info.req.headers.origin;
+    if (!isOriginAllowed(origin)) {
+      console.warn(`[ws] Rejected WebSocket upgrade from disallowed origin: ${origin}`);
+      return done(false, 403, "Forbidden origin");
+    }
+    return done(true);
+  },
+});
 
 wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
   // Long-running span for the lifetime of the WebSocket connection.

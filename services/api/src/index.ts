@@ -251,6 +251,18 @@ app.use(
   })
 );
 
+// BUG-012: hono/cors emits `Access-Control-Allow-Credentials: true`
+// unconditionally when `credentials: true` is set — even when the origin
+// callback returned `null` and `Access-Control-Allow-Origin` is absent.
+// This violates the principle of minimal disclosure and confuses security
+// scanners. Strip ACAC when ACAO is not present so headers are coherent.
+app.use("*", async (c, next) => {
+  await next();
+  if (!c.res.headers.get("Access-Control-Allow-Origin")) {
+    c.res.headers.delete("Access-Control-Allow-Credentials");
+  }
+});
+
 // Trailing-slash normalization — Hono's router is strict about trailing
 // slashes, so `GET /workspaces/` returns 404 while `GET /workspaces` returns
 // 200. That caused bugs 7 and 13 where clients that built URLs with a
