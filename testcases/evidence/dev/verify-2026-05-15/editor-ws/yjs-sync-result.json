@@ -1,0 +1,31 @@
+{
+  "status": "FILE_UPDATE_OK",
+  "events": [
+    {
+      "t": 1071,
+      "ev": "open"
+    },
+    {
+      "t": 1076,
+      "ev": "msg",
+      "type": "connected"
+    },
+    {
+      "t": 1326,
+      "ev": "msg",
+      "type": "room:joined"
+    },
+    {
+      "t": 2144,
+      "ev": "api_put",
+      "path": "verify-yjs-1778790820503.txt",
+      "status": 200
+    },
+    {
+      "t": 2150,
+      "ev": "msg",
+      "type": "yjs:update"
+    }
+  ]
+}
+Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 76

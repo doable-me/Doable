@@ -150,8 +150,16 @@ Close codes:
 ## TC-WS-AUTH-036 — POST /internal/yjs/write requires secret
 - **Severity:** high
 
-## TC-WS-AUTH-037 — GET /internal/presence/:id no secret check (verify)
-- **Notes:** code shows no secret check on /internal/presence and /internal/collab-active. File security gap if exposed.
+## TC-WS-AUTH-037 — GET /internal/presence/:id requires X-Internal-Secret → 403 without it
+- **Steps:** `curl -i https://<env>-ws.doable.me/internal/presence/<projectId>` (no secret header).
+- **Expected:** 403 Forbidden. With matching `X-Internal-Secret`: 200 with `{users: [...]}`.
+- **Notes:** Closed by BUG-EDITOR-002 fix in `services/ws/src/index.ts` — same gate as `/internal/broadcast` and `/internal/yjs/write`.
+- **Severity:** high
+
+## TC-WS-AUTH-037b — GET /internal/collab-active/:id requires X-Internal-Secret → 403 without it
+- **Steps:** `curl -i https://<env>-ws.doable.me/internal/collab-active/<projectId>` (no secret header).
+- **Expected:** 403 Forbidden. With matching `X-Internal-Secret`: 200 with `{active, users: <count>}`.
+- **Notes:** Companion endpoint to /internal/presence; same leak class. Only legitimate caller is `services/api/src/ai/yjs-bridge.ts::isCollaborationActive`, which already sends the secret.
 - **Severity:** high
 
 ## TC-WS-AUTH-038 — TLS upgrade required on production hostname (no plaintext ws://)
