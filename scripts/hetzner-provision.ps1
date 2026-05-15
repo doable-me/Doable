@@ -1,8 +1,12 @@
 # Hetzner Robot API helper for doable test server #2987905
 #
 # Reads credentials from environment:
-#   $env:HETZNER_ROBOT_USER  (webservice username, e.g. ws+SdXXXXXX)
+#   $env:HETZNER_ROBOT_USER  (webservice username; STARTS WITH '#', e.g. '#ws+SdXXXXXX')
 #   $env:HETZNER_ROBOT_PASS  (webservice password)
+#
+# NOTE: Hetzner Robot webservice usernames include a literal leading '#'.
+# Strip it and you get HTTP 401. The webservice user is separate from
+# your account login — generate it under Robot → Preferences → Web service settings.
 #
 # Actions:
 #   discover     - GET /server, print server_number/IP/status/DC. Never destructive.
