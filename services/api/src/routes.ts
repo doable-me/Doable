@@ -51,6 +51,7 @@ import { planRoutes } from "./routes/plan.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import artifactsRoutes from "./routes/artifacts.js";
 import { publicFrameworkRoutes } from "./routes/admin-frameworks.js";
+import { setupRoutes } from "./routes/setup.js";
 
 export function mountRoutes(app: Hono): void {
 app.route("/health", healthRoutes);
@@ -108,6 +109,7 @@ app.route("/admin", adminAuditRoutes);
 app.route("/admin/tracing", tracingControlRouter);
 app.route("/admin/mfa", adminMfaRoutes);
 app.route("/admin", adminSignupRoutes);
+app.route("/api/setup", setupRoutes);
 app.route("/projects", securityRoutes);
 app.route("/community", communityRoutes);
 app.route("/workspaces", connectorRoutes);

@@ -16,6 +16,7 @@ import {
   loginRateLimiter, registerRateLimiter, forgotPasswordRateLimiter, resetPasswordRateLimiter,
   issueTokens, ensureWorkspace, FRONTEND_URL, ACCESS_TOKEN_TTL_SECONDS,
 } from "./helpers.js";
+import { firstUserBootstrap } from "../../auth/firstUserBootstrap.js";
 import { issueMfaChallenge } from "./mfa.js";
 
 const auth = authQueries(sql);
@@ -28,11 +29,16 @@ export const coreAuthRoutes = new Hono({ strict: false });
 
 // ─── POST /auth/register ───────────────────────────────────
 coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {
-  const parsed = registerSchema.safeParse(await c.req.json());
+  const body = await c.req.json();
+  const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {
     return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
   }
   const { email, password, displayName } = parsed.data;
+  // Accept bootstrap token from request body or ?bootstrap= query param
+  const bootstrapToken: string | undefined =
+    (body as Record<string, unknown>).bootstrap_token as string | undefined ??
+    c.req.query("bootstrap") ?? undefined;
 
   // Sanitize displayName to prevent XSS
   const sanitizedName = displayName ? stripHtmlTags(displayName) : undefined;
@@ -81,6 +87,21 @@ coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {
 
   // Auto-create personal workspace so the user isn't blocked on first login
   await ensureWorkspace(user.id, user.display_name, user.email);
+
+  // First-user bootstrap: promote to platform owner if eligible.
+  // Runs after workspace creation so the audit log can reference it.
+  // Errors are non-fatal — a failed promotion is logged but doesn't break signup.
+  try {
+    const cf = c.req.header("cf-connecting-ip");
+    const fwd = c.req.header("x-forwarded-for");
+    const clientIp = cf ?? (fwd ? fwd.split(",")[0]?.trim() : null) ?? null;
+    await firstUserBootstrap(user.id, bootstrapToken ?? null, {
+      clientIp,
+      userAgent: c.req.header("user-agent") ?? null,
+    });
+  } catch (err) {
+    console.warn("[register] firstUserBootstrap error (non-fatal):", err);
+  }
 
   // Send welcome email (queued, non-blocking)
   sendTemplatedEmail(user.email, "welcome", {
