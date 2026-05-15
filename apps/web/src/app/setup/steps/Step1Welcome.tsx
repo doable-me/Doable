@@ -40,9 +40,9 @@ export function Step1Welcome({ workspaceName, onWorkspaceNameChange, onNext }: P
         </h1>
         <p className="text-base text-muted-foreground leading-relaxed max-w-prose">
           You are the platform owner on this install. This short setup walks you through
-          connecting an AI provider, sign-in options, and building your first app.
-          Every step is optional — you can always revisit these from{" "}
-          <span className="text-foreground font-medium">/admin</span>.
+          connecting an AI provider, sign-in options, and plans &amp; billing — so your
+          team can sign up and start building. Every step is optional and revisitable
+          from <span className="text-foreground font-medium">/admin</span>.
         </p>
       </div>
 
