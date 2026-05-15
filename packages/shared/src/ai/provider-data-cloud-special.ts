@@ -47,7 +47,7 @@ export const CLOUD_SPECIAL_PROVIDERS = [
     description: "European AI lab with strong open-weight models",
     capabilities: CLOUD_CAPS_FULL,
     freeTier: "Experiment plan free",
-    tags: ["free", "european", "open-source"],
+    tags: ["free", "european", "open-source", "popular"],
   },
   {
     id: "cohere",
@@ -114,7 +114,7 @@ export const CLOUD_SPECIAL_PROVIDERS = [
     description: "Cost-effective reasoning and chat models from China",
     capabilities: CLOUD_CAPS_NO_VISION,
     freeTier: "Free tokens",
-    tags: ["free", "reasoning", "cheap"],
+    tags: ["free", "reasoning", "cheap", "popular"],
   },
   {
     id: "perplexity",

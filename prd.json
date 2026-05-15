@@ -1,71 +1,78 @@
 {
-  "task": "Ralph + Team (2026-05-15): Ship a discoverable, user-friendly way to configure ALL integration auth types in /admin -> Integrations. Today only authType=oauth2 has any config UI (and only via a tiny unlabeled Key icon). secret_text, basic_auth, and custom_auth integrations have no config path at all. Add a labeled Configure button on every row, a polymorphic config form covering all 5 auth types, backend platform-level credential storage for non-OAuth auth types, bulk enable/disable, and a guided per-provider wizard for the top providers. Never bind 0.0.0.0. Never weaken security. Never touch prod. All credential writes must go through the existing envelope-encryption vault and through platformAdminMiddleware.",
+  "task": "Ralph (2026-05-16): Make doable's installer hassle-free for admins. (1) Replace setup wizard Step 2's 3+1 hardcoded provider tiles with a searchable catalog grid backed by the existing 60+ provider PROVIDER_CATALOG; MiniMax must appear as a popular tile. (2) Bake MINIMAX_API_KEY env var into docker-compose.yml + docker/setup.sh + setup-server.sh so an admin who exports the key before install gets MiniMax pre-configured. (3) Clean stale '5-step / build your first app' copy in docker/setup.sh that doesn't match the actual 4-step wizard. (4) Hetzner Robot API discovery script (NON-destructive) that resolves server #2987905 to its IP using ws+ credentials. (5) End-to-end test recipe at C:/Users/gj/Documents/doable-hetzner-recipe.md. (6) Local docker compose smoke run + bug iteration loop. Commits go on main; deploy only to Hetzner #2987905, never do.fid.pw / dodev.fid.pw. Never bind 0.0.0.0. Never weaken security.",
   "stories": [
     {
-      "id": "US-INT-01",
-      "title": "Discoverable, labeled Configure action for every integration (all auth types)",
-      "passes": true,
+      "id": "US-WIZ-01",
+      "title": "Searchable provider catalog grid in Step 2 (replaces 3+1 hardcoded tiles)",
+      "passes": false,
       "acceptanceCriteria": [
-        "apps/web/src/modules/integrations/integrations-admin-panel.tsx: every row in /admin -> Integrations now renders a visible button labeled 'Configure' (with key/cog icon) next to the existing 'Enable' toggle, regardless of authType",
-        "The Configure button is shown for authType in {oauth2, secret_text, basic_auth, custom_auth}; for authType='none' the Configure button is hidden (nothing to configure)",
-        "Clicking Configure on a non-OAuth integration opens a config form (modal or inline sheet) appropriate to that auth type, not the OAuth-only form",
-        "The existing tiny Key icon button is replaced or absorbed by the new labeled Configure button so there is exactly one Configure entry point per row",
-        "Row visual state still reflects: NOT CONFIGURED (gray) / ENV (blue) / CONFIGURED (green) / NEEDS-CONFIG (yellow) after the redesign",
-        "lsp_diagnostics shows 0 errors on the changed file"
+        "apps/web/src/app/setup/steps/Step2AIProvider.tsx imports PROVIDER_CATALOG / PROVIDER_BY_ID from @doable/shared (packages/shared/src/ai/provider-catalog.ts) and renders tiles sourced from that catalog, not a 4-entry hardcoded PROVIDERS array",
+        "The default view shows at least 12 popular provider tiles including: anthropic, openai, minimax, groq, openrouter, mistral, deepseek, together, fireworks, ollama, github_copilot, and a 'BYOK custom URL' fallback",
+        "A search input filters tiles by provider name or id with case-insensitive substring match",
+        "A 'Show all 60+ providers' toggle expands the grid to render the full PROVIDER_CATALOG length (PROVIDER_COUNT)",
+        "Selecting a tile pre-fills the form fields from the provider preset: baseUrl, defaultModel, available models list, apiKeyPlaceholder, apiKeyHelpUrl; only the API key input is required from the user",
+        "Selecting MiniMax pre-fills baseUrl=https://api.minimax.io/v1, defaultModel=MiniMax-M2.7, and 'Validate & Save' POSTs provider=custom, baseUrl=that URL, model=MiniMax-M2.7 to /api/setup/ai-provider (matching existing aiProviderSchema)",
+        "TypeScript compiles cleanly: pnpm -r --filter='./apps/web' exec tsc --noEmit  → 0 errors on Step2AIProvider.tsx",
+        "Existing 'Skip for now' link and Back/Continue buttons retained; no visual regression to header/footer of Step 2"
       ]
     },
     {
-      "id": "US-INT-02",
-      "title": "Polymorphic config form covers oauth2, secret_text, basic_auth, custom_auth",
-      "passes": true,
+      "id": "US-WIZ-02",
+      "title": "docker/setup.sh post-install copy reflects the real 4-step wizard",
+      "passes": false,
       "acceptanceCriteria": [
-        "A new component (e.g. apps/web/src/modules/integrations/integration-config-form.tsx) renders the correct fields based on the integration's authType from the registry",
-        "oauth2 form: client_id, client_secret (password input + reveal toggle), shows copy-paste redirect URI helper, optional scopes display",
-        "secret_text form: single secret field (password input + reveal toggle), provider hint from registry (e.g. 'Get your API key from platform.openai.com/api-keys')",
-        "basic_auth form: username + password fields",
-        "custom_auth form: dynamic key/value pairs driven by the integration's customAuthFields registry definition (or graceful generic fallback if not declared)",
-        "Existing secrets are NEVER pre-filled in any password field; instead the form shows a 'Replace existing credential' affordance + masked tail of stored client_id where applicable",
-        "Form submit calls the correct admin endpoint per auth type; success closes the form, refreshes the list, and the row flips to CONFIGURED state",
-        "Validation: client_id/secret/api key non-empty, no trailing whitespace, length sanity-checked client-side and server-side"
+        "docker/setup.sh contains zero occurrences of '5-step', 'first app', or 'template gallery'",
+        "The post-install banner lists exactly the four real steps from WizardShell.tsx: Welcome, AI Provider, Sign-in, Plans & Billing",
+        "Bash syntax check passes: bash -n docker/setup.sh → exit 0"
       ]
     },
     {
-      "id": "US-INT-03",
-      "title": "Backend platform-level credential storage for non-OAuth auth types",
-      "passes": true,
+      "id": "US-MM-01",
+      "title": "MINIMAX_API_KEY env-var seeding across docker stack + setup-server.sh",
+      "passes": false,
       "acceptanceCriteria": [
-        "New migration adds platform_integration_credentials table: id, integration_id (unique), auth_type, credentials_encrypted (bytea), credentials_format ('pgp_sym' | 'envelope_v1'), created_by, created_at, updated_at. Mirrors the oauth_apps encryption pattern. Includes RLS policy that locks ALL access behind the API service role.",
-        "services/api/src/integrations/credential-vault.ts gains a platformCredentials API with get/list/upsert/delete that encrypts via pgp_sym_encrypt (and envelope_v1 when DOABLE_ENVELOPE_ENCRYPTION=1 with a deterministic platform KEK scope) consistent with how oauth_apps does it for global rows today",
-        "services/api/src/routes/integrations-admin.ts adds POST/DELETE/GET /integrations/admin/credentials behind platformAdminMiddleware; payload accepts authType + credentials JSON; never returns the secret in any response (returns clientId masked tail and updated_at only)",
-        "The catalog 'configured' flag now resolves true if oauth_apps OR platform_integration_credentials OR env vars provide credentials for that integration",
-        "The runtime resolution in connections-manager / vault-bridge prefers user > workspace > platform > env for non-OAuth too (matching today's oauth_apps order)",
-        "Contract test: POST /integrations/admin/credentials with a valid OpenAI secret, then GET /integrations/admin/credentials, asserts the response array contains the integration but DOES NOT contain the secret field; DELETE removes it",
-        "No 0.0.0.0 binds introduced. Migration is forward-only and idempotent (CREATE TABLE IF NOT EXISTS pattern consistent with other migrations)"
+        "docker-compose.yml api service env block has MINIMAX_API_KEY: ${MINIMAX_API_KEY:-} passthrough",
+        "docker/setup.sh writes MINIMAX_API_KEY= (empty default) into the AI block of docker/.env so admins can paste their key without editing compose",
+        "setup-server.sh (bare-metal path) writes MINIMAX_API_KEY=${MINIMAX_API_KEY:-} into the generated services/api/.env and apps/web/.env when present in the calling environment",
+        "When MINIMAX_API_KEY is set at first API boot AND platform_config.setup.ai_provider_key is unset, services/api boot path seeds setup.ai_provider=custom, setup.ai_provider_base_url=https://api.minimax.io/v1, setup.ai_model=MiniMax-M2.7, setup.ai_provider_key=<encrypted via setEncryptedConfig> using a system actor",
+        "GET /api/setup/status (as platform admin) after first boot with MINIMAX_API_KEY set reports fields_configured.ai_provider_key=true, ai_provider='custom', ai_provider_base_url='https://api.minimax.io/v1'",
+        "No plaintext key ever logged: grep -ri 'sk-cp-' services/api/src 2>/dev/null returns 0 hits"
       ]
     },
     {
-      "id": "US-INT-04",
-      "title": "Bulk select + bulk enable/disable + preset stacks",
-      "passes": true,
+      "id": "US-HET-01",
+      "title": "Hetzner Robot API discovery script (NON-destructive) for server #2987905",
+      "passes": false,
       "acceptanceCriteria": [
-        "Each integration row in the admin panel has a checkbox; each category section has a 'select all in category' checkbox",
-        "When >=1 row is selected, a sticky action bar appears with: 'Enable selected', 'Disable selected', and a 'Configure next' button that opens the config form for the first selected unconfigured integration (after submit, advances to the next)",
-        "3 preset stacks are exposed: 'Productivity (Google + Notion + Slack)', 'Dev (GitHub + Linear + Sentry + PagerDuty)', 'Marketing (Mailchimp + HubSpot + Stripe + Calendly)'. Clicking a preset selects those rows; admin still has to click Enable selected + configure each",
-        "Bulk enable calls /integrations/admin/platform-enabled in sequence (no new endpoint), shows per-row success/failure",
-        "lsp_diagnostics 0 errors on changed files; no regression in the existing single-row enable/disable flow",
-        "Bulk operations are guarded by platformAdminMiddleware on every request (no client-trust)"
+        "scripts/hetzner-provision.ps1 exists and accepts -ServerNumber 2987905 -Action discover. Reads HETZNER_ROBOT_USER and HETZNER_ROBOT_PASS from env (never logs them)",
+        "Discover mode: GETs https://robot-ws.your-server.de/server, parses JSON, prints { server_number, server_ip, status, dc } for the matching server",
+        "Rescue mode (-Action rescue) requires -Confirm switch; otherwise prints what it WOULD do (POST /boot/<ip>/rescue os=linux arch=64) without sending the request",
+        "Install mode (-Action installimage) and reset mode (-Action reset) both require -Confirm and additionally refuse to run if ServerNumber is not 2987905 (hard whitelist guard)",
+        "Script exits with non-zero status on missing creds, HTTP error, or server not found, and prints a single-line diagnostic to stderr in those cases"
       ]
     },
     {
-      "id": "US-INT-05",
-      "title": "Per-provider guided wizard for top providers + audit log + security review",
-      "passes": true,
+      "id": "US-HET-02",
+      "title": "End-to-end Hetzner test recipe markdown at C:/Users/gj/Documents/doable-hetzner-recipe.md",
+      "passes": false,
       "acceptanceCriteria": [
-        "A new file apps/web/src/modules/integrations/provider-setup-guides.ts exports a Map<integrationId, SetupGuide> with entries for at least: slack, google_sheets, google_calendar, gmail, notion, github (api), linear, stripe, hubspot, openai, anthropic, mailchimp, calendly, intercom, twilio. Each guide has: consoleUrl (deeplink), steps[] (3-5 short strings), requiredScopes[] (optional), troubleshooting[] (optional)",
-        "When a user opens Configure for an integration that has a guide, the form shows: step list, a 'Open provider console' button (target=_blank), a one-click 'Copy redirect URI' button, and the credential fields. Integrations without a guide get a generic fallback ('Paste your credentials from the provider')",
-        "After successful credential save, a 'Test connection' button appears that calls a new POST /integrations/admin/test endpoint (or extends an existing one). The endpoint exists and returns { ok: true, message } or { ok: false, error }. For OAuth, this verifies tokenUrl reachability + client_id is non-empty. For secret_text/basic_auth/custom_auth, it returns ok if credentials are stored (no upstream call required in v1).",
-        "Audit log: every create/update/delete on /integrations/admin/oauth-apps and /integrations/admin/credentials writes an audit row (existing audit_log infra). Field captured: actor user_id, integration_id, action, IP, user_agent. Secret values MUST NOT appear in audit log.",
-        "Architect review (THOROUGH tier) verifies: (a) no raw secret ever serialized in API response, (b) all admin endpoints behind platformAdminMiddleware, (c) RLS on platform_integration_credentials is restrictive, (d) audit log captures every credential mutation, (e) no new 0.0.0.0 binds, (f) the polymorphic config form does not leak existing secret values into the DOM"
+        "C:/Users/gj/Documents/doable-hetzner-recipe.md exists",
+        "Contains sections: Prereqs / Discover server IP / Rescue mode + SSH-key paste / installimage Ubuntu 24.04 autosetup / Reboot + reconnect / Clone repo / Run docker/setup.sh with MINIMAX_API_KEY exported / Smoke curl tests / Run testcases subset / Tear down (next reinstall)",
+        "Every command block is copy-pasteable verbatim (PowerShell + bash variants where relevant), with placeholder $env:HETZNER_ROBOT_USER / $env:HETZNER_ROBOT_PASS / $env:MINIMAX_API_KEY",
+        "Recipe NEVER embeds the real credentials or key — only placeholders + a 'rotate before sharing' warning at the top"
+      ]
+    },
+    {
+      "id": "US-TEST-01",
+      "title": "Local docker compose smoke + auth/api testcase pass",
+      "passes": false,
+      "acceptanceCriteria": [
+        "docker compose --env-file docker/.env up -d --build succeeds on Windows host (or WSL2) — all four containers (postgres, migrate-completed, api, ws, web) report healthy or running",
+        "curl http://127.0.0.1:4000/health returns HTTP 200 with JSON body containing 'ok'",
+        "First signup at http://127.0.0.1:3000/auth/register succeeds (empty users table → first signup becomes platform owner)",
+        "With MINIMAX_API_KEY exported before compose up, /api/setup/status after admin login reports fields_configured.ai_provider_key=true and ai_provider='custom'",
+        "Smoke subset of testcases/01-auth passes (>=8 of 10 acceptance cases) and is logged to testcases/99-runlog/DEPLOYLOG.md with UTC timestamp",
+        "Any failed test gets a bug entry filed at testcases/bugs/2026-05-16-<area>-<id>.md with steps to reproduce + evidence file path; a dedicated Opus 4.7 executor agent is launched per bug, fixes it, commits, and the smoke subset is rerun until green"
       ]
     }
   ]

@@ -160,6 +160,7 @@ if [ "$CONTAINER_MODE" = "1" ] || [ "$NON_INTERACTIVE" = "1" ] || ! [ -t 0 ]; th
   GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}"
   ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
   OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+  MINIMAX_API_KEY="${MINIMAX_API_KEY:-}"
   PUBLISH_PREFIX="${PUBLISH_PREFIX:-do-}"
   STRIPE_SECRET_KEY="${STRIPE_SECRET_KEY:-}"
   STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-}"
@@ -194,6 +195,7 @@ else
   echo "── Optional: AI API keys (press Enter to skip) ──"
   read -rp "Anthropic API Key: " ANTHROPIC_API_KEY
   read -rp "OpenAI API Key: " OPENAI_API_KEY
+  read -rp "MiniMax API Key (sk-cp-... for M2.7): " MINIMAX_API_KEY
 
   echo ""
   echo "── Optional: Stripe (press Enter to skip) ──"
@@ -716,6 +718,7 @@ COPILOT_CLI_PATH=
 COPILOT_CLI_URL=
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 OPENAI_API_KEY=${OPENAI_API_KEY}
+MINIMAX_API_KEY=${MINIMAX_API_KEY}
 
 # ─── Storage (S3-compatible) ───────────────────────────────
 S3_BUCKET=doable-uploads
@@ -1735,6 +1738,7 @@ check_creds "Google login + integrations" "GOOGLE_CLIENT_ID" "${GOOGLE_CLIENT_ID
 check_creds "GitHub login + repo import"  "GITHUB_CLIENT_ID" "${GITHUB_CLIENT_ID:-}" "https://github.com/settings/applications/new (callback: https://${API_DOMAIN}/auth/github/callback)"
 check_creds "Anthropic AI"                "ANTHROPIC_API_KEY" "${ANTHROPIC_API_KEY:-}" "https://console.anthropic.com/settings/keys"
 check_creds "OpenAI AI"                   "OPENAI_API_KEY" "${OPENAI_API_KEY:-}" "https://platform.openai.com/api-keys"
+check_creds "MiniMax AI"                  "MINIMAX_API_KEY" "${MINIMAX_API_KEY:-}" "https://platform.minimax.io/user-center/payment/token-plan"
 check_creds "Stripe billing"              "STRIPE_SECRET_KEY" "${STRIPE_SECRET_KEY:-}" "https://dashboard.stripe.com/apikeys (skip if you want bypass-mode)"
 if [ "$MISSING" -gt 0 ]; then
   echo ""

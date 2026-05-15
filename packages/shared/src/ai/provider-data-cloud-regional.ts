@@ -137,7 +137,7 @@ export const CLOUD_REGIONAL_PROVIDERS = [
     icon: "minimax",
     description: "MiniMax M2.x coding & reasoning models",
     capabilities: CLOUD_CAPS_FULL,
-    tags: ["china", "multimodal", "coding"],
+    tags: ["china", "multimodal", "coding", "popular"],
   },
   {
     id: "stepfun",

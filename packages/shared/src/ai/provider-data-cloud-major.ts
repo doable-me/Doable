@@ -218,7 +218,7 @@ export const CLOUD_MAJOR_PROVIDERS = [
     description: "Open-source models with fast inference",
     capabilities: CLOUD_CAPS_FULL,
     freeTier: "$25 free credits",
-    tags: ["free", "aggregator", "open-source"],
+    tags: ["free", "aggregator", "open-source", "popular"],
   },
   {
     id: "fireworks-ai",
@@ -238,7 +238,7 @@ export const CLOUD_MAJOR_PROVIDERS = [
     description: "Blazing-fast inference for open-source models",
     capabilities: CLOUD_CAPS_FULL,
     freeTier: "$1 free credits",
-    tags: ["free", "aggregator", "fast"],
+    tags: ["free", "aggregator", "fast", "popular"],
   },
   {
     id: "unify-ai",

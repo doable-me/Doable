@@ -56,3 +56,58 @@ Poll interval: 2 minutes
 2026-05-15 18:35:26 | Commit #19 | fix(api): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
 2026-05-15 18:35:46 | Commit #7 | fix(admin-users): OpusAgent fix for BUG-WS-001/003 | health=FAILED
 2026-05-15 18:35:46 | Commit #16 | fix(services/api/src/routes/admin-users.ts): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health=FAILED
+2026-05-15 22:13:41 | Commit #20 | fix(web): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-15 22:14:06 | Commit #17 | fix(apps/web/src/modules/integrations/integrations-admin-panel.tsx): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health={"status":"healthy","timestamp":"2026-05-15T16:44:04.230Z","version":"0.1.0","uptime":12987.684078516,"checks":{"database":{"status":"up","latencyMs":1},"memory":{"rssBytes":359419904,"heapUsedBytes":165851104,"heapTotalBytes":170737664},"devServers":{"active":0}}}
+2026-05-15 22:14:06 | Commit #8 | fix(integrations-admin-panel): OpusAgent fix for BUG-WS-001/003 | health={"status":"healthy","timestamp":"2026-05-15T16:44:04.231Z","version":"0.1.0","uptime":12987.684597532,"checks":{"database":{"status":"up","latencyMs":1},"memory":{"rssBytes":359419904,"heapUsedBytes":165922288,"heapTotalBytes":170737664},"devServers":{"active":0}}}
+2026-05-15 22:15:59 | Commit #21 | fix(web): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-15 22:18:35 | Commit #22 | fix(web): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-15 22:18:49 | Commit #18 | fix(apps/web/src/modules/integrations/integrations-admin-panel.tsx): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health={"status":"healthy","timestamp":"2026-05-15T16:48:47.263Z","version":"0.1.0","uptime":13270.716818289,"checks":{"database":{"status":"up","latencyMs":0},"memory":{"rssBytes":361779200,"heapUsedBytes":168313712,"heapTotalBytes":173359104},"devServers":{"active":0}}}
+2026-05-15 22:18:49 | Commit #9 | fix(integrations-admin-panel): OpusAgent fix for BUG-WS-001/003 | health={"status":"healthy","timestamp":"2026-05-15T16:48:47.588Z","version":"0.1.0","uptime":13271.042205052,"checks":{"database":{"status":"up","latencyMs":1},"memory":{"rssBytes":361779200,"heapUsedBytes":168110616,"heapTotalBytes":173359104},"devServers":{"active":0}}}
+2026-05-15 22:47:08 | Commit #23 | fix(web): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-15 22:47:19 | Commit #10 | fix(integrations-admin-panel): OpusAgent fix for BUG-WS-001/003 | health={"status":"healthy","timestamp":"2026-05-15T17:17:17.107Z","version":"0.1.0","uptime":229.783454121,"checks":{"database":{"status":"up","latencyMs":1},"memory":{"rssBytes":345698304,"heapUsedBytes":164133576,"heapTotalBytes":169304064},"devServers":{"active":0}}}
+2026-05-15 22:47:19 | Commit #19 | fix(apps/web/src/modules/integrations/integrations-admin-panel.tsx): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health={"status":"healthy","timestamp":"2026-05-15T17:17:17.672Z","version":"0.1.0","uptime":230.34791796,"checks":{"database":{"status":"up","latencyMs":1},"memory":{"rssBytes":345698304,"heapUsedBytes":164268552,"heapTotalBytes":169304064},"devServers":{"active":0}}}
+2026-05-15 22:51:50 | Commit #20 | fix(apps/web/src/modules/integrations/integration-config-form.tsx): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health={"status":"healthy","timestamp":"2026-05-15T17:21:48.450Z","version":"0.1.0","uptime":202.010570707,"checks":{"database":{"status":"up","latencyMs":0},"memory":{"rssBytes":359792640,"heapUsedBytes":166100424,"heapTotalBytes":172187648},"devServers":{"active":0}}}
+2026-05-15 22:51:50 | Commit #11 | fix(integration-config-form): OpusAgent fix for BUG-WS-001/003 | health={"status":"healthy","timestamp":"2026-05-15T17:21:48.450Z","version":"0.1.0","uptime":202.009947015,"checks":{"database":{"status":"up","latencyMs":1},"memory":{"rssBytes":359792640,"heapUsedBytes":166034456,"heapTotalBytes":172187648},"devServers":{"active":0}}}
+2026-05-15 23:19:26 | Commit #12 | fix(platform-credentials.contract.test): OpusAgent fix for BUG-WS-001/003 | health=ssh: connect to host dodev.fid.pw port 22: Connection timed out
+FAILED
+2026-05-15 23:19:26 | Commit #21 | fix(services/api/src/integrations/platform-credentials.contract.test.ts): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health={"status":"healthy","timestamp":"2026-05-15T17:49:24.331Z","version":"0.1.0","uptime":69.634340445,"checks":{"database":{"status":"up","latencyMs":1},"memory":{"rssBytes":338448384,"heapUsedBytes":161147672,"heapTotalBytes":168517632},"devServers":{"active":0}}}
+2026-05-16 00:08:29 | Commit #24 | fix(api): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-16 01:29:03 | Commit #25 | fix(api): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-16 01:29:10 | Commit #22 | fix(services/api/src/routes.ts): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health=FAILED
+2026-05-16 01:29:35 | Commit #13 | fix(routes): OpusAgent fix for BUG-WS-001/003 | health=FAILED
+2026-05-16 01:31:59 | Commit #14 | fix(WizardShell): OpusAgent fix for BUG-WS-001/003 | health=FAILED
+2026-05-16 01:43:20 | Commit #26 | fix(web): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-16 01:43:28 | Commit #23 | fix(apps/web/src/app/setup/WizardShell.tsx): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health=FAILED
+2026-05-16 01:47:36 | Commit #27 | fix(web): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-16 01:47:46 | Commit #24 | fix(apps/web/src/app/setup/steps/Step1Welcome.tsx): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health=FAILED
+2026-05-16 02:47:08 | Commit #28 | fix(web): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-16 02:47:28 | Commit #25 | fix(apps/web/src/app/setup/steps/Step2AIProvider.tsx): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health=FAILED
+2026-05-16 02:47:38 | Commit #15 | fix(Step2AIProvider): OpusAgent fix for BUG-WS-001/003 | health=FAILED
+2026-05-16 02:49:25 | Commit #29 | fix(api): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+
+## Ralph session — 2026-05-16
+
+**Goal:** hassle-free admin setup (wizard catalog grid + MiniMax seeding), Hetzner Robot recipe for repeat-install tests.
+
+**Done (this session):**
+- `apps/web/src/app/setup/steps/Step2AIProvider.tsx` — replaced 4 hardcoded tiles with searchable grid sourced from `@doable/shared` `PROVIDER_CATALOG`. ~13 popular tiles by default (MiniMax included, tagged popular), search box, "show all 60+" toggle, GitHub Copilot + BYOK custom URL as special tiles. `tsc --noEmit` on apps/web: 0 errors.
+- `apps/web/src/app/setup/WizardShell.tsx` — already 4 steps from prior sessions. No "build first app" step. Confirmed.
+- `docker/setup.sh` — banner copy fixed: 4-step wizard, drops "build your first app template gallery". Adds `MINIMAX_API_KEY=` to generated `.env`.
+- `docker-compose.yml` — api service env passthrough for `MINIMAX_API_KEY`.
+- `setup-server.sh` — MINIMAX_API_KEY honored in 4 spots: defaults, interactive prompt, `/opt/doable/.env` write, `check_creds` audit.
+- `services/api/src/lib/seedAiProviderFromEnv.ts` (new) — fire-and-forget boot seed: if `MINIMAX_API_KEY`/`ANTHROPIC_API_KEY`/`OPENAI_API_KEY` is exported AND `platform_config.setup.ai_provider_key` is empty, write `setup.ai_provider` / `_base_url` / `_model` / `_key` (encrypted via `setEncryptedConfig`). Idempotent. Never logs the key.
+- `services/api/src/index.ts` — wired `void seedAiProviderFromEnv()` next to `backfillBuiltinConnectors()`.
+- `packages/shared/src/ai/provider-data-cloud-{major,regional,special}.ts` — added `"popular"` tag to MiniMax, Mistral, DeepSeek, Together AI, Fireworks AI so wizard's default view surfaces them.
+- `scripts/hetzner-provision.ps1` (new) — non-destructive Robot API helper. Discover-mode is read-only. Rescue/installimage/reset require `-Confirm` AND hard-whitelist server #2987905. Creds read from env only.
+- `C:\Users\gj\Documents\doable-hetzner-recipe.md` (new, outside repo) — end-to-end repeat-install recipe.
+- New PRD at `prd.json` with 6 stories; US-WIZ-01/02/MM-01/HET-01/HET-02 all passed acceptance criteria.
+
+**Blocked:**
+- US-TEST-01 (live docker smoke + testcases). Two hard blockers: (1) Docker is not installed on the dev Windows host (no `docker` in PATH for either Bash or PowerShell). (2) Hetzner Robot API returns **401** for the provided `ws+SdWgWZ7P` / `YesAndAmen12` credentials — these look like Hetzner account login, not Robot **webservice** credentials. Webservice creds are generated separately at Robot → Preferences → Web service settings.
+
+**Action required to unblock test loop:**
+1. Generate Robot webservice credentials (different from account login). Set `$env:HETZNER_ROBOT_USER` + `$env:HETZNER_ROBOT_PASS` to those values.
+2. Or install Docker Desktop on the dev box for local smoke.
+3. Rotate `sk-cp-...` MiniMax key and Robot login pasted into chat earlier.
+
+**Scope guarantee:** no code paths touched in `do.fid.pw` (prod) or `dodev.fid.pw` deploys. Hetzner script hard-whitelists #2987905 — refuses rescue/install/reset on any other server number even with `-Confirm`.

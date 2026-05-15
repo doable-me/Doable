@@ -181,6 +181,7 @@ REDIS_URL=
 # ─── AI (set at least one for AI features) ────────
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
+MINIMAX_API_KEY=
 
 # ─── OAuth (optional) ─────────────────────────────
 GITHUB_CLIENT_ID=
@@ -327,9 +328,13 @@ echo "    1. Open ${APP_URL}/signup in your browser."
 echo "       The FIRST account to sign up becomes the platform owner"
 echo "       automatically — no SSH, no SQL, no .env editing required."
 echo ""
-echo "    2. You'll be guided through a 5-step setup wizard at /setup:"
-echo "       AI provider key, optional Google / GitHub sign-in, integrations,"
-echo "       and a 'build your first app' template gallery."
+echo "    2. You'll be guided through a 4-step setup wizard at /setup:"
+echo "       Welcome → AI provider (60+ providers including MiniMax, OpenAI,"
+echo "       Anthropic, OpenRouter, Groq, Ollama …) → Google / GitHub sign-in →"
+echo "       Plans & Billing. End-users build apps from the dashboard later."
+echo ""
+echo "       Tip: export MINIMAX_API_KEY (or ANTHROPIC_API_KEY / OPENAI_API_KEY)"
+echo "       before re-running this script and Step 2 will already be configured."
 echo ""
 if [ "$MODE" != "domain" ]; then
   echo -e "  ${YELLOW}Note: Self-signed SSL — browsers will show a certificate warning.${NC}"
