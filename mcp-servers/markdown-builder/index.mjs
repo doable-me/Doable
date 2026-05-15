@@ -178,7 +178,7 @@ function buildPreviewHtml(markdownContent, title) {
 <style>
   *, html { box-sizing: border-box; }
   html { background: transparent; }
-  body { margin: 0; padding: 24px 32px; font: 15px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color: #1a1a2e; background: #ffffff; max-width: 820px; margin-left: auto; margin-right: auto; overflow: hidden; }
+  body { margin: 0; padding: 24px 32px; font: 15px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color: #1a1a2e; background: #ffffff; max-width: 820px; margin-left: auto; margin-right: auto; }
   h1, h2, h3, h4, h5, h6 { color: #1a1a2e; line-height: 1.25; margin: 1.6em 0 0.6em 0; font-weight: 600; }
   h1 { font-size: 2em; border-bottom: 1px solid #f0f0f5; padding-bottom: .35em; margin-top: 0; }
   h2 { font-size: 1.5em; border-bottom: 1px solid #f0f0f5; padding-bottom: .25em; }
