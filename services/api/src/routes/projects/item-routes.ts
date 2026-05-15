@@ -303,6 +303,12 @@ projectItemRoutes.delete("/:id", async (c) => {
 });
 
 // ─── Archive / Unarchive Project ───────────────────────────
+// NOTE: The `project_status` enum on dev/prod is `{creating, draft, published, error}`
+// — there is NO `archived` value. Archival is represented exclusively by
+// `deleted_at IS NOT NULL`; the `status` column stays at whatever value it
+// already had. Previously we SET status='archived' which raised
+// "invalid input value for enum project_status" and surfaced as 500
+// (BUG-API-005 regression after a172e882).
 projectItemRoutes.post("/:id/archive", async (c) => {
   const id = c.req.param("id");
   const userId = c.get("userId");
@@ -313,14 +319,14 @@ projectItemRoutes.post("/:id/archive", async (c) => {
     return c.json({ error: "Only workspace owners and admins can archive projects" }, 403);
   }
 
-  const [updated] = await sql<{ id: string; status: string }[]>`
+  const [updated] = await sql<{ id: string; status: string; archived: boolean }[]>`
     UPDATE projects
-    SET status = 'archived', deleted_at = now(), updated_at = now()
+    SET deleted_at = now(), updated_at = now()
     WHERE id = ${id}
-    RETURNING id, status
+    RETURNING id, status, (deleted_at IS NOT NULL) AS archived
   `;
   if (!updated) return c.json({ error: "Project not found" }, 404);
-  return c.json({ data: { id: updated.id, status: updated.status } });
+  return c.json({ data: { id: updated.id, status: updated.status, archived: updated.archived } });
 });
 
 projectItemRoutes.post("/:id/unarchive", async (c) => {
@@ -333,14 +339,14 @@ projectItemRoutes.post("/:id/unarchive", async (c) => {
     return c.json({ error: "Only workspace owners and admins can unarchive projects" }, 403);
   }
 
-  const [updated] = await sql<{ id: string; status: string }[]>`
+  const [updated] = await sql<{ id: string; status: string; archived: boolean }[]>`
     UPDATE projects
-    SET status = 'draft', deleted_at = NULL, updated_at = now()
+    SET deleted_at = NULL, updated_at = now()
     WHERE id = ${id}
-    RETURNING id, status
+    RETURNING id, status, (deleted_at IS NOT NULL) AS archived
   `;
   if (!updated) return c.json({ error: "Project not found" }, 404);
-  return c.json({ data: { id: updated.id, status: updated.status } });
+  return c.json({ data: { id: updated.id, status: updated.status, archived: updated.archived } });
 });
 
 // ─── Duplicate Project ──────────────────────────────────────
