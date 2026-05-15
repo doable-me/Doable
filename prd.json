@@ -47,7 +47,7 @@
     {
       "id": "US-R17-05",
       "title": "Commit, push, deploy on dodev, claude-in-chrome smoke",
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Atomic commit on a fix branch; PR opened against main; squash-merged",
         "dodev.fid.pw: sudo -u doable git pull --ff-only origin main; tsx watch picks up the API change automatically; web rebuild + tmux:0 restart for the apps/web change",
