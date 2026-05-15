@@ -1,10 +1,78 @@
-import { mkdir, cp, rm, readdir, stat } from "node:fs/promises";
+import { mkdir, cp, rm, readdir, stat, access } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import type { DeployAdapter, DeployInput, DeployResult } from "../adapter.js";
 import { getEffectiveCfApiToken } from "../../lib/cloudflare-token.js";
+
+/**
+ * Sentinel error thrown when SITES_DIR is unreachable/unwritable from the
+ * API process. Distinct from a build failure or a user-content problem —
+ * always indicates server misconfiguration (e.g. `SITES_DIR` in `.env`
+ * disagrees with `ReadWritePaths=` in the systemd unit so mkdir hits a
+ * read-only filesystem). The trigger route maps this to a 503 with a
+ * clear, non-leaky message; the original ENOENT/EACCES is logged but
+ * never surfaced to the end user.
+ *
+ * Root cause for BUG-2026-05-14-publish-001 / BUG-PUB-004 follow-up:
+ * dev was provisioned with SITES_DIR=/var/lib/doable-sites but the
+ * doable.service unit's ReadWritePaths= only allowlists /data/sites.
+ * Under ProtectSystem=strict, writes outside ReadWritePaths surface as
+ * ENOENT (not EACCES) when the kernel mounts the path read-only —
+ * pre-flighting catches both modes uniformly.
+ */
+export class SitesDirUnwritableError extends Error {
+  readonly sitesDir: string;
+  readonly cause?: Error;
+  constructor(sitesDir: string, cause?: Error) {
+    super(
+      `SITES_DIR is not writable from the API process: ${sitesDir}. ` +
+        `Either the directory does not exist or it is not listed in the ` +
+        `doable.service ReadWritePaths= directive. Operators: align the ` +
+        `SITES_DIR env var with the systemd ReadWritePaths= list, run ` +
+        `\`mkdir -p $SITES_DIR && chown doable:doable $SITES_DIR\` on the ` +
+        `host, then \`systemctl daemon-reload && systemctl restart doable\`.`,
+    );
+    this.name = "SitesDirUnwritableError";
+    this.sitesDir = sitesDir;
+    this.cause = cause;
+  }
+}
+
+/**
+ * Probe whether SITES_DIR exists and is writable from this process. Used
+ * before any per-publish work so we fail fast with a clear actionable
+ * error instead of a confusing mid-pipeline mkdir ENOENT that leaks the
+ * full filesystem path to the user (BUG-2026-05-14-publish-001).
+ *
+ * Strategy: try to create + remove a probe directory under SITES_DIR. We
+ * don't trust existsSync(SITES_DIR) alone because systemd's
+ * ProtectSystem=strict can mount the parent read-only while the directory
+ * itself exists (mkdir of a child still fails). A real mkdir attempt is
+ * the only reliable signal.
+ */
+export async function assertSitesDirWritable(sitesDir: string): Promise<void> {
+  const probe = path.join(
+    sitesDir,
+    `.writable-probe-${process.pid}-${Date.now().toString(36)}`,
+  );
+  try {
+    await mkdir(sitesDir, { recursive: true });
+    await access(sitesDir, fsConstants.W_OK);
+    await mkdir(probe, { recursive: true });
+  } catch (err) {
+    throw new SitesDirUnwritableError(
+      sitesDir,
+      err instanceof Error ? err : new Error(String(err)),
+    );
+  } finally {
+    // Best-effort cleanup — if probe creation failed there's nothing to remove,
+    // and if removal fails we don't want to mask the real error.
+    await rm(probe, { recursive: true, force: true }).catch(() => {});
+  }
+}
 
 /**
  * Sites directory: where published static sites are served from.
@@ -109,6 +177,12 @@ export class DoableCloudAdapter implements DeployAdapter {
     const { siteSubdomain } = computeSitePublishLocation(subdomain, environment);
     const siteDir = path.join(SITES_DIR, siteSubdomain);
     const targetDir = path.join(siteDir, envDir);
+
+    // Pre-flight: ensure SITES_DIR is reachable + writable from the API
+    // process. Catches systemd ProtectSystem=strict / ReadWritePaths drift
+    // before we leak a half-baked ENOENT path string to the user.
+    // BUG-2026-05-14-publish-001 / BUG-PUB-004 (deeper root cause).
+    await assertSitesDirWritable(SITES_DIR);
 
     try {
       // Ensure site directory exists
