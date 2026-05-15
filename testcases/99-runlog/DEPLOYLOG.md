@@ -44,3 +44,6 @@ Poll interval: 2 minutes
 2026-05-15 09:28:17 | Commit #14 | fix(api): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
 2026-05-15 09:30:29 | Commit #15 | fix(api): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
 2026-05-15 09:30:31 | Commit #3 | fix(rate-limit): OpusAgent fix for BUG-WS-001/003 | health=FAILED
+2026-05-15 09:45:12 | Commit #16 | fix(api): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-15 09:45:18 | Commit #4 | fix(rate-limit): OpusAgent fix for BUG-WS-001/003 | health=FAILED
+2026-05-15 09:45:19 | Commit #13 | fix(services/api/src/middleware/rate-limit.ts): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health=FAILED

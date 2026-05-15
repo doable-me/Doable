@@ -3,7 +3,7 @@
 - **Severity**: P1 (high — the marquee PDF-attach feature does not work end-to-end)
 - **Env**: dev (dev-api.doable.me / dev.doable.me)
 - **Filed**: 2026-05-14 (Ralph R11)
-- **Status**: DEPLOY-PENDING-FULL-E2E-VERIFICATION (2026-05-15) — fix branch `fix/r11-pdf-attachment-prompt-and-persist` (commit `fecc8c1`) merged to main and deployed via PR #19; full 60s SSE+AI end-to-end probe not re-run in R12 (timeout constraint); code is live but AI-generates-from-PDF outcome unconfirmed
+- **Status**: FIXED — R13 verified 2026-05-15. Fix branch `fix/r11-pdf-attachment-prompt-and-persist` (commit `fecc8c1`) merged via PR #19 + PR #35 + PR #39. Full E2E confirmed: prompt_tokens=57,979, App.tsx=3,731 chars with verbatim SRS content ("Amazing Lunch Indicator", 9 features from §2.2, Restaurant entity fields from §3-§4), history=2 messages, version sha committed. See `testcases/evidence/dev/r13-pdf-e2e-verify.md`.
 - **User report**: "when I tried to attach a large pdf and told it to create an app, it created something without looking at the pdf I attached" (uniquegodwin@gmail.com)
 - **Reproduced by**: `scripts/r11-pdf-attach-test.ts` against `dev-api.doable.me`
 

@@ -1,0 +1,18 @@
+{
+  "project_id": "ff206268-2992-43aa-a6c8-bcd7bf7b38f3",
+  "prompt_tokens": 57979,
+  "completion_tokens": 1324,
+  "tool_call_count": 1,
+  "response_chars": 3731,
+  "done_received": true,
+  "n_sse_events": 61,
+  "T_total_ms": 37044,
+  "history_messages": 2,
+  "app_tsx_snippet": "import { MapPin, Search, List, Navigation, Globe, User, Utensils } from \"lucide-react\";\n\nconst mainFeatures = [\n  \"Search for restaurants by price, destination, restaurant type, and specific dish\",\n  \"Free-text search through restaurant name, description, address, type, or menu\",\n  \"View search results in list view or map view\",\n  \"Navigate to restaurants using GPS navigation\",\n  \"View detailed restaurant information including name, address, phone, email, type, price, description, and menu\",\n  \"Manage restaurant information via web portal\",\n  \"User registration and login with profile management\",\n  \"Filter and sort search results\",\n  \"Multi-language support: Swedish, English, Spanish, and French\"\n];\n\nconst restaurantEntity = {\n  entity: \"Restaurant\",\n  fields: {\n    restaurant_name: \"strin",
+  "app_is_splash": false,
+  "srs_terms_found": [
+    "Restaurant",
+    "Lunch",
+    "Indicator"
+  ]
+}
