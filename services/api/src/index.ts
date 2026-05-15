@@ -51,6 +51,7 @@ import { serve } from "@hono/node-server";
 import { initDocore, shutdownDocore } from "./ai/docore-bridge.js";
 import { initEmailService, stopEmailService } from "./lib/email/index.js";
 import { backfillBuiltinConnectors } from "./mcp/builtin-connectors.js";
+import { seedAiProviderFromEnv } from "./lib/seedAiProviderFromEnv.js";
 import { startMarketplaceFeaturedRefresher } from "./jobs/marketplace-featured-refresher.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -443,6 +444,11 @@ await initEmailService(sql).catch((err) => {
 // Runs once per startup; per-workspace state is tracked in
 // workspace_builtin_provisioned so user deletions are respected.
 void backfillBuiltinConnectors();
+
+// Bootstrap the setup wizard from env vars when the admin exported a key
+// before starting the API (e.g. MINIMAX_API_KEY=... docker compose up). Never
+// overwrites an existing platform_config.setup.ai_provider_key.
+void seedAiProviderFromEnv();
 
 // Refresh the featured-listings/discover materialised views every 5 min.
 // Cheap (sub-second on small datasets) and avoids stale featured strips.
