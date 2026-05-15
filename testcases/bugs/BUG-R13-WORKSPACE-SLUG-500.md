@@ -4,7 +4,7 @@
 **Severity**: P2  
 **Date**: 2026-05-15  
 **Found by**: R13 matrix run  
-**Status**: FIXED (pending commit hash; branch `fix/r13-workspace-slug-409`)
+**Status**: FIXED in a10ee048 (branch `fix/r13-workspace-slug-409`)
 
 ## Summary
 
