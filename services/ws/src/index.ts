@@ -202,6 +202,18 @@ const server = createServer(async (req, res) => {
 
   // ─── Internal: check if project has active collaborators ───
   if (req.method === "GET" && req.url?.startsWith("/internal/collab-active/")) {
+    // BUG-EDITOR-002 (follow-up): like /internal/presence/:id, this endpoint
+    // leaks per-project state (active flag + connected-user count) to any
+    // unauthenticated caller that reaches dev-ws.doable.me. The only
+    // legitimate caller is services/api (yjs-bridge.isCollaborationActive),
+    // which already sends X-Internal-Secret. Gate it the same way the other
+    // /internal/* routes are gated.
+    const secret = req.headers["x-internal-secret"];
+    if (secret !== INTERNAL_SECRET) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
     const projectId = req.url.split("/internal/collab-active/")[1];
     const room = rooms.get(projectId ?? "");
     const active = room ? !room.isEmpty : false;
