@@ -9,16 +9,17 @@ import { Step1Welcome } from "./steps/Step1Welcome";
 import { Step2AIProvider } from "./steps/Step2AIProvider";
 import { Step3SignInProviders } from "./steps/Step3SignInProviders";
 import { Step4Integrations } from "./steps/Step4Integrations";
-import { Step5BuildFirstApp } from "./steps/Step5BuildFirstApp";
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 4;
 
+// The wizard targets operators installing Doable for their team — workspace
+// identity, AI key, sign-in providers, plans & billing. Building a first app
+// belongs in the dashboard for end-users, not in the install flow.
 const STEP_LABELS = [
   "Welcome",
   "AI Provider",
   "Sign-in",
-  "Integrations",
-  "First App",
+  "Plans & Billing",
 ];
 
 export function WizardShell() {
@@ -158,8 +159,14 @@ export function WizardShell() {
           )}
           {step === 2 && <Step2AIProvider {...stepProps} />}
           {step === 3 && <Step3SignInProviders {...stepProps} />}
-          {step === 4 && <Step4Integrations {...stepProps} />}
-          {step === 5 && <Step5BuildFirstApp onComplete={handleComplete} onBack={handleBack} />}
+          {step === 4 && (
+            <Step4Integrations
+              onNext={handleComplete}
+              onBack={handleBack}
+              onSkip={handleComplete}
+              isFinalStep
+            />
+          )}
         </div>
       </main>
 

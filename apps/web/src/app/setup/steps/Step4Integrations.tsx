@@ -10,11 +10,13 @@ interface StepProps {
   onNext: () => void;
   onBack: () => void;
   onSkip: () => void;
+  /** When true, the primary button label switches to "Finish setup". */
+  isFinalStep?: boolean;
 }
 
 type SaveStatus = "idle" | "saving" | "success" | "error";
 
-export function Step4Integrations({ onNext, onBack, onSkip }: StepProps) {
+export function Step4Integrations({ onNext, onBack, onSkip, isFinalStep }: StepProps) {
   // Billing
   const [showBilling, setShowBilling] = useState(false);
   const [stripeSecret, setStripeSecret] = useState("");
@@ -228,7 +230,7 @@ export function Step4Integrations({ onNext, onBack, onSkip }: StepProps) {
             Skip for now
           </button>
           <Button onClick={onNext} className="bg-brand-600 text-white hover:bg-brand-500 gap-2">
-            Continue <ArrowRight className="h-4 w-4" />
+            {isFinalStep ? "Finish setup" : "Continue"} <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
       </div>
