@@ -55,16 +55,26 @@ export function getTrustedClientIp(c: any): string {
 // every rateLimiter() instance is a no-op. Used during QA campaigns so the matrix
 // can hammer auth/login/chat endpoints without 429-flooding. Upstream CF Tunnel
 // rate-limit + MFA + JWT verify + RLS + CSP are all independent and unaffected.
-// Intended for DEV only — leaving this on in prod would remove brute-force
-// protection on login/forgot-password/MFA verify.
+// FAIL-CLOSED in production: if RATE_LIMIT_DISABLED is set when NODE_ENV is
+// production, the API refuses to start. This prevents a misconfigured .env
+// from silently disabling brute-force protection on login/forgot-password/
+// MFA verify in prod (architect verification P3 follow-up).
 const RATE_LIMIT_DISABLED = ["true", "1", "yes"].includes(
   (process.env.RATE_LIMIT_DISABLED ?? "").toLowerCase()
 );
 if (RATE_LIMIT_DISABLED) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "[rate-limit] RATE_LIMIT_DISABLED=true is set with NODE_ENV=production. " +
+        "Refusing to start — this would disable login/forgot-password/MFA " +
+        "brute-force protection in prod. Unset RATE_LIMIT_DISABLED in your .env " +
+        "or set NODE_ENV=development if this is a non-prod environment."
+    );
+  }
   // eslint-disable-next-line no-console
   console.warn(
     "[rate-limit] RATE_LIMIT_DISABLED=true — every rateLimiter() is a no-op. " +
-      "Intended for QA on dev only. Do NOT enable in production."
+      "Intended for QA on dev only. Production startup will refuse if this is set."
   );
 }
 
