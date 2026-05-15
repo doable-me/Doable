@@ -90,7 +90,11 @@ const RATE_LIMITED_PATHS = new Set([
 ]);
 
 // Routes intentionally returning 200 even for invalid auth/payload.
-const IDEMPOTENT_PATHS = new Set(["/auth/logout"]);
+// Idempotent endpoints accept arbitrary bodies (including empty/junk/oversized) and
+// still return 200/204. R13 matrix flagged `/auth/mfa/enroll/start` because the
+// handler ignores any request body by design — adding it here so negative-payload
+// probes don't pollute UNEXPECTED-STATUS.
+const IDEMPOTENT_PATHS = new Set(["/auth/logout", "/auth/mfa/enroll/start"]);
 
 // ---------- route catalog ----------
 //
@@ -223,9 +227,17 @@ const ROUTES: RouteSpec[] = [
     expectByAuth: { anon: [401], "qa-owner": [200, 403], "qa-admin": [403], "qa-member": [403] } },
   { verb: "GET", path: "/admin/plan-limits", group: "admin", requiresAuth: true,
     expectByAuth: { anon: [401], "qa-owner": [200, 403], "qa-admin": [403], "qa-member": [403] } },
+  // R14: bare /admin/tools has no index handler (only /admin/tools/modes is registered).
+  // 404 is correct server behaviour — accept it so the harness doesn't flag a server-correct
+  // path as a bug. Real admin tooling lives under /admin/tools/<sub>.
   { verb: "GET", path: "/admin/tools", group: "admin", requiresAuth: true,
-    expectByAuth: { anon: [401], "qa-owner": [200, 403], "qa-admin": [403], "qa-member": [403] } },
+    expectByAuth: { anon: [401], "qa-owner": [200, 403, 404], "qa-admin": [403, 404], "qa-member": [403, 404] } },
   { verb: "GET", path: "/admin/email/config", group: "admin", requiresAuth: true,
+    expectByAuth: { anon: [401], "qa-owner": [200, 403, 404], "qa-admin": [403, 404], "qa-member": [403, 404] } },
+  // R14: DELETE /admin/email/config is a real registered handler (deactivates DB email config,
+  // falls back to env vars). Model it so wrong-verb probes from GET /admin/email/config don't
+  // mis-classify the 200 as UNEXPECTED.
+  { verb: "DELETE", path: "/admin/email/config", group: "admin", requiresAuth: true,
     expectByAuth: { anon: [401], "qa-owner": [200, 403, 404], "qa-admin": [403, 404], "qa-member": [403, 404] } },
 
   // ---- notifications (workspaceId query required) ----
@@ -281,7 +293,11 @@ function buildAssertions(): Assertion[] {
       for (const role of writeRoles) {
         for (const pc of ["empty", "invalid-shape", "junk", "oversized"] as const) {
           let expect: number[];
-          if (idempotent) {
+          if (idempotent && role === "anon" && r.requiresAuth) {
+            // Idempotent body handling still requires auth — anon hits 401
+            // before reaching the idempotent path (e.g. /auth/mfa/enroll/start).
+            expect = [401, 429];
+          } else if (idempotent) {
             expect = [200, 204, 400, 415, 422, 429];
           } else if (role === "anon") {
             expect = rateLimited ? [400, 401, 415, 422, 429] : [401, 429];
@@ -304,12 +320,16 @@ function buildAssertions(): Assertion[] {
     }
 
     // 3. wrong-verb probes (method-not-allowed) — pick the opposite verb class.
-    // Skip GET-as-wrong-verb when the same path ALSO has a real GET registered
-    // (e.g. /projects has both GET and POST; a wrong-verb GET would hit the
-    // real GET handler and return 200, polluting UNEXPECTED).
-    const hasGet = ROUTES.some(x => x.path === r.path && x.verb === "GET");
-    const wrongVerbs: ("GET" | "POST" | "PUT" | "DELETE" | "PATCH")[] =
-      r.verb === "GET" ? ["POST", "DELETE"] : (hasGet ? [] : ["GET"]);
+    // R14: generalised — for any candidate wrong-verb, if the SAME path has that
+    // verb registered as a real route elsewhere in ROUTES, skip the probe (would
+    // hit the real handler and pollute UNEXPECTED). Previously only hasGet was
+    // checked; this missed DELETE /admin/email/config (a real handler) being
+    // probed as wrong-verb from GET /admin/email/config and returning 200.
+    const candidateWrongVerbs: ("GET" | "POST" | "PUT" | "DELETE" | "PATCH")[] =
+      r.verb === "GET" ? ["POST", "DELETE"] : ["GET"];
+    const wrongVerbs = candidateWrongVerbs.filter(
+      (wv) => !ROUTES.some((x) => x.path === r.path && x.verb === wv)
+    );
     for (const wv of wrongVerbs) {
       for (const role of ["anon", "qa-owner"] as const) {
         const expect = role === "anon" ? [401, 404, 405] : [400, 401, 403, 404, 405, 415, 422];
@@ -381,7 +401,11 @@ function buildAssertions(): Assertion[] {
     const isIdempotent = IDEMPOTENT_PATHS.has(r.path);
     for (const role of ["anon", "qa-owner"] as const) {
       let expect: number[];
-      if (isIdempotent) {
+      if (isIdempotent && role === "anon" && r.requiresAuth) {
+        // Idempotent body handling still requires auth — anon hits 401 before
+        // reaching the idempotent path (parallels the pass-#2 anon-auth carve-out).
+        expect = [401, 429];
+      } else if (isIdempotent) {
         expect = [200, 204, 400, 415, 422, 429];
       } else if (role === "anon") {
         expect = isRateLimited ? [400, 401, 415, 422, 429] : [400, 401, 415];

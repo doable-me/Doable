@@ -1,65 +1,49 @@
 {
-  "task": "Ralph R13 (2026-05-15): close R12 carry-overs + retest dev for any new bugs surfaced after R12 deploy. Rate limits stay OFF on dodev; NO security weakening. Sonnet for testing, Opus for root cause + fix. Commit, push, deploy to dodev. Never bind 0.0.0.0. Never touch prod.",
+  "task": "Ralph R14 (2026-05-15): close R13's 3 P3 harness-expectation gaps so the matrix gives clean signal; re-run + surface any newly-visible bugs; fix new P0/P1. Rate limits stay OFF on dodev; NO security weakening. Sonnet for testing, Opus for root cause + fix. Commit, push, deploy. Never bind 0.0.0.0. Never touch prod.",
   "stories": [
     {
-      "id": "US-R13-01",
-      "title": "Run BUG-R11-PDF-ATTACHMENT-IGNORED-001 full E2E probe with longer wall-clock budget",
+      "id": "US-R14-01",
+      "title": "Update scripts/r10-api-matrix.ts to fix 3 P3 expectation gaps",
       "passes": false,
       "acceptanceCriteria": [
-        "scripts/r11-pdf-attach-test.ts re-run vs https://dev-api.doable.me with at least 10-min budget",
-        "prompt_tokens > 50000 (PDF text is being inlined)",
-        "response_chars > 100 AND tool_call_count > 0 (AI is generating)",
-        "Generated src/App.tsx references SRS content (system name from cover, an entity from §4, a feature from §2-§3) — NOT the default vite-react splash",
-        "GET /projects/<id>/chat/history → data array is non-empty",
-        "Bug file BUG-R11-PDF-ATTACHMENT-IGNORED-001.md status updated to FIXED+R13-verified OR STILL-OPEN with new root-cause analysis"
+        "Gap A: GET /admin/tools expectation aligns with reality — either path corrected to /admin/tools/modes OR 404 added to expected status set (the bare /admin/tools index has no handler by design)",
+        "Gap B: POST /auth/mfa/enroll/start expected statuses include 200 — handler ignores arbitrary bodies by design, returning 200 is correct",
+        "Gap C: DELETE /admin/email/config expected statuses include 200 — this is a real registered DELETE handler that deactivates the DB email config, not a wrong-verb probe target",
+        "Re-run produces 0 UNEXPECTED-STATUS for those 3 paths (or the same failures classified as PASS/EXPECTED)"
       ]
     },
     {
-      "id": "US-R13-02",
-      "title": "Add unit test pinning the logout-anon-200 contract (architect P2 follow-up)",
+      "id": "US-R14-02",
+      "title": "Run cleaned matrix vs dev — confirm clean signal",
       "passes": false,
       "acceptanceCriteria": [
-        "Test file under services/api/test/ OR scripts/r13-test-logout-contract.ts asserts: POST /auth/logout without auth → 200, with valid refreshToken → 200, with invalid refreshToken → 200",
-        "Test runs successfully (tsc clean + assertions pass)",
-        "Test references BUG-R10-AUTH-LOGOUT-ANON-200-001 in a comment so future readers know the contract is intentional"
+        "scripts/r10-api-matrix.ts re-run vs https://dev-api.doable.me → SERVER-5XX count = 0; UNEXPECTED-STATUS count <= 2 (only genuinely-new bugs)",
+        "All trailing-slash assertions PASS (regression check for PR #35)",
+        "Rate-limit kill switch still active (no 429s)",
+        "Output written to testcases/evidence/dev/matrix-r14/"
       ]
     },
     {
-      "id": "US-R13-03",
-      "title": "Live retest dev for any NEW bugs surfaced after R12 deploy",
+      "id": "US-R14-03",
+      "title": "Triage any NEW UNEXPECTED-STATUS / SERVER-5XX failures",
       "passes": false,
       "acceptanceCriteria": [
-        "Run scripts/r10-api-matrix.ts vs dev — full 1194-assertion matrix",
-        "Compare failure tally to R12-FINAL-REGRESSION.md baseline",
-        "Any NEW failures (UNEXPECTED-STATUS / SERVER-5XX) — file fresh BUG-R13-* bug files with repro + classification",
-        "Any new bug with severity P0 or P1 → root-cause + fix this round; P2/P3 → carry over to R14 with rationale",
-        "Trailing-slash assertions pass (regression check for PR #35)",
-        "Rate-limit kill switch still active (no 429 during matrix)"
+        "For each new failure, classify severity (P0/P1/P2/P3) with cite to repro path + observed body",
+        "P0/P1: file BUG-R14-* + Opus tracer + Opus executor fix on branch fix/r14-<slug>",
+        "P2/P3: log in R14 carry-over note; do not block this round",
+        "If zero new failures, mark passes:true with rationale 'matrix clean'"
       ]
     },
     {
-      "id": "US-R13-04",
-      "title": "Root-cause + fix any P0/P1 bugs surfaced in US-R13-03",
+      "id": "US-R14-04",
+      "title": "Commit, push, merge harness updates + any fixes; deploy dev; final smoke",
       "passes": false,
       "acceptanceCriteria": [
-        "Opus tracer agent produces evidence-backed root-cause for each P0/P1 bug",
-        "Opus executor agent implements the fix on a dedicated branch fix/r13-<bug-slug>",
-        "pnpm --filter @doable/api exec tsc --noEmit → 0 errors on each fix branch",
-        "A probe script verifies the fix locally",
-        "If no P0/P1 bugs surfaced, mark this story passes:true with rationale 'no qualifying bugs to fix'"
-      ]
-    },
-    {
-      "id": "US-R13-05",
-      "title": "Commit, push, merge fixes; deploy to dodev; final regression",
-      "passes": false,
-      "acceptanceCriteria": [
-        "All R13 fix branches merged to main via PR with admin-merge",
-        "ssh dodev → git pull origin main → systemctl restart doable.service",
-        "ss -tlnp on dodev confirms NO 0.0.0.0 binds; all services on 127.0.0.1",
-        "Smoke probes: /health 200, /templates/ 401 anon (regression test for PR #35), CORS evil-origin → no ACAO",
-        "Re-run scripts/r10-api-matrix.ts post-deploy — failure count not worse than baseline; new fixes verified",
-        "FINDINGS.md updated with 2026-05-15 R13 section"
+        "All R14 branches merged to main via PR with admin-merge",
+        "dodev pulled latest main + service restarted",
+        "ss -tlnp confirms NO 0.0.0.0 binds; all services on 127.0.0.1",
+        "Final smoke: /health 200, /templates/ 401 anon, logout-contract probe 4/4 PASS",
+        "FINDINGS.md updated with 2026-05-15 R14 section"
       ]
     }
   ]
