@@ -236,28 +236,26 @@ function resolveAllowedCorsOrigin(c: { req: { path: string; header(name: string)
 
 // BUG-012: hono/cors emits `Access-Control-Allow-Credentials: true`
 // unconditionally when `credentials: true` is set — even when the origin
-// callback returned `null` and `Access-Control-Allow-Origin` is absent.
-// On OPTIONS preflight hono/cors short-circuits with a fresh Response
-// before downstream middleware can post-process it. So this strip MUST
-// be registered BEFORE cors() — that way its `await next()` captures
-// cors()'s synthesized OPTIONS response on the way back up.
+// callback returns null and ACAO is absent. Prior attempts to strip ACAC
+// in a post-cors finaliser failed because hono/cors's synthesized OPTIONS
+// preflight Response uses an immutable Headers init that resists both
+// `headers.delete()` and `c.res = new Response(...)` rebuilds.
+//
+// The reliable fix is to short-circuit disallowed-origin OPTIONS preflight
+// BEFORE cors() runs at all. We return our own 204 with no CORS headers,
+// so cors() never gets a chance to emit ACAC for that request. Real
+// (non-OPTIONS) cross-origin requests still flow through cors() — if the
+// origin is disallowed, cors() omits ACAO and the browser blocks the
+// response anyway (ACAC alone is harmless without ACAO).
 app.use("*", async (c, next) => {
+  if (c.req.method !== "OPTIONS") return next();
   const origin = c.req.header("origin") ?? "";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resolved = resolveAllowedCorsOrigin(c as any, origin);
-  const originAllowed = resolved !== null && resolved !== "";
-  await next();
-  if (!originAllowed) {
-    if (c.res.headers.get("Access-Control-Allow-Credentials")) {
-      const cleaned = new Headers(c.res.headers);
-      cleaned.delete("Access-Control-Allow-Credentials");
-      c.res = new Response(c.res.body, {
-        status: c.res.status,
-        statusText: c.res.statusText,
-        headers: cleaned,
-      });
-    }
+  if (resolved === null) {
+    return c.body(null, 204);
   }
+  return next();
 });
 
 app.use(
