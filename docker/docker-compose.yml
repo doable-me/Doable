@@ -23,7 +23,7 @@ services:
       - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-doable}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-doable_secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/.env — run ./docker/setup.sh to generate}
       POSTGRES_DB: ${POSTGRES_DB:-doable}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -45,7 +45,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:-doable_secret}@postgres:5432/${POSTGRES_DB:-doable}
+      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/.env — run ./docker/setup.sh to generate}@postgres:5432/${POSTGRES_DB:-doable}
     restart: "no"
 
   # --- API server (Hono) ---
@@ -62,7 +62,7 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:-doable_secret}@postgres:5432/${POSTGRES_DB:-doable}
+      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/.env — run ./docker/setup.sh to generate}@postgres:5432/${POSTGRES_DB:-doable}
       DATABASE_POOL_SIZE: 20
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in docker/.env}
       JWT_ISSUER: doable
@@ -91,6 +91,11 @@ services:
       NODE_ENV: production
       PROJECTS_ROOT: ./projects
       REDIS_URL: ${REDIS_URL:-}
+      # KEK for envelope encryption of wizard-saved secrets (required)
+      DOABLE_KEK: ${DOABLE_KEK:?Set DOABLE_KEK in docker/.env — openssl rand -base64 32}
+      # First-run bootstrap (single-use; setup.sh generates these)
+      INSTALL_BOOTSTRAP_TOKEN: ${INSTALL_BOOTSTRAP_TOKEN:-}
+      INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT: ${INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT:-}
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails
@@ -109,7 +114,7 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:-doable_secret}@postgres:5432/${POSTGRES_DB:-doable}
+      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/.env — run ./docker/setup.sh to generate}@postgres:5432/${POSTGRES_DB:-doable}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in docker/.env}
       WS_PORT: 4001
       WS_HOST: 0.0.0.0  # Must be 0.0.0.0 inside Docker for container networking; host port is bound to 127.0.0.1

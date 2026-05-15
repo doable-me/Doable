@@ -1,4 +1,20 @@
-# Doable — Quickstart: New Server From Zero
+# Doable — Quickstart
+
+## Just want to play with it? (60 seconds, no domain required)
+
+```bash
+git clone https://github.com/doable-me/doable.git
+cd doable
+./docker/setup.sh
+```
+
+Open http://localhost:3000 in your browser. Sign up — the first account becomes platform owner automatically. The setup wizard walks you through AI keys and integrations. No SSH, no SQL, no .env editing.
+
+To use AI features locally: drop your Anthropic or OpenAI key into the wizard (Step 2). Or connect GitHub Copilot if you have a subscription.
+
+---
+
+## Full VPS Setup (24 minutes from zero to deployed)
 
 This guide takes you from an empty Hetzner box to a working Doable instance with HTTPS, AI features, sandboxed previews, and per-tenant DNS. Real timings, real values, real failure modes.
 
@@ -286,33 +302,15 @@ If you see `SSL_VERSION_OR_CIPHER_MISMATCH` for `<env>-something.doable.me`, the
 
 ## Step 6 — Create your first admin user
 
-The migrations don't seed an admin. Sign up via the web UI first, then promote via SQL:
-
-```bash
-ssh -i ~/Documents/itdept root@<env>.fid.pw "sudo -u postgres psql -d doable <<EOF
-UPDATE users
-SET is_platform_admin = true,
-    platform_role = 'owner',
-    is_verified_publisher = true
-WHERE email = 'YOUR_EMAIL@example.com';
-
-UPDATE workspace_members
-SET role = 'owner'
-WHERE user_id = (SELECT id FROM users WHERE email='YOUR_EMAIL@example.com');
-
-UPDATE credit_balances
-SET daily_credits = 100000,
-    monthly_credits = 1000000,
-    plan_type = 'enterprise'
-WHERE user_id = (SELECT id FROM users WHERE email='YOUR_EMAIL@example.com');
-EOF"
-```
+**This step is no longer required.** As of 2026-05, the first user to sign up on a fresh install is automatically promoted to platform owner. Just visit `https://<env>.<your-domain>/signup` after install completes.
 
 ---
 
 ## Step 7 — Configure integrations (optional)
 
-The setup banner prints a checklist of missing OAuth credentials. Edit `/root/doable/.env` to add:
+The in-app setup wizard at `https://<env>.<your-domain>/setup` is the easiest way to configure integrations and AI providers. The wizard guides you through each step and surfaces copy-paste OAuth callback URLs for each provider.
+
+Alternatively, edit `/root/doable/.env` to add:
 
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (Google login + Drive/Calendar/Gmail integrations)
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` (GitHub login + repo import)
@@ -323,9 +321,9 @@ After editing, `systemctl restart doable.service`.
 
 OAuth callbacks must be set in each provider's dashboard:
 
-- Google: `https://<env>-api.doable.me/auth/google/callback`
-- GitHub login: `https://<env>-api.doable.me/auth/github/callback`
-- GitHub repo: `https://<env>-api.doable.me/auth/github/repo/callback`
+- Google: `https://<env>-api.<your-domain>/auth/google/callback`
+- GitHub login: `https://<env>-api.<your-domain>/auth/github/callback`
+- GitHub repo: `https://<env>-api.<your-domain>/auth/github/repo/callback`
 
 ---
 
