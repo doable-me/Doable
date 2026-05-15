@@ -3,7 +3,7 @@
 - **Severity**: P2 (high — feature completely broken, leaks internal path)
 - **Env**: dev (dev-api.doable.me)
 - **Filed**: 2026-05-14 (Ralph R11)
-- **Status**: OPEN
+- **Status**: FIXED + R12 verified (2026-05-15) — fix `6f5d70a0` on `fix/r11-versions-projectpath-server-derived` merged to main; live returns 400 (not 500), no EACCES, no /boot/lost+found leak
 - **Discovered by**: R11 gap-areas smoke probes
 
 ## Repro

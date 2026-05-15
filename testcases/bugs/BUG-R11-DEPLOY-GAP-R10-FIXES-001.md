@@ -3,7 +3,7 @@
 - **Severity**: P1 (one-off — operational/deploy, not a code defect)
 - **Env**: dev (dev-api.doable.me / dodev.fid.pw)
 - **Filed**: 2026-05-14 (Ralph R11)
-- **Status**: OPEN — requires user with SSH access to deploy
+- **Status**: ZAPPED + R12 verified (2026-05-15) — all R10/R11 fix branches merged to main and confirmed live on dev
 
 ## What's deployed vs not (verified by live probes from R11)
 

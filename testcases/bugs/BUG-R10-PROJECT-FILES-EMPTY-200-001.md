@@ -3,7 +3,7 @@
 - **Severity**: P3 (soft info-leak; not a real RLS data leak)
 - **Env**: dev (dev-api.doable.me)
 - **Filed**: 2026-05-14 (Ralph R10)
-- **Status**: OPEN
+- **Status**: FIXED + R12 verified (2026-05-15) — dev now returns 400 (UUID validation) or 404 (not found) for non-existent project UUIDs; 200-empty no longer returned
 - **Discovered by**: scripts/r10-api-matrix.ts (RLS negative probe, qa-owner)
 
 ## Repro
