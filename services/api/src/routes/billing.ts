@@ -24,6 +24,22 @@ const workspaces = workspaceQueries(sql);
 
 export const billingRoutes = new Hono<AuthEnv>();
 
+/**
+ * Verify the caller is a member of the target workspace. Used by every
+ * billing route that accepts a `workspaceId` parameter — otherwise any
+ * authenticated user could probe/manipulate billing state for any workspace
+ * by guessing/enumerating workspaceId. See BUG-BILLING-002 and the wider
+ * 2026-05-15 audit that found 6+ other endpoints missing this check.
+ */
+async function isWorkspaceMember(workspaceId: string, userId: string): Promise<boolean> {
+  const [row] = await sql<Array<{ id: string }>>`
+    SELECT id FROM workspace_members
+    WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+    LIMIT 1
+  `;
+  return !!row;
+}
+
 // ─── Public: Plans ─────────────────────────────────────────
 billingRoutes.get("/plans", (c) => {
   return c.json({
@@ -223,6 +239,12 @@ billingRoutes.post("/topup", async (c) => {
     return c.json({ error: "Invalid request", details: parsed.error.flatten().fieldErrors }, 400);
   }
   const { workspaceId, packageId } = parsed.data;
+  const userId = c.get("userId");
+  // BUG-BILLING-002 audit: same as /top-up — top-up packages grant real
+  // money-equivalent credits to the target workspace.
+  if (!(await isWorkspaceMember(workspaceId, userId))) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
+  }
   const pkg = TOPUP_PACKAGES.find((p) => p.id === packageId);
   if (!pkg) return c.json({ error: "Unknown packageId" }, 400);
 
@@ -267,6 +289,13 @@ billingRoutes.get("/invoices", async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) {
     return c.json({ error: "workspaceId query param required" }, 400);
+  }
+  const userId = c.get("userId");
+  // BUG-BILLING-002 audit: invoices may contain Stripe URLs + customer
+  // amounts. Require membership before returning anything (even an empty
+  // list, since an empty list still confirms the workspace exists).
+  if (!(await isWorkspaceMember(workspaceId, userId))) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
   }
   try {
     const rows = await sql<any[]>`
@@ -386,6 +415,13 @@ billingRoutes.get("/usage", async (c) => {
         pagination: { total: 0, page, pageSize, totalPages: 0 },
       });
     }
+  } else {
+    // BUG-BILLING-002 audit: caller supplied an explicit workspaceId — they
+    // must be a member, otherwise any authed user could read every
+    // workspace's full credit-usage history (project IDs, timestamps, etc).
+    if (!(await isWorkspaceMember(workspaceId, userId))) {
+      return c.json({ error: "Not a member of this workspace" }, 403);
+    }
   }
 
   try {
@@ -427,6 +463,12 @@ billingRoutes.post("/subscribe", async (c) => {
   }
 
   const { workspaceId, planId, interval } = parsed.data;
+  const userId = c.get("userId");
+  // BUG-BILLING-002 audit: must be a member to spin up a Stripe checkout
+  // that mutates this workspace's plan/customer/subscription state.
+  if (!(await isWorkspaceMember(workspaceId, userId))) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
+  }
   const plan = getPlanById(planId);
   if (!plan) {
     return c.json({ error: "Plan not found" }, 404);
@@ -485,6 +527,13 @@ billingRoutes.post("/portal", async (c) => {
     return c.json({ error: "workspaceId required" }, 400);
   }
 
+  // BUG-BILLING-002 audit: a Stripe portal session lets the holder edit
+  // payment methods, view invoices, cancel — strictly members only.
+  const userId = c.get("userId");
+  if (!(await isWorkspaceMember(workspaceId, userId))) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
+  }
+
   const subscription = await billing.getSubscription(workspaceId);
   if (!subscription?.stripe_customer_id) {
     return c.json({ error: "No billing account found" }, 404);
@@ -513,6 +562,12 @@ billingRoutes.post("/top-up", async (c) => {
   }
 
   const { workspaceId, credits } = parsed.data;
+  const userId = c.get("userId");
+  // BUG-BILLING-002 audit: top-up grants money-equivalent credits to the
+  // target workspace — must verify the caller is allowed to buy for it.
+  if (!(await isWorkspaceMember(workspaceId, userId))) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
+  }
   const pricePerCredit = 5; // 5 cents per credit
   const amount = credits * pricePerCredit;
 
@@ -542,6 +597,11 @@ billingRoutes.post("/top-up", async (c) => {
 billingRoutes.get("/subscription", authMiddleware, async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
+  const userId = c.get("userId");
+  // BUG-BILLING-002 audit: don't reveal plan/Stripe sub state to non-members.
+  if (!(await isWorkspaceMember(workspaceId, userId))) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
+  }
   const [ws] = await sql<{ id: string; plan: string }[]>`SELECT id, plan FROM workspaces WHERE id = ${workspaceId}`;
   if (!ws) return c.json({ error: "Workspace not found" }, 404);
   const sub = await billing.getSubscription(workspaceId);
@@ -552,6 +612,11 @@ billingRoutes.get("/subscription", authMiddleware, async (c) => {
 billingRoutes.get("/limits", authMiddleware, async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
+  const userId = c.get("userId");
+  // BUG-BILLING-002 audit: plan/limits is workspace-private — gate it.
+  if (!(await isWorkspaceMember(workspaceId, userId))) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
+  }
   const [ws] = await sql<{ plan: string }[]>`SELECT plan FROM workspaces WHERE id = ${workspaceId}`;
   if (!ws) return c.json({ error: "Workspace not found" }, 404);
   const plan = ws.plan as keyof typeof PLAN_LIMITS;
@@ -563,6 +628,13 @@ billingRoutes.post("/cancel", authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const workspaceId = (body as { workspaceId?: string }).workspaceId;
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
+  const userId = c.get("userId");
+  // BUG-BILLING-002 audit: cancelling a subscription is workspace-owner
+  // territory. Require workspace membership at minimum; richer role checks
+  // (only owner/admin) can layer on top later.
+  if (!(await isWorkspaceMember(workspaceId, userId))) {
+    return c.json({ error: "Not a member of this workspace" }, 403);
+  }
   if (!process.env.STRIPE_SECRET_KEY) {
     await sql`UPDATE workspaces SET plan = 'free', updated_at = now() WHERE id = ${workspaceId}`;
     return c.json({ data: { cancelled: true, mode: "bypass" } });
