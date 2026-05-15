@@ -34,3 +34,6 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: Contract tests
+        run: pnpm test:contracts

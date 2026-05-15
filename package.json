@@ -11,6 +11,8 @@
     "dev:ws": "turbo run dev --filter=@doable/ws",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:contracts": "node scripts/run-contract-tests.mjs",
+    "smoke:admin": "node scripts/smoke-admin.mjs",
     "type-check": "turbo run type-check",
     "db:migrate": "turbo run db:migrate --filter=@doable/api",
     "clean": "turbo run clean",
