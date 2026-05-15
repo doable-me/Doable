@@ -102,12 +102,28 @@ workspaceRoutes.post("/", async (c) => {
     return c.json({ error: "A workspace with this slug already exists" }, 409);
   }
 
-  const workspace = await workspaces.create({
-    name: parsed.data.name,
-    slug: parsed.data.slug,
-    description: parsed.data.description,
-    ownerId: userId,
-  });
+  let workspace;
+  try {
+    workspace = await workspaces.create({
+      name: parsed.data.name,
+      slug: parsed.data.slug,
+      description: parsed.data.description,
+      ownerId: userId,
+    });
+  } catch (err) {
+    // BUG-R13-WORKSPACE-SLUG-500: the line-100 pre-check races with
+    // concurrent inserts (qa-admin + qa-member POSTing the same slug at
+    // once, or any two requests landing between the SELECT and INSERT).
+    // Postgres surfaces the unique-violation on `workspaces_slug_key` as
+    // code 23505; map it to the same friendly 409 the pre-check returns
+    // instead of bubbling the raw constraint name to the client (which
+    // would otherwise leak `workspaces_slug_key` via the global onError
+    // handler in dev mode and trip schema-enumeration scanners).
+    if ((err as { code?: string } | null)?.code === "23505") {
+      return c.json({ error: "A workspace with this slug already exists" }, 409);
+    }
+    throw err;
+  }
 
   // Provision built-in MCP Apps (e.g., Presentation Builder).
   await ensureBuiltinConnectorsForWorkspace(workspace.id, userId);
