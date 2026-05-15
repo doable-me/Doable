@@ -13,7 +13,7 @@ import { adminFrameworkRoutes } from "./admin-frameworks.js";
 
 const featureFlags = featureFlagQueries(sql);
 
-export const adminRoutes = new Hono<AuthEnv>();
+export const adminRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── Feature access check (any authenticated user) ──────
 // This is BEFORE the platform admin guard so regular users can check their own access.

@@ -26,7 +26,7 @@ const publicApiUrl =
   process.env.CORS_ORIGINS?.split(",")[0]?.replace(/\/$/, "") ??
   `http://localhost:${process.env.API_PORT ?? "4000"}`;
 
-export const previewRoutes = new Hono();
+export const previewRoutes = new Hono({ strict: false });
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

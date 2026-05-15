@@ -22,7 +22,7 @@ const billing = billingQueries(sql);
 const creditsDb = creditQueries(sql);
 const workspaces = workspaceQueries(sql);
 
-export const billingRoutes = new Hono<AuthEnv>();
+export const billingRoutes = new Hono<AuthEnv>({ strict: false });
 
 /**
  * Verify the caller is a member of the target workspace. Used by every

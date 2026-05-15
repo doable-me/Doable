@@ -14,7 +14,7 @@ import {
 } from "../../projects/dev-server.js";
 import { buildZipBuffer } from "../../lib/zip.js";
 
-export const devServerFileRoutes = new Hono<AuthEnv>();
+export const devServerFileRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── GET /projects/:id/preview-url ─ Get dev server URL ─────
 

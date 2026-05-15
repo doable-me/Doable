@@ -9,7 +9,7 @@ import {
   parseUserAgent,
 } from "../../analytics/tracker.js";
 
-export const trackingRoutes = new Hono();
+export const trackingRoutes = new Hono({ strict: false });
 
 // Public URL — this gets embedded in the tracking script served to browsers
 const apiUrl =

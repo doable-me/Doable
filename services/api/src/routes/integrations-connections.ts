@@ -11,7 +11,7 @@ import { resolveAuth } from "../integrations/runner-helpers.js";
 
 const workspaces = workspaceQueries(sql);
 
-export const integrationConnectionRoutes = new Hono<AuthEnv>();
+export const integrationConnectionRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── Role helpers ──────────────────────────────────────────
 

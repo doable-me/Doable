@@ -18,7 +18,7 @@ import { rateLimiter, getTrustedClientIp } from "../../middleware/rate-limit.js"
 
 export { getChatSessionsSnapshot } from "./session-state.js";
 
-export const chatRoutes = new Hono<AuthEnv>();
+export const chatRoutes = new Hono<AuthEnv>({ strict: false });
 
 const shareTrackingDb = shareTrackingQueries(sql);
 

@@ -10,7 +10,7 @@ import { ENCRYPTION_KEY } from "../lib/secrets.js";
 const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
 const workspaces = workspaceQueries(sql);
 
-export const aiSettingsConfigRoutes = new Hono<AuthEnv>();
+export const aiSettingsConfigRoutes = new Hono<AuthEnv>({ strict: false });
 
 aiSettingsConfigRoutes.use("*", authMiddleware);
 

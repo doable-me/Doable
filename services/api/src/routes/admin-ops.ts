@@ -45,7 +45,7 @@ function redactSecrets(line: string): string {
   return out;
 }
 
-export const adminOpsRoutes = new Hono<AuthEnv>();
+export const adminOpsRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminOpsRoutes.use("*", authMiddleware);
 adminOpsRoutes.use("*", platformAdminMiddleware);

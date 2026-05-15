@@ -7,7 +7,7 @@ import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 
 const modeTools = modeToolQueries(sql);
 
-export const adminToolsRoutes = new Hono<AuthEnv>();
+export const adminToolsRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminToolsRoutes.use("*", authMiddleware);
 adminToolsRoutes.use("*", platformAdminMiddleware);

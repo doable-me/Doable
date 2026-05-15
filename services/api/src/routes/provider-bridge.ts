@@ -9,7 +9,7 @@ import { ENCRYPTION_KEY } from "../lib/secrets.js";
 const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
 const workspaces = workspaceQueries(sql);
 
-export const providerBridgeRoutes = new Hono<AuthEnv>();
+export const providerBridgeRoutes = new Hono<AuthEnv>({ strict: false });
 
 // All provider bridge routes require authentication
 providerBridgeRoutes.use("*", authMiddleware);

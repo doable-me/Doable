@@ -20,7 +20,7 @@ const shareTracking = shareTrackingQueries(sql);
 const projectViews = projectViewQueries(sql);
 const users = userQueries(sql);
 
-export const projectItemRoutes = new Hono<AuthEnv>();
+export const projectItemRoutes = new Hono<AuthEnv>({ strict: false });
 
 // Reject non-UUID `:id` params with 400 before any handler hits Postgres
 // (BUG-CORPUS-PROJ-002). Every route in this group is `/:id...` so the

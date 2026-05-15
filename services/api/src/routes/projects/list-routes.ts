@@ -21,7 +21,7 @@ const stars = starQueries(sql);
 const projectViews = projectViewQueries(sql);
 const shareTracking = shareTrackingQueries(sql);
 
-export const projectListRoutes = new Hono<AuthEnv>();
+export const projectListRoutes = new Hono<AuthEnv>({ strict: false });
 
 // BUG-CORPUS-PROJ-003: validate the `workspaceId` query param on
 // `GET /projects` and `GET /projects/recently-viewed` etc. before any SQL

@@ -87,7 +87,7 @@ async function postOauthRedirect(args: {
   return `${FRONTEND_URL}/auth/callback#${fragParams.toString()}`;
 }
 
-export const oauthRoutes = new Hono();
+export const oauthRoutes = new Hono({ strict: false });
 
 // Validate a returnTo value is a safe same-origin path (starts with /, not //).
 function safeReturnTo(value: string | null | undefined): string | null {

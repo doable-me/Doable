@@ -10,7 +10,7 @@ import * as crypto from "node:crypto";
 
 const workspaces = workspaceQueries(sql);
 
-export const integrationOAuthRoutes = new Hono<AuthEnv>();
+export const integrationOAuthRoutes = new Hono<AuthEnv>({ strict: false });
 
 async function requireMember(workspaceId: string, userId: string): Promise<string | null> {
   const role = await workspaces.getMemberRole(workspaceId, userId);

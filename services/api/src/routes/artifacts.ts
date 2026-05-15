@@ -45,7 +45,7 @@ export function storeArtifact(opts: { bytes: Buffer; mimeType: string; fileName:
   return id;
 }
 
-const artifacts = new Hono();
+const artifacts = new Hono({ strict: false });
 
 artifacts.get("/:id{.+}", (c) => {
   // Strip any extension the client appended (e.g. /artifacts/abc.pptx).

@@ -14,7 +14,7 @@ import { runMigration } from "../../../integrations/supabase/migrate.js";
 import { deployEdgeFunction } from "../../../integrations/supabase/edge-functions.js";
 import { requireMember, getMgmtAccessToken, activeProvisions } from "./provision-helpers.js";
 
-export const provisionCreateRoutes = new Hono<AuthEnv>();
+export const provisionCreateRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── POST /api/integrations/supabase/provision ────────────
 

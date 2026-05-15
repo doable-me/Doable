@@ -26,7 +26,7 @@ import {
 } from "../git/operations.js";
 import { validateProjectIdParam } from "./projects/helpers.js";
 
-export const versionRoutes = new Hono<AuthEnv>();
+export const versionRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── Helper: Format git log entries as version entries ─────
 function formatGitLogAsVersions(

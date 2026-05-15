@@ -8,7 +8,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 const skills = skillsQueries(sql);
 const workspaces = workspaceQueries(sql);
 
-export const skillsRoutes = new Hono<AuthEnv>();
+export const skillsRoutes = new Hono<AuthEnv>({ strict: false });
 
 // All skills/rules routes require authentication
 skillsRoutes.use("*", authMiddleware);

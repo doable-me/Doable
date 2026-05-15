@@ -7,7 +7,7 @@ const workspaces = workspaceQueries(sql);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const notificationRoutes = new Hono<AuthEnv>();
+export const notificationRoutes = new Hono<AuthEnv>({ strict: false });
 
 async function requireMember(workspaceId: string, userId: string): Promise<string | null> {
   const role = await workspaces.getMemberRole(workspaceId, userId);

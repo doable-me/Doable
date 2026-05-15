@@ -9,7 +9,7 @@ import { contextManager } from "../context/manager.js";
 import { getContextStats } from "../context/injector.js";
 import { evictProjectSessions } from "./chat/session-state.js";
 
-export const contextRoutes = new Hono<AuthEnv>();
+export const contextRoutes = new Hono<AuthEnv>({ strict: false });
 contextRoutes.use("*", authMiddleware);
 
 const ctx = contextManager(sql);
@@ -157,7 +157,7 @@ contextRoutes.delete("/:filename", async (c) => {
 // ─── Workspace-level context ─────────────────────────────────
 // These are mounted separately under /workspaces/:wid/context/...
 
-export const workspaceContextRoutes = new Hono<AuthEnv>();
+export const workspaceContextRoutes = new Hono<AuthEnv>({ strict: false });
 workspaceContextRoutes.use("*", authMiddleware);
 // BUG-CORPUS-CTX-001: workspace context endpoints leaked to ANY authenticated
 // user — all routes here only require `viewer` role on the workspace

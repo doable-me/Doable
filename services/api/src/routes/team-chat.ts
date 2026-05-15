@@ -9,7 +9,7 @@ import { INTERNAL_SECRET } from "../lib/secrets.js";
 const teamChat = teamChatQueries(sql);
 const projects = projectQueries(sql);
 
-export const teamChatRoutes = new Hono<AuthEnv>();
+export const teamChatRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── Internal endpoints (no auth — verified via X-Internal-Secret) ────
 // GET /team-chat/:projectId/internal — load history (for WS server)

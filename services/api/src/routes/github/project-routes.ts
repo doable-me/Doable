@@ -11,7 +11,7 @@ import { requireProjectAccess } from "../projects/helpers.js";
 
 const db = githubQueries(sql);
 
-export const githubProjectRoutes = new Hono<AuthEnv>();
+export const githubProjectRoutes = new Hono<AuthEnv>({ strict: false });
 
 // Protect project-level routes (not webhook)
 githubProjectRoutes.use("/:projectId/github/*", authMiddleware);

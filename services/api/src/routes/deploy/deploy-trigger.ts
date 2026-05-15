@@ -24,7 +24,7 @@ const projects = projectQueries(sql);
 const deployments = deploymentQueries(sql);
 const platformSettings = platformSettingQueries(sql);
 
-export const deployTriggerRoutes = new Hono<AuthEnv>();
+export const deployTriggerRoutes = new Hono<AuthEnv>({ strict: false });
 
 deployTriggerRoutes.use("/*", authMiddleware);
 

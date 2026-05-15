@@ -5,7 +5,7 @@ import { listIntegrations, getIntegration, getCategories } from "../integrations
 import { getIntegrationActions } from "../integrations/runner.js";
 import type { IntegrationCategory } from "../integrations/types.js";
 
-export const integrationCatalogRoutes = new Hono<AuthEnv>();
+export const integrationCatalogRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── Catalog (public, no auth) ─────────────────────────────
 

@@ -3,8 +3,10 @@
 - **Severity**: P2 (footgun for API consumers, not a security hole)
 - **Env**: dev (dev-api.doable.me)
 - **Filed**: 2026-05-14 (Ralph R10)
-- **Status**: OPEN (matrix updated to use no-trailing-slash path; underlying redirect behavior unchanged)
+- **Status**: FIXED (2026-05-15, Ralph R12, commit `166c94af` on branch `fix/r12-trailing-slash-no-redirect`) — top-level Hono app + every sub-router switched to `{ strict: false }`, the 308-redirect middleware deleted. `/foo` and `/foo/` now route to the same handler with no redirect, so no client can drop Authorization on the followed request.
 - **Discovered by**: scripts/r10-api-matrix.ts (templates route, qa-owner role)
+- **Tracer**: testcases/evidence/dev/r12-trailing-slash-trace.md
+- **Probe**: scripts/r12-test-trailing-slash.ts (47/47 assertions pass)
 
 ## Repro
 ```bash

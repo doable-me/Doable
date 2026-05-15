@@ -19,7 +19,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { requireProjectAccess } from "./projects/helpers.js";
 import { getInstanceMetrics } from "../runtime/metrics.js";
 
-export const runtimeRoutes = new Hono<AuthEnv>();
+export const runtimeRoutes = new Hono<AuthEnv>({ strict: false });
 
 runtimeRoutes.use("/projects/*", authMiddleware);
 
@@ -216,7 +216,7 @@ runtimeRoutes.get("/projects/:id/runtime/logs", async (c) => {
 // ─── Workspace-level runtime listing ──────────────────────
 // Mounted at /workspaces in routes.ts. Lists every project_runtime row
 // for the workspace with live per-instance metrics joined in.
-export const workspaceRuntimeRoutes = new Hono<AuthEnv>();
+export const workspaceRuntimeRoutes = new Hono<AuthEnv>({ strict: false });
 workspaceRuntimeRoutes.use("*", authMiddleware);
 
 workspaceRuntimeRoutes.get("/:wid/runtime/instances", async (c) => {

@@ -21,7 +21,7 @@ import { getDevServerInternalUrl } from "../projects/dev-server.js";
 import { sql } from "../db/index.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 
-export const thumbnailRoutes = new Hono<AuthEnv>();
+export const thumbnailRoutes = new Hono<AuthEnv>({ strict: false });
 
 // GET /thumbnails/:filename — serve a project thumbnail
 // Expects filename like "proj-123.png"

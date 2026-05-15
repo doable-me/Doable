@@ -31,7 +31,7 @@ import type { WorkspaceRole } from "@doable/shared";
 
 const workspaces = workspaceQueries(sql);
 
-export const sandboxRoutes = new Hono<AuthEnv>();
+export const sandboxRoutes = new Hono<AuthEnv>({ strict: false });
 sandboxRoutes.use("*", authMiddleware);
 
 const ADMIN_ROLES: WorkspaceRole[] = ["owner", "admin"];

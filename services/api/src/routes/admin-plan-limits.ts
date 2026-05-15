@@ -6,7 +6,7 @@ import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { PLAN_LIMITS, type PlanLimits } from "@doable/shared";
 import type { WorkspacePlan } from "@doable/shared";
 
-export const adminPlanLimitsRoutes = new Hono<AuthEnv>();
+export const adminPlanLimitsRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminPlanLimitsRoutes.use("*", authMiddleware);
 adminPlanLimitsRoutes.use("*", platformAdminMiddleware);

@@ -9,7 +9,7 @@ import { ENCRYPTION_KEY } from "../lib/secrets.js";
 const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
 const platformDefaults = platformAiDefaultsQueries(sql);
 
-export const adminAiRoutes = new Hono<AuthEnv>();
+export const adminAiRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminAiRoutes.use("*", authMiddleware);
 adminAiRoutes.use("*", platformAdminMiddleware);

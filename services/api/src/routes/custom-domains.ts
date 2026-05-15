@@ -18,7 +18,7 @@ const domains = customDomainQueries(sql);
 const projects = projectQueries(sql);
 const workspaces = workspaceQueries(sql);
 
-export const customDomainRoutes = new Hono<AuthEnv>();
+export const customDomainRoutes = new Hono<AuthEnv>({ strict: false });
 
 customDomainRoutes.use("/*", authMiddleware);
 

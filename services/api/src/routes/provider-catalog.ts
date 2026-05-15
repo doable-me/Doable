@@ -18,7 +18,7 @@ function djb2(str: string): string {
 const CATALOG_FINGERPRINT = djb2(PROVIDER_CATALOG.map((p) => p.id).join(","));
 const CATALOG_ETAG = `"catalog-${PROVIDER_COUNT}-${CATALOG_FINGERPRINT}"`;
 
-export const providerCatalogRoutes = new Hono<AuthEnv>();
+export const providerCatalogRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── GET /ai/provider-catalog ────────────────────────────
 // Return the full static catalog (all presets).

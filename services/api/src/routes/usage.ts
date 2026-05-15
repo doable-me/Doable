@@ -9,7 +9,7 @@ import type { WorkspaceRole } from "@doable/shared";
 
 const workspaces = workspaceQueries(sql);
 
-export const usageRoutes = new Hono<AuthEnv>();
+export const usageRoutes = new Hono<AuthEnv>({ strict: false });
 
 // All usage routes require authentication
 usageRoutes.use("*", authMiddleware);

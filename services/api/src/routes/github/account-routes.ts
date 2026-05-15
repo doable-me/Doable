@@ -7,7 +7,7 @@ import { authMiddlewareWithRls as authMiddleware } from "../../middleware/rls.js
 
 const db = githubQueries(sql);
 
-export const githubAccountRoutes = new Hono<AuthEnv>();
+export const githubAccountRoutes = new Hono<AuthEnv>({ strict: false });
 
 githubAccountRoutes.use("/github/repos", authMiddleware);
 githubAccountRoutes.use("/github/disconnect", authMiddleware);

@@ -9,7 +9,7 @@ import type { AuthEnv } from "../../../middleware/auth.js";
 import { provisionListRoutes } from "./provision-list.js";
 import { provisionCreateRoutes } from "./provision-create.js";
 
-export const supabaseProvisionRoutes = new Hono<AuthEnv>();
+export const supabaseProvisionRoutes = new Hono<AuthEnv>({ strict: false });
 
 supabaseProvisionRoutes.route("/", provisionListRoutes);
 supabaseProvisionRoutes.route("/", provisionCreateRoutes);

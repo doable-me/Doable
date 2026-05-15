@@ -20,11 +20,11 @@ const mkt = marketplaceQueries(sql);
 const envs = environmentQueries(sql);
 const ws = workspaceQueries(sql);
 
-export const marketplaceRoutes = new Hono<AuthEnv>();
+export const marketplaceRoutes = new Hono<AuthEnv>({ strict: false });
 
 // Public browse routes (no auth needed)
-const publicRoutes = new Hono<AuthEnv>();
-const authedRoutes = new Hono<AuthEnv>();
+const publicRoutes = new Hono<AuthEnv>({ strict: false });
+const authedRoutes = new Hono<AuthEnv>({ strict: false });
 
 authedRoutes.use("*", authMiddleware);
 

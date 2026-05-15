@@ -8,7 +8,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 const envs = environmentQueries(sql);
 const workspaces = workspaceQueries(sql);
 
-export const environmentRoutes = new Hono<AuthEnv>();
+export const environmentRoutes = new Hono<AuthEnv>({ strict: false });
 
 environmentRoutes.use("*", authMiddleware);
 
