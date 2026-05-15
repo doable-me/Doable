@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { sql } from "../../db/index.js";
+import { sql, sqlRoot } from "../../db/index.js";
 import { starQueries } from "@doable/db";
 import { shareTrackingQueries } from "@doable/db";
 import { projectViewQueries } from "@doable/db";
@@ -313,10 +313,15 @@ projectItemRoutes.post("/:id/archive", async (c) => {
     return c.json({ error: "Only workspace owners and admins can archive projects" }, 403);
   }
 
+  // BUG-API-005: previous code set `deleted_at = now()` on archive, which
+  // collided with the hard-delete contract (deleted_at-marked rows are
+  // hidden everywhere) and made archived projects vanish instead of move
+  // to an "archived" pane. Status alone is the correct signal; the new
+  // 'archived' enum value (migration 084) is now the canonical marker.
   const [updated] = await sql<{ id: string; status: string }[]>`
     UPDATE projects
-    SET status = 'archived', deleted_at = now(), updated_at = now()
-    WHERE id = ${id}
+    SET status = 'archived', updated_at = now()
+    WHERE id = ${id} AND deleted_at IS NULL
     RETURNING id, status
   `;
   if (!updated) return c.json({ error: "Project not found" }, 404);
@@ -335,8 +340,8 @@ projectItemRoutes.post("/:id/unarchive", async (c) => {
 
   const [updated] = await sql<{ id: string; status: string }[]>`
     UPDATE projects
-    SET status = 'draft', deleted_at = NULL, updated_at = now()
-    WHERE id = ${id}
+    SET status = 'draft', updated_at = now()
+    WHERE id = ${id} AND deleted_at IS NULL
     RETURNING id, status
   `;
   if (!updated) return c.json({ error: "Project not found" }, 404);
@@ -501,7 +506,30 @@ projectItemRoutes.post("/:id/collaborators", async (c) => {
     );
   }
 
-  const targetUser = await users.findByEmail(parsed.data.email);
+  // BUG-CORPUS-PROJ-005 (RLS interaction): the `users` table has RLS
+  // policy `users_workspace_visible` (migration 076) that hides rows
+  // unless the caller shares a workspace with the target. For the
+  // canonical add-collaborator flow that is precisely the wrong filter:
+  // by definition the invitee is NOT yet a co-member, so a normal
+  // RLS-scoped `users.findByEmail()` returns undefined and we 404 every
+  // legitimate external invite.
+  //
+  // Authorisation is already enforced above (workspace member at
+  // ≥`member` role), so it's safe to use the RLS-bypass `sqlRoot`
+  // handle for ONLY the email → user lookup. We do not surface any
+  // other user fields beyond what the GET handler already returns
+  // (email, display_name, avatar_url, id).
+  const [targetUser] = await sqlRoot<{
+    id: string;
+    email: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  }[]>`
+    SELECT id, email, display_name, avatar_url
+    FROM users
+    WHERE email = ${parsed.data.email.toLowerCase()}
+    LIMIT 1
+  `;
   if (!targetUser) {
     return c.json({ error: "User not found" }, 404);
   }

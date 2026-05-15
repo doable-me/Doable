@@ -70,6 +70,26 @@ const realSql: postgres.Sql = DATABASE_URL
 // `await sql`SELECT ...`` and Postgres sees the session variable set.
 export const txAls = new AsyncLocalStorage<postgres.Sql>();
 
+/**
+ * RLS-bypass DB handle. ALWAYS routes to the raw pool — never to the
+ * ALS-stored per-request transaction — so queries through this handle
+ * run WITHOUT `doable.current_user_id` set and therefore skip the RLS
+ * predicates that filter rows by user/workspace membership.
+ *
+ * Use cases (handful only):
+ *   - email → user-id resolution for invite/add-collaborator flows where
+ *     the API has just authorised the caller as a workspace owner/admin
+ *     but the `users` RLS policy (mig 076) would hide the invitee row
+ *     because they are not yet a co-member. BUG-CORPUS-PROJ-005.
+ *   - one-shot internal lookups guarded by an explicit prior authz gate
+ *     in the calling route.
+ *
+ * NEVER use this for routes that have not already proven the caller has
+ * a legitimate, authenticated reason to read the target row — it is a
+ * probe oracle if exposed without an authz gate in front of it.
+ */
+export const sqlRoot: postgres.Sql = realSql;
+
 // Proxy over the real postgres.js client. Routes to the ALS-stored tx
 // when one is set (i.e., inside an RLS-scoped request); otherwise the
 // raw pool. Keeps the public `sql` API identical so the 100+ existing
