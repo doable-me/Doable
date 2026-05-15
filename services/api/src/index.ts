@@ -193,6 +193,22 @@ app.use("*", async (c, next) => {
   return secureHeadersMw(c, next);
 });
 
+// BUG-ADMIN-010: admin API responses must not be cached by browsers or
+// shared proxies, and the admin panel HTML must never render inside an
+// iframe (no embedding for the platform admin surface). The default
+// secureHeaders() emits `X-Frame-Options: SAMEORIGIN` which is too
+// permissive for /admin/*. Apply tighter rules for the admin namespace
+// after the global secureHeaders() so we override its defaults.
+app.use("*", async (c, next) => {
+  await next();
+  if (c.req.path === "/admin" || c.req.path.startsWith("/admin/")) {
+    c.res.headers.set("Cache-Control", "no-store, private");
+    c.res.headers.set("X-Frame-Options", "DENY");
+    c.res.headers.set("Referrer-Policy", "same-origin");
+    c.res.headers.set("Pragma", "no-cache");
+  }
+});
+
 app.use(
   "*",
   cors({

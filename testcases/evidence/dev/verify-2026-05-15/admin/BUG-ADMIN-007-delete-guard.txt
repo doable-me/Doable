@@ -1,0 +1,2 @@
+{"error":"System feature flags cannot be deleted","hint":"Use PATCH /admin/features/:key { enabled: false } to disable."}
+HTTP=403
