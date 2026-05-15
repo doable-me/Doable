@@ -51,6 +51,23 @@ export function getTrustedClientIp(c: any): string {
   return "unknown";
 }
 
+// Operator-level kill switch: when RATE_LIMIT_DISABLED is truthy ("true"/"1"/"yes"),
+// every rateLimiter() instance is a no-op. Used during QA campaigns so the matrix
+// can hammer auth/login/chat endpoints without 429-flooding. Upstream CF Tunnel
+// rate-limit + MFA + JWT verify + RLS + CSP are all independent and unaffected.
+// Intended for DEV only — leaving this on in prod would remove brute-force
+// protection on login/forgot-password/MFA verify.
+const RATE_LIMIT_DISABLED = ["true", "1", "yes"].includes(
+  (process.env.RATE_LIMIT_DISABLED ?? "").toLowerCase()
+);
+if (RATE_LIMIT_DISABLED) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[rate-limit] RATE_LIMIT_DISABLED=true — every rateLimiter() is a no-op. " +
+      "Intended for QA on dev only. Do NOT enable in production."
+  );
+}
+
 /**
  * Rate limiter middleware backed by the shared KV store.
  *
@@ -62,7 +79,8 @@ export function rateLimiter(options: RateLimitOptions) {
   // max=0 → middleware is a no-op. Lets operators disable rate limiting via
   // RATE_LIMIT_MAX=0 when an upstream limiter (Cloudflare, nginx, ALB) is
   // already in place.
-  if (max <= 0) {
+  // RATE_LIMIT_DISABLED=true → all instances no-op (QA kill switch).
+  if (max <= 0 || RATE_LIMIT_DISABLED) {
     return createMiddleware(async (_c, next) => { await next(); });
   }
 

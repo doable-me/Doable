@@ -168,6 +168,12 @@ coreAuthRoutes.post("/refresh", async (c) => {
 });
 
 // ─── POST /auth/logout ─────────────────────────────────────
+// BUG-R10-AUTH-LOGOUT-ANON-200-001: intentionally PUBLIC (no authMiddleware).
+// Logout is idempotent: missing/expired tokens still return 200 so SDKs and
+// browser sign-out paths that call logout as cleanup never see a confusing
+// 401. Access tokens are stateless JWTs that expire on their own; the only
+// destructive action is best-effort refresh-token revocation guarded by the
+// `if (refreshToken)` below. Pinned as WONTFIX with this comment.
 coreAuthRoutes.post("/logout", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { refreshToken } = body as { refreshToken?: string };

@@ -1,128 +1,126 @@
 {
-  "task": "Ralph round 10 (2026-05-14): Comprehensive quality push — build a parameterized API test matrix harness yielding 1000+ assertions against https://dev-api.doable.me, run it, EVOLVE by writing new TC files for failure modes discovered, fix root causes with Opus agents (no workarounds), parallel-haiku commit+push each fix immediately, and bake every server-config fix into setup-server.sh so 100 fresh deployments work out-of-the-box. Constraints: NEVER bind 0.0.0.0 (CLAUDE.md), NEVER touch prod (do.fid.pw), only dev (dodev.fid.pw / dev.doable.me). SSH to dodev currently denied — operate via HTTPS only.",
+  "task": "Ralph R12 (2026-05-15): zap all remaining unfixed bugs from R10/R11 carry-over + any new bugs surfaced during retest. Rate limits stay OFF on dodev for QA; NO security weakening. Use sonnet agents for testing, opus agents for root cause + fix. Commit, push, merge to main if local, deploy to dev (dodev.fid.pw), re-verify. Never bind 0.0.0.0. Never touch prod.",
   "stories": [
     {
-      "id": "US-001",
-      "title": "Build parameterized API matrix harness (1000+ assertions)",
-      "passes": true,
+      "id": "US-R12-01",
+      "title": "Inventory all R10/R11/R12 bug files + live-test dev to determine still-open set",
+      "passes": false,
       "acceptanceCriteria": [
-        "Harness at scripts/r10-api-matrix.ts — done. Reads BASE_URL+TOKENS_FILE, runs 1194 assertions across auth/projects/billing/templates/integrations/admin/community/notifications/folders/health/skills/marketplace + fuzz + RLS-negative + wrong-verb + header-fuzz + repeat-stability",
-        "Parametric generation: 4 auth roles × 5 HTTP verbs × 5 payload classes × stability reps; correct paths verified against services/api/src/routes.ts",
-        "Classifies as PASS / EXPECTED-{401,403,400,404,405,429} / UNEXPECTED-STATUS / SERVER-5XX / NETWORK-FAIL / SKIPPED-NO-TOKEN",
-        "Writes JSONL + CSV + failures.json + failures-by-route.md to testcases/evidence/dev/matrix-final2/",
-        "Runs in 35s with concurrency=6, well under 10min target",
-        "Final tally: 1194 total / 163 PASS / 564 EXPECTED-* / 476 SKIPPED-NO-TOKEN / 10 fail (all triaged)"
+        "Each BUG-R10-*, BUG-R11-* bug file is read and its current status (FIXED|OPEN|WONTFIX|RETESTED) recorded in testcases/99-runlog/R12-STATUS.md",
+        "Live tests against https://dev-api.doable.me probe each open bug's repro path and record HTTP status + body excerpt",
+        "Output: deterministic list of bugs that are still reproducible vs already-zapped"
       ]
     },
     {
-      "id": "US-002",
-      "title": "Seed dev QA accounts + capture JWTs for matrix",
-      "passes": true,
+      "id": "US-R12-02",
+      "title": "Confirm dodev rate-limit posture: rate limits OFF; security features ON",
+      "passes": false,
       "acceptanceCriteria": [
-        "qa-owner@doable.test login on https://dev-api.doable.me → 200, JWT captured",
-        "qa-owner JWT saved to testcases/evidence/dev/_tokens.json (gitignored)",
-        "qa-admin + qa-member registration rate-limited (429) — documented as known gap; harness handles via SKIPPED-NO-TOKEN classification cleanly",
-        "Matrix runs successfully with anon + qa-owner authed; qa-admin/qa-member assertions explicitly classified as SKIPPED-NO-TOKEN (not polluting UNEXPECTED)"
+        "SSH to dodev.fid.pw, inspect /root/doable/.env for RATE_LIMIT_DISABLED or per-limiter overrides",
+        "Confirm RATE_LIMIT_DISABLED=true (or equivalent) is set; rate limiters return 200 not 429 during QA matrix",
+        "Verify security features remain ON: CORS allowlist enforced, MFA + RLS + JWT verify + CSP all active",
+        "Document the posture in testcases/99-runlog/R12-RATELIMIT-POSTURE.md"
       ]
     },
     {
-      "id": "US-003",
-      "title": "Execute matrix vs dev + collect failures",
-      "passes": true,
+      "id": "US-R12-03",
+      "title": "Root-cause + fix BUG-R11-PDF-ATTACHMENT-IGNORED-001 (P1) — verify fix branch lands on dev",
+      "passes": false,
       "acceptanceCriteria": [
-        "Ran 6 iterations of the matrix vs https://dev-api.doable.me (matrix → matrix-authed → v2 → v3 → v4 → v5 → final2)",
-        "1194 assertions actually executed (well over 1000 target)",
-        "All SERVER-5XX + UNEXPECTED aggregated into testcases/evidence/dev/matrix-final2/r10-failures.json",
-        "Per-route failure tally in r10-failures-by-route.md",
-        "5xx bodies sampled (DOABLE_KEK leak text captured verbatim)"
+        "fix branch fix/r11-pdf-attachment-prompt-and-persist (fecc8c1c) reviewed for completeness against the Opus root-cause doc",
+        "Migration 083 (workspace_id on ai_sessions) confirmed clean + idempotent",
+        "scripts/r11-pdf-attach-test.ts re-runs against dev showing pdf_text_detected_in_prompt: true AND App.tsx derived from SRS content (not splash)",
+        "ai_sessions table has rows for the test session (admin/chat history shows the session)"
       ]
     },
     {
-      "id": "US-004",
-      "title": "Triage failures → bug files + EVOLVE test coverage",
-      "passes": true,
+      "id": "US-R12-04",
+      "title": "BUG-R10-AUTH-PASSWORD-RESET-404-001 — re-verify /auth/password-reset 200 on dev post-deploy",
+      "passes": false,
       "acceptanceCriteria": [
-        "5 unique bug files filed under testcases/bugs/BUG-R10-*: AUTH-REGISTER-DUP-500-001, AUTH-PASSWORD-RESET-404-001, AUTH-LOGOUT-ANON-200-001, MFA-ENROLL-500-DOABLE-KEK-001, TRAILING-SLASH-AUTH-DROP-001, PROJECT-FILES-EMPTY-200-001 (6 total)",
-        "EVOLVE step: matrix's route catalog refined 5 times — wrong /healthz→/health, wrong /skills→/workspaces/:id/skills, wrong /custom-domains→/domains, wrong /community/posts→/community/discover, wrong /ai-settings→/workspaces/:id/ai-settings, idempotent-logout 200 acceptance, rate-limited 429 acceptance, hasGet wrong-verb suppression, trailing-slash 308 auth-drop documented",
-        "FINDINGS.md updated with 2026-05-14 R10 section (next story)"
+        "fix consolidated in 7dfd654b on the current branch; verified merged or cherry-picked into main",
+        "POST https://dev-api.doable.me/auth/password-reset with {email:'qa-owner@doable.test'} → 200 (anti-enumeration envelope)",
+        "Body NEVER reveals whether email exists",
+        "Rate limit honoured at 4th call → 429 (if rate limits re-enabled) — but during R12 QA limits are off"
       ]
     },
     {
-      "id": "US-005",
-      "title": "Root-cause + fix top P0 bug (Opus) — branch + haiku push",
-      "passes": true,
+      "id": "US-R12-05",
+      "title": "BUG-R10-MFA-ENROLL-500-DOABLE-KEK-001 — verify dev has DOABLE_KEK set + boot fail-fast works",
+      "passes": false,
       "acceptanceCriteria": [
-        "Selected highest-severity: /auth/register 500 + DB constraint leak (BUG-R10-AUTH-REGISTER-DUP-500-001)",
-        "Opus root-cause: race condition in pre-check + case-mismatch (createUser lowercases, pre-check does not) + global onError leaking err.message in NODE_ENV=development",
-        "Fix on fix/register-duplicate-email-409 (commit 80988c3): try/catch on 23505, sanitize onError envelopes",
-        "pnpm --filter @doable/api exec tsc --noEmit → 0 errors",
-        "Probe scripts/test-register-dup.ts: 12/12 assertions pass (409 on race, 409 on pre-check, no DB-constraint leak)",
-        "Haiku pushed branch to origin"
+        "ssh dodev grep DOABLE_KEK /root/doable/.env → returns a 64-char hex value",
+        "POST /auth/mfa/enroll/start with valid JWT → 200 (not 500) with QR + secret",
+        "Body contains NO 'DOABLE_KEK' literal string (no env-name leak)",
+        "Boot logs show 'KEK loaded successfully' (or no boot panic)"
       ]
     },
     {
-      "id": "US-006",
-      "title": "Root-cause + fix next-priority bug (Opus) — branch + haiku push",
-      "passes": true,
+      "id": "US-R12-06",
+      "title": "BUG-R10-PROJECT-FILES-EMPTY-200-001 + BUG-R11-SEC-RLS-PROJECT-FILES-200 — verify 404 on unknown project",
+      "passes": false,
       "acceptanceCriteria": [
-        "Selected /auth/password-reset 404 (BUG-R10-AUTH-PASSWORD-RESET-404-001) — P0 functional (locked-out users can't recover)",
-        "Opus root-cause: route literally not registered (only /forgot-password existed) — Case (b) per dispatch",
-        "Fix on fix/password-reset-public-access (commit 6e09ec5): registered /password-reset alias sharing forgotPasswordRateLimiter bucket, anti-enumeration generic 200 envelope, .catch on sendTemplatedEmail",
-        "Probe scripts/verify-password-reset.ts: 200/400/429 paths verified locally",
-        "Haiku pushed branch to origin"
+        "fix consolidated in 15bf9ad9 on the current branch; verified merged or cherry-picked",
+        "GET /projects/00000000-0000-0000-0000-000000000000/files with valid qa-owner JWT → 404 (not 200 empty)",
+        "GET /projects/<other-tenant-project>/files with qa-owner JWT → 403 or 404 (cross-tenant blocked)",
+        "GET /projects/<own-project>/files with qa-owner JWT → 200 with the project's files"
       ]
     },
     {
-      "id": "US-007",
-      "title": "Bake server-config fix into setup-server.sh + setup-v3 + .env templates",
-      "passes": true,
+      "id": "US-R12-07",
+      "title": "BUG-R11-VERSIONS-EACCES-500-001 — verify fix landed + 500 with /boot/lost+found leak gone",
+      "passes": false,
       "acceptanceCriteria": [
-        "DOABLE_KEK back-fill added to setup-server.sh:604-630 (idempotent: missing→append, empty→fill+warn, set→preserve)",
-        "Same fix mirrored in setup-v3/setup-server-v3.sh:826-855",
-        "Boot-time fail-fast via loadKek() eager import in services/api/src/index.ts:11-29 — future operators get a clear hint at boot, not a 500 on MFA enroll",
-        "docker/.env.example documents DOABLE_KEK (parity with JWT_SECRET/ENCRYPTION_KEY)",
-        "bash -n setup-server.sh → 0; idempotence walked manually across all 3 states",
-        "Branch fix/setup-server-doable-kek (commit 6e019a8) pushed to origin",
-        "Effect: any of 100 fresh setup-server.sh runs (or re-runs against pre-R9 .env files) now produces a KEK out of the box — no manual remediation needed"
+        "fix branch fix/r11-versions-projectpath-server-derived (76fe7b6) merged or cherry-picked",
+        "POST /projects/<id>/versions with body {projectPath:'/'} → 400 or 403 (NOT 500)",
+        "Response body NEVER contains /boot, /etc, /var, /root, EACCES, ENOENT path leaks",
+        "Normal /versions POST without projectPath continues to work for scaffolded project"
       ]
     },
     {
-      "id": "US-008",
-      "title": "Verify from-scratch deploy path (dry-run trace)",
-      "passes": true,
+      "id": "US-R12-08",
+      "title": "BUG-R10-TRAILING-SLASH-AUTH-DROP-001 (P2) — root-cause + fix the 308 redirect Authorization-strip",
+      "passes": false,
       "acceptanceCriteria": [
-        "bash -n setup-server.sh → exit 0 (syntax clean)",
-        "bash -n setup-v3/setup-server-v3.sh → exit 0",
-        "DOABLE_KEK generation present at setup-server.sh:213-216 (fresh install) AND back-fill present in reuse-branch (R10 commit)",
-        "Idempotence walk by Opus: existing absent → append, empty → fill + warn, set → preserve",
-        "Re-runs do NOT clobber existing KEK (which would brick encrypted columns)",
-        "Trace documented inline in the commit message of 6e019a8"
+        "Opus analyses the 308 redirect: confirm whether Hono trailingSlash + Cloudflare Tunnel + Node fetch is dropping Authorization header on cross-origin or same-origin redirect",
+        "Choose the right fix: either disable trailing-slash redirect in Hono (return 404 vs redirect for /templates/), OR set HSTS-style canonical path early, OR document explicitly as a Node-fetch behaviour with no API-side fix",
+        "Probe: GET /templates with Authorization → 200; GET /templates/ with Authorization → either 200 or 308 to /templates BUT clients with proper redirect handling (curl -L, browser fetch) still authenticate",
+        "Document the chosen fix in BUG-R10-TRAILING-SLASH-AUTH-DROP-001.md with the trade-off rationale"
       ]
     },
     {
-      "id": "US-009",
-      "title": "Final regression — re-run matrix + all fixed bugs verified",
-      "passes": true,
+      "id": "US-R12-09",
+      "title": "BUG-R10-AUTH-LOGOUT-ANON-200-001 (P3) — make a product call + apply",
+      "passes": false,
       "acceptanceCriteria": [
-        "Final matrix run: 1194 assertions / 10 failures = 99.16% pass-or-expected",
-        "10 residual failures all triaged:",
-        "  • 4 × MFA enroll 500 — fix shipped in 6e019a8, awaiting dev redeploy",
-        "  • 5 × password-reset 404 — fix shipped in 6e09ec5, awaiting dev redeploy",
-        "  • 1 × project-files 200 empty data — P3 RLS soft-leak, accepted as 200-empty-list pattern; bug file filed for future fix",
-        "Each filed BUG-R10-* has 'Fix verified' or 'Awaiting deploy' line in body",
-        "pnpm --filter @doable/api exec tsc --noEmit on each fix branch — 0 errors"
+        "Triage note 297b5271 reviewed for the existing product call",
+        "Either: require auth on /auth/logout returning 401 for anon, OR explicitly document idempotent logout 200 as intentional in routes/auth.ts + add a unit test pinning the contract",
+        "Acceptance: contract is pinned with a test; behaviour matches the docs"
       ]
     },
     {
-      "id": "US-010",
-      "title": "Update FINDINGS.md + progress.txt + final close-out",
-      "passes": true,
+      "id": "US-R12-10",
+      "title": "Commit, push, merge consolidated fixes into main; deploy dev",
+      "passes": false,
       "acceptanceCriteria": [
-        "testcases/99-runlog/FINDINGS.md gets a new 2026-05-14 R10 section",
-        "progress.txt updated with R10 summary: 1194 assertions, 3 fix branches pushed, 6 bugs filed, setup-server.sh hardened for fresh deploys, learnings captured",
-        "All pushed branches listed: fix/register-duplicate-email-409 (80988c3), fix/password-reset-public-access (6e09ec5), fix/setup-server-doable-kek (6e019a8)",
-        "R10 evidence branch chore/qa-r10-evidence carries prd.json, progress.txt, scripts/r10-api-matrix.ts, testcases/bugs/BUG-R10-*.md, testcases/evidence/dev/matrix-*",
-        "Carry-over to R11: 2 unfixed P3 (logout-anon-200, project-files-empty-200) + trailing-slash auth-drop"
+        "All open fix branches either merged to main via PR or rebased into a single deploy branch",
+        "git push origin main updated with all merged fixes",
+        "ssh dodev cd /root/doable && git fetch && git checkout main && git pull (or equivalent) executed (with user approval)",
+        "pnpm db:migrate run on dev to apply migration 083 (and any pending)",
+        "tmux doable session restarted (api/web/ws windows) — services up on 127.0.0.1 only",
+        "ss -tlnp on dodev shows NO 0.0.0.0 binds"
+      ]
+    },
+    {
+      "id": "US-R12-11",
+      "title": "Final regression — re-run R10/R11 matrix vs dev; zero P0/P1 left",
+      "passes": false,
+      "acceptanceCriteria": [
+        "scripts/r10-api-matrix.ts re-run vs https://dev-api.doable.me → 5xx count = 0; UNEXPECTED count for previously-fixed bugs = 0",
+        "scripts/r11-pdf-attach-test.ts re-run → pdf_text_detected_in_prompt: true AND non-splash App.tsx",
+        "ai_sessions admin view shows the recent test sessions (not empty)",
+        "All BUG-R10-*/BUG-R11-* status updated in their .md files: FIXED + verified, or WONTFIX with rationale, or carried over to R13 with explicit reasoning",
+        "testcases/99-runlog/FINDINGS.md gets a 2026-05-15 R12 section with the final scoreboard"
       ]
     }
   ]
