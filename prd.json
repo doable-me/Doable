@@ -1,119 +1,65 @@
 {
-  "task": "Ralph R12 (2026-05-15): zap all remaining unfixed bugs from R10/R11 carry-over + any new bugs surfaced during retest. Rate limits stay OFF on dodev for QA; NO security weakening. Use sonnet agents for testing, opus agents for root cause + fix. Commit, push, merge to main if local, deploy to dev (dodev.fid.pw), re-verify. Never bind 0.0.0.0. Never touch prod.",
+  "task": "Ralph R13 (2026-05-15): close R12 carry-overs + retest dev for any new bugs surfaced after R12 deploy. Rate limits stay OFF on dodev; NO security weakening. Sonnet for testing, Opus for root cause + fix. Commit, push, deploy to dodev. Never bind 0.0.0.0. Never touch prod.",
   "stories": [
     {
-      "id": "US-R12-01",
-      "title": "Inventory all R10/R11/R12 bug files + live-test dev to determine still-open set",
-      "passes": true,
-      "acceptanceCriteria": [
-        "testcases/99-runlog/R12-STATUS.md written — 11 bugs classified: 7 ZAPPED, 2 WONTFIX, 2 STILL-OPEN (trailing-slash + PDF E2E unverified)",
-        "Live HTTP probes captured for every bug + status table written",
-        "Deterministic still-open vs zapped list produced — 2 STILL-OPEN driving R12 implementation work"
-      ]
-    },
-    {
-      "id": "US-R12-02",
-      "title": "Confirm dodev rate-limit posture: rate limits OFF; security features ON",
-      "passes": true,
-      "acceptanceCriteria": [
-        "Rate-limit kill switch shipped via PR #35 (RATE_LIMIT_DISABLED env var honored by middleware/rate-limit.ts)",
-        "dodev .env updated: RATE_LIMIT_DISABLED=true (verified via grep)",
-        "doable.service restarted; services back on 127.0.0.1 only (ss -tlnp confirms NO 0.0.0.0)",
-        "Security 9/9 PASS — CORS allowlist, MFA, RLS, JWT, CSP, HSTS, X-Frame-Options, no public ports, cookie flags — all verified by posture agent",
-        "Posture documented in testcases/99-runlog/R12-RATELIMIT-POSTURE.md"
-      ]
-    },
-    {
-      "id": "US-R12-03",
-      "title": "Root-cause + fix BUG-R11-PDF-ATTACHMENT-IGNORED-001 (P1) — verify fix branch lands on dev",
+      "id": "US-R13-01",
+      "title": "Run BUG-R11-PDF-ATTACHMENT-IGNORED-001 full E2E probe with longer wall-clock budget",
       "passes": false,
       "acceptanceCriteria": [
-        "Code fix shipped in PR #19 (commit 852beea7) and on main; migration 083 in services/api/src/db/migrations/ honored by primary loader in services/api/src/db/migrate.ts:36-57",
-        "DEPLOYED on dev (HEAD at f03422d4 includes PR #19 + #35); ai_sessions has workspace_id column",
-        "Full SSE+app-content E2E probe TIMED OUT at 5min in R12 verification agent — CARRY OVER to R13",
-        "R13 should re-run scripts/r11-pdf-attach-test.ts with 10-min budget and inspect generated App.tsx for SRS-derived content + non-empty chat history"
+        "scripts/r11-pdf-attach-test.ts re-run vs https://dev-api.doable.me with at least 10-min budget",
+        "prompt_tokens > 50000 (PDF text is being inlined)",
+        "response_chars > 100 AND tool_call_count > 0 (AI is generating)",
+        "Generated src/App.tsx references SRS content (system name from cover, an entity from §4, a feature from §2-§3) — NOT the default vite-react splash",
+        "GET /projects/<id>/chat/history → data array is non-empty",
+        "Bug file BUG-R11-PDF-ATTACHMENT-IGNORED-001.md status updated to FIXED+R13-verified OR STILL-OPEN with new root-cause analysis"
       ]
     },
     {
-      "id": "US-R12-04",
-      "title": "BUG-R10-AUTH-PASSWORD-RESET-404-001 — re-verify /auth/password-reset 200 on dev post-deploy",
-      "passes": true,
-      "acceptanceCriteria": [
-        "Fix from PR #13 (commit 10bad3b6) merged to main; live on dev",
-        "POST https://dev-api.doable.me/auth/password-reset anon and authed → 200 with anti-enumeration envelope (verified by R12 inventory agent)",
-        "Body never reveals whether email exists"
-      ]
-    },
-    {
-      "id": "US-R12-05",
-      "title": "BUG-R10-MFA-ENROLL-500-DOABLE-KEK-001 — verify dev has DOABLE_KEK set + boot fail-fast works",
-      "passes": true,
-      "acceptanceCriteria": [
-        "ssh dodev grep DOABLE_KEK /root/doable/.env → returns value (verified)",
-        "POST /auth/mfa/enroll/start with JWT → 200 with secret/otpauthUrl (verified by R12 inventory agent)",
-        "Body contains NO 'DOABLE_KEK' literal string"
-      ]
-    },
-    {
-      "id": "US-R12-06",
-      "title": "BUG-R10-PROJECT-FILES-EMPTY-200-001 + BUG-R11-SEC-RLS-PROJECT-FILES-200 — verify 404 on unknown project",
-      "passes": true,
-      "acceptanceCriteria": [
-        "Fix from PR #15 (commit a28981bd) merged to main; live on dev",
-        "GET /projects/00000000-0000-0000-0000-000000000000/files authed → 404 (verified)",
-        "Cross-tenant GET /projects/<other-uuid>/files → 404 (verified by R12 inventory agent)"
-      ]
-    },
-    {
-      "id": "US-R12-07",
-      "title": "BUG-R11-VERSIONS-EACCES-500-001 — verify fix landed + 500 with /boot/lost+found leak gone",
-      "passes": true,
-      "acceptanceCriteria": [
-        "Fix from PR #12 (commit ea76d024) merged to main; live on dev",
-        "POST /projects/<id>/versions with body {projectPath:'/'} → 400 (NOT 500); no /boot or EACCES leak (verified by R12 inventory agent)"
-      ]
-    },
-    {
-      "id": "US-R12-08",
-      "title": "BUG-R10-TRAILING-SLASH-AUTH-DROP-001 (P2) — root-cause + fix the 308 redirect Authorization-strip",
-      "passes": true,
-      "acceptanceCriteria": [
-        "Opus tracer pinned root cause to services/api/src/index.ts:289-319 308 redirect (testcases/evidence/dev/r12-trailing-slash-trace.md)",
-        "Fix shipped in PR #35 commit 166c94af: top-level `new Hono({ strict: false })` + 84 sub-routers with strict:false + 308 middleware deleted",
-        "tsc clean (0 errors); scripts/r12-test-trailing-slash.ts 47/47 in-process assertions PASS",
-        "Live dev: GET /templates/ returns 401 (no auth) not 308 — fix confirmed deployed (smoke probe 2026-05-15 09:38)",
-        "Bug file status updated to FIXED with commit 166c94af reference"
-      ]
-    },
-    {
-      "id": "US-R12-09",
-      "title": "BUG-R10-AUTH-LOGOUT-ANON-200-001 (P3) — make a product call + apply",
-      "passes": true,
-      "acceptanceCriteria": [
-        "Product decision: idempotent logout 200 for anon is intentional; rationale (SDK cleanup paths + stateless JWTs) documented",
-        "Inline WONTFIX comment added to services/api/src/routes/auth/core.ts:170-176 pinning the contract"
-      ]
-    },
-    {
-      "id": "US-R12-10",
-      "title": "Commit, push, merge consolidated fixes into main; deploy dev",
-      "passes": true,
-      "acceptanceCriteria": [
-        "PR #35 (fix/r12-trailing-slash-no-redirect → main) merged at f03422d4",
-        "PR #36 (chore/r12-progress-update → main) merged with progress.txt update",
-        "dodev: git pull → HEAD at f03422d4; systemctl restart doable.service",
-        "ss -tlnp on dodev confirms services on 127.0.0.1 only (4000 api, 4001 ws, 3000 web); NO 0.0.0.0 binds"
-      ]
-    },
-    {
-      "id": "US-R12-11",
-      "title": "Final regression — re-run R10/R11 matrix vs dev; zero P0/P1 left",
+      "id": "US-R13-02",
+      "title": "Add unit test pinning the logout-anon-200 contract (architect P2 follow-up)",
       "passes": false,
       "acceptanceCriteria": [
-        "Background Sonnet final-regression agent in flight — writing to testcases/99-runlog/R12-FINAL-REGRESSION.md",
-        "Opus architect verification in flight — judging optimality of strict:false scope + RATE_LIMIT_DISABLED safety",
-        "All R10/R11 bug-file statuses to be updated to FIXED/WONTFIX/CARRY-OVER",
-        "FINDINGS.md to get a 2026-05-15 R12 section with final scoreboard"
+        "Test file under services/api/test/ OR scripts/r13-test-logout-contract.ts asserts: POST /auth/logout without auth → 200, with valid refreshToken → 200, with invalid refreshToken → 200",
+        "Test runs successfully (tsc clean + assertions pass)",
+        "Test references BUG-R10-AUTH-LOGOUT-ANON-200-001 in a comment so future readers know the contract is intentional"
+      ]
+    },
+    {
+      "id": "US-R13-03",
+      "title": "Live retest dev for any NEW bugs surfaced after R12 deploy",
+      "passes": false,
+      "acceptanceCriteria": [
+        "Run scripts/r10-api-matrix.ts vs dev — full 1194-assertion matrix",
+        "Compare failure tally to R12-FINAL-REGRESSION.md baseline",
+        "Any NEW failures (UNEXPECTED-STATUS / SERVER-5XX) — file fresh BUG-R13-* bug files with repro + classification",
+        "Any new bug with severity P0 or P1 → root-cause + fix this round; P2/P3 → carry over to R14 with rationale",
+        "Trailing-slash assertions pass (regression check for PR #35)",
+        "Rate-limit kill switch still active (no 429 during matrix)"
+      ]
+    },
+    {
+      "id": "US-R13-04",
+      "title": "Root-cause + fix any P0/P1 bugs surfaced in US-R13-03",
+      "passes": false,
+      "acceptanceCriteria": [
+        "Opus tracer agent produces evidence-backed root-cause for each P0/P1 bug",
+        "Opus executor agent implements the fix on a dedicated branch fix/r13-<bug-slug>",
+        "pnpm --filter @doable/api exec tsc --noEmit → 0 errors on each fix branch",
+        "A probe script verifies the fix locally",
+        "If no P0/P1 bugs surfaced, mark this story passes:true with rationale 'no qualifying bugs to fix'"
+      ]
+    },
+    {
+      "id": "US-R13-05",
+      "title": "Commit, push, merge fixes; deploy to dodev; final regression",
+      "passes": false,
+      "acceptanceCriteria": [
+        "All R13 fix branches merged to main via PR with admin-merge",
+        "ssh dodev → git pull origin main → systemctl restart doable.service",
+        "ss -tlnp on dodev confirms NO 0.0.0.0 binds; all services on 127.0.0.1",
+        "Smoke probes: /health 200, /templates/ 401 anon (regression test for PR #35), CORS evil-origin → no ACAO",
+        "Re-run scripts/r10-api-matrix.ts post-deploy — failure count not worse than baseline; new fixes verified",
+        "FINDINGS.md updated with 2026-05-15 R13 section"
       ]
     }
   ]
