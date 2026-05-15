@@ -289,7 +289,16 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
   // user with the iframe in view keeps the session warm.
   touchActivity(projectId);
 
-  const originalPath = c.req.path;
+  // BUG-PREVIEW-TRAILING-SLASH: the Hono router for this file is constructed
+  // with `strict: false`, which means it routes `/preview/:id/` and
+  // `/preview/:id` to the same handler but ALSO normalizes `c.req.path` by
+  // stripping the trailing slash. Forwarding that normalized path to Vite
+  // makes Vite's baseMiddleware reject the request — its base is
+  // `/preview/<id>/` and `path.startsWith(base)` fails for `/preview/<id>`,
+  // so Vite emits its "did you mean to visit /preview/<id>/" 404 page and
+  // the iframe renders as a blank white pane with a single hyperlink.
+  // Read the pathname off the raw URL instead so the slash survives.
+  const originalPath = new URL(c.req.url).pathname;
   const targetUrl = `${devUrl}${originalPath}`;
 
   // Preserve query string
@@ -581,7 +590,11 @@ async function viteDevAssetFallback(c: import("hono").Context) {
   const devUrl = getDevServerInternalUrl(projectId);
   if (!devUrl) return c.text("Not found", 404);
 
-  const originalPath = c.req.path;
+  // Same trailing-slash hazard as the main proxy route: Hono's
+  // `strict: false` normalizes `c.req.path` and would change the forwarded
+  // shape of /@vite/ /@fs/ /__vite_ping etc. Read the pathname off the raw
+  // URL so we forward exactly what the browser sent.
+  const originalPath = new URL(c.req.url).pathname;
   const qsIndex = c.req.url.indexOf("?");
   const queryString = qsIndex !== -1 ? c.req.url.slice(qsIndex + 1) : "";
   const targetUrl = queryString ? `${devUrl}${originalPath}?${queryString}` : `${devUrl}${originalPath}`;
