@@ -1433,6 +1433,25 @@ if [ "$CONTAINER_MODE" != "1" ]; then
     warn "deploy/apparmor/doable-ai-bash missing in repo — skipping MAC profile install"
   fi
 
+  # Puppeteer Chrome userns profile: Ubuntu 24.04+ blocks unprivileged user
+  # namespaces (kernel.apparmor_restrict_unprivileged_userns=1), so Chrome's
+  # sandbox can't start when puppeteer launches it as the doable user. This
+  # profile grants `userns` to ONLY the puppeteer-managed Chrome binary, so
+  # the global restriction still protects every other workload (including
+  # user-supplied AI code in bubblewrap jails).
+  if [ -f "${INSTALL_DIR}/deploy/apparmor/doable-puppeteer-chrome" ]; then
+    install -m 0644 -o root -g root \
+      "${INSTALL_DIR}/deploy/apparmor/doable-puppeteer-chrome" \
+      /etc/apparmor.d/doable-puppeteer-chrome
+    if apparmor_parser -r /etc/apparmor.d/doable-puppeteer-chrome 2>&1 | tee /tmp/aa-chrome.log; then
+      ok "AppArmor profile 'doable-puppeteer-chrome' loaded (thumbnails sandbox ok)"
+    else
+      warn "apparmor_parser failed: $(tail -1 /tmp/aa-chrome.log) — thumbnail captures will fail under Ubuntu 24.04+ until resolved"
+    fi
+  else
+    warn "deploy/apparmor/doable-puppeteer-chrome missing in repo — thumbnail captures may fail on Ubuntu 24.04+"
+  fi
+
   # — Bind-mount helper for proc-mask + etc-synth composers —
   # The composers stage synthetic /proc and /etc files in
   # `<projectPath>/.sandbox/...` and ask this helper to bind-mount them

@@ -1,0 +1,27 @@
+# AppArmor profile for the puppeteer-managed Chrome binary used by the
+# thumbnail capture service (services/api/src/thumbnails/capture.ts).
+#
+# Ubuntu 24.04 ships with kernel.apparmor_restrict_unprivileged_userns=1,
+# which blocks Chrome from creating its sandbox user namespace when launched
+# under a non-root user. Without an AppArmor profile granting `userns`,
+# Chrome aborts at startup with "No usable sandbox!" and every thumbnail
+# capture fails.
+#
+# Granting `userns` to ONLY this Chrome binary keeps the global kernel
+# restriction in place for every other process on the host — including the
+# user-supplied AI code that runs inside bubblewrap-jailed Vite dev servers.
+# This preserves defense-in-depth against a user-code → root chain via a
+# kernel userns LPE while still letting the thumbnail service work.
+#
+# The path glob covers any puppeteer-installed Chrome version under
+# /var/cache/doable/puppeteer/ (see setup-server.sh PUPPETEER_CACHE_DIR).
+abi <abi/4.0>,
+include <tunables/global>
+
+profile doable-puppeteer-chrome /var/cache/doable/puppeteer/chrome/**/chrome flags=(unconfined) {
+  userns,
+}
+
+profile doable-puppeteer-chrome-headless /var/cache/doable/puppeteer/chrome-headless-shell/**/chrome-headless-shell flags=(unconfined) {
+  userns,
+}
