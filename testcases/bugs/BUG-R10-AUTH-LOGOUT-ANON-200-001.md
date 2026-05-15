@@ -3,7 +3,7 @@
 - **Severity**: P3 (low — informational / hardening opportunity)
 - **Env**: dev (dev-api.doable.me)
 - **Filed**: 2026-05-14 (Ralph R10)
-- **Status**: OPEN (not in this round's fix list)
+- **Status**: WONTFIX pinned in code (R12) — idempotent logout returning 200 is intentional product decision; confirmed live 2026-05-15
 - **Discovered by**: scripts/r10-api-matrix.ts (A00007)
 
 ## Repro

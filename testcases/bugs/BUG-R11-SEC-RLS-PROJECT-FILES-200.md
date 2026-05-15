@@ -3,7 +3,7 @@
 - **Severity**: P2 (high — tenant isolation leak)
 - **Env**: dev (dev-api.doable.me)
 - **Filed**: 2026-05-14 (R11 security smoke)
-- **Status**: OPEN
+- **Status**: FIXED + R12 verified (2026-05-15) — cross-tenant project access returns 404; tenant isolation confirmed via live probe (tenant2 project `3779f840` returns 404 to tenant1 JWT)
 - **Discovered by**: R11 Probe #6
 
 ## Repro

@@ -3,7 +3,7 @@
 - **Severity**: P0 (functional — password-reset flow broken end-to-end)
 - **Env**: dev (dev-api.doable.me)
 - **Filed**: 2026-05-14 (Ralph R10)
-- **Status**: UNDER INVESTIGATION (Opus on `fix/password-reset-public-access`)
+- **Status**: FIXED + R12 verified (2026-05-15) — fix `6e09ec5` on `fix/password-reset-public-access` merged to main; live on dev returns 200 anon
 - **Discovered by**: scripts/r10-api-matrix.ts (A00010 — POST /auth/password-reset)
 
 ## Repro

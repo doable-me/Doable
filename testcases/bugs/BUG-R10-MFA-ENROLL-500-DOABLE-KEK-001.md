@@ -3,7 +3,7 @@
 - **Severity**: P0 (functional + info-disclosure)
 - **Env**: dev (dev-api.doable.me)
 - **Filed**: 2026-05-14 (Ralph R10)
-- **Status**: IN FLIGHT — Opus on `fix/setup-server-doable-kek` baking DOABLE_KEK gen into setup-server.sh
+- **Status**: FIXED + R12 verified (2026-05-15) — fix `6e019a8` on `fix/setup-server-doable-kek` merged to main; DOABLE_KEK set on dev; live returns 200 with secret + otpauthUrl
 - **Discovered by**: scripts/r10-api-matrix.ts (A00126, A00133, A00134, A00135)
 
 ## Repro

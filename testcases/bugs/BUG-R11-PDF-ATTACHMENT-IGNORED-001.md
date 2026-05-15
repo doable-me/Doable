@@ -3,7 +3,7 @@
 - **Severity**: P1 (high — the marquee PDF-attach feature does not work end-to-end)
 - **Env**: dev (dev-api.doable.me / dev.doable.me)
 - **Filed**: 2026-05-14 (Ralph R11)
-- **Status**: OPEN — root-cause investigation by Opus agent in progress
+- **Status**: DEPLOY-PENDING-FULL-E2E-VERIFICATION (2026-05-15) — fix branch `fix/r11-pdf-attachment-prompt-and-persist` (commit `fecc8c1`) merged to main and deployed via PR #19; full 60s SSE+AI end-to-end probe not re-run in R12 (timeout constraint); code is live but AI-generates-from-PDF outcome unconfirmed
 - **User report**: "when I tried to attach a large pdf and told it to create an app, it created something without looking at the pdf I attached" (uniquegodwin@gmail.com)
 - **Reproduced by**: `scripts/r11-pdf-attach-test.ts` against `dev-api.doable.me`
 

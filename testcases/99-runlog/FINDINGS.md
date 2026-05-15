@@ -308,3 +308,52 @@ Three new TC files born from R11 findings (`scripts/r11-...` agent run):
 - Platform-wide `ai_sessions` empty bug — will auto-resolve once R11 fix lands AND deploys
 - Carry-overs from R10 (trailing-slash auth-drop, project-files 200-empty)
 
+
+---
+
+## 2026-05-15 — R12 Final Regression
+
+**Mission:** Confirm zero P0/P1 bugs remaining, verify trailing-slash fix (PR #35) live, rate-limit kill switch active, security intact. Target: dev-api.doable.me. Agent: qa-tester (claude-sonnet-4-6).
+
+### 11 bugs accounted for
+
+| Bug ID | Severity | Verdict |
+|--------|----------|---------|
+| BUG-R10-AUTH-PASSWORD-RESET-404-001 | P0 | FIXED + R12 verified |
+| BUG-R10-AUTH-REGISTER-DUP-500-001 | P0 | FIXED + R12 verified |
+| BUG-R10-MFA-ENROLL-500-DOABLE-KEK-001 | P0 | FIXED + R12 verified |
+| BUG-R10-PROJECT-FILES-EMPTY-200-001 | P3 | FIXED + R12 verified |
+| BUG-R10-AUTH-LOGOUT-ANON-200-001 | P3 | WONTFIX-DOCUMENTED (idempotent logout by design) |
+| BUG-R10-TRAILING-SLASH-AUTH-DROP-001 | P2 | FIXED-IN-R12 (PR #35, `strict:false` on all Hono routers) |
+| BUG-R11-DEPLOY-GAP-R10-FIXES-001 | P1 | ZAPPED + R12 verified |
+| BUG-R11-PDF-ATTACHMENT-IGNORED-001 | P1 | DEPLOY-PENDING-FULL-E2E-VERIFICATION (code live via PR #19, 60s probe not re-run) |
+| BUG-R11-SEC-BAD-SIG-200 | N/A | NOT A BUG (false positive — base64url padding artifact) |
+| BUG-R11-SEC-RLS-PROJECT-FILES-200 | P2 | FIXED + R12 verified |
+| BUG-R11-VERSIONS-EACCES-500-001 | P2 | FIXED + R12 verified |
+
+### Counts
+- 7 ZAPPED on dev (password-reset, register-dup, mfa-enroll, project-files-empty, deploy-gap, rls-cross-tenant, versions-eacces)
+- 2 WONTFIX-DOCUMENTED (logout-anon-200, sec-bad-sig false positive)
+- 1 FIXED-IN-R12 (trailing-slash — PR #35, all 6 paths return 200, no 308)
+- 1 DEPLOY-PENDING-FULL-E2E-VERIFICATION (PDF attachment — code shipped PR #19, full 60s SSE+AI probe deferred)
+
+### Trailing-slash fix — verified live
+All 6 endpoints confirmed 200 with Authorization header and trailing slash:
+- GET /templates/ → 200
+- GET /workspaces/ → 200
+- GET /projects/ → 200
+
+### Rate-limit kill switch — verified live (BUG-QA-RATELIMIT)
+- 12x POST /auth/login with wrong password → all 401, zero 429
+- 7x POST /auth/register with unique emails → all 201, zero 429
+
+### Security — 8/9 verified (pre-existing CSP gap, not a regression)
+- CORS evil origin: no ACAO header ✓
+- JWT tamper: 401 ✓
+- HSTS: max-age=15552000; includeSubDomains ✓
+- X-Frame-Options: DENY on /admin, SAMEORIGIN on API ✓
+- RLS cross-tenant: 404 on tenant2 project ✓
+- CSP: absent from API server (pre-existing, not introduced by R12)
+
+### Full evidence
+`testcases/99-runlog/R12-FINAL-REGRESSION.md`

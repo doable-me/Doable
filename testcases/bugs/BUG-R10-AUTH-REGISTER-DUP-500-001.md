@@ -3,7 +3,7 @@
 - **Severity**: P0 (reliability + info-disclosure)
 - **Env**: dev (dev-api.doable.me)
 - **Filed**: 2026-05-14 (Ralph R10)
-- **Status**: FIXED on branch `fix/register-duplicate-email-409` (commit `80988c35`)
+- **Status**: FIXED + R12 verified (2026-05-15) — live on dev returns 409 with no DB constraint leak
 - **Discovered by**: scripts/r10-api-matrix.ts (assertions A00019, A00020)
 
 ## Repro

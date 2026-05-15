@@ -3,7 +3,7 @@
 - **Severity**: NOT A BUG (originally filed P1, retracted after deeper verification)
 - **Env**: dev (dev-api.doable.me)
 - **Filed**: 2026-05-14 (R11 security smoke)
-- **Status**: **CLOSED — FALSE POSITIVE**
+- **Status**: NOT A BUG (false positive, R12 confirmed 2026-05-15) — tampered JWT returns 401; base64url non-canonical padding explained the original apparent anomaly
 - **Discovered by**: R11 Probe #4
 
 ## Original repro
