@@ -50,11 +50,27 @@ export function usePlatformAdmin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // BUG-ADMIN-010: defense in depth against API response-shape drift.
+  // /admin/features and /admin/users must populate React state with an
+  // ARRAY — admin/page.tsx then does features.map(...) and users.map(...).
+  // If a future API change ever re-wraps these in a { data: [...] } envelope
+  // (the original BUG-ADMIN-005 regression), unwrap it transparently so the
+  // admin page never crashes with "A.map is not a function" again. We still
+  // assert Array.isArray at the end so non-array, non-envelope responses
+  // (string, null, object) fall back to [] rather than poisoning state.
+  function asArray<T>(raw: unknown): T[] {
+    if (Array.isArray(raw)) return raw as T[];
+    if (raw && typeof raw === "object" && Array.isArray((raw as { data?: unknown }).data)) {
+      return (raw as { data: T[] }).data;
+    }
+    return [];
+  }
+
   const loadFeatures = useCallback(async () => {
     if (!isPlatformAdmin) return;
     try {
       const data = await apiFetch("/admin/features");
-      setFeatures(data);
+      setFeatures(asArray<FeatureFlag>(data));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load features");
     }
@@ -64,7 +80,7 @@ export function usePlatformAdmin() {
     if (!isPlatformAdmin) return;
     try {
       const data = await apiFetch("/admin/users");
-      setUsers(data);
+      setUsers(asArray<AdminUser>(data));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load users");
     }

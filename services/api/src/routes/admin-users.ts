@@ -62,26 +62,37 @@ adminUserRoutes.get("/users", async (c) => {
       `)[0]?.c ?? 0
     : (await sql<{ c: number }[]>`SELECT COUNT(*)::int AS c FROM users`)[0]?.c ?? 0;
 
-  return c.json({
-    data: rows.map((u) => ({
+  // BUG-ADMIN-010 (regression of BUG-ADMIN-005):
+  // We must return a flat snake_case array here. The single consumer
+  // (apps/web/src/hooks/use-platform-admin.ts) reads this as
+  // `setUsers(data)` and then admin/page.tsx does `users.map(...)`. When
+  // BUG-ADMIN-005 wrapped this in a { data, total, limit, offset } envelope
+  // with camelCase keys, the admin page crashed with
+  // "TypeError: A.map is not a function" on every load. The enriched fields
+  // (plan, ai_source, etc.) are still surfaced — only the shape is reverted
+  // to what every existing consumer (AdminUser type, admin-components.tsx,
+  // user-management-panel.tsx, page.tsx) already expects.
+  return c.json(
+    rows.map((u) => ({
       id: u.id,
       email: u.email,
-      displayName: u.display_name,
-      isPlatformAdmin: u.is_platform_admin,
-      platformRole: u.platform_role,
-      createdAt: u.created_at,
-      workspaceId: u.workspace_id,
+      display_name: u.display_name,
+      is_platform_admin: u.is_platform_admin,
+      platform_role: u.platform_role,
+      created_at: u.created_at,
+      workspace_id: u.workspace_id,
       plan: u.plan ?? "free",
-      aiSource: u.ai_source,
+      ai_source: u.ai_source,
       model: u.model,
-      dailyCredits: u.daily_credits ?? 0,
-      monthlyCredits: u.monthly_credits ?? 0,
-      rolloverCredits: u.rollover_credits ?? 0,
+      daily_credits: u.daily_credits ?? 0,
+      monthly_credits: u.monthly_credits ?? 0,
+      rollover_credits: u.rollover_credits ?? 0,
     })),
-    total,
-    limit,
-    offset,
-  });
+  );
+  // total/limit/offset intentionally dropped: the frontend never read them
+  // (only consumer ignored them) and shipping them inside the array would
+  // be a breaking change. Re-introduce them via a separate header/endpoint
+  // if pagination UI is built — do NOT re-wrap this response.
 });
 
 // Toggle platform admin
