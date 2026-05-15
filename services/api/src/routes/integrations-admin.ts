@@ -150,6 +150,17 @@ integrationAdminRoutes.post(
         isGlobal: body.isGlobal,
       });
 
+      await recordAdminAction(c, {
+        action: "integrations.oauth_app.upsert",
+        resourceType: "integration",
+        resourceId: body.integrationId,
+        details: {
+          isGlobal: !!body.isGlobal,
+          workspaceId: body.workspaceId ?? null,
+          clientIdTail: body.clientId.slice(-4),
+        },
+      }).catch(() => { /* audit failures must not block the operation */ });
+
       return c.json({
         data: {
           id: app.id,
@@ -161,8 +172,11 @@ integrationAdminRoutes.post(
         },
       }, 201);
     } catch (err) {
+      // Sanitize: never echo a credential value back even if the DB layer leaked it.
+      const msg = err instanceof Error ? err.message : String(err);
+      const safe = msg.replace(/[A-Za-z0-9_\-]{20,}/g, "[redacted]");
       return c.json({
-        error: `Failed to create OAuth app: ${err instanceof Error ? err.message : String(err)}`,
+        error: `Failed to create OAuth app: ${safe}`,
       }, 500);
     }
   },
@@ -185,6 +199,18 @@ integrationAdminRoutes.delete("/integrations/admin/oauth-apps/:id", authMiddlewa
   }
 
   await oauthApps.delete(appId);
+
+  await recordAdminAction(c, {
+    action: "integrations.oauth_app.delete",
+    resourceType: "integration",
+    resourceId: (app.integration_id as string) ?? appId,
+    details: {
+      oauthAppId: appId,
+      isGlobal: !!app.is_global,
+      workspaceId: app.workspace_id ?? null,
+    },
+  }).catch(() => { /* audit failures must not block the operation */ });
+
   return c.json({ data: { id: appId, deleted: true } });
 });
 
@@ -577,6 +603,76 @@ integrationAdminRoutes.delete(
     });
 
     return c.json({ data: { integrationId, deleted: true } });
+  },
+);
+
+// ─── Platform Admin: Test Connection ──────────────────────
+// Lightweight "are credentials configured and reachable" probe. Does NOT
+// decrypt or transmit secrets. For OAuth integrations it checks reachability
+// of the provider's tokenUrl. For non-OAuth, it returns ok if a row exists.
+// Real upstream API calls (which would require decrypting + transmitting
+// credentials) are intentionally out of scope for v1.
+
+integrationAdminRoutes.post(
+  "/integrations/admin/test",
+  authMiddleware,
+  platformAdminMiddleware,
+  zValidator("json", z.object({ integrationId: z.string().min(1) })),
+  async (c) => {
+    const { integrationId } = c.req.valid("json");
+
+    const def = getIntegration(integrationId);
+    if (!def) {
+      return c.json({ ok: false, error: "Integration not found in registry" }, 404);
+    }
+
+    // OAuth: verify (a) we have a stored client_id or env vars, and (b) the
+    // tokenUrl resolves. We DO NOT POST to the token endpoint here — that
+    // would require the encrypted secret and bind us to provider quirks.
+    if (def.authType === "oauth2") {
+      const [row] = await sql<Array<{ id: string }>>`
+        SELECT id FROM oauth_apps
+        WHERE integration_id = ${integrationId}
+          AND (is_global = true OR workspace_id IS NULL)
+        LIMIT 1
+      `;
+      const envKey = integrationId.toUpperCase().replace(/-/g, "_");
+      const hasEnv = !!(process.env[`OAUTH_${envKey}_CLIENT_ID`] && process.env[`OAUTH_${envKey}_CLIENT_SECRET`]);
+      if (!row && !hasEnv) {
+        return c.json({ ok: false, error: "No OAuth credentials configured" }, 200);
+      }
+      const tokenUrl = def.oauth2Config?.tokenUrl;
+      if (!tokenUrl) {
+        return c.json({ ok: true, message: "Credentials present (no tokenUrl declared)" });
+      }
+      try {
+        // HEAD avoids transmitting a body. 405 is fine — the URL is reachable.
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 5000);
+        const res = await fetch(tokenUrl, { method: "HEAD", signal: ctrl.signal });
+        clearTimeout(t);
+        return c.json({
+          ok: res.status < 500,
+          message: `tokenUrl reachable (HTTP ${res.status})`,
+        });
+      } catch (err) {
+        return c.json({
+          ok: false,
+          error: `tokenUrl unreachable: ${err instanceof Error ? err.message : "unknown"}`,
+        }, 200);
+      }
+    }
+
+    // Non-OAuth: ok if a platform credential row exists.
+    if (def.authType === "secret_text" || def.authType === "basic_auth" || def.authType === "custom_auth") {
+      const cred = await platformCredentials.list().then((rows) => rows.find((r) => r.integrationId === integrationId));
+      if (!cred) {
+        return c.json({ ok: false, error: "No credentials configured" }, 200);
+      }
+      return c.json({ ok: true, message: `Configured (${cred.authType})` });
+    }
+
+    return c.json({ ok: true, message: "Nothing to test" });
   },
 );
 

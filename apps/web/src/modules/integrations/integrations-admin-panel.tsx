@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 import { CATEGORY_LABELS, type CustomAuthField } from "./use-integration-catalog";
 import { IntegrationConfigForm, type ExistingCredentialHint } from "./integration-config-form";
+import { PROVIDER_SETUP_GUIDES } from "./provider-setup-guides";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -665,6 +666,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                             isPlatformMode={isPlatformMode}
                             workspaceId={workspaceId || undefined}
                             existing={buildExistingHint({ entry, platformCred: platformCredsMap.get(item.id), envInfo })}
+                            setupGuide={PROVIDER_SETUP_GUIDES[item.id]}
                             onSaved={handleConfigSaved}
                             onCancel={() => setExpandedId(null)}
                           />
