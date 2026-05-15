@@ -162,6 +162,10 @@ function OAuthAppForm({
   onSaved,
   onCancel,
 }: IntegrationConfigFormProps) {
+  // Per-mount unique form name so each open instance gets a distinct form
+  // boundary — prevents Chrome from grouping multiple configure forms into
+  // one synthetic login form.
+  const [formName] = useState(() => `int-cfg-oauth-${item.id}-${Math.random().toString(36).slice(2, 8)}`);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
@@ -491,6 +495,7 @@ function SecretInput({
   setShow,
   placeholder,
   autoFocus,
+  name,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -498,18 +503,30 @@ function SecretInput({
   setShow: (v: boolean) => void;
   placeholder: string;
   autoFocus?: boolean;
+  name?: string;
 }) {
   return (
     <div className="relative">
       <input
         type={show ? "text" : "password"}
+        name={name ?? `int-secret-${Math.random().toString(36).slice(2, 8)}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoFocus={autoFocus}
         className={cn(inputClass, "pr-10 font-mono")}
-        autoComplete="off"
+        // "new-password" tells Chrome this is a NEW credential being entered,
+        // not a saved one to autofill. Combined with the unique name= and the
+        // ancestor <form autoComplete="off">, this prevents the credential
+        // manager from treating the panel as a login form and autofilling
+        // the catalog search input. See also: data-1p-ignore, data-lpignore.
+        autoComplete="new-password"
+        autoCorrect="off"
+        autoCapitalize="off"
         spellCheck={false}
+        data-1p-ignore
+        data-lpignore="true"
+        data-form-type="other"
       />
       <button
         type="button"
