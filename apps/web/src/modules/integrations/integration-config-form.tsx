@@ -220,7 +220,21 @@ function OAuthAppForm({
   };
 
   return (
-    <div className="space-y-4">
+    <form
+      name={formName}
+      autoComplete="off"
+      onSubmit={(e) => { e.preventDefault(); void submit(); }}
+      className="space-y-4"
+    >
+      {/* Honeypot inputs — Chrome/Safari/password managers see these first
+          and target them with autofill instead of the real credential fields
+          and the catalog search input. They're positioned off-screen + tab
+          excluded so users never see or focus them. */}
+      <div aria-hidden="true" style={{ position: "absolute", left: "-9999px", height: 0, overflow: "hidden" }}>
+        <input type="text" name="username" tabIndex={-1} autoComplete="username" defaultValue="" />
+        <input type="password" name="password" tabIndex={-1} autoComplete="current-password" defaultValue="" />
+      </div>
+
       <ProviderHelpBlurb authType="oauth2" setupGuide={setupGuide} />
 
       <div className="flex items-start gap-2 rounded-md bg-muted/40 border p-3 text-xs">
@@ -259,15 +273,24 @@ function OAuthAppForm({
       <FieldLabel>Client ID</FieldLabel>
       <input
         type="text"
+        name={`${formName}-client-id`}
         autoFocus
         value={clientId}
         onChange={(e) => setClientId(e.target.value)}
         placeholder="OAuth Client ID from provider console"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        data-1p-ignore
+        data-lpignore="true"
+        data-form-type="other"
         className={inputClass}
       />
 
       <FieldLabel>Client Secret</FieldLabel>
       <SecretInput
+        name={`${formName}-client-secret`}
         value={clientSecret}
         onChange={setClientSecret}
         show={showSecret}
@@ -280,18 +303,18 @@ function OAuthAppForm({
       <FormActions>
         {existing && <TestConnectionButton integrationId={item.id} disabled={saving} />}
         <div className="flex-1" />
-        <button onClick={onCancel} disabled={saving} className={btnSecondary}>
+        <button type="button" onClick={onCancel} disabled={saving} className={btnSecondary}>
           Cancel
         </button>
         <button
-          onClick={submit}
+          type="submit"
           disabled={saving || !clientId.trim() || !clientSecret.trim()}
           className={btnPrimary}
         >
           {saving ? <><Loader2 className="h-3 w-3 animate-spin" /> Saving</> : <><Key className="h-3 w-3" /> Save Credentials</>}
         </button>
       </FormActions>
-    </div>
+    </form>
   );
 }
 
@@ -306,6 +329,7 @@ function NonOAuthCredentialForm({
   onSaved,
   onCancel,
 }: IntegrationConfigFormProps) {
+  const [formName] = useState(() => `int-cfg-cred-${item.id}-${Math.random().toString(36).slice(2, 8)}`);
   const [apiKey, setApiKey] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -373,7 +397,19 @@ function NonOAuthCredentialForm({
   };
 
   return (
-    <div className="space-y-4">
+    <form
+      name={formName}
+      autoComplete="off"
+      onSubmit={(e) => { e.preventDefault(); void submit(); }}
+      className="space-y-4"
+    >
+      {/* Honeypot inputs absorb password-manager autofill before it reaches
+          the real fields or the catalog search above. Off-screen + untabable. */}
+      <div aria-hidden="true" style={{ position: "absolute", left: "-9999px", height: 0, overflow: "hidden" }}>
+        <input type="text" name="username" tabIndex={-1} autoComplete="username" defaultValue="" />
+        <input type="password" name="password" tabIndex={-1} autoComplete="current-password" defaultValue="" />
+      </div>
+
       <ProviderHelpBlurb authType={item.authType} setupGuide={setupGuide} />
 
       {existing && (
@@ -385,7 +421,15 @@ function NonOAuthCredentialForm({
       {item.authType === "secret_text" && (
         <>
           <FieldLabel>API Key</FieldLabel>
-          <SecretInput value={apiKey} onChange={setApiKey} show={showSecret} setShow={setShowSecret} placeholder={`Paste your ${item.displayName} API key`} autoFocus />
+          <SecretInput
+            name={`${formName}-api-key`}
+            value={apiKey}
+            onChange={setApiKey}
+            show={showSecret}
+            setShow={setShowSecret}
+            placeholder={`Paste your ${item.displayName} API key`}
+            autoFocus
+          />
         </>
       )}
 
@@ -394,14 +438,29 @@ function NonOAuthCredentialForm({
           <FieldLabel>Username</FieldLabel>
           <input
             type="text"
+            name={`${formName}-username`}
             autoFocus
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="Username"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            data-form-type="other"
             className={inputClass}
           />
           <FieldLabel>Password</FieldLabel>
-          <SecretInput value={password} onChange={setPassword} show={showSecret} setShow={setShowSecret} placeholder="Password" />
+          <SecretInput
+            name={`${formName}-password`}
+            value={password}
+            onChange={setPassword}
+            show={showSecret}
+            setShow={setShowSecret}
+            placeholder="Password"
+          />
         </>
       )}
 
@@ -409,7 +468,15 @@ function NonOAuthCredentialForm({
         fields.length === 0 ? (
           <>
             <FieldLabel>Authentication Token</FieldLabel>
-            <SecretInput value={apiKey} onChange={setApiKey} show={showSecret} setShow={setShowSecret} placeholder="Authentication token" autoFocus />
+            <SecretInput
+              name={`${formName}-token`}
+              value={apiKey}
+              onChange={setApiKey}
+              show={showSecret}
+              setShow={setShowSecret}
+              placeholder="Authentication token"
+              autoFocus
+            />
           </>
         ) : (
           fields.map((field, idx) => (
@@ -423,6 +490,7 @@ function NonOAuthCredentialForm({
               )}
               {field.type === "dropdown" && field.options ? (
                 <select
+                  name={`${formName}-${field.name}`}
                   value={custom[field.name] ?? ""}
                   onChange={(e) => setCustom({ ...custom, [field.name]: e.target.value })}
                   className={inputClass}
@@ -434,6 +502,7 @@ function NonOAuthCredentialForm({
                 </select>
               ) : field.type === "secret" ? (
                 <SecretInput
+                  name={`${formName}-${field.name}`}
                   value={custom[field.name] ?? ""}
                   onChange={(v) => setCustom({ ...custom, [field.name]: v })}
                   show={showSecret}
@@ -444,10 +513,18 @@ function NonOAuthCredentialForm({
               ) : (
                 <input
                   type="text"
+                  name={`${formName}-${field.name}`}
                   value={custom[field.name] ?? ""}
                   onChange={(e) => setCustom({ ...custom, [field.name]: e.target.value })}
                   placeholder={`Enter ${field.displayName.toLowerCase()}`}
                   autoFocus={idx === 0}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-1p-ignore
+                  data-lpignore="true"
+                  data-form-type="other"
                   className={inputClass}
                 />
               )}
@@ -466,14 +543,14 @@ function NonOAuthCredentialForm({
       <FormActions>
         {existing && <TestConnectionButton integrationId={item.id} disabled={saving} />}
         <div className="flex-1" />
-        <button onClick={onCancel} disabled={saving} className={btnSecondary}>
+        <button type="button" onClick={onCancel} disabled={saving} className={btnSecondary}>
           Cancel
         </button>
-        <button onClick={submit} disabled={saving || !isValid} className={btnPrimary}>
+        <button type="submit" disabled={saving || !isValid} className={btnPrimary}>
           {saving ? <><Loader2 className="h-3 w-3 animate-spin" /> Saving</> : <><Key className="h-3 w-3" /> Save Credentials</>}
         </button>
       </FormActions>
-    </div>
+    </form>
   );
 }
 
