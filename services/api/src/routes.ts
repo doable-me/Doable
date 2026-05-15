@@ -109,7 +109,7 @@ app.route("/admin", adminAuditRoutes);
 app.route("/admin/tracing", tracingControlRouter);
 app.route("/admin/mfa", adminMfaRoutes);
 app.route("/admin", adminSignupRoutes);
-app.route("/api/setup", setupRoutes);
+app.route("/setup", setupRoutes);
 app.route("/projects", securityRoutes);
 app.route("/community", communityRoutes);
 app.route("/workspaces", connectorRoutes);
