@@ -501,7 +501,13 @@ projectItemRoutes.post("/:id/collaborators", async (c) => {
     );
   }
 
-  const targetUser = await users.findByEmail(parsed.data.email);
+  // BUG-CORPUS-PROJ-005 (root cause): under `authMiddlewareWithRls`, the
+  // `users_workspace_visible` RLS policy (migration 076) hides every user
+  // who doesn't already share a workspace with the caller — which is
+  // *exactly* the user you'd be adding as a collaborator. Use the
+  // SECURITY DEFINER helper that bypasses the visibility RLS but only
+  // returns public-safe columns and only for authenticated callers.
+  const targetUser = await users.findByEmailForInvite(parsed.data.email);
   if (!targetUser) {
     return c.json({ error: "User not found" }, 404);
   }

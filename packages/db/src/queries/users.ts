@@ -17,6 +17,45 @@ export function userQueries(sql: postgres.Sql) {
       return user;
     },
 
+    /**
+     * BUG-CORPUS-PROJ-005: lookup helper for invite / add-collaborator
+     * flows where the caller needs to find a user by email but is NOT
+     * guaranteed to share a workspace with them — exactly the case the
+     * `users_workspace_visible` RLS policy (migration 076) hides under
+     * `authMiddlewareWithRls`.
+     *
+     * Goes through the `doable_lookup_user_by_email` SECURITY DEFINER
+     * function (migration 084) which returns only public-safe columns
+     * (id, email, display_name, avatar_url) and requires the caller to
+     * be authenticated (`doable_current_user_id() IS NOT NULL`). Never
+     * exposes password_hash / mfa secrets / oauth tokens. Caller MUST
+     * still gate use of this method on their own permission check
+     * (e.g. "is the caller a workspace admin?") — this method only
+     * bypasses the visibility RLS, not the application-level authz.
+     */
+    async findByEmailForInvite(email: string): Promise<
+      | {
+          id: string;
+          email: string;
+          display_name: string | null;
+          avatar_url: string | null;
+        }
+      | undefined
+    > {
+      const rows = await sql<
+        {
+          id: string;
+          email: string;
+          display_name: string | null;
+          avatar_url: string | null;
+        }[]
+      >`
+        SELECT id, email, display_name, avatar_url
+        FROM doable_lookup_user_by_email(${email.toLowerCase()})
+      `;
+      return rows[0];
+    },
+
     async findByGithubId(githubId: string): Promise<UserRow | undefined> {
       const [user] = await sql<UserRow[]>`
         SELECT * FROM users WHERE github_id = ${githubId}
