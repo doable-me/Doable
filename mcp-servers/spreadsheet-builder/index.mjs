@@ -353,7 +353,7 @@ function buildPreviewHtml({ topic, sheets, totalRowsSecondary = 0 }) {
 <style>
   *, html { box-sizing: border-box; }
   html { background: transparent; }
-  body { margin: 0; padding: 0; font: 11px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color: #1a1a2e; background: #ffffff; overflow: hidden; }
+  body { margin: 0; padding: 0; font: 11px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color: #1a1a2e; background: #ffffff; }
   .head { padding: 10px 14px 6px; border-bottom: 1px solid #f0f0f5; }
   .ttl { font-weight: 600; font-size: 12px; color: #1a1a2e; }
   .sub { font-size: 10px; color: #6b7280; margin-top: 1px; }
