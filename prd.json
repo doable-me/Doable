@@ -1,59 +1,71 @@
 {
-  "task": "Ralph (2026-05-15, R17): /admin on dev.doable.me throws 'Something went wrong — A.map is not a function' for platform admins (admin2). Root-cause it, fix it, prevent recurrence on every doable server (incl. fresh setup-server.sh deploys), commit, deploy on dodev.fid.pw so dev.doable.me reflects immediately. Never bind 0.0.0.0. Never weaken security. Never touch prod.",
+  "task": "Ralph + Team (2026-05-15): Ship a discoverable, user-friendly way to configure ALL integration auth types in /admin -> Integrations. Today only authType=oauth2 has any config UI (and only via a tiny unlabeled Key icon). secret_text, basic_auth, and custom_auth integrations have no config path at all. Add a labeled Configure button on every row, a polymorphic config form covering all 5 auth types, backend platform-level credential storage for non-OAuth auth types, bulk enable/disable, and a guided per-provider wizard for the top providers. Never bind 0.0.0.0. Never weaken security. Never touch prod. All credential writes must go through the existing envelope-encryption vault and through platformAdminMiddleware.",
   "stories": [
     {
-      "id": "US-R17-01",
-      "title": "Reproduce on dev + capture stack",
+      "id": "US-INT-01",
+      "title": "Discoverable, labeled Configure action for every integration (all auth types)",
       "passes": true,
       "acceptanceCriteria": [
-        "Logged into dev.doable.me as admin2@doable.me (isPlatformAdmin=true) via claude-in-chrome",
-        "Visiting https://dev.doable.me/admin renders 'Something went wrong' + 'A.map is not a function' + 'Try again' (Dashboard error.tsx boundary)",
-        "Console error captured: 'TypeError: A.map is not a function' originating from chunk 02_qi-vb43azw.js:1:198035 (minified admin page)",
-        "Network confirms /admin/features, /admin/frameworks, /admin/users all return 200; mismatch is in response shape — /admin/users returns { data, total, limit, offset } envelope but hook stores the whole object as users state"
+        "apps/web/src/modules/integrations/integrations-admin-panel.tsx: every row in /admin -> Integrations now renders a visible button labeled 'Configure' (with key/cog icon) next to the existing 'Enable' toggle, regardless of authType",
+        "The Configure button is shown for authType in {oauth2, secret_text, basic_auth, custom_auth}; for authType='none' the Configure button is hidden (nothing to configure)",
+        "Clicking Configure on a non-OAuth integration opens a config form (modal or inline sheet) appropriate to that auth type, not the OAuth-only form",
+        "The existing tiny Key icon button is replaced or absorbed by the new labeled Configure button so there is exactly one Configure entry point per row",
+        "Row visual state still reflects: NOT CONFIGURED (gray) / ENV (blue) / CONFIGURED (green) / NEEDS-CONFIG (yellow) after the redesign",
+        "lsp_diagnostics shows 0 errors on the changed file"
       ]
     },
     {
-      "id": "US-R17-02",
-      "title": "Root-cause without guessing",
+      "id": "US-INT-02",
+      "title": "Polymorphic config form covers oauth2, secret_text, basic_auth, custom_auth",
       "passes": true,
       "acceptanceCriteria": [
-        "Owner: commit 05b622dc 'fix(api): enrich GET /admin/users with plan, AI config, and credit fields (BUG-ADMIN-005)' rewrote /admin/users to return { data, total, limit, offset } in camelCase",
-        "Consumer apps/web/src/hooks/use-platform-admin.ts:67 does setUsers(data) — stores entire envelope as users state",
-        "apps/web/src/app/(dashboard)/admin/page.tsx:241 then computes displayUsers via users.map(...) which throws because users is an object",
-        "Secondary mismatch: API returns displayName/isPlatformAdmin/platformRole/createdAt (camelCase) but type AdminUser + every consumer in admin-components.tsx, user-management-panel.tsx, page.tsx reads display_name/is_platform_admin/platform_role/created_at (snake_case)"
+        "A new component (e.g. apps/web/src/modules/integrations/integration-config-form.tsx) renders the correct fields based on the integration's authType from the registry",
+        "oauth2 form: client_id, client_secret (password input + reveal toggle), shows copy-paste redirect URI helper, optional scopes display",
+        "secret_text form: single secret field (password input + reveal toggle), provider hint from registry (e.g. 'Get your API key from platform.openai.com/api-keys')",
+        "basic_auth form: username + password fields",
+        "custom_auth form: dynamic key/value pairs driven by the integration's customAuthFields registry definition (or graceful generic fallback if not declared)",
+        "Existing secrets are NEVER pre-filled in any password field; instead the form shows a 'Replace existing credential' affordance + masked tail of stored client_id where applicable",
+        "Form submit calls the correct admin endpoint per auth type; success closes the form, refreshes the list, and the row flips to CONFIGURED state",
+        "Validation: client_id/secret/api key non-empty, no trailing whitespace, length sanity-checked client-side and server-side"
       ]
     },
     {
-      "id": "US-R17-03",
-      "title": "Surgical API fix + defensive hook",
+      "id": "US-INT-03",
+      "title": "Backend platform-level credential storage for non-OAuth auth types",
       "passes": true,
       "acceptanceCriteria": [
-        "services/api/src/routes/admin-users.ts: GET /admin/users returns a flat array of snake_case rows (matches AdminUser type and all consumer code); enriched fields plan/ai_source/model/daily_credits/monthly_credits/rollover_credits/workspace_id preserved in snake_case",
-        "apps/web/src/hooks/use-platform-admin.ts: loadUsers + loadFeatures defensively unwrap an optional { data } envelope and assert Array.isArray before setState — protects against any future envelope-style regressions",
-        "TypeScript compiles green for affected files (lsp_diagnostics shows 0 errors on the changed files)",
-        "No 0.0.0.0 binds introduced, no other security control weakened"
+        "New migration adds platform_integration_credentials table: id, integration_id (unique), auth_type, credentials_encrypted (bytea), credentials_format ('pgp_sym' | 'envelope_v1'), created_by, created_at, updated_at. Mirrors the oauth_apps encryption pattern. Includes RLS policy that locks ALL access behind the API service role.",
+        "services/api/src/integrations/credential-vault.ts gains a platformCredentials API with get/list/upsert/delete that encrypts via pgp_sym_encrypt (and envelope_v1 when DOABLE_ENVELOPE_ENCRYPTION=1 with a deterministic platform KEK scope) consistent with how oauth_apps does it for global rows today",
+        "services/api/src/routes/integrations-admin.ts adds POST/DELETE/GET /integrations/admin/credentials behind platformAdminMiddleware; payload accepts authType + credentials JSON; never returns the secret in any response (returns clientId masked tail and updated_at only)",
+        "The catalog 'configured' flag now resolves true if oauth_apps OR platform_integration_credentials OR env vars provide credentials for that integration",
+        "The runtime resolution in connections-manager / vault-bridge prefers user > workspace > platform > env for non-OAuth too (matching today's oauth_apps order)",
+        "Contract test: POST /integrations/admin/credentials with a valid OpenAI secret, then GET /integrations/admin/credentials, asserts the response array contains the integration but DOES NOT contain the secret field; DELETE removes it",
+        "No 0.0.0.0 binds introduced. Migration is forward-only and idempotent (CREATE TABLE IF NOT EXISTS pattern consistent with other migrations)"
       ]
     },
     {
-      "id": "US-R17-04",
-      "title": "Regression coverage so this never recurs",
+      "id": "US-INT-04",
+      "title": "Bulk select + bulk enable/disable + preset stacks",
       "passes": true,
       "acceptanceCriteria": [
-        "A test file pins the /admin/users contract — asserts Array.isArray(body) and that each row has snake_case fields (id, email, display_name, is_platform_admin, platform_role, plan)",
-        "The test runs with the existing API test runner so future enrichment commits cannot silently flip the response shape",
-        "Smoke test or unit test added at apps/web/src/hooks for usePlatformAdmin that confirms users state is always an array after load, even if the API ever ships a wrapped envelope"
+        "Each integration row in the admin panel has a checkbox; each category section has a 'select all in category' checkbox",
+        "When >=1 row is selected, a sticky action bar appears with: 'Enable selected', 'Disable selected', and a 'Configure next' button that opens the config form for the first selected unconfigured integration (after submit, advances to the next)",
+        "3 preset stacks are exposed: 'Productivity (Google + Notion + Slack)', 'Dev (GitHub + Linear + Sentry + PagerDuty)', 'Marketing (Mailchimp + HubSpot + Stripe + Calendly)'. Clicking a preset selects those rows; admin still has to click Enable selected + configure each",
+        "Bulk enable calls /integrations/admin/platform-enabled in sequence (no new endpoint), shows per-row success/failure",
+        "lsp_diagnostics 0 errors on changed files; no regression in the existing single-row enable/disable flow",
+        "Bulk operations are guarded by platformAdminMiddleware on every request (no client-trust)"
       ]
     },
     {
-      "id": "US-R17-05",
-      "title": "Commit, push, deploy on dodev, claude-in-chrome smoke",
+      "id": "US-INT-05",
+      "title": "Per-provider guided wizard for top providers + audit log + security review",
       "passes": true,
       "acceptanceCriteria": [
-        "Atomic commit on a fix branch; PR opened against main; squash-merged",
-        "dodev.fid.pw: sudo -u doable git pull --ff-only origin main; tsx watch picks up the API change automatically; web rebuild + tmux:0 restart for the apps/web change",
-        "claude-in-chrome smoke after deploy: navigating to https://dev.doable.me/admin as admin2 renders the actual admin panel (Feature Flags tab visible, no error boundary)",
-        "Console clean of TypeError on /admin first-load",
-        "Visual verdict before/after screenshots captured"
+        "A new file apps/web/src/modules/integrations/provider-setup-guides.ts exports a Map<integrationId, SetupGuide> with entries for at least: slack, google_sheets, google_calendar, gmail, notion, github (api), linear, stripe, hubspot, openai, anthropic, mailchimp, calendly, intercom, twilio. Each guide has: consoleUrl (deeplink), steps[] (3-5 short strings), requiredScopes[] (optional), troubleshooting[] (optional)",
+        "When a user opens Configure for an integration that has a guide, the form shows: step list, a 'Open provider console' button (target=_blank), a one-click 'Copy redirect URI' button, and the credential fields. Integrations without a guide get a generic fallback ('Paste your credentials from the provider')",
+        "After successful credential save, a 'Test connection' button appears that calls a new POST /integrations/admin/test endpoint (or extends an existing one). The endpoint exists and returns { ok: true, message } or { ok: false, error }. For OAuth, this verifies tokenUrl reachability + client_id is non-empty. For secret_text/basic_auth/custom_auth, it returns ok if credentials are stored (no upstream call required in v1).",
+        "Audit log: every create/update/delete on /integrations/admin/oauth-apps and /integrations/admin/credentials writes an audit row (existing audit_log infra). Field captured: actor user_id, integration_id, action, IP, user_agent. Secret values MUST NOT appear in audit log.",
+        "Architect review (THOROUGH tier) verifies: (a) no raw secret ever serialized in API response, (b) all admin endpoints behind platformAdminMiddleware, (c) RLS on platform_integration_credentials is restrictive, (d) audit log captures every credential mutation, (e) no new 0.0.0.0 binds, (f) the polymorphic config form does not leak existing secret values into the DOM"
       ]
     }
   ]
