@@ -96,6 +96,8 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<"all" | "enabled" | "unconfigured" | "env">("all");
   const [envConfiguredMap, setEnvConfiguredMap] = useState<Map<string, { source: string; clientId?: string }>>(new Map());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState<{ kind: "enable" | "disable"; done: number; total: number } | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -196,6 +198,88 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
     setExpandedId(null);
     await fetchData();
   }, [fetchData]);
+
+  // ─── Bulk ops ────────────────────────────────────────────
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const selectAllVisible = useCallback((ids: string[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+  }, []);
+
+  const deselectAllVisible = useCallback((ids: string[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const runBulk = useCallback(async (kind: "enable" | "disable") => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBulkBusy({ kind, done: 0, total: ids.length });
+    setError(null);
+    let done = 0;
+    let failures = 0;
+    for (const integrationId of ids) {
+      try {
+        if (kind === "enable") {
+          if (isPlatformMode) {
+            await apiFetch("/integrations/admin/platform-enabled", {
+              method: "POST",
+              body: JSON.stringify({ integrationId, enabled: true }),
+            });
+          } else {
+            await apiFetch("/integrations/admin/enabled", {
+              method: "POST",
+              body: JSON.stringify({ workspaceId, integrationId, enabled: true }),
+            });
+          }
+        } else {
+          if (isPlatformMode) {
+            await apiFetch(`/integrations/admin/platform-enabled/${integrationId}`, { method: "DELETE" });
+          } else {
+            await apiFetch(`/integrations/admin/enabled/${integrationId}?workspaceId=${workspaceId}`, { method: "DELETE" });
+          }
+        }
+      } catch {
+        failures++;
+      }
+      done++;
+      setBulkBusy({ kind, done, total: ids.length });
+    }
+    setBulkBusy(null);
+    if (failures > 0) {
+      setError(`${failures} of ${ids.length} ${kind} operations failed. The list has been refreshed.`);
+    }
+    clearSelection();
+    await fetchData();
+  }, [selectedIds, isPlatformMode, workspaceId, fetchData, clearSelection]);
+
+  const applyPreset = useCallback((presetIds: readonly string[]) => {
+    // Only select IDs that actually exist in the current catalog
+    const available = new Set(catalog.map((i) => i.id));
+    const matching = presetIds.filter((id) => available.has(id));
+    if (matching.length === 0) {
+      setError(`None of this preset's integrations are in the catalog yet.`);
+      return;
+    }
+    setError(null);
+    setSelectedIds(new Set(matching));
+  }, [catalog]);
 
   // Filter and search
   const filtered = catalog.filter((item) => {
