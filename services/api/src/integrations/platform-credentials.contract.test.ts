@@ -17,7 +17,9 @@ import assert from "node:assert/strict";
 // Dynamic import after env is loaded
 const { platformCredentials } = await import("./credential-vault.js");
 
-const TEST_INTEGRATION_ID = "__test_platform_cred_openai__";
+// Namespace the test integration id with the runner pid so that parallel
+// runs against the same database don't trample each other's setup/teardown.
+const TEST_INTEGRATION_ID = `__test_platform_cred_openai_${process.pid}__`;
 const SECRET_VALUE = "sk-supersecret-test-key-do-not-log";
 const TEST_CREDENTIALS = { apiKey: SECRET_VALUE };
 

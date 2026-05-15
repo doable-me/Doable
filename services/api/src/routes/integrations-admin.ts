@@ -171,18 +171,25 @@ integrationAdminRoutes.post(
           createdAt: app.created_at,
         },
       }, 201);
-    } catch (err) {
-      // Sanitize: never echo a credential value back even if the DB layer leaked it.
-      const msg = err instanceof Error ? err.message : String(err);
-      const safe = msg.replace(/[A-Za-z0-9_\-]{20,}/g, "[redacted]");
+    } catch {
+      // Opaque error — never reflect err.message for credential operations, even
+      // sanitized. The detailed failure is captured in API logs; the response is
+      // a generic 500 so no token-shaped string can leak via the network.
       return c.json({
-        error: `Failed to create OAuth app: ${safe}`,
+        error: "Failed to create OAuth app. Check API logs for details.",
       }, 500);
     }
   },
 );
 
 // DELETE /integrations/admin/oauth-apps/:id
+//
+// Authorization model:
+//   - Workspace-scoped row (workspace_id NOT NULL): caller must be admin of that workspace
+//   - Global row (workspace_id IS NULL): caller must be a platform admin
+// Pre-existing audit gap from the original implementation: global rows previously
+// only required authMiddleware (any logged-in user could delete the platform's
+// OAuth apps if they knew an id). Fixed here.
 integrationAdminRoutes.delete("/integrations/admin/oauth-apps/:id", authMiddleware, async (c) => {
   const userId = c.get("userId");
   const appId = c.req.param("id");
@@ -190,12 +197,27 @@ integrationAdminRoutes.delete("/integrations/admin/oauth-apps/:id", authMiddlewa
   const [app] = await sql`SELECT * FROM oauth_apps WHERE id = ${appId}`;
 
   if (!app) {
+    // Audit even the 404 — captures "tried to delete unknown OAuth app id X" for forensics.
+    await recordAdminAction(c, {
+      action: "integrations.oauth_app.delete_attempt_not_found",
+      resourceType: "integration",
+      resourceId: appId,
+    }).catch(() => { /* audit best-effort */ });
     return c.json({ error: "OAuth app not found" }, 404);
   }
 
   if (app.workspace_id) {
-    const err = await requireAdmin(app.workspace_id, userId);
+    const err = await requireAdmin(app.workspace_id as string, userId);
     if (err) return c.json({ error: err }, 403);
+  } else {
+    // Global row: require platform admin. Pre-existing DELETE behavior allowed
+    // any authenticated user to delete global OAuth apps if they knew the id.
+    const { featureFlagQueries } = await import("@doable/db");
+    const ff = featureFlagQueries(sql);
+    const isPlatformAdmin = await ff.isPlatformAdmin(userId);
+    if (!isPlatformAdmin) {
+      return c.json({ error: "Platform admin access required to delete global OAuth apps" }, 403);
+    }
   }
 
   await oauthApps.delete(appId);
