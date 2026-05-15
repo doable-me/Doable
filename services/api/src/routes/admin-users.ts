@@ -55,23 +55,13 @@ adminUserRoutes.get("/users", async (c) => {
     LIMIT ${limit} OFFSET ${offset}
   `;
 
-  const total = search
-    ? (await sql<{ c: number }[]>`
-        SELECT COUNT(*)::int AS c FROM users u
-        WHERE u.email ILIKE ${searchPattern} OR u.display_name ILIKE ${searchPattern}
-      `)[0]?.c ?? 0
-    : (await sql<{ c: number }[]>`SELECT COUNT(*)::int AS c FROM users`)[0]?.c ?? 0;
-
-  // BUG-ADMIN-012 (regression of BUG-ADMIN-005):
-  // We must return a flat snake_case array here. The single consumer
-  // (apps/web/src/hooks/use-platform-admin.ts) reads this as
-  // `setUsers(data)` and then admin/page.tsx does `users.map(...)`. When
+  // BUG-ADMIN-012 (regression of BUG-ADMIN-005): return a flat snake_case
+  // array. The sole consumer (apps/web/src/hooks/use-platform-admin.ts)
+  // does setUsers(data) → admin/page.tsx does users.map(...). When
   // BUG-ADMIN-005 wrapped this in a { data, total, limit, offset } envelope
-  // with camelCase keys, the admin page crashed with
-  // "TypeError: A.map is not a function" on every load. The enriched fields
-  // (plan, ai_source, etc.) are still surfaced — only the shape is reverted
-  // to what every existing consumer (AdminUser type, admin-components.tsx,
-  // user-management-panel.tsx, page.tsx) already expects.
+  // with camelCase keys, /admin crashed with "A.map is not a function". If
+  // pagination UI is ever built, surface total/limit/offset via response
+  // headers — do NOT re-wrap this body.
   return c.json(
     rows.map((u) => ({
       id: u.id,
@@ -89,10 +79,6 @@ adminUserRoutes.get("/users", async (c) => {
       rollover_credits: u.rollover_credits ?? 0,
     })),
   );
-  // total/limit/offset intentionally dropped: the frontend never read them
-  // (only consumer ignored them) and shipping them inside the array would
-  // be a breaking change. Re-introduce them via a separate header/endpoint
-  // if pagination UI is built — do NOT re-wrap this response.
 });
 
 // Toggle platform admin
