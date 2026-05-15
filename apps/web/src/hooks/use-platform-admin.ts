@@ -41,6 +41,18 @@ export interface AdminUser {
   created_at: string;
 }
 
+// BUG-ADMIN-012: features.map / users.map at admin/page.tsx crash if the
+// API ever returns a { data: [] } envelope (the BUG-ADMIN-005 regression
+// shape) or anything non-array. Unwrap a single-level envelope, otherwise
+// fall back to [] so React state stays an array even if the wire drifts.
+function asArray<T>(raw: unknown): T[] {
+  if (Array.isArray(raw)) return raw as T[];
+  if (raw && typeof raw === "object" && Array.isArray((raw as { data?: unknown }).data)) {
+    return (raw as { data: T[] }).data;
+  }
+  return [];
+}
+
 export function usePlatformAdmin() {
   const { user } = useAuth();
   const isPlatformAdmin = user?.isPlatformAdmin === true;
@@ -49,22 +61,6 @@ export function usePlatformAdmin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // BUG-ADMIN-012: defense in depth against API response-shape drift.
-  // /admin/features and /admin/users must populate React state with an
-  // ARRAY — admin/page.tsx then does features.map(...) and users.map(...).
-  // If a future API change ever re-wraps these in a { data: [...] } envelope
-  // (the original BUG-ADMIN-005 regression), unwrap it transparently so the
-  // admin page never crashes with "A.map is not a function" again. We still
-  // assert Array.isArray at the end so non-array, non-envelope responses
-  // (string, null, object) fall back to [] rather than poisoning state.
-  function asArray<T>(raw: unknown): T[] {
-    if (Array.isArray(raw)) return raw as T[];
-    if (raw && typeof raw === "object" && Array.isArray((raw as { data?: unknown }).data)) {
-      return (raw as { data: T[] }).data;
-    }
-    return [];
-  }
 
   const loadFeatures = useCallback(async () => {
     if (!isPlatformAdmin) return;

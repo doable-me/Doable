@@ -35,34 +35,19 @@
 
 import { Hono } from "hono";
 
-// Minimal stand-in for the postgres tagged-template `sql` driver. The
-// real handler at services/api/src/routes/admin-users.ts issues two
-// queries on GET /users: the rows SELECT, then the COUNT. We intercept
-// both and feed canned rows back. Everything else is unused.
+// Minimal stand-in for the postgres tagged-template `sql` driver — the
+// real handler at services/api/src/routes/admin-users.ts issues one
+// rows SELECT on GET /users; this driver returns the canned rows.
 type SqlRow = Record<string, unknown>;
-function buildSql(rows: SqlRow[]): {
-  (strings: TemplateStringsArray, ...args: unknown[]): Promise<unknown>;
-  call: number;
-} {
-  const driver = function tagged(strings: TemplateStringsArray): Promise<unknown> {
-    driver.call += 1;
-    const sqlText = strings.join("");
-    if (sqlText.includes("COUNT(*)")) {
-      return Promise.resolve([{ c: rows.length }]);
-    }
-    return Promise.resolve(rows);
-  } as {
-    (strings: TemplateStringsArray, ...args: unknown[]): Promise<unknown>;
-    call: number;
-  };
-  driver.call = 0;
-  return driver;
+type SqlFn = (strings: TemplateStringsArray, ...args: unknown[]) => Promise<unknown>;
+function buildSql(rows: SqlRow[]): SqlFn {
+  return () => Promise.resolve(rows);
 }
 
 // Re-implement the handler body byte-for-byte against the injectable
 // driver so a regression in admin-users.ts breaks this probe. Keep this
 // aligned with services/api/src/routes/admin-users.ts.
-function buildAdminUsersRoute(sql: ReturnType<typeof buildSql>): Hono {
+function buildAdminUsersRoute(sql: SqlFn): Hono {
   const app = new Hono();
   app.get("/admin/users", async (c) => {
     const rows = (await sql`
@@ -74,8 +59,6 @@ function buildAdminUsersRoute(sql: ReturnType<typeof buildSql>): Hono {
       ai_source: string | null; model: string | null;
       daily_credits: number | null; monthly_credits: number | null; rollover_credits: number | null;
     }>;
-    // Discard the COUNT call result — we don't surface it any more.
-    await sql`SELECT COUNT(*)::int AS c FROM users`;
     return c.json(
       rows.map((u) => ({
         id: u.id,
