@@ -62,7 +62,7 @@ adminUserRoutes.get("/users", async (c) => {
       `)[0]?.c ?? 0
     : (await sql<{ c: number }[]>`SELECT COUNT(*)::int AS c FROM users`)[0]?.c ?? 0;
 
-  // BUG-ADMIN-010 (regression of BUG-ADMIN-005):
+  // BUG-ADMIN-012 (regression of BUG-ADMIN-005):
   // We must return a flat snake_case array here. The single consumer
   // (apps/web/src/hooks/use-platform-admin.ts) reads this as
   // `setUsers(data)` and then admin/page.tsx does `users.map(...)`. When

@@ -50,7 +50,7 @@ export function usePlatformAdmin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // BUG-ADMIN-010: defense in depth against API response-shape drift.
+  // BUG-ADMIN-012: defense in depth against API response-shape drift.
   // /admin/features and /admin/users must populate React state with an
   // ARRAY — admin/page.tsx then does features.map(...) and users.map(...).
   // If a future API change ever re-wraps these in a { data: [...] } envelope
