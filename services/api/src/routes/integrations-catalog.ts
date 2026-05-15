@@ -10,11 +10,29 @@ export const integrationCatalogRoutes = new Hono<AuthEnv>();
 // ─── Catalog (public, no auth) ─────────────────────────────
 
 // GET /integrations/catalog
+//
+// Query params:
+//   ?category=<IntegrationCategory>  Filter by category slug
+//   ?search=<text>                   Free-text search (name/description/tags)
+//   ?q=<text>                        Alias for ?search (BUG-MCP-005)
+//   ?authType=<oauth2|api_key|...>   Filter by definition.authType
+//   ?limit=<n>                       Max results to return (cap 1000)
+//   ?offset=<n>                      Skip first n results
+//   ?workspaceId=<uuid>              Enrich with connection status + admin enablement
+//   ?showAll=true                    Bypass workspace enablement filter (admin only)
 integrationCatalogRoutes.get("/integrations/catalog", async (c) => {
   const category = c.req.query("category") as IntegrationCategory | undefined;
-  const search = c.req.query("search");
+  // BUG-MCP-005: clients commonly send ?q= for search; treat both as equivalent.
+  const search = c.req.query("search") ?? c.req.query("q");
+  const authType = c.req.query("authType");
   const workspaceId = c.req.query("workspaceId");
   const showAll = c.req.query("showAll") === "true"; // admin override
+
+  // Pagination params (clamped — server-side cap to prevent abuse).
+  const rawLimit = Number(c.req.query("limit"));
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 1000) : undefined;
+  const rawOffset = Number(c.req.query("offset"));
+  const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
 
   const definitions = listIntegrations({ category, search });
   const categoriesRaw = getCategories();
@@ -60,9 +78,19 @@ integrationCatalogRoutes.get("/integrations/catalog", async (c) => {
   }
 
   // Filter by enabled integrations (if admin has configured any)
-  const filteredDefinitions = enabledIds
+  let filteredDefinitions = enabledIds
     ? definitions.filter((def) => enabledIds!.has(def.id))
     : definitions;
+
+  // BUG-MCP-005 / F2: support ?authType= filter on the catalog.
+  if (authType) {
+    filteredDefinitions = filteredDefinitions.filter((def) => def.authType === authType);
+  }
+
+  // BUG-MCP-005 / F2: cursor-less pagination — capture total before slicing.
+  const total = filteredDefinitions.length;
+  if (offset > 0) filteredDefinitions = filteredDefinitions.slice(offset);
+  if (limit !== undefined) filteredDefinitions = filteredDefinitions.slice(0, limit);
 
   const data = filteredDefinitions.map((def) => ({
     id: def.id,
@@ -87,7 +115,16 @@ integrationCatalogRoutes.get("/integrations/catalog", async (c) => {
     } : {}),
   }));
 
-  return c.json({ data, categories });
+  return c.json({ data, categories, total });
+});
+
+// BUG-MCP-004: GET /integrations (no /catalog suffix) historically returned
+// 404. Clients (test corpora, older SDK calls) expect the catalog at the
+// shorter path too. Redirect to /integrations/catalog so the canonical URL
+// stays a single source of truth (preserves query string).
+integrationCatalogRoutes.get("/integrations", (c) => {
+  const url = new URL(c.req.url);
+  return c.redirect("/integrations/catalog" + (url.search || ""), 302);
 });
 
 // GET /integrations/catalog/:id

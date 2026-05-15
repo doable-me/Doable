@@ -1,0 +1,49 @@
+=== Date: 2026-05-14T20:20:51Z ===
+=== /health ===
+{"status":"healthy","timestamp":"2026-05-14T20:20:50.013Z","version":"0.1.0","uptime":865.690521567,"checks":{"database":{"status":"up","latencyMs":1},"memory":{"rssBytes":373694464,"heapUsedBytes":177835264,"heapTotalBytes":190177280},"devServers":{"active":1}}}
+HTTP:200
+
+=== GET /workspaces/74e22382-65a0-4d22-acad-6585cbcea26b/connectors ===
+{"data":[{"id":"4b2aafbe-7831-4c5e-95d2-198392cab29c","workspace_id":"74e22382-65a0-4d22-acad-6585cbcea26b","project_id":null,"created_by":"a548d48a-941a-408c-ae77-45e9ac127263","scope":"workspace","name":"Markdown Builder","description":"Built-in MCP App. Creates polished Markdown documents with frontmatter, tables, and a live rendered HTML preview, plus .md and .html downloads. Standards-compliant MCP App (mcpui.dev) — see mcp-servers/markdown-builder.","transport_type":"stdio","server_url":null,"server_command":"node","server_args":["/root/doable/mcp-servers/markdown-builder/index.mjs"],"server_env_encrypted":null,"auth_type":"none","credentials_encrypted":null,"status":"active","capabilities_cache":null,"last_connected_at":null,"error_message":null,"created_at":"2026-05-13T19:46:53.336Z","updated_at":"2026-05-13T19:46:53.336Z"},{"id":"88db1726-e58d-44d0-b8eb-3c0a02a69059","workspace_id":"74e22382-65a0-4d22-acad-6585cbcea26b","project_id":null,"created_by":"a548d48a-941a-408c-ae77-45e9ac127263","scope":"workspace","name":"PDF Builder","description":"Built-in MCP App. Creates print-ready PDF documents from a topic by generating a single-file HTML and rendering it via headless Chrome. Returns .pdf and .html downloads with a live preview. Standards-compliant MCP App (mcpui.dev) — see mcp-servers/pdf-builder.","transport_type":"stdio","server_url":null,"server_command":"node","server_args":["/root/doable/mcp-servers/pdf-builder/index.mjs"],"server_env_encrypted":null,"auth_type":"none","credentials_encrypted":null,"status":"active","capabilities_cache":null,"last_connected_at":null,"error_message":null,"created_at":"2026-05-13T19:46:53.336Z","updated_at":"2026-05-13T19:46:53.336Z"},{"id":"751d6952-82a8-477e-987f-c34a919bda2b","workspace_id":"74e22382-65a0-4d22-acad-6585cbcea26b","project_id":null,"created_by":"a548d48a-941a-408c-ae77-45e9ac127263","scope":"workspace","name":"Presentation Builder","description":"Built-in MCP App. Creates editable PowerPoint (.pptx) decks from a topic via an interactive picker. Standards-compliant MCP App (mcpui.dev) — see mcp-servers/presentation-builder for the source as a developer reference.","transport_type":"stdio","server_url":null,"server_command":"node","server_args":["/root/doable/mcp-servers/presentation-builder/index.mjs"],"server_env_encrypted":null,"auth_type":"none","credentials_encrypted":null,"status":"active","capabilities_cache":null,"last_connected_at":null,"error_message":null,"created_at":"2026-05-13T19:46:53.336Z","updated_at":"2026-05-13T19:46:53.336Z"},{"id":"8bfc4573-b8dc-4730-bcc6-6e37c356abe8","workspace_id":"74e22382-65a0-4d22-acad-6585cbcea26b","project_id":null,"created_by":"a548d48a-941a-408c-ae77-45e9ac127263","scope":"workspace","name":"Spreadsheet Builder","description":"Built-in MCP App. Creates editable Excel (.xlsx) workbooks plus CSV exports from a topic, with formulas, formatting, and a live in-chat table preview. Standards-compliant MCP App (mcpui.dev) — see mcp-servers/spreadsheet-builder.","transport_type":"stdio","server_url":null,"server_command":"node","server_args":["/root/doable/mcp-servers/spreadsheet-builder/index.mjs"],"server_env_encrypted":null,"auth_type":"none","credentials_encrypted":null,"status":"active","capabilities_cache":null,"last_connected_at":null,"error_message":null,"created_at":"2026-05-13T19:46:53.336Z","updated_at":"2026-05-13T19:46:53.336Z"}],"role":"owner"}
+
+=== GET /workspaces/74e22382-65a0-4d22-acad-6585cbcea26b/connectors-effective ===
+{"data":[{"id":"4b2aafbe-7831-4c5e-95d2-198392cab29c","workspace_id":"74e22382-65a0-4d22-acad-6585cbcea26b","project_id":null,"created_by":"a548d48a-941a-408c-ae77-45e9ac127263","scope":"workspace","name":"Markdown Builder","description":"Built-in MCP App. Creates polished Markdown documents with frontmatter, tables, and a live rendered HTML preview, plus .md and .html downloads. Standards-compliant MCP App (mcpui.dev) — see mcp-servers/markdown-builder.","transport_type":"stdio","server_url":null,"server_command":"node","server_args":["/root/doable/mcp-servers/markdown-builder/index.mjs"],"server_env_encrypted":null,"auth_type":"none","credentials_encrypted":null,"status":"active","capabilities_cache":null,"last_connected_at":null,"error_message":null,"created_at":"2026-05-13T19:46:53.336Z","updated_at":"2026-05-13T19:46:53.336Z"},{"id":"88db1726-e58d-44d0-b8eb-3c0a02a69059","workspace_id":"74e22382-65a0-4d22-acad-6585cbcea26b","project_id":null,"created_by":"a548d48a-941a-408c-ae77-45e9ac127263","scope":"workspace","name":"PDF Builder","description":"Built-in MCP App. Creates print-ready PDF documents from a topic by generating a single-file HTML and rendering it via headless Chrome. Returns .pdf and .html downloads with a live preview. Standards-compliant MCP App (mcpui.dev) — see mcp-servers/pdf-builder.","transport_type":"stdio","server_url":null,"server_command":"node","server_args":["/root/doable/mcp-servers/pdf-builder/index.mjs"],"server_env_encrypted":null,"auth_type":"none","credentials_encrypted":null,"status":"active","capabilities_cache":null,"last_connected_at":null,"error_message":null,"created_at":"2026-05-13T19:46:53.336Z","updated_at":"2026-05-13T19:46:53.336Z"},{"id":"751d6952-82a8-477e-987f-c34a919bda2b","workspace_id":"74e22382-65a0-4d22-acad-6585cbcea26b","project_id":null,"created_by":"a548d48a-941a-408c-ae77-45e9ac127263","scope":"workspace","name":"Presentation Builder","description":"Built-in MCP App. Creates editable PowerPoint (.pptx) decks from a topic via an interactive picker. Standards-compliant MCP App (mcpui.dev) — see mcp-servers/presentation-builder for the source as a developer reference.","transport_type":"stdio","server_url":null,"server_command":"node","server_args":["/root/doable/mcp-servers/presentation-builder/index.mjs"],"server_env_encrypted":null,"auth_type":"none","credentials_encrypted":null,"status":"active","capabilities_cache":null,"last_connected_at":null,"error_message":null,"created_at":"2026-05-13T19:46:53.336Z","updated_at":"2026-05-13T19:46:53.336Z"},{"id":"8bfc4573-b8dc-4730-bcc6-6e37c356abe8","workspace_id":"74e22382-65a0-4d22-acad-6585cbcea26b","project_id":null,"created_by":"a548d48a-941a-408c-ae77-45e9ac127263","scope":"workspace","name":"Spreadsheet Builder","description":"Built-in MCP App. Creates editable Excel (.xlsx) workbooks plus CSV exports from a topic, with formulas, formatting, and a live in-chat table preview. Standards-compliant MCP App (mcpui.dev) — see mcp-servers/spreadsheet-builder.","transport_type":"stdio","server_url":null,"server_command":"node","server_args":["/root/doable/mcp-servers/spreadsheet-builder/index.mjs"],"server_env_encrypted":null,"auth_type":"none","credentials_encrypted":null,"status":"active","capabilities_cache":null,"last_connected_at":null,"error_message":null,"created_at":"2026-05-13T19:46:53.336Z","updated_at":"2026-05-13T19:46:53.336Z"}]}
+
+=== BUG-MCP-007 RETEST (http:// URL) ===
+{"error":"MCP server URL must use HTTPS"}
+HTTP:400
+
+=== BUG-MCP-002 RETEST (delete builtin) ===
+{"error":"Cannot delete built-in connector"}
+HTTP:403
+
+=== BUG-CORPUS-MCP-001 RETEST (bogus UUID) ===
+{"error":"Invalid id: must be a UUID"}
+HTTP:400
+
+=== BUG-WSI-002 RETEST (/integrations/connections without wsid) ===
+{"error":"workspaceId query parameter is required"}
+HTTP:400
+
+=== BUG-MCP-010 RETEST (PATCH status=inactive) ===
+(create + PATCH + delete loop verified live earlier)
+
+=== BUG-MCP-005 RETEST (?q=stripe) ===
+Before fix on dev: returns all 533. After deploy: should filter.
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json; d=json.load(open('testcases/evidence/dev/verify-2026-05-15/mcp-integrations/q_stripe_dev.json')); print('Live (dev, pre-deploy): count=', len(d.get('data', [])), 'first3=', [i['id'] for i in d.get('data', [])[:3]])
+                             ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'testcases/evidence/dev/verify-2026-05-15/mcp-integrations/q_stripe_dev.json'
+
+=== BUG-MCP-004 RETEST (/integrations) ===
+{"error":"Not Found","path":"/integrations"}
+HTTP:404
+
+=== MCP Apps RUNTIME (dodev mcp-servers dir) ===
+markdown-builder
+pdf-builder
+presentation-builder
+_shared
+spreadsheet-builder
+-rw-rw-r-- 1 doable doable 17009 May 14 18:15 /root/doable/mcp-servers/markdown-builder/index.mjs
