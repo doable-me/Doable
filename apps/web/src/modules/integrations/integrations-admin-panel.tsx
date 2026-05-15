@@ -55,6 +55,32 @@ interface PlatformCredential {
   updatedAt: string;
 }
 
+// ─── Preset Stacks ──────────────────────────────────────────
+// Curated bundles for one-click "select common stack" workflows. The admin
+// still needs to click Enable + Configure — presets only set the selection.
+// IDs that aren't in the live catalog are skipped gracefully.
+
+const PRESET_STACKS: ReadonlyArray<{ key: string; label: string; description: string; ids: readonly string[] }> = [
+  {
+    key: "productivity",
+    label: "Productivity",
+    description: "Email, calendar, docs, chat",
+    ids: ["google_sheets", "gmail", "google_calendar", "notion", "slack"],
+  },
+  {
+    key: "dev",
+    label: "Dev",
+    description: "Source, tickets, errors, on-call",
+    ids: ["github", "linear", "sentry", "pagerduty", "jira"],
+  },
+  {
+    key: "marketing",
+    label: "Marketing",
+    description: "Email, CRM, payments, booking",
+    ids: ["mailchimp", "hubspot", "stripe", "calendly", "intercom"],
+  },
+];
+
 // ─── Main Component ─────────────────────────────────────────
 
 interface IntegrationsAdminPanelProps {
@@ -386,6 +412,60 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
         </div>
       )}
 
+      {/* Preset stacks — one-click select-a-common-bundle */}
+      {isPlatformMode && (
+        <div className="flex items-start gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground mt-1.5 mr-1">Quick start:</span>
+          {PRESET_STACKS.map((preset) => (
+            <button
+              key={preset.key}
+              onClick={() => applyPreset(preset.ids)}
+              className="rounded-md border border-dashed border-input bg-background px-2.5 py-1 text-xs hover:bg-muted transition-colors"
+              title={preset.description}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Bulk action bar — appears when one or more rows are selected */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3 shadow-sm">
+          <div className="text-sm font-medium text-foreground">
+            {selectedIds.size} integration{selectedIds.size === 1 ? "" : "s"} selected
+            {bulkBusy && (
+              <span className="ml-2 text-xs text-muted-foreground">
+                · {bulkBusy.kind === "enable" ? "Enabling" : "Disabling"} {bulkBusy.done}/{bulkBusy.total}…
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void runBulk("enable")}
+              disabled={!!bulkBusy}
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {bulkBusy?.kind === "enable" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Enable selected"}
+            </button>
+            <button
+              onClick={() => void runBulk("disable")}
+              disabled={!!bulkBusy}
+              className="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50 transition-colors"
+            >
+              {bulkBusy?.kind === "disable" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Disable selected"}
+            </button>
+            <button
+              onClick={clearSelection}
+              disabled={!!bulkBusy}
+              className="rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Filter bar */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
@@ -438,11 +518,28 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
       <div className="space-y-4">
         {Object.entries(grouped)
           .sort(([a], [b]) => (CATEGORY_LABELS[a] || a).localeCompare(CATEGORY_LABELS[b] || b))
-          .map(([cat, items]) => (
+          .map(([cat, items]) => {
+            const categoryIds = items.map((i) => i.id);
+            const allSelectedInCategory = categoryIds.length > 0 && categoryIds.every((id) => selectedIds.has(id));
+            const someSelectedInCategory = categoryIds.some((id) => selectedIds.has(id));
+            return (
             <div key={cat}>
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                {CATEGORY_LABELS[cat] || cat} ({items.length})
-              </h3>
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="checkbox"
+                  checked={allSelectedInCategory}
+                  ref={(el) => { if (el) el.indeterminate = !allSelectedInCategory && someSelectedInCategory; }}
+                  onChange={(e) => {
+                    if (e.target.checked) selectAllVisible(categoryIds);
+                    else deselectAllVisible(categoryIds);
+                  }}
+                  className="h-3.5 w-3.5 rounded border-input cursor-pointer"
+                  aria-label={`Select all in ${CATEGORY_LABELS[cat] || cat}`}
+                />
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {CATEGORY_LABELS[cat] || cat} ({items.length})
+                </h3>
+              </div>
               <div className="space-y-1">
                 {items.map((item) => {
                   const entry = enabledMap.get(item.id);
@@ -470,6 +567,14 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                       )}
                     >
                       <div className="flex items-center gap-3 p-3">
+                        {/* Bulk select checkbox */}
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(item.id)}
+                          onChange={() => toggleSelected(item.id)}
+                          className="h-3.5 w-3.5 rounded border-input cursor-pointer shrink-0"
+                          aria-label={`Select ${item.displayName}`}
+                        />
                         {/* Logo */}
                         <img
                           src={item.logoUrl}
@@ -570,7 +675,8 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                 })}
               </div>
             </div>
-          ))}
+            );
+          })}
       </div>
 
       {filtered.length === 0 && (
