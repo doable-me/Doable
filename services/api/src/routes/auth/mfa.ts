@@ -52,7 +52,7 @@ import {
 const auth = authQueries(sql);
 const mfa = mfaQueries(sql);
 
-export const mfaRoutes = new Hono();
+export const mfaRoutes = new Hono({ strict: false });
 
 const TOTP_ISSUER = process.env.MFA_ISSUER_NAME ?? "Doable";
 

@@ -17,7 +17,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { recordAdminAction } from "./audit-log.js";
 
-export const adminAuditRoutes = new Hono<AuthEnv>();
+export const adminAuditRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminAuditRoutes.use("*", authMiddleware);
 adminAuditRoutes.use("*", platformAdminMiddleware);

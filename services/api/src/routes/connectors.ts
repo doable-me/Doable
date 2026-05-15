@@ -17,7 +17,7 @@ import type { McpConnectorConfig } from "../mcp/types.js";
 const connectors = connectorQueries(sql);
 const workspaces = workspaceQueries(sql);
 
-export const connectorRoutes = new Hono<AuthEnv>();
+export const connectorRoutes = new Hono<AuthEnv>({ strict: false });
 
 connectorRoutes.use("*", authMiddleware);
 
@@ -547,7 +547,7 @@ connectorRoutes.post(
 
 // ─── MCP OAuth Callback (no auth middleware — browser redirect) ──────
 
-export const mcpOAuthCallbackRoute = new Hono();
+export const mcpOAuthCallbackRoute = new Hono({ strict: false });
 
 // GET /connectors/mcp-oauth/callback — OAuth redirect target
 mcpOAuthCallbackRoute.get("/connectors/mcp-oauth/callback", async (c) => {

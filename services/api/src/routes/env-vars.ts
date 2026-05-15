@@ -38,7 +38,7 @@ const updateSchema = z.object({
 
 // ─── Workspace-scoped env vars ──────────────────────────────
 
-export const wsEnvVarRoutes = new Hono<AuthEnv>();
+export const wsEnvVarRoutes = new Hono<AuthEnv>({ strict: false });
 wsEnvVarRoutes.use("*", authMiddleware);
 
 // GET /workspaces/:workspaceId/env-vars
@@ -117,7 +117,7 @@ wsEnvVarRoutes.delete("/:workspaceId/env-vars/:varId", async (c) => {
 
 // ─── Project-scoped env vars ────────────────────────────────
 
-export const projEnvVarRoutes = new Hono<AuthEnv>();
+export const projEnvVarRoutes = new Hono<AuthEnv>({ strict: false });
 projEnvVarRoutes.use("*", authMiddleware);
 // BUG-CORPUS-PROJ-003: reject non-UUID :projectId before SQL → 400, not 500.
 projEnvVarRoutes.use("/:projectId/env-vars", validateProjectIdParam("projectId"));
@@ -229,7 +229,7 @@ projEnvVarRoutes.get("/:projectId/env-vars/resolved", async (c) => {
 
 // ─── Reveal non-secret value (standalone) ───────────────────
 
-export const envVarUtilRoutes = new Hono<AuthEnv>();
+export const envVarUtilRoutes = new Hono<AuthEnv>({ strict: false });
 envVarUtilRoutes.use("*", authMiddleware);
 
 // GET /env-vars/:varId/value

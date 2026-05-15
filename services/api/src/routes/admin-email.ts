@@ -27,7 +27,7 @@ import {
 
 const featureFlags = featureFlagQueries(sql);
 
-export const adminEmailRoutes = new Hono<AuthEnv>();
+export const adminEmailRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminEmailRoutes.use("*", authMiddleware);
 

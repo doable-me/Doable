@@ -6,7 +6,7 @@ import { integrationOAuthRoutes } from "./integrations-oauth.js";
 import { integrationEnhancedAuthRoutes } from "./integrations-enhanced-auth.js";
 import { integrationAdminRoutes } from "./integrations-admin.js";
 
-export const integrationRoutes = new Hono<AuthEnv>();
+export const integrationRoutes = new Hono<AuthEnv>({ strict: false });
 
 integrationRoutes.route("/", integrationCatalogRoutes);
 integrationRoutes.route("/", integrationConnectionRoutes);

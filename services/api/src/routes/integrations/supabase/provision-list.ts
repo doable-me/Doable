@@ -8,7 +8,7 @@ import { listOrganizations } from "../../../integrations/supabase/provisioner.js
 import supabaseEnhancedAuthModule from "../../../integrations/enhanced-auth/supabase.js";
 import { requireMember, getMgmtAccessToken } from "./provision-helpers.js";
 
-export const provisionListRoutes = new Hono<AuthEnv>();
+export const provisionListRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── GET /api/integrations/supabase/orgs ──────────────────
 

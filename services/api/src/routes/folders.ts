@@ -8,7 +8,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 const folders = folderQueries(sql);
 const workspaces = workspaceQueries(sql);
 
-export const folderRoutes = new Hono<AuthEnv>();
+export const folderRoutes = new Hono<AuthEnv>({ strict: false });
 
 // All folder routes require authentication
 folderRoutes.use("*", authMiddleware);

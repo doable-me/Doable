@@ -18,7 +18,7 @@ import type { AuthEnv } from "../../middleware/auth.js";
 import { resolveProfile } from "../../sandbox/profile-resolver.js";
 import { getSandboxRegistry } from "../../../../../packages/dovault/src/sandbox-registry.js";
 
-export const workspaceSandboxRoutes = new Hono<AuthEnv>();
+export const workspaceSandboxRoutes = new Hono<AuthEnv>({ strict: false });
 
 // GET /workspaces/:wsId/sandbox/settings
 workspaceSandboxRoutes.get("/:wsId/sandbox/settings", async (c) => {

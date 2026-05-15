@@ -61,7 +61,7 @@ async function getDefaultFrameworkFromDb(): Promise<string> {
 
 // ─── Admin Routes ───────────────────────────────────────
 
-export const adminFrameworkRoutes = new Hono<AuthEnv>();
+export const adminFrameworkRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminFrameworkRoutes.use("*", authMiddleware);
 adminFrameworkRoutes.use("*", platformAdminMiddleware);
@@ -125,7 +125,7 @@ adminFrameworkRoutes.put("/frameworks", async (c) => {
 
 // ─── Public Route (for project creation dialog) ─────────
 
-export const publicFrameworkRoutes = new Hono<AuthEnv>();
+export const publicFrameworkRoutes = new Hono<AuthEnv>({ strict: false });
 publicFrameworkRoutes.use("*", authMiddleware);
 
 publicFrameworkRoutes.get("/frameworks", async (c) => {

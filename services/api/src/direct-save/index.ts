@@ -15,7 +15,7 @@ import type { DirectSaveRequest, DirectSaveResponse } from "./types.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { requireProjectAccess } from "../middleware/project-access.js";
 
-export const directSaveRoutes = new Hono<AuthEnv>();
+export const directSaveRoutes = new Hono<AuthEnv>({ strict: false });
 
 directSaveRoutes.post(
   "/projects/:id/direct-save",

@@ -8,7 +8,7 @@ import { Hono } from "hono";
 import { hasProjectAccess } from "../middleware/project-access.js";
 import { INTERNAL_SECRET } from "../lib/secrets.js";
 
-export const internalRoutes = new Hono();
+export const internalRoutes = new Hono({ strict: false });
 
 internalRoutes.use("*", async (c, next) => {
   const secret = c.req.header("x-internal-secret");

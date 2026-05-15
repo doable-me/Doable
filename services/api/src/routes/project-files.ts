@@ -15,7 +15,7 @@ import { scaffoldRoutes } from "./project-files/scaffold.js";
 import { fileCrudRoutes } from "./project-files/file-crud.js";
 import { devServerFileRoutes } from "./project-files/dev-server-routes.js";
 
-export const projectFileRoutes = new Hono<AuthEnv>();
+export const projectFileRoutes = new Hono<AuthEnv>({ strict: false });
 
 // Require authentication for all project file operations
 // UUID regex — skip middleware for non-UUID :id values (e.g. "recently-viewed", "starred")

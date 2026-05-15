@@ -13,7 +13,7 @@ const workspaces = workspaceQueries(sql);
 const users = userQueries(sql);
 const envs = environmentQueries(sql);
 
-export const workspaceRoutes = new Hono<AuthEnv>();
+export const workspaceRoutes = new Hono<AuthEnv>({ strict: false });
 
 // Auth + per-request RLS context. Sets `doable.current_user_id` for the
 // duration of each request so migrations 045/071/076 enforce row-level

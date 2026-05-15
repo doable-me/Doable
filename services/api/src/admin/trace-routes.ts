@@ -18,7 +18,7 @@ import { sql } from "../db/index.js";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 
-export const adminTraceRoutes = new Hono<AuthEnv>();
+export const adminTraceRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminTraceRoutes.use("*", authMiddleware);
 adminTraceRoutes.use("*", platformAdminMiddleware);

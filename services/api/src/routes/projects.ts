@@ -5,7 +5,7 @@ import { projectListRoutes } from "./projects/list-routes.js";
 import { projectItemRoutes } from "./projects/item-routes.js";
 import { projectApiKeyRoutes } from "./projects/api-keys.js";
 
-export const projectRoutes = new Hono<AuthEnv>();
+export const projectRoutes = new Hono<AuthEnv>({ strict: false });
 
 // Auth + per-request RLS context. Verifies the JWT and sets
 // `doable.current_user_id` so migration 045/076 policies apply to every

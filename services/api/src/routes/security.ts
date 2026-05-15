@@ -7,7 +7,7 @@ import { runFullScan } from "../security/scanner.js";
 import { validateProjectIdParam } from "./projects/helpers.js";
 
 const security = securityQueries(sql);
-export const securityRoutes = new Hono();
+export const securityRoutes = new Hono({ strict: false });
 
 // All security routes require authentication
 securityRoutes.use("*", authMiddleware);

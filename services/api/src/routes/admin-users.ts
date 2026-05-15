@@ -9,7 +9,7 @@ import { WORKSPACE_PLANS, WORKSPACE_ROLES, PLAN_LIMITS } from "@doable/shared";
 const featureFlags = featureFlagQueries(sql);
 const credits = creditQueries(sql);
 
-export const adminUserRoutes = new Hono<AuthEnv>();
+export const adminUserRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminUserRoutes.use("*", authMiddleware);
 adminUserRoutes.use("*", platformAdminMiddleware);

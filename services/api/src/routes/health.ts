@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { checkDbHealth } from "../db/index.js";
 import { getRunningServers } from "../projects/dev-server.js";
 
-export const healthRoutes = new Hono();
+export const healthRoutes = new Hono({ strict: false });
 
 healthRoutes.get("/", async (c) => {
   const start = Date.now();

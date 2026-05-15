@@ -10,7 +10,7 @@ import {
 const db = githubQueries(sql);
 const FRONTEND_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
-export const githubOAuthRoutes = new Hono();
+export const githubOAuthRoutes = new Hono({ strict: false });
 
 // ─── OAuth: Initiate GitHub repo connection ─────────────────
 // Browser redirect -- no auth middleware (user clicks a link).

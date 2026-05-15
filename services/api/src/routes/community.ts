@@ -16,7 +16,7 @@ const COMMUNITY_FEATURED_TTL_MS = 60 * 1000;
 const COMMUNITY_CATEGORIES_KEY = "community:categories:v1";
 const COMMUNITY_CATEGORIES_TTL_MS = 5 * 60 * 1000;
 
-export const communityRoutes = new Hono<AuthEnv>();
+export const communityRoutes = new Hono<AuthEnv>({ strict: false });
 
 const community = communityQueries(sql);
 

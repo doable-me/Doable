@@ -6,7 +6,7 @@ import { getIntegration } from "../integrations/registry/index.js";
 import { getEnhancedAuthModule, storeEnhancedAuthSession, getEnhancedAuthSession, deleteEnhancedAuthSession } from "../integrations/enhanced-auth/index.js";
 import * as crypto from "node:crypto";
 
-export const integrationEnhancedAuthRoutes = new Hono<AuthEnv>();
+export const integrationEnhancedAuthRoutes = new Hono<AuthEnv>({ strict: false });
 
 const EA_API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
 const EA_PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL

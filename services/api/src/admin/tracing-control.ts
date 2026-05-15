@@ -23,7 +23,7 @@ import {
 } from "../tracing/level-registry.js";
 import { TRACING_LEVELS, type TracingLevel } from "../tracing/types.js";
 
-export const tracingControlRouter = new Hono<AuthEnv>();
+export const tracingControlRouter = new Hono<AuthEnv>({ strict: false });
 
 tracingControlRouter.use("*", authMiddleware);
 tracingControlRouter.use("*", platformAdminMiddleware);

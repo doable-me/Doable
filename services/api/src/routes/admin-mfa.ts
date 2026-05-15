@@ -15,7 +15,7 @@ import { recordAdminAction } from "../admin/audit-log.js";
 
 const mfa = mfaQueries(sql);
 
-export const adminMfaRoutes = new Hono<AuthEnv>();
+export const adminMfaRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminMfaRoutes.use("*", authMiddleware, platformAdminMiddleware);
 

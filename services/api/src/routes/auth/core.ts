@@ -24,7 +24,7 @@ const securityDb = securityQueries(sql);
 const mfa = mfaQueries(sql);
 const signupApproval = signupApprovalQueries(sql);
 
-export const coreAuthRoutes = new Hono();
+export const coreAuthRoutes = new Hono({ strict: false });
 
 // ─── POST /auth/register ───────────────────────────────────
 coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {

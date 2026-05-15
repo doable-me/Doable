@@ -12,7 +12,7 @@ import { validatePathSafe } from "../../projects/path-safety.js";
 import { sql } from "../../db/index.js";
 import { emitActivity } from "../../lib/activity.js";
 
-export const fileCrudRoutes = new Hono<AuthEnv>();
+export const fileCrudRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── GET /projects/:id/files ─ List all project files ────────
 

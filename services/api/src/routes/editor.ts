@@ -4,7 +4,7 @@ import { z } from "zod";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { validatePathSafe } from "../projects/path-safety.js";
 
-export const editorRoutes = new Hono<AuthEnv>();
+export const editorRoutes = new Hono<AuthEnv>({ strict: false });
 
 // All editor routes require authentication
 editorRoutes.use("/projects/:id/*", authMiddleware);

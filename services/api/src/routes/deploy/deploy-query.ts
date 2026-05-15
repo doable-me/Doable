@@ -9,7 +9,7 @@ import { runPipeline } from "../../deploy/pipeline.js";
 const deployments = deploymentQueries(sql);
 const projects = projectQueries(sql);
 
-export const deployQueryRoutes = new Hono<AuthEnv>();
+export const deployQueryRoutes = new Hono<AuthEnv>({ strict: false });
 
 deployQueryRoutes.use("/*", authMiddleware);
 

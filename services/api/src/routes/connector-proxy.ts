@@ -48,7 +48,7 @@ import { getConnectorManager } from "../mcp/connector-manager.js";
 import type { McpConnectorConfig } from "../mcp/types.js";
 import { PROJECT_JWT_SECRET } from "../lib/secrets.js";
 
-export const connectorProxyRoutes = new Hono();
+export const connectorProxyRoutes = new Hono({ strict: false });
 
 // ─── Config ─────────────────────────────────────────────
 

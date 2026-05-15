@@ -13,7 +13,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 
 const workspaces = workspaceQueries(sql);
 
-export const workspaceLogFilterRoutes = new Hono<AuthEnv>();
+export const workspaceLogFilterRoutes = new Hono<AuthEnv>({ strict: false });
 
 workspaceLogFilterRoutes.use("*", authMiddleware);
 

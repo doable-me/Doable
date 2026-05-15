@@ -7,7 +7,7 @@ import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { updateContextFile } from "../ai/context/index.js";
 import type { Plan, PlanStep } from "@doable/shared/types/ai.js";
 
-export const planRoutes = new Hono<AuthEnv>();
+export const planRoutes = new Hono<AuthEnv>({ strict: false });
 
 // Auth middleware for all plan routes
 planRoutes.use("/projects/:id/plan", authMiddleware);

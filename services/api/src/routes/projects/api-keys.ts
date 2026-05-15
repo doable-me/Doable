@@ -13,7 +13,7 @@ import { generateProjectApiKey } from "../connector-proxy.js";
 import type { AuthEnv } from "../../middleware/auth.js";
 import { validateProjectIdParam } from "./helpers.js";
 
-export const projectApiKeyRoutes = new Hono<AuthEnv>();
+export const projectApiKeyRoutes = new Hono<AuthEnv>({ strict: false });
 
 // Reject non-UUID `:id` with 400 before SQL (BUG-CORPUS-PROJ-002).
 projectApiKeyRoutes.use("/:id/*", validateProjectIdParam());

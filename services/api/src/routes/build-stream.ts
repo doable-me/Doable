@@ -23,7 +23,7 @@ import {
   type BuildEvent,
 } from "../build-events/index.js";
 
-export const buildStreamRoutes = new Hono<AuthEnv>();
+export const buildStreamRoutes = new Hono<AuthEnv>({ strict: false });
 
 const KEEP_ALIVE_MS = 25_000;
 

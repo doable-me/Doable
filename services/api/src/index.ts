@@ -115,7 +115,13 @@ process.on("unhandledRejection", (reason) => {
   console.error("[api] unhandled rejection:", reason);
 });
 
-const app = new Hono();
+// BUG-R10-TRAILING-SLASH-AUTH-DROP-001: register the app with `strict: false`
+// so Hono matches BOTH `/foo` and `/foo/` against the same handler. Removes
+// the need for the 308-redirect normalization middleware that previously
+// caused some clients (curl without --location-trusted, older undici, some
+// SDKs) to drop the Authorization header on the followed request and 401.
+// See tracer evidence in testcases/evidence/dev/r12-trailing-slash-trace.md.
+const app = new Hono({ strict: false });
 
 async function ensureProjectFilesTableExists(): Promise<void> {
   await sql`
@@ -270,53 +276,18 @@ app.use(
   })
 );
 
-// Trailing-slash normalization — Hono's router is strict about trailing
-// slashes, so `GET /workspaces/` returns 404 while `GET /workspaces` returns
-// 200. That caused bugs 7 and 13 where clients that built URLs with a
-// base+path concatenation hit 404s inconsistently.
+// BUG-R10-TRAILING-SLASH-AUTH-DROP-001: the previous 308-redirect approach
+// to trailing-slash normalization caused some clients (curl without
+// --location-trusted, older undici, some SDKs) to drop the Authorization
+// header on the followed request — yielding a 401 even with a valid JWT.
+// The fix is structural: the top-level `app` is now `new Hono({ strict: false })`
+// and every sub-router that matters has `strict: false` too, so `/foo` and
+// `/foo/` route to the same handler with no redirect round-trip. No 308 is
+// emitted, no client header policy comes into play, and all clients work.
 //
-// Approach: issue a 308 Permanent Redirect with `Cache-Control: no-store`
-// so browsers don't cache the redirect (which would make subsequent
-// unrelated path changes behave inconsistently as seen during round-2
-// fix-verification). Redirect happens AFTER CORS so the redirect response
-// carries `Access-Control-Allow-Origin`. OPTIONS preflight is short-
-// circuited to a 204 before the redirect would apply, so there's no
-// "redirect on preflight" problem.
-//
-// EXCEPT: `/preview/:projectId/` is the canonical Vite dev server entry
-// point (Vite serves index.html at the trailing-slash path), and
-// `/thumbnails/` is a static asset prefix — leave both untouched.
-app.use("*", async (c, next) => {
-  const path = c.req.path;
-  if (
-    c.req.method !== "OPTIONS" &&
-    path.length > 1 &&
-    path.endsWith("/") &&
-    !path.startsWith("/preview/") &&
-    !path.startsWith("/thumbnails/") &&
-    // BUG-WSI-003: design-comments router is registered with
-    // `strict: false` so it accepts both `/design-comments/:id` and
-    // `/design-comments/:id/`. Skipping the 308 redirect here prevents
-    // a permanent redirect (which Cloudflare/Caddy can cache and which
-    // some clients dropped the Authorization header on) from masking
-    // an otherwise-valid request.
-    !path.startsWith("/design-comments/") &&
-    path !== "/health/"
-  ) {
-    const url = new URL(c.req.url);
-    url.pathname = path.replace(/\/+$/, "");
-    // BUG-API-001: behind Cloudflare/Caddy the raw URL is http://127.0.0.1:...
-    // Use x-forwarded-proto so the 308 redirect goes to the correct scheme.
-    const proto = c.req.header("x-forwarded-proto");
-    const firstProto = proto?.split(",")[0]?.trim();
-    if (firstProto) url.protocol = firstProto + ":";
-    const host = c.req.header("x-forwarded-host") ?? c.req.header("host");
-    if (host) url.host = host;
-    c.header("Cache-Control", "no-store");
-    return c.redirect(url.toString(), 308);
-  }
-  return next();
-});
+// `/preview/:projectId/` and `/thumbnails/` keep their trailing-slash
+// semantics through their own sub-routers (Vite dev server is served at the
+// trailing-slash path; preview-proxy does its own URL rewriting).
 
 // Rate limiter for all routes EXCEPT:
 //   - /preview/* : a single Vite page load triggers many subrequests

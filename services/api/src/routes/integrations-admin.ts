@@ -57,7 +57,7 @@ function getEnvConfiguredIntegrations(): Map<string, { source: string; clientId?
 
 const workspaces = workspaceQueries(sql);
 
-export const integrationAdminRoutes = new Hono<AuthEnv>();
+export const integrationAdminRoutes = new Hono<AuthEnv>({ strict: false });
 
 async function requireAdmin(workspaceId: string, userId: string): Promise<string | null> {
   const role = await workspaces.getMemberRole(workspaceId, userId);

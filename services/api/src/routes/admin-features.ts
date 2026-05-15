@@ -22,7 +22,7 @@ import {
 const featureFlags = featureFlagQueries(sql);
 const platformSettings = platformSettingQueries(sql);
 
-export const adminFeatureRoutes = new Hono<AuthEnv>();
+export const adminFeatureRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminFeatureRoutes.use("*", authMiddleware);
 adminFeatureRoutes.use("*", platformAdminMiddleware);

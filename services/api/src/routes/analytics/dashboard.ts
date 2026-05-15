@@ -46,7 +46,7 @@ const apiUrl =
   process.env.CORS_ORIGINS?.split(",")[0]?.replace(/\/$/, "") ??
   `http://localhost:${process.env.API_PORT ?? "4000"}`;
 
-export const dashboardRoutes = new Hono<AuthEnv>();
+export const dashboardRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── Helpers ──────────────────────────────────────────────────
 

@@ -13,7 +13,7 @@ import {
 import { sql } from "../../db/index.js";
 import { getTemplate } from "../../templates/registry.js";
 
-export const scaffoldRoutes = new Hono<AuthEnv>();
+export const scaffoldRoutes = new Hono<AuthEnv>({ strict: false });
 
 // In-flight scaffold locks — prevents two concurrent scaffold calls from
 // double-creating a project (e.g. frontend mount + chat auto-scaffold).

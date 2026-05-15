@@ -20,7 +20,7 @@ import { ensureWorkspace } from "./auth/helpers.js";
 
 const signupApproval = signupApprovalQueries(sql);
 
-export const adminSignupRoutes = new Hono<AuthEnv>();
+export const adminSignupRoutes = new Hono<AuthEnv>({ strict: false });
 
 adminSignupRoutes.use("*", authMiddleware);
 adminSignupRoutes.use("*", platformAdminMiddleware);

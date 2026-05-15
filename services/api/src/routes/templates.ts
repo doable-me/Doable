@@ -8,7 +8,7 @@ import { getTemplates, getTemplate, getCategories } from "../templates/registry.
 import { scaffolder } from "../templates/scaffolder.js";
 import { buildTemplatePreviewHtml } from "../templates/preview-builder.js";
 
-export const templateRoutes = new Hono<AuthEnv>();
+export const templateRoutes = new Hono<AuthEnv>({ strict: false });
 
 const scaffold = scaffolder(sql);
 

@@ -15,7 +15,7 @@ import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 
 const mkt = marketplaceQueries(sql);
 
-export const marketplaceModerationRoutes = new Hono<AuthEnv>();
+export const marketplaceModerationRoutes = new Hono<AuthEnv>({ strict: false });
 
 // ─── User-facing: file a report ───────────────────────────
 
