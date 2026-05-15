@@ -181,6 +181,21 @@ app.use("*", async (c, next) => {
 });
 app.use("*", timing());
 
+// BUG-ADMIN-010: admin API responses must not be cached by browsers or
+// shared proxies, and the admin panel HTML must never render inside an
+// iframe. Registered BEFORE secureHeaders so its post-next code runs
+// LAST on the response — secureHeaders sets X-Frame-Options: SAMEORIGIN
+// on the way out, so this override needs to be the final writer.
+app.use("*", async (c, next) => {
+  await next();
+  if (c.req.path === "/admin" || c.req.path.startsWith("/admin/")) {
+    c.res.headers.set("Cache-Control", "no-store, private");
+    c.res.headers.set("X-Frame-Options", "DENY");
+    c.res.headers.set("Referrer-Policy", "same-origin");
+    c.res.headers.set("Pragma", "no-cache");
+  }
+});
+
 // Secure headers for all routes EXCEPT /preview/* and /thumbnails/* —
 // the default secureHeaders() sets X-Frame-Options: SAMEORIGIN and
 // Cross-Origin-Resource-Policy: same-origin which block cross-origin
@@ -193,21 +208,8 @@ app.use("*", async (c, next) => {
   return secureHeadersMw(c, next);
 });
 
-// BUG-ADMIN-010: admin API responses must not be cached by browsers or
-// shared proxies, and the admin panel HTML must never render inside an
-// iframe (no embedding for the platform admin surface).
-app.use("*", async (c, next) => {
-  await next();
-  if (c.req.path === "/admin" || c.req.path.startsWith("/admin/")) {
-    c.res.headers.set("Cache-Control", "no-store, private");
-    c.res.headers.set("X-Frame-Options", "DENY");
-    c.res.headers.set("Referrer-Policy", "same-origin");
-    c.res.headers.set("Pragma", "no-cache");
-  }
-});
-
 // Resolve whether a request's Origin is in the allowlist for CORS purposes.
-// Shared by the cors() origin callback and the post-CORS strip below so
+// Shared by the cors() origin callback and the post-CORS strip so
 // the two stay in lockstep — a future change to the allowlist logic
 // can never re-introduce the BUG-012 mismatch where ACAC was emitted
 // for origins that did NOT receive an ACAO header.
@@ -232,28 +234,13 @@ function resolveAllowedCorsOrigin(c: { req: { path: string; header(name: string)
   return null;
 }
 
-app.use(
-  "*",
-  cors({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    origin: (origin, c) => resolveAllowedCorsOrigin(c as any, origin),
-    credentials: true,
-    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "x-doable-project-id"],
-    maxAge: 86400,
-  })
-);
-
 // BUG-012: hono/cors emits `Access-Control-Allow-Credentials: true`
 // unconditionally when `credentials: true` is set — even when the origin
 // callback returned `null` and `Access-Control-Allow-Origin` is absent.
 // On OPTIONS preflight hono/cors short-circuits with a fresh Response
-// before our middleware chain can post-process it, so a post-cors hook
-// never runs. Instead, intercept BEFORE cors() runs: if the request's
-// Origin isn't on the allowlist, attach a finaliser that scrubs any
-// orphan ACAC header from the response. Works for both OPTIONS (where
-// hono/cors emits a new Response inheriting these headers) and real
-// requests (where `await next()` returns through us).
+// before downstream middleware can post-process it. So this strip MUST
+// be registered BEFORE cors() — that way its `await next()` captures
+// cors()'s synthesized OPTIONS response on the way back up.
 app.use("*", async (c, next) => {
   const origin = c.req.header("origin") ?? "";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -261,9 +248,6 @@ app.use("*", async (c, next) => {
   const originAllowed = resolved !== null && resolved !== "";
   await next();
   if (!originAllowed) {
-    // Strip orphan ACAC headers. Use both c.res.headers (Hono's mutable
-    // headers object) and reset c.res so the wrapped Response that
-    // hono/cors built for OPTIONS preflight no longer carries ACAC.
     if (c.res.headers.get("Access-Control-Allow-Credentials")) {
       const cleaned = new Headers(c.res.headers);
       cleaned.delete("Access-Control-Allow-Credentials");
@@ -275,6 +259,18 @@ app.use("*", async (c, next) => {
     }
   }
 });
+
+app.use(
+  "*",
+  cors({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    origin: (origin, c) => resolveAllowedCorsOrigin(c as any, origin),
+    credentials: true,
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization", "x-doable-project-id"],
+    maxAge: 86400,
+  })
+);
 
 // Trailing-slash normalization — Hono's router is strict about trailing
 // slashes, so `GET /workspaces/` returns 404 while `GET /workspaces` returns
