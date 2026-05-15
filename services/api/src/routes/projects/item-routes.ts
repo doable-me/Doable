@@ -313,10 +313,15 @@ projectItemRoutes.post("/:id/archive", async (c) => {
     return c.json({ error: "Only workspace owners and admins can archive projects" }, 403);
   }
 
+  // BUG-API-005: previous code set `deleted_at = now()` on archive, which
+  // collided with the soft-delete contract (deleted_at-marked rows are
+  // hidden everywhere). 'archived' is now a real enum value (mig 085) and
+  // status alone is the canonical signal. The deleted_at IS NULL guard
+  // prevents reviving soft-deleted rows via archive/unarchive.
   const [updated] = await sql<{ id: string; status: string }[]>`
     UPDATE projects
-    SET status = 'archived', deleted_at = now(), updated_at = now()
-    WHERE id = ${id}
+    SET status = 'archived', updated_at = now()
+    WHERE id = ${id} AND deleted_at IS NULL
     RETURNING id, status
   `;
   if (!updated) return c.json({ error: "Project not found" }, 404);
@@ -335,8 +340,8 @@ projectItemRoutes.post("/:id/unarchive", async (c) => {
 
   const [updated] = await sql<{ id: string; status: string }[]>`
     UPDATE projects
-    SET status = 'draft', deleted_at = NULL, updated_at = now()
-    WHERE id = ${id}
+    SET status = 'draft', updated_at = now()
+    WHERE id = ${id} AND deleted_at IS NULL
     RETURNING id, status
   `;
   if (!updated) return c.json({ error: "Project not found" }, 404);
