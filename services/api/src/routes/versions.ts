@@ -168,19 +168,31 @@ versionRoutes.post("/:projectId/versions", async (c) => {
   // auto, restore, diff). The legacy `projectPath` field in the request
   // body is now ignored for backward compatibility — a deprecation warning
   // is logged so we can find stale callers.
+  //
+  // BUG-CORPUS-VERSIONS-001: legacy callers had to supply `createdBy` in the
+  // body, which (a) forced the client to know its own user id and (b) let a
+  // signed-in user attribute a snapshot to anyone they wanted. We now always
+  // use the authenticated user id from the JWT. Body.createdBy is accepted
+  // but ignored — schema kept backwards-compatible.
   const body = await c.req.json<{
     description?: string;
-    createdBy: string;
+    createdBy?: string;
     projectPath?: string;
-  }>();
+  }>().catch(() => ({} as { description?: string; createdBy?: string; projectPath?: string }));
 
-  if (!body.createdBy) {
-    return c.json({ error: "Missing required field: createdBy" }, 400);
+  const createdBy = c.get("userId");
+  if (!createdBy) {
+    return c.json({ error: "Unauthorized" }, 401);
   }
 
   if (body.projectPath !== undefined) {
     console.warn(
       `[versions] POST /:projectId/versions received deprecated body.projectPath=${JSON.stringify(body.projectPath)} for project ${projectId} — ignoring; path is derived server-side`
+    );
+  }
+  if (body.createdBy !== undefined && body.createdBy !== createdBy) {
+    console.warn(
+      `[versions] POST /:projectId/versions received deprecated body.createdBy=${JSON.stringify(body.createdBy)} for project ${projectId} — ignoring; createdBy is derived from auth context`
     );
   }
 
@@ -193,7 +205,7 @@ versionRoutes.post("/:projectId/versions", async (c) => {
   try {
     const version = await createVersion(projectId, projectPath, {
       description: body.description,
-      createdBy: body.createdBy,
+      createdBy,
     });
 
     emitActivity(sql, {
@@ -217,8 +229,22 @@ versionRoutes.post("/:projectId/versions", async (c) => {
 });
 
 // ─── Get single version ───────────────────────────────────
+// BUG-VER-001: previously this handler passed `:versionId` straight to a
+// UUID-typed DB lookup, so probes for the literal segment "auto" (a sibling
+// POST route) or any non-UUID/non-SHA string crashed postgres with
+// `invalid input syntax for type uuid` and surfaced as 500. Reserved
+// segments and malformed ids must short-circuit to 404 BEFORE we touch the
+// DB so the route is well-behaved.
+const RESERVED_VERSION_SEGMENTS = new Set(["auto", "undo"]);
+const VERSION_ID_REGEX =
+  /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{7,40})$/i;
+
 versionRoutes.get("/:projectId/versions/:versionId", async (c) => {
   const versionId = c.req.param("versionId");
+
+  if (RESERVED_VERSION_SEGMENTS.has(versionId) || !VERSION_ID_REGEX.test(versionId)) {
+    return c.json({ error: "Version not found" }, 404);
+  }
 
   try {
     const version = await getVersion(versionId);
@@ -240,11 +266,13 @@ versionRoutes.post("/:projectId/versions/auto", async (c) => {
 
   const body = await c.req.json<{
     description?: string;
-    createdBy: string;
-  }>();
+    createdBy?: string;
+  }>().catch(() => ({} as { description?: string; createdBy?: string }));
 
-  if (!body.createdBy) {
-    return c.json({ error: "Missing required field: createdBy" }, 400);
+  // BUG-CORPUS-VERSIONS-001: derive createdBy from auth context, not body.
+  const createdBy = c.get("userId");
+  if (!createdBy) {
+    return c.json({ error: "Unauthorized" }, 401);
   }
 
   // Resolve project path from project ID
@@ -259,7 +287,7 @@ versionRoutes.post("/:projectId/versions/auto", async (c) => {
       projectId,
       projectPath,
       body.description ?? "AI-generated changes",
-      body.createdBy
+      createdBy
     );
 
     emitActivity(sql, {
@@ -333,12 +361,23 @@ versionRoutes.post("/:projectId/versions/:versionId/restore", async (c) => {
     return c.json({ data: newVersion }, 201);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    const status = message.includes("not found") ? 404 : 500;
+    // BUG-VER-002: git "checkout"/"rev-parse" errors for unknown SHAs surface
+    // as opaque "reference is not a tree", "unknown revision", or
+    // "ambiguous argument" stderr. They must map to 404 so callers can
+    // distinguish "version doesn't exist" from a real server crash.
+    const lower = message.toLowerCase();
+    const isNotFound =
+      lower.includes("not found") ||
+      lower.includes("reference is not a tree") ||
+      lower.includes("unknown revision") ||
+      lower.includes("bad revision") ||
+      lower.includes("ambiguous argument");
+    const status = isNotFound ? 404 : 500;
     if (process.env.NODE_ENV === "development") {
-      return c.json({ error: "Failed to restore version", message }, status);
+      return c.json({ error: isNotFound ? "Version not found" : "Failed to restore version", message }, status);
     }
     console.error(`[versions] restoreVersion failed for project ${projectId}:`, err);
-    return c.json({ error: "Failed to restore version" }, status);
+    return c.json({ error: isNotFound ? "Version not found" : "Failed to restore version" }, status);
   }
 });
 

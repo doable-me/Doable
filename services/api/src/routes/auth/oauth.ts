@@ -6,9 +6,10 @@ import { mfaQueries } from "@doable/db/queries/mfa.js";
 import { signupApprovalQueries } from "@doable/db/queries/signup-approval.js";
 import {
   getGitHubAuthUrl, exchangeGitHubCode, getGitHubCopilotAuthUrl,
-  GITHUB_COPILOT_REDIRECT_URI, GITHUB_REPO_REDIRECT_URI,
+  getGitHubRepoAuthUrl, GITHUB_COPILOT_REDIRECT_URI, GITHUB_REPO_REDIRECT_URI,
   getGoogleAuthUrl, exchangeGoogleCode,
 } from "../../lib/oauth.js";
+import { verifyAccessToken } from "../../lib/jwt.js";
 import {
   stripHtmlTags, issueTokens, ensureWorkspace, FRONTEND_URL,
 } from "./helpers.js";
@@ -226,6 +227,47 @@ oauthRoutes.get("/google/callback", async (c) => {
     console.error("[OAuth] Google callback error:", err);
     return c.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
   }
+});
+
+// ─── GET /auth/github/repo/start ─ Initiate repo-scope OAuth ──────
+// BUG-GH-001: this route previously did not exist. /auth/github/repo/start
+// was returning 500/401 because there was no handler — repo-connect flow
+// was only reachable via /github/connect (which doesn't require auth and
+// takes userId as a query param). Test clients hitting /auth/github/repo/start
+// expected an auth-gated 302 redirect to GitHub, so we now mirror the
+// existing /github/connect handler but require a Bearer token / session.
+oauthRoutes.get("/github/repo/start", async (c) => {
+  // Manual auth check: Bearer header or `?token=` query param.
+  // Browser <a href> can't set Authorization, so accept `?token=` too.
+  const header = c.req.header("Authorization") ?? "";
+  const bearer = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const tokenFromQuery = c.req.query("token") ?? "";
+  const accessToken = bearer || tokenFromQuery;
+
+  let userId = "";
+  if (accessToken) {
+    try {
+      const payload = await verifyAccessToken(accessToken);
+      userId = payload.sub;
+    } catch {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+  } else {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const projectId = c.req.query("projectId") ?? "";
+  const returnUrl = safeReturnTo(c.req.query("returnUrl")) ?? "";
+
+  const state = JSON.stringify({
+    type: "repo",
+    userId,
+    projectId,
+    returnUrl,
+    nonce: crypto.randomUUID(),
+  });
+  const encodedState = Buffer.from(state).toString("base64url");
+  return c.redirect(getGitHubRepoAuthUrl(encodedState));
 });
 
 // ─── GET /auth/github/copilot ─ Initiate Copilot account connection ─
