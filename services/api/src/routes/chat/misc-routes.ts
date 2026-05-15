@@ -333,6 +333,39 @@ export function registerMiscRoutes(app: Hono<AuthEnv>) {
     }
   });
 
+  // ─── GET /chat/modes ──
+  // BUG-AI-018: expose the canonical list of chat modes so the UI doesn't
+  // have to hard-code them (and tester tooling can introspect them). The
+  // four entries here MUST match the `mode` z.enum in send-handler.ts
+  // (sendMessageSchema) — keep them in sync if a new mode is added.
+  app.get("/chat/modes", async (c) => {
+    return c.json({
+      data: [
+        {
+          id: "agent",
+          label: "Agent",
+          description: "AI builds, edits, and runs your project using tools.",
+          default: true,
+        },
+        {
+          id: "plan",
+          label: "Plan",
+          description: "AI returns a structured build plan; no files written.",
+        },
+        {
+          id: "visual-edit",
+          label: "Visual Edit",
+          description: "Targeted edit on a selected element in Design View.",
+        },
+        {
+          id: "chat",
+          label: "Chat",
+          description: "Plain Q&A — no tool calls, no file writes.",
+        },
+      ],
+    });
+  });
+
   // ─── GET /ai/auth-status ──
   app.get("/ai/auth-status", async (c) => {
     try {
