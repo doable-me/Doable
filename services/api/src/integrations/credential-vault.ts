@@ -274,6 +274,119 @@ export const credentialVault = {
   },
 };
 
+// ─── Platform Integration Credentials ────────────────────
+// Non-OAuth platform-scope credentials (secret_text, basic_auth, custom_auth).
+// OAuth credentials remain in oauth_apps. This object handles everything else
+// at the platform (global) level — no workspace_id involved.
+//
+// TODO: When envelope_v1 gains a platform-scope key path (a KEK-derived DEK
+// not tied to any workspace), migrate writes here to envelope_v1. For now
+// pgp_sym is used because envelope encryption requires a workspace_id.
+
+export type PlatformCredentialAuthType = "secret_text" | "basic_auth" | "custom_auth";
+
+export interface PlatformCredentialRow {
+  id: string;
+  integrationId: string;
+  authType: PlatformCredentialAuthType;
+  displayHint: string | null;
+  updatedAt: Date;
+}
+
+export interface PlatformCredentialDecrypted extends PlatformCredentialRow {
+  credentials: unknown;
+}
+
+export const platformCredentials = {
+  /**
+   * Retrieve and decrypt credentials for a single integration.
+   * Returns null if no row exists.
+   * NEVER expose the returned credentials in HTTP responses.
+   */
+  async get(integrationId: string): Promise<PlatformCredentialDecrypted | null> {
+    const [row] = await sql`
+      SELECT id, integration_id, auth_type, display_hint, updated_at,
+             pgp_sym_decrypt(credentials_encrypted, ${ENCRYPTION_KEY}) AS credentials_json
+      FROM platform_integration_credentials
+      WHERE integration_id = ${integrationId}
+    `;
+    if (!row) return null;
+    return {
+      id: row.id as string,
+      integrationId: row.integration_id as string,
+      authType: row.auth_type as PlatformCredentialAuthType,
+      displayHint: (row.display_hint ?? null) as string | null,
+      updatedAt: row.updated_at as Date,
+      credentials: JSON.parse(row.credentials_json as string),
+    };
+  },
+
+  /**
+   * List all platform credentials — metadata only, no secrets.
+   */
+  async list(): Promise<PlatformCredentialRow[]> {
+    const rows = await sql`
+      SELECT id, integration_id, auth_type, display_hint, updated_at
+      FROM platform_integration_credentials
+      ORDER BY integration_id
+    `;
+    return rows.map((r) => ({
+      id: r.id as string,
+      integrationId: r.integration_id as string,
+      authType: r.auth_type as PlatformCredentialAuthType,
+      displayHint: (r.display_hint ?? null) as string | null,
+      updatedAt: r.updated_at as Date,
+    }));
+  },
+
+  /**
+   * Insert or update credentials for an integration.
+   * Encrypts with pgp_sym (same as oauthApps.create fallback path).
+   */
+  async upsert(params: {
+    integrationId: string;
+    authType: PlatformCredentialAuthType;
+    credentials: unknown;
+    displayHint?: string;
+    actorUserId: string;
+  }): Promise<{ id: string; updatedAt: Date }> {
+    const credJson = JSON.stringify(params.credentials);
+    const rows = await sql`
+      INSERT INTO platform_integration_credentials
+        (integration_id, auth_type, credentials_encrypted, credentials_format, display_hint, created_by)
+      VALUES
+        (${params.integrationId},
+         ${params.authType},
+         pgp_sym_encrypt(${credJson}, ${ENCRYPTION_KEY}),
+         'pgp_sym',
+         ${params.displayHint ?? null},
+         ${params.actorUserId}::uuid)
+      ON CONFLICT (integration_id) DO UPDATE SET
+        auth_type             = EXCLUDED.auth_type,
+        credentials_encrypted = EXCLUDED.credentials_encrypted,
+        credentials_format    = EXCLUDED.credentials_format,
+        display_hint          = EXCLUDED.display_hint,
+        updated_at            = now()
+      RETURNING id, updated_at
+    `;
+    const row = rows[0] as { id: string; updated_at: Date };
+    return { id: row.id, updatedAt: row.updated_at };
+  },
+
+  /**
+   * Delete credentials for an integration.
+   * Returns true if a row was deleted, false if it didn't exist.
+   */
+  async delete(integrationId: string): Promise<boolean> {
+    const rows = await sql`
+      DELETE FROM platform_integration_credentials
+      WHERE integration_id = ${integrationId}
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+};
+
 // ─── OAuth App Helpers ────────────────────────────────────
 
 export const oauthApps = {

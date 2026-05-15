@@ -1,20 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Search,
   Check,
-  X,
   AlertTriangle,
   Key,
   Loader2,
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  Settings2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
-import { CATEGORY_LABELS } from "./use-integration-catalog";
+import { CATEGORY_LABELS, type CustomAuthField } from "./use-integration-catalog";
+import { IntegrationConfigForm, type ExistingCredentialHint } from "./integration-config-form";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -24,10 +25,11 @@ interface CatalogItem {
   description: string;
   logoUrl: string;
   category: string;
-  authType: string;
+  authType: "oauth2" | "secret_text" | "custom_auth" | "basic_auth" | "none";
   tier: string;
   connected: boolean;
   actionCount: number;
+  customAuthFields?: CustomAuthField[];
 }
 
 interface EnabledIntegration {
@@ -46,10 +48,11 @@ interface EnabledIntegration {
   env_source?: string | null;
 }
 
-interface OAuthAppForm {
+interface PlatformCredential {
   integrationId: string;
-  clientId: string;
-  clientSecret: string;
+  authType: string;
+  displayHint?: string;
+  updatedAt: string;
 }
 
 // ─── Main Component ─────────────────────────────────────────
@@ -83,6 +86,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
   const isPlatformMode = !propWorkspaceId; // Platform admin mode (global)
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [enabledMap, setEnabledMap] = useState<Map<string, EnabledIntegration>>(new Map());
+  const [platformCredsMap, setPlatformCredsMap] = useState<Map<string, PlatformCredential>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
@@ -90,9 +94,6 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [oauthForm, setOauthForm] = useState<OAuthAppForm | null>(null);
-  const [oauthSaving, setOauthSaving] = useState(false);
-  const [oauthError, setOauthError] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<"all" | "enabled" | "unconfigured" | "env">("all");
   const [envConfiguredMap, setEnvConfiguredMap] = useState<Map<string, { source: string; clientId?: string }>>(new Map());
 
@@ -108,9 +109,13 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
         ? `/integrations/admin/platform-enabled`
         : `/integrations/admin/enabled?workspaceId=${workspaceId}`;
 
-      const [catalogRes, enabledRes] = await Promise.all([
+      const [catalogRes, enabledRes, platformCredsRes] = await Promise.all([
         apiFetch<{ data: CatalogItem[]; categories: string[] }>(catalogUrl),
         apiFetch<{ data: EnabledIntegration[]; envConfigured?: Array<{ integration_id: string; env_configured: boolean; env_source: string; oauth_client_id?: string }> }>(enabledUrl),
+        // Platform credentials list (only meaningful in platform mode; falls back to empty in workspace mode)
+        isPlatformMode
+          ? apiFetch<{ data: PlatformCredential[] }>("/integrations/admin/credentials").catch(() => ({ data: [] as PlatformCredential[] }))
+          : Promise.resolve({ data: [] as PlatformCredential[] }),
       ]);
       setCatalog(catalogRes.data);
       setCategories(catalogRes.categories);
@@ -133,6 +138,12 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
       }
       setEnvConfiguredMap(envMap);
       setEnabledMap(map);
+      // Platform credentials for non-OAuth integrations
+      const credsMap = new Map<string, PlatformCredential>();
+      for (const cred of platformCredsRes.data) {
+        credsMap.set(cred.integrationId, cred);
+      }
+      setPlatformCredsMap(credsMap);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load integrations");
@@ -181,41 +192,10 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
     }
   };
 
-  const saveOAuthApp = async () => {
-    if (!oauthForm) return;
-    setOauthSaving(true);
-    setOauthError(null);
-    try {
-      // Create OAuth app (global for platform admins, workspace-scoped otherwise)
-      const oauthPayload = isPlatformMode
-        ? { isGlobal: true, integrationId: oauthForm.integrationId, clientId: oauthForm.clientId, clientSecret: oauthForm.clientSecret }
-        : { workspaceId, integrationId: oauthForm.integrationId, clientId: oauthForm.clientId, clientSecret: oauthForm.clientSecret };
-
-      await apiFetch("/integrations/admin/oauth-apps", {
-        method: "POST",
-        body: JSON.stringify(oauthPayload),
-      });
-
-      // Also enable the integration
-      if (isPlatformMode) {
-        await apiFetch("/integrations/admin/platform-enabled", {
-          method: "POST",
-          body: JSON.stringify({ integrationId: oauthForm.integrationId, enabled: true }),
-        });
-      } else {
-        await apiFetch("/integrations/admin/enabled", {
-          method: "POST",
-          body: JSON.stringify({ workspaceId, integrationId: oauthForm.integrationId, enabled: true }),
-        });
-      }
-      setOauthForm(null);
-      await fetchData();
-    } catch (err) {
-      setOauthError(err instanceof Error ? err.message : "Failed to save OAuth credentials");
-    } finally {
-      setOauthSaving(false);
-    }
-  };
+  const handleConfigSaved = useCallback(async () => {
+    setExpandedId(null);
+    await fetchData();
+  }, [fetchData]);
 
   // Filter and search
   const filtered = catalog.filter((item) => {
@@ -229,7 +209,8 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
     if (filterMode === "enabled" && !enabledMap.has(item.id)) return false;
     if (filterMode === "unconfigured") {
       const entry = enabledMap.get(item.id);
-      if (!entry || entry.configured) return false;
+      const hasAny = (entry?.configured ?? false) || platformCredsMap.has(item.id) || envConfiguredMap.has(item.id);
+      if (!entry || hasAny) return false;
     }
     if (filterMode === "env" && !envConfiguredMap.has(item.id)) return false;
     return true;
@@ -243,8 +224,14 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
   }, {});
 
   const enabledCount = enabledMap.size;
-  const unconfiguredCount = [...enabledMap.values()].filter((e) => !e.configured).length;
+  const unconfiguredCount = useMemo(
+    () => [...enabledMap.entries()].filter(([id, e]) =>
+      !e.configured && !platformCredsMap.has(id) && !envConfiguredMap.has(id),
+    ).length,
+    [enabledMap, platformCredsMap, envConfiguredMap],
+  );
   const envConfiguredCount = envConfiguredMap.size;
+  const platformConfiguredCount = platformCredsMap.size;
   const oauthIntegrations = catalog.filter((i) => i.authType === "oauth2");
 
   if (loading) {
@@ -273,9 +260,11 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
           <div className="text-2xl font-bold text-foreground">{enabledCount}</div>
           <div className="text-xs text-muted-foreground">Enabled</div>
         </div>
-        <div className="rounded-lg border p-3 bg-background">
-          <div className="text-2xl font-bold text-foreground">{oauthIntegrations.length}</div>
-          <div className="text-xs text-muted-foreground">Need OAuth Setup</div>
+        <div className={cn("rounded-lg border p-3 bg-background", platformConfiguredCount > 0 && "border-green-500/50")}>
+          <div className={cn("text-2xl font-bold", platformConfiguredCount > 0 ? "text-green-600" : "text-foreground")}>
+            {platformConfiguredCount}
+          </div>
+          <div className="text-xs text-muted-foreground">Configured (DB)</div>
         </div>
         <div className={cn("rounded-lg border p-3 bg-background", envConfiguredCount > 0 && "border-blue-500/50")}>
           <div className={cn("text-2xl font-bold", envConfiguredCount > 0 ? "text-blue-600" : "text-foreground")}>
@@ -287,7 +276,7 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
           <div className={cn("text-2xl font-bold", unconfiguredCount > 0 ? "text-yellow-600" : "text-foreground")}>
             {unconfiguredCount}
           </div>
-          <div className="text-xs text-muted-foreground">Enabled but Unconfigured</div>
+          <div className="text-xs text-muted-foreground">Enabled, Needs Config</div>
         </div>
       </div>
 
@@ -295,9 +284,8 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
         <div className="flex items-start gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3">
           <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 shrink-0" />
           <div className="text-sm text-yellow-700 dark:text-yellow-400">
-            <strong>{unconfiguredCount} integration(s)</strong> are enabled but missing OAuth credentials.
-            Users will see a &quot;redirect_uri_mismatch&quot; or similar error when trying to connect.
-            Configure the OAuth app credentials below to fix this.
+            <strong>{unconfiguredCount} integration(s)</strong> are enabled but missing credentials.
+            Users won&apos;t be able to connect until credentials are configured. Click <strong>Configure</strong> on a row below to fix.
           </div>
         </div>
       )}
@@ -375,21 +363,25 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                 {items.map((item) => {
                   const entry = enabledMap.get(item.id);
                   const isEnabled = !!entry;
-                  const isConfigured = entry?.configured ?? false;
                   const isOAuth = item.authType === "oauth2";
+                  const hasPlatformCred = platformCredsMap.has(item.id);
                   const isExpanded = expandedId === item.id;
                   const isSaving = saving === item.id;
                   const envInfo = envConfiguredMap.get(item.id);
                   const isEnvConfigured = !!envInfo;
+                  // Effective "configured" state: enabled row's flag OR a platform credential exists OR env vars provide credentials
+                  const isConfigured = (entry?.configured ?? false) || hasPlatformCred || isEnvConfigured;
+                  const needsConfig = isEnabled && !isConfigured && item.authType !== "none";
+                  const canConfigure = item.authType !== "none";
 
                   return (
                     <div
                       key={item.id}
                       className={cn(
                         "rounded-lg border transition-colors",
-                        isEnvConfigured && "border-blue-500/30 bg-blue-500/5",
-                        isEnabled && !isConfigured && !isEnvConfigured && isOAuth && "border-yellow-500/40",
-                        isEnabled && (isConfigured || isEnvConfigured) && "border-green-500/30",
+                        isEnvConfigured && !isEnabled && "border-blue-500/30 bg-blue-500/5",
+                        needsConfig && "border-yellow-500/40",
+                        isEnabled && isConfigured && "border-green-500/30",
                         !isEnabled && !isEnvConfigured && "border-border"
                       )}
                     >
@@ -404,20 +396,21 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium text-foreground">{item.displayName}</span>
-                            {isOAuth && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                                OAuth
-                              </span>
-                            )}
+                            <StatusChip authType={item.authType} />
                             {isEnvConfigured && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20" title={`Configured via: ${envInfo!.source}`}>
                                 ENV
                               </span>
                             )}
-                            {isEnabled && (isConfigured || isEnvConfigured) && (
+                            {hasPlatformCred && !isEnvConfigured && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20" title="Platform credential configured">
+                                DB
+                              </span>
+                            )}
+                            {isEnabled && isConfigured && (
                               <Check className="h-3.5 w-3.5 text-green-500" />
                             )}
-                            {isEnabled && !isConfigured && !isEnvConfigured && isOAuth && (
+                            {needsConfig && (
                               <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />
                             )}
                           </div>
@@ -430,25 +423,21 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                         </div>
                         {/* Actions */}
                         <div className="flex items-center gap-2 shrink-0">
-                          {isOAuth && (
+                          {canConfigure && (
                             <button
-                              onClick={() => {
-                                if (isExpanded) {
-                                  setExpandedId(null);
-                                  setOauthForm(null);
-                                } else {
-                                  setExpandedId(item.id);
-                                  setOauthForm({
-                                    integrationId: item.id,
-                                    clientId: entry?.oauth_client_id || "",
-                                    clientSecret: "",
-                                  });
-                                }
-                              }}
-                              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs border hover:bg-muted transition-colors"
-                              title="Configure OAuth credentials"
+                              onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                              className={cn(
+                                "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors",
+                                needsConfig
+                                  ? "border-yellow-500/40 bg-yellow-500/5 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/10"
+                                  : isConfigured
+                                    ? "border-green-500/30 bg-green-500/5 text-green-700 dark:text-green-400 hover:bg-green-500/10"
+                                    : "border-input bg-background text-foreground hover:bg-muted"
+                              )}
+                              title={isConfigured ? "Update credentials" : "Configure credentials"}
                             >
-                              <Key className="h-3 w-3" />
+                              <Settings2 className="h-3 w-3" />
+                              {isConfigured ? "Update" : "Configure"}
                               {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                             </button>
                           )}
@@ -456,14 +445,14 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                             onClick={() => toggleIntegration(item.id, !isEnabled)}
                             disabled={!!isSaving}
                             className={cn(
-                              "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                              "px-3 py-1.5 rounded-md text-xs font-medium transition-colors min-w-[68px]",
                               isEnabled
                                 ? "bg-green-500/10 text-green-700 dark:text-green-400 hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-400"
                                 : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary"
                             )}
                           >
                             {isSaving ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
+                              <Loader2 className="h-3 w-3 animate-spin mx-auto" />
                             ) : isEnabled ? (
                               "Enabled"
                             ) : (
@@ -473,70 +462,23 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
                         </div>
                       </div>
 
-                      {/* OAuth Config Expanded */}
-                      {isExpanded && oauthForm && (
-                        <div className="border-t p-4 bg-muted/30 space-y-3">
-                          <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md p-2">
-                            <ExternalLink className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                            <div>
-                              Create an OAuth app in the provider&apos;s developer console.
-                              Set the redirect URI to:{" "}
-                              <code className="text-[11px] bg-background px-1 py-0.5 rounded border">
-                                {typeof window !== "undefined"
-                                  ? `${window.location.origin.replace(/:\d+$/, ":4000")}/integrations/oauth/callback`
-                                  : "/integrations/oauth/callback"}
-                              </code>
-                            </div>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-foreground">Client ID</label>
-                            <input
-                              type="text"
-                              value={oauthForm.clientId}
-                              onChange={(e) => setOauthForm({ ...oauthForm, clientId: e.target.value })}
-                              placeholder="OAuth Client ID"
-                              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-foreground">Client Secret</label>
-                            <input
-                              type="password"
-                              value={oauthForm.clientSecret}
-                              onChange={(e) => setOauthForm({ ...oauthForm, clientSecret: e.target.value })}
-                              placeholder="OAuth Client Secret"
-                              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            />
-                          </div>
-                          {entry?.oauth_client_id && (
-                            <div className="text-xs text-green-600 flex items-center gap-1">
-                              <Check className="h-3 w-3" />
-                              Credentials already configured (Client ID: {entry.oauth_client_id.slice(0, 20)}...)
-                            </div>
-                          )}
-                          {oauthError && (
-                            <div className="text-xs text-red-600">{oauthError}</div>
-                          )}
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={saveOAuthApp}
-                              disabled={oauthSaving || !oauthForm.clientId || !oauthForm.clientSecret}
-                              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                            >
-                              {oauthSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Key className="h-3 w-3" />}
-                              Save Credentials
-                            </button>
-                            <button
-                              onClick={() => {
-                                setExpandedId(null);
-                                setOauthForm(null);
-                                setOauthError(null);
-                              }}
-                              className="rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
+                      {/* Polymorphic Config Form (expanded) */}
+                      {isExpanded && canConfigure && (
+                        <div className="border-t p-4 bg-muted/30">
+                          <IntegrationConfigForm
+                            item={{
+                              id: item.id,
+                              displayName: item.displayName,
+                              description: item.description,
+                              authType: item.authType,
+                              customAuthFields: item.customAuthFields,
+                            }}
+                            isPlatformMode={isPlatformMode}
+                            workspaceId={workspaceId || undefined}
+                            existing={buildExistingHint({ entry, platformCred: platformCredsMap.get(item.id), envInfo })}
+                            onSaved={handleConfigSaved}
+                            onCancel={() => setExpandedId(null)}
+                          />
                         </div>
                       )}
                     </div>
@@ -554,6 +496,52 @@ export function IntegrationsAdminPanel({ workspaceId: propWorkspaceId }: Integra
       )}
     </div>
   );
+}
+
+// ─── Status / Auth-Type Chip ─────────────────────────────────
+
+function StatusChip({ authType }: { authType: CatalogItem["authType"] }) {
+  if (authType === "none") return null;
+  const label =
+    authType === "oauth2" ? "OAuth"
+    : authType === "secret_text" ? "API Key"
+    : authType === "basic_auth" ? "User/Pass"
+    : "Custom";
+  return (
+    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+      {label}
+    </span>
+  );
+}
+
+// ─── Existing Credential Hint Builder ───────────────────────
+
+function buildExistingHint({
+  entry,
+  platformCred,
+  envInfo,
+}: {
+  entry: EnabledIntegration | undefined;
+  platformCred: PlatformCredential | undefined;
+  envInfo: { source: string; clientId?: string } | undefined;
+}): ExistingCredentialHint | undefined {
+  // Resolution priority for the "existing" badge shown in the form:
+  // 1. Env-var fallback (read-only, can be overridden by saving a DB credential)
+  // 2. Workspace/platform oauth_app row (has oauth_client_id)
+  // 3. Platform non-OAuth credential (has displayHint)
+  if (envInfo) {
+    return { source: "env", envSource: envInfo.source, displayHint: envInfo.clientId?.slice(-4) };
+  }
+  if (entry?.oauth_client_id) {
+    return { source: "oauth_apps", displayHint: entry.oauth_client_id.slice(-4) };
+  }
+  if (platformCred?.displayHint) {
+    return { source: "platform_credentials", displayHint: platformCred.displayHint };
+  }
+  if (platformCred) {
+    return { source: "platform_credentials" };
+  }
+  return undefined;
 }
 
 // ─── Workspace Selector ─────────────────────────────────────

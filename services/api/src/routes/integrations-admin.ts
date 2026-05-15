@@ -5,7 +5,8 @@ import { sql } from "../db/index.js";
 import { workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
-import { oauthApps } from "../integrations/credential-vault.js";
+import { oauthApps, platformCredentials } from "../integrations/credential-vault.js";
+import { recordAdminAction } from "../admin/audit-log.js";
 import { getIntegration, listIntegrations } from "../integrations/registry/index.js";
 import { xray } from "../integrations/xray.js";
 
@@ -378,13 +379,18 @@ integrationAdminRoutes.post(
     const def = getIntegration(body.integrationId);
     if (!def) return c.json({ error: "Integration not found in registry" }, 404);
 
-    // Check if global OAuth credentials exist
+    // Check if credentials exist for this integration
     let configured = true;
     if (def.authType === "oauth2" && def.requiresOAuthApp) {
       const [oauthApp] = await sql`
         SELECT id FROM oauth_apps WHERE integration_id = ${body.integrationId} AND is_global = true LIMIT 1
       `;
       configured = !!oauthApp;
+    } else if (def.authType === "secret_text" || def.authType === "basic_auth" || def.authType === "custom_auth") {
+      const [credRow] = await sql`
+        SELECT id FROM platform_integration_credentials WHERE integration_id = ${body.integrationId} LIMIT 1
+      `;
+      configured = !!credRow;
     }
 
     const [row] = await sql`
@@ -433,6 +439,11 @@ integrationAdminRoutes.post(
           SELECT id FROM oauth_apps WHERE integration_id = ${integrationId} AND is_global = true LIMIT 1
         `;
         configured = !!oauthApp;
+      } else if (def.authType === "secret_text" || def.authType === "basic_auth" || def.authType === "custom_auth") {
+        const [credRow] = await sql`
+          SELECT id FROM platform_integration_credentials WHERE integration_id = ${integrationId} LIMIT 1
+        `;
+        configured = !!credRow;
       }
 
       const [row] = await sql`
@@ -465,6 +476,109 @@ integrationAdminRoutes.get("/integrations/admin/env-configured", authMiddleware,
   }));
   return c.json({ data });
 });
+
+// ─── Platform Admin: Non-OAuth Credential Storage ─────────────────────────
+// Handles secret_text, basic_auth, custom_auth at the platform (global) scope.
+// OAuth credentials remain in /admin/oauth-apps.
+
+// GET /integrations/admin/credentials
+integrationAdminRoutes.get(
+  "/integrations/admin/credentials",
+  authMiddleware,
+  platformAdminMiddleware,
+  async (c) => {
+    const rows = await platformCredentials.list();
+    return c.json({
+      data: rows.map((r) => ({
+        integrationId: r.integrationId,
+        authType: r.authType,
+        displayHint: r.displayHint,
+        updatedAt: r.updatedAt,
+      })),
+    });
+  },
+);
+
+const createCredentialSchema = z.object({
+  integrationId: z.string().min(1),
+  authType: z.enum(["secret_text", "basic_auth", "custom_auth"]),
+  credentials: z.record(z.unknown()),
+  displayHint: z.string().optional(),
+});
+
+// POST /integrations/admin/credentials
+integrationAdminRoutes.post(
+  "/integrations/admin/credentials",
+  authMiddleware,
+  platformAdminMiddleware,
+  zValidator("json", createCredentialSchema),
+  async (c) => {
+    const userId = c.get("userId");
+    const body = c.req.valid("json");
+
+    const def = getIntegration(body.integrationId);
+    if (!def) {
+      return c.json({ error: "Integration not found in registry" }, 404);
+    }
+
+    if (def.authType !== body.authType) {
+      return c.json(
+        { error: `Integration declares authType '${def.authType}', got '${body.authType}'` },
+        400,
+      );
+    }
+
+    const result = await platformCredentials.upsert({
+      integrationId: body.integrationId,
+      authType: body.authType,
+      credentials: body.credentials,
+      displayHint: body.displayHint,
+      actorUserId: userId,
+    });
+
+    await recordAdminAction(c, {
+      action: "integrations.platform_credentials.upsert",
+      resourceType: "integration",
+      resourceId: body.integrationId,
+      details: { authType: body.authType },
+    });
+
+    return c.json(
+      {
+        data: {
+          id: result.id,
+          integrationId: body.integrationId,
+          authType: body.authType,
+          updatedAt: result.updatedAt,
+        },
+      },
+      201,
+    );
+  },
+);
+
+// DELETE /integrations/admin/credentials/:integrationId
+integrationAdminRoutes.delete(
+  "/integrations/admin/credentials/:integrationId",
+  authMiddleware,
+  platformAdminMiddleware,
+  async (c) => {
+    const integrationId = c.req.param("integrationId");
+    const deleted = await platformCredentials.delete(integrationId);
+
+    if (!deleted) {
+      return c.json({ error: "No credentials found for this integration" }, 404);
+    }
+
+    await recordAdminAction(c, {
+      action: "integrations.platform_credentials.delete",
+      resourceType: "integration",
+      resourceId: integrationId,
+    });
+
+    return c.json({ data: { integrationId, deleted: true } });
+  },
+);
 
 // ─── X-Ray: Integration Observability Endpoints ──────────
 
