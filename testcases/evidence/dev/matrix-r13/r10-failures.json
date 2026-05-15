@@ -1,0 +1,101 @@
+[
+  {
+    "group": "auth",
+    "route": "/auth/mfa/enroll/start",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "empty",
+    "expect": [
+      400,
+      401,
+      415,
+      422
+    ],
+    "description": "POST /auth/mfa/enroll/start as qa-owner (empty payload)",
+    "id": "A00133",
+    "actual": 200,
+    "durationMs": 294,
+    "bodyHead": "{\"secret\":\"BQANCFM2BOZEYYTB4LUOI6IGTXEF4RSL\",\"otpauthUrl\":\"otpauth://totp/Doable:qa-r13-main-1778818986%40doable.test?secret=BQANCFM2BOZEYYTB4LUOI6IGTXEF4RSL&issuer=Doable&algorithm=SHA1&digits=6&period=30\",\"issuer\":\"Doable\",\"accountName\":\"qa-r13-main-1778818986@doable.test\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/mfa/enroll/start",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "invalid-shape",
+    "expect": [
+      400,
+      401,
+      415,
+      422
+    ],
+    "description": "POST /auth/mfa/enroll/start as qa-owner (invalid-shape payload)",
+    "id": "A00134",
+    "actual": 200,
+    "durationMs": 283,
+    "bodyHead": "{\"secret\":\"WO6IWA3P2MKBVHLIQGRUSDNAFJNCUJLL\",\"otpauthUrl\":\"otpauth://totp/Doable:qa-r13-main-1778818986%40doable.test?secret=WO6IWA3P2MKBVHLIQGRUSDNAFJNCUJLL&issuer=Doable&algorithm=SHA1&digits=6&period=30\",\"issuer\":\"Doable\",\"accountName\":\"qa-r13-main-1778818986@doable.test\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/mfa/enroll/start",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "junk",
+    "expect": [
+      400,
+      401,
+      415,
+      422
+    ],
+    "description": "POST /auth/mfa/enroll/start as qa-owner (junk payload)",
+    "id": "A00135",
+    "actual": 200,
+    "durationMs": 278,
+    "bodyHead": "{\"secret\":\"KI7IHUGV5DZS7PDTYP2VXJ3RAVDRCS2T\",\"otpauthUrl\":\"otpauth://totp/Doable:qa-r13-main-1778818986%40doable.test?secret=KI7IHUGV5DZS7PDTYP2VXJ3RAVDRCS2T&issuer=Doable&algorithm=SHA1&digits=6&period=30\",\"issuer\":\"Doable\",\"accountName\":\"qa-r13-main-1778818986@doable.test\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/mfa/enroll/start",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "oversized",
+    "expect": [
+      400,
+      401,
+      413,
+      415,
+      422,
+      429,
+      500
+    ],
+    "description": "POST /auth/mfa/enroll/start as qa-owner (oversized payload)",
+    "id": "A00136",
+    "actual": 200,
+    "durationMs": 434,
+    "bodyHead": "{\"secret\":\"5PEMWEYVGKJ4RWVRM5DNHIEUT4CGPVPS\",\"otpauthUrl\":\"otpauth://totp/Doable:qa-r13-main-1778818986%40doable.test?secret=5PEMWEYVGKJ4RWVRM5DNHIEUT4CGPVPS&issuer=Doable&algorithm=SHA1&digits=6&period=30\",\"issuer\":\"Doable\",\"accountName\":\"qa-r13-main-1778818986@doable.test\"}",
+    "classification": "UNEXPECTED-STATUS"
+  },
+  {
+    "group": "auth",
+    "route": "/auth/mfa/enroll/start",
+    "verb": "POST",
+    "auth": "qa-owner",
+    "payloadClass": "empty",
+    "expect": [
+      400,
+      401,
+      415,
+      422,
+      500
+    ],
+    "description": "POST /auth/mfa/enroll/start (no Content-Type) as qa-owner",
+    "id": "A00424",
+    "actual": 200,
+    "durationMs": 279,
+    "bodyHead": "{\"secret\":\"NJNEVBZF3VIEUOKIHB4YJ323UXOJH52A\",\"otpauthUrl\":\"otpauth://totp/Doable:qa-r13-main-1778818986%40doable.test?secret=NJNEVBZF3VIEUOKIHB4YJ323UXOJH52A&issuer=Doable&algorithm=SHA1&digits=6&period=30\",\"issuer\":\"Doable\",\"accountName\":\"qa-r13-main-1778818986@doable.test\"}",
+    "classification": "UNEXPECTED-STATUS"
+  }
+]
