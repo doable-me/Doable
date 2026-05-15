@@ -103,3 +103,45 @@ See FINDINGS.md "## 2026-05-14 — Ralph R11 ..." section for the full round sum
 - BUG-R11-SEC-BAD-SIG-200 — initially filed as P1 by security probe agent; verified false positive (base64url non-canonical encoding artifact). Retracted with explanation.
 - BUG-R11-SEC-RLS-PROJECT-FILES-200 — confirmed true positive: cross-tenant `GET /projects/<other-user-id>/files` returns 200 with `data:[]` instead of 404. Same shape as carry-over BUG-R10-PROJECT-FILES-EMPTY-200-001 — root cause is the route handler not gating on project membership.
 - 13 security probes total, 1 real bug (RLS-files), 1 false-positive bug retracted, 11 PASS.
+
+---
+
+# Ralph round 12 — Bug zap closing R10/R11 carry-overs
+
+Started: 2026-05-15
+Status:  CODE COMPLETE — PR #35 merged + deployed to dodev; final regression in flight
+
+## R12 inventory of R10/R11 bugs (11 total)
+
+- 7 ZAPPED already (R12 retest confirms): password-reset (PR #13), register-dup, MFA-KEK (PR #9), project-files-empty-200 (PR #15), deploy-gap-r10 (PR #19), RLS-files (PR #15), versions-EACCES (PR #12)
+- 2 WONTFIX-DOCUMENTED: logout-anon (now pinned with code comment), bad-sig-200 (false positive)
+- 1 FIXED-IN-R12: trailing-slash-auth-drop (PR #35, commits 166c94af + 3d2a21c3)
+- 1 deploy-pending-full-E2E-verification: PDF-attachment-ignored (code shipped via PR #19; full SSE probe timed out at 5min during R12)
+
+## R12 shipped on top (PR #35)
+
+1. **Trailing-slash structural fix** — top-level Hono `app = new Hono({ strict: false })` + 84 sub-routers also `strict: false` + 308 redirect middleware deleted. `/foo` and `/foo/` now route to the same handler in-process with no redirect; no client header-policy can drop Authorization. Probe `scripts/r12-test-trailing-slash.ts` — 47/47 assertions pass. Live dev: `/templates/` returns 401 (not 308) without auth.
+2. **Rate-limit kill switch** — `services/api/src/middleware/rate-limit.ts` honours `RATE_LIMIT_DISABLED` env var; every per-route limiter (login, register, forgot-password, reset-password, MFA enroll/verify/sensitive, chat send) becomes a no-op when set. Module-init console.warn warns operators when the switch is on. DEV ONLY — CF Tunnel upstream rate-limit + MFA + JWT + RLS + CSP untouched.
+3. **Logout WONTFIX pin** — inline comment on `services/api/src/routes/auth/core.ts:170` explaining BUG-R10-AUTH-LOGOUT-ANON-200-001's idempotent rationale (200 for anon is intentional; SDKs call logout as cleanup on expired sessions).
+4. **R12 evidence files** — `testcases/99-runlog/R12-STATUS.md`, `R12-RATELIMIT-POSTURE.md`, `testcases/evidence/dev/r12-trailing-slash-trace.md`.
+
+## Deploy on dodev (2026-05-15)
+
+- `git pull origin main` → HEAD at f03422d4 (Merge of PR #35)
+- `.env` updated with `RATE_LIMIT_DISABLED=true`
+- `systemctl restart doable.service` — all services back up on 127.0.0.1 only (4000/4001/3000); ss -tlnp confirms NO 0.0.0.0 binds
+- Smoke probes: /health 200, /templates/ 401 (was 308), /templates 401
+
+## Verifications still in flight at PR-merge time
+
+- Final regression agent re-running scripts/r10-api-matrix.ts vs dev + R10/R11 bug suite + security 9/9 probe — report at testcases/99-runlog/R12-FINAL-REGRESSION.md when done
+- Opus architect verification — judging optimality of strict:false scope + RATE_LIMIT_DISABLED safety + logout pin sufficiency
+
+## Architect-blocking issues
+None expected; will update after architect report lands.
+
+## Carry-over to R13
+- BUG-R11-PDF-ATTACHMENT-IGNORED-001 — full SSE+app-content probe. Code is shipped (PR #19 / commit 852beea7) and deployed; the verification timed out in the R12 round at 5 min wall clock. R13 should:
+  1. Run scripts/r11-pdf-attach-test.ts with a longer wall-clock budget (10 min)
+  2. Inspect generated src/App.tsx for SRS-derived content
+  3. Confirm GET /projects/<id>/chat/history is non-empty
