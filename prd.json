@@ -1,51 +1,59 @@
 {
-  "task": "Ralph (2026-05-15, R16): User created a markdown document project in Doable and sees it loaded in the preview iframe, but cannot scroll down within the preview to view the full content. Reproduce on dev via claude-in-chrome, root-cause it (preview iframe scroll surface — likely CSS overflow or iframe sizing issue), fix it, commit, push, and deploy to dev. Never bind 0.0.0.0. Never weaken security. Never touch prod.",
+  "task": "Ralph (2026-05-15, R17): /admin on dev.doable.me throws 'Something went wrong — A.map is not a function' for platform admins (admin2). Root-cause it, fix it, prevent recurrence on every doable server (incl. fresh setup-server.sh deploys), commit, deploy on dodev.fid.pw so dev.doable.me reflects immediately. Never bind 0.0.0.0. Never weaken security. Never touch prod.",
   "stories": [
     {
-      "id": "US-R16-01",
-      "title": "Reproduce the preview scroll bug in claude-in-chrome",
+      "id": "US-R17-01",
+      "title": "Reproduce on dev + capture stack",
       "passes": true,
       "acceptanceCriteria": [
-        "Located 'Make A Simple Markdown About Spots' (id 67deca59-c8a0-48d9-9e54-bf62457be0ce) in dashboard",
-        "Opened in editor — markdown rendered 'Best Spots to Visit in Italy' through 'Rome' but cut off; content continues beyond viewport",
-        "Mousewheel scroll on iframe area produced no movement; bodyScrollHeight (2107) >> bodyClientHeight when measured standalone confirmed content overflows",
-        "Iframe attrs captured: width 812, height 553, overflow clip, scrolling=null, sandbox=allow-scripts allow-same-origin allow-forms allow-popups allow-modals; parent overflow:hidden, parentH=553",
-        "Bug reproducible — confirmed by scrolling test in editor (no change between pre/post screenshots)"
+        "Logged into dev.doable.me as admin2@doable.me (isPlatformAdmin=true) via claude-in-chrome",
+        "Visiting https://dev.doable.me/admin renders 'Something went wrong' + 'A.map is not a function' + 'Try again' (Dashboard error.tsx boundary)",
+        "Console error captured: 'TypeError: A.map is not a function' originating from chunk 02_qi-vb43azw.js:1:198035 (minified admin page)",
+        "Network confirms /admin/features, /admin/frameworks, /admin/users all return 200; mismatch is in response shape — /admin/users returns { data, total, limit, offset } envelope but hook stores the whole object as users state"
       ]
     },
     {
-      "id": "US-R16-02",
-      "title": "Root-cause the scroll bug (no guessing)",
+      "id": "US-R17-02",
+      "title": "Root-cause without guessing",
       "passes": true,
       "acceptanceCriteria": [
-        "Owner: mcp-servers/markdown-builder/index.mjs:181 bakes `body { ... overflow: hidden }` into the generated index.html for every markdown project",
-        "Cause: standalone the browser window scrollbar handles overflow regardless of body overflow:hidden — bug invisible to direct-page testing. Embedded as iframe, scroll relies on the inner doc's body/html overflow chain, which body{overflow:hidden} explicitly blocks",
-        "Two evidence sources: (a) DOM probe via javascript_tool reported bodyOverflow:'hidden', bodyOverflowY:'hidden', htmlScroll:2107 vs htmlClient:617 — overflow ratio confirms scrollable content with hidden body; (b) grep -rn overflow on the deployed project files at /root/doable/services/api/projects/67deca59-.../index.html showed the literal `overflow: hidden` rule in the body declaration",
-        "No recent regression — this has been in the markdown-builder template since it was added; the bug surfaced because the user used the markdown tool path which had never been iframe-tested"
+        "Owner: commit 05b622dc 'fix(api): enrich GET /admin/users with plan, AI config, and credit fields (BUG-ADMIN-005)' rewrote /admin/users to return { data, total, limit, offset } in camelCase",
+        "Consumer apps/web/src/hooks/use-platform-admin.ts:67 does setUsers(data) — stores entire envelope as users state",
+        "apps/web/src/app/(dashboard)/admin/page.tsx:241 then computes displayUsers via users.map(...) which throws because users is an object",
+        "Secondary mismatch: API returns displayName/isPlatformAdmin/platformRole/createdAt (camelCase) but type AdminUser + every consumer in admin-components.tsx, user-management-panel.tsx, page.tsx reads display_name/is_platform_admin/platform_role/created_at (snake_case)"
       ]
     },
     {
-      "id": "US-R16-03",
-      "title": "Fix the scroll surface + verify locally / on dev",
+      "id": "US-R17-03",
+      "title": "Surgical API fix + defensive hook",
       "passes": true,
       "acceptanceCriteria": [
-        "Minimal change: removed ` overflow: hidden;` segment from body rule on line 181 of mcp-servers/markdown-builder/index.mjs (1 line, +1 -1). `pre { overflow: auto }` preserved for wide code blocks",
-        "TypeScript not applicable — .mjs file, no compile step. Validated by inspecting the diff",
-        "Re-tested AFTER deploy in claude-in-chrome: preview iframe now scrolls — confirmed new content ('Venice', 'Piazza San Marco', 'The Amalfi Coast', 'Cinque Terre') visible after 10-tick scroll where previously only 'Best Spots / Rome / Vatican' was reachable",
-        "Vite-React preview from R15 fix still works (no regression — Smoke Vite Updated rendered correctly during this session)",
-        "No 0.0.0.0 binds introduced (no service binding touched)"
+        "services/api/src/routes/admin-users.ts: GET /admin/users returns a flat array of snake_case rows (matches AdminUser type and all consumer code); enriched fields plan/ai_source/model/daily_credits/monthly_credits/rollover_credits/workspace_id preserved in snake_case",
+        "apps/web/src/hooks/use-platform-admin.ts: loadUsers + loadFeatures defensively unwrap an optional { data } envelope and assert Array.isArray before setState — protects against any future envelope-style regressions",
+        "TypeScript compiles green for affected files (lsp_diagnostics shows 0 errors on the changed files)",
+        "No 0.0.0.0 binds introduced, no other security control weakened"
       ]
     },
     {
-      "id": "US-R16-04",
-      "title": "Commit, push to main, deploy on dev, final smoke",
+      "id": "US-R17-04",
+      "title": "Regression coverage so this never recurs",
       "passes": true,
       "acceptanceCriteria": [
-        "Atomic commit on fix/r16-markdown-preview-scroll branch — see commit 72951def (squashed into main as c83cc2f5)",
-        "PR #46 opened + admin-merged squash to main",
-        "dodev.fid.pw: sudo -u doable git pull --ff-only origin main applied c83cc2f5; one-off sed patch on existing project index.html so the user's existing markdown sees the fix without re-running the build tool",
-        "Final claude-in-chrome smoke: markdown preview scrolls (Venice section visible post-scroll); Vite-React preview from R15 fix still renders correctly",
-        "Before/after screenshots captured during this session (ss_5060h228r before, ss_31329qxz6 after) show different content reachable post-scroll"
+        "A test file pins the /admin/users contract — asserts Array.isArray(body) and that each row has snake_case fields (id, email, display_name, is_platform_admin, platform_role, plan)",
+        "The test runs with the existing API test runner so future enrichment commits cannot silently flip the response shape",
+        "Smoke test or unit test added at apps/web/src/hooks for usePlatformAdmin that confirms users state is always an array after load, even if the API ever ships a wrapped envelope"
+      ]
+    },
+    {
+      "id": "US-R17-05",
+      "title": "Commit, push, deploy on dodev, claude-in-chrome smoke",
+      "passes": false,
+      "acceptanceCriteria": [
+        "Atomic commit on a fix branch; PR opened against main; squash-merged",
+        "dodev.fid.pw: sudo -u doable git pull --ff-only origin main; tsx watch picks up the API change automatically; web rebuild + tmux:0 restart for the apps/web change",
+        "claude-in-chrome smoke after deploy: navigating to https://dev.doable.me/admin as admin2 renders the actual admin panel (Feature Flags tab visible, no error boundary)",
+        "Console clean of TypeError on /admin first-load",
+        "Visual verdict before/after screenshots captured"
       ]
     }
   ]

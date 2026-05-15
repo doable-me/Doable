@@ -145,3 +145,46 @@ None expected; will update after architect report lands.
   1. Run scripts/r11-pdf-attach-test.ts with a longer wall-clock budget (10 min)
   2. Inspect generated src/App.tsx for SRS-derived content
   3. Confirm GET /projects/<id>/chat/history is non-empty
+
+# Ralph round 17 — /admin "A.map is not a function" P0 fix
+
+Started: 2026-05-15
+Status: in-flight
+
+## Mission
+User reports /admin on dev.doable.me is broken with "Something went wrong" and "A.map is not a function".
+Root-cause it, fix it, prevent recurrence on every doable server (including freshly setup-server.sh deployed),
+commit, deploy on dodev.fid.pw so dev.doable.me reflects immediately. Never bind 0.0.0.0, never touch prod.
+
+## Reproduction (claude-in-chrome on dev)
+- Logged in as admin2@doable.me (isPlatformAdmin: true)
+- Navigated to https://dev.doable.me/admin
+- Captured: TypeError: A.map is not a function — chunk 02_qi-vb43azw.js:1:198035
+- /admin/features 200 (array OK), /admin/frameworks 200 ({frameworks,defaultFramework} OK), /admin/users 200 ({data,total,limit,offset} - BREAKS HOOK)
+
+## Root cause (BUG-ADMIN-012, regression of BUG-ADMIN-005)
+Commit 05b622dc enriched GET /admin/users with plan/AI/credits fields but
+also flipped the response shape from a flat snake_case array to a
+{ data, total, limit, offset } envelope with camelCase keys. The single
+consumer use-platform-admin.ts does setUsers(data) then admin/page.tsx
+does users.map(...), which throws because users is now an object.
+
+## Fix
+1. services/api/src/routes/admin-users.ts — GET /users returns a flat
+   snake_case array (matching every consumer in admin-components.tsx,
+   user-management-panel.tsx, page.tsx, and the AdminUser type).
+   Enriched fields (plan, ai_source, model, daily/monthly/rollover
+   credits, workspace_id) retained in snake_case.
+2. apps/web/src/hooks/use-platform-admin.ts — loadFeatures + loadUsers
+   now defensively unwrap { data } envelopes and Array.isArray-coerce
+   before setState. Future drift can't reproduce this crash class.
+3. scripts/r17-test-admin-users-contract.ts — 26-assertion contract probe.
+   Run with `pnpm exec tsx scripts/r17-test-admin-users-contract.ts`.
+   Pins flat-array shape, snake_case keys, no camelCase variants.
+4. testcases/bugs/2026-05-15-admin-012.md — bug ticket with full repro,
+   RCA, and prevention notes.
+
+## Verification
+- Local typecheck (web + api): green
+- Contract probe: 26/26 PASS
+- Production smoke on dev.doable.me after deploy: pending (see story US-R17-05)
