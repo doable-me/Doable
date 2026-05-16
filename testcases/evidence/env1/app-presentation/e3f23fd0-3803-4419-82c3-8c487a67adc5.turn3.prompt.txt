@@ -1,1 +1,0 @@
-Add a slide thumbnail strip at the bottom showing all 5 mini-slides; clicking jumps to that slide. Highlight current.

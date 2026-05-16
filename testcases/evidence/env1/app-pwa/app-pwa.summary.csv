@@ -1,6 +1,0 @@
-turn,project,sse_ms,preview_ms,prompt_tok,comp_tok,ttft_ms,model,changed_files,accept_hits,prompt_excerpt
-1,08e11ba1-da55-4d69-9dbd-b6e4c4023d92,181179,186746,,,,,"index.html,package.json,src/App.tsx,src/index.css,src/lib/utils.ts,src/main.tsx,vite.config.ts,","+navigator.onLine;+localStorage;+textarea;+notes\.map;","Build a tiny notes PWA. Page lists notes (initially empty). Single tex"
-2,08e11ba1-da55-4d69-9dbd-b6e4c4023d92,180710,183483,,,,,"","","Add a manifest.json in /public with name=Doable Notes short_name=Note"
-3,08e11ba1-da55-4d69-9dbd-b6e4c4023d92,717,3161,,,,,"","","Register a service worker (sw.js) in /public that caches the app shell"
-4,08e11ba1-da55-4d69-9dbd-b6e4c4023d92,723,3391,,,,,"","","Make the service worker serve a custom offline.html when fetch fails."
-5,08e11ba1-da55-4d69-9dbd-b6e4c4023d92,833,3582,,,,,"","","Add an 'Install App' button that calls beforeinstallprompt's prompt() "

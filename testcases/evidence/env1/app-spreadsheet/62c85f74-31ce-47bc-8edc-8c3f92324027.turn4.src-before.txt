@@ -1,7 +1,0 @@
-a2f3ecb9e20d5e4a82799a58b8d8844ec5a493a4e9770c01790bff34c657ff08  /opt/doable/services/api/projects/62c85f74-31ce-47bc-8edc-8c3f92324027/index.html
-1df75281897afd717f821d65f0f7b695a163bf0563f11ca1c70a5be24de69a55  /opt/doable/services/api/projects/62c85f74-31ce-47bc-8edc-8c3f92324027/package.json
-757e4de39331f550752f5a9b1b729d0cb32176c1d49983b5eb38c4788f1f683d  /opt/doable/services/api/projects/62c85f74-31ce-47bc-8edc-8c3f92324027/src/App.tsx
-41f4963a7fe17288a09a8d709cd9e34373cd340d2d5b7475a0507a268987e492  /opt/doable/services/api/projects/62c85f74-31ce-47bc-8edc-8c3f92324027/src/index.css
-4acbc7165a8d54738ff62b51414e772c08fe78434e524e6d8770180d3ba2925f  /opt/doable/services/api/projects/62c85f74-31ce-47bc-8edc-8c3f92324027/src/lib/utils.ts
-718150cf912bbad9110cdab3daf611e55bcceb58fdc1cc098063aa6e665d1e72  /opt/doable/services/api/projects/62c85f74-31ce-47bc-8edc-8c3f92324027/src/main.tsx
-51492e3c752288d2f49bad73d3da70af4fd269df4d9fe0464138a35d8a4973ea  /opt/doable/services/api/projects/62c85f74-31ce-47bc-8edc-8c3f92324027/vite.config.ts

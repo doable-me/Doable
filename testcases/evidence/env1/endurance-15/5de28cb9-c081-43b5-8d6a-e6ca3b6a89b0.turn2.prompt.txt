@@ -1,1 +1,0 @@
-Add click-to-select: clicking a piece highlights its square in yellow.

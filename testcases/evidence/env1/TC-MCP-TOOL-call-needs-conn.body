@@ -1,1 +1,0 @@
-{"success":false,"error":{"issues":[{"code":"invalid_type","expected":"string","received":"undefined","path":["connectorId"],"message":"Required"},{"code":"invalid_type","expected":"string","received":"undefined","path":["toolName"],"message":"Required"}],"name":"ZodError"}}

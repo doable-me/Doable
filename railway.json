@@ -1,0 +1,94 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "docker/Dockerfile"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  },
+  "services": {
+    "api": {
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "docker/Dockerfile",
+        "dockerfileTarget": "api"
+      },
+      "deploy": {
+        "healthcheckPath": "/health",
+        "startCommand": "npx tsx services/api/src/index.ts"
+      },
+      "networking": {
+        "servicePort": 4000
+      },
+      "variables": {
+        "DATABASE_URL": "${{postgres.DATABASE_URL}}",
+        "JWT_SECRET": {"generator": "secret"},
+        "ENCRYPTION_KEY": {"generator": "secret"},
+        "INTERNAL_SECRET": {"generator": "secret"},
+        "API_PORT": "4000",
+        "API_HOST": "0.0.0.0",
+        "NODE_ENV": "production",
+        "CORS_ORIGINS": "${{web.RAILWAY_PUBLIC_DOMAIN_VALUE}}",
+        "WS_INTERNAL_URL": "http://${{ws.RAILWAY_PRIVATE_DOMAIN}}:4001",
+        "NEXT_PUBLIC_API_URL": "https://${{RAILWAY_PUBLIC_DOMAIN}}"
+      }
+    },
+    "ws": {
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "docker/Dockerfile",
+        "dockerfileTarget": "ws"
+      },
+      "deploy": {
+        "startCommand": "npx tsx services/ws/src/index.ts"
+      },
+      "networking": {
+        "servicePort": 4001
+      },
+      "variables": {
+        "DATABASE_URL": "${{postgres.DATABASE_URL}}",
+        "JWT_SECRET": "${{api.JWT_SECRET}}",
+        "INTERNAL_SECRET": "${{api.INTERNAL_SECRET}}",
+        "WS_PORT": "4001",
+        "WS_HOST": "0.0.0.0",
+        "API_URL": "http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4000",
+        "NODE_ENV": "production"
+      }
+    },
+    "web": {
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "docker/Dockerfile",
+        "dockerfileTarget": "web",
+        "buildArgs": {
+          "NEXT_PUBLIC_API_URL": "https://${{api.RAILWAY_PUBLIC_DOMAIN}}",
+          "NEXT_PUBLIC_WS_URL": "wss://${{ws.RAILWAY_PUBLIC_DOMAIN}}",
+          "NEXT_PUBLIC_APP_URL": "https://${{RAILWAY_PUBLIC_DOMAIN}}"
+        }
+      },
+      "deploy": {
+        "startCommand": "node apps/web/.next/standalone/server.js"
+      },
+      "networking": {
+        "servicePort": 3000
+      },
+      "variables": {
+        "NEXT_PUBLIC_API_URL": "https://${{api.RAILWAY_PUBLIC_DOMAIN}}",
+        "NEXT_PUBLIC_WS_URL": "wss://${{ws.RAILWAY_PUBLIC_DOMAIN}}",
+        "NEXT_PUBLIC_APP_URL": "https://${{RAILWAY_PUBLIC_DOMAIN}}",
+        "HOSTNAME": "0.0.0.0",
+        "PORT": "3000",
+        "NODE_ENV": "production"
+      }
+    },
+    "postgres": {
+      "plugin": "postgresql",
+      "pluginConfig": {
+        "version": "16"
+      }
+    }
+  }
+}

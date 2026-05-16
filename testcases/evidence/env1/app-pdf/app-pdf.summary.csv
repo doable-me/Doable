@@ -1,5 +1,0 @@
-turn,project,sse_ms,preview_ms,prompt_tok,comp_tok,ttft_ms,model,changed_files,accept_hits,prompt_excerpt
-1,bc2a40b8-0fd2-4c61-9c66-7cc73cace4f3,71466,TIMEOUT,79486,3522,3159,MiniMax-M2.7-highspeed,"index.html,package.json,src/App.tsx,src/index.css,src/lib/utils.ts,src/main.tsx,vite.config.ts,","+jsPDF;+jspdf;+new jsPDF;+doc\.save;","Build an invoice generator. Form has: company name customer name lis"
-2,bc2a40b8-0fd2-4c61-9c66-7cc73cace4f3,49898,TIMEOUT,50697,3923,4318,MiniMax-M2.7-highspeed,"src/App.tsx,","+preview;+grid-cols-2;+invoice;","Show a live preview of the invoice on the right side using HTML/Tailwi"
-3,bc2a40b8-0fd2-4c61-9c66-7cc73cace4f3,739,TIMEOUT,,,,,"","","When clicking Generate PDF the PDF should include: company header cu"
-3,bc2a40b8-0fd2-4c61-9c66-7cc73cace4f3,984,TIMEOUT,,,,,"","","When clicking Generate PDF the PDF should include: company header cu"

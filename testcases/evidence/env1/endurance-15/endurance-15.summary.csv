@@ -1,9 +1,0 @@
-turn,project,sse_ms,preview_ms,prompt_tok,comp_tok,ttft_ms,model,changed_files,accept_hits,prompt_excerpt
-1,5de28cb9-c081-43b5-8d6a-e6ca3b6a89b0,60288,65453,84325,1962,3922,MiniMax-M2.7-highspeed,"index.html,package.json,src/App.tsx,src/index.css,src/lib/utils.ts,src/main.tsx,vite.config.ts,","+grid-cols-8;+♔;+♚;","Build a simple chess game UI: 8x8 board with alternating colors place"
-2,5de28cb9-c081-43b5-8d6a-e6ca3b6a89b0,27009,32932,46810,1463,2218,MiniMax-M2.7-highspeed,"src/App.tsx,","+onClick;+bg-yellow;","Add click-to-select: clicking a piece highlights its square in yellow."
-3,5de28cb9-c081-43b5-8d6a-e6ca3b6a89b0,26033,31725,49991,1598,2469,MiniMax-M2.7-highspeed,"src/App.tsx,","-White to move;-Black to move;+useState;","Add a turn counter at the top showing 'White to move' / 'Black to move"
-4,5de28cb9-c081-43b5-8d6a-e6ca3b6a89b0,30146,35792,53548,1790,4624,MiniMax-M2.7-highspeed,"src/App.tsx,","+Reset;-setSelectedPiece;+onClick;","Add a 'Reset' button that puts all pieces back to start."
-5,5de28cb9-c081-43b5-8d6a-e6ca3b6a89b0,37509,43220,57690,2194,6286,MiniMax-M2.7-highspeed,"src/App.tsx,","+captured;+Captured;","Show captured pieces below the board in two rows (white-captured blac"
-6,5de28cb9-c081-43b5-8d6a-e6ca3b6a89b0,39972,45633,62842,2846,2637,MiniMax-M2.7-highspeed,"src/App.tsx,","+moves;-setMoves;-Move history;-history;","Add a move history panel on the right listing each move as 'turn 1: e2"
-7,5de28cb9-c081-43b5-8d6a-e6ca3b6a89b0,766,3017,,,,,"","","Persist game state to localStorage so refreshing keeps the position."
-7,5de28cb9-c081-43b5-8d6a-e6ca3b6a89b0,802,3464,,,,,"","","Persist game state to localStorage so refreshing keeps the position."

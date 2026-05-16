@@ -1,1 +1,0 @@
-Build a multi-page React app with React Router (react-router-dom v7). Pages: / (Home), /about (About), /dashboard (Dashboard with placeholder cards), /settings (Settings form), /* (404 NotFound). Top nav with Links to all 4 pages, highlighting the active route.

@@ -1,1 +1,0 @@
-If a cell starts with '=' followed by a SUM formula like =SUM(A1:A3), parse it and display the sum. Other formulas show as-is.

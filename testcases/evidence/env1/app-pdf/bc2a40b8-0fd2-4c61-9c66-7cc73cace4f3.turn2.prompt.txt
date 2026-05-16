@@ -1,1 +1,0 @@
-Show a live preview of the invoice on the right side using HTML/Tailwind so the user can see what the PDF will contain before generating.

@@ -1,1 +1,0 @@
-Persist all cell values to localStorage so values survive a refresh.

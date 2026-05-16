@@ -1,0 +1,109 @@
+spec:
+  name: doable
+  region: nyc
+  features:
+    - buildpack-stack=ubuntu-22
+
+  databases:
+    - engine: PG
+      name: doable-db
+      version: "16"
+      size: db-s-1vcpu-1gb
+      num_nodes: 1
+
+  services:
+    - name: api
+      dockerfile_path: docker/Dockerfile
+      build_command: ""
+      run_command: npx tsx services/api/src/index.ts
+      source_dir: /
+      http_port: 4000
+      instance_count: 1
+      instance_size_slug: basic-xxs
+      health_check:
+        http_path: /health
+      envs:
+        - key: DATABASE_URL
+          scope: RUN_TIME
+          value: ${doable-db.DATABASE_URL}
+        - key: JWT_SECRET
+          scope: RUN_AND_BUILD_TIME
+          type: SECRET
+          value: REPLACE_ME
+        - key: ENCRYPTION_KEY
+          scope: RUN_TIME
+          type: SECRET
+          value: REPLACE_ME
+        - key: INTERNAL_SECRET
+          scope: RUN_TIME
+          type: SECRET
+          value: REPLACE_ME
+        - key: API_PORT
+          scope: RUN_TIME
+          value: "4000"
+        - key: API_HOST
+          scope: RUN_TIME
+          value: "0.0.0.0"
+        - key: NODE_ENV
+          scope: RUN_AND_BUILD_TIME
+          value: production
+
+    - name: ws
+      dockerfile_path: docker/Dockerfile
+      build_command: ""
+      run_command: npx tsx services/ws/src/index.ts
+      source_dir: /
+      http_port: 4001
+      instance_count: 1
+      instance_size_slug: basic-xxs
+      envs:
+        - key: DATABASE_URL
+          scope: RUN_TIME
+          value: ${doable-db.DATABASE_URL}
+        - key: JWT_SECRET
+          scope: RUN_TIME
+          type: SECRET
+          value: ${api.JWT_SECRET}
+        - key: INTERNAL_SECRET
+          scope: RUN_TIME
+          type: SECRET
+          value: ${api.INTERNAL_SECRET}
+        - key: WS_PORT
+          scope: RUN_TIME
+          value: "4001"
+        - key: WS_HOST
+          scope: RUN_TIME
+          value: "0.0.0.0"
+        - key: NODE_ENV
+          scope: RUN_TIME
+          value: production
+
+    - name: web
+      dockerfile_path: docker/Dockerfile
+      build_command: ""
+      run_command: node apps/web/.next/standalone/server.js
+      source_dir: /
+      http_port: 3000
+      instance_count: 1
+      instance_size_slug: basic-xxs
+      routes:
+        - path: /
+      envs:
+        - key: NEXT_PUBLIC_API_URL
+          scope: RUN_AND_BUILD_TIME
+          value: ${api.PUBLIC_URL}
+        - key: NEXT_PUBLIC_WS_URL
+          scope: RUN_AND_BUILD_TIME
+          value: ${ws.PUBLIC_URL}
+        - key: NEXT_PUBLIC_APP_URL
+          scope: RUN_AND_BUILD_TIME
+          value: ${web.PUBLIC_URL}
+        - key: HOSTNAME
+          scope: RUN_TIME
+          value: "0.0.0.0"
+        - key: PORT
+          scope: RUN_TIME
+          value: "3000"
+        - key: NODE_ENV
+          scope: RUN_AND_BUILD_TIME
+          value: production

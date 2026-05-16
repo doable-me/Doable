@@ -1,7 +1,0 @@
-HTTP 302 | redirect_url: https://github.com/login/oauth/authorize?client_id=Ov23liEvKEm2S2ZRXAyr&redirect_uri=https%3A%2F%2Fdev-api.doable.me%2Fauth%2Fgithub%2Frepo%2Fcallback&scope=repo+read%3Auser&state=eyJ0eXBlIjoicmVwbyIsInVzZXJJZCI6IiIsInByb2plY3RJZCI6IiIsInJldHVyblVybCI6IiIsIm5vbmNlIjoiMzE1MDUzZDAtMzRmNC00MzhjLTliY2EtODYxZGVhYmRkYTY3In0
-HTTP 401
-HTTP 200
-HTTP 200
-HTTP 404
-HTTP 202
-HTTP 302 | redirect: https://github.com/login/oauth/authorize?client_id=Ov23liEvKEm2S2ZRXAyr&redirect_uri=https%3A%2F%2Fdev-api.doable.me%2Fauth%2Fgithub%2Fcallback&scope=read%3Auser+user%3Aemail&state=eyJ0eXBlIjoiZ2l0aHViIiwibm9uY2UiOiIyMjAxZDQxYy1mN2UwLTQ2NjQtYjQ1NS00OWQ0YmNjZGNmNjYifQ

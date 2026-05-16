@@ -1,1 +1,0 @@
-Add a Sort-by-column dropdown — pick a column letter, then ascending/descending.

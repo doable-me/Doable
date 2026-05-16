@@ -1,0 +1,135 @@
+services:
+  # --- PostgreSQL 16 with pgvector ---
+  - type: pserv
+    name: postgres
+    plan: starter
+    env: docker
+    dockerfilePath: ""
+    repo: https://github.com/doable-me/doable
+    envVars:
+      - key: POSTGRES_USER
+        value: doable
+      - key: POSTGRES_PASSWORD
+        generateValue: true
+      - key: POSTGRES_DB
+        value: doable
+    disk:
+      name: pgdata
+      mountPath: /var/lib/postgresql/data
+      sizeGB: 10
+
+  # --- API server (Hono + Node.js) ---
+  - type: web
+    name: api
+    plan: starter
+    env: docker
+    dockerfilePath: docker/Dockerfile
+    dockerContext: .
+    dockerTarget: api
+    repo: https://github.com/doable-me/doable
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          type: pserv
+          name: postgres
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: INTERNAL_SECRET
+        generateValue: true
+      - key: API_PORT
+        value: "4000"
+      - key: API_HOST
+        value: "0.0.0.0"
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGINS
+        fromService:
+          type: web
+          name: web
+          property: host
+      - key: WS_INTERNAL_URL
+        fromService:
+          type: pserv
+          name: ws
+          property: hostport
+
+  # --- WebSocket server (Yjs CRDT) ---
+  - type: pserv
+    name: ws
+    plan: starter
+    env: docker
+    dockerfilePath: docker/Dockerfile
+    dockerContext: .
+    dockerTarget: ws
+    repo: https://github.com/doable-me/doable
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          type: pserv
+          name: postgres
+          property: connectionString
+      - key: JWT_SECRET
+        fromService:
+          type: web
+          name: api
+          envVarKey: JWT_SECRET
+      - key: INTERNAL_SECRET
+        fromService:
+          type: web
+          name: api
+          envVarKey: INTERNAL_SECRET
+      - key: WS_PORT
+        value: "4001"
+      - key: WS_HOST
+        value: "0.0.0.0"
+      - key: API_URL
+        fromService:
+          type: web
+          name: api
+          property: hostport
+      - key: NODE_ENV
+        value: production
+
+  # --- Web frontend (Next.js) ---
+  - type: web
+    name: web
+    plan: starter
+    env: docker
+    dockerfilePath: docker/Dockerfile
+    dockerContext: .
+    dockerTarget: web
+    repo: https://github.com/doable-me/doable
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: api
+          property: host
+      - key: NEXT_PUBLIC_WS_URL
+        fromService:
+          type: pserv
+          name: ws
+          property: host
+      - key: NEXT_PUBLIC_APP_URL
+        fromService:
+          type: web
+          name: web
+          property: host
+      - key: HOSTNAME
+        value: "0.0.0.0"
+      - key: PORT
+        value: "3000"
+      - key: NODE_ENV
+        value: production
+
+databases:
+  - name: doable-db
+    plan: starter
+    databaseName: doable
+    user: doable
+    postgresMajorVersion: "16"
+    ipAllowList: []

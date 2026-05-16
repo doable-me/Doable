@@ -1,1 +1,0 @@
-Add Save-as-CSV button that downloads the current sheet as a Blob (Content-Type: text/csv).

@@ -205,6 +205,12 @@ Vulnerability reports: [SECURITY.md](SECURITY.md).
 
 ## Production Deployment
 
+### One Click Deploy
+
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/doable?referralCode=doable)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/doable-me/doable)
+[![Deploy to DO](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/doable-me/doable/tree/main)
+
 ### Docker + nginx (recommended)
 
 ```bash

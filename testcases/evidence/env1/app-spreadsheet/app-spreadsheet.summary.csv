@@ -1,8 +1,0 @@
-turn,project,sse_ms,preview_ms,prompt_tok,comp_tok,ttft_ms,model,changed_files,accept_hits,prompt_excerpt
-1,62c85f74-31ce-47bc-8edc-8c3f92324027,74200,80316,106850,3193,3245,MiniMax-M2.7-highspeed,"index.html,package.json,src/App.tsx,src/index.css,src/lib/utils.ts,src/main.tsx,vite.config.ts,","-grid-cols-7;+contentEditable;-onChange;-rows.*=.*10;","Build a 10x6 editable spreadsheet. Each cell is a contentEditable div "
-2,62c85f74-31ce-47bc-8edc-8c3f92324027,30690,36791,46942,1457,6340,MiniMax-M2.7-highspeed,"src/App.tsx,","+localStorage\.setItem;+localStorage\.getItem;+cells;","Persist all cell values to localStorage so values survive a refresh."
-3,62c85f74-31ce-47bc-8edc-8c3f92324027,36415,42714,50359,1944,6321,MiniMax-M2.7-highspeed,"src/App.tsx,","+SUM;+parse;+startsWith.*=;-reduce;","If a cell starts with '=' followed by a SUM formula like =SUM(A1:A3) "
-4,62c85f74-31ce-47bc-8edc-8c3f92324027,29399,34964,54445,2184,2399,MiniMax-M2.7-highspeed,"src/App.tsx,","+text/csv;+Blob;+download;+\.csv;","Add Save-as-CSV button that downloads the current sheet as a Blob (Con"
-5,62c85f74-31ce-47bc-8edc-8c3f92324027,1682,4863,,,,,"","","Add a Sort-by-column dropdown — pick a column letter then ascending"
-5,62c85f74-31ce-47bc-8edc-8c3f92324027,1076,4081,,,,,"","","Add a Sort-by-column dropdown — pick a column letter then ascending"
-5,62c85f74-31ce-47bc-8edc-8c3f92324027,1365,5047,,,,,"","","Add a Sort-by-column dropdown — pick a column letter then ascending"

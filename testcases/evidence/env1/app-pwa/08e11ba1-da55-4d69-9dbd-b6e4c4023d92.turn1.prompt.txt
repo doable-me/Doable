@@ -1,1 +1,0 @@
-Build a tiny notes PWA. Page lists notes (initially empty). Single text-area to type a note + Save button. Notes persist to localStorage. Use Tailwind. Show offline banner when navigator.onLine is false.

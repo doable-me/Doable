@@ -1,1 +1,0 @@
-HTTP=307 location=https://dev.doable.me/login?next=%2Fadmin

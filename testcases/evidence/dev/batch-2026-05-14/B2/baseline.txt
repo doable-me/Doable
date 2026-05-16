@@ -1,3 +1,0 @@
-HTTP/1.1 404 Not Found
-Date: Thu, 14 May 2026 16:01:33 GMT
-Baseline: /help returns 404 before fix

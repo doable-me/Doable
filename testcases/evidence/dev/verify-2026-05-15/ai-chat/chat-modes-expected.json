@@ -1,8 +1,0 @@
-{
-  "data": [
-    {"id":"agent","label":"Agent","description":"AI builds, edits, and runs your project using tools.","default":true},
-    {"id":"plan","label":"Plan","description":"AI returns a structured build plan; no files written."},
-    {"id":"visual-edit","label":"Visual Edit","description":"Targeted edit on a selected element in Design View."},
-    {"id":"chat","label":"Chat","description":"Plain Q&A — no tool calls, no file writes."}
-  ]
-}

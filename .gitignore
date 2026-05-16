@@ -109,3 +109,9 @@ testcases/evidence/**/_tokens.json
 
 # R10 QA evidence tokens (contains JWTs)
 testcases/evidence/dev/_tokens.json
+
+# Ralph session artifacts — committed historical versions stay, but new
+# changes shouldn't churn the repo. To re-track a working PRD, use
+# git add -f prd.json progress.txt.
+prd.json
+progress.txt

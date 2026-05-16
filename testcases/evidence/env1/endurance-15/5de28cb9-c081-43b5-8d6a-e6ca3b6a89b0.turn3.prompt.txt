@@ -1,1 +1,0 @@
-Add a turn counter at the top showing 'White to move' / 'Black to move', toggling on each click.

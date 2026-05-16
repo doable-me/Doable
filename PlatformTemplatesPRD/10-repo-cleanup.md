@@ -6,6 +6,48 @@ into the published images (api/ws/migrate do `COPY . .` in their build
 stages), so this checklist is the gate between "internal dev cruft is OK"
 and "anyone can pull our images".
 
+## NEVER DELETE — ARCHIVE policy
+
+**Rule:** every cleanup step that removes a file or directory from the
+public repo MUST move it into `../doablechore/archive/` first, preserving
+the original repo-relative path. NEVER `rm`, NEVER `git rm -r` against
+content that hasn't been archived. Data is cheap; recovery of an
+accidentally-deleted internal note can cost hours.
+
+**Archive layout** (mirrors the repo's original paths so restoration is
+a single `mv` from archive back into place):
+
+```
+doablechore/archive/
+  setup-v2/                                 ← was doable/setup-v2/
+  setup-v3/                                 ← was doable/setup-v3/
+  sync-codehub.ps1                          ← was doable/sync-codehub.ps1
+  do-commit.cmd                             ← was doable/do-commit.cmd
+  dev.ps1                                   ← was doable/dev.ps1
+  cleanup-temp.ps1                          ← was doable/cleanup-temp.ps1
+  watchdog.sh                               ← was doable/watchdog.sh
+  scripts/
+    r10-*.ts r11-*.ts r12-*.ts r13-*.ts r17-*.ts  ← ralph round-specific tests
+    phase1-golden/                          ← internal golden test corpus
+    screenshots/                            ← internal QA screenshots
+  testcases/
+    99-runlog/                              ← internal dev journal (RUNLOG, FINDINGS, R*-STATUS)
+    evidence/                               ← real API response captures (may contain test-user PII)
+```
+
+**Standard archive command:**
+
+```bash
+# from doable/ repo root:
+mkdir -p ../doablechore/archive/<parent-dir-if-any>
+mv <path-in-doable> ../doablechore/archive/<same-relative-path>
+git add -A   # stages the deletes on the doable side
+```
+
+If `doablechore/` itself becomes worth versioning later, run
+`git init` inside it; nothing about the archive layout assumes one way
+or the other.
+
 ## A — `.dockerignore` tightening
 
 The current `.dockerignore` is too permissive. Lines to ADD (audit-driven):

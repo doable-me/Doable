@@ -1,1 +1,0 @@
-Make the service worker serve a custom offline.html when fetch fails.

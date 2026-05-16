@@ -1,1 +1,0 @@
-Add a fullscreen toggle button (top-right) that goes fullscreen using requestFullscreen API.
