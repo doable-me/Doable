@@ -41,7 +41,7 @@ browser traffic to them.
 
 ## One-time Setup
 
-You can run `deploy-templates/fly/migrate.sh` (see below) to automate most of this, or follow
+You can run `deployment/platforms/fly/migrate.sh` (see below) to automate most of this, or follow
 the manual steps.
 
 ### 1. Create the apps
@@ -119,7 +119,7 @@ fly secrets set --app doable-ws \
 
 Uncomment whichever providers you want:
 
-The canonical list (per `PlatformTemplatesPRD/00-baseline.md` — the 19 vars `seedAiProviderFromEnv()` consumes at api boot). Set any one or more:
+The 19 vars `seedAiProviderFromEnv()` consumes at api boot. Set any one or more:
 
 ```bash
 fly secrets set --app doable-api \
@@ -153,9 +153,9 @@ Local providers (Ollama, LM Studio, vLLM, …) need no env var — configure the
 ```bash
 # Deploy in order: api first (runs DB migrations via release_command),
 # then ws, then web.
-fly deploy --app doable-api --config deploy-templates/fly/api.toml
-fly deploy --app doable-ws  --config deploy-templates/fly/ws.toml
-fly deploy --app doable-web --config deploy-templates/fly/web.toml
+fly deploy --app doable-api --config deployment/platforms/fly/api.toml
+fly deploy --app doable-ws  --config deployment/platforms/fly/ws.toml
+fly deploy --app doable-web --config deployment/platforms/fly/web.toml
 ```
 
 Each deploy streams logs. The api deploy runs
@@ -168,9 +168,9 @@ CI tags `ghcr.io/doable-me/doable-{api,ws,web}:latest` on every main merge.
 To pick up the new images:
 
 ```bash
-fly deploy --app doable-api --config deploy-templates/fly/api.toml --image ghcr.io/doable-me/doable-api:latest
-fly deploy --app doable-ws  --config deploy-templates/fly/ws.toml  --image ghcr.io/doable-me/doable-ws:latest
-fly deploy --app doable-web --config deploy-templates/fly/web.toml  --image ghcr.io/doable-me/doable-web:latest
+fly deploy --app doable-api --config deployment/platforms/fly/api.toml --image ghcr.io/doable-me/doable-api:latest
+fly deploy --app doable-ws  --config deployment/platforms/fly/ws.toml  --image ghcr.io/doable-me/doable-ws:latest
+fly deploy --app doable-web --config deployment/platforms/fly/web.toml  --image ghcr.io/doable-me/doable-web:latest
 ```
 
 ---

@@ -43,10 +43,10 @@ This starts:
 ### Docker Alternative
 
 ```bash
-./docker/setup.sh
+./deployment/docker/setup.sh
 ```
 
-See [`docker/README.md`](docker/README.md) for details.
+See [`deployment/docker/README.md`](deployment/docker/README.md) for details.
 
 ## Making Changes
 

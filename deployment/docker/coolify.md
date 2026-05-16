@@ -5,8 +5,6 @@ Coolify is a self-hosted PaaS that runs on Docker + Traefik on a single VPS
 new manifest file for Coolify — this guide describes the connect flow against
 the prebuilt `deployment/docker/docker-compose.prod.yml` (pulls from `ghcr.io/doable-me/doable-*`).
 
-See also: `PlatformTemplatesPRD/01-coolify.md` (in the doablechore repo) for
-the original PRD.
 
 ## Prerequisites
 
@@ -41,8 +39,7 @@ the original PRD.
      - `INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT` (manual ISO8601, 24h ahead —
        e.g. `2026-05-17T12:00:00Z`)
    - At least one of the 19 AI provider keys (or skip — the setup wizard
-     can configure them at runtime). See `PlatformTemplatesPRD/00-baseline.md`
-     for the full list.
+     can configure them at runtime). The setup wizard lists all supported providers.
    - URL contract:
      - `NEXT_PUBLIC_API_URL=https://<your-domain>/api`
      - `NEXT_PUBLIC_WS_URL=wss://<your-domain>/ws`
@@ -55,8 +52,7 @@ the original PRD.
 
 ## Coolify-specific notes
 
-- **Traefik is Coolify's reverse proxy.** The `docker/nginx.conf.template` and
-  `docker/setup.sh` nginx code are unused on this path — Coolify handles
+- **Traefik is Coolify's reverse proxy.** The nginx templates and setup script nginx code are unused on this path — Coolify handles
   80/443 termination and adds Traefik labels automatically.
 - **Coolify rewrites port bindings.** The prebuilt compose binds
   `127.0.0.1:NNNN:NNNN`; Coolify reads the second number for routing. If you
@@ -64,7 +60,7 @@ the original PRD.
   adds them on Save).
 - **NEXT_PUBLIC_* runtime substitution** works transparently — Coolify sets
   the env vars at container runtime, and the web container's entrypoint
-  (`docker/web-runtime-entrypoint.sh`) sed-replaces the build-baked
+  (the web container's entrypoint) sed-replaces the build-baked
   placeholders. One image, any deployment URL.
 - **Coolify-managed Postgres alternative**: if you'd rather use Coolify's
   managed Postgres service (a separate resource), set `DATABASE_URL` on

@@ -5,7 +5,7 @@
 ```bash
 git clone https://github.com/doable-me/doable.git
 cd doable
-./docker/setup.sh
+./deployment/docker/setup.sh
 ```
 
 Open http://localhost:3000 in your browser. Sign up — the first account becomes platform owner automatically. The setup wizard walks you through AI keys and integrations. No SSH, no SQL, no .env editing.

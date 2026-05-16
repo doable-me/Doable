@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Post-create script for Doable Codespaces / Dev Container.
-# Spec: doablechore/PlatformTemplatesPRD/08-codespaces.md
+# Spec: .devcontainer/devcontainer.json + deployment/docker/docker-compose.dev.yml
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -37,6 +37,6 @@ Ports (in Codespaces, prefixed with the codespace host):
   WS:   ws://localhost:4001
 
 For Codespaces, set NEXT_PUBLIC_* in deployment/docker/.env to the *.app.github.dev URLs
-that Codespaces assigns each forwarded port. See PlatformTemplatesPRD/08-codespaces.md
-for the exact URL pattern.
+that Codespaces assigns each forwarded port. The pattern is
+https://<codespace-name>-<port>.app.github.dev — copy each forwarded URL from the Ports tab.
 EOF

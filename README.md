@@ -51,8 +51,8 @@ Doable ships with manifests for every major full-stack PaaS. Pick the one that m
 | **DigitalOcean App Platform** | 1-click button above | [`.do/app.yaml`](.do/app.yaml) |
 | **Render** | 1-click button above | [`render.yaml`](render.yaml) |
 | **Railway** | 1-click button above | [`railway.json`](railway.json) |
-| **Fly.io** | `bash deploy-templates/fly/migrate.sh` then `fly deploy` per app | [`deploy-templates/fly/DEPLOY.md`](deploy-templates/fly/DEPLOY.md) |
-| **Kubernetes** | `kubectl apply -k deploy-templates/k8s/base/` | [`deploy-templates/k8s/README.md`](deploy-templates/k8s/README.md) |
+| **Fly.io** | `bash deployment/platforms/fly/migrate.sh` then `fly deploy` per app | [`deployment/platforms/fly/DEPLOY.md`](deployment/platforms/fly/DEPLOY.md) |
+| **Kubernetes** | `kubectl apply -k deployment/platforms/k8s/base/` | [`deployment/platforms/k8s/README.md`](deployment/platforms/k8s/README.md) |
 | **Heroku** | 1-click button above | [`app.json`](app.json) |
 | **GitHub Codespaces** | 1-click button above | [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) |
 

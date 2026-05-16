@@ -15,7 +15,7 @@ The logout endpoint returns **HTTP 200** even when called without an Authorizati
 
 **Rationale:** Access tokens are stateless JWTs that expire naturally. Refresh tokens are revoked server-side. Requiring auth on logout breaks cleanup flows where a session has already expired. SDKs that call `logout()` as a cleanup action should not fail if the session is already gone.
 
-**Related TC:** `testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md#TC-AUTH-LOGOUT-002, -003, -004`
+**Related TC:** `TC-AUTH-LOGOUT-002, -003, -004` (test suite archived; see git history)
 
 ---
 
@@ -33,7 +33,7 @@ When calling API routes, **omit trailing slashes.** For example:
 
 **Workaround:** Strip trailing slashes client-side or document in SDK that authenticated calls must use non-trailing-slash paths.
 
-**Related TC:** `testcases/01-auth/TC-AUTH-REFRESH-LOGOUT.md#TC-AUTH-LOGOUT-007` (test verifies no trailing slash in logout path)
+**Related TC:** `TC-AUTH-LOGOUT-007` (test verifies no trailing slash in logout path; test suite archived, see git history)
 
 ---
 

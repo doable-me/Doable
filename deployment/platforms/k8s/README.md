@@ -1,6 +1,5 @@
 # Doable — Kubernetes (Kustomize) Quickstart
 
-Full guide: `doablechore/PlatformTemplatesPRD/06-kubernetes.md`
 
 ## Prerequisites
 
@@ -15,7 +14,7 @@ Full guide: `doablechore/PlatformTemplatesPRD/06-kubernetes.md`
 kubectl create namespace doable
 
 # 2. Fill in secrets
-cp deploy-templates/k8s/base/secret.example.yaml deploy-templates/k8s/base/secret.yaml
+cp deployment/platforms/k8s/base/secret.example.yaml deployment/platforms/k8s/base/secret.yaml
 # Edit secret.yaml — replace every CHANGEME with real values:
 #   JWT_SECRET / ENCRYPTION_KEY / INTERNAL_SECRET:  openssl rand -hex 32
 #   DOABLE_KEK:                                      openssl rand -base64 32
@@ -26,14 +25,14 @@ cp deploy-templates/k8s/base/secret.example.yaml deploy-templates/k8s/base/secre
 #   Set at least one AI provider key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
 
 # 3. Add secret.yaml to kustomization resources
-# Edit deploy-templates/k8s/base/kustomization.yaml and uncomment the "- secret.yaml" line
+# Edit deployment/platforms/k8s/base/kustomization.yaml and uncomment the "- secret.yaml" line
 
-# 4. Edit deploy-templates/k8s/base/configmap.yaml — replace app.example.com with your domain
+# 4. Edit deployment/platforms/k8s/base/configmap.yaml — replace app.example.com with your domain
 
 # 5. Apply
-kubectl apply -k deploy-templates/k8s/base/
+kubectl apply -k deployment/platforms/k8s/base/
 # or for prod (2 replicas + TLS):
-kubectl apply -k deploy-templates/k8s/overlays/prod/
+kubectl apply -k deployment/platforms/k8s/overlays/prod/
 
 # 6. Wait for rollout
 kubectl wait --for=condition=available --timeout=300s deployment/api -n doable
@@ -53,7 +52,7 @@ kubectl get ingress -n doable
 
 ## Secret management
 
-The default `deploy-templates/k8s/base/secret.yaml` approach stores secrets as a plain k8s Secret
+The default `deployment/platforms/k8s/base/secret.yaml` approach stores secrets as a plain k8s Secret
 (base64-encoded, not encrypted unless your cluster has KMS). For production:
 
 - **External Secrets Operator** (recommended): point a `ClusterSecretStore` at
