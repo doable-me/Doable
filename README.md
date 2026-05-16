@@ -12,8 +12,6 @@
   The open source AI app builder. Describe what you want and Doable builds it, deploys it, and hosts it.
 </p>
 
-<!-- TODO: capture demo.gif and commit to repo -->
-
 ## Get Started
 
 Choose your path:
