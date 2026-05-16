@@ -15,12 +15,14 @@
  *   - Runs ONLY when DOABLE_KEK is available (the encrypt call would throw
  *     otherwise; we guard so the API still boots without a KEK in test).
  *
- * Provider precedence: the SOURCES array order. MiniMax is first because the
- * Doable team ships a MiniMax M2.7 plan key for new self-hosters; it's the
- * most common bootstrap path. Other providers seed in popularity order.
- * The first non-empty env match wins. Set only the env vars you actually
- * want as the default — the wizard at /setup supports 50+ providers
+ * Provider precedence: the SOURCES array order. The first non-empty env
+ * match wins. Operators set only the env var(s) for the providers whose
+ * keys they actually hold — the wizard at /setup supports 50+ providers
  * regardless (PROVIDER_CATALOG in @doable/shared).
+ *
+ * NOTE: Doable does NOT bundle, ship, or proxy any third-party API keys.
+ * Every key in this file is a BYOK (bring-your-own-key) seed — the
+ * operator must obtain it from the provider themselves.
  *
  * To add a new env-seedable provider: append to SOURCES below. baseUrl is
  * required for "custom" provider type (every OpenAI-compatible endpoint).
@@ -39,21 +41,18 @@ interface SeedSource {
 }
 
 const SOURCES: readonly SeedSource[] = [
-  // ─── Tier 1: Doable-bundled bootstrap ───────────────────────
-  { envVar: "MINIMAX_API_KEY",     provider: "custom",    baseUrl: "https://api.minimax.io/v1",                          model: "MiniMax-M2.7",       label: "MiniMax M2.7" },
-
-  // ─── Tier 2: Major cloud providers ──────────────────────────
+  // ─── Major cloud providers ──────────────────────────────────
   { envVar: "ANTHROPIC_API_KEY",   provider: "anthropic",                                                                model: "claude-sonnet-4-6",  label: "Anthropic Claude" },
   { envVar: "OPENAI_API_KEY",      provider: "openai",                                                                   model: "gpt-4o",             label: "OpenAI GPT-4o" },
   { envVar: "GEMINI_API_KEY",      provider: "custom",    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/", model: "gemini-2.5-pro", label: "Google Gemini" },
 
-  // ─── Tier 3: Aggregators (one key → many models) ────────────
+  // ─── Aggregators (one key → many models) ────────────────────
   { envVar: "OPENROUTER_API_KEY",  provider: "custom",    baseUrl: "https://openrouter.ai/api/v1",                        label: "OpenRouter" },
   { envVar: "TOGETHER_API_KEY",    provider: "custom",    baseUrl: "https://api.together.xyz/v1",                         label: "Together AI" },
   { envVar: "FIREWORKS_API_KEY",   provider: "custom",    baseUrl: "https://api.fireworks.ai/inference/v1",               label: "Fireworks AI" },
   { envVar: "OPENCODE_ZEN_API_KEY",provider: "custom",    baseUrl: "https://opencode.ai/zen/v1",                          label: "OpenCode Zen" },
 
-  // ─── Tier 4: Specialty / fast-inference clouds ──────────────
+  // ─── Specialty / fast-inference clouds ──────────────────────
   { envVar: "GROQ_API_KEY",        provider: "custom",    baseUrl: "https://api.groq.com/openai/v1",                      label: "Groq" },
   { envVar: "CEREBRAS_API_KEY",    provider: "custom",    baseUrl: "https://api.cerebras.ai/v1",                          label: "Cerebras" },
   { envVar: "DEEPSEEK_API_KEY",    provider: "custom",    baseUrl: "https://api.deepseek.com",                            label: "DeepSeek" },
@@ -64,7 +63,8 @@ const SOURCES: readonly SeedSource[] = [
   { envVar: "DEEPINFRA_API_KEY",   provider: "custom",    baseUrl: "https://api.deepinfra.com/v1/openai",                 label: "DeepInfra" },
   { envVar: "NVIDIA_API_KEY",      provider: "custom",    baseUrl: "https://integrate.api.nvidia.com/v1",                 label: "NVIDIA NIM" },
 
-  // ─── Tier 5: Regional clouds ────────────────────────────────
+  // ─── Regional clouds ────────────────────────────────────────
+  { envVar: "MINIMAX_API_KEY",     provider: "custom",    baseUrl: "https://api.minimax.io/v1",                           model: "MiniMax-M2.7",       label: "MiniMax M2.7" },
   { envVar: "MOONSHOT_API_KEY",    provider: "custom",    baseUrl: "https://api.moonshot.ai/v1",                          label: "Moonshot/Kimi" },
   { envVar: "ZHIPU_API_KEY",       provider: "custom",    baseUrl: "https://open.bigmodel.cn/api/paas/v4",                label: "Zhipu GLM" },
 
