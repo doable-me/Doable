@@ -143,6 +143,27 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 if [ ! -f "$ENV_FILE" ]; then
+  # Fresh .env means fresh secrets. If a postgres_data volume already exists
+  # from a previous install, it has the OLD password — Postgres ignores
+  # POSTGRES_PASSWORD on subsequent boots (only honored on first boot of an
+  # empty data dir), so migrate fails with "password authentication failed
+  # for user doable" and the api/ws/web containers never come up. The fresh
+  # JWT_SECRET / ENCRYPTION_KEY / DOABLE_KEK would also invalidate every
+  # encrypted column in the old DB. Bundle the volume-wipe with the secret
+  # rotation so they always cohere.
+  if docker volume ls -q 2>/dev/null | grep -qE '_postgres_data$'; then
+    warn "Pre-existing postgres_data volume detected — its password won't match the fresh .env we're about to generate."
+    warn "Wiping postgres + api + ws + thumbnails volumes to avoid an authentication mismatch."
+    docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || true
+    # Belt-and-suspenders: down -v only removes volumes attached to THIS
+    # compose project. Sweep any leftover *_postgres_data volume from a
+    # previous compose-project name (e.g. an earlier `docker/` reorg cycle).
+    for v in $(docker volume ls -q | grep -E '_(postgres_data|api_projects|api_thumbnails|ws_projects)$' || true); do
+      docker volume rm -f "$v" 2>/dev/null || true
+    done
+    ok "Cleared previous-install volumes"
+  fi
+
   info "Generating deployment/docker/.env with random secrets..."
 
   JWT_SECRET=$(openssl rand -hex 32)
