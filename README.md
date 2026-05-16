@@ -58,8 +58,6 @@ Doable ships with manifests for every major full-stack PaaS. Pick the one that m
 | **Heroku** | 1-click button above | [`app.json`](app.json) |
 | **GitHub Codespaces** | 1-click button above | [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) |
 
-> **Not supported:** Vercel, Netlify, Cloudflare Pages, AWS Amplify (frontend-only mode), GitHub Pages, Surge, Firebase Hosting. Doable's api/ws/web are tightly coupled — splitting them across hosts adds latency, JWT routing complexity, and CORS pain for no operator benefit.
-
 ---
 
 ## Badges
