@@ -21,8 +21,7 @@ export async function runAuthTests(
     const body = await res.json() as Record<string, unknown>;
     saveEvidence("TC-AU01", body, Object.fromEntries(res.headers.entries()));
     assert(res.status === 200, `Expected 200, got ${res.status}: ${JSON.stringify(body)}`);
-    // API returns { user, tokens: { accessToken, refreshToken } } in v0.1+;
-    // some legacy responses kept the fields flat — accept both shapes.
+    // API nests under body.tokens; older deploys had it flat.
     const tokens = (body.tokens as Record<string, unknown>) ?? body;
     loginToken       = (tokens.accessToken ?? tokens.token) as string ?? null;
     refreshTokenValue = tokens.refreshToken as string ?? null;

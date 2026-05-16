@@ -57,11 +57,7 @@ export async function runWorkspaceProjectTests(ownerToken: string): Promise<void
       body: JSON.stringify({
         name: `OOB Smoke Project ${Date.now()}`,
         workspaceId,
-        // Project framework must be one of the values accepted by the create
-        // endpoint (services/api/src/routes/projects.ts). As of v0.1 the
-        // allowed list is `vite-react` and `nextjs-app`. Pick vite-react —
-        // it's the lightest scaffold and doesn't need a Next.js build env
-        // for the create-only smoke test.
+        // API allows vite-react|nextjs-app; vite-react is the lighter scaffold.
         framework: "vite-react",
       }),
     });
