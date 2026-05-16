@@ -18,7 +18,11 @@ WORKDIR /app
 # --- Dependencies ---
 FROM base AS deps
 
-# Copy workspace config + every package.json (for pnpm install)
+# Copy workspace config + EVERY workspace package.json so `pnpm install` can
+# resolve the full dependency graph. Must list each member of pnpm-workspace.yaml
+# (apps/*, services/*, packages/*, mcp-servers/*) — pnpm fails at runtime with
+# ERR_MODULE_NOT_FOUND if a workspace member is missing here. When adding a new
+# workspace package, also add it below.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/
 COPY services/api/package.json services/api/
@@ -27,6 +31,12 @@ COPY packages/db/package.json packages/db/
 COPY packages/shared/package.json packages/shared/
 COPY packages/docore/package.json packages/docore/
 COPY packages/dovault/package.json packages/dovault/
+COPY packages/doable-sdk/package.json packages/doable-sdk/
+COPY packages/marketplace-bundle/package.json packages/marketplace-bundle/
+COPY mcp-servers/markdown-builder/package.json mcp-servers/markdown-builder/
+COPY mcp-servers/pdf-builder/package.json mcp-servers/pdf-builder/
+COPY mcp-servers/presentation-builder/package.json mcp-servers/presentation-builder/
+COPY mcp-servers/spreadsheet-builder/package.json mcp-servers/spreadsheet-builder/
 
 # Skip Puppeteer's bundled Chromium — thumbnails are optional in Docker
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true

@@ -19,6 +19,13 @@ trap cleanup TERM INT
 # Start a detached tmux session running the service
 tmux new-session -d -s "$SESSION" -x 200 -y 50 "$@"
 
+# Forward pane output to the container's stderr so `docker logs` and `docker
+# compose logs` actually see app output. Without this, a service that crashes
+# on startup (missing env, ESM resolution error, port-in-use, etc.) appears as
+# a silent "Restarting (0)" loop with empty logs — impossible to debug. The
+# pipe-pane runs for the lifetime of the session and adds negligible overhead.
+tmux pipe-pane -t "$SESSION" -o 'cat >&2' 2>/dev/null || true
+
 # Wait for the session to end (process exits → pane closes → session closes)
 while tmux has-session -t "$SESSION" 2>/dev/null; do
   sleep 1

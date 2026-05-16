@@ -137,6 +137,11 @@ if [ ! -f "$ENV_FILE" ]; then
   INTERNAL_SECRET=$(openssl rand -hex 32)
   PG_PASSWORD=$(openssl rand -hex 16)
   INSTALL_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
+  # DOABLE_KEK is the envelope-encryption key used by the API for wizard-saved
+  # secrets (AI provider keys, OAuth client secrets, Stripe). docker-compose.yml
+  # marks it required (${DOABLE_KEK:?...}) so the API container refuses to
+  # start without it — generate it here, never roll it (rolling = data loss).
+  DOABLE_KEK=$(openssl rand -base64 32)
   # Bootstrap token TTL: 24h from install. After this, the empty-users-table
   # gate still works for true greenfield installs, but the token itself stops
   # being accepted on signup.
@@ -155,6 +160,7 @@ if [ ! -f "$ENV_FILE" ]; then
 JWT_SECRET=${JWT_SECRET}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 INTERNAL_SECRET=${INTERNAL_SECRET}
+DOABLE_KEK=${DOABLE_KEK}
 
 # ─── First-run bootstrap (single-use; auto-closes after first signup) ───
 # When the users table is empty AND the first signup presents this token
@@ -179,9 +185,13 @@ CORS_ORIGINS=${CORS}
 REDIS_URL=
 
 # ─── AI (set at least one for AI features) ────────
-ANTHROPIC_API_KEY=
-OPENAI_API_KEY=
-MINIMAX_API_KEY=
+# Honour pre-export: if the operator exported any of these before running
+# setup.sh, they get seeded into the .env (and the API container's
+# seedAiProviderFromEnv() then pre-fills the wizard's Step 2). Empty
+# otherwise — wizard can still configure at runtime.
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+OPENAI_API_KEY=${OPENAI_API_KEY:-}
+MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
 
 # ─── OAuth (optional) ─────────────────────────────
 GITHUB_CLIENT_ID=
@@ -194,7 +204,28 @@ STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 EOF
 
-  ok "Created docker/.env with generated secrets"
+  # docker/.env holds DB password, JWT secret, encryption key, KEK and any
+  # operator-supplied AI / OAuth / Stripe keys — restrict to owner-only read.
+  # env-perms-check.ts at services/api/src/lib/env-perms-check.ts warns on every
+  # boot if this is group/world-readable; setting 600 here silences the warning
+  # AND protects against unprivileged accounts reading secrets off disk.
+  chmod 600 "$ENV_FILE"
+  ok "Created docker/.env with generated secrets (mode 600)"
+fi
+
+# ─── Idempotent back-fill: existing .env from a pre-DOABLE_KEK install ────────
+# If the operator chose to keep an existing .env above, it may pre-date the
+# DOABLE_KEK requirement. Back-fill the line without clobbering anything else,
+# so re-running setup.sh on an older install doesn't break docker compose up.
+if [ -f "$ENV_FILE" ] && ! grep -qE '^DOABLE_KEK=.+' "$ENV_FILE"; then
+  NEW_KEK=$(openssl rand -base64 32)
+  if grep -qE '^DOABLE_KEK=' "$ENV_FILE"; then
+    # Empty assignment present — replace in place
+    sed -i.bak -E "s|^DOABLE_KEK=.*|DOABLE_KEK=${NEW_KEK}|" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
+  else
+    printf '\n# Added by setup.sh back-fill (%s)\nDOABLE_KEK=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$NEW_KEK" >> "$ENV_FILE"
+  fi
+  ok "Back-filled DOABLE_KEK in existing $ENV_FILE"
 fi
 
 # ─── Set up nginx + SSL ──────────────────────────────────────────────────────

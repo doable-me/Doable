@@ -82,13 +82,23 @@ services:
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # MiniMax M2.7 seed key — when the operator exports MINIMAX_API_KEY before
+      # docker compose up (typically via docker/setup.sh's .env), the API's
+      # seedAiProviderFromEnv() bootstraps it as the default custom provider so
+      # the setup wizard's AI step shows "configured" on first boot.
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      # QA-only rate-limit kill switch (services/api/src/middleware/rate-limit.ts:54).
+      # Default empty = limits enforced. Set to "true" in docker/.env ONLY for
+      # QA-bench runs on a test box — the rate-limit module fail-loudly warns
+      # when this is on with NODE_ENV=production.
+      RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-production}
       PROJECTS_ROOT: ./projects
       REDIS_URL: ${REDIS_URL:-}
       # KEK for envelope encryption of wizard-saved secrets (required)
@@ -120,7 +130,7 @@ services:
       WS_HOST: 0.0.0.0  # Must be 0.0.0.0 inside Docker for container networking; host port is bound to 127.0.0.1
       INTERNAL_SECRET: ${INTERNAL_SECRET:?Set INTERNAL_SECRET in docker/.env}
       API_URL: http://api:4000
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-production}
       REDIS_URL: ${REDIS_URL:-}
     volumes:
       - ws_projects:/app/services/ws/projects
@@ -148,7 +158,7 @@ services:
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       HOSTNAME: 0.0.0.0  # Must be 0.0.0.0 inside Docker for container networking; host port is bound to 127.0.0.1
       PORT: 3000
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-production}
 
   # --- Redis (optional, enabled with --profile redis) ---
   redis:

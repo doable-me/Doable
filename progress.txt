@@ -188,3 +188,85 @@ does users.map(...), which throws because users is now an object.
 - Local typecheck (web + api): green
 - Contract probe: 26/26 PASS
 - Production smoke on dev.doable.me after deploy: pending (see story US-R17-05)
+
+# Ralph round 18 — Docker-on-Hetzner repeat-install proof + setup.sh hassle-free pass
+
+Started: 2026-05-16 evening
+Status:  in-flight on live server #2987905 (95.216.8.180)
+
+## Mission
+Prove the docker/ install flow works end-to-end on a freshly-installimage'd Hetzner box,
+fix every bug found at root cause, write a reusable recipe to C:/Users/gj/Documents/,
+seed MiniMax M2.7 as the default AI provider so first-run requires no AI setup,
+keep the wizard at 4 steps (no "create first app" gate — admin is installing for a team).
+
+## Bugs zapped this round (real ones found via live install)
+
+1. **BUG-DOCKER-KEK-001 (P0)** — docker-compose.yml requires DOABLE_KEK but
+   docker/setup.sh's .env generator didn't emit it. Fresh install died at
+   `docker compose up` with "required variable DOABLE_KEK is missing".
+   Fix: setup.sh now generates `DOABLE_KEK=$(openssl rand -base64 32)` and
+   writes it into .env; plus an idempotent back-fill block for older .env
+   files that pre-date the requirement.
+
+2. **BUG-DOCKER-MINIMAX-PASSTHROUGH-001 (P1)** — even if admin exported
+   MINIMAX_API_KEY before running setup.sh, docker/docker-compose.yml's api
+   service env block didn't include it, so seedAiProviderFromEnv() inside
+   the container never saw the key. MiniMax never became default provider
+   despite the env-seed code existing.
+   Fix: added `MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}` to docker-compose.yml
+   api block (matching the existing ANTHROPIC/OPENAI passthrough pattern).
+
+3. **BUG-DOCKER-AIKEYS-ENV-001 (P1)** — setup.sh wrote literal `MINIMAX_API_KEY=`
+   (empty) into .env, clobbering whatever the admin had exported. Same for
+   ANTHROPIC_API_KEY and OPENAI_API_KEY.
+   Fix: changed those .env lines to `MINIMAX_API_KEY=${MINIMAX_API_KEY:-}`
+   so a pre-export survives into the generated .env, gets passed through
+   compose into the api container, gets seen by seedAiProviderFromEnv.
+
+4. **BUG-DOCKER-ENVPERMS-001 (P2)** — setup.sh did not chmod 600 .env after
+   creation; env-perms-check.ts warned on every API boot.
+   Fix: `chmod 600 "$ENV_FILE"` immediately after the heredoc closes.
+
+5. **BUG-DOCKER-WORKSPACE-MISSING-001 (P0)** — Dockerfile deps stage only
+   copied 7 of 13 workspace package.json files; pnpm install resolved an
+   incomplete graph; at runtime api crashed with
+   `Cannot find package 'zod' imported from /app/packages/marketplace-bundle/src/manifest.ts`.
+   Missing: doable-sdk, marketplace-bundle, plus 4 mcp-servers/* packages.
+   Fix: added the 6 missing COPY lines in docker/Dockerfile deps stage
+   with a maintenance comment explaining the pattern.
+
+6. **BUG-DOCKER-TMUX-BLINDSPOT-001 (P1)** — docker/tmux-entrypoint.sh
+   started tmux detached and never forwarded pane output to container stdout.
+   When the api crashed on startup, `docker compose logs api` returned
+   EMPTY, making the bug above (zod resolution) invisible until I ran the
+   process directly without the entrypoint.
+   Fix: added `tmux pipe-pane -t "$SESSION" -o 'cat >&2'` so every line
+   from the app reaches docker's log stream.
+
+## Hetzner-side learnings (recipe-relevant)
+
+- Rescue mode auto-clears after one boot. First reset sometimes "consumes"
+  the rescue arm without actually booting rescue (box comes up in
+  previously-installed OS). Pattern: arm rescue, reset, **if SSH key rejected**,
+  re-arm + re-reset — the second cycle reliably boots rescue. Documented
+  in the recipe.
+- The /root/images/ image path AND the legacy
+  /root/.oldroot/nfs/install/../images/ path both resolve to the same
+  file. Recipe path works.
+- installimage emits noisy debconf "TERM not set" warnings during grub
+  install — cosmetic, exit 0.
+- The `doable-hetzner-test` ed25519 key in Robot is stale (private key
+  was regenerated mid-prior-session). The itdept RSA key at
+  C:\Users\gj\Documents\itdept (Robot name `rsa-key-20190626`) is the
+  reliable key. Recipe updated to recommend itdept.
+- Hetzner Robot's PaidUntil can be a past date (grace period). Trust
+  Status=ready, not the date.
+
+## Verifications still in flight at this checkpoint
+
+- Rebuild of api/ws/migrate with fixed Dockerfile + tmux-entrypoint (in flight)
+- Re-run of smoke harness once rebuild completes
+- Audit agent flagged 8 additional concerns (CORS default mismatch, missing
+  volumes for MCP/projects, etc.) — held for follow-up; not blockers for the
+  cycle-proof goal.

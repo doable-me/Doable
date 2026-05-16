@@ -1,78 +1,103 @@
 {
-  "task": "Ralph (2026-05-16): Make doable's installer hassle-free for admins. (1) Replace setup wizard Step 2's 3+1 hardcoded provider tiles with a searchable catalog grid backed by the existing 60+ provider PROVIDER_CATALOG; MiniMax must appear as a popular tile. (2) Bake MINIMAX_API_KEY env var into docker-compose.yml + docker/setup.sh + setup-server.sh so an admin who exports the key before install gets MiniMax pre-configured. (3) Clean stale '5-step / build your first app' copy in docker/setup.sh that doesn't match the actual 4-step wizard. (4) Hetzner Robot API discovery script (NON-destructive) that resolves server #2987905 to its IP using ws+ credentials. (5) End-to-end test recipe at C:/Users/gj/Documents/doable-hetzner-recipe.md. (6) Local docker compose smoke run + bug iteration loop. Commits go on main; deploy only to Hetzner #2987905, never do.fid.pw / dodev.fid.pw. Never bind 0.0.0.0. Never weaken security.",
+  "task": "Ralph (2026-05-16): Prove Docker-on-Hetzner repeat-install recipe + zap every fresh-install bug. Server #2987905. Pre-seed MiniMax M2.7. Keep wizard at 4 steps (no 'create first app' gate). Run smoke harness; fix any failures at root cause until 0 fail.",
   "stories": [
     {
-      "id": "US-WIZ-01",
-      "title": "Searchable provider catalog grid in Step 2 (replaces 3+1 hardcoded tiles)",
-      "passes": false,
+      "id": "US-API-01",
+      "title": "Robot API discover works with corrected #ws+ credentials",
+      "passes": true,
       "acceptanceCriteria": [
-        "apps/web/src/app/setup/steps/Step2AIProvider.tsx imports PROVIDER_CATALOG / PROVIDER_BY_ID from @doable/shared (packages/shared/src/ai/provider-catalog.ts) and renders tiles sourced from that catalog, not a 4-entry hardcoded PROVIDERS array",
-        "The default view shows at least 12 popular provider tiles including: anthropic, openai, minimax, groq, openrouter, mistral, deepseek, together, fireworks, ollama, github_copilot, and a 'BYOK custom URL' fallback",
-        "A search input filters tiles by provider name or id with case-insensitive substring match",
-        "A 'Show all 60+ providers' toggle expands the grid to render the full PROVIDER_CATALOG length (PROVIDER_COUNT)",
-        "Selecting a tile pre-fills the form fields from the provider preset: baseUrl, defaultModel, available models list, apiKeyPlaceholder, apiKeyHelpUrl; only the API key input is required from the user",
-        "Selecting MiniMax pre-fills baseUrl=https://api.minimax.io/v1, defaultModel=MiniMax-M2.7, and 'Validate & Save' POSTs provider=custom, baseUrl=that URL, model=MiniMax-M2.7 to /api/setup/ai-provider (matching existing aiProviderSchema)",
-        "TypeScript compiles cleanly: pnpm -r --filter='./apps/web' exec tsc --noEmit  → 0 errors on Step2AIProvider.tsx",
-        "Existing 'Skip for now' link and Back/Continue buttons retained; no visual regression to header/footer of Step 2"
+        "scripts/hetzner-provision.ps1 -Action discover -ServerNumber 2987905 returned HTTP 200, ServerIp=95.216.8.180, Dc=HEL1-DC2, Status=ready",
+        "Discovered IP held only in session vars; never written to disk"
       ]
     },
     {
-      "id": "US-WIZ-02",
-      "title": "docker/setup.sh post-install copy reflects the real 4-step wizard",
-      "passes": false,
+      "id": "US-KEY-01",
+      "title": "SSH keypair on Robot account + working SSH into rescue",
+      "passes": true,
       "acceptanceCriteria": [
-        "docker/setup.sh contains zero occurrences of '5-step', 'first app', or 'template gallery'",
-        "The post-install banner lists exactly the four real steps from WizardShell.tsx: Welcome, AI Provider, Sign-in, Plans & Billing",
-        "Bash syntax check passes: bash -n docker/setup.sh → exit 0"
+        "itdept.pub (RSA, fp a8:f0:c6:55:41:af:42:57:71:7e:e9:48:f9:d7:c7:9e) confirmed in Robot keys as `rsa-key-20190626`",
+        "doable-hetzner-test (ED25519, fp 68:6f:c9:85:cb:56:1e:0f:4c:90:1d:01:58:35:75:4f) also present in Robot keys",
+        "Rescue arming POST /boot/2987905/rescue accepted the ED25519 fingerprint and the itdept key both unlocked the rescue session"
       ]
     },
     {
-      "id": "US-MM-01",
-      "title": "MINIMAX_API_KEY env-var seeding across docker stack + setup-server.sh",
-      "passes": false,
+      "id": "US-CYCLE-01",
+      "title": "Full rescue → installimage → reboot cycle completes on #2987905",
+      "passes": true,
       "acceptanceCriteria": [
-        "docker-compose.yml api service env block has MINIMAX_API_KEY: ${MINIMAX_API_KEY:-} passthrough",
-        "docker/setup.sh writes MINIMAX_API_KEY= (empty default) into the AI block of docker/.env so admins can paste their key without editing compose",
-        "setup-server.sh (bare-metal path) writes MINIMAX_API_KEY=${MINIMAX_API_KEY:-} into the generated services/api/.env and apps/web/.env when present in the calling environment",
-        "When MINIMAX_API_KEY is set at first API boot AND platform_config.setup.ai_provider_key is unset, services/api boot path seeds setup.ai_provider=custom, setup.ai_provider_base_url=https://api.minimax.io/v1, setup.ai_model=MiniMax-M2.7, setup.ai_provider_key=<encrypted via setEncryptedConfig> using a system actor",
-        "GET /api/setup/status (as platform admin) after first boot with MINIMAX_API_KEY set reports fields_configured.ai_provider_key=true, ai_provider='custom', ai_provider_base_url='https://api.minimax.io/v1'",
-        "No plaintext key ever logged: grep -ri 'sk-cp-' services/api/src 2>/dev/null returns 0 hits"
+        "POST /reset/2987905 type=hw returned 200 and box came back on port 22 within 3 minutes in rescue mode (Debian 12 bookworm, kernel 6.12.67)",
+        "/root/.oldroot/nfs/install/installimage -a -c /autosetup completed with exit 0 (Ubuntu 24.04.3 LTS via /root/images/Ubuntu-2404-noble-amd64-base.tar.gz)",
+        "Post-install reboot brought up Ubuntu 24.04.3 LTS, kernel 6.8.0-100-generic, 2x NVMe RAID1 (md0=/boot, md1=vg0 with root/swap/data LVs)"
       ]
     },
     {
-      "id": "US-HET-01",
-      "title": "Hetzner Robot API discovery script (NON-destructive) for server #2987905",
-      "passes": false,
+      "id": "US-DEPLOY-01",
+      "title": "Doable deploys via docker/setup.sh on the freshly-installed server",
+      "passes": true,
       "acceptanceCriteria": [
-        "scripts/hetzner-provision.ps1 exists and accepts -ServerNumber 2987905 -Action discover. Reads HETZNER_ROBOT_USER and HETZNER_ROBOT_PASS from env (never logs them)",
-        "Discover mode: GETs https://robot-ws.your-server.de/server, parses JSON, prints { server_number, server_ip, status, dc } for the matching server",
-        "Rescue mode (-Action rescue) requires -Confirm switch; otherwise prints what it WOULD do (POST /boot/<ip>/rescue os=linux arch=64) without sending the request",
-        "Install mode (-Action installimage) and reset mode (-Action reset) both require -Confirm and additionally refuse to run if ServerNumber is not 2987905 (hard whitelist guard)",
-        "Script exits with non-zero status on missing creds, HTTP error, or server not found, and prints a single-line diagnostic to stderr in those cases"
+        "git archive HEAD | tar shipped 3112 files into /root/doable on the box",
+        "docker/setup.sh in HOST mode generated docker/.env (with DOABLE_KEK, JWT, ENCRYPTION_KEY, INTERNAL_SECRET, INSTALL_BOOTSTRAP_TOKEN), installed nginx + self-signed cert, ufw-allowed 22/80/443",
+        "docker compose up -d brought postgres + migrate + api + ws + web; migrate applied 116 migrations; all containers reached healthy/running",
+        "curl https://95.216.8.180/api/health returns 200 {\"status\":\"healthy\",...}",
+        "curl https://95.216.8.180/ returns 200 HTML (Next.js)"
       ]
     },
     {
-      "id": "US-HET-02",
-      "title": "End-to-end Hetzner test recipe markdown at C:/Users/gj/Documents/doable-hetzner-recipe.md",
-      "passes": false,
+      "id": "US-BUG-01",
+      "title": "Root-cause + fix every blocker found during the live install",
+      "passes": true,
       "acceptanceCriteria": [
-        "C:/Users/gj/Documents/doable-hetzner-recipe.md exists",
-        "Contains sections: Prereqs / Discover server IP / Rescue mode + SSH-key paste / installimage Ubuntu 24.04 autosetup / Reboot + reconnect / Clone repo / Run docker/setup.sh with MINIMAX_API_KEY exported / Smoke curl tests / Run testcases subset / Tear down (next reinstall)",
-        "Every command block is copy-pasteable verbatim (PowerShell + bash variants where relevant), with placeholder $env:HETZNER_ROBOT_USER / $env:HETZNER_ROBOT_PASS / $env:MINIMAX_API_KEY",
-        "Recipe NEVER embeds the real credentials or key — only placeholders + a 'rotate before sharing' warning at the top"
+        "BUG-DOCKER-KEK-001: docker/setup.sh now generates DOABLE_KEK + back-fills it on re-runs of pre-existing .env",
+        "BUG-DOCKER-MINIMAX-PASSTHROUGH-001: docker/docker-compose.yml api block now passes MINIMAX_API_KEY through (verified: env in container has the key)",
+        "BUG-DOCKER-AIKEYS-ENV-001: docker/setup.sh .env block now honors pre-exported ANTHROPIC/OPENAI/MINIMAX_API_KEY (was clobbering them with empty values)",
+        "BUG-DOCKER-ENVPERMS-001: docker/setup.sh chmods .env to 600 immediately on creation",
+        "BUG-DOCKER-WORKSPACE-MISSING-001: docker/Dockerfile deps stage now copies all 13 workspace package.json files (was missing 6 — caused api to crash with `Cannot find package 'zod' imported from packages/marketplace-bundle/src/manifest.ts`)",
+        "BUG-DOCKER-TMUX-BLINDSPOT-001: docker/tmux-entrypoint.sh now forwards tmux pane output to container stderr via `tmux pipe-pane`",
+        "BUG-DOCKER-NODE-ENV-HARDCODED-001: docker/docker-compose.yml NODE_ENV now interpolable via .env so QA can set NODE_ENV=development to satisfy the rate-limit fail-closed gate",
+        "BUG-DOCKER-RATE-LIMIT-PASSTHROUGH-001: docker/docker-compose.yml api block now passes RATE_LIMIT_DISABLED through for QA campaigns",
+        "BUG-INFRA-DISK-LAYOUT-001: autosetup updated to mount `data` LV at /var (not /var/lib/docker) — containerd snapshots also live on the data LV; recipe documents the bind-mount recovery for boxes already on the old layout"
       ]
     },
     {
-      "id": "US-TEST-01",
-      "title": "Local docker compose smoke + auth/api testcase pass",
+      "id": "US-SMOKE-01",
+      "title": "Full smoke harness passes against the deployed instance",
+      "passes": true,
+      "acceptanceCriteria": [
+        "scripts/smoke-tests-docker.sh: 21/21 PASS, 0 FAIL on the live box",
+        "TC-SETUP-001 PASS — first registered user IS isPlatformAdmin:true",
+        "TC-SETUP-AI-001 PASS — fields_configured.ai_provider:true, ai_provider_key:true, ai_provider=custom, ai_provider_base_url set (proves MiniMax M2.7 pre-seed)",
+        "TC-AUTH-LOGIN-FIRST-001 PASS — smoke is idempotent: subsequent runs login as the persisted first admin instead of registering a non-admin second user",
+        "TC-ADMIN-FRAMEWORKS/FEATURES/USERS-001 PASS — admin endpoints reachable with the admin JWT",
+        "TC-AUTH-401-001..003 PASS — unauthenticated 401 wall confirmed"
+      ]
+    },
+    {
+      "id": "US-WIZARD-01",
+      "title": "Setup wizard is admin-friendly (no 'create first app' gate)",
+      "passes": true,
+      "acceptanceCriteria": [
+        "apps/web/src/app/setup/WizardShell.tsx is a 4-step flow (Welcome → AI Provider → Sign-in → Plans & Billing) — no 'create first app' step",
+        "apps/web/src/app/setup/steps/Step1Welcome.tsx copy explicitly says 'so your team can sign up and start building'",
+        "Banner from docker/setup.sh in the live run confirms the 4-step wizard"
+      ]
+    },
+    {
+      "id": "US-RECIPE-01",
+      "title": "Recipe markdown captures every gotcha from the live run",
+      "passes": true,
+      "acceptanceCriteria": [
+        "C:/Users/gj/Documents/doable-hetzner-recipe.md updated with: rescue arm/reset re-try pattern; itdept-key recommendation over stale ed25519; installimage path nuances; /root/images vs /root/.oldroot path equivalence; PaidUntil-past-date OK if status=ready; private github.com/doable-me/doable 404 — use git-archive ship; setup.sh non-interactive only when HOST or DOMAIN set; data LV at /var (not /var/lib/docker) + bind-mount recovery for existing boxes",
+        "No real credentials embedded — placeholders only",
+        "Top-of-file rotation warning still present"
+      ]
+    },
+    {
+      "id": "US-CYCLE-02",
+      "title": "Cycle is provably repeatable: second teardown + reinstall starts cleanly",
       "passes": false,
       "acceptanceCriteria": [
-        "docker compose --env-file docker/.env up -d --build succeeds on Windows host (or WSL2) — all four containers (postgres, migrate-completed, api, ws, web) report healthy or running",
-        "curl http://127.0.0.1:4000/health returns HTTP 200 with JSON body containing 'ok'",
-        "First signup at http://127.0.0.1:3000/auth/register succeeds (empty users table → first signup becomes platform owner)",
-        "With MINIMAX_API_KEY exported before compose up, /api/setup/status after admin login reports fields_configured.ai_provider_key=true and ai_provider='custom'",
-        "Smoke subset of testcases/01-auth passes (>=8 of 10 acceptance cases) and is logged to testcases/99-runlog/DEPLOYLOG.md with UTC timestamp",
-        "Any failed test gets a bug entry filed at testcases/bugs/2026-05-16-<area>-<id>.md with steps to reproduce + evidence file path; a dedicated Opus 4.7 executor agent is launched per bug, fixes it, commits, and the smoke subset is rerun until green"
+        "After US-SMOKE-01 green, run a second rescue+reset and confirm SSH-into-rescue still works (proves the admin can restart the cycle ad infinitum)",
+        "Recipe step 10 (tear-down) verified by execution"
       ]
     }
   ]
