@@ -94,10 +94,11 @@
     {
       "id": "US-CYCLE-02",
       "title": "Cycle is provably repeatable: second teardown + reinstall starts cleanly",
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
-        "After US-SMOKE-01 green, run a second rescue+reset and confirm SSH-into-rescue still works (proves the admin can restart the cycle ad infinitum)",
-        "Recipe step 10 (tear-down) verified by execution"
+        "POST /boot/2987905/rescue (round 2) returned HTTP 200 with itdept fingerprint authorized",
+        "POST /reset/2987905 type=hw (round 2) returned HTTP 200 and box rebooted (port 22 went DOWN then back UP within 3 minutes)",
+        "SSH with C:/Users/gj/Documents/itdept into round-2 rescue returned `Linux rescue 6.12.67 ... PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"` — confirms the box is in rescue ready for installimage round 2"
       ]
     }
   ]

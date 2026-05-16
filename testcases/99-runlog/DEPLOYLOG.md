@@ -111,3 +111,12 @@ FAILED
 3. Rotate `sk-cp-...` MiniMax key and Robot login pasted into chat earlier.
 
 **Scope guarantee:** no code paths touched in `do.fid.pw` (prod) or `dodev.fid.pw` deploys. Hetzner script hard-whitelists #2987905 — refuses rescue/install/reset on any other server number even with `-Confirm`.
+2026-05-16 11:41:39 | Commit #30 | fix(api): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-16 11:41:46 | Commit #26 | fix(services/api/src/lib/seedAiProviderFromEnv.ts): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health=FAILED
+2026-05-16 11:41:48 | Commit #16 | fix(seedAiProviderFromEnv): OpusAgent fix for BUG-WS-001/003 | health=FAILED
+2026-05-16 12:06:00 | Commit #31 | fix(api): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-16 12:06:09 | Commit #27 | fix(services/api/src/lib/seedAiProviderFromEnv.ts): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health=FAILED
+2026-05-16 12:06:18 | Commit #17 | fix(seedAiProviderFromEnv): OpusAgent fix for BUG-WS-001/003 | health=FAILED
+2026-05-16 12:10:12 | Commit #32 | fix(web): OpusAgent fix for BUG-WS-001/003 | deployed to dodev
+2026-05-16 12:10:21 | Commit #28 | fix(apps/web/src/app/setup/steps/Step2AIProvider.tsx): OpusAgent fix for BUG-WS-001/003 | SCP deployed | health=FAILED
+2026-05-16 12:10:29 | Commit #18 | fix(Step2AIProvider): OpusAgent fix for BUG-WS-001/003 | health=FAILED

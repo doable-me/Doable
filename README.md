@@ -259,3 +259,9 @@ pnpm install && pnpm dev
 ## License
 
 [MIT](LICENSE) — use it however you want.
+
+## Acknowledgments
+
+- Integrations powered by [ActivePieces](https://www.activepieces.com) (MIT)
+- Real-time collaboration powered by [Yjs](https://yjs.dev) (MIT)
+- AI agent extensibility via [Model Context Protocol](https://modelcontextprotocol.io)
