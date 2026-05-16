@@ -105,7 +105,7 @@ doable/
 ├── packages/docore/    # Agent engine (Copilot SDK wrapper)
 ├── packages/dovault/   # Runtime sandbox
 ├── mcp-servers/        # MCP server implementations
-├── docker/             # Docker deployment
+├── deployment/        # Docker, Fly, K8s, server setup
 └── scripts/            # Utility scripts
 ```
 
