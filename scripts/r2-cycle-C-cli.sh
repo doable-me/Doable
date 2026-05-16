@@ -35,13 +35,8 @@ $SSHCMD 'cd /root/doable 2>/dev/null && \
   echo "[done] cleanup"'
 
 echo "[r2-C] 2b. Pre-ship git archive HEAD into /root/doable"
-# doable-cli ships only the setup script over SSH (via bash -s -- stdin).
-# It does NOT ship the source tree — that's expected to live on the box
-# already, or the script's Step 7 will `git clone` it. For private-repo
-# test cycles (and any OSS user who wants offline / non-default fork
-# behavior), pre-staging the source here mirrors how cycle B + cycle A
-# bootstrap: `git archive HEAD | tar xf -`. Once the repo is public,
-# operators can rely on the script's clone fallback instead.
+# Pre-stage source so Step 7's git-clone fallback isn't needed on private-repo
+# test cycles. Mirrors the approach used in cycles A and B.
 git archive --format=tar HEAD | $SSHCMD 'cd /root/doable && tar xf -'
 
 echo "[r2-C] 3. Drive install via doable-cli (NO_TUNNEL + MINIMAX preconfigured)"

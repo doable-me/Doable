@@ -9,10 +9,7 @@ import * as https from "node:https";
 
 // ─── Config from env ──────────────────────────────────────────────────────
 export const BASE = (process.env.DOABLE_BASE ?? "http://localhost:3001").replace(/\/$/, "");
-export const API  = BASE.includes("localhost") || BASE.includes("127.0.0.1")
-  ? BASE  // bare-metal / docker — API is same host (or set DOABLE_API_BASE separately)
-  : BASE;
-export const API_BASE = (process.env.DOABLE_API_BASE ?? API).replace(/\/$/, "");
+export const API_BASE = (process.env.DOABLE_API_BASE ?? BASE).replace(/\/$/, "");
 export const WS_BASE  = (process.env.DOABLE_WS_BASE  ?? API_BASE.replace(/^http/, "ws")).replace(/\/$/, "");
 
 export const TEST_EMAIL    = process.env.DOABLE_TEST_EMAIL    ?? `oob-smoke-${Date.now()}@example.local`;

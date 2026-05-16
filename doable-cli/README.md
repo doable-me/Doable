@@ -1,7 +1,7 @@
 # doable-installer
 
 A Rust TUI app that operators run on their laptop to provision a fresh Doable
-server. It SSHes into the target host, streams `setup-server-v3.sh`, and
+server. It SSHes into the target host, streams `deployment/server-setup.sh`, and
 shows a live, color-coded view of every phase.
 
 ```
@@ -9,15 +9,15 @@ shows a live, color-coded view of every phase.
 │ Doable Installer │ host: 203.0.113.10   user: ubuntu  env: myorg    │
 │                  │ elapsed: 03:21                                    │
 ├────────────────────┬─────────────────────────────────────────────────┤
-│ Phases (4/15)      │ Setup output                                    │
-│  ✅  1 Preflight    │ ════════ Phase 4/15 — PostgreSQL 16 + ext.     │
-│  ✅  2 System pkgs  │   apt-get update                                │
-│  ✅  3 Node 22+pnpm │   installing postgresql-16 …                    │
-│  🔄  4 PostgreSQL   │   creating role doable …                        │
-│  ⏳  5 Caddy …      │   running migrations …                          │
-│  ⏳  6 Puppeteer …  │                                                  │
-│  ⏳  7 Repo clone   │                                                  │
-│  ⏳ … 15            │                                                  │
+│ Phases (3/13)      │ Setup output                                    │
+│  ✅  1 System pkgs  │ ════════ Step 3/13 — Hardening services        │
+│  ✅  2 Firewall     │   tuning postgresql.conf …                      │
+│  🔄  3 Hardening    │   restarting fail2ban …                         │
+│  ⏳  4 Swap …       │                                                  │
+│  ⏳  5 PostgreSQL   │                                                  │
+│  ⏳  6 GitHub auth  │                                                  │
+│  ⏳  7 Clone repo   │                                                  │
+│  ⏳ … 13            │                                                  │
 ├────────────────────┴─────────────────────────────────────────────────┤
 │ q=quit  l=toggle log filter  r=retry phase  p=pause                  │
 └──────────────────────────────────────────────────────────────────────┘
@@ -74,12 +74,12 @@ cargo run -- \
 ```
 
 - `cli.rs` — clap derive struct.
-- `phases.rs` — the 15 phases mirroring `setup-server-v3.sh`.
+- `phases.rs` — the 15 phases mirroring `deployment/server-setup.sh`.
 - `events.rs` — `AppEvent` enum for the central channel.
 - `tui.rs` — ratatui state + draw routines (title / sidebar / log / status / end-screen).
 - `runner.rs` — `tokio::process::Command` invokes the system `ssh`, streams
-  stdout+stderr, and parses `Phase N/15 …` markers to drive the sidebar.
-  Also exposes a `run_demo` replay for `--demo`.
+  stdout+stderr, and parses `Phase N/M …` AND `Step N/M …` markers to drive
+  the sidebar. Also exposes a `run_demo` replay for `--demo`.
 - `main.rs` — wires it all together with a panic hook so raw mode is always
   restored on crash or Ctrl-C.
 
@@ -101,6 +101,6 @@ small and the trust surface tiny.
 
 ## Network safety
 
-This installer uploads `setup-server-v3.sh`, which binds **all** services to
+This installer uploads `deployment/server-setup.sh`, which binds **all** services to
 `127.0.0.1` and exposes them only via Cloudflare Tunnel. See `CLAUDE.md` for
 the platform-wide network policy.
