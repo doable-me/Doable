@@ -1,24 +1,53 @@
 # Docker Deployment
 
-Everything you need to self-host Doable with Docker.
+Everything you need to self-host Doable with Docker. Two install paths:
 
-## Quick Start (localhost)
+| Path | Time | When to pick |
+|------|------|--------------|
+| **Pre-built (recommended)** | ~30s pull | Production, repeated installs, no Node toolchain on the box |
+| **From source** | 5–10 min build | Local dev, working on a fork, customizing the Dockerfile |
+
+## Fast Path — pre-built images (recommended)
+
+```bash
+mkdir doable && cd doable
+curl -O https://raw.githubusercontent.com/doable-me/doable/main/docker/docker-compose.prod.yml
+curl -O https://raw.githubusercontent.com/doable-me/doable/main/docker/setup.sh
+curl -O https://raw.githubusercontent.com/doable-me/doable/main/docker/init.sql
+curl -O https://raw.githubusercontent.com/doable-me/doable/main/docker/nginx.conf.template
+chmod +x setup.sh
+
+# Pick one — DOMAIN for Let's Encrypt, HOST for self-signed on a LAN IP, or
+# omit both for localhost:
+DOMAIN=app.example.com ./setup.sh --prebuilt
+```
+
+`--prebuilt` (or `DOABLE_PREBUILT=true ./setup.sh`) tells setup.sh to pull
+`ghcr.io/doable-me/doable-{api,ws,web,migrate}:latest` instead of building
+from source. Pin a specific release with `DOABLE_IMAGE_TAG=v1.2.3`.
+
+The published images are built with placeholder URLs in the client bundle;
+the web container's runtime entrypoint sed-replaces them with your real
+`NEXT_PUBLIC_*` values on startup. One image works for any deployment URL.
+
+## Source Path — build locally
+
+Use when you want to modify the Dockerfile or contribute upstream:
 
 ```bash
 git clone https://github.com/doable-me/doable.git
 cd doable
-cp docker/.env.example docker/.env
-# Edit docker/.env — at minimum, generate real secrets:
-#   openssl rand -hex 32
-
-docker compose -f docker/docker-compose.yml up --build
+DOMAIN=app.example.com ./docker/setup.sh
 ```
 
-Open <https://localhost> (self-signed SSL — accept the browser warning).
+setup.sh runs `docker compose build` (the 5–10min step) then `up -d`. The
+final command is identical between the two paths — only the source of the
+images differs.
 
 ## One-liner Setup
 
-The `setup.sh` script handles everything: secret generation, nginx, SSL, Docker build, and firewall.
+The `setup.sh` script handles everything: secret generation, nginx, SSL,
+image build OR pull, and firewall.
 
 ### Public domain (Let's Encrypt)
 

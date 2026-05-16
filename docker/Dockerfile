@@ -46,10 +46,16 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 # --- Build ---
 FROM deps AS build
 
-# Next.js needs NEXT_PUBLIC_* at build time (client-side bundling)
-ARG NEXT_PUBLIC_API_URL=http://localhost:4000
-ARG NEXT_PUBLIC_WS_URL=ws://localhost:4001
-ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+# Next.js bakes NEXT_PUBLIC_* into the client bundle at build time, which
+# would normally lock a published image to one URL. To ship one generic image
+# that works for any deployment, default the build args to placeholder strings
+# that the web container's runtime entrypoint sed-replaces with real values on
+# container start. Local source builds (via docker/docker-compose.yml) still
+# pass real URLs as build args and override the placeholders — the runtime
+# sed then finds nothing to replace (no-op, ~50ms).
+ARG NEXT_PUBLIC_API_URL=__DOABLE_API_URL__
+ARG NEXT_PUBLIC_WS_URL=__DOABLE_WS_URL__
+ARG NEXT_PUBLIC_APP_URL=__DOABLE_APP_URL__
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
@@ -85,10 +91,15 @@ FROM base AS web
 WORKDIR /app
 COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+# Runtime placeholder rewriter — replaces __DOABLE_*_URL__ placeholders
+# baked at build time with the operator's actual NEXT_PUBLIC_* values from
+# container env. Lets one image work for any deployment URL.
+COPY docker/web-runtime-entrypoint.sh /usr/local/bin/web-runtime-entrypoint
+RUN chmod +x /usr/local/bin/web-runtime-entrypoint
 USER node
 EXPOSE 3000
-ENTRYPOINT ["tmux-entrypoint"]
-CMD ["web", "node", "apps/web/server.js"]
+ENTRYPOINT ["web-runtime-entrypoint"]
+CMD ["tmux-entrypoint", "web", "node", "apps/web/server.js"]
 
 # --- Migration runner ---
 FROM base AS migrate

@@ -23,7 +23,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="$SCRIPT_DIR/.env"
-COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+# Pre-built (pulls from ghcr.io) vs source-build (5-10min). Default = source.
+# Set DOABLE_PREBUILT=true (or pass --prebuilt) to use the published images
+# instead — ~30s install. Overridable per-invocation.
+if [ "${DOABLE_PREBUILT:-false}" = "true" ]; then
+  COMPOSE_FILE="$SCRIPT_DIR/docker-compose.prod.yml"
+else
+  COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+fi
 SELF_SIGNED_DIR="/etc/ssl/doable"
 
 # Colors
@@ -38,16 +45,22 @@ SKIP_SSL=false
 for arg in "$@"; do
   case "$arg" in
     --skip-ssl)  SKIP_SSL=true ;;
+    --prebuilt)  COMPOSE_FILE="$SCRIPT_DIR/docker-compose.prod.yml" ;;
     --help|-h)
-      echo "Usage: [DOMAIN=app.example.com | HOST=192.168.1.50] $0 [--skip-ssl]"
+      echo "Usage: [DOMAIN=app.example.com | HOST=192.168.1.50] $0 [--skip-ssl] [--prebuilt]"
       echo ""
       echo "Options:"
       echo "  --skip-ssl   Set up nginx but skip Let's Encrypt (e.g. behind Cloudflare)"
+      echo "  --prebuilt   Pull pre-built images from ghcr.io instead of building"
+      echo "               from source (~30s install vs ~5-10min build)."
+      echo "               Equivalent to setting DOABLE_PREBUILT=true."
       echo ""
       echo "Environment variables:"
-      echo "  DOMAIN       Your domain name — uses Let's Encrypt for SSL"
-      echo "  HOST         IP or hostname for private network — uses self-signed SSL"
-      echo "  EMAIL        Email for Let's Encrypt notifications (optional)"
+      echo "  DOMAIN              Your domain name — uses Let's Encrypt for SSL"
+      echo "  HOST                IP or hostname for private network — self-signed SSL"
+      echo "  EMAIL               Email for Let's Encrypt notifications (optional)"
+      echo "  DOABLE_PREBUILT     Set to 'true' to pull from ghcr.io (same as --prebuilt)"
+      echo "  DOABLE_IMAGE_TAG    Image tag to pull (default: latest; use v1.2.3 to pin)"
       echo ""
       echo "If neither DOMAIN nor HOST is set, defaults to localhost with self-signed SSL."
       exit 0
@@ -368,11 +381,18 @@ if command -v ufw &>/dev/null; then
   ok "Firewall: ports 22, 80, 443 open"
 fi
 
-# ─── Build and start ─────────────────────────────────────────────────────────
+# ─── Build (or pull) and start ────────────────────────────────────────────────
 echo ""
-info "Building and starting Docker containers..."
 cd "$PROJECT_DIR"
-docker compose -f "$COMPOSE_FILE" build
+if [[ "$COMPOSE_FILE" == *docker-compose.prod.yml ]]; then
+  info "Pulling pre-built images from ghcr.io (tag: ${DOABLE_IMAGE_TAG:-latest})..."
+  docker compose -f "$COMPOSE_FILE" pull
+  info "Starting containers..."
+else
+  info "Building Docker images from source (this takes ~5-10 minutes)..."
+  docker compose -f "$COMPOSE_FILE" build
+  info "Starting containers..."
+fi
 docker compose -f "$COMPOSE_FILE" up -d
 
 # Re-read the bootstrap token from .env in case .env already existed (operator
