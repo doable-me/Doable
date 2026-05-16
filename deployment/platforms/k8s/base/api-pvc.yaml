@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: api-projects
+  namespace: doable
+spec:
+  accessModes:
+    # ReadWriteOnce is fine for a single api replica.
+    # If you scale api to >1 replica, change this to ReadWriteMany and
+    # use an NFS/EFS/CephFS storage class that supports RWX.
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: api-thumbnails
+  namespace: doable
+spec:
+  accessModes:
+    # Same RWX note as api-projects above.
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

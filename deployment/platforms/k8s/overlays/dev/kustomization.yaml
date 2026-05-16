@@ -1,0 +1,90 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: doable
+
+# Dev overlay: single replica, smaller resource asks, no TLS (plain HTTP).
+# Replicas are already 1 in base, so no replica patch needed.
+# The main difference from base: TLS is disabled (ingress has no tls block)
+# and you can point app.example.com at a local LoadBalancer IP / port-forward.
+
+bases:
+  - ../../base
+
+# Override configmap values for dev (use http, localhost-style URLs).
+configMapGenerator:
+  - name: doable-config
+    namespace: doable
+    behavior: merge
+    literals:
+      - NEXT_PUBLIC_API_URL=http://app.example.com/api
+      - NEXT_PUBLIC_WS_URL=ws://app.example.com/ws
+      - NEXT_PUBLIC_APP_URL=http://app.example.com
+      - CORS_ORIGINS=http://app.example.com
+      - NODE_ENV=production
+
+# Patch: reduce resource limits for dev to save cluster quota.
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api
+        namespace: doable
+      spec:
+        template:
+          spec:
+            containers:
+              - name: api
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 256Mi
+                  limits:
+                    cpu: 250m
+                    memory: 512Mi
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ws
+        namespace: doable
+      spec:
+        template:
+          spec:
+            containers:
+              - name: ws
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 128Mi
+                  limits:
+                    cpu: 100m
+                    memory: 256Mi
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: web
+        namespace: doable
+      spec:
+        template:
+          spec:
+            containers:
+              - name: web
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 128Mi
+                  limits:
+                    cpu: 100m
+                    memory: 256Mi
+  # Dev ingress: no TLS block (plain HTTP).
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: doable
+        namespace: doable
+      spec:
+        tls: []

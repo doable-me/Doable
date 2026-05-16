@@ -1,0 +1,98 @@
+{
+  "name": "Doable",
+  "description": "Self-hostable AI-powered no-code app platform. Build apps with natural language.",
+  "repository": "https://github.com/doable-me/doable",
+  "logo": "https://github.com/doable-me/doable/raw/main/apps/web/public/logo.png",
+  "keywords": ["nocode", "ai", "platform", "monaco", "nextjs", "hono"],
+  "website": "https://doable.me",
+  "success_url": "/auth/register",
+  "stack": "container",
+  "image": "ghcr.io/doable-me/doable-api:latest",
+  "env": {
+    "JWT_SECRET": {
+      "description": "Signs JWT access + refresh tokens. Generate with: openssl rand -hex 32",
+      "generator": "secret"
+    },
+    "ENCRYPTION_KEY": {
+      "description": "Symmetric encryption for legacy column-encryption paths. Generate with: openssl rand -hex 32",
+      "generator": "secret"
+    },
+    "INTERNAL_SECRET": {
+      "description": "HMAC for internal api <-> ws auth on loopback. Generate with: openssl rand -hex 32",
+      "generator": "secret"
+    },
+    "DOABLE_KEK": {
+      "description": "Key-encryption-key for envelope-encrypted wizard-saved secrets. NEVER ROLL — rolling equals data loss. Generate with: openssl rand -base64 32",
+      "generator": "secret"
+    },
+    "INSTALL_BOOTSTRAP_TOKEN": {
+      "description": "Single-use signup token granting platform-owner on first signup. Generate with: openssl rand -hex 32",
+      "generator": "secret"
+    },
+    "INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT": {
+      "description": "ISO8601 UTC timestamp for token expiry (recommended: install time + 24h)",
+      "value": ""
+    },
+    "ANTHROPIC_API_KEY": { "description": "Anthropic Claude API key (optional). Pre-configures the wizard's AI step.", "required": false },
+    "OPENAI_API_KEY": { "description": "OpenAI API key (optional). Pre-configures the wizard's AI step.", "required": false },
+    "GEMINI_API_KEY": { "description": "Google Gemini API key (optional).", "required": false },
+    "MINIMAX_API_KEY": { "description": "MiniMax M2.7 API key (optional).", "required": false },
+    "OPENROUTER_API_KEY": { "description": "OpenRouter aggregator key (optional).", "required": false },
+    "TOGETHER_API_KEY": { "description": "Together AI key (optional).", "required": false },
+    "FIREWORKS_API_KEY": { "description": "Fireworks AI key (optional).", "required": false },
+    "OPENCODE_ZEN_API_KEY": { "description": "OpenCode Zen key (optional).", "required": false },
+    "GROQ_API_KEY": { "description": "Groq key (optional).", "required": false },
+    "CEREBRAS_API_KEY": { "description": "Cerebras key (optional).", "required": false },
+    "DEEPSEEK_API_KEY": { "description": "DeepSeek key (optional).", "required": false },
+    "MISTRAL_API_KEY": { "description": "Mistral AI key (optional).", "required": false },
+    "COHERE_API_KEY": { "description": "Cohere key (optional).", "required": false },
+    "XAI_API_KEY": { "description": "xAI Grok key (optional).", "required": false },
+    "PERPLEXITY_API_KEY": { "description": "Perplexity key (optional).", "required": false },
+    "DEEPINFRA_API_KEY": { "description": "DeepInfra key (optional).", "required": false },
+    "NVIDIA_API_KEY": { "description": "NVIDIA NIM key (optional).", "required": false },
+    "MOONSHOT_API_KEY": { "description": "Moonshot/Kimi key (optional).", "required": false },
+    "ZHIPU_API_KEY": { "description": "Zhipu GLM key (optional).", "required": false },
+    "GITHUB_CLIENT_ID": { "description": "GitHub OAuth signin client ID (optional).", "required": false },
+    "GITHUB_CLIENT_SECRET": { "description": "GitHub OAuth client secret (optional).", "required": false },
+    "GOOGLE_CLIENT_ID": { "description": "Google OAuth client ID (optional).", "required": false },
+    "GOOGLE_CLIENT_SECRET": { "description": "Google OAuth client secret (optional).", "required": false },
+    "STRIPE_SECRET_KEY": { "description": "Stripe API key for paid plans (optional).", "required": false },
+    "STRIPE_WEBHOOK_SECRET": { "description": "Stripe webhook signing secret (optional).", "required": false },
+    "NEXT_PUBLIC_API_URL": {
+      "description": "Public URL for the API (e.g. https://yourapp.com/api). Will be sed-rewritten into the web bundle at startup.",
+      "required": true
+    },
+    "NEXT_PUBLIC_WS_URL": {
+      "description": "Public WebSocket URL (e.g. wss://yourapp.com/ws).",
+      "required": true
+    },
+    "NEXT_PUBLIC_APP_URL": {
+      "description": "Public root URL (e.g. https://yourapp.com).",
+      "required": true
+    },
+    "CORS_ORIGINS": {
+      "description": "Comma-separated list of accepted CORS origins (usually = NEXT_PUBLIC_APP_URL).",
+      "required": true
+    },
+    "NODE_ENV": {
+      "description": "Node environment.",
+      "value": "production"
+    }
+  },
+  "addons": [
+    {
+      "plan": "heroku-postgresql:essential-0",
+      "as": "DATABASE",
+      "options": {
+        "version": "16"
+      }
+    }
+  ],
+  "scripts": {
+    "postdeploy": "node /app/services/api/dist/db/migrate.js"
+  },
+  "formation": {
+    "web": { "quantity": 1, "size": "basic" }
+  },
+  "buildpacks": []
+}

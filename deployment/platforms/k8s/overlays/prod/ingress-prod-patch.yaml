@@ -1,0 +1,14 @@
+# Strategic merge patch: adds cert-manager annotation + TLS block to the base ingress.
+# Applied by overlays/prod/kustomization.yaml.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: doable
+  namespace: doable
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - app.example.com
+      secretName: doable-tls

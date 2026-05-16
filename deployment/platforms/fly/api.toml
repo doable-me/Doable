@@ -1,0 +1,52 @@
+app = "doable-api"
+primary_region = "iad"
+
+[build]
+  image = "ghcr.io/doable-me/doable-api:latest"
+
+[experimental]
+  auto_rollback = true
+
+# Run migrations before every deploy (Heroku-style release phase).
+# The migrate image's CMD runs services/api/src/db/migrate.ts; since api
+# also has that code, we can just invoke it from the same image instead
+# of pulling the migrate image separately.
+[deploy]
+  release_command = "node /app/services/api/dist/db/migrate.js"
+  strategy = "rolling"
+
+[env]
+  API_PORT = "4000"
+  API_HOST = "0.0.0.0"
+  WS_PORT = "4001"
+  WS_HOST = "0.0.0.0"
+  WS_INTERNAL_URL = "http://doable-ws.flycast:4001"
+  API_URL = "http://doable-api.flycast:4000"
+  NODE_ENV = "production"
+  PROJECTS_ROOT = "/data/projects"
+
+# Internal-only service (no public IP) — only doable-web reaches this via
+# flycast. The browser hits api via doable-web's /api proxy path.
+[[services]]
+  internal_port = 4000
+  protocol = "tcp"
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 4000
+
+[checks]
+  [checks.health]
+    type = "http"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/health"
+
+[mounts]
+  source = "doable_api_data"
+  destination = "/data"

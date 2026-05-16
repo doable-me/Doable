@@ -1,135 +1,117 @@
-services:
-  # --- PostgreSQL 16 with pgvector ---
-  - type: pserv
-    name: postgres
-    plan: starter
-    env: docker
-    dockerfilePath: ""
-    repo: https://github.com/doable-me/doable
-    envVars:
-      - key: POSTGRES_USER
-        value: doable
-      - key: POSTGRES_PASSWORD
-        generateValue: true
-      - key: POSTGRES_DB
-        value: doable
-    disk:
-      name: pgdata
-      mountPath: /var/lib/postgresql/data
-      sizeGB: 10
-
-  # --- API server (Hono + Node.js) ---
-  - type: web
-    name: api
-    plan: starter
-    env: docker
-    dockerfilePath: docker/Dockerfile
-    dockerContext: .
-    dockerTarget: api
-    repo: https://github.com/doable-me/doable
-    healthCheckPath: /health
-    envVars:
-      - key: DATABASE_URL
-        fromService:
-          type: pserv
-          name: postgres
-          property: connectionString
-      - key: JWT_SECRET
-        generateValue: true
-      - key: ENCRYPTION_KEY
-        generateValue: true
-      - key: INTERNAL_SECRET
-        generateValue: true
-      - key: API_PORT
-        value: "4000"
-      - key: API_HOST
-        value: "0.0.0.0"
-      - key: NODE_ENV
-        value: production
-      - key: CORS_ORIGINS
-        fromService:
-          type: web
-          name: web
-          property: host
-      - key: WS_INTERNAL_URL
-        fromService:
-          type: pserv
-          name: ws
-          property: hostport
-
-  # --- WebSocket server (Yjs CRDT) ---
-  - type: pserv
-    name: ws
-    plan: starter
-    env: docker
-    dockerfilePath: docker/Dockerfile
-    dockerContext: .
-    dockerTarget: ws
-    repo: https://github.com/doable-me/doable
-    envVars:
-      - key: DATABASE_URL
-        fromService:
-          type: pserv
-          name: postgres
-          property: connectionString
-      - key: JWT_SECRET
-        fromService:
-          type: web
-          name: api
-          envVarKey: JWT_SECRET
-      - key: INTERNAL_SECRET
-        fromService:
-          type: web
-          name: api
-          envVarKey: INTERNAL_SECRET
-      - key: WS_PORT
-        value: "4001"
-      - key: WS_HOST
-        value: "0.0.0.0"
-      - key: API_URL
-        fromService:
-          type: web
-          name: api
-          property: hostport
-      - key: NODE_ENV
-        value: production
-
-  # --- Web frontend (Next.js) ---
-  - type: web
-    name: web
-    plan: starter
-    env: docker
-    dockerfilePath: docker/Dockerfile
-    dockerContext: .
-    dockerTarget: web
-    repo: https://github.com/doable-me/doable
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: api
-          property: host
-      - key: NEXT_PUBLIC_WS_URL
-        fromService:
-          type: pserv
-          name: ws
-          property: host
-      - key: NEXT_PUBLIC_APP_URL
-        fromService:
-          type: web
-          name: web
-          property: host
-      - key: HOSTNAME
-        value: "0.0.0.0"
-      - key: PORT
-        value: "3000"
-      - key: NODE_ENV
-        value: production
+# Render Blueprint for Doable
+# Spec ref: https://render.com/docs/blueprint-spec
+#
+# Auto-detected on Connect to a public GitHub repo (Dashboard → New → Blueprint).
+# Render reads this file, prompts for any env vars with sync: false, then provisions:
+# managed PG → api (preDeployCommand runs migrate) → ws → web.
+#
+# All app images come from ghcr.io (built by .github/workflows/publish-docker-images.yml).
+# Source-build path is intentionally NOT used — Render's free/Starter tier OOMs during the
+# Next.js build. See doablechore/PlatformTemplatesPRD/04-render.md.
 
 databases:
   - name: doable-db
-    plan: starter
     databaseName: doable
     user: doable
-    postgresMajorVersion: "16"
-    ipAllowList: []
+    plan: starter   # bump to standard for >50 users
+    postgresMajorVersion: 16
+    ipAllowList: []   # internal-only
+
+services:
+  # --- API server (Hono REST) ---
+  - type: web
+    name: doable-api
+    runtime: image
+    image:
+      url: ghcr.io/doable-me/doable-api:latest
+    plan: starter   # 512MB — bump to standard (2GB) for >25 users
+    region: oregon
+    healthCheckPath: /health
+    # preDeployCommand runs migrations before every deploy. Idempotent (every migration
+    # is CREATE … IF NOT EXISTS, so re-runs are no-ops).
+    preDeployCommand: node /app/services/api/dist/db/migrate.js
+    envVars:
+      - { key: DATABASE_URL, fromDatabase: { name: doable-db, property: connectionString } }
+      - { key: NODE_ENV, value: production }
+      - { key: API_PORT, value: "4000" }
+      - { key: API_HOST, value: "0.0.0.0" }
+      - { key: WS_PORT, value: "4001" }
+      - { key: WS_HOST, value: "0.0.0.0" }
+      - { key: API_URL, value: http://doable-api:4000 }
+      - { key: WS_INTERNAL_URL, value: http://doable-ws:4001 }
+      # Public URLs — operator fills these once the Render-assigned hostname is known.
+      # Format: https://<service-name>-<hash>.onrender.com
+      - { key: NEXT_PUBLIC_API_URL, sync: false }
+      - { key: NEXT_PUBLIC_WS_URL,  sync: false }
+      - { key: NEXT_PUBLIC_APP_URL, sync: false }
+      - { key: CORS_ORIGINS,        sync: false }
+      # Required secrets — Render auto-generates on first deploy.
+      - { key: JWT_SECRET,             generateValue: true }
+      - { key: ENCRYPTION_KEY,         generateValue: true }
+      - { key: INTERNAL_SECRET,        generateValue: true }
+      - { key: DOABLE_KEK,             generateValue: true }
+      - { key: INSTALL_BOOTSTRAP_TOKEN, generateValue: true }
+      - { key: INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT, sync: false }   # operator: ISO8601 now+24h
+      # 19 AI provider env-seeds — leave any blank to skip (configure via wizard later).
+      - { key: ANTHROPIC_API_KEY,    sync: false }
+      - { key: OPENAI_API_KEY,       sync: false }
+      - { key: GEMINI_API_KEY,       sync: false }
+      - { key: MINIMAX_API_KEY,      sync: false }
+      - { key: OPENROUTER_API_KEY,   sync: false }
+      - { key: TOGETHER_API_KEY,     sync: false }
+      - { key: FIREWORKS_API_KEY,    sync: false }
+      - { key: OPENCODE_ZEN_API_KEY, sync: false }
+      - { key: GROQ_API_KEY,         sync: false }
+      - { key: CEREBRAS_API_KEY,     sync: false }
+      - { key: DEEPSEEK_API_KEY,     sync: false }
+      - { key: MISTRAL_API_KEY,      sync: false }
+      - { key: COHERE_API_KEY,       sync: false }
+      - { key: XAI_API_KEY,          sync: false }
+      - { key: PERPLEXITY_API_KEY,   sync: false }
+      - { key: DEEPINFRA_API_KEY,    sync: false }
+      - { key: NVIDIA_API_KEY,       sync: false }
+      - { key: MOONSHOT_API_KEY,     sync: false }
+      - { key: ZHIPU_API_KEY,        sync: false }
+      # Optional OAuth + Stripe
+      - { key: GITHUB_CLIENT_ID,      sync: false }
+      - { key: GITHUB_CLIENT_SECRET,  sync: false }
+      - { key: GOOGLE_CLIENT_ID,      sync: false }
+      - { key: GOOGLE_CLIENT_SECRET,  sync: false }
+      - { key: STRIPE_SECRET_KEY,     sync: false }
+      - { key: STRIPE_WEBHOOK_SECRET, sync: false }
+
+  # --- WebSocket server (Yjs CRDT) ---
+  - type: pserv
+    name: doable-ws
+    runtime: image
+    image:
+      url: ghcr.io/doable-me/doable-ws:latest
+    plan: starter
+    region: oregon
+    envVars:
+      - { key: DATABASE_URL, fromDatabase: { name: doable-db, property: connectionString } }
+      - { key: NODE_ENV, value: production }
+      - { key: WS_PORT, value: "4001" }
+      - { key: WS_HOST, value: "0.0.0.0" }
+      - { key: API_URL, value: http://doable-api:4000 }
+      - { key: JWT_SECRET,      fromService: { type: web, name: doable-api, envVarKey: JWT_SECRET } }
+      - { key: INTERNAL_SECRET, fromService: { type: web, name: doable-api, envVarKey: INTERNAL_SECRET } }
+
+  # --- Web frontend (Next.js) ---
+  - type: web
+    name: doable-web
+    runtime: image
+    image:
+      url: ghcr.io/doable-me/doable-web:latest
+    plan: starter
+    region: oregon
+    envVars:
+      # Web's NEXT_PUBLIC_* are rewritten at container startup by docker/web-runtime-entrypoint.sh
+      # (placeholder strings in the bundle are sed-replaced). The values below are what the
+      # browser sees — they MUST match doable-api's NEXT_PUBLIC_* above.
+      - { key: NEXT_PUBLIC_API_URL, sync: false }
+      - { key: NEXT_PUBLIC_WS_URL,  sync: false }
+      - { key: NEXT_PUBLIC_APP_URL, sync: false }
+      - { key: HOSTNAME, value: "0.0.0.0" }
+      - { key: PORT, value: "3000" }
+      - { key: NODE_ENV, value: production }

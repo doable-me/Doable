@@ -3,7 +3,7 @@
 This file covers vulnerability reporting and supported versions. For
 the **operational security model** (sandbox layers, per-project UID
 isolation, network firewalling, runtime hardening, env knobs, etc.),
-see [`README-DEPLOY.md`](README-DEPLOY.md) — specifically:
+see [`deployment/README.md`](deployment/README.md) — specifically:
 
 - **§7 Architecture summary → Security model** — the 3-layer sandbox
   (build / dev preview / production runtime)
@@ -20,7 +20,7 @@ see [`README-DEPLOY.md`](README-DEPLOY.md) — specifically:
 The summary: **sandbox is on by default**. AI-generated user code
 runs as a per-project Linux UID with kernel-level network egress
 blocked except via Squid (npm/PyPI allow-list). Same posture on
-bare-metal install (`setup-server.sh`) and `docker-compose.secure.yml`.
+bare-metal install (`deployment/server-setup.sh`) and `deployment/docker/docker-compose.secure.yml`.
 Both are idempotent — re-running them only fills in what's missing.
 
 ## Supported Versions

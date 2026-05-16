@@ -21,7 +21,10 @@ FINDINGS.md
 
 # Dev/QA scaffolding — not part of the runtime image
 testcases
-deploy/
+deployment/apparmor/                  # server-side apparmor profiles, not for the image
+deployment/platforms/                  # PaaS-specific manifests (fly/, k8s/) — not needed in image
+deployment/server-setup.sh             # VPS provisioning, not for the image
+deployment/README.md                   # operator docs
 .github/
 .devcontainer/
 

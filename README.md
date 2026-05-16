@@ -20,18 +20,43 @@ Choose your path:
 
 ```bash
 # Try it locally in 60 seconds (Docker, no domain, no API keys required to boot)
-git clone https://github.com/doable-me/doable.git && cd doable && ./docker/setup.sh
+git clone https://github.com/doable-me/doable.git && cd doable && ./deployment/docker/setup.sh
 
 # Local dev (Node 22, pnpm, Postgres 16)
 pnpm install && cp .env.example .env && pnpm db:migrate && pnpm dev
 
 # Production VPS (Ubuntu 22.04/24.04 with a Cloudflare managed domain)
-./setup-server.sh
+./deployment/server-setup.sh
 ```
 
 ### After first launch
 
 Open http://localhost:3000, sign up. The first account becomes the platform owner automatically. You'll be guided through a 5 step setup wizard for AI keys and integrations. No SSH, no SQL, no editing .env files.
+
+---
+
+## Deploy in one click
+
+Doable ships with manifests for every major full-stack PaaS. Pick the one that matches where you already host things — the same prebuilt images from `ghcr.io/doable-me/doable-*` back every path, so the deploy is ~30s once secrets are filled in.
+
+[![Deploy to DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/doable-me/doable/tree/main)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/doable-me/doable)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/doable-me/doable)
+[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/doable-me/doable)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/doable-me/doable?quickstart=1)
+
+| Platform | Path | Manifest |
+|---|---|---|
+| **Coolify** (self-hosted) | Point at `deployment/docker/docker-compose.prod.yml` | [`deployment/docker/coolify.md`](deployment/docker/coolify.md) |
+| **DigitalOcean App Platform** | 1-click button above | [`.do/app.yaml`](.do/app.yaml) |
+| **Render** | 1-click button above | [`render.yaml`](render.yaml) |
+| **Railway** | 1-click button above | [`railway.json`](railway.json) |
+| **Fly.io** | `bash deploy-templates/fly/migrate.sh` then `fly deploy` per app | [`deploy-templates/fly/DEPLOY.md`](deploy-templates/fly/DEPLOY.md) |
+| **Kubernetes** | `kubectl apply -k deploy-templates/k8s/base/` | [`deploy-templates/k8s/README.md`](deploy-templates/k8s/README.md) |
+| **Heroku** | 1-click button above | [`app.json`](app.json) |
+| **GitHub Codespaces** | 1-click button above | [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) |
+
+> **Not supported:** Vercel, Netlify, Cloudflare Pages, AWS Amplify (frontend-only mode), GitHub Pages, Surge, Firebase Hosting. Doable's api/ws/web are tightly coupled — splitting them across hosts adds latency, JWT routing complexity, and CORS pain for no operator benefit.
 
 ---
 
@@ -96,7 +121,7 @@ Doable itself (minus third party integrations) can be deployed and used complete
 
 ```bash
 # Private network / air gapped
-HOST=192.168.1.50 ./docker/setup.sh
+HOST=192.168.1.50 ./deployment/docker/setup.sh
 ```
 
 Uses self signed SSL. All services stay on `127.0.0.1`. Point it at Ollama, LM Studio, vLLM, or any local model server and you have a fully private AI app builder with zero internet dependency.
@@ -171,7 +196,7 @@ mcp-servers/          File builders (PPTX, XLSX, PDF, Markdown)
 ## Security
 
 Doable runs untrusted AI generated user code on a shared host. The
-sandbox is layered and **on by default**. `setup-server.sh` and
+sandbox is layered and **on by default**. `deployment/server-setup.sh` and
 `docker-compose.secure.yml` provision every primitive automatically:
 
 - **Per project Linux UID** for every dev preview AND build/publish
@@ -192,10 +217,10 @@ sandbox is layered and **on by default**. `setup-server.sh` and
   vault for OAuth tokens / integration secrets.
 - **Idle eviction** where dev previews get killed after 15 min idle to
   bound multi tenant memory.
-- **Idempotent installer** so you can re run `setup-server.sh` on existing
+- **Idempotent installer** so you can re run `deployment/server-setup.sh` on existing
   hosts to backfill missing primitives without breaking state.
 
-See [README-DEPLOY.md](README-DEPLOY.md) for the full security
+See [deployment/README.md](deployment/README.md) for the full security
 model, including the Docker secure parity story and an operator lever
 cheatsheet (every env var, default, and when to flip it).
 
@@ -214,13 +239,13 @@ Vulnerability reports: [SECURITY.md](SECURITY.md).
 ### Docker + nginx (recommended)
 
 ```bash
-DOMAIN=app.example.com EMAIL=admin@example.com ./docker/setup.sh
+DOMAIN=app.example.com EMAIL=admin@example.com ./deployment/docker/setup.sh
 ```
 
 ### Bare metal
 
 ```bash
-./setup-server.sh
+./deployment/server-setup.sh
 ```
 
 Installs Node.js 22, pnpm, PostgreSQL 16, Caddy, Cloudflare Tunnel, UFW firewall, fail2ban, and systemd services on a fresh Ubuntu server.

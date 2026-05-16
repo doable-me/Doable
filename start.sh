@@ -18,7 +18,7 @@ cd "$(dirname "$0")"
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # Ensure all scripts are executable (git on Windows can strip +x)
-chmod +x watchdog.sh start.sh setup-server.sh 2>/dev/null || true
+chmod +x watchdog.sh start.sh deployment/server-setup.sh 2>/dev/null || true
 
 # Run database migrations before starting services
 echo "Running database migrations..."
@@ -43,12 +43,12 @@ tmux send-keys -t "$SESSION:api" "pnpm dev:api" Enter
 # The `postbuild` script in apps/web/package.json copies .next/static and public/
 # into the standalone output automatically — no manual step required.
 #
-# Self-heal root-owned artifacts: setup-server.sh skips .next/.turbo in its
+# Self-heal root-owned artifacts: deployment/server-setup.sh skips .next/.turbo in its
 # chown step (perf), so any manual root build (debugging, ad-hoc pnpm run as
 # root) leaves stale files that the doable user cannot remove. Without
 # sudo-chown first, `rm -rf .next .turbo` errors silently, build aborts,
 # port 3000 stays down — surfaced to users as bad gateway on /dashboard.
-# The sudoers entry installed by setup-server.sh allows exactly:
+# The sudoers entry installed by deployment/server-setup.sh allows exactly:
 #   sudo -n chown -R doable\:doable INSTALL_DIR/apps/web/.next
 #   sudo -n chown -R doable\:doable INSTALL_DIR/apps/web/.turbo
 tmux new-window -t "$SESSION" -n "web" -c "$(pwd)/apps/web"
@@ -56,7 +56,7 @@ tmux new-window -t "$SESSION" -n "web" -c "$(pwd)/apps/web"
 # Turbopack races inside the PrivateTmp/PrivateUsers namespace of doable.service
 # and intermittently aborts with
 #   ENOENT: ... .next/static/<hash>/_buildManifest.js.tmp.<id>
-# wiping the .next that Step 9 of setup-server.sh just produced. The standalone
+# wiping the .next that Step 9 of deployment/server-setup.sh just produced. The standalone
 # server is self-contained, so on plain restarts we run it directly. Force a
 # rebuild by removing apps/web/.next/standalone before invoking start.sh.
 tmux send-keys -t "$SESSION:web" "cd $(pwd)/apps/web && (sudo -n chown -R doable:doable $(pwd)/apps/web/.next 2>/dev/null || true) && (sudo -n chown -R doable:doable $(pwd)/apps/web/.turbo 2>/dev/null || true) && { [ -f .next/standalone/apps/web/server.js ] || { rm -rf .next .turbo && pnpm --filter web build; }; } && PORT=3000 HOSTNAME=${WEB_HOSTNAME} node .next/standalone/apps/web/server.js" Enter

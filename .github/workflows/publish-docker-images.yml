@@ -13,7 +13,7 @@
 #
 # The web image is built WITHOUT NEXT_PUBLIC_* build args so its client
 # bundle keeps the __DOABLE_*_URL__ placeholders. The container's runtime
-# entrypoint (docker/web-runtime-entrypoint.sh) sed-replaces them at start
+# entrypoint (deployment/docker/web-runtime-entrypoint.sh) sed-replaces them at start
 # with the operator's actual URLs from env. One image works for any URL.
 # ==============================================================================
 
@@ -74,7 +74,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile
+          file: deployment/docker/Dockerfile
           target: ${{ matrix.target }}
           push: true
           tags: ${{ steps.tags.outputs.tags }}

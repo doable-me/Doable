@@ -67,6 +67,9 @@ Cargo.lock
 .spec/
 **/.spec/
 
+# Playwright MCP console captures (may contain real session data)
+.playwright-mcp/
+
 # TypeScript build info
 *.tsbuildinfo
 
