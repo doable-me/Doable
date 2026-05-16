@@ -297,7 +297,6 @@ rm /var/backups/doable/env-<old-timestamp>
 
 ## Cross-References
 
-- `servertodo/14-ai-messages-encryption.md` — ai_messages column-level encryption design
-- `setup-v3/backfill-ai-messages-encryption.sh` — backfill script for existing plaintext rows
 - `services/api/src/lib/envelope-crypto.ts` — envelope-v1 per-workspace DEK
   (separate from the global ENCRYPTION_KEY; not rotated by this script)
+- `services/api/src/lib/secrets.ts` — runtime secret loading + validation

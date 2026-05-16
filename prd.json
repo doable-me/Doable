@@ -1,104 +1,157 @@
 {
-  "task": "Ralph (2026-05-16): Prove Docker-on-Hetzner repeat-install recipe + zap every fresh-install bug. Server #2987905. Pre-seed MiniMax M2.7. Keep wizard at 4 steps (no 'create first app' gate). Run smoke harness; fix any failures at root cause until 0 fail.",
+  "task": "Ralph (2026-05-16 evening, R19): Two-part move-and-document. (1) git mv 5 internal PRD/planning dirs (SandboxAgnosticSandboxingPRD, devframeworkPRD, secureIntegrationsPRD, skillsPRD, servertodo) from the public doable repo to ../doablechore/ (already exists as internal-cruft dump). (2) Create a new PlatformTemplatesPRD/ in the doable repo with one detailed markdown file per supported deployment platform — full env-var contracts, deploy steps, gotchas. Full-stack platforms only (no Vercel/Netlify split). Skip mid-stage doctest deltas, focus on landing the full PRD in one batch.",
   "stories": [
     {
-      "id": "US-API-01",
-      "title": "Robot API discover works with corrected #ws+ credentials",
+      "id": "US-MOVE-01",
+      "title": "Move 5 internal PRD/planning dirs from doable/ to ../doablechore/",
       "passes": true,
       "acceptanceCriteria": [
-        "scripts/hetzner-provision.ps1 -Action discover -ServerNumber 2987905 returned HTTP 200, ServerIp=95.216.8.180, Dc=HEL1-DC2, Status=ready",
-        "Discovered IP held only in session vars; never written to disk"
+        "git mv runs cleanly for SandboxAgnosticSandboxingPRD, devframeworkPRD, secureIntegrationsPRD, skillsPRD, servertodo — destination = ../doablechore/<name>/",
+        "Repo-root `ls` no longer lists any of those 5 dirs",
+        "../doablechore/ contains all 5 dirs with their full contents preserved",
+        "git status shows the moves as renames (not delete + add) so history is preserved",
+        "Grep across services/ apps/ packages/ scripts/ docker/ — confirm no source file references any of the moved paths (no broken imports, no broken doc links)"
       ]
     },
     {
-      "id": "US-KEY-01",
-      "title": "SSH keypair on Robot account + working SSH into rescue",
+      "id": "US-PRD-INDEX-01",
+      "title": "Create PlatformTemplatesPRD/_INDEX.md — top-level overview + scope decisions",
       "passes": true,
       "acceptanceCriteria": [
-        "itdept.pub (RSA, fp a8:f0:c6:55:41:af:42:57:71:7e:e9:48:f9:d7:c7:9e) confirmed in Robot keys as `rsa-key-20190626`",
-        "doable-hetzner-test (ED25519, fp 68:6f:c9:85:cb:56:1e:0f:4c:90:1d:01:58:35:75:4f) also present in Robot keys",
-        "Rescue arming POST /boot/2987905/rescue accepted the ED25519 fingerprint and the itdept key both unlocked the rescue session"
+        "PlatformTemplatesPRD/_INDEX.md exists with: (a) one-paragraph scope statement (full-stack platforms only, no split frontend hosting), (b) table of contents linking the 9 per-platform docs + 1 baseline doc + 1 release-pipeline doc, (c) explicit list of platforms we DO NOT support and why",
+        "Doc references the canonical env contract (DOABLE_KEK, JWT_SECRET, ENCRYPTION_KEY, INTERNAL_SECRET, INSTALL_BOOTSTRAP_TOKEN, all 19 AI provider env vars, OAuth + Stripe optionals) and points readers at 00-baseline.md for the source of truth"
       ]
     },
     {
-      "id": "US-CYCLE-01",
-      "title": "Full rescue → installimage → reboot cycle completes on #2987905",
+      "id": "US-PRD-BASELINE-01",
+      "title": "Create PlatformTemplatesPRD/00-baseline.md — shared env contract + image references",
       "passes": true,
       "acceptanceCriteria": [
-        "POST /reset/2987905 type=hw returned 200 and box came back on port 22 within 3 minutes in rescue mode (Debian 12 bookworm, kernel 6.12.67)",
-        "/root/.oldroot/nfs/install/installimage -a -c /autosetup completed with exit 0 (Ubuntu 24.04.3 LTS via /root/images/Ubuntu-2404-noble-amd64-base.tar.gz)",
-        "Post-install reboot brought up Ubuntu 24.04.3 LTS, kernel 6.8.0-100-generic, 2x NVMe RAID1 (md0=/boot, md1=vg0 with root/swap/data LVs)"
+        "Documents the FULL env-var contract: required secrets (JWT_SECRET, ENCRYPTION_KEY, INTERNAL_SECRET, DOABLE_KEK, POSTGRES_PASSWORD) + how to generate each + bootstrap (INSTALL_BOOTSTRAP_TOKEN/EXPIRES_AT) + AI seeds (all 19 with their seedAiProviderFromEnv.ts baseUrls) + OAuth/Stripe optionals",
+        "Documents the 4 ghcr.io image names + tag scheme (ghcr.io/doable-me/doable-{api,ws,web,migrate}:{vX.Y.Z,latest})",
+        "Documents the NEXT_PUBLIC_* runtime-placeholder mechanism (__DOABLE_API_URL__ → sed at startup) so per-platform docs can reference it without re-explaining",
+        "Documents the postgres + migrate + api/ws/web start ordering (migrate must run to completion before api/ws; web depends on api + ws being up)",
+        "States our network security invariant (services bind 127.0.0.1 only; one fronting proxy/ingress takes 80/443)"
       ]
     },
     {
-      "id": "US-DEPLOY-01",
-      "title": "Doable deploys via docker/setup.sh on the freshly-installed server",
+      "id": "US-PRD-COOLIFY-01",
+      "title": "Create PlatformTemplatesPRD/01-coolify.md — Coolify self-hosted PaaS",
       "passes": true,
       "acceptanceCriteria": [
-        "git archive HEAD | tar shipped 3112 files into /root/doable on the box",
-        "docker/setup.sh in HOST mode generated docker/.env (with DOABLE_KEK, JWT, ENCRYPTION_KEY, INTERNAL_SECRET, INSTALL_BOOTSTRAP_TOKEN), installed nginx + self-signed cert, ufw-allowed 22/80/443",
-        "docker compose up -d brought postgres + migrate + api + ws + web; migrate applied 116 migrations; all containers reached healthy/running",
-        "curl https://95.216.8.180/api/health returns 200 {\"status\":\"healthy\",...}",
-        "curl https://95.216.8.180/ returns 200 HTML (Next.js)"
+        "Documents Coolify install path: point Coolify's Docker Compose source at docker/docker-compose.prod.yml (pull from ghcr.io)",
+        "Documents Coolify-specific tweaks: env-secrets-via-UI mapping, persistent volume mounts, magic env handling for NEXT_PUBLIC_*",
+        "Documents the labels Coolify expects (if any) and whether we need a coolify.json manifest at all",
+        "Documents nginx/Traefik handling — Coolify provides its own reverse proxy, so our docker/setup.sh nginx is skipped; documents how Coolify exposes only ports 3000/4000/4001 internally and serves them at user-configured subdomains",
+        "Verification: 'as documented, an admin clicking through Coolify UI can reach the wizard at /setup without editing any compose YAML'"
       ]
     },
     {
-      "id": "US-BUG-01",
-      "title": "Root-cause + fix every blocker found during the live install",
+      "id": "US-PRD-DO-01",
+      "title": "Create PlatformTemplatesPRD/02-digitalocean.md — DO App Platform",
       "passes": true,
       "acceptanceCriteria": [
-        "BUG-DOCKER-KEK-001: docker/setup.sh now generates DOABLE_KEK + back-fills it on re-runs of pre-existing .env",
-        "BUG-DOCKER-MINIMAX-PASSTHROUGH-001: docker/docker-compose.yml api block now passes MINIMAX_API_KEY through (verified: env in container has the key)",
-        "BUG-DOCKER-AIKEYS-ENV-001: docker/setup.sh .env block now honors pre-exported ANTHROPIC/OPENAI/MINIMAX_API_KEY (was clobbering them with empty values)",
-        "BUG-DOCKER-ENVPERMS-001: docker/setup.sh chmods .env to 600 immediately on creation",
-        "BUG-DOCKER-WORKSPACE-MISSING-001: docker/Dockerfile deps stage now copies all 13 workspace package.json files (was missing 6 — caused api to crash with `Cannot find package 'zod' imported from packages/marketplace-bundle/src/manifest.ts`)",
-        "BUG-DOCKER-TMUX-BLINDSPOT-001: docker/tmux-entrypoint.sh now forwards tmux pane output to container stderr via `tmux pipe-pane`",
-        "BUG-DOCKER-NODE-ENV-HARDCODED-001: docker/docker-compose.yml NODE_ENV now interpolable via .env so QA can set NODE_ENV=development to satisfy the rate-limit fail-closed gate",
-        "BUG-DOCKER-RATE-LIMIT-PASSTHROUGH-001: docker/docker-compose.yml api block now passes RATE_LIMIT_DISABLED through for QA campaigns",
-        "BUG-INFRA-DISK-LAYOUT-001: autosetup updated to mount `data` LV at /var (not /var/lib/docker) — containerd snapshots also live on the data LV; recipe documents the bind-mount recovery for boxes already on the old layout"
+        "Documents the exact changes needed to .do/app.yaml to make it deploy successfully: add DOABLE_KEK, all 19 AI provider env vars (as SECRET-scoped envs), INSTALL_BOOTSTRAP_TOKEN, point service definitions at the ghcr.io images via image field (instead of dockerfile_path build path), add a migrate Job (DO supports pre-deploy jobs)",
+        "Documents the DO managed PostgreSQL wiring (DATABASE_URL=${doable-db.DATABASE_URL}) + pgvector caveat (DO doesn't ship pgvector — operator must enable extensions; document the SQL to run, or point at the alternative of running our pgvector image as a worker)",
+        "Documents the ports/routes mapping (web → /, api → /api, ws → /ws)",
+        "Documents the instance sizes recommended (basic-xs for api/ws, basic-xxs for web) and what fails on smaller plans (Next.js build OOMs)",
+        "Provides a 1-click 'Deploy to DO' button snippet + the matching app-spec validate command (`doctl apps spec validate .do/app.yaml`)"
       ]
     },
     {
-      "id": "US-SMOKE-01",
-      "title": "Full smoke harness passes against the deployed instance",
+      "id": "US-PRD-RAILWAY-01",
+      "title": "Create PlatformTemplatesPRD/03-railway.md — Railway",
       "passes": true,
       "acceptanceCriteria": [
-        "scripts/smoke-tests-docker.sh: 21/21 PASS, 0 FAIL on the live box",
-        "TC-SETUP-001 PASS — first registered user IS isPlatformAdmin:true",
-        "TC-SETUP-AI-001 PASS — fields_configured.ai_provider:true, ai_provider_key:true, ai_provider=custom, ai_provider_base_url set (proves MiniMax M2.7 pre-seed)",
-        "TC-AUTH-LOGIN-FIRST-001 PASS — smoke is idempotent: subsequent runs login as the persisted first admin instead of registering a non-admin second user",
-        "TC-ADMIN-FRAMEWORKS/FEATURES/USERS-001 PASS — admin endpoints reachable with the admin JWT",
-        "TC-AUTH-401-001..003 PASS — unauthenticated 401 wall confirmed"
+        "Documents Railway service-per-process model: 4 separate Railway services (api, ws, web, migrate-as-startupHook) sharing one Postgres plugin",
+        "Documents exact railway.json template content + which fields are required (build, deploy, healthcheckPath)",
+        "Documents the Railway 'Deploy from Image' option pointing at ghcr.io/doable-me/doable-<service>:latest (avoids Railway's 8GB build OOM on Next.js)",
+        "Documents env-var setup: which can be shared via Railway 'shared variables' (POSTGRES_PASSWORD, JWT_SECRET, INTERNAL_SECRET, DOABLE_KEK) vs which must be per-service (NEXT_PUBLIC_* for web)",
+        "Documents migration handling: Railway's lack of native pre-deploy hooks → use the migrate image as a one-shot 'startup migration' service or set up a release command",
+        "Provides a 'Deploy on Railway' button template URL"
       ]
     },
     {
-      "id": "US-WIZARD-01",
-      "title": "Setup wizard is admin-friendly (no 'create first app' gate)",
+      "id": "US-PRD-RENDER-01",
+      "title": "Create PlatformTemplatesPRD/04-render.md — Render",
       "passes": true,
       "acceptanceCriteria": [
-        "apps/web/src/app/setup/WizardShell.tsx is a 4-step flow (Welcome → AI Provider → Sign-in → Plans & Billing) — no 'create first app' step",
-        "apps/web/src/app/setup/steps/Step1Welcome.tsx copy explicitly says 'so your team can sign up and start building'",
-        "Banner from docker/setup.sh in the live run confirms the 4-step wizard"
+        "Documents Render's blueprint mechanism (render.yaml in repo root, auto-detected on connect)",
+        "Documents exact render.yaml template content: 3 web services (api/ws/web) + 1 cron/preDeployCommand for migrate + 1 managed Postgres",
+        "Documents Render's pgvector support (managed Postgres supports the extension; document the CREATE EXTENSION command and where to run it)",
+        "Documents image: ghcr.io/... usage so users can skip Render's source build",
+        "Documents the 'Deploy to Render' button URL pattern + the autoDeploy: false / true tradeoff"
       ]
     },
     {
-      "id": "US-RECIPE-01",
-      "title": "Recipe markdown captures every gotcha from the live run",
+      "id": "US-PRD-FLY-01",
+      "title": "Create PlatformTemplatesPRD/05-fly.md — Fly.io",
       "passes": true,
       "acceptanceCriteria": [
-        "C:/Users/gj/Documents/doable-hetzner-recipe.md updated with: rescue arm/reset re-try pattern; itdept-key recommendation over stale ed25519; installimage path nuances; /root/images vs /root/.oldroot path equivalence; PaidUntil-past-date OK if status=ready; private github.com/doable-me/doable 404 — use git-archive ship; setup.sh non-interactive only when HOST or DOMAIN set; data LV at /var (not /var/lib/docker) + bind-mount recovery for existing boxes",
-        "No real credentials embedded — placeholders only",
-        "Top-of-file rotation warning still present"
+        "Documents Fly's one-app-per-toml model: 3 separate apps (doable-api, doable-ws, doable-web) + 1 fly postgres cluster",
+        "Documents what goes in each fly.toml (build.image = ghcr.io/...) — three example tomls included",
+        "Documents Fly's internal DNS (.flycast / .internal) so api/ws/web can reach each other via doable-api.flycast etc., not via Docker compose network",
+        "Documents migration handling: `fly machine run` for one-shot migrate, OR a release_command in fly.toml",
+        "Documents Fly volumes for api_projects, api_thumbnails, ws_projects (per-region attached volumes)",
+        "Documents internal-only vs public services: api/ws should be internal (flycast), web should be public (with .fly.dev domain or custom)"
       ]
     },
     {
-      "id": "US-CYCLE-02",
-      "title": "Cycle is provably repeatable: second teardown + reinstall starts cleanly",
+      "id": "US-PRD-K8S-01",
+      "title": "Create PlatformTemplatesPRD/06-kubernetes.md — Kubernetes (Kustomize + Helm path)",
       "passes": true,
       "acceptanceCriteria": [
-        "POST /boot/2987905/rescue (round 2) returned HTTP 200 with itdept fingerprint authorized",
-        "POST /reset/2987905 type=hw (round 2) returned HTTP 200 and box rebooted (port 22 went DOWN then back UP within 3 minutes)",
-        "SSH with C:/Users/gj/Documents/itdept into round-2 rescue returned `Linux rescue 6.12.67 ... PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"` — confirms the box is in rescue ready for installimage round 2"
+        "Documents the K8s resources needed: 4 Deployments (api/ws/web/migrate-as-Job), 4 Services (api/ws/web/postgres ClusterIP), 1 StatefulSet for postgres (or external managed DB), 1 Ingress (default: nginx-ingress with cert-manager for TLS), 1 Secret per credential category, 1 ConfigMap per non-secret env block, PVCs for api_projects/api_thumbnails/ws_projects",
+        "Documents Kustomize base/overlays structure (k8s/base/ + k8s/overlays/{dev,prod}/) so operators can layer environment-specific config",
+        "Documents the Job spec for migrate (runs once on apply, blocks api/ws from starting via initContainer or a Helm hook)",
+        "Documents the readiness/liveness probes for each service (api: /health, web: /, ws: TCP)",
+        "Documents the secret-management options (in-cluster Secret, External Secrets Operator, sealed-secrets) and recommends one default",
+        "Documents the alternative Helm chart approach (charts/doable/) and which path we ship FIRST (recommend: Kustomize first, Helm later — fewer files, simpler templating)"
+      ]
+    },
+    {
+      "id": "US-PRD-HEROKU-01",
+      "title": "Create PlatformTemplatesPRD/07-app-json.md — Heroku-style app.json for 1-click buttons",
+      "passes": true,
+      "acceptanceCriteria": [
+        "Documents the role of app.json: it's the schema Heroku/Render/Railway/some-others auto-detect to populate their 'Deploy this app' button",
+        "Documents the exact app.json content: name, description, repository, success_url, all required env vars with descriptions + value templates + secret generators ({{generate jwt-secret}} pattern), buildpacks (or pointer to Dockerfile), addons (heroku-postgresql)",
+        "Documents how this overlaps with .do/app.yaml, railway.json, render.yaml (it doesn't conflict — app.json is the meta-deploy-button schema; each platform also reads its own native file)",
+        "Documents the README badge URLs the file enables: Deploy to Heroku, Deploy to Render, Deploy to Railway"
+      ]
+    },
+    {
+      "id": "US-PRD-CODESPACES-01",
+      "title": "Create PlatformTemplatesPRD/08-codespaces.md — GitHub Codespaces / VS Code Dev Containers",
+      "passes": true,
+      "acceptanceCriteria": [
+        "Documents the .devcontainer/devcontainer.json file we'll ship: Node 22 + pnpm + Postgres + Docker-in-Docker features, ports 3000/4000/4001/5432 forwarded, postCreateCommand running pnpm install + setup-server.sh in localhost mode",
+        "Documents the included VS Code extensions list (ESLint, Prettier, Tailwind, GitLens, etc.) — keep it tight",
+        "Documents the recommended Codespaces machine size (4-core/16GB minimum because of the Next.js build)",
+        "Documents how the 'Open in Codespaces' README badge works + the exact URL pattern",
+        "Documents what's DIFFERENT from local dev: the Codespaces forwarded-port URLs (which are HTTPS by default with a synthetic cert) and how that affects NEXT_PUBLIC_API_URL config"
+      ]
+    },
+    {
+      "id": "US-PRD-RELEASE-01",
+      "title": "Create PlatformTemplatesPRD/09-release-pipeline.md — ghcr.io publish workflow + versioning policy",
+      "passes": true,
+      "acceptanceCriteria": [
+        "Documents the .github/workflows/publish-docker-images.yml workflow's exact triggers (push of `v*.*.*` tag + manual workflow_dispatch) and matrix structure (api/ws/web/migrate)",
+        "Documents the versioning policy: semver, `latest` always tracks the most recent vX.Y.Z, never built off main HEAD between releases",
+        "Documents the post-publish checklist: make package public on ghcr.io (manual step in GitHub UI), update README badges, smoke-test the published image with docker/setup.sh --prebuilt",
+        "Documents the per-platform release impact: docs in this PRD reference :latest by default, but recommend pinning :vX.Y.Z in prod templates"
+      ]
+    },
+    {
+      "id": "US-PRD-CLEANUP-01",
+      "title": "Create PlatformTemplatesPRD/10-repo-cleanup.md — public-release cleanup checklist",
+      "passes": true,
+      "acceptanceCriteria": [
+        "Documents the .dockerignore audit findings and the specific lines that must be added (PRD planning dirs in chore now, scripts/r*-*.ts, CLAUDE.md, prd.json, progress.txt, etc.)",
+        "Documents the git remote cleanup (drop the codehub remote before publishing, OR keep as a private mirror)",
+        "Documents the secret-scan approach (grep for sk-, sk-ant-, sk-cp-, eyJ JWTs across the repo; document what to do if anything is found)",
+        "Documents the recommended pre-tag-release ritual: run the cleanup checklist, push, then `git tag v0.1.0` to trigger the publish workflow"
       ]
     }
   ]

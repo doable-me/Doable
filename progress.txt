@@ -270,3 +270,132 @@ keep the wizard at 4 steps (no "create first app" gate — admin is installing f
 - Audit agent flagged 8 additional concerns (CORS default mismatch, missing
   volumes for MCP/projects, etc.) — held for follow-up; not blockers for the
   cycle-proof goal.
+
+# Ralph round 19 — Repo cleanup + PlatformTemplatesPRD
+
+Started: 2026-05-16 late evening
+Status:  Stories complete; pending architect verification + cancel
+
+## Mission
+
+Move 5 internal-planning PRD dirs out of the public repo to ../doablechore/
+(a sibling cruft folder that already exists). In the same round, create a new
+PlatformTemplatesPRD/ inside the doable repo with full operator-facing detail
+for every supported deployment platform — what env vars, what manifest
+structure, what gotchas, what verification commands.
+
+## Stories shipped
+
+US-MOVE-01      Moved 5 dirs from doable/ to ../doablechore/ via fs mv (git mv
+                refuses cross-repo) → 5 deletions tracked in doable. One
+                user-facing doc link in docs/SECRET_ROTATION.md fixed
+                (broken: servertodo/14-..., setup-v3/backfill-...). Source
+                docstring comments in packages/dovault and packages/db
+                migrations left as historical breadcrumbs (deliberate, see
+                10-repo-cleanup.md section E).
+
+US-PRD-INDEX-01 PlatformTemplatesPRD/_INDEX.md — scope statement (full-stack
+                only), TOC across 12 docs, explicit "platforms we don't
+                support" table.
+
+US-PRD-BASELINE-01 PlatformTemplatesPRD/00-baseline.md — the canonical env
+                contract referenced by every per-platform doc. Service
+                topology diagram, image references, 5 required secrets +
+                bootstrap + 19 AI env vars + optional OAuth/Stripe + network
+                security invariant + NEXT_PUBLIC_* runtime-placeholder
+                mechanism + per-platform migration handling table + volume
+                contract.
+
+US-PRD-COOLIFY-01 PlatformTemplatesPRD/01-coolify.md — uses existing
+                docker/docker-compose.prod.yml (no new manifest), Coolify
+                connect flow, env-secrets-via-UI, Traefik replaces our nginx.
+
+US-PRD-DO-01    PlatformTemplatesPRD/02-digitalocean.md — full target
+                .do/app.yaml rewrite shape (image: ghcr.io/..., pre-deploy
+                migrate job, managed PG with pgvector via doctl, DOABLE_KEK +
+                19 AI keys + bootstrap + OAuth/Stripe all wired). Operator
+                flow + instance-size guidance + 1-click button.
+
+US-PRD-RAILWAY-01 PlatformTemplatesPRD/03-railway.md — service-per-process
+                model: 4 Railway services + shared Postgres (pgvector
+                container, not managed). railway.json + releaseCommand
+                migration pattern. 1-click button URL.
+
+US-PRD-RENDER-01 PlatformTemplatesPRD/04-render.md — Blueprint mechanism with
+                full render.yaml shape, preDeployCommand for migrations, all
+                env vars with generateValue: true / sync: false flags.
+                pgvector CREATE EXTENSION instructions.
+
+US-PRD-FLY-01   PlatformTemplatesPRD/05-fly.md — three fly.toml files
+                (api/ws/web), flycast internal DNS, release_command for
+                migrations, fly secrets set commands, pgvector enable steps,
+                public vs internal service distinction, cost estimate.
+
+US-PRD-K8S-01   PlatformTemplatesPRD/06-kubernetes.md — Kustomize-first
+                approach with base/ + overlays/{dev,prod}/ structure. All
+                resources enumerated (StatefulSet/postgres, Job/migrate,
+                Deployments+Services for api/ws/web, Ingress with
+                cert-manager). InitContainer pattern for migrate-then-api
+                ordering. Secret management options (in-cluster vs ESO vs
+                sealed-secrets). Helm chart as follow-up.
+
+US-PRD-HEROKU-01 PlatformTemplatesPRD/07-app-json.md — full app.json target
+                content with generator: secret for the 4 required secrets,
+                all 19 AI keys, NEXT_PUBLIC_* contract, postdeploy script
+                for migrations. Heroku multi-app caveat documented (Heroku
+                better suited to single-process — recommend Coolify/Fly
+                instead). README badges enabled.
+
+US-PRD-CODESPACES-01 PlatformTemplatesPRD/08-codespaces.md — devcontainer.json
+                + post-create.sh shape. Forwarded ports (3000/4000/4001/5432)
+                with portsAttributes. VS Code extensions list. hostRequirements:
+                4 CPU / 16 GB (justified by Next.js build memory). Codespaces
+                public-URL HTTPS caveat for NEXT_PUBLIC_*. Both
+                Codespaces-button URL formats. Prebuild workflow as follow-up.
+
+US-PRD-RELEASE-01 PlatformTemplatesPRD/09-release-pipeline.md — explains the
+                already-shipped publish-docker-images.yml workflow (triggers,
+                matrix, cache scopes, why NEXT_PUBLIC_* build args are
+                intentionally omitted). Versioning policy: semver, :latest =
+                most recent vX.Y.Z, never main HEAD. Post-publish checklist
+                including the "make packages public" UI step. Image size
+                baseline.
+
+US-PRD-CLEANUP-01 PlatformTemplatesPRD/10-repo-cleanup.md — actionable
+                checklist: tightened .dockerignore content (every line
+                justified), repo file deletions remaining after R19 (setup-v2/,
+                setup-v3/, scripts/r*-*.ts, testcases/evidence/), git remote
+                audit, secret/PII scan grep commands (JWT/AKIA/sk-*/SSH keys/
+                internal hostnames), .gitignore audit with check-ignore -v
+                verifications. Pre-tag ritual.
+
+## Total deliverable
+
+12 markdown files in PlatformTemplatesPRD/, 2311 lines total. Each per-platform
+doc carries: deliverable file name, full target content, operator flow,
+platform-specific gotchas, acceptance criteria. The baseline doc is the env
+contract single source of truth referenced by all per-platform docs.
+
+## Doablechore destination
+
+../doablechore/ now contains:
+- SandboxAgnosticSandboxingPRD/  (16 design docs)
+- devframeworkPRD/                (12 docs)
+- secureIntegrationsPRD/          (planning docs)
+- skillsPRD/                      (skill design)
+- servertodo/                     (server-side TODOs)
+Plus the prior cruft (push-codehub*, debug logs, etc.).
+
+doablechore/ is NOT a git repo — it's a workspace cruft folder. Files there
+are file-system only, not version controlled. If the user wants them under
+version control eventually, they can `git init` doablechore/ separately.
+
+## Carry-over
+
+- Repo file deletions (setup-v2/, setup-v3/, scripts/r10-*..r17-*) listed in
+  10-repo-cleanup.md Section B — deferred to a separate cleanup round so this
+  one stays focused on the PRD authorship.
+- .dockerignore tightening (10-repo-cleanup.md Section A) — defer to the
+  same cleanup round.
+- Source docstring references to the moved PRD dirs — intentionally left as
+  historical breadcrumbs (documented in 10-repo-cleanup.md Section E).
