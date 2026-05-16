@@ -31,19 +31,31 @@ $SSHCMD 'cd /root/doable 2>/dev/null && \
   systemctl stop nginx 2>/dev/null || true; \
   systemctl stop caddy 2>/dev/null || true; \
   rm -rf /root/doable; \
+  mkdir -p /root/doable; \
   echo "[done] cleanup"'
+
+echo "[r2-C] 2b. Pre-ship git archive HEAD into /root/doable"
+# doable-cli ships only the setup script over SSH (via bash -s -- stdin).
+# It does NOT ship the source tree — that's expected to live on the box
+# already, or the script's Step 7 will `git clone` it. For private-repo
+# test cycles (and any OSS user who wants offline / non-default fork
+# behavior), pre-staging the source here mirrors how cycle B + cycle A
+# bootstrap: `git archive HEAD | tar xf -`. Once the repo is public,
+# operators can rely on the script's clone fallback instead.
+git archive --format=tar HEAD | $SSHCMD 'cd /root/doable && tar xf -'
 
 echo "[r2-C] 3. Drive install via doable-cli (NO_TUNNEL + MINIMAX preconfigured)"
 # Run the CLI non-interactively. Output streams to console; the 13 phases
 # advance based on `Step N/13` markers in server-setup.sh's stdout.
 # --remote-env KEY=VAL forwards env vars into the remote bash -s -- prefix.
-"$CLI_BIN" \
+"$CLI_BIN" install \
   --host "${SERVER_IP}" \
   --user root \
   --env-name doable-test \
   --ssh-key "${SSH_KEY}" \
   --non-interactive \
   --skip-admin-user \
+  --headless \
   --remote-env "NO_TUNNEL=1" \
   --remote-env "NON_INTERACTIVE=1" \
   --remote-env "DOABLE_NO_TMUX=1" \
