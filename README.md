@@ -12,6 +12,10 @@
   The open source AI app builder. Describe what you want and Doable builds it, deploys it, and hosts it.
 </p>
 
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="Doable in action" width="800" />
+</p>
+
 ## Get Started
 
 Choose your path:
@@ -160,6 +164,10 @@ The frontend includes a provider setup wizard, in editor model picker, and admin
 ## Architecture
 
 Monorepo managed with [pnpm](https://pnpm.io) workspaces + [Turborepo](https://turbo.build).
+
+<p align="center">
+  <img src="docs/assets/architecture.png" alt="Doable architecture" width="800" />
+</p>
 
 ```
 apps/web/             Next.js 15 (React 19, Tailwind 4, Monaco Editor)
