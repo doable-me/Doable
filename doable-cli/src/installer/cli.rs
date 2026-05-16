@@ -59,6 +59,14 @@ pub struct Args {
     /// as if they had been exported on the box.
     #[arg(long = "remote-env", value_name = "KEY=VAL")]
     pub remote_env: Vec<String>,
+
+    /// Skip the TUI; stream phase + log events to stdout as plain text.
+    /// Required when stdout is piped (e.g. via `| tee log`) or when
+    /// driving the installer from CI / scripts where no terminal is
+    /// available. Implies --non-interactive. Auto-enabled when stdout
+    /// is detected as non-TTY.
+    #[arg(long, env = "DOABLE_HEADLESS", default_value_t = false)]
+    pub headless: bool,
 }
 
 impl Args {

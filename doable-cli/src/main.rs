@@ -76,6 +76,17 @@ async fn main() -> Result<()> {
 
     let cli = TopCli::parse();
 
+    // Headless installer path — bypasses TUI entirely so stdout can be
+    // safely piped (e.g. `doable install --headless ... | tee log`).
+    // Auto-enabled when stdout isn't a TTY (CI / `script` / cycle-C runs).
+    if let Some(TopCmd::Install(args)) = &cli.cmd {
+        use std::io::IsTerminal;
+        let stdout_is_tty = std::io::stdout().is_terminal();
+        if args.headless || !stdout_is_tty {
+            return installer::run_headless(args.clone()).await;
+        }
+    }
+
     term::install_panic_hook();
     let mut terminal = term::setup().context("setup terminal")?;
 
