@@ -21,8 +21,11 @@ export async function runAuthTests(
     const body = await res.json() as Record<string, unknown>;
     saveEvidence("TC-AU01", body, Object.fromEntries(res.headers.entries()));
     assert(res.status === 200, `Expected 200, got ${res.status}: ${JSON.stringify(body)}`);
-    loginToken       = (body.accessToken ?? body.token) as string ?? null;
-    refreshTokenValue = body.refreshToken as string ?? null;
+    // API returns { user, tokens: { accessToken, refreshToken } } in v0.1+;
+    // some legacy responses kept the fields flat — accept both shapes.
+    const tokens = (body.tokens as Record<string, unknown>) ?? body;
+    loginToken       = (tokens.accessToken ?? tokens.token) as string ?? null;
+    refreshTokenValue = tokens.refreshToken as string ?? null;
     loginUserId      = (body.user as Record<string, unknown>)?.id as string ?? null;
     assert(!!loginToken, "No accessToken in login response");
     pass("TC-AU01", "POST /api/auth/login returns accessToken");
@@ -67,7 +70,8 @@ export async function runAuthTests(
       const body = await res.json() as Record<string, unknown>;
       saveEvidence("TC-AU04", body, Object.fromEntries(res.headers.entries()));
       assert(res.status === 200, `Expected 200 from /auth/refresh, got ${res.status}: ${JSON.stringify(body)}`);
-      const newToken = (body.accessToken ?? body.token) as string ?? null;
+      const refreshTokens = (body.tokens as Record<string, unknown>) ?? body;
+      const newToken = (refreshTokens.accessToken ?? refreshTokens.token) as string ?? null;
       assert(!!newToken, "No accessToken in refresh response");
       loginToken = newToken; // use fresh token going forward
       pass("TC-AU04", "POST /api/auth/refresh returns new accessToken");
