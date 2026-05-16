@@ -80,13 +80,34 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:4001}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      # ─── AI provider env-seed passthrough ─────────────────────────────────
+      # Doable supports 50+ providers via the runtime wizard
+      # (packages/shared/src/ai/provider-catalog.ts). The vars below are the
+      # ones whose values get auto-seeded into platform_config on first boot
+      # by services/api/src/lib/seedAiProviderFromEnv.ts so the wizard's AI
+      # step shows "configured" without manual entry. Empty by default —
+      # operators set whichever of these they want as the install's default
+      # provider in docker/.env. Local providers (Ollama, LM Studio, vLLM, …)
+      # are configured at runtime via the wizard, no env var needed.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      # MiniMax M2.7 seed key — when the operator exports MINIMAX_API_KEY before
-      # docker compose up (typically via docker/setup.sh's .env), the API's
-      # seedAiProviderFromEnv() bootstraps it as the default custom provider so
-      # the setup wizard's AI step shows "configured" on first boot.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      TOGETHER_API_KEY: ${TOGETHER_API_KEY:-}
+      FIREWORKS_API_KEY: ${FIREWORKS_API_KEY:-}
+      OPENCODE_ZEN_API_KEY: ${OPENCODE_ZEN_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      COHERE_API_KEY: ${COHERE_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
+      DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      ZHIPU_API_KEY: ${ZHIPU_API_KEY:-}
       # QA-only rate-limit kill switch (services/api/src/middleware/rate-limit.ts:54).
       # Default empty = limits enforced. Set to "true" in docker/.env ONLY for
       # QA-bench runs on a test box — the rate-limit module fail-loudly warns

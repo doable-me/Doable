@@ -184,14 +184,39 @@ CORS_ORIGINS=${CORS}
 # ─── Redis (optional) ─────────────────────────────
 REDIS_URL=
 
-# ─── AI (set at least one for AI features) ────────
-# Honour pre-export: if the operator exported any of these before running
-# setup.sh, they get seeded into the .env (and the API container's
-# seedAiProviderFromEnv() then pre-fills the wizard's Step 2). Empty
-# otherwise — wizard can still configure at runtime.
+# ─── AI providers (set ANY ONE for first-boot pre-config) ─────────
+# Doable supports 50+ providers via the setup wizard at /setup (see
+# packages/shared/src/ai/provider-catalog.ts for the full list, including
+# Azure/Bedrock/Vertex/Ollama/LM Studio/etc.). The keys below are the ones
+# whose env vars get seeded into the wizard automatically by
+# services/api/src/lib/seedAiProviderFromEnv.ts. Honours pre-export from
+# the host shell — if you exported any of these before running setup.sh,
+# they're already filled in here.
+#
+# Precedence on first boot: SOURCES order in seedAiProviderFromEnv.ts —
+# MiniMax > Anthropic > OpenAI > Gemini > OpenRouter > Together > Fireworks
+# > OpenCode Zen > Groq > Cerebras > DeepSeek > Mistral > Cohere > xAI
+# > Perplexity > DeepInfra > NVIDIA > Moonshot > Zhipu. First non-empty wins.
+# (Local providers like Ollama/LM Studio/vLLM are configured via the wizard.)
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
+GEMINI_API_KEY=${GEMINI_API_KEY:-}
 MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
+OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+TOGETHER_API_KEY=${TOGETHER_API_KEY:-}
+FIREWORKS_API_KEY=${FIREWORKS_API_KEY:-}
+OPENCODE_ZEN_API_KEY=${OPENCODE_ZEN_API_KEY:-}
+GROQ_API_KEY=${GROQ_API_KEY:-}
+CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+COHERE_API_KEY=${COHERE_API_KEY:-}
+XAI_API_KEY=${XAI_API_KEY:-}
+PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
+DEEPINFRA_API_KEY=${DEEPINFRA_API_KEY:-}
+NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+MOONSHOT_API_KEY=${MOONSHOT_API_KEY:-}
+ZHIPU_API_KEY=${ZHIPU_API_KEY:-}
 
 # ─── OAuth (optional) ─────────────────────────────
 GITHUB_CLIENT_ID=
@@ -360,12 +385,25 @@ echo "       The FIRST account to sign up becomes the platform owner"
 echo "       automatically — no SSH, no SQL, no .env editing required."
 echo ""
 echo "    2. You'll be guided through a 4-step setup wizard at /setup:"
-echo "       Welcome → AI provider (60+ providers including MiniMax, OpenAI,"
-echo "       Anthropic, OpenRouter, Groq, Ollama …) → Google / GitHub sign-in →"
-echo "       Plans & Billing. End-users build apps from the dashboard later."
+echo "       Welcome → AI provider → Google / GitHub sign-in → Plans & Billing."
+echo "       End-users build apps from the dashboard after this — the wizard"
+echo "       is for the platform admin only."
 echo ""
-echo "       Tip: export MINIMAX_API_KEY (or ANTHROPIC_API_KEY / OPENAI_API_KEY)"
-echo "       before re-running this script and Step 2 will already be configured."
+echo "       AI provider step covers 50+ providers including OpenAI, Anthropic,"
+echo "       Gemini, OpenRouter, Together, Fireworks, Groq, Cerebras, DeepSeek,"
+echo "       Mistral, Cohere, xAI, Perplexity, MiniMax, Moonshot, Zhipu, plus"
+echo "       Azure/Bedrock/Vertex enterprise endpoints AND local OpenAI-compatible"
+echo "       servers (Ollama, LM Studio, vLLM, llama.cpp, Jan, LocalAI, …)."
+echo ""
+echo "       Tip: pre-export ANY of these before running setup.sh and the"
+echo "       wizard's AI step starts pre-configured (first non-empty wins):"
+echo "         ANTHROPIC_API_KEY  OPENAI_API_KEY    GEMINI_API_KEY"
+echo "         MINIMAX_API_KEY    OPENROUTER_API_KEY  TOGETHER_API_KEY"
+echo "         FIREWORKS_API_KEY  OPENCODE_ZEN_API_KEY  GROQ_API_KEY"
+echo "         CEREBRAS_API_KEY   DEEPSEEK_API_KEY  MISTRAL_API_KEY"
+echo "         COHERE_API_KEY     XAI_API_KEY       PERPLEXITY_API_KEY"
+echo "         DEEPINFRA_API_KEY  NVIDIA_API_KEY    MOONSHOT_API_KEY"
+echo "         ZHIPU_API_KEY"
 echo ""
 if [ "$MODE" != "domain" ]; then
   echo -e "  ${YELLOW}Note: Self-signed SSL — browsers will show a certificate warning.${NC}"
