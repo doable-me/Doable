@@ -63,6 +63,11 @@ export function pass(id: string, name: string): void {
   console.log(`  PASS  [${id}] ${name}`);
 }
 
+export function skip(id: string, name: string, reason: string): void {
+  results.push({ id, name, passed: true, error: `SKIP: ${reason}` });
+  console.log(`  SKIP  [${id}] ${name} — ${reason}`);
+}
+
 export function fail(id: string, name: string, reason: string): void {
   results.push({ id, name, passed: false, error: reason });
   console.error(`  FAIL  [${id}] ${name} — ${reason}`);

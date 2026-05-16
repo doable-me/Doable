@@ -16,6 +16,16 @@ import { runAuthTests }              from "./auth.test.js";
 import { runWorkspaceProjectTests }  from "./workspace-project.test.js";
 import { runWebSocketTests }         from "./websocket.test.js";
 import { runAiChatTests }            from "./ai-chat.test.js";
+import { runProjectsCrudTests }      from "./projects-crud.test.js";
+import { runIntegrationsTests }      from "./integrations.test.js";
+import { runBillingTests }           from "./billing.test.js";
+import { runMcpTests }               from "./mcp.test.js";
+import { runAdminTests }             from "./admin.test.js";
+import { runSecurityTests }          from "./security.test.js";
+import { runGithubTests }            from "./github.test.js";
+import { runMarketplaceTests }       from "./marketplace.test.js";
+import { runFoldersTests }           from "./folders.test.js";
+import { runThumbnailsTests }        from "./thumbnails.test.js";
 import { getResults, API_BASE, WS_BASE, BASE } from "./_shared.js";
 
 async function main() {
@@ -81,17 +91,60 @@ async function main() {
   console.log("\n── AI Chat ────────────────────────────────────────────");
   await runAiChatTests(activeToken, wsId);
 
+  // ── Stage 9: Projects CRUD (extended) ────────────────────────────────────
+  console.log("\n── Projects CRUD ──────────────────────────────────────");
+  await runProjectsCrudTests(activeToken, wsId);
+
+  // ── Stage 10: Integrations ───────────────────────────────────────────────
+  console.log("\n── Integrations ───────────────────────────────────────");
+  await runIntegrationsTests(activeToken, wsId);
+
+  // ── Stage 11: Billing ────────────────────────────────────────────────────
+  console.log("\n── Billing ────────────────────────────────────────────");
+  await runBillingTests(activeToken, wsId);
+
+  // ── Stage 12: MCP Connectors ─────────────────────────────────────────────
+  console.log("\n── MCP Connectors ─────────────────────────────────────");
+  await runMcpTests(activeToken, wsId);
+
+  // ── Stage 13: Admin ──────────────────────────────────────────────────────
+  console.log("\n── Admin ──────────────────────────────────────────────");
+  await runAdminTests(activeToken);
+
+  // ── Stage 14: Security ───────────────────────────────────────────────────
+  console.log("\n── Security ───────────────────────────────────────────");
+  await runSecurityTests(activeToken, wsId);
+
+  // ── Stage 15: GitHub ─────────────────────────────────────────────────────
+  console.log("\n── GitHub ─────────────────────────────────────────────");
+  await runGithubTests(activeToken, wsId);
+
+  // ── Stage 16: Marketplace ────────────────────────────────────────────────
+  console.log("\n── Marketplace ────────────────────────────────────────");
+  await runMarketplaceTests(activeToken, wsId);
+
+  // ── Stage 17: Folders ────────────────────────────────────────────────────
+  console.log("\n── Folders ────────────────────────────────────────────");
+  await runFoldersTests(activeToken, wsId);
+
+  // ── Stage 18: Thumbnails ─────────────────────────────────────────────────
+  console.log("\n── Thumbnails ─────────────────────────────────────────");
+  await runThumbnailsTests(activeToken, wsId);
+
   // ── Summary ───────────────────────────────────────────────────────────────
   printSummary();
 }
 
 function printSummary() {
   const results = getResults();
-  const passed  = results.filter(r => r.passed).length;
+  const passed  = results.filter(r => r.passed && !r.error?.startsWith("SKIP:")).length;
+  const skipped = results.filter(r => r.passed && r.error?.startsWith("SKIP:")).length;
   const failed  = results.filter(r => !r.passed).length;
+  const total   = results.length;
 
   console.log("\n══════════════════════════════════════════════════════");
-  console.log(` PASS: ${passed}  FAIL: ${failed}  SKIP: 0`);
+  console.log(` Doable OOB Smoke Tests — ${total} TCs across 18 areas`);
+  console.log(` PASS: ${passed}  FAIL: ${failed}  SKIP: ${skipped}`);
   console.log("══════════════════════════════════════════════════════\n");
 
   if (failed > 0) {
