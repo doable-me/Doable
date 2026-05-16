@@ -956,6 +956,21 @@ ok "Dependencies installed & database migrated"
 # a non-standard NODE_ENV — emits "non-standard NODE_ENV" warnings and
 # can crash /_global-error static generation. The runtime keeps using
 # the .env value once start.sh boots services.
+# Build workspace packages first — services/api imports `docore` (and other
+# packages import `dovault`) via `package.json#main` → `dist/index.js`.
+# Without these built artifacts, `tsx watch` in services/api dies at startup
+# with `ERR_MODULE_NOT_FOUND: …/services/api/node_modules/docore/dist/index.js`
+# (workspace symlink resolves to packages/docore/dist/ which doesn't exist
+# until build runs). Mirrors the Dockerfile's explicit docore + dovault build
+# steps. `|| true` tolerates a missing build script the same way the docker
+# path does — `tsc` failures are surfaced via the API's start-up error if
+# the dist/ stays empty.
+info "Building workspace packages (docore, dovault)..."
+cd "$INSTALL_DIR"
+pnpm --filter=docore run build || warn "docore build emitted errors — API may fail to start"
+pnpm --filter=dovault run build || warn "dovault build emitted errors — sandbox features may degrade"
+ok "Workspace packages built"
+
 info "Building Next.js..."
 cd "$INSTALL_DIR/apps/web"
 rm -rf .next .turbo
@@ -1208,9 +1223,14 @@ if [ "$NO_TUNNEL" = "1" ]; then
       -out /etc/caddy/selfsigned.crt \
       -subj "/CN=${HOST}" \
       -addext "$SAN_EXT"
-    chmod 600 /etc/caddy/selfsigned.key
+    # Caddy runs as the `caddy` user (apt package default), so the key
+    # must be readable by it — chmod 600 owned by root would cause
+    # "permission denied" at service start. Ownership transfer + group-
+    # read keeps the secret off the world but available to the daemon.
+    chown caddy:caddy /etc/caddy/selfsigned.crt /etc/caddy/selfsigned.key
+    chmod 640 /etc/caddy/selfsigned.key
     chmod 644 /etc/caddy/selfsigned.crt
-    ok "Self-signed cert created at /etc/caddy/selfsigned.{crt,key} (CN=${HOST})"
+    ok "Self-signed cert created at /etc/caddy/selfsigned.{crt,key} (CN=${HOST}, owner=caddy)"
   else
     info "Self-signed cert already present at /etc/caddy/selfsigned.{crt,key} — reusing"
   fi
