@@ -1329,14 +1329,21 @@ chown doable:doable /home/doable /var/log/doable
 chmod 0755 /home/doable /var/log/doable
 ok "System user 'doable' (uid 5000) present"
 
-# Chown install dir to doable:doable (skip heavy dirs for speed)
+# Chown install dir to doable:doable (skip node_modules for speed — they're
+# read-only at runtime). .next + .turbo MUST be chown'd because the web
+# service runs `next dev --turbopack` as the doable user, and next-dev
+# needs to write its build cache under .next/dev — leaving it root-owned
+# kills the web pane with EACCES on mkdir '.next/dev'.
 find "${INSTALL_DIR}" \
   -not \( -name node_modules -prune \) \
-  -not \( -name .next -prune \) \
-  -not \( -name .turbo -prune \) \
   -maxdepth 6 \
   -print0 2>/dev/null | xargs -0 chown doable:doable 2>/dev/null || \
   chown -R doable:doable "${INSTALL_DIR}" 2>/dev/null || true
+# Belt-and-suspenders: ensure .next/.turbo are doable-writable even if the
+# find/xargs path above raced or hit a transient EACCES. These dirs are
+# whole-tree small (typically 50–200 MB) so a recursive chown is cheap.
+[ -d "${INSTALL_DIR}/apps/web/.next" ] && chown -R doable:doable "${INSTALL_DIR}/apps/web/.next" 2>/dev/null || true
+[ -d "${INSTALL_DIR}/apps/web/.turbo" ] && chown -R doable:doable "${INSTALL_DIR}/apps/web/.turbo" 2>/dev/null || true
 ok "Chowned ${INSTALL_DIR} to doable:doable"
 
 # ─── Step 12: Systemd services ────────────────────────────────
