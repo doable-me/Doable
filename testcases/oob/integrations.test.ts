@@ -91,11 +91,13 @@ export async function runIntegrationsTests(ownerToken: string, workspaceId: stri
   }
 
   // TC-IN06: DELETE /api/integrations/connections/:id with unknown id returns 404/400
-  // NOTE: endpoint requires ?workspaceId= query param; without it returns 400
+  // The id column is UUID-typed, so we must pass a VALID uuid shape (all zeros) to
+  // hit the "not found" 404 branch instead of a Postgres "invalid uuid syntax" 500.
   try {
+    const fakeUuid = "00000000-0000-0000-0000-000000000000";
     const url = workspaceId
-      ? `/api/integrations/connections/nonexistent-id-000?workspaceId=${workspaceId}`
-      : "/api/integrations/connections/nonexistent-id-000";
+      ? `/api/integrations/connections/${fakeUuid}?workspaceId=${workspaceId}`
+      : `/api/integrations/connections/${fakeUuid}`;
     const res = await apiFetch(url, {
       method: "DELETE",
       token: ownerToken,
