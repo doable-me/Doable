@@ -18,7 +18,7 @@ To use AI features locally: drop your Anthropic or OpenAI key into the wizard (S
 
 This guide takes you from an empty Hetzner box to a working Doable instance with HTTPS, AI features, sandboxed previews, and per-tenant DNS. Real timings, real values, real failure modes.
 
-> Tested end-to-end on **2026-05-15** by reinstalling `testingserver.fid.pw` (Hetzner dedicated, 2x 477GB NVMe, 64GB RAM).
+> Tested end-to-end on **2026-05-15** by reinstalling `testingserver.<your-bare-dns>` (Hetzner dedicated, 2x 477GB NVMe, 64GB RAM).
 > Wall-clock breakdown of one verified run: installimage ~5 min, reboot ~30 s, setup-server.sh ~15 min (first pass) + ~3 min re-run after the Step-10 grep bug, smoke tests ~30 s. Total ≈ 24 min.
 > All 13 setup steps completed, 113 DB migrations applied, web/api/ws all 200/200/101 via Cloudflare Tunnel.
 
@@ -98,11 +98,11 @@ In the Hetzner Robot console, activate the **Rescue** system for the server with
 
 ```bash
 # Clear any stale host key from previous incarnations of this IP
-ssh-keygen -R <env>.fid.pw
+ssh-keygen -R <env>.<your-bare-dns>
 ssh-keygen -R <server-ip>
 
 # Confirm rescue is up
-ssh -i ~/Documents/itdept root@<env>.fid.pw "hostname; uname -a; lsblk -d -o NAME,SIZE,MODEL,TYPE"
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "hostname; uname -a; lsblk -d -o NAME,SIZE,MODEL,TYPE"
 # Expected: hostname=rescue, two NVMe disks visible
 ```
 
@@ -116,7 +116,7 @@ Hetzner's `installimage` writes a fresh OS to disk. Software RAID1 across both N
 
 ```bash
 # Push the autosetup config (drives, RAID level, hostname, partitions, image)
-ssh -i ~/Documents/itdept root@<env>.fid.pw "cat > /root/autosetup <<'EOF'
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "cat > /root/autosetup <<'EOF'
 DRIVE1 /dev/nvme0n1
 DRIVE2 /dev/nvme1n1
 SWRAID 1
@@ -130,25 +130,25 @@ IMAGE /root/images/Ubuntu-2404-noble-amd64-base.tar.gz
 EOF"
 
 # Run installimage in detached background so SSH disconnect doesn't kill it
-ssh -i ~/Documents/itdept root@<env>.fid.pw \
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> \
   "nohup /root/.oldroot/nfs/install/installimage -a -c /root/autosetup > /root/installimage.log 2>&1 &"
 
 # Poll until you see "INSTALLATION COMPLETE" (5-10 min)
-ssh -i ~/Documents/itdept root@<env>.fid.pw "tail /root/installimage.log"
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "tail /root/installimage.log"
 ```
 
 Verify the log ends with `INSTALLATION COMPLETE`. Then reboot:
 
 ```bash
-ssh -i ~/Documents/itdept root@<env>.fid.pw "nohup reboot &" || true
-ssh-keygen -R <env>.fid.pw   # rescue host key won't match the new install
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "nohup reboot &" || true
+ssh-keygen -R <env>.<your-bare-dns>   # rescue host key won't match the new install
 ```
 
 Wait ~60s, then poll for the new Ubuntu to come up:
 
 ```bash
-until ssh -i ~/Documents/itdept -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 \
-  -o BatchMode=yes root@<env>.fid.pw "cat /etc/os-release | head -1"; do
+until ssh -i <your-ssh-key> -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 \
+  -o BatchMode=yes root@<env>.<your-bare-dns> "cat /etc/os-release | head -1"; do
   sleep 5
 done
 # Expected: PRETTY_NAME="Ubuntu 24.04.3 LTS"
@@ -169,10 +169,10 @@ Two things need to land on the new box before `setup-server.sh` runs:
 ```bash
 # ⚠️  ONLY if both servers belong to the same CF account and zone you control.
 #     Never copy someone else's cert.pem — it gives full control of their tunnels + DNS.
-scp -i ~/Documents/itdept ~/Documents/<sibling>.fid.pw/cloudflared-cert.pem \
-  root@<env>.fid.pw:/tmp/cf-cert.pem
+scp -i <your-ssh-key> <path-to-sibling-cert.pem> \
+  root@<env>.<your-bare-dns>:/tmp/cf-cert.pem
 
-ssh -i ~/Documents/itdept root@<env>.fid.pw \
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> \
   "mkdir -p /root/.cloudflared && mv /tmp/cf-cert.pem /root/.cloudflared/cert.pem && chmod 600 /root/.cloudflared/cert.pem"
 ```
 
@@ -182,7 +182,7 @@ If you go the interactive route, `cloudflared tunnel login` writes the cert to `
 
 ```bash
 TOKEN=$(gh auth token)   # local gh CLI, must have repo scope
-ssh -i ~/Documents/itdept root@<env>.fid.pw \
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> \
   "git clone https://x-access-token:$TOKEN@github.com/doable-me/doable.git /root/doable && \
    cd /root/doable && git log -1 --oneline"
 ```
@@ -199,7 +199,7 @@ Pre-set the hostnames and DB password as env vars so the script runs without pro
 DB_PASS=$(openssl rand -hex 16)
 echo "Save this somewhere safe: DB_PASS=$DB_PASS"
 
-ssh -i ~/Documents/itdept root@<env>.fid.pw "cat > /root/run-setup.sh <<EOF
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "cat > /root/run-setup.sh <<EOF
 #!/bin/bash
 export DOMAIN=<env>.doable.me
 export API_DOMAIN=<env>-api.doable.me
@@ -223,7 +223,7 @@ disown"
 Poll progress (the script prints 13 numbered steps):
 
 ```bash
-ssh -i ~/Documents/itdept root@<env>.fid.pw "tail -30 /root/setup.log"
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "tail -30 /root/setup.log"
 ```
 
 Wait for the closing banner:
@@ -241,7 +241,7 @@ On a **first** run, Step 10 may exit with this error. Root cause: `cloudflared t
 The tunnel itself **is created successfully** (you can confirm with `cloudflared tunnel list` — `doable-<env>-doable-me` will be there). Just re-run the launcher:
 
 ```bash
-ssh -i ~/Documents/itdept root@<env>.fid.pw "
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "
   mv /root/setup.log /root/setup.log.first-run
   setsid bash -c 'nohup /root/run-setup.sh > /root/setup.log 2>&1' < /dev/null &
   disown
@@ -276,7 +276,7 @@ The re-run hits the `EXISTING_TUNNEL` branch (which uses `python3 -c` to parse J
 ## Step 5 — Verify (~2 min)
 
 ```bash
-ssh -i ~/Documents/itdept root@<env>.fid.pw "
+ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "
   systemctl is-active doable.service cloudflared
   ss -tlnp | grep -E ':(3000|4000|4001|5432|8080)'
   curl -sI http://127.0.0.1:3000/ | head -1
@@ -332,7 +332,7 @@ OAuth callbacks must be set in each provider's dashboard:
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `Connection refused` on SSH right after `installimage` | Server still booting | Wait 60s and retry |
-| `Connection refused` from rescue → installed Ubuntu | Stale host key in `~/.ssh/known_hosts` | `ssh-keygen -R <env>.fid.pw` |
+| `Connection refused` from rescue → installed Ubuntu | Stale host key in `~/.ssh/known_hosts` | `ssh-keygen -R <env>.<your-bare-dns>` |
 | `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` in browser | Two-level subdomain on free Universal SSL | Use `<env>-api.doable.me`, not `api.<env>.doable.me` |
 | `Error 1033` from Cloudflare | Tunnel not running | `systemctl status cloudflared` |
 | Setup hangs at "Cloudflare authentication" | No pre-staged cert.pem and no TTY | scp cert.pem from a sibling server (see Step 3a) |

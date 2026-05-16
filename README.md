@@ -36,6 +36,8 @@ pnpm install && cp .env.example .env && pnpm db:migrate && pnpm dev
 ./deployment/server-setup.sh
 ```
 
+Self-hosting on a VPS? See the [**full quickstart guide**](docs/QUICKSTART.md) — a 24-minute, end-to-end walkthrough from a blank Ubuntu box to a production deployment with HTTPS, sandboxed previews, and per-tenant DNS.
+
 ### After first launch
 
 Open http://localhost:3000, sign up. The first account becomes the platform owner automatically. You'll be guided through a 5 step setup wizard for AI keys and integrations. No SSH, no SQL, no editing .env files.
@@ -66,7 +68,7 @@ Most AI coding tools generate code but leave you to wire it all up yourself. Doa
 | Manually set up databases | AI provisions Supabase in one click |
 | Wire up auth, APIs, hosting yourself | Everything connected out of the box |
 | Export code and figure out deployment | Publish to a live URL instantly |
-| Limited to one AI model | 60+ providers, use any model you want |
+| Limited to one AI model | 53+ providers, use any model you want |
 
 **Doable is for creators, designers, founders, and teams.** If you can describe it, Doable can build it.
 
@@ -86,13 +88,13 @@ Multiple users can work together in real time on the same project. Chat together
 ### AI Powered Development
 
 - **Natural language to working app** in one conversation
-- **60+ AI providers** including Anthropic Claude, OpenAI, Google Gemini, Groq, Mistral, DeepSeek, local models via Ollama/LM Studio, and [many more](#supported-ai-providers)
+- **53+ AI providers** including Anthropic Claude, OpenAI, Google Gemini, Groq, Mistral, DeepSeek, local models via Ollama/LM Studio, and [many more](docs/PROVIDERS.md)
 - **File builders** to generate presentations (PPTX), spreadsheets (XLSX), PDFs, and Markdown directly from chat
 - **One click Supabase** where AI provisions a database, runs migrations, and deploys edge functions with zero config
 
 ### Integrations (powered by ActivePieces)
 
-50+ integrations out of the box. Connect services and the AI uses them as tools automatically:
+630+ integrations out of the box (powered by ActivePieces). Connect services and the AI uses them as tools automatically:
 
 | Category | Examples |
 |----------|----------|
