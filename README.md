@@ -52,16 +52,7 @@ Doable ships with manifests for every major full-stack PaaS. Pick the one that m
 [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/doable-me/doable)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/doable-me/doable?quickstart=1)
 
-| Platform | Path | Manifest |
-|---|---|---|
-| **Coolify** (self-hosted) | Point at `deployment/docker/docker-compose.prod.yml` | [`deployment/docker/coolify.md`](deployment/docker/coolify.md) |
-| **DigitalOcean App Platform** | 1-click button above | [`.do/app.yaml`](.do/app.yaml) |
-| **Render** | 1-click button above | [`render.yaml`](render.yaml) |
-| **Railway** | 1-click button above | [`railway.json`](railway.json) |
-| **Fly.io** | `bash deployment/platforms/fly/migrate.sh` then `fly deploy` per app | [`deployment/platforms/fly/DEPLOY.md`](deployment/platforms/fly/DEPLOY.md) |
-| **Kubernetes** | `kubectl apply -k deployment/platforms/k8s/base/` | [`deployment/platforms/k8s/README.md`](deployment/platforms/k8s/README.md) |
-| **Heroku** | 1-click button above | [`app.json`](app.json) |
-| **GitHub Codespaces** | 1-click button above | [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) |
+Self-hosting? [Coolify](deployment/docker/coolify.md), [Fly.io](deployment/platforms/fly/DEPLOY.md), and [Kubernetes](deployment/platforms/k8s/README.md) are supported too.
 
 ---
 
