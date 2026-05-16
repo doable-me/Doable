@@ -49,7 +49,7 @@ pub struct Args {
     pub demo: bool,
 
     /// Path to the setup script to upload+execute remotely.
-    /// Defaults to the repo's `setup-server-v3.sh`.
-    #[arg(long, env = "DOABLE_SETUP_SCRIPT", default_value = "setup-server-v3.sh")]
+    /// Defaults to the repo's `deployment/server-setup.sh`.
+    #[arg(long, env = "DOABLE_SETUP_SCRIPT", default_value = "deployment/server-setup.sh")]
     pub setup_script: PathBuf,
 }
