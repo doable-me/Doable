@@ -11,9 +11,15 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LABEL="${1:-cycleA}"
 
 cd "$REPO_ROOT"
+# IMPORTANT: testcases/oob/*.test.ts files always call apiFetch("/api/…") so
+# the path includes the /api prefix. API_BASE therefore MUST be the host
+# origin only — NOT include /api or /ws — or you get /api/api/health which
+# nginx still 200s but the API itself bounces with "Missing or invalid
+# Authorization header" (the /api/api/* path falls into an auth-gated
+# wildcard route, not /api/health). Same for WS.
 export DOABLE_BASE="https://${SERVER_IP}"
-export DOABLE_API_BASE="https://${SERVER_IP}/api"
-export DOABLE_WS_BASE="wss://${SERVER_IP}/ws"
+export DOABLE_API_BASE="https://${SERVER_IP}"
+export DOABLE_WS_BASE="wss://${SERVER_IP}"
 export DOABLE_WEB_BASE="https://${SERVER_IP}"
 export DOABLE_MINIMAX_KEY="${MINIMAX_API_KEY}"
 export DOABLE_MOCK_AI=false
