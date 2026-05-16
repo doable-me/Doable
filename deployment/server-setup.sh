@@ -153,7 +153,7 @@ if [ "$CONTAINER_MODE" = "1" ] || [ "$NON_INTERACTIVE" = "1" ] || ! [ -t 0 ]; th
   API_SUB="${API_SUB:-api}"
   WS_SUB="${WS_SUB:-ws}"
   REPO="${REPO:-doable-me/doable}"
-  DB_PASS="${DB_PASS:-doable}"
+  DB_PASS="${DB_PASS:-$(openssl rand -hex 16)}"
   GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
   GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
   GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:-}"
@@ -1657,8 +1657,9 @@ cat << BANNER
   Step 1: Sign up at https://${DOMAIN}/signup
           The FIRST account becomes platform owner automatically.
 
-  Step 2: Walk through the 5-step setup wizard at /setup
-          (AI provider key + optional OAuth + integrations)
+  Step 2: Walk through the 4-step setup wizard at /setup
+          (Welcome → AI provider → Sign-in → Plans & billing.
+           No "create first app" step — that's for end-users in the dashboard.)
 
   Bootstrap token (only needed if first signup is delayed >24h or you
   need to re-bootstrap — keep this private, valid 24h):
