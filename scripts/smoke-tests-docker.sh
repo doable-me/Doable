@@ -72,10 +72,12 @@ log_tc TC-SMOKE-WEB-001 200 "$web_code" 0 "web /"
 # First-ever signup becomes platform owner (services/api/src/auth/firstUserBootstrap.ts).
 # Once the bootstrap fires, subsequent signups are regular members — they get
 # 401 on /setup/status and 403 on /admin/* (correct security).
-# Strategy: persist the first admin's creds in /tmp/doable-first-admin.json so
-# repeat smoke runs against the SAME database log back in as the original admin
-# instead of creating a non-admin second user (which would flunk the admin-path TCs).
-ADMIN_CREDS=/tmp/doable-first-admin.json
+# Strategy: persist the first admin's creds in /root/.doable-smoke-admin.json
+# (NOT /tmp — that gets cleared on reboot, and postgres_data outlives reboots
+# so the in-DB admin user persists while /tmp-stored creds would be lost).
+# Repeat smoke runs log back in as the original admin instead of creating a
+# non-admin second user (which would flunk the admin-path TCs).
+ADMIN_CREDS=/root/.doable-smoke-admin.json
 if [[ -f "$ADMIN_CREDS" ]]; then
   EMAIL=$(python3 -c "import json; print(json.load(open('$ADMIN_CREDS'))['email'])")
   PASS=$(python3 -c "import json; print(json.load(open('$ADMIN_CREDS'))['password'])")
