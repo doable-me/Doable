@@ -262,9 +262,20 @@ fn spawn_runner_for_args(args: &Args, tx: mpsc::Sender<AppEvent>) {
         } else if let (Some(host), Some(env_name), Some(ssh_key)) =
             (args.host.as_deref(), args.env_name.as_deref(), args.ssh_key.as_deref())
         {
+            let extra_env = args.remote_env_map();
+            if !extra_env.is_empty() {
+                let keys: Vec<String> = extra_env.keys().cloned().collect();
+                let _ = tx
+                    .send(AppEvent::LogLine(format!(
+                        "[ui] forwarding {} --remote-env vars: {}",
+                        keys.len(),
+                        keys.join(", ")
+                    )))
+                    .await;
+            }
             runner::run_remote_setup(
                 host, &args.user, ssh_key, args.ssh_port, env_name,
-                &args.setup_script, Default::default(), tx.clone(),
+                &args.setup_script, extra_env, tx.clone(),
             ).await
         } else {
             Ok(())

@@ -52,4 +52,28 @@ pub struct Args {
     /// Defaults to the repo's `deployment/server-setup.sh`.
     #[arg(long, env = "DOABLE_SETUP_SCRIPT", default_value = "deployment/server-setup.sh")]
     pub setup_script: PathBuf,
+
+    /// Forward an env var into the remote setup script. Repeat for each
+    /// var: `--remote-env NO_TUNNEL=1 --remote-env MINIMAX_API_KEY=sk-...`.
+    /// Plumbed unchanged into `bash -s --` so the remote script sees them
+    /// as if they had been exported on the box.
+    #[arg(long = "remote-env", value_name = "KEY=VAL")]
+    pub remote_env: Vec<String>,
+}
+
+impl Args {
+    /// Parse `--remote-env KEY=VAL` entries into a BTreeMap. Entries with
+    /// no `=` separator are silently dropped.
+    pub fn remote_env_map(&self) -> std::collections::BTreeMap<String, String> {
+        let mut map = std::collections::BTreeMap::new();
+        for kv in &self.remote_env {
+            if let Some((k, v)) = kv.split_once('=') {
+                let k = k.trim();
+                if !k.is_empty() {
+                    map.insert(k.to_string(), v.to_string());
+                }
+            }
+        }
+        map
+    }
 }
