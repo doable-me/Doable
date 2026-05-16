@@ -180,7 +180,7 @@ COPY . /opt/doable
 VOLUME ["/var/lib/doable"]
 
 # Entrypoint: just exec's /sbin/init. Setup runs later via systemd one-shot.
-COPY docker/entrypoint-secure.sh /usr/local/bin/doable-entrypoint
+COPY deployment/docker/entrypoint-secure.sh /usr/local/bin/doable-entrypoint
 RUN chmod +x /usr/local/bin/doable-entrypoint
 
 # First-boot setup script — runs as systemd one-shot AFTER postgres is up.
