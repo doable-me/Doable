@@ -132,7 +132,10 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
     setStatus("idle");
     setErrorMsg(null);
     if (t.kind === "preset") {
-      setCustomBaseUrl("");
+      // Pre-fill the editable URL field with the catalog default so the
+      // user only has to touch it for template-substituted providers
+      // (Azure {resource}, Bedrock {region}, Vertex {region}/{project}).
+      setCustomBaseUrl(t.preset.baseUrlEditable ? t.preset.defaultBaseUrl : "");
       setModel(t.preset.defaultModels[0]?.id ?? "");
     } else {
       setCustomBaseUrl("");
@@ -144,11 +147,17 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
     if (!selected) return;
     const isCopilot = selected.kind === "special" && selected.tile.id === "github_copilot";
     const isByokCustom = selected.kind === "special" && selected.tile.id === "byok-custom";
+    const isEditableUrlPreset =
+      selected.kind === "preset" && selected.preset.baseUrlEditable;
+    // Local providers (Ollama, LM Studio, vLLM, …) use authMethod="none" —
+    // they bind to a localhost URL with no API key. Skip the key requirement.
+    const skipsKey =
+      isCopilot ||
+      (selected.kind === "preset" && selected.preset.authMethod === "none");
 
-    // Copilot uses OAuth — no key entered here. Everything else needs a key.
-    if (!isCopilot && !apiKey.trim()) return;
-    // BYOK custom URL needs a base URL.
-    if (isByokCustom && !customBaseUrl.trim()) return;
+    if (!skipsKey && !apiKey.trim()) return;
+    // BYOK custom URL + editable-preset paths both need a base URL.
+    if ((isByokCustom || isEditableUrlPreset) && !customBaseUrl.trim()) return;
 
     setStatus("saving");
     setErrorMsg(null);
@@ -160,7 +169,12 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
 
       const body: Record<string, string> = { provider: backend.provider };
       if (!isCopilot && apiKey.trim()) body.apiKey = apiKey.trim();
-      if (backend.baseUrl) body.baseUrl = backend.baseUrl;
+      // Editable-URL preset overrides defaultBaseUrl with operator-supplied value.
+      if (isEditableUrlPreset && customBaseUrl.trim()) {
+        body.baseUrl = customBaseUrl.trim();
+      } else if (backend.baseUrl) {
+        body.baseUrl = backend.baseUrl;
+      }
       if (isByokCustom && customBaseUrl.trim()) body.baseUrl = customBaseUrl.trim();
       if (model.trim()) body.model = model.trim();
 
@@ -272,6 +286,8 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
                     setStatus("idle");
                     setErrorMsg(null);
                   }}
+                  baseUrl={customBaseUrl}
+                  onBaseUrlChange={setCustomBaseUrl}
                   model={model}
                   onModelChange={setModel}
                   showKey={showKey}
@@ -310,12 +326,30 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
         })}
       </div>
 
-      <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-        Tip: export <code className="text-foreground">MINIMAX_API_KEY</code>,{" "}
-        <code className="text-foreground">ANTHROPIC_API_KEY</code>, or{" "}
-        <code className="text-foreground">OPENAI_API_KEY</code> before running{" "}
-        <code className="text-foreground">docker/setup.sh</code> and the matching provider is
-        pre-configured for you.
+      <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-xs text-muted-foreground space-y-1">
+        <p>
+          Tip: export any of 19 supported API key env vars
+          (<code className="text-foreground">ANTHROPIC_API_KEY</code>,{" "}
+          <code className="text-foreground">OPENAI_API_KEY</code>,{" "}
+          <code className="text-foreground">GEMINI_API_KEY</code>,{" "}
+          <code className="text-foreground">OPENROUTER_API_KEY</code>,{" "}
+          <code className="text-foreground">GROQ_API_KEY</code>,{" "}
+          <code className="text-foreground">DEEPSEEK_API_KEY</code>, …) before running{" "}
+          <code className="text-foreground">docker/setup.sh</code> and the matching provider is
+          pre-configured here. See <code className="text-foreground">docker/setup.sh</code>{" "}
+          banner for the full list.
+        </p>
+        <p>
+          Running a <span className="text-foreground font-medium">local model</span>? Search for{" "}
+          <code className="text-foreground">ollama</code>,{" "}
+          <code className="text-foreground">lm studio</code>, or{" "}
+          <code className="text-foreground">vllm</code> above — no API key needed, just point
+          at <code className="text-foreground">http://localhost:&lt;port&gt;/v1</code>.
+        </p>
+        <p>
+          Doable does <span className="text-foreground font-medium">not</span> bundle, ship, or
+          proxy any third-party AI keys — every key is BYOK (bring-your-own).
+        </p>
       </div>
 
       <div className="flex items-center justify-between pt-2">
@@ -347,6 +381,8 @@ interface PresetFormProps {
   preset: ProviderPreset;
   apiKey: string;
   onApiKeyChange: (v: string) => void;
+  baseUrl: string;
+  onBaseUrlChange: (v: string) => void;
   model: string;
   onModelChange: (v: string) => void;
   showKey: boolean;
@@ -360,6 +396,8 @@ function PresetForm({
   preset,
   apiKey,
   onApiKeyChange,
+  baseUrl,
+  onBaseUrlChange,
   model,
   onModelChange,
   showKey,
@@ -370,43 +408,94 @@ function PresetForm({
 }: PresetFormProps) {
   return (
     <div className="rounded-b-lg border border-t-0 border-brand-500/40 bg-card px-4 pb-4 pt-3 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">
-          Base URL: <code className="text-foreground">{preset.defaultBaseUrl}</code>
-        </span>
-        {preset.apiKeyHelpUrl && (
-          <a
-            href={preset.apiKeyHelpUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 underline underline-offset-2"
-          >
-            Get key <ExternalLink className="h-3 w-3" />
-          </a>
-        )}
-      </div>
+      {preset.baseUrlEditable ? (
+        <>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-medium text-foreground">
+              Base URL
+              {preset.baseUrlTemplate && (
+                <span className="ml-1 text-muted-foreground font-normal">
+                  (replace {`{placeholders}`} with your values)
+                </span>
+              )}
+            </label>
+            {preset.apiKeyHelpUrl && (
+              <a
+                href={preset.apiKeyHelpUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 underline underline-offset-2"
+              >
+                Help <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+          <input
+            type="url"
+            value={baseUrl}
+            onChange={(e) => onBaseUrlChange(e.target.value)}
+            placeholder={preset.defaultBaseUrl}
+            autoComplete="off"
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
+          />
+        </>
+      ) : (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">
+            Base URL: <code className="text-foreground">{preset.defaultBaseUrl}</code>
+          </span>
+          {preset.apiKeyHelpUrl && (
+            <a
+              href={preset.apiKeyHelpUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 underline underline-offset-2"
+            >
+              Get key <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
+      )}
 
-      <label className="text-xs font-medium text-foreground">API key</label>
-      <div className="relative">
-        <input
-          type={showKey ? "text" : "password"}
-          value={apiKey}
-          onChange={(e) => onApiKeyChange(e.target.value)}
-          placeholder={preset.apiKeyPlaceholder ?? "Your API key"}
-          autoComplete="new-password"
-          autoCorrect="off"
-          spellCheck={false}
-          className="h-9 w-full rounded-md border border-input bg-background pr-9 pl-3 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
-        />
-        <button
-          type="button"
-          onClick={onToggleShowKey}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          tabIndex={-1}
-        >
-          {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-        </button>
-      </div>
+      {preset.authMethod === "none" ? (
+        <p className="text-xs text-muted-foreground">
+          This provider runs locally on your machine — no API key needed.
+          Make sure the server is running at the URL above
+          {preset.warnings && preset.warnings.length > 0 ? "; see warnings below" : ""}.
+        </p>
+      ) : (
+        <>
+          <label className="text-xs font-medium text-foreground">API key</label>
+          <div className="relative">
+            <input
+              type={showKey ? "text" : "password"}
+              value={apiKey}
+              onChange={(e) => onApiKeyChange(e.target.value)}
+              placeholder={preset.apiKeyPlaceholder ?? "Your API key"}
+              autoComplete="new-password"
+              autoCorrect="off"
+              spellCheck={false}
+              className="h-9 w-full rounded-md border border-input bg-background pr-9 pl-3 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
+            />
+            <button
+              type="button"
+              onClick={onToggleShowKey}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              tabIndex={-1}
+            >
+              {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+        </>
+      )}
+
+      {preset.warnings && preset.warnings.length > 0 && (
+        <ul className="text-xs text-yellow-500/90 space-y-0.5 list-disc list-inside">
+          {preset.warnings.map((w, i) => (
+            <li key={i}>{w}</li>
+          ))}
+        </ul>
+      )}
 
       {preset.defaultModels.length > 0 && (
         <div className="flex flex-col gap-1">
@@ -425,7 +514,17 @@ function PresetForm({
         </div>
       )}
 
-      <SaveControls status={status} errorMsg={errorMsg} onSave={onSave} disabled={!apiKey.trim()} />
+      <SaveControls
+        status={status}
+        errorMsg={errorMsg}
+        onSave={onSave}
+        disabled={
+          // Local providers (authMethod: "none") need no key — only require URL.
+          // Editable-URL presets also need the URL field populated.
+          (preset.authMethod !== "none" && !apiKey.trim()) ||
+          (preset.baseUrlEditable && !baseUrl.trim())
+        }
+      />
     </div>
   );
 }
