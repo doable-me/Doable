@@ -548,8 +548,19 @@ fi
 # ─── Step 5: PostgreSQL setup ──────────────────────────────────
 info "Step 5/13: Setting up PostgreSQL..."
 
-sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='doable'" | grep -q 1 \
-  || sudo -u postgres psql -c "CREATE USER doable WITH PASSWORD '${DB_PASS}' CREATEDB;"
+if sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='doable'" | grep -q 1; then
+  # User exists from a prior install. The .env we just wrote has a fresh
+  # DB_PASS (Step 8 always generates one unless pre-staged), so the live
+  # postgres password is stale — every subsequent migration + service
+  # boot fails with "password authentication failed for user doable".
+  # Align the postgres-side password with the .env every run; this is a
+  # no-op on the first install (same password just written).
+  sudo -u postgres psql -c "ALTER USER doable WITH PASSWORD '${DB_PASS}';" >/dev/null
+  ok "Aligned postgres 'doable' password with current .env"
+else
+  sudo -u postgres psql -c "CREATE USER doable WITH PASSWORD '${DB_PASS}' CREATEDB;"
+  ok "Created postgres user 'doable'"
+fi
 
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='doable'" | grep -q 1 \
   || sudo -u postgres psql -c "CREATE DATABASE doable OWNER doable;"
