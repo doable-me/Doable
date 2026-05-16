@@ -194,10 +194,16 @@ REDIS_URL=
 # they're already filled in here.
 #
 # Precedence on first boot: SOURCES order in seedAiProviderFromEnv.ts —
-# MiniMax > Anthropic > OpenAI > Gemini > OpenRouter > Together > Fireworks
+# Anthropic > OpenAI > Gemini > OpenRouter > Together > Fireworks
 # > OpenCode Zen > Groq > Cerebras > DeepSeek > Mistral > Cohere > xAI
-# > Perplexity > DeepInfra > NVIDIA > Moonshot > Zhipu. First non-empty wins.
-# (Local providers like Ollama/LM Studio/vLLM are configured via the wizard.)
+# > Perplexity > DeepInfra > NVIDIA > MiniMax > Moonshot > Zhipu.
+# First non-empty wins.
+#
+# These are ALL bring-your-own-key (BYOK). Doable does NOT bundle, ship,
+# or proxy any third-party API keys — the operator obtains the key from
+# the provider directly. Local providers (Ollama, LM Studio, vLLM,
+# llama.cpp, Jan, LocalAI, etc.) need no API key and are configured via
+# the wizard with their own base URL.
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
 GEMINI_API_KEY=${GEMINI_API_KEY:-}

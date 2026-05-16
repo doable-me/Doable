@@ -56,7 +56,7 @@ export const LOCAL_PROVIDERS = [
     icon: "vllm",
     description: "High-throughput LLM serving with PagedAttention",
     capabilities: LOCAL_CAPS_FULL,
-    tags: ["local", "fast", "production"],
+    tags: ["local", "popular", "fast", "production"],
   },
   {
     id: "llama-cpp",
@@ -72,7 +72,7 @@ export const LOCAL_PROVIDERS = [
     icon: "llamacpp",
     description: "C/C++ LLM inference with minimal dependencies",
     capabilities: LOCAL_CAPS_FULL,
-    tags: ["local", "lightweight", "cpp"],
+    tags: ["local", "popular", "lightweight", "cpp"],
   },
   {
     id: "jan",
