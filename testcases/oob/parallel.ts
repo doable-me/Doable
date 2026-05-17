@@ -147,13 +147,6 @@ const parallelStages: Stage[] = [
     },
   },
   {
-    name: "perm-matrix",
-    run: async (token, wsId) => {
-      const { runPermMatrixTests } = await import("./perm-matrix.test.js");
-      await runPermMatrixTests(token, wsId);
-    },
-  },
-  {
     name: "upload-limits",
     run: async (token, wsId) => {
       const { runUploadLimitTests } = await import("./upload-limits.test.js");
@@ -177,10 +170,17 @@ const parallelStages: Stage[] = [
 ];
 
 // ─── Post-fanout sequential stages ───────────────────────────────────────────
-// Stages with global side-effects (e.g. tripping the IP-based rate limiter)
-// MUST run AFTER the parallel fanout finishes, or they poison every other
-// stage with spurious 429s.
+// Stages with global side-effects (e.g. tripping the IP-based rate limiter,
+// or competing for /api/auth/register slots) MUST run AFTER the parallel
+// fanout finishes, or they poison every other stage with spurious 429s.
 const postFanoutSequentialStages: Stage[] = [
+  {
+    name: "perm-matrix",
+    run: async (token, wsId) => {
+      const { runPermMatrixTests } = await import("./perm-matrix.test.js");
+      await runPermMatrixTests(token, wsId);
+    },
+  },
   {
     name: "ratelimit",
     run: async (token, wsId) => {

@@ -36,7 +36,7 @@ export async function runAiChatTests(ownerToken: string, workspaceId: string | n
     const projRes = await apiFetch("/api/projects", {
       method: "POST",
       token: ownerToken,
-      body: JSON.stringify({ name: `OOB Chat Test ${Date.now()}`, workspaceId: wsId, framework: "vanilla" }),
+      body: JSON.stringify({ name: `OOB Chat Test ${Date.now()}`, workspaceId: wsId, framework: "vite-react" }),
     });
     const projBody = await projRes.json() as Record<string, unknown>;
     if (projRes.status === 201 || projRes.status === 200) {
@@ -47,16 +47,16 @@ export async function runAiChatTests(ownerToken: string, workspaceId: string | n
     // project creation failed — skip AI chat gracefully
   }
 
-  // TC-AC01: POST /api/chat/:projectId returns non-404 (endpoint exists)
+  // TC-AC01: POST /api/projects/:id/chat returns non-404 (endpoint exists)
   try {
     if (!projectId) {
       console.log("  SKIP  [TC-AC01] Could not create test project");
       pass("TC-AC01", "AI chat endpoint reachable (skipped — project creation failed)");
     } else {
-      const res = await apiFetch(`/api/chat/${projectId}`, {
+      const res = await apiFetch(`/api/projects/${projectId}/chat`, {
         method: "POST",
         token: ownerToken,
-        body: JSON.stringify({ messages: [{ role: "user", content: "Hello" }] }),
+        body: JSON.stringify({ content: "Hello" }),
       });
       const bodyText = await res.text();
       saveEvidence("TC-AC01", bodyText.slice(0, 500), Object.fromEntries(res.headers.entries()));
@@ -64,10 +64,10 @@ export async function runAiChatTests(ownerToken: string, workspaceId: string | n
       assert(res.status !== 404, `Chat endpoint returned 404 — route not registered`);
       assert(res.status !== 500 || bodyText.includes("provider") || bodyText.includes("key") || bodyText.includes("config"),
         `Unexpected 500: ${bodyText.slice(0, 200)}`);
-      pass(`TC-AC01`, `AI chat endpoint POST /api/chat/:projectId returns HTTP ${res.status} (not 404)`);
+      pass(`TC-AC01`, `AI chat endpoint POST /api/projects/:id/chat returns HTTP ${res.status} (not 404)`);
     }
   } catch (e) {
-    fail("TC-AC01", "AI chat endpoint POST /api/chat/:projectId returns non-404", (e as Error).message);
+    fail("TC-AC01", "AI chat endpoint POST /api/projects/:id/chat returns non-404", (e as Error).message);
   }
 
   // TC-AC02: If MINIMAX key is set, streaming response starts with SSE data prefix
@@ -76,10 +76,10 @@ export async function runAiChatTests(ownerToken: string, workspaceId: string | n
       console.log("  SKIP  [TC-AC02] No provider key — skipping SSE stream validation");
       pass("TC-AC02", "AI chat SSE stream starts correctly (skipped — no provider key)");
     } else {
-      const res = await apiFetch(`/api/chat/${projectId}`, {
+      const res = await apiFetch(`/api/projects/${projectId}/chat`, {
         method: "POST",
         token: ownerToken,
-        body: JSON.stringify({ messages: [{ role: "user", content: "Say the word PONG only." }] }),
+        body: JSON.stringify({ content: "Say the word PONG only." }),
       });
       const bodyText = await res.text();
       saveEvidence("TC-AC02", bodyText.slice(0, 1000), Object.fromEntries(res.headers.entries()));

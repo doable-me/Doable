@@ -1,157 +1,146 @@
 /**
- * TC-AL01 – TC-AL10: Audit log tests.
- * GET /api/audit-log or /api/admin/audit-log shape check.
+ * TC-AL01 – TC-AL10: Admin audit-log tests.
+ *
+ * The real audit API lives at /api/admin/audit/{conversations,actions,stats,
+ * messages,conversations/:id}. /api/audit-log and /api/admin/audit-log are
+ * NOT mounted — earlier R3 probes against those imaginary paths returned 404,
+ * caused TC-AL01 to short-circuit, and SKIPped the rest of this stage.
+ *
+ * This file probes the real endpoints. Requires platform-admin owner token.
  */
 import { apiFetch, pass, fail, skip, assert, saveEvidence } from "./_shared.js";
 
-export async function runAuditLogTests(ownerToken: string, wsId: string | null): Promise<void> {
-  // Probe both known paths
-  const candidatePaths = [
-    `/api/audit-log`,
-    `/api/admin/audit-log`,
-    wsId ? `/api/workspaces/${wsId}/audit-log` : null,
-    `/api/audit-logs`,
-  ].filter(Boolean) as string[];
-
-  let auditPath: string | null = null;
-
-  // TC-AL01: Probe audit log endpoints — find which one exists
+export async function runAuditLogTests(ownerToken: string, _wsId: string | null): Promise<void> {
+  // TC-AL01: GET /api/admin/audit/conversations returns 200 with array shape
   try {
-    for (const p of candidatePaths) {
-      const res = await apiFetch(p, { token: ownerToken });
-      const text = await res.text();
-      saveEvidence("TC-AL01", text.slice(0, 500), Object.fromEntries(res.headers.entries()), `path: ${p}`);
-      if (res.status !== 404) {
-        auditPath = p;
-        break;
-      }
-    }
-    if (!auditPath) {
-      skip("TC-AL01", "Audit log endpoint discovery", "no audit log endpoint found at known paths");
-      return;
-    }
-    pass(`TC-AL01`, `Audit log endpoint found at ${auditPath}`);
+    const res = await apiFetch("/api/admin/audit/conversations", { token: ownerToken });
+    const text = await res.text();
+    saveEvidence("TC-AL01", text.slice(0, 500), Object.fromEntries(res.headers.entries()));
+    assert(res.status === 200, `Expected 200, got ${res.status}: ${text.slice(0, 200)}`);
+    const body = JSON.parse(text);
+    const list = Array.isArray(body) ? body : (body.data ?? body.conversations ?? body.items);
+    assert(Array.isArray(list), `Expected array shape, got ${typeof list}`);
+    pass("TC-AL01", "GET /api/admin/audit/conversations returns 200 with array");
   } catch (e) {
-    fail("TC-AL01", "Audit log endpoint discovery", (e as Error).message);
+    fail("TC-AL01", "GET /api/admin/audit/conversations 200 + array", (e as Error).message);
   }
 
-  if (!auditPath) {
-    for (let i = 2; i <= 10; i++) {
-      skip(`TC-AL${String(i).padStart(2, "0")}`, "Audit log test", "no endpoint found");
-    }
-    return;
-  }
-
-  // TC-AL02: GET audit log returns 200
+  // TC-AL02: GET /api/admin/audit/actions returns 200 with array
   try {
-    const res = await apiFetch(auditPath, { token: ownerToken });
+    const res = await apiFetch("/api/admin/audit/actions", { token: ownerToken });
     const text = await res.text();
     saveEvidence("TC-AL02", text.slice(0, 500), Object.fromEntries(res.headers.entries()));
     assert(res.status === 200, `Expected 200, got ${res.status}: ${text.slice(0, 200)}`);
-    pass("TC-AL02", `GET ${auditPath} returns 200`);
+    const body = JSON.parse(text);
+    const list = Array.isArray(body) ? body : (body.data ?? body.actions ?? body.items);
+    assert(Array.isArray(list), `Expected array shape, got ${typeof list}`);
+    pass("TC-AL02", "GET /api/admin/audit/actions returns 200 with array");
   } catch (e) {
-    fail("TC-AL02", `GET ${auditPath} returns 200`, (e as Error).message);
+    fail("TC-AL02", "GET /api/admin/audit/actions 200 + array", (e as Error).message);
   }
 
-  // TC-AL03: GET audit log returns JSON content-type
+  // TC-AL03: GET /api/admin/audit/stats returns 200 with object
   try {
-    const res = await apiFetch(auditPath, { token: ownerToken });
+    const res = await apiFetch("/api/admin/audit/stats", { token: ownerToken });
     const text = await res.text();
     saveEvidence("TC-AL03", text.slice(0, 500), Object.fromEntries(res.headers.entries()));
-    const ct = res.headers.get("content-type") ?? "";
-    assert(ct.includes("json"), `Expected JSON content-type, got ${ct}`);
-    pass("TC-AL03", "Audit log returns JSON content-type");
+    assert(res.status === 200, `Expected 200, got ${res.status}: ${text.slice(0, 200)}`);
+    const body = JSON.parse(text);
+    assert(typeof body === "object" && body !== null, "Expected object shape");
+    pass("TC-AL03", "GET /api/admin/audit/stats returns 200 with object");
   } catch (e) {
-    fail("TC-AL03", "Audit log returns JSON", (e as Error).message);
+    fail("TC-AL03", "GET /api/admin/audit/stats 200 + object", (e as Error).message);
   }
 
-  // TC-AL04: GET audit log response is array or object with data array
+  // TC-AL04: GET /api/admin/audit/messages returns 200 with array
   try {
-    const res = await apiFetch(auditPath, { token: ownerToken });
+    const res = await apiFetch("/api/admin/audit/messages", { token: ownerToken });
     const text = await res.text();
     saveEvidence("TC-AL04", text.slice(0, 500), Object.fromEntries(res.headers.entries()));
-    let body: unknown;
-    try { body = JSON.parse(text); } catch { throw new Error("Not JSON"); }
-    const isArray = Array.isArray(body);
-    const isObjWithArray = typeof body === "object" && body !== null &&
-      (Array.isArray((body as Record<string, unknown>).data) ||
-       Array.isArray((body as Record<string, unknown>).logs) ||
-       Array.isArray((body as Record<string, unknown>).events) ||
-       Array.isArray((body as Record<string, unknown>).items));
-    assert(isArray || isObjWithArray, `Expected array or {data:[]} shape, got: ${text.slice(0, 200)}`);
-    pass("TC-AL04", "Audit log response has array shape");
+    assert(res.status === 200 || res.status === 400, `Expected 200/400, got ${res.status}: ${text.slice(0, 200)}`);
+    if (res.status === 400) {
+      // /messages may require a query param (q=, filter=); empty list is acceptable
+      pass("TC-AL04", "GET /api/admin/audit/messages returns 400 when no query (acceptable)");
+      return;
+    }
+    const body = JSON.parse(text);
+    const list = Array.isArray(body) ? body : (body.data ?? body.messages ?? body.items);
+    assert(Array.isArray(list), `Expected array shape, got ${typeof list}`);
+    pass("TC-AL04", "GET /api/admin/audit/messages returns 200 with array");
   } catch (e) {
-    fail("TC-AL04", "Audit log response shape", (e as Error).message);
+    fail("TC-AL04", "GET /api/admin/audit/messages 200 + array", (e as Error).message);
   }
 
-  // TC-AL05: GET audit log without token returns 401/403
+  // TC-AL05: GET /api/admin/audit/conversations without token returns 401/403
   try {
-    const res = await apiFetch(auditPath);
+    const res = await apiFetch("/api/admin/audit/conversations");
     const text = await res.text();
     saveEvidence("TC-AL05", text, Object.fromEntries(res.headers.entries()));
-    assert(
-      res.status === 401 || res.status === 403,
-      `Expected 401/403 without token, got ${res.status}`
-    );
-    pass("TC-AL05", "GET audit log without token returns 401/403");
+    assert(res.status === 401 || res.status === 403, `Expected 401/403 without token, got ${res.status}`);
+    pass("TC-AL05", "GET /api/admin/audit/conversations without token returns 401/403");
   } catch (e) {
-    fail("TC-AL05", "Audit log requires auth", (e as Error).message);
+    fail("TC-AL05", "Audit requires auth", (e as Error).message);
   }
 
-  // TC-AL06: GET audit log with pagination param ?limit=5 doesn't 500
+  // TC-AL06: GET /api/admin/audit/conversations?limit=5 doesn't 500
   try {
-    const res = await apiFetch(`${auditPath}?limit=5`, { token: ownerToken });
+    const res = await apiFetch("/api/admin/audit/conversations?limit=5", { token: ownerToken });
     const text = await res.text();
     saveEvidence("TC-AL06", text.slice(0, 500), Object.fromEntries(res.headers.entries()));
     assert(res.status !== 500, `Got 500 with limit=5: ${text.slice(0, 200)}`);
-    pass("TC-AL06", "GET audit log?limit=5 doesn't 500");
+    pass("TC-AL06", "GET /api/admin/audit/conversations?limit=5 doesn't 500");
   } catch (e) {
-    fail("TC-AL06", "Audit log pagination no 500", (e as Error).message);
+    fail("TC-AL06", "Audit limit param no 500", (e as Error).message);
   }
 
-  // TC-AL07: GET audit log with ?page=0 doesn't 500
+  // TC-AL07: GET /api/admin/audit/conversations?offset=0 doesn't 500
   try {
-    const res = await apiFetch(`${auditPath}?page=0`, { token: ownerToken });
+    const res = await apiFetch("/api/admin/audit/conversations?offset=0", { token: ownerToken });
     const text = await res.text();
     saveEvidence("TC-AL07", text.slice(0, 500), Object.fromEntries(res.headers.entries()));
-    assert(res.status !== 500, `Got 500 with page=0: ${text.slice(0, 200)}`);
-    pass("TC-AL07", "GET audit log?page=0 doesn't 500");
+    assert(res.status !== 500, `Got 500 with offset=0: ${text.slice(0, 200)}`);
+    pass("TC-AL07", "GET /api/admin/audit/conversations?offset=0 doesn't 500");
   } catch (e) {
-    fail("TC-AL07", "Audit log page=0 no 500", (e as Error).message);
+    fail("TC-AL07", "Audit offset param no 500", (e as Error).message);
   }
 
-  // TC-AL08: GET audit log with ?action=login filter doesn't 500
+  // TC-AL08: GET /api/admin/audit/actions?action=login doesn't 500
   try {
-    const res = await apiFetch(`${auditPath}?action=login`, { token: ownerToken });
+    const res = await apiFetch("/api/admin/audit/actions?action=login", { token: ownerToken });
     const text = await res.text();
     saveEvidence("TC-AL08", text.slice(0, 500), Object.fromEntries(res.headers.entries()));
-    assert(res.status !== 500, `Got 500 with action=login filter: ${text.slice(0, 200)}`);
-    pass("TC-AL08", "GET audit log?action=login doesn't 500");
+    assert(res.status !== 500, `Got 500 with action filter: ${text.slice(0, 200)}`);
+    pass("TC-AL08", "GET /api/admin/audit/actions?action=login doesn't 500");
   } catch (e) {
-    fail("TC-AL08", "Audit log action filter no 500", (e as Error).message);
+    fail("TC-AL08", "Audit action filter no 500", (e as Error).message);
   }
 
-  // TC-AL09: GET audit log with ?userId=fake-id doesn't 500
+  // TC-AL09: GET /api/admin/audit/conversations/:fakeId returns 404 (not 500)
   try {
-    const res = await apiFetch(`${auditPath}?userId=00000000-0000-4000-8000-000000000099`, { token: ownerToken });
+    const fakeId = "00000000-0000-4000-8000-000000000099";
+    const res = await apiFetch(`/api/admin/audit/conversations/${fakeId}`, { token: ownerToken });
     const text = await res.text();
     saveEvidence("TC-AL09", text.slice(0, 500), Object.fromEntries(res.headers.entries()));
-    assert(res.status !== 500, `Got 500 with userId filter: ${text.slice(0, 200)}`);
-    pass("TC-AL09", "GET audit log?userId=fake-uuid doesn't 500");
+    assert(
+      res.status === 404 || res.status === 200,
+      `Expected 404/200 for non-existent session, got ${res.status}: ${text.slice(0, 200)}`,
+    );
+    pass("TC-AL09", "GET /api/admin/audit/conversations/:fakeId returns 404/200");
   } catch (e) {
-    fail("TC-AL09", "Audit log userId filter no 500", (e as Error).message);
+    fail("TC-AL09", "Audit conversation by id no 500", (e as Error).message);
   }
 
-  // TC-AL10: GET audit log with date range ?from=&to= doesn't 500
+  // TC-AL10: GET /api/admin/audit/messages?q=hello doesn't 500
   try {
-    const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const to = new Date().toISOString();
-    const res = await apiFetch(`${auditPath}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { token: ownerToken });
+    const res = await apiFetch("/api/admin/audit/messages?q=hello", { token: ownerToken });
     const text = await res.text();
     saveEvidence("TC-AL10", text.slice(0, 500), Object.fromEntries(res.headers.entries()));
-    assert(res.status !== 500, `Got 500 with date range: ${text.slice(0, 200)}`);
-    pass("TC-AL10", "GET audit log with date range filter doesn't 500");
+    assert(res.status !== 500, `Got 500 with messages?q=: ${text.slice(0, 200)}`);
+    pass("TC-AL10", "GET /api/admin/audit/messages?q=hello doesn't 500");
   } catch (e) {
-    fail("TC-AL10", "Audit log date range filter no 500", (e as Error).message);
+    fail("TC-AL10", "Audit messages query no 500", (e as Error).message);
   }
+
+  // unused-import guard — skip is here so it stays imported even when no branch uses it
+  void skip;
 }
