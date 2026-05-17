@@ -13,10 +13,7 @@ import { Step4Integrations } from "./steps/Step4Integrations";
 
 const TOTAL_STEPS = 5;
 
-// The wizard targets operators installing Doable for their team — workspace
-// identity, AI key, sign-in providers, network posture (Cloudflare), plans &
-// billing. Building a first app belongs in the dashboard for end-users, not
-// in the install flow.
+// Admin-installer wizard — no "create first app" step (that belongs in the dashboard, not setup).
 const STEP_LABELS = [
   "Welcome",
   "AI Provider",
