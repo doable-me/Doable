@@ -87,10 +87,19 @@ if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null; then
     error "Docker is not installed and this isn't a debian/ubuntu box (no apt-get). Install Docker manually: https://docs.docker.com/engine/install/"
     exit 1
   fi
-  info "Docker missing — installing docker.io + docker-compose-plugin via apt (Ubuntu/Debian)..."
+  info "Docker missing — installing docker.io + compose v2 via apt (Ubuntu/Debian)..."
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq docker.io docker-compose-plugin
+  # Ubuntu ships compose v2 as `docker-compose-v2`; Docker Inc.'s official
+  # repo (which ubuntu may have layered in) calls the same plugin
+  # `docker-compose-plugin`. Try both names — first match wins.
+  apt-get install -y -qq docker.io
+  if ! apt-get install -y -qq docker-compose-v2 2>/dev/null; then
+    apt-get install -y -qq docker-compose-plugin 2>/dev/null || {
+      error "Could not install docker compose v2 (tried docker-compose-v2 + docker-compose-plugin). Install manually: https://docs.docker.com/compose/install/"
+      exit 1
+    }
+  fi
   systemctl enable --now docker
   ok "Docker $(docker --version 2>/dev/null || echo '?') + compose $(docker compose version 2>/dev/null | head -1 || echo '?') installed"
 fi
