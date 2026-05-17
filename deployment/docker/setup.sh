@@ -298,6 +298,27 @@ fi
 
 info "Setting up nginx reverse proxy for ${LISTEN_HOST}..."
 
+# Free :80 and :443 before installing nginx. If the box was previously running
+# the bare-metal NO_TUNNEL path, caddy is already bound to both ports and nginx
+# will fail to start with EADDRINUSE. Stop+disable any other web server we know
+# about — purely a no-op on a fresh box.
+for svc in caddy apache2 lighttpd; do
+  if systemctl is-active --quiet "$svc"; then
+    info "Stopping conflicting web server: $svc (was bound to :80/:443)"
+    systemctl stop "$svc" 2>/dev/null || true
+    systemctl disable "$svc" 2>/dev/null || true
+  fi
+done
+
+# Same for doable.service — its tmux session may hold node processes that
+# bind 127.0.0.1:3000/4000/4001 (web/api/ws). Docker compose will rebind the
+# same ports inside the container, so we stop the bare-metal copy first.
+if systemctl is-active --quiet doable; then
+  info "Stopping bare-metal doable.service (was using ports 3000/4000/4001)"
+  systemctl stop doable 2>/dev/null || true
+  systemctl disable doable 2>/dev/null || true
+fi
+
 # Install nginx if not present
 if ! command -v nginx &>/dev/null; then
   info "Installing nginx..."
