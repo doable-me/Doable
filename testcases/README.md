@@ -1,17 +1,22 @@
 # Doable OOB Smoke Tests
 
-Single-command release-readiness check for any Doable install (local docker, remote docker, bare-metal).
+Single-command release-readiness check for any Doable install (local docker, remote docker, bare-metal). 234 unique TCs across 26 areas. Sequential or parallel runner.
 
 ## Quick Start
 
 ```bash
-# Against a remote install
+# Sequential runner (default) — ~50s against a remote install
 DOABLE_BASE=https://staging.doable.me bash testcases/run.sh
+
+# Parallel runner — ~20s against a remote install (concurrency=6 default)
+DOABLE_OOB_PARALLEL=1 DOABLE_BASE=https://staging.doable.me bash testcases/run.sh
 
 # Against local docker-compose
 DOABLE_BASE=http://localhost:3001 bash testcases/run.sh
 
 # With all options
+DOABLE_OOB_PARALLEL=1 \
+DOABLE_OOB_CONCURRENCY=8 \
 DOABLE_BASE=https://your-install.example.com \
 DOABLE_API_BASE=https://your-install-api.example.com \
 DOABLE_TEST_EMAIL=admin@example.com \
@@ -31,6 +36,25 @@ bash testcases/run.sh
 | `DOABLE_TEST_EMAIL` | No | Email for test owner account |
 | `DOABLE_TEST_PASSWORD` | No | Password for test owner account |
 | `DOABLE_MINIMAX_KEY` | No | MINIMAX_API_KEY to test env-seeding path |
+| `DOABLE_OOB_PARALLEL` | No (default: `0`) | Set to `1` to use the parallel runner (`testcases/oob/parallel.ts`) |
+| `DOABLE_OOB_CONCURRENCY` | No (default: `6`) | Parallel worker count for post-bootstrap fan-out |
+
+## Runner Architecture
+
+Bootstrap (5 stages — sequential by necessity, single owner-state mutation order):
+
+  health → signup-bootstrap → auth → wizard → ai-seeding
+
+Post-bootstrap (sequential in `index.ts`, parallel in `parallel.ts`):
+
+  workspace-project, websocket, ai-chat, projects-crud, integrations,
+  billing, mcp, admin, security, github, marketplace, folders,
+  thumbnails, search, oauth-negative, error-paths, perm-matrix,
+  upload-limits, settings-crud, audit-log
+
+Post-fanout sequential (in `parallel.ts`, last stage of `index.ts`):
+
+  ratelimit (intentionally trips IP throttle; must run last)
 
 ## Test Coverage
 
