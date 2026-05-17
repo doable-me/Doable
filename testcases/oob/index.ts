@@ -26,6 +26,14 @@ import { runGithubTests }            from "./github.test.js";
 import { runMarketplaceTests }       from "./marketplace.test.js";
 import { runFoldersTests }           from "./folders.test.js";
 import { runThumbnailsTests }        from "./thumbnails.test.js";
+import { runSearchTests }            from "./search.test.js";
+import { runRateLimitTests }         from "./ratelimit.test.js";
+import { runOauthNegativeTests }     from "./oauth-negative.test.js";
+import { runErrorPathTests }         from "./error-paths.test.js";
+import { runPermMatrixTests }        from "./perm-matrix.test.js";
+import { runUploadLimitTests }       from "./upload-limits.test.js";
+import { runSettingsCrudTests }      from "./settings-crud.test.js";
+import { runAuditLogTests }          from "./audit-log.test.js";
 import { getResults, API_BASE, WS_BASE, BASE } from "./_shared.js";
 
 async function main() {
@@ -131,6 +139,38 @@ async function main() {
   console.log("\n── Thumbnails ─────────────────────────────────────────");
   await runThumbnailsTests(activeToken, wsId);
 
+  // ── Stage 19: Search ─────────────────────────────────────────────────────
+  console.log("\n── Search ─────────────────────────────────────────────");
+  await runSearchTests(activeToken, wsId);
+
+  // ── Stage 20: Rate Limits ────────────────────────────────────────────────
+  console.log("\n── Rate Limits ────────────────────────────────────────");
+  await runRateLimitTests(activeToken, wsId);
+
+  // ── Stage 21: OAuth Negative Paths ───────────────────────────────────────
+  console.log("\n── OAuth Negative Paths ───────────────────────────────");
+  await runOauthNegativeTests(activeToken, wsId);
+
+  // ── Stage 22: Error Paths ────────────────────────────────────────────────
+  console.log("\n── Error Paths ────────────────────────────────────────");
+  await runErrorPathTests(activeToken, wsId);
+
+  // ── Stage 23: Permission Matrix ──────────────────────────────────────────
+  console.log("\n── Permission Matrix ──────────────────────────────────");
+  await runPermMatrixTests(activeToken, wsId);
+
+  // ── Stage 24: Upload Limits ──────────────────────────────────────────────
+  console.log("\n── Upload Limits ──────────────────────────────────────");
+  await runUploadLimitTests(activeToken, wsId);
+
+  // ── Stage 25: Settings CRUD ──────────────────────────────────────────────
+  console.log("\n── Settings CRUD ──────────────────────────────────────");
+  await runSettingsCrudTests(activeToken, wsId);
+
+  // ── Stage 26: Audit Log ──────────────────────────────────────────────────
+  console.log("\n── Audit Log ──────────────────────────────────────────");
+  await runAuditLogTests(activeToken, wsId);
+
   // ── Summary ───────────────────────────────────────────────────────────────
   printSummary();
 }
@@ -143,7 +183,7 @@ function printSummary() {
   const total   = results.length;
 
   console.log("\n══════════════════════════════════════════════════════");
-  console.log(` Doable OOB Smoke Tests — ${total} TCs across 18 areas`);
+  console.log(` Doable OOB Smoke Tests — ${total} TCs across 26 areas`);
   console.log(` PASS: ${passed}  FAIL: ${failed}  SKIP: ${skipped}`);
   console.log("══════════════════════════════════════════════════════\n");
 
