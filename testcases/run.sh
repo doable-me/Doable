@@ -44,4 +44,10 @@ fi
 mkdir -p "$SCRIPT_DIR/evidence"
 
 # ── Run ──────────────────────────────────────────────────────────────────────
-$TSX_BIN "$SCRIPT_DIR/oob/index.ts"
+if [ "${DOABLE_OOB_PARALLEL:-0}" = "1" ]; then
+  echo " Mode: PARALLEL (concurrency=${DOABLE_OOB_CONCURRENCY:-6})"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  $TSX_BIN "$SCRIPT_DIR/oob/parallel.ts"
+else
+  $TSX_BIN "$SCRIPT_DIR/oob/index.ts"
+fi
