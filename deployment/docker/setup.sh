@@ -330,7 +330,7 @@ server {
 HTTPEOF
   ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${LISTEN_HOST}"
   rm -f /etc/nginx/sites-enabled/default
-  nginx -t && systemctl reload nginx
+  nginx -t && systemctl enable --now nginx && systemctl reload-or-restart nginx
 
   EMAIL_FLAG=""
   if [ -n "${EMAIL:-}" ]; then
@@ -390,7 +390,7 @@ sed -e "s|__HOST__|${LISTEN_HOST}|g" \
 ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${LISTEN_HOST}"
 rm -f /etc/nginx/sites-enabled/default
 
-nginx -t && systemctl reload nginx
+nginx -t && systemctl enable --now nginx && systemctl reload-or-restart nginx
 ok "nginx configured and running for ${LISTEN_HOST}"
 
 # ─── Firewall ────────────────────────────────────────────────────────────────
