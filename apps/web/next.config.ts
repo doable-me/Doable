@@ -113,16 +113,22 @@ const nextConfig: NextConfig = {
       "base-uri 'self'",
     ].join("; ");
 
-    // Strict CSP for everything else — drops `unsafe-eval`. We keep
-    // `'unsafe-inline'` on script-src and style-src because Next.js App
-    // Router emits inline bootstrap scripts (self.__next_r, self.__next_f
+    // Strict CSP for everything else — drops `unsafe-eval` IN PRODUCTION.
+    // In development the React runtime uses `eval()` for source-map debug
+    // features and Fast Refresh; without `'unsafe-eval'` React refuses to
+    // hydrate (form.onSubmit ends up undefined and the page is dead). Detect
+    // dev mode and emit the looser policy. Production builds (NODE_ENV =
+    // production) keep the stricter policy.
+    const isDev = process.env.NODE_ENV !== "production";
+    const scriptSrcExtra = isDev ? "'unsafe-eval' " : "";
+    // We keep `'unsafe-inline'` on script-src and style-src because Next.js
+    // App Router emits inline bootstrap scripts (self.__next_r, self.__next_f
     // RSC payload, theme bootstrap) that React requires for hydration.
-    // Without it the page never hydrates and stays on loading.tsx.
     // Future: switch to nonce-based CSP once middleware nonce injection is
     // wired up.
     const strictCsp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://static.cloudflareinsights.com",
+      `script-src 'self' 'unsafe-inline' ${scriptSrcExtra}https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://static.cloudflareinsights.com`,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
       "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
       `img-src 'self' data: blob: https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://cdn.activepieces.com http://localhost:* http://127.0.0.1:* ${apexAllow}${extraApex}`,
