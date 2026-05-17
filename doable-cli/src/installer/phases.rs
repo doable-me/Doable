@@ -33,25 +33,23 @@ impl Phase {
     }
 }
 
-/// The 15 phases mirror `setup-server-v3.sh`. Order matters — the runner uses
-/// `Phase N/15` markers from the remote script to drive the sidebar.
+/// The 13 phases mirror `deployment/server-setup.sh` — order matches the
+/// `Step N/13` markers the script emits.
 pub fn default_phases() -> Vec<Phase> {
     [
-        "Preflight checks (OS, sudo, network)",
-        "System packages (apt, locales, tzdata)",
-        "Node.js 22 + pnpm",
-        "PostgreSQL 16 + extensions (pgcrypto, pgvector, pg_trgm)",
-        "Caddy + cloudflared",
-        "Puppeteer / Chrome dependencies",
-        "Repo clone + workspace install",
-        "Database creation + migrations",
-        "Environment files + secret generation",
-        "UFW firewall (deny all, allow SSH)",
-        "fail2ban + sshd hardening",
-        "Swap file (2 GB)",
-        "Cloudflare Tunnel configuration",
-        "systemd services (doable + cloudflared)",
-        "tmux session (api / web / ws) + smoke test",
+        "Installing system packages",
+        "Configuring firewall (UFW)",
+        "Hardening services (PostgreSQL & fail2ban)",
+        "Configuring swap",
+        "Setting up PostgreSQL",
+        "GitHub authentication",
+        "Cloning repository",
+        "Writing environment files",
+        "Installing dependencies",
+        "Setting up Cloudflare Tunnel",
+        "Setting up publish infrastructure",
+        "Creating systemd services",
+        "Starting services",
     ]
     .iter()
     .map(|n| Phase::new(n))

@@ -2,8 +2,8 @@
 # Doable — Multi-stage Dockerfile
 # ==============================================================================
 # Targets: api, ws, web, migrate
-# Usage:   docker compose -f docker/docker-compose.yml up
-#          docker compose -f docker/docker-compose.yml up postgres  (DB only)
+# Usage:   docker compose -f deployment/docker/docker-compose.yml up
+#          docker compose -f deployment/docker/docker-compose.yml up postgres  (DB only)
 # ==============================================================================
 
 # --- Base ---
@@ -11,7 +11,7 @@ FROM node:22-slim AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable pnpm && apt-get update && apt-get install -y --no-install-recommends tmux && rm -rf /var/lib/apt/lists/*
-COPY docker/tmux-entrypoint.sh /usr/local/bin/tmux-entrypoint
+COPY deployment/docker/tmux-entrypoint.sh /usr/local/bin/tmux-entrypoint
 RUN chmod +x /usr/local/bin/tmux-entrypoint
 WORKDIR /app
 
@@ -94,7 +94,7 @@ COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/
 # Runtime placeholder rewriter — replaces __DOABLE_*_URL__ placeholders
 # baked at build time with the operator's actual NEXT_PUBLIC_* values from
 # container env. Lets one image work for any deployment URL.
-COPY docker/web-runtime-entrypoint.sh /usr/local/bin/web-runtime-entrypoint
+COPY deployment/docker/web-runtime-entrypoint.sh /usr/local/bin/web-runtime-entrypoint
 RUN chmod +x /usr/local/bin/web-runtime-entrypoint
 USER node
 EXPOSE 3000

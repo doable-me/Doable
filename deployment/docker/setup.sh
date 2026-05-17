@@ -143,6 +143,27 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 if [ ! -f "$ENV_FILE" ]; then
+  # Fresh .env means fresh secrets. If a postgres_data volume already exists
+  # from a previous install, it has the OLD password — Postgres ignores
+  # POSTGRES_PASSWORD on subsequent boots (only honored on first boot of an
+  # empty data dir), so migrate fails with "password authentication failed
+  # for user doable" and the api/ws/web containers never come up. The fresh
+  # JWT_SECRET / ENCRYPTION_KEY / DOABLE_KEK would also invalidate every
+  # encrypted column in the old DB. Bundle the volume-wipe with the secret
+  # rotation so they always cohere.
+  if docker volume ls -q 2>/dev/null | grep -qE '_postgres_data$'; then
+    warn "Pre-existing postgres_data volume detected — its password won't match the fresh .env we're about to generate."
+    warn "Wiping postgres + api + ws + thumbnails volumes to avoid an authentication mismatch."
+    docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || true
+    # Belt-and-suspenders: down -v only removes volumes attached to THIS
+    # compose project. Sweep any leftover *_postgres_data volume from a
+    # previous compose-project name (e.g. an earlier `docker/` reorg cycle).
+    for v in $(docker volume ls -q | grep -E '_(postgres_data|api_projects|api_thumbnails|ws_projects)$' || true); do
+      docker volume rm -f "$v" 2>/dev/null || true
+    done
+    ok "Cleared previous-install volumes"
+  fi
+
   info "Generating deployment/docker/.env with random secrets..."
 
   JWT_SECRET=$(openssl rand -hex 32)
@@ -277,6 +298,38 @@ fi
 
 info "Setting up nginx reverse proxy for ${LISTEN_HOST}..."
 
+# Free :80 and :443 before installing nginx. If the box was previously running
+# the bare-metal NO_TUNNEL path, caddy is already bound to both ports and nginx
+# will fail to start with EADDRINUSE. Stop+disable any other web server we know
+# about — purely a no-op on a fresh box.
+for svc in caddy apache2 lighttpd; do
+  if systemctl is-active --quiet "$svc"; then
+    info "Stopping conflicting web server: $svc (was bound to :80/:443)"
+    systemctl stop "$svc" 2>/dev/null || true
+    systemctl disable "$svc" 2>/dev/null || true
+  fi
+done
+
+# Same for doable.service — its tmux session may hold node processes that
+# bind 127.0.0.1:3000/4000/4001 (web/api/ws). Docker compose will rebind the
+# same ports inside the container, so we stop the bare-metal copy first.
+if systemctl is-active --quiet doable; then
+  info "Stopping bare-metal doable.service (was using ports 3000/4000/4001)"
+  systemctl stop doable 2>/dev/null || true
+  systemctl disable doable 2>/dev/null || true
+fi
+
+# Native postgres holds 127.0.0.1:5432 on any box that ran the bare-metal
+# server-setup.sh path. Docker compose maps 127.0.0.1:5432 -> postgres:5432
+# inside the container, so the host bind fails with EADDRINUSE if native
+# postgres is up. The docker postgres container will be the new source of
+# truth; the native one is no longer needed.
+if systemctl is-active --quiet postgresql; then
+  info "Stopping native postgresql (was holding 127.0.0.1:5432 — docker postgres takes over)"
+  systemctl stop postgresql 2>/dev/null || true
+  systemctl disable postgresql 2>/dev/null || true
+fi
+
 # Install nginx if not present
 if ! command -v nginx &>/dev/null; then
   info "Installing nginx..."
@@ -309,7 +362,7 @@ server {
 HTTPEOF
   ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${LISTEN_HOST}"
   rm -f /etc/nginx/sites-enabled/default
-  nginx -t && systemctl reload nginx
+  nginx -t && systemctl enable --now nginx && systemctl reload-or-restart nginx
 
   EMAIL_FLAG=""
   if [ -n "${EMAIL:-}" ]; then
@@ -369,7 +422,7 @@ sed -e "s|__HOST__|${LISTEN_HOST}|g" \
 ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${LISTEN_HOST}"
 rm -f /etc/nginx/sites-enabled/default
 
-nginx -t && systemctl reload nginx
+nginx -t && systemctl enable --now nginx && systemctl reload-or-restart nginx
 ok "nginx configured and running for ${LISTEN_HOST}"
 
 # ─── Firewall ────────────────────────────────────────────────────────────────

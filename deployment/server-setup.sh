@@ -22,6 +22,19 @@ if [ "$CONTAINER_MODE" = "1" ]; then
   info "Running in CONTAINER_MODE — host-only steps will be skipped."
 fi
 
+# ─── No-tunnel mode (pure-IP installs) ─────────────────────────
+# Set NO_TUNNEL=1 together with HOST=<ip-or-hostname> to skip Cloudflare
+# Tunnel entirely and serve api/ws/web directly behind Caddy with a
+# self-signed cert on :443. Used for fresh-user installs on a bare IP
+# without any Cloudflare-managed domain.
+NO_TUNNEL="${NO_TUNNEL:-0}"
+if [ "$NO_TUNNEL" = "1" ]; then
+  if [ -z "${HOST:-}" ]; then
+    err "NO_TUNNEL=1 requires HOST=<ip-or-hostname> (e.g. HOST=203.0.113.10 NO_TUNNEL=1 ./server-setup.sh)"
+  fi
+  info "NO_TUNNEL=1 — serving api/ws/web at https://${HOST} with a self-signed cert"
+fi
+
 # ─── Auto-tmux wrap (crash-safe forensics) ─────────────────────
 # Re-exec inside a tmux session named `doable-setup` so the pane stays
 # open after the script exits — successes AND failures retain full
@@ -153,7 +166,7 @@ if [ "$CONTAINER_MODE" = "1" ] || [ "$NON_INTERACTIVE" = "1" ] || ! [ -t 0 ]; th
   API_SUB="${API_SUB:-api}"
   WS_SUB="${WS_SUB:-ws}"
   REPO="${REPO:-doable-me/doable}"
-  DB_PASS="${DB_PASS:-doable}"
+  DB_PASS="${DB_PASS:-$(openssl rand -hex 16)}"
   GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
   GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
   GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:-}"
@@ -209,6 +222,18 @@ fi
 # get rewritten to dev-api.dev.doable.me.
 API_DOMAIN="${API_DOMAIN:-${API_SUB}.${DOMAIN}}"
 WS_DOMAIN="${WS_DOMAIN:-${WS_SUB}.${DOMAIN}}"
+
+# NO_TUNNEL=1 single-host override: api/ws/web all served behind one
+# IP-facing Caddy on the same machine, distinguished by request path. Force
+# DOMAIN/API_DOMAIN/WS_DOMAIN to the operator-supplied HOST so every
+# downstream .env URL and Caddy block points at the IP.
+if [ "$NO_TUNNEL" = "1" ]; then
+  DOMAIN="${HOST}"
+  API_DOMAIN="${HOST}"
+  WS_DOMAIN="${HOST}"
+  info "NO_TUNNEL=1 — DOMAIN/API_DOMAIN/WS_DOMAIN all set to ${HOST}"
+fi
+
 JWT_SECRET=$(openssl rand -hex 32)
 ENCRYPTION_KEY=$(openssl rand -hex 32)
 INTERNAL_SECRET=$(openssl rand -hex 16)
@@ -414,6 +439,14 @@ if [ "$CONTAINER_MODE" != "1" ]; then
 
   # NOTE: No application ports are opened — all access goes through Cloudflare Tunnel.
   # Services bind to 127.0.0.1 only. Never expose 3000/4000/4001/8080 to the public.
+  if [ "$NO_TUNNEL" = "1" ]; then
+    # NO_TUNNEL mode: Caddy fronts api/ws/web on :443 directly with a
+    # self-signed cert. Open :80 (redirect to :443) and :443. Backend services
+    # still bind to 127.0.0.1 only — Caddy is the sole public listener.
+    ufw allow 80/tcp comment "HTTP (NO_TUNNEL redirect to HTTPS)" >/dev/null 2>&1 || true
+    ufw allow 443/tcp comment "HTTPS (NO_TUNNEL Caddy self-signed)" >/dev/null 2>&1 || true
+    info "NO_TUNNEL=1 — opened :80 and :443 for Caddy public fronting"
+  fi
 
   # ── Safety verification before enabling UFW ──
   # Verify SSH rule is actually in the ruleset before enabling.
@@ -515,8 +548,19 @@ fi
 # ─── Step 5: PostgreSQL setup ──────────────────────────────────
 info "Step 5/13: Setting up PostgreSQL..."
 
-sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='doable'" | grep -q 1 \
-  || sudo -u postgres psql -c "CREATE USER doable WITH PASSWORD '${DB_PASS}' CREATEDB;"
+if sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='doable'" | grep -q 1; then
+  # User exists from a prior install. The .env we just wrote has a fresh
+  # DB_PASS (Step 8 always generates one unless pre-staged), so the live
+  # postgres password is stale — every subsequent migration + service
+  # boot fails with "password authentication failed for user doable".
+  # Align the postgres-side password with the .env every run; this is a
+  # no-op on the first install (same password just written).
+  sudo -u postgres psql -c "ALTER USER doable WITH PASSWORD '${DB_PASS}';" >/dev/null
+  ok "Aligned postgres 'doable' password with current .env"
+else
+  sudo -u postgres psql -c "CREATE USER doable WITH PASSWORD '${DB_PASS}' CREATEDB;"
+  ok "Created postgres user 'doable'"
+fi
 
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='doable'" | grep -q 1 \
   || sudo -u postgres psql -c "CREATE DATABASE doable OWNER doable;"
@@ -656,6 +700,16 @@ else
   BIND_HOST=127.0.0.1
 fi
 
+# Public-facing hostname for the GitHub repo-scope OAuth callback. Normally
+# the operator's `api.${DOMAIN}` (prod), but for NO_TUNNEL=1 there's no
+# wildcard DNS so we collapse the single-host install onto ${HOST}.
+if [ "$NO_TUNNEL" = "1" ]; then
+  GITHUB_REPO_CALLBACK_HOST="${HOST}"
+  warn "NO_TUNNEL=1 — OAuth providers (Google/GitHub) reject raw IPs as redirect URIs. The GOOGLE_REDIRECT_URI/GITHUB_REDIRECT_URI values written below point at https://${HOST}; you'll need to overwrite them with a real registered HTTPS hostname before OAuth login will work."
+else
+  GITHUB_REPO_CALLBACK_HOST="api.${DOMAIN}"
+fi
+
 cat > "${INSTALL_DIR}/.env" << ENVEOF
 # ─── Database ───────────────────────────────────────────────
 DATABASE_URL=postgres://doable:${DB_PASS}@localhost:5432/doable
@@ -701,7 +755,7 @@ GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
 GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
 GITHUB_REDIRECT_URI=https://${API_DOMAIN}/auth/github/callback
 GITHUB_COPILOT_REDIRECT_URI=https://${API_DOMAIN}/auth/github/copilot/callback
-GITHUB_REPO_REDIRECT_URI=https://api.${DOMAIN}/auth/github/repo/callback
+GITHUB_REPO_REDIRECT_URI=https://${GITHUB_REPO_CALLBACK_HOST}/auth/github/repo/callback
 
 # Integration OAuth callbacks — must be HTTPS (Supabase, Google reject http://
 # non-localhost). Reusing the public API hostname avoids edge-layer mismatches.
@@ -913,6 +967,21 @@ ok "Dependencies installed & database migrated"
 # a non-standard NODE_ENV — emits "non-standard NODE_ENV" warnings and
 # can crash /_global-error static generation. The runtime keeps using
 # the .env value once start.sh boots services.
+# Build workspace packages first — services/api imports `docore` (and other
+# packages import `dovault`) via `package.json#main` → `dist/index.js`.
+# Without these built artifacts, `tsx watch` in services/api dies at startup
+# with `ERR_MODULE_NOT_FOUND: …/services/api/node_modules/docore/dist/index.js`
+# (workspace symlink resolves to packages/docore/dist/ which doesn't exist
+# until build runs). Mirrors the Dockerfile's explicit docore + dovault build
+# steps. `|| true` tolerates a missing build script the same way the docker
+# path does — `tsc` failures are surfaced via the API's start-up error if
+# the dist/ stays empty.
+info "Building workspace packages (docore, dovault)..."
+cd "$INSTALL_DIR"
+pnpm --filter=docore run build || warn "docore build emitted errors — API may fail to start"
+pnpm --filter=dovault run build || warn "dovault build emitted errors — sandbox features may degrade"
+ok "Workspace packages built"
+
 info "Building Next.js..."
 cd "$INSTALL_DIR/apps/web"
 rm -rf .next .turbo
@@ -921,7 +990,11 @@ cd "$INSTALL_DIR"
 ok "Next.js built"
 
 # ─── Step 10: Cloudflare Tunnel ───────────────────────────────
-if [ "$CONTAINER_MODE" != "1" ]; then
+if [ "$NO_TUNNEL" = "1" ]; then
+  echo "[SKIP-NO-TUNNEL] Step 10/13: Cloudflare Tunnel (NO_TUNNEL=1 — using direct nginx-style fronting with self-signed cert)"
+  TUNNEL_NAME="no-tunnel"
+  TUNNEL_ID="n/a"
+elif [ "$CONTAINER_MODE" != "1" ]; then
   info "Step 10/13: Setting up Cloudflare Tunnel..."
 
   if [[ ! -f /root/.cloudflared/cert.pem ]]; then
@@ -1143,8 +1216,76 @@ chmod 711 /root
 chmod -R 755 "${INSTALL_DIR}/sites"
 
 # Caddyfile: serves *.domain from /sites/{subdomain}/
-# Bound to 127.0.0.1 — only reachable via Cloudflare Tunnel
-cat > /etc/caddy/Caddyfile << CADDYEOF
+# Bound to 127.0.0.1 — only reachable via Cloudflare Tunnel.
+# NO_TUNNEL=1 swaps in a self-signed-TLS, public-facing Caddyfile that
+# fronts api/ws/web on :443 directly (no tunnel, no wildcard publishes).
+if [ "$NO_TUNNEL" = "1" ]; then
+  # Generate self-signed cert keyed on HOST (IP or hostname). SAN extension
+  # picks IP: for raw IPv4, DNS: otherwise — same logic as docker/setup.sh.
+  mkdir -p /etc/caddy
+  if [ ! -f /etc/caddy/selfsigned.crt ] || [ ! -f /etc/caddy/selfsigned.key ]; then
+    if echo "$HOST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+      SAN_EXT="subjectAltName=IP:${HOST}"
+    else
+      SAN_EXT="subjectAltName=DNS:${HOST}"
+    fi
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout /etc/caddy/selfsigned.key \
+      -out /etc/caddy/selfsigned.crt \
+      -subj "/CN=${HOST}" \
+      -addext "$SAN_EXT"
+    # Caddy runs as the `caddy` user (apt package default), so the key
+    # must be readable by it — chmod 600 owned by root would cause
+    # "permission denied" at service start. Ownership transfer + group-
+    # read keeps the secret off the world but available to the daemon.
+    chown caddy:caddy /etc/caddy/selfsigned.crt /etc/caddy/selfsigned.key
+    chmod 640 /etc/caddy/selfsigned.key
+    chmod 644 /etc/caddy/selfsigned.crt
+    ok "Self-signed cert created at /etc/caddy/selfsigned.{crt,key} (CN=${HOST}, owner=caddy)"
+  else
+    info "Self-signed cert already present at /etc/caddy/selfsigned.{crt,key} — reusing"
+  fi
+
+  cat > /etc/caddy/Caddyfile << CADDYEOF
+{
+    auto_https off
+    admin 127.0.0.1:2019
+}
+
+:80 {
+    redir https://{host}{uri} permanent
+}
+
+:443 {
+    tls /etc/caddy/selfsigned.crt /etc/caddy/selfsigned.key
+
+    # /api/* → API on 127.0.0.1:4000
+    handle_path /api/* {
+        reverse_proxy 127.0.0.1:4000
+    }
+
+    # /socket* and /ws* → WebSocket on 127.0.0.1:4001
+    @ws path /socket* /ws*
+    handle @ws {
+        reverse_proxy 127.0.0.1:4001
+    }
+
+    # Everything else → Next.js web on 127.0.0.1:3000
+    handle {
+        reverse_proxy 127.0.0.1:3000
+    }
+
+    header {
+        X-Frame-Options SAMEORIGIN
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+}
+CADDYEOF
+
+  ok "Caddy configured for NO_TUNNEL=1 — :443 self-signed TLS fronting api/ws/web at https://${HOST}"
+else
+  cat > /etc/caddy/Caddyfile << CADDYEOF
 {
     auto_https off
     admin 127.0.0.1:2019
@@ -1174,11 +1315,11 @@ cat > /etc/caddy/Caddyfile << CADDYEOF
     }
 }
 CADDYEOF
+  ok "Caddy configured on :8080 for *.${DOMAIN} → ${INSTALL_DIR}/sites/"
+fi
 
 systemctl enable caddy
 systemctl restart caddy
-
-ok "Caddy configured on :8080 for *.${DOMAIN} → ${INSTALL_DIR}/sites/"
 
 # ─── Step 11.5: Create non-root service user ─────────────────
 info "Step 11.5/13: Creating 'doable' system user (uid 5000)..."
@@ -1199,14 +1340,21 @@ chown doable:doable /home/doable /var/log/doable
 chmod 0755 /home/doable /var/log/doable
 ok "System user 'doable' (uid 5000) present"
 
-# Chown install dir to doable:doable (skip heavy dirs for speed)
+# Chown install dir to doable:doable (skip node_modules for speed — they're
+# read-only at runtime). .next + .turbo MUST be chown'd because the web
+# service runs `next dev --turbopack` as the doable user, and next-dev
+# needs to write its build cache under .next/dev — leaving it root-owned
+# kills the web pane with EACCES on mkdir '.next/dev'.
 find "${INSTALL_DIR}" \
   -not \( -name node_modules -prune \) \
-  -not \( -name .next -prune \) \
-  -not \( -name .turbo -prune \) \
   -maxdepth 6 \
   -print0 2>/dev/null | xargs -0 chown doable:doable 2>/dev/null || \
   chown -R doable:doable "${INSTALL_DIR}" 2>/dev/null || true
+# Belt-and-suspenders: ensure .next/.turbo are doable-writable even if the
+# find/xargs path above raced or hit a transient EACCES. These dirs are
+# whole-tree small (typically 50–200 MB) so a recursive chown is cheap.
+[ -d "${INSTALL_DIR}/apps/web/.next" ] && chown -R doable:doable "${INSTALL_DIR}/apps/web/.next" 2>/dev/null || true
+[ -d "${INSTALL_DIR}/apps/web/.turbo" ] && chown -R doable:doable "${INSTALL_DIR}/apps/web/.turbo" 2>/dev/null || true
 ok "Chowned ${INSTALL_DIR} to doable:doable"
 
 # ─── Step 12: Systemd services ────────────────────────────────
@@ -1410,7 +1558,9 @@ WantedBy=multi-user.target
 APPTGTEOF
 
 # Cloudflared service
-if [ "$CONTAINER_MODE" != "1" ]; then
+if [ "$NO_TUNNEL" = "1" ]; then
+  echo "[SKIP-NO-TUNNEL] cloudflared service install (NO_TUNNEL=1 — Caddy fronts directly with self-signed cert)"
+elif [ "$CONTAINER_MODE" != "1" ]; then
   # `cloudflared service install` refuses with "Possible conflicting
   # configuration" when BOTH /root/.cloudflared/config.yml and
   # /etc/cloudflared/config.yml exist. The script always writes its own
@@ -1431,7 +1581,11 @@ if [ "$CONTAINER_MODE" != "1" ]; then
 fi
 
 systemctl daemon-reload
-if [ "$CONTAINER_MODE" = "1" ]; then
+if [ "$NO_TUNNEL" = "1" ]; then
+  # NO_TUNNEL mode: cloudflared is installed but not configured/used.
+  # Enable only the doable units; Caddy was already enabled in Step 11.
+  systemctl enable doable.service doable-watchdog.timer doable-apps.target 2>/dev/null || true
+elif [ "$CONTAINER_MODE" = "1" ]; then
   # Container mode: cloudflared is masked; doable-watchdog.timer requires
   # cloudflared transitively in some setups — enable only what we have.
   systemctl enable doable.service doable-watchdog.timer doable-apps.target 2>/dev/null || true
@@ -1602,7 +1756,11 @@ fi
 info "Step 13/13: Starting services..."
 
 if [ "$CONTAINER_MODE" != "1" ]; then
-  systemctl start cloudflared 2>/dev/null || systemctl restart cloudflared
+  if [ "$NO_TUNNEL" = "1" ]; then
+    info "NO_TUNNEL=1 — skipping cloudflared start (Caddy on :443 handles public traffic)"
+  else
+    systemctl start cloudflared 2>/dev/null || systemctl restart cloudflared
+  fi
   systemctl start doable.service
   systemctl start doable-watchdog.timer
 
@@ -1617,10 +1775,15 @@ if [ "$CONTAINER_MODE" != "1" ]; then
   done
   echo ""
 
-  # Final health check
+  # Final health check. NO_TUNNEL=1: public URL is https://${HOST} with a
+  # self-signed cert, so curl needs -k to skip TLS verification.
   WEB_STATUS=$(timeout 30 curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ 2>/dev/null || echo "000")
   API_STATUS=$(timeout 10 curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/ 2>/dev/null || echo "000")
-  CF_STATUS=$(timeout 15 curl -s -o /dev/null -w "%{http_code}" "https://${DOMAIN}/" 2>/dev/null || echo "000")
+  if [ "$NO_TUNNEL" = "1" ]; then
+    CF_STATUS=$(timeout 15 curl -sk -o /dev/null -w "%{http_code}" "https://${HOST}/" 2>/dev/null || echo "000")
+  else
+    CF_STATUS=$(timeout 15 curl -s -o /dev/null -w "%{http_code}" "https://${DOMAIN}/" 2>/dev/null || echo "000")
+  fi
 else
   # CONTAINER_MODE: systemd PID 1 is up and the unit files were just written
   # in Step 12. Daemon-reload + start them now from inside doable-init.
@@ -1657,8 +1820,9 @@ cat << BANNER
   Step 1: Sign up at https://${DOMAIN}/signup
           The FIRST account becomes platform owner automatically.
 
-  Step 2: Walk through the 5-step setup wizard at /setup
-          (AI provider key + optional OAuth + integrations)
+  Step 2: Walk through the 4-step setup wizard at /setup
+          (Welcome → AI provider → Sign-in → Plans & billing.
+           No "create first app" step — that's for end-users in the dashboard.)
 
   Bootstrap token (only needed if first signup is delayed >24h or you
   need to re-bootstrap — keep this private, valid 24h):
@@ -1698,6 +1862,15 @@ fi
 
 if [[ "$CF_STATUS" == "000" ]]; then
   warn "Public URL not reachable yet — DNS propagation may take a few minutes."
+fi
+
+if [ "$NO_TUNNEL" = "1" ]; then
+  echo ""
+  echo "  ── NO_TUNNEL smoke test ──"
+  echo "  Test with: curl -k https://${HOST}/api/health"
+  echo "  The cert is self-signed — browsers will warn. Real-domain installs use"
+  echo "  cloudflared + automatic Let's Encrypt."
+  echo ""
 fi
 
 echo ""

@@ -72,6 +72,9 @@ services:
       JWT_ACCESS_TOKEN_EXPIRES_IN: ${JWT_ACCESS_TOKEN_EXPIRES_IN:-15m}
       JWT_REFRESH_TOKEN_EXPIRES_IN: ${JWT_REFRESH_TOKEN_EXPIRES_IN:-7d}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required — run ./deployment/docker/setup.sh to generate}
+      # Envelope-crypto master key for AI provider / OAuth / Stripe secrets
+      # stored via the setup wizard. Required — api refuses to boot without it.
+      DOABLE_KEK: ${DOABLE_KEK:?DOABLE_KEK is required — run ./deployment/docker/setup.sh to generate}
       API_PORT: 4000
       API_HOST: 0.0.0.0
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
@@ -94,6 +97,14 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      # QA-only rate-limit kill switch — defaults unset.
+      # When operators set RATE_LIMIT_DISABLED=true (QA test boxes only),
+      # services/api/src/middleware/rate-limit.ts no-ops every rateLimiter()
+      # so the full TC suite can run without 429 cascades. The middleware's
+      # own fail-closed guard refuses to enable this when NODE_ENV=production,
+      # so QA boxes must ALSO set NODE_ENV=development (or staging) in the
+      # .env. The passthrough is here so admins don't have to edit compose.
+      RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails

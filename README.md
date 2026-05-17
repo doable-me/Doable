@@ -40,7 +40,7 @@ Self-hosting on a VPS? See the [**full quickstart guide**](docs/QUICKSTART.md) �
 
 ### After first launch
 
-Open http://localhost:3000, sign up. The first account becomes the platform owner automatically. You'll be guided through a 5 step setup wizard for AI keys and integrations. No SSH, no SQL, no editing .env files.
+Open http://localhost:3000, sign up. The first account becomes the platform owner automatically. You'll be guided through a 4 step setup wizard — Welcome, AI provider, Sign-in, Plans & billing. No SSH, no SQL, no editing .env files. (Building the first app belongs in the dashboard for end-users, not in the install flow.)
 
 ---
 
@@ -143,23 +143,31 @@ Monorepo managed with [pnpm](https://pnpm.io) workspaces + [Turborepo](https://t
   <img src="docs/assets/architecture.png" alt="Doable architecture" width="800" />
 </p>
 
-```
-apps/web/             Next.js 15 (React 19, Tailwind 4, Monaco Editor)
-services/api/         Hono REST API (auth, projects, AI chat, billing)
-services/ws/          WebSocket server (Yjs CRDT collaboration)
-packages/db/          Database queries & migrations
-packages/shared/      Shared types, AI provider catalog, utilities
-packages/docore/      AI agent engine
-packages/dovault/     Runtime sandbox for generated code
-mcp-servers/          File builders (PPTX, XLSX, PDF, Markdown)
-```
-
 | Service | Port | Stack |
 |---------|------|-------|
-| **Web** | 3000 | Next.js 15, Turbopack, React 19 |
-| **API** | 4000 | Hono, Node.js, Copilot SDK, Puppeteer |
-| **WS** | 4001 | Hono, ws, Yjs CRDT |
+| **Web** | 3000 | Next.js 16, Turbopack, React 19.2, Tailwind 4 |
+| **API** | 4000 | Hono 4, Node 22, Copilot SDK, Puppeteer 24 |
+| **WS** | 4001 | Hono 4, ws 8, Yjs 13 CRDT |
 | **DB** | 5432 | PostgreSQL 16 (pgvector, pgcrypto, pg_trgm) |
+
+---
+
+## doable CLI
+
+`doable` is a single-binary Rust TUI for operators — install a fresh server or manage an existing one (local or remote over SSH) without leaving the terminal. It streams `setup-server-v3.sh` over SSH and shows every phase (Postgres, Caddy, Puppeteer, tunnel, …) live in a 15-step sidebar.
+
+```bash
+# Provision a fresh Ubuntu box
+cd doable-cli && cargo run --release -- \
+  --host 203.0.113.10 --user ubuntu --env-name myorg \
+  --ssh-key ~/.ssh/id_ed25519
+
+# Or unattended (CI / scripted)
+DOABLE_HOST=… DOABLE_USER=… DOABLE_ENV_NAME=… DOABLE_SSH_KEY=… \
+  DOABLE_NON_INTERACTIVE=1 cargo run --release
+```
+
+Once a server is up, the same binary doubles as a platform-admin TUI: manage users & admins, workspace members & roles, feature flags, AI provider keys, credits & plans, sandbox / system rules, and server config — all over SSH. See [`doable-cli/README.md`](doable-cli/README.md).
 
 ---
 

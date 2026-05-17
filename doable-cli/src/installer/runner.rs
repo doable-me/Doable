@@ -22,8 +22,8 @@ fn env_prefix(env: &BTreeMap<String, String>) -> String {
 }
 
 /// Spawns an SSH process to stream the remote setup script. Parses
-/// `Phase N/15 — <name>` markers to drive sidebar transitions and forwards
-/// every other line into the log pane.
+/// `Phase N/M — <name>` or `Step N/M: <name>` markers to drive sidebar
+/// transitions and forwards every other line into the log pane.
 ///
 /// We deliberately use the system `ssh` binary instead of a Rust SSH crate —
 /// it sidesteps key-handling subtleties and lets the operator reuse their
@@ -128,10 +128,18 @@ async fn forward_line(line: &str, tx: &mpsc::Sender<AppEvent>) {
 /// Recognises lines like:
 ///   ════════ Phase 3/15 — Node.js 22 + pnpm
 ///   ======== Phase 3/15 - Node.js 22 + pnpm
+///   Step 3/13: Hardening services...
+///   Step 3/13 — Hardening services
 fn parse_phase_marker(line: &str) -> Option<(usize, String)> {
     let trimmed = line.trim();
-    let idx = trimmed.find("Phase ")?;
-    let rest = &trimmed[idx + "Phase ".len()..];
+    let (idx, key_len) = if let Some(i) = trimmed.find("Phase ") {
+        (i, "Phase ".len())
+    } else if let Some(i) = trimmed.find("Step ") {
+        (i, "Step ".len())
+    } else {
+        return None;
+    };
+    let rest = &trimmed[idx + key_len..];
     let slash = rest.find('/')?;
     let n: usize = rest[..slash].trim().parse().ok()?;
     // Find optional name after a dash.
@@ -168,9 +176,14 @@ fn parse_phase_failed(line: &str) -> Option<(usize, String)> {
 
 fn extract_phase_number(line: &str) -> Option<usize> {
     let l = line.to_ascii_lowercase();
-    let key = "phase ";
-    let pos = l.find(key)?;
-    let rest = &line[pos + key.len()..];
+    let (pos, key_len) = if let Some(p) = l.find("phase ") {
+        (p, "phase ".len())
+    } else if let Some(p) = l.find("step ") {
+        (p, "step ".len())
+    } else {
+        return None;
+    };
+    let rest = &line[pos + key_len..];
     let mut digits = String::new();
     for c in rest.chars() {
         if c.is_ascii_digit() {
@@ -299,8 +312,32 @@ mod tests {
     }
 
     #[test]
+    fn parses_step_markers() {
+        let (idx, name) =
+            parse_phase_marker("Step 3/13: Hardening services...").unwrap();
+        assert_eq!(idx, 2);
+        assert!(name.starts_with("Hardening"));
+
+        let (idx, name) =
+            parse_phase_marker("info \"Step 1/13: Installing system packages...\"").unwrap();
+        assert_eq!(idx, 0);
+        assert!(name.starts_with("Installing"));
+
+        let (idx, _) = parse_phase_marker("Step 13/13 — Starting services").unwrap();
+        assert_eq!(idx, 12);
+
+        assert!(parse_phase_marker("Step 0/13").is_none());
+    }
+
+    #[test]
     fn extracts_phase_number_in_done_lines() {
         assert_eq!(extract_phase_number("[phase 7] done"), Some(6));
         assert_eq!(extract_phase_number("Phase 12/15 done"), Some(11));
+    }
+
+    #[test]
+    fn extracts_step_number_in_done_lines() {
+        assert_eq!(extract_phase_number("[step 7] done"), Some(6));
+        assert_eq!(extract_phase_number("Step 12/13 ✅"), Some(11));
     }
 }

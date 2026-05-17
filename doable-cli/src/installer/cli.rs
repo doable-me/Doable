@@ -49,7 +49,39 @@ pub struct Args {
     pub demo: bool,
 
     /// Path to the setup script to upload+execute remotely.
-    /// Defaults to the repo's `setup-server-v3.sh`.
-    #[arg(long, env = "DOABLE_SETUP_SCRIPT", default_value = "setup-server-v3.sh")]
+    /// Defaults to the repo's `deployment/server-setup.sh`.
+    #[arg(long, env = "DOABLE_SETUP_SCRIPT", default_value = "deployment/server-setup.sh")]
     pub setup_script: PathBuf,
+
+    /// Forward an env var into the remote setup script. Repeat for each
+    /// var: `--remote-env NO_TUNNEL=1 --remote-env MINIMAX_API_KEY=sk-...`.
+    /// Plumbed unchanged into `bash -s --` so the remote script sees them
+    /// as if they had been exported on the box.
+    #[arg(long = "remote-env", value_name = "KEY=VAL")]
+    pub remote_env: Vec<String>,
+
+    /// Skip the TUI; stream phase + log events to stdout as plain text.
+    /// Required when stdout is piped (e.g. via `| tee log`) or when
+    /// driving the installer from CI / scripts where no terminal is
+    /// available. Implies --non-interactive. Auto-enabled when stdout
+    /// is detected as non-TTY.
+    #[arg(long, env = "DOABLE_HEADLESS", default_value_t = false)]
+    pub headless: bool,
+}
+
+impl Args {
+    /// Parse `--remote-env KEY=VAL` entries into a BTreeMap. Entries with
+    /// no `=` separator are silently dropped.
+    pub fn remote_env_map(&self) -> std::collections::BTreeMap<String, String> {
+        let mut map = std::collections::BTreeMap::new();
+        for kv in &self.remote_env {
+            if let Some((k, v)) = kv.split_once('=') {
+                let k = k.trim();
+                if !k.is_empty() {
+                    map.insert(k.to_string(), v.to_string());
+                }
+            }
+        }
+        map
+    }
 }

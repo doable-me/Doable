@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { TracingInit } from "@/components/tracing-init";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
+// We DELIBERATELY do NOT use next/font/google here. next/font fetches font
+// files from fonts.googleapis.com at build time, which breaks offline/firewalled
+// installs (corporate proxies, region-blocked deploys, transient network
+// flakes during docker build — observed on Hetzner during R3 cycle-A). The
+// inline style below prefers Inter when present locally and falls back to the
+// platform sans stack, so the app renders correctly with or without Inter.
 
 // Opt entire app out of static generation. Pages use runtime env, per-user
 // auth, and search params — static prerender fails without them at build time.
@@ -42,8 +43,8 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${inter.variable} font-sans antialiased`}
-        style={{ fontFamily: "var(--font-inter), system-ui, sans-serif" }}
+        className="font-sans antialiased"
+        style={{ fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
       >
         <TracingInit />
         {children}

@@ -29,6 +29,95 @@ enum AppMode {
     Running(Box<App>),
 }
 
+/// Headless installer — no TUI, just streams phase + log events to stdout.
+/// Used when stdout is piped (CI / tee / scripts) or when the operator
+/// passes `--headless`. Requires `--host`, `--env-name`, `--ssh-key` so
+/// there's nothing left to prompt for.
+pub async fn run_headless(args: Args) -> Result<()> {
+    let (host, env_name, ssh_key) = match (
+        args.host.as_deref(),
+        args.env_name.as_deref(),
+        args.ssh_key.as_deref(),
+    ) {
+        (Some(h), Some(e), Some(k)) => (h.to_string(), e.to_string(), k.to_path_buf()),
+        _ => anyhow::bail!(
+            "--headless requires --host, --env-name, and --ssh-key (no interactive form available)"
+        ),
+    };
+    let extra_env = args.remote_env_map();
+    let env_keys: Vec<String> = extra_env.keys().cloned().collect();
+    println!("doable-installer (headless) — host={host} env={env_name}");
+    if !env_keys.is_empty() {
+        println!("forwarding {} --remote-env vars: {}", env_keys.len(), env_keys.join(", "));
+    }
+    let phases = default_phases();
+    println!("setup script: {}", args.setup_script.display());
+    println!("phases ({}):", phases.len());
+    for (i, p) in phases.iter().enumerate() {
+        println!("  {}/{}: {}", i + 1, phases.len(), p.name);
+    }
+    println!();
+
+    let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
+    let setup_script = args.setup_script.clone();
+    let user = args.user.clone();
+    let port = args.ssh_port;
+    let tx_runner = tx.clone();
+    tokio::spawn(async move {
+        let res = runner::run_remote_setup(
+            &host, &user, &ssh_key, port, &env_name,
+            &setup_script, extra_env, tx_runner.clone(),
+        )
+        .await;
+        if let Err(e) = res {
+            let _ = tx_runner
+                .send(AppEvent::LogLine(format!("[runner error] {e:?}")))
+                .await;
+            let _ = tx_runner.send(AppEvent::Finished { success: false }).await;
+        }
+    });
+
+    let total = phases.len();
+    let mut success = false;
+    while let Some(evt) = rx.recv().await {
+        match evt {
+            AppEvent::LogLine(line) => println!("{line}"),
+            AppEvent::PhaseStarted(idx) => {
+                let name = phases
+                    .get(idx)
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("(unknown)");
+                println!("[phase {}/{total} START] {name}", idx + 1);
+            }
+            AppEvent::PhaseDone(idx) => {
+                let name = phases
+                    .get(idx)
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("(unknown)");
+                println!("[phase {}/{total} DONE]  {name}", idx + 1);
+            }
+            AppEvent::PhaseFailed(idx, msg) => {
+                let name = phases
+                    .get(idx)
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("(unknown)");
+                eprintln!("[phase {}/{total} FAIL] {name}: {msg}", idx + 1);
+            }
+            AppEvent::Finished { success: s } => {
+                success = s;
+                println!("[installer] finished — success={s}");
+                break;
+            }
+            AppEvent::Tick | AppEvent::KeyPressMods(_, _) => {}
+        }
+    }
+
+    if !success {
+        anyhow::bail!("installer reported failure");
+    }
+    Ok(())
+}
+
 /// Public entry point for the installer subcommand. Re-uses the caller's
 /// `Tui` so the top-level dispatcher owns terminal lifecycle.
 pub async fn run(terminal: &mut Tui, args: Args) -> Result<()> {
@@ -262,9 +351,20 @@ fn spawn_runner_for_args(args: &Args, tx: mpsc::Sender<AppEvent>) {
         } else if let (Some(host), Some(env_name), Some(ssh_key)) =
             (args.host.as_deref(), args.env_name.as_deref(), args.ssh_key.as_deref())
         {
+            let extra_env = args.remote_env_map();
+            if !extra_env.is_empty() {
+                let keys: Vec<String> = extra_env.keys().cloned().collect();
+                let _ = tx
+                    .send(AppEvent::LogLine(format!(
+                        "[ui] forwarding {} --remote-env vars: {}",
+                        keys.len(),
+                        keys.join(", ")
+                    )))
+                    .await;
+            }
             runner::run_remote_setup(
                 host, &args.user, ssh_key, args.ssh_port, env_name,
-                &args.setup_script, Default::default(), tx.clone(),
+                &args.setup_script, extra_env, tx.clone(),
             ).await
         } else {
             Ok(())
