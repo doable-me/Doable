@@ -28,8 +28,8 @@ export async function runPermMatrixTests(ownerToken: string, wsId: string | null
       return;
     }
     assert(res.status === 201 || res.status === 200, `Expected 201/200/429 for register, got ${res.status}: ${JSON.stringify(body)}`);
-    const token = (body.token ?? (body.data as Record<string, unknown>)?.token ?? (body.user as Record<string, unknown>)?.token) as string | undefined;
-    secondToken = token ?? null;
+    const tokensA = (body.tokens as Record<string, unknown>) ?? body;
+    secondToken = ((tokensA.accessToken ?? tokensA.token) as string) ?? null;
     pass("TC-PM01", `Second user registered (${secondEmail})`);
   } catch (e) {
     fail("TC-PM01", "Register second user", (e as Error).message);
@@ -52,7 +52,8 @@ export async function runPermMatrixTests(ownerToken: string, wsId: string | null
         return;
       }
       assert(res.status === 200, `Expected 200, got ${res.status}`);
-      secondToken = (body.token ?? (body.data as Record<string, unknown>)?.token) as string ?? null;
+      const tokensB = (body.tokens as Record<string, unknown>) ?? body;
+      secondToken = ((tokensB.accessToken ?? tokensB.token) as string) ?? null;
       assert(!!secondToken, "No token in second user login response");
     }
     pass("TC-PM02", "Second user login returns token");
