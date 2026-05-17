@@ -13,6 +13,8 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+import { spawn } from "node:child_process";
+import { promises as fs } from "node:fs";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import {
@@ -300,6 +302,99 @@ setupRoutes.post("/signup-policy", async (c) => {
   }).catch(() => {});
 
   return c.json({ ok: true, requireApproval });
+});
+
+// ─── GET /api/setup/cloudflare/status ─────────────────────────────────────
+// Server-side because cloudflared is a systemd service on the API host —
+// the browser cannot probe it directly. Every probe falls back to a safe
+// default so a missing tool never 500s the wizard.
+async function probeBinary(cmd: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn("which", [cmd], { stdio: "ignore" });
+    child.on("close", (code) => resolve(code === 0));
+    child.on("error", () => resolve(false));
+  });
+}
+
+async function probeServiceActive(service: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn("systemctl", ["is-active", service], { stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    child.stdout?.on("data", (d) => (out += d.toString()));
+    child.on("close", () => resolve(out.trim() === "active"));
+    child.on("error", () => resolve(false));
+  });
+}
+
+setupRoutes.get("/cloudflare/status", async (c) => {
+  const [binaryInstalled, serviceActive, configExists] = await Promise.all([
+    probeBinary("cloudflared"),
+    probeServiceActive("cloudflared"),
+    fs
+      .access("/etc/cloudflared/config.yml")
+      .then(() => true)
+      .catch(() => false),
+  ]);
+
+  let tunnelId: string | null = null;
+  let tunnelHostname: string | null = null;
+  if (configExists) {
+    try {
+      const cfg = await fs.readFile("/etc/cloudflared/config.yml", "utf-8");
+      const idMatch = cfg.match(/^\s*tunnel:\s*([0-9a-f-]{36})\s*$/im);
+      if (idMatch && idMatch[1]) tunnelId = idMatch[1];
+      const hostMatch = cfg.match(/^\s*hostname:\s*([^\s]+)\s*$/m);
+      if (hostMatch && hostMatch[1]) tunnelHostname = hostMatch[1];
+    } catch {
+      // ignore read errors — fall through with nulls
+    }
+  }
+
+  const skipChoice = await getConfig("setup.cloudflare_skip");
+  const skipped = skipChoice === true || skipChoice === "true";
+
+  return c.json({
+    binaryInstalled,
+    serviceActive,
+    tunnelConfigured: configExists,
+    tunnelId,
+    tunnelHostname,
+    skipped,
+    nextAction: !binaryInstalled
+      ? "install_cloudflared"
+      : !configExists
+      ? "login_to_cloudflare"
+      : !serviceActive
+      ? "start_cloudflared_service"
+      : "configured",
+    loginUrl: "https://dash.cloudflare.com/?to=/:account/networks/tunnels",
+  });
+});
+
+// ─── POST /api/setup/cloudflare ───────────────────────────────────────────
+// Persist the operator's Cloudflare wizard choice. Two flows:
+//   { action: "skip" }                  — operator chose direct ports 80/443
+//   { action: "use_tunnel" }            — operator confirmed tunnel posture
+const cloudflareChoiceSchema = z.object({
+  action: z.enum(["skip", "use_tunnel"]),
+});
+
+setupRoutes.post("/cloudflare", async (c) => {
+  const parsed = cloudflareChoiceSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
+  }
+  const { action } = parsed.data;
+  const userId = c.get("userId");
+
+  await setConfig("setup.cloudflare_skip", action === "skip", { updatedBy: userId });
+
+  recordAdminAction(c, {
+    action: "setup_save_cloudflare_choice",
+    details: { action },
+  }).catch(() => {});
+
+  return c.json({ ok: true, action });
 });
 
 // ─── POST /api/setup/complete ─────────────────────────────────────────────

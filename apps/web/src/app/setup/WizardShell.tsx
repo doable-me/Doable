@@ -8,17 +8,20 @@ import { apiFetch } from "@/lib/api";
 import { Step1Welcome } from "./steps/Step1Welcome";
 import { Step2AIProvider } from "./steps/Step2AIProvider";
 import { Step3SignInProviders } from "./steps/Step3SignInProviders";
+import { StepCloudflare } from "./steps/StepCloudflare";
 import { Step4Integrations } from "./steps/Step4Integrations";
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 
 // The wizard targets operators installing Doable for their team — workspace
-// identity, AI key, sign-in providers, plans & billing. Building a first app
-// belongs in the dashboard for end-users, not in the install flow.
+// identity, AI key, sign-in providers, network posture (Cloudflare), plans &
+// billing. Building a first app belongs in the dashboard for end-users, not
+// in the install flow.
 const STEP_LABELS = [
   "Welcome",
   "AI Provider",
   "Sign-in",
+  "Cloudflare",
   "Plans & Billing",
 ];
 
@@ -159,7 +162,8 @@ export function WizardShell() {
           )}
           {step === 2 && <Step2AIProvider {...stepProps} />}
           {step === 3 && <Step3SignInProviders {...stepProps} />}
-          {step === 4 && (
+          {step === 4 && <StepCloudflare {...stepProps} />}
+          {step === 5 && (
             <Step4Integrations
               onNext={handleComplete}
               onBack={handleBack}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, ChevronDown, ChevronUp, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
+import { Check, Copy, ChevronDown, ChevronUp, Loader2, ArrowRight, ArrowLeft, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
@@ -27,18 +27,29 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? (typeof window !== "undefined
 // OAuth callbacks go through the API server, not the web server
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
-const OAUTH_PROVIDERS: { id: OAuthProvider; label: string; description: string; callbackPath: string }[] = [
+const OAUTH_PROVIDERS: {
+  id: OAuthProvider;
+  label: string;
+  description: string;
+  callbackPath: string;
+  consoleUrl: string;
+  consoleLabel: string;
+}[] = [
   {
     id: "google",
     label: "Google",
     description: "Sign in with Google accounts",
     callbackPath: "/auth/google/callback",
+    consoleUrl: "https://console.cloud.google.com/apis/credentials",
+    consoleLabel: "Open Google Cloud Console",
   },
   {
     id: "github",
     label: "GitHub",
     description: "Sign in with GitHub accounts",
     callbackPath: "/auth/github/callback",
+    consoleUrl: "https://github.com/settings/developers",
+    consoleLabel: "Open GitHub Developer Settings",
   },
 ];
 
@@ -142,10 +153,20 @@ export function Step3SignInProviders({ onNext, onBack, onSkip }: StepProps) {
                 <div className="border-t border-border/60 px-4 pb-4 pt-3 flex flex-col gap-4">
                   {/* Callback URL display */}
                   <div className="flex flex-col gap-1.5">
-                    <p className="text-xs font-medium text-foreground">
-                      1. Register this callback URL in the {p.label} developer console
-                    </p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <p className="text-xs font-medium text-foreground">
+                        1. Register this callback URL in the {p.label} developer console
+                      </p>
+                      <a
+                        href={p.consoleUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 underline-offset-2 hover:underline"
+                      >
+                        {p.consoleLabel} <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
                       <code className="flex-1 rounded border border-border bg-muted px-3 py-2 text-xs font-mono text-foreground overflow-x-auto">
                         {callbackUrl}
                       </code>
