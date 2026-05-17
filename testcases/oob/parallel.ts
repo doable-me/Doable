@@ -200,32 +200,26 @@ async function runWithSemaphore(
   wsId: string | null,
   concurrency: number,
 ): Promise<void> {
-  // Produce tasks as an async iterable queue consumed by N workers.
   const queue = [...stages];
-  let extraFails = 0;
 
   async function worker(): Promise<void> {
     while (true) {
       const stage = queue.shift();
       if (!stage) return;
-      const label = `[parallel:${stage.name}]`;
       try {
         await stage.run(token, wsId);
       } catch (err: unknown) {
-        // Module not found → SKIP the whole stage
         const msg = err instanceof Error ? err.message : String(err);
         if (/Cannot find module|ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND/i.test(msg)) {
           skip(`PAR-${stage.name.toUpperCase()}`, `${stage.name} stage`, "module not yet available");
         } else {
-          console.error(`\n  ${label} Unhandled exception: ${msg}`);
+          console.error(`\n  [parallel:${stage.name}] Unhandled exception: ${msg}`);
           fail(`PAR-${stage.name.toUpperCase()}`, `${stage.name} stage (runner error)`, msg);
-          extraFails++;
         }
       }
     }
   }
 
-  // Spin up N workers and wait for all to drain the queue
   const workers: Promise<void>[] = [];
   for (let i = 0; i < Math.min(concurrency, stages.length); i++) {
     workers.push(worker());
