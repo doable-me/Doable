@@ -43,6 +43,38 @@ const nextConfig: NextConfig = {
     ];
   },
   async headers() {
+    // Derive the user's install apex (e.g. `multaimind.com`) from the public
+    // env so CSP allows cross-origin connect/img/frame for `*.<apex>`. Falls
+    // back to `*.doable.me` for source-tree dev runs that don't preseed
+    // NEXT_PUBLIC_APP_URL. We only honour the first non-empty value, since
+    // all three public URLs always sit under the same apex.
+    const hostFromUrl = (u: string | undefined): string => {
+      if (!u) return "";
+      try {
+        return new URL(u).hostname;
+      } catch {
+        return "";
+      }
+    };
+    const apexOf = (host: string): string => {
+      const parts = host.split(".").filter(Boolean);
+      if (parts.length <= 2) return host;
+      return parts.slice(-2).join(".");
+    };
+    const installHost =
+      hostFromUrl(process.env.NEXT_PUBLIC_APP_URL) ||
+      hostFromUrl(process.env.NEXT_PUBLIC_API_URL) ||
+      hostFromUrl(process.env.NEXT_PUBLIC_WS_URL) ||
+      "doable.me";
+    const installApex = apexOf(installHost);
+    const apexAllow = `https://*.${installApex}`;
+    const apexAllowWs = `wss://*.${installApex}`;
+    // Always include doable.me for backwards-compat with builds that haven't
+    // re-baked the env (matches prior behaviour exactly when installApex is
+    // doable.me — no duplicate entries needed).
+    const extraApex = installApex === "doable.me" ? "" : " https://*.doable.me";
+    const extraApexWs = installApex === "doable.me" ? "" : " wss://*.doable.me";
+
     // BUG-016: CSP was applying `unsafe-eval` + `unsafe-inline` to every
     // route, neutering XSS protection. The editor route legitimately needs
     // `unsafe-eval` (Monaco worker) and inline styles (Tailwind/Monaco),
@@ -69,9 +101,9 @@ const nextConfig: NextConfig = {
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://static.cloudflareinsights.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
       "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
-      "img-src 'self' data: blob: https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://cdn.activepieces.com http://localhost:* http://127.0.0.1:* https://*.doable.me",
-      "connect-src 'self' https://*.doable.me wss://*.doable.me ws://localhost:* wss://localhost:* ws://127.0.0.1:* wss://127.0.0.1:* http://localhost:* http://127.0.0.1:* https://cloudflareinsights.com",
-      "frame-src 'self' http://localhost:* http://127.0.0.1:* https://*.doable.me",
+      `img-src 'self' data: blob: https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://cdn.activepieces.com http://localhost:* http://127.0.0.1:* ${apexAllow}${extraApex}`,
+      `connect-src 'self' ${apexAllow} ${apexAllowWs}${extraApex}${extraApexWs} ws://localhost:* wss://localhost:* ws://127.0.0.1:* wss://127.0.0.1:* http://localhost:* http://127.0.0.1:* https://cloudflareinsights.com`,
+      `frame-src 'self' http://localhost:* http://127.0.0.1:* ${apexAllow}${extraApex}`,
       "frame-ancestors 'self'",
       "worker-src 'self' blob:",
       "object-src 'none'",
@@ -90,9 +122,9 @@ const nextConfig: NextConfig = {
       "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://static.cloudflareinsights.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
       "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
-      "img-src 'self' data: blob: https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://cdn.activepieces.com http://localhost:* http://127.0.0.1:* https://*.doable.me",
-      "connect-src 'self' https://*.doable.me wss://*.doable.me ws://localhost:* wss://localhost:* ws://127.0.0.1:* wss://127.0.0.1:* http://localhost:* http://127.0.0.1:* https://cloudflareinsights.com",
-      "frame-src 'self' http://localhost:* http://127.0.0.1:* https://*.doable.me",
+      `img-src 'self' data: blob: https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://cdn.activepieces.com http://localhost:* http://127.0.0.1:* ${apexAllow}${extraApex}`,
+      `connect-src 'self' ${apexAllow} ${apexAllowWs}${extraApex}${extraApexWs} ws://localhost:* wss://localhost:* ws://127.0.0.1:* wss://127.0.0.1:* http://localhost:* http://127.0.0.1:* https://cloudflareinsights.com`,
+      `frame-src 'self' http://localhost:* http://127.0.0.1:* ${apexAllow}${extraApex}`,
       "frame-ancestors 'self'",
       "worker-src 'self' blob:",
       "object-src 'none'",
