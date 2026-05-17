@@ -57,6 +57,9 @@ const nextConfig: NextConfig = {
       }
     };
     const apexOf = (host: string): string => {
+      // IPv4 / bare IP: return as-is, no wildcard expansion (Universal SSL
+      // doesn't apply to IP installs anyway — those use self-signed certs).
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return host;
       const parts = host.split(".").filter(Boolean);
       if (parts.length <= 2) return host;
       return parts.slice(-2).join(".");
