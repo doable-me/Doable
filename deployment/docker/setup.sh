@@ -319,6 +319,17 @@ if systemctl is-active --quiet doable; then
   systemctl disable doable 2>/dev/null || true
 fi
 
+# Native postgres holds 127.0.0.1:5432 on any box that ran the bare-metal
+# server-setup.sh path. Docker compose maps 127.0.0.1:5432 -> postgres:5432
+# inside the container, so the host bind fails with EADDRINUSE if native
+# postgres is up. The docker postgres container will be the new source of
+# truth; the native one is no longer needed.
+if systemctl is-active --quiet postgresql; then
+  info "Stopping native postgresql (was holding 127.0.0.1:5432 — docker postgres takes over)"
+  systemctl stop postgresql 2>/dev/null || true
+  systemctl disable postgresql 2>/dev/null || true
+fi
+
 # Install nginx if not present
 if ! command -v nginx &>/dev/null; then
   info "Installing nginx..."
