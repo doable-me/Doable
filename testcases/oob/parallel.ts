@@ -133,13 +133,6 @@ const parallelStages: Stage[] = [
     },
   },
   {
-    name: "ratelimit",
-    run: async (token, wsId) => {
-      const { runRateLimitTests } = await import("./ratelimit.test.js");
-      await runRateLimitTests(token, wsId);
-    },
-  },
-  {
     name: "oauth-negative",
     run: async (token, wsId) => {
       const { runOauthNegativeTests } = await import("./oauth-negative.test.js");
@@ -179,6 +172,20 @@ const parallelStages: Stage[] = [
     run: async (token, wsId) => {
       const { runAuditLogTests } = await import("./audit-log.test.js");
       await runAuditLogTests(token, wsId);
+    },
+  },
+];
+
+// ─── Post-fanout sequential stages ───────────────────────────────────────────
+// Stages with global side-effects (e.g. tripping the IP-based rate limiter)
+// MUST run AFTER the parallel fanout finishes, or they poison every other
+// stage with spurious 429s.
+const postFanoutSequentialStages: Stage[] = [
+  {
+    name: "ratelimit",
+    run: async (token, wsId) => {
+      const { runRateLimitTests } = await import("./ratelimit.test.js");
+      await runRateLimitTests(token, wsId);
     },
   },
 ];
@@ -300,10 +307,24 @@ async function main(): Promise<void> {
   } catch { /* non-fatal — stages that need wsId will skip gracefully */ }
 
   // ── Parallel fan-out ──────────────────────────────────────────────────────
-  const stageCount = 5 /* bootstrap */ + parallelStages.length;
+  const stageCount = 5 /* bootstrap */ + parallelStages.length + postFanoutSequentialStages.length;
   console.log(`\n── Parallel fan-out (${parallelStages.length} stages, ${CONCURRENCY} workers) ──────────────────\n`);
 
   await runWithSemaphore(parallelStages, activeToken, wsId, CONCURRENCY);
+
+  // ── Post-fanout sequential (stages with global side-effects e.g. rate limiter) ─
+  if (postFanoutSequentialStages.length > 0) {
+    console.log(`\n── Post-fanout sequential (${postFanoutSequentialStages.length} stages — global side-effects) ──\n`);
+    for (const stage of postFanoutSequentialStages) {
+      try {
+        await stage.run(activeToken, wsId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`\n  [post:${stage.name}] Unhandled exception: ${msg}`);
+        fail(`PAR-${stage.name.toUpperCase()}`, `${stage.name} stage (runner error)`, msg);
+      }
+    }
+  }
 
   const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
   console.log(`\n  Wall clock: ${elapsed}s`);

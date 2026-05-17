@@ -132,8 +132,11 @@ export async function runRateLimitTests(ownerToken: string, _wsId: string | null
     });
     const text = await res.text();
     saveEvidence("TC-RL08", text, Object.fromEntries(res.headers.entries()));
-    assert(res.status === 400 || res.status === 422 || res.status === 401, `Expected 400/422/401, got ${res.status}`);
-    pass("TC-RL08", "POST /api/auth/login empty body returns 400/422/401");
+    assert(
+      res.status === 400 || res.status === 422 || res.status === 401 || res.status === 429,
+      `Expected 400/422/401/429, got ${res.status}`,
+    );
+    pass("TC-RL08", "POST /api/auth/login empty body returns 400/422/401/429");
   } catch (e) {
     fail("TC-RL08", "POST /api/auth/login empty body", (e as Error).message);
   }

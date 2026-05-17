@@ -143,33 +143,36 @@ async function main() {
   console.log("\n── Search ─────────────────────────────────────────────");
   await runSearchTests(activeToken, wsId);
 
-  // ── Stage 20: Rate Limits ────────────────────────────────────────────────
-  console.log("\n── Rate Limits ────────────────────────────────────────");
-  await runRateLimitTests(activeToken, wsId);
-
-  // ── Stage 21: OAuth Negative Paths ───────────────────────────────────────
+  // ── Stage 20: OAuth Negative Paths ───────────────────────────────────────
   console.log("\n── OAuth Negative Paths ───────────────────────────────");
   await runOauthNegativeTests(activeToken, wsId);
 
-  // ── Stage 22: Error Paths ────────────────────────────────────────────────
+  // ── Stage 21: Error Paths ────────────────────────────────────────────────
   console.log("\n── Error Paths ────────────────────────────────────────");
   await runErrorPathTests(activeToken, wsId);
 
-  // ── Stage 23: Permission Matrix ──────────────────────────────────────────
+  // ── Stage 22: Permission Matrix ──────────────────────────────────────────
   console.log("\n── Permission Matrix ──────────────────────────────────");
   await runPermMatrixTests(activeToken, wsId);
 
-  // ── Stage 24: Upload Limits ──────────────────────────────────────────────
+  // ── Stage 23: Upload Limits ──────────────────────────────────────────────
   console.log("\n── Upload Limits ──────────────────────────────────────");
   await runUploadLimitTests(activeToken, wsId);
 
-  // ── Stage 25: Settings CRUD ──────────────────────────────────────────────
+  // ── Stage 24: Settings CRUD ──────────────────────────────────────────────
   console.log("\n── Settings CRUD ──────────────────────────────────────");
   await runSettingsCrudTests(activeToken, wsId);
 
-  // ── Stage 26: Audit Log ──────────────────────────────────────────────────
+  // ── Stage 25: Audit Log ──────────────────────────────────────────────────
   console.log("\n── Audit Log ──────────────────────────────────────────");
   await runAuditLogTests(activeToken, wsId);
+
+  // ── Stage 26: Rate Limits ────────────────────────────────────────────────
+  // RATELIMIT MUST RUN LAST: it hammers /api/auth/login 110+ times which
+  // trips the IP-based rate limiter. If anything ran AFTER this, those
+  // tests would see 429s and fail spuriously.
+  console.log("\n── Rate Limits (last — pollutes global IP throttle) ──");
+  await runRateLimitTests(activeToken, wsId);
 
   // ── Summary ───────────────────────────────────────────────────────────────
   printSummary();

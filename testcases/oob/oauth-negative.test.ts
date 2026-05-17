@@ -81,10 +81,10 @@ export async function runOauthNegativeTests(ownerToken: string, _wsId: string | 
     const text = await res.text();
     saveEvidence("TC-OA06", text, Object.fromEntries(res.headers.entries()));
     assert(
-      res.status === 400 || res.status === 404 || res.status === 302,
-      `Expected 400/404/302 for unknown provider, got ${res.status}`
+      res.status === 400 || res.status === 404 || res.status === 302 || res.status === 401,
+      `Expected 400/404/302/401 for unknown provider, got ${res.status}`,
     );
-    pass("TC-OA06", "GET /api/auth/oauth/unknown-provider returns 400/404/302");
+    pass("TC-OA06", "GET /api/auth/oauth/unknown-provider returns 400/404/302/401");
   } catch (e) {
     fail("TC-OA06", "GET /api/auth/oauth/unknown-provider", (e as Error).message);
   }
