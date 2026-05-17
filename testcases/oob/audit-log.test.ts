@@ -8,7 +8,7 @@
  *
  * This file probes the real endpoints. Requires platform-admin owner token.
  */
-import { apiFetch, pass, fail, skip, assert, saveEvidence } from "./_shared.js";
+import { apiFetch, pass, fail, assert, saveEvidence } from "./_shared.js";
 
 export async function runAuditLogTests(ownerToken: string, _wsId: string | null): Promise<void> {
   // TC-AL01: GET /api/admin/audit/conversations returns 200 with array shape
@@ -141,6 +141,4 @@ export async function runAuditLogTests(ownerToken: string, _wsId: string | null)
     fail("TC-AL10", "Audit messages query no 500", (e as Error).message);
   }
 
-  // unused-import guard — skip is here so it stays imported even when no branch uses it
-  void skip;
 }
