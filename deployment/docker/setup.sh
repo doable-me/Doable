@@ -71,14 +71,28 @@ done
 # ─── Check prerequisites ─────────────────────────────────────────────────────
 info "Checking prerequisites..."
 
-if ! command -v docker &>/dev/null; then
-  error "Docker is not installed. Install it from https://docs.docker.com/engine/install/"
-  exit 1
-fi
-
-if ! docker compose version &>/dev/null; then
-  error "Docker Compose v2 is required. Install it from https://docs.docker.com/compose/install/"
-  exit 1
+# Auto-install docker + compose-plugin on debian/ubuntu when missing.
+# Keeps the new-user one-liner truly one-line on a fresh OS — no detour to
+# docs.docker.com/install before being able to run setup.sh.
+if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null; then
+  if [ "${DOABLE_SKIP_DOCKER_INSTALL:-0}" = "1" ]; then
+    error "Docker (or compose plugin) is not installed and DOABLE_SKIP_DOCKER_INSTALL=1 — refusing auto-install."
+    exit 1
+  fi
+  if [ "$(id -u)" -ne 0 ]; then
+    error "Docker is not installed and this script is not running as root — re-run with sudo or install Docker first (https://docs.docker.com/engine/install/)."
+    exit 1
+  fi
+  if ! command -v apt-get &>/dev/null; then
+    error "Docker is not installed and this isn't a debian/ubuntu box (no apt-get). Install Docker manually: https://docs.docker.com/engine/install/"
+    exit 1
+  fi
+  info "Docker missing — installing docker.io + docker-compose-plugin via apt (Ubuntu/Debian)..."
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq docker.io docker-compose-plugin
+  systemctl enable --now docker
+  ok "Docker $(docker --version 2>/dev/null || echo '?') + compose $(docker compose version 2>/dev/null | head -1 || echo '?') installed"
 fi
 
 ok "Docker and Docker Compose found"
