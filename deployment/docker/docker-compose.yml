@@ -97,6 +97,14 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      # QA-only rate-limit kill switch — defaults unset.
+      # When operators set RATE_LIMIT_DISABLED=true (QA test boxes only),
+      # services/api/src/middleware/rate-limit.ts no-ops every rateLimiter()
+      # so the full TC suite can run without 429 cascades. The middleware's
+      # own fail-closed guard refuses to enable this when NODE_ENV=production,
+      # so QA boxes must ALSO set NODE_ENV=development (or staging) in the
+      # .env. The passthrough is here so admins don't have to edit compose.
+      RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails
