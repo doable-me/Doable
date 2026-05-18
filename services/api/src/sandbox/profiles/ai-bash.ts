@@ -15,6 +15,10 @@ import type { SystemRules } from "../system-rules.js";
 import { MB, NPM_CACHE_DIR } from "./constants.js";
 
 export function aiBashProfile(ctx: SpawnContext, sys: SystemRules): SandboxProfile {
+  // R14: prefer host-side sandbox uid (project dir owner) so the AI bash tool
+  // can actually edit files. Default 65534 ("nobody") only when no hostUid is
+  // available — that path can read but not write the project tree.
+  const uid = ctx.hostUid ?? 65534;
   return {
     id: "ai-bash",
     fs: {
@@ -46,8 +50,8 @@ export function aiBashProfile(ctx: SpawnContext, sys: SystemRules): SandboxProfi
       },
       etcSynth: {
         "/etc/passwd":
-          "project:x:65534:65534:project:/work:/bin/sh\nroot:x:0:0:root:/root:/bin/sh\n",
-        "/etc/group": "project:x:65534:\nroot:x:0:\n",
+          `project:x:${uid}:${uid}:project:/work:/bin/sh\nroot:x:0:0:root:/root:/bin/sh\n`,
+        "/etc/group": `project:x:${uid}:\nroot:x:0:\n`,
         "/etc/hostname": "project\n",
         "/etc/resolv.conf": "nameserver 127.0.0.1\n",
         "/etc/os-release": "NAME=Doable\nID=doable\n",
@@ -66,10 +70,10 @@ export function aiBashProfile(ctx: SpawnContext, sys: SystemRules): SandboxProfi
       user: true,
     },
     user: {
-      uid: 65534,
-      gid: 65534,
+      uid,
+      gid: uid,
       passwd: {
-        65534: "project:x:65534:65534:project:/work:/bin/sh",
+        [uid]: `project:x:${uid}:${uid}:project:/work:/bin/sh`,
       },
     },
     syscalls: {

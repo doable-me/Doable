@@ -120,6 +120,11 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
       userId: "",
       sessionId: opts.projectId,
       hardening,
+      // R14 fix for BUG-R13-DEV-VITE-UIDNS — pass the host-side sandbox uid
+      // through so vitePreviewProfile.user.uid matches the project dir owner.
+      // Without this, bwrap's inside-NS uid (9000-range) maps to the API's
+      // EUID (5000) and vite EACCES on every write inside /work.
+      hostUid: typeof opts.uid === "number" ? opts.uid : undefined,
     };
 
     // The vite-preview profile binds the project's host rootDir to `/work`

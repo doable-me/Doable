@@ -15,14 +15,19 @@ import type { SystemRules } from "../system-rules.js";
 import { MB, NPM_CACHE_DIR } from "./constants.js";
 
 function perProjectUid(projectId: string): number {
-  // Derive per-project uid (9000-9999) so two tenants' preview processes
-  // can't read each other's files even if mount-ns drifts.
+  // Fallback per-project uid (9000-9999) used ONLY when SpawnContext doesn't
+  // carry a hostUid (local dev, tests). Production paths always pass
+  // ctx.hostUid from dev-uid-allocator so the inside-NS uid matches the
+  // host file owner — see SpawnContext.hostUid docs in orchestrator.ts.
   const first = projectId.length > 0 ? projectId.charCodeAt(0) : 0;
   return 9000 + (first % 1000);
 }
 
 export function vitePreviewProfile(ctx: SpawnContext, sys: SystemRules): SandboxProfile {
-  const uid = perProjectUid(ctx.projectId);
+  // Prefer the host-side sandbox uid (matches project dir owner) so writes
+  // inside the bwrap user namespace don't EACCES. Fallback to derived uid
+  // for code paths that haven't been updated to thread hostUid.
+  const uid = ctx.hostUid ?? perProjectUid(ctx.projectId);
 
   return {
     id: "vite-preview",

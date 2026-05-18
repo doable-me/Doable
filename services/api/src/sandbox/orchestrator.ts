@@ -40,6 +40,15 @@ export interface SpawnContext {
   userId: string;
   sessionId: string;
   hardening: "off" | "dev" | "staging" | "prod";
+  /**
+   * Optional per-project sandbox uid (host-side) that owns the project tree
+   * (chowned by dev-uid-allocator). Profiles use this for `--uid` inside the
+   * bwrap user-namespace so the inside-uid matches the host file owner. If
+   * absent, profiles fall back to their derived per-project uid. R14 fix
+   * for BUG-R13-DEV-VITE-UIDNS where unrelated uid allocators produced
+   * disjoint ranges and EACCES on every write inside the jail.
+   */
+  hostUid?: number;
 }
 
 export type ProfileKey = "ai-bash" | "vite-preview" | "install" | "build" | string;
