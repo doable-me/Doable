@@ -129,21 +129,18 @@ function toAuthUser(apiUser: {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
-  // Optimistic-first auth: if both a stored user AND a stored token already
-  // exist on the client, treat the user as authenticated immediately so
-  // AuthGuard renders children on the first paint. /auth/me revalidates in
-  // the effect below and demotes us to unauthenticated if the token is
-  // actually stale. Without this, isLoading was reaching the AuthGuard
-  // `if (isLoading) return <Loading/>` branch and staying there whenever the
-  // mount effect failed to fire (Next.js 16 + Turbopack dev + streaming
-  // Suspense in the (dashboard) layout was deferring it indefinitely),
-  // leaving the dashboard frozen on the "Loading..." spinner even for users
-  // who had a perfectly valid session.
-  const [isLoading, setIsLoading] = useState(() => {
-    if (typeof window === "undefined") return true;
-    const { accessToken } = getStoredTokens();
-    return !(accessToken && getStoredUser());
-  });
+  // Plain initial state: always `true`, then the mount effect below flips
+  // to false once /auth/me resolves. R15's "optimistic init that reads
+  // localStorage when window exists" caused a React 19 hydration mismatch
+  // because SSR rendered the AuthGuard Loading fallback while the client
+  // skipped straight to children — the resulting `Hydration failed`
+  // exception forced a full client re-render, which cascaded into stale
+  // workspace data being used elsewhere on the page (e.g. sidebar showing
+  // the plan-tier project limit instead of the per-workspace admin
+  // override). The R16 `allowedDevOrigins` fix is what actually keeps the
+  // mount effect firing reliably; this `useState(true)` is the
+  // SSR/CSR-consistent partner to that.
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
