@@ -11,10 +11,10 @@ Everything you need to self-host Doable with Docker. Two install paths:
 
 ```bash
 mkdir doable && cd doable
-curl -O https://raw.githubusercontent.com/doable-me/doable/main/docker/docker-compose.prod.yml
-curl -O https://raw.githubusercontent.com/doable-me/doable/main/docker/setup.sh
-curl -O https://raw.githubusercontent.com/doable-me/doable/main/docker/init.sql
-curl -O https://raw.githubusercontent.com/doable-me/doable/main/docker/nginx.conf.template
+curl -O https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker/docker-compose.prod.yml
+curl -O https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker/setup.sh
+curl -O https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker/init.sql
+curl -O https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker/nginx.conf.template
 chmod +x setup.sh
 
 # Pick one — DOMAIN for Let's Encrypt, HOST for self-signed on a LAN IP, or
@@ -37,7 +37,7 @@ Use when you want to modify the Dockerfile or contribute upstream:
 ```bash
 git clone https://github.com/doable-me/doable.git
 cd doable
-DOMAIN=app.example.com ./docker/setup.sh
+DOMAIN=app.example.com ./deployment/docker/setup.sh
 ```
 
 setup.sh runs `docker compose build` (the 5–10min step) then `up -d`. The
@@ -52,7 +52,7 @@ image build OR pull, and firewall.
 ### Public domain (Let's Encrypt)
 
 ```bash
-DOMAIN=app.example.com ./docker/setup.sh
+DOMAIN=app.example.com ./deployment/docker/setup.sh
 ```
 
 Optionally add `EMAIL=you@example.com` for certificate expiry notifications.
@@ -60,7 +60,7 @@ Optionally add `EMAIL=you@example.com` for certificate expiry notifications.
 ### Private network / LAN (self-signed SSL)
 
 ```bash
-HOST=192.168.1.50 ./docker/setup.sh
+HOST=192.168.1.50 ./deployment/docker/setup.sh
 ```
 
 Replace `192.168.1.50` with your server's LAN IP. Browsers will show a certificate warning — accept it, or import `/etc/ssl/doable/cert.pem` into your trust store.
@@ -68,7 +68,7 @@ Replace `192.168.1.50` with your server's LAN IP. Browsers will show a certifica
 ### Localhost only (self-signed SSL)
 
 ```bash
-./docker/setup.sh
+./deployment/docker/setup.sh
 ```
 
 When prompted, press Enter to default to `localhost`.
@@ -76,7 +76,7 @@ When prompted, press Enter to default to `localhost`.
 ### Behind Cloudflare or another proxy
 
 ```bash
-DOMAIN=app.example.com ./docker/setup.sh --skip-ssl
+DOMAIN=app.example.com ./deployment/docker/setup.sh --skip-ssl
 ```
 
 Uses a self-signed certificate between your proxy and nginx.
@@ -114,6 +114,7 @@ These must be set in `docker/.env` — Docker will refuse to start without them:
 | `JWT_SECRET` | `openssl rand -hex 32` |
 | `ENCRYPTION_KEY` | `openssl rand -hex 32` |
 | `INTERNAL_SECRET` | `openssl rand -hex 32` |
+| `DOABLE_KEK` | `openssl rand -hex 32` (key-encryption-key for stored secrets; Docker refuses to start without it) |
 
 > **Note:** `setup.sh` generates these automatically. You only need to set them manually if using `docker compose` directly.
 
