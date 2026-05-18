@@ -1622,9 +1622,9 @@ if [ "$CONTAINER_MODE" != "1" ]; then
   if ! command -v apparmor_parser &>/dev/null; then
     apt-get install -y apparmor apparmor-utils 2>&1 | tail -2
   fi
-  if [ -f "${INSTALL_DIR}/deploy/apparmor/doable-ai-bash" ]; then
+  if [ -f "${INSTALL_DIR}/deployment/apparmor/doable-ai-bash" ]; then
     install -m 0644 -o root -g root \
-      "${INSTALL_DIR}/deploy/apparmor/doable-ai-bash" \
+      "${INSTALL_DIR}/deployment/apparmor/doable-ai-bash" \
       /etc/apparmor.d/doable-ai-bash
     if apparmor_parser -r /etc/apparmor.d/doable-ai-bash 2>&1 | tee /tmp/aa.log; then
       ok "AppArmor profile 'doable-ai-bash' loaded"
@@ -1635,15 +1635,33 @@ if [ "$CONTAINER_MODE" != "1" ]; then
     warn "deployment/apparmor/doable-ai-bash missing in repo — skipping MAC profile install"
   fi
 
+  # bwrap userns profile: same Ubuntu 24.04+ restriction as Chrome below —
+  # apparmor_restrict_unprivileged_userns=1 blocks bwrap from creating the
+  # user namespace it needs for the --uid/--gid remap, killing every
+  # preview / build / chat-tool spawn with `bwrap: setting up uid map:
+  # Permission denied`. The profile is scoped to /usr/bin/bwrap only.
+  if [ -f "${INSTALL_DIR}/deployment/apparmor/doable-bwrap" ]; then
+    install -m 0644 -o root -g root \
+      "${INSTALL_DIR}/deployment/apparmor/doable-bwrap" \
+      /etc/apparmor.d/doable-bwrap
+    if apparmor_parser -r /etc/apparmor.d/doable-bwrap 2>&1 | tee /tmp/aa-bwrap.log; then
+      ok "AppArmor profile 'doable-bwrap' loaded (dev-server / preview / chat-tool jails ok)"
+    else
+      warn "apparmor_parser failed for doable-bwrap: $(tail -1 /tmp/aa-bwrap.log) — Vite preview + AI code-gen may fail on Ubuntu 24.04+ until resolved"
+    fi
+  else
+    warn "deployment/apparmor/doable-bwrap missing in repo — AI code-gen may fail on Ubuntu 24.04+ (bwrap uid-map denied)"
+  fi
+
   # Puppeteer Chrome userns profile: Ubuntu 24.04+ blocks unprivileged user
   # namespaces (kernel.apparmor_restrict_unprivileged_userns=1), so Chrome's
   # sandbox can't start when puppeteer launches it as the doable user. This
   # profile grants `userns` to ONLY the puppeteer-managed Chrome binary, so
   # the global restriction still protects every other workload (including
   # user-supplied AI code in bubblewrap jails).
-  if [ -f "${INSTALL_DIR}/deploy/apparmor/doable-puppeteer-chrome" ]; then
+  if [ -f "${INSTALL_DIR}/deployment/apparmor/doable-puppeteer-chrome" ]; then
     install -m 0644 -o root -g root \
-      "${INSTALL_DIR}/deploy/apparmor/doable-puppeteer-chrome" \
+      "${INSTALL_DIR}/deployment/apparmor/doable-puppeteer-chrome" \
       /etc/apparmor.d/doable-puppeteer-chrome
     if apparmor_parser -r /etc/apparmor.d/doable-puppeteer-chrome 2>&1 | tee /tmp/aa-chrome.log; then
       ok "AppArmor profile 'doable-puppeteer-chrome' loaded (thumbnails sandbox ok)"
@@ -1651,7 +1669,7 @@ if [ "$CONTAINER_MODE" != "1" ]; then
       warn "apparmor_parser failed: $(tail -1 /tmp/aa-chrome.log) — thumbnail captures will fail under Ubuntu 24.04+ until resolved"
     fi
   else
-    warn "deploy/apparmor/doable-puppeteer-chrome missing in repo — thumbnail captures may fail on Ubuntu 24.04+"
+    warn "deployment/apparmor/doable-puppeteer-chrome missing in repo — thumbnail captures may fail on Ubuntu 24.04+"
   fi
 
   # — Bind-mount helper for proc-mask + etc-synth composers —
@@ -1695,17 +1713,24 @@ WRAPPER
   # Validates uid range (10001-65000), project_id (canonical UUID), and the
   # command (must be /usr/bin/node OR under <project_path>/node_modules/.bin)
   # then setpriv --reuid/--regid/--clear-groups and exec. Sole privileged op.
-  # The canonical source lives at setup-v3/sandbox-spawn — we copy it and
-  # rewrite PROJECTS_PREFIX to match INSTALL_DIR so paths align with this
-  # install (the upstream default is /opt/doable/services/api/projects).
-  if [ -f "${INSTALL_DIR}/setup-v3/sandbox-spawn" ]; then
+  # Canonical source: deployment/bin/sandbox-spawn (shipped in repo). The
+  # legacy setup-v3/sandbox-spawn path remains as a fallback for forks that
+  # haven't picked up the rename. PROJECTS_PREFIX is sed-rewritten to match
+  # this install's INSTALL_DIR (upstream default is /opt/doable/services/api).
+  SBSPAWN_SRC=""
+  if [ -f "${INSTALL_DIR}/deployment/bin/sandbox-spawn" ]; then
+    SBSPAWN_SRC="${INSTALL_DIR}/deployment/bin/sandbox-spawn"
+  elif [ -f "${INSTALL_DIR}/setup-v3/sandbox-spawn" ]; then
+    SBSPAWN_SRC="${INSTALL_DIR}/setup-v3/sandbox-spawn"
+  fi
+  if [ -n "$SBSPAWN_SRC" ]; then
     sed "s|^PROJECTS_PREFIX=.*|PROJECTS_PREFIX=\"${INSTALL_DIR}/services/api/projects\"|" \
-      "${INSTALL_DIR}/setup-v3/sandbox-spawn" > /opt/doable/bin/sandbox-spawn
+      "$SBSPAWN_SRC" > /opt/doable/bin/sandbox-spawn
     chmod 0755 /opt/doable/bin/sandbox-spawn
     chown root:root /opt/doable/bin/sandbox-spawn
-    ok "sandbox-spawn helper installed (PROJECTS_PREFIX=${INSTALL_DIR}/services/api/projects)"
+    ok "sandbox-spawn helper installed from ${SBSPAWN_SRC#${INSTALL_DIR}/} (PROJECTS_PREFIX=${INSTALL_DIR}/services/api/projects)"
   else
-    warn "setup-v3/sandbox-spawn missing in repo — preview/dev-server jails will run as the API user (no UID drop)"
+    warn "sandbox-spawn missing in repo (looked under deployment/bin/ and setup-v3/) — preview/dev-server jails will run as the API user (no UID drop)"
   fi
 
   # — Polkit rule: let `doable` invoke systemd-run --scope —
