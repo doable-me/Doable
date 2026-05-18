@@ -35,11 +35,50 @@ const KNOWN_TOOLS = [
   { name: "edit", category: "sdk", description: "SDK: Edit file (built-in)" },
 ];
 
-// GET /admin/tools/modes — list all mode configs + known tools catalog
+// Default mode definitions — mirrored from filterToolsForMode's hardcoded
+// fallback in routes/chat/session-manager.ts. The chat handler will use these
+// when no DB row exists for a mode, so the admin UI must show them as the
+// "live" config rather than a confusing empty list. Each default has
+// `is_default: true` so the UI can render "(default — click Customize to
+// override)" instead of acting like the admin has to wire tools from scratch
+// before chat works. The `agent` mode allows every known tool except the
+// three plan-only ones; `plan` mirrors PLAN_MODE_ALLOWED_DEFAULT.
+const PLAN_ONLY_TOOL_NAMES = ["ask_clarification", "create_plan", "mark_step_complete"];
+const PLAN_DEFAULT_ALLOWED = [
+  "read_file", "list_files", "search_files",
+  "ask_clarification", "create_plan", "mark_step_complete",
+];
+const DEFAULT_MODES = [
+  {
+    mode: "agent",
+    allowed_tools: KNOWN_TOOLS.map((t) => t.name).filter((n) => !PLAN_ONLY_TOOL_NAMES.includes(n)),
+    description: "Build mode — full file creation, editing, install, and deploy tools.",
+    updated_by: null,
+    updated_at: new Date(0).toISOString(),
+    is_default: true,
+  },
+  {
+    mode: "plan",
+    allowed_tools: PLAN_DEFAULT_ALLOWED,
+    description: "Strategize / plan mode — read-only analysis tools plus plan creation.",
+    updated_by: null,
+    updated_at: new Date(0).toISOString(),
+    is_default: true,
+  },
+] as const;
+
+// GET /admin/tools/modes — list all mode configs + known tools catalog.
+// Merges DB-customized rows over the built-in DEFAULT_MODES so the admin
+// UI always shows the active config (not an empty list on a fresh install).
 adminToolsRoutes.get("/tools/modes", async (c) => {
   try {
-    const modes = await modeTools.list();
-    return c.json({ modes, knownTools: KNOWN_TOOLS });
+    const dbModes = await modeTools.list();
+    const dbModeNames = new Set(dbModes.map((m: { mode: string }) => m.mode));
+    const merged = [
+      ...dbModes.map((m: object) => ({ ...m, is_default: false })),
+      ...DEFAULT_MODES.filter((d) => !dbModeNames.has(d.mode)),
+    ];
+    return c.json({ modes: merged, knownTools: KNOWN_TOOLS });
   } catch (err) {
     console.error("[admin/tools/modes] Error:", err);
     return c.json({ error: "Internal Server Error" }, 500);
