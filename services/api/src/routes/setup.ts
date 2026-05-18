@@ -227,11 +227,25 @@ setupRoutes.post("/ai-provider", async (c) => {
         // chat handler resolved model=null → "No model available" SDK error.
         // Always write to `default_provider_model` for the BYOK path.
         const storedModel = model ?? null;
+        // Apply the wizard's pick to BOTH primary (default) and suggestions
+        // slots in workspace_ai_settings. A first-time installer overwhelmingly
+        // expects the model they just configured to drive both the main chat
+        // path and the inline suggestions path. If we leave the suggestion_*
+        // columns NULL, suggestions silently fall back to copilot defaults —
+        // which fail with "No model available" on a BYOK-only install (no
+        // GitHub Copilot account ever connected). Power users can rebind
+        // suggestions to a cheaper/faster model later via /admin/ai-settings.
         await sql`
           INSERT INTO workspace_ai_settings (
-            workspace_id, default_provider_id, default_provider_model, default_source, updated_by
+            workspace_id,
+            default_provider_id, default_provider_model, default_source,
+            suggestion_provider_id, suggestion_provider_model, suggestion_source,
+            updated_by
           ) VALUES (
-            ${adminWorkspace.id}, ${providerId}, ${storedModel}, 'custom', ${userId}
+            ${adminWorkspace.id},
+            ${providerId}, ${storedModel}, 'custom',
+            ${providerId}, ${storedModel}, 'custom',
+            ${userId}
           )
           ON CONFLICT (workspace_id) DO UPDATE SET
             default_provider_id = EXCLUDED.default_provider_id,
@@ -239,6 +253,11 @@ setupRoutes.post("/ai-provider", async (c) => {
             default_copilot_model = NULL,
             default_copilot_account_id = NULL,
             default_source = 'custom',
+            suggestion_provider_id = EXCLUDED.suggestion_provider_id,
+            suggestion_provider_model = EXCLUDED.suggestion_provider_model,
+            suggestion_copilot_model = NULL,
+            suggestion_copilot_account_id = NULL,
+            suggestion_source = 'custom',
             updated_by = EXCLUDED.updated_by
         `;
 
