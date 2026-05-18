@@ -232,20 +232,31 @@ setupRoutes.post("/ai-provider", async (c) => {
             updated_by = EXCLUDED.updated_by
         `;
 
-        // platform_ai_defaults has 4 pre-seeded rows (free/pro/business/
-        // enterprise) from migration 056 — UPDATE in place, never INSERT.
+        // platform_ai_defaults is pre-seeded with the 4 plan rows by
+        // migration 056. But that seed can be missing on installs that lost
+        // it (TRUNCATE cascades, OOB resets, half-applied migrations on
+        // long-lived boxes). Use UPSERT so the wizard always populates
+        // defaults for all 4 plans even when rows weren't pre-seeded.
         if (setAsPlanDefault) {
-          await sql`
-            UPDATE platform_ai_defaults
-            SET source = 'custom',
-                provider_id = ${providerId},
-                provider_model = ${storedModel},
+          for (const plan of ["free", "pro", "business", "enterprise"]) {
+            await sql`
+              INSERT INTO platform_ai_defaults (
+                plan, source, provider_id, provider_model,
+                copilot_account_id, copilot_model, updated_by
+              ) VALUES (
+                ${plan}, 'custom', ${providerId}, ${storedModel},
+                NULL, NULL, ${userId}
+              )
+              ON CONFLICT (plan) DO UPDATE SET
+                source = 'custom',
+                provider_id = EXCLUDED.provider_id,
+                provider_model = EXCLUDED.provider_model,
                 copilot_account_id = NULL,
                 copilot_model = NULL,
-                updated_by = ${userId},
+                updated_by = EXCLUDED.updated_by,
                 updated_at = now()
-            WHERE plan IN ('free', 'pro', 'business', 'enterprise')
-          `;
+            `;
+          }
         }
       }
     } catch (err) {
