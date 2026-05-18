@@ -2190,13 +2190,21 @@ function EditorPageInner() {
         else setScaffoldProgressMsg(`Almost there… (${elapsed}s)`);
       }, 2000);
 
+      let postScaffoldTicker: ReturnType<typeof setInterval> | null = null;
       try {
         const scaffoldUrl = await scaffoldProject(resolvedProjectId);
         clearInterval(ticker);
         if (cancelled) return;
 
+        postScaffoldTicker = setInterval(() => {
+          const elapsed = Math.round((Date.now() - startTime) / 1000);
+          setScaffoldProgressMsg(`Loading preview… (${elapsed}s)`);
+        }, 2000);
+
         if (scaffoldUrl) {
           // Scaffold returned the preview URL directly
+          clearInterval(postScaffoldTicker);
+          postScaffoldTicker = null;
           setPreviewUrl(scaffoldUrl);
           setScaffoldStatus("ready");
         } else {
@@ -2228,6 +2236,8 @@ function EditorPageInner() {
 
           if (cancelled) return;
 
+          clearInterval(postScaffoldTicker);
+          postScaffoldTicker = null;
           if (url) {
             setPreviewUrl(url);
             setScaffoldStatus("ready");
@@ -2239,6 +2249,7 @@ function EditorPageInner() {
         }
       } catch (err: unknown) {
         clearInterval(ticker);
+        if (postScaffoldTicker) { clearInterval(postScaffoldTicker); postScaffoldTicker = null; }
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : "Failed to scaffold project";
         setScaffoldError(msg);
@@ -4267,10 +4278,19 @@ function EditorPageInner() {
         else if (elapsed < 90) setScaffoldProgressMsg(`Linking packages… (${elapsed}s)`);
         else setScaffoldProgressMsg(`Almost there… (${elapsed}s)`);
       }, 2000);
+      let postScaffoldTicker: ReturnType<typeof setInterval> | null = null;
       try {
         const scaffoldUrl = await scaffoldProject(resolvedProjectId);
         clearInterval(ticker);
+
+        postScaffoldTicker = setInterval(() => {
+          const elapsed = Math.round((Date.now() - startTime) / 1000);
+          setScaffoldProgressMsg(`Loading preview… (${elapsed}s)`);
+        }, 2000);
+
         if (scaffoldUrl) {
+          clearInterval(postScaffoldTicker);
+          postScaffoldTicker = null;
           setPreviewUrl(scaffoldUrl);
           setScaffoldStatus("ready");
         } else {
@@ -4288,6 +4308,8 @@ function EditorPageInner() {
               await new Promise((r) => setTimeout(r, 1000));
             }
           }
+          clearInterval(postScaffoldTicker);
+          postScaffoldTicker = null;
           if (url) {
             setPreviewUrl(url);
             setScaffoldStatus("ready");
@@ -4297,6 +4319,7 @@ function EditorPageInner() {
         }
       } catch (err: unknown) {
         clearInterval(ticker);
+        if (postScaffoldTicker) { clearInterval(postScaffoldTicker); postScaffoldTicker = null; }
         const msg = err instanceof Error ? err.message : "Failed to scaffold project";
         setScaffoldError(msg);
         setScaffoldStatus("error");
