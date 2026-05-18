@@ -20,6 +20,12 @@ export interface ChatStreamState {
   msgIdDeltaStart: number;
   assistantMessageId: string | undefined;
   lastFlushLen: number;
+  /** Track last thinking_content flush length — mirrors lastFlushLen so a
+   * crash mid-stream still leaves the thinking transcript visible on
+   * /chat/history. Without this, agent-loop runs that keep all reasoning
+   * in the leading-text buffer (then hit a server crash / dropped
+   * connection before finalSave runs) lost the entire turn. */
+  lastThinkingFlushLen: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   assistantToolCalls: any[];
   usageCollector: ReturnType<typeof createUsageCollector> | null;
@@ -87,6 +93,7 @@ export function createInitialState(): ChatStreamState {
     msgIdDeltaStart: 0,
     assistantMessageId: undefined,
     lastFlushLen: 0,
+    lastThinkingFlushLen: 0,
     assistantToolCalls: [],
     usageCollector: null,
     traceCollector: null,

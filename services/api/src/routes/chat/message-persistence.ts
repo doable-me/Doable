@@ -94,34 +94,38 @@ export async function finalSaveAssistantMessage(
 ): Promise<void> {
   if (!assistantMessageId) return;
 
-  if (assistantContent || hadToolCalls) {
-    try {
-      const toolActionsJson = assistantToolCalls.length > 0
-        ? sql.json(buildToolActionsFromCalls(assistantToolCalls, assistantMessageId) as any)
-        : sql.json([]);
-      // Encryption-aware UPDATE: write the right column for the current
-      // toggle state and NULL the other so the XOR check (migration 072)
-      // is always satisfied. We pass empty string (not null) when there
-      // was no text but tool calls happened — matches the pre-insert
-      // semantics and keeps exactly one side non-null.
-      const plaintext = assistantContent || "";
-      const { column, value } = messageContentColumnAndValue(sql, plaintext);
-      const otherColumn = column === "content" ? "encrypted_content" : "content";
-      await sql`
-        UPDATE ai_messages
-        SET ${sql(column)} = ${value},
-            ${sql(otherColumn)} = ${null},
-            tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls as any) : sql.json([])},
-            tool_actions = ${toolActionsJson},
-            version_sha = ${versionSha ?? null},
-            had_tool_calls = ${hadToolCalls},
-            thinking_content = ${assistantThinking || null}
-        WHERE id = ${assistantMessageId}
-      `;
-    } catch (e) {
-      console.warn("[Chat] Failed to save assistant message:", e);
-    }
-  } else {
-    sql`DELETE FROM ai_messages WHERE id = ${assistantMessageId}`.catch(() => {});
+  // ALWAYS UPDATE the placeholder row — never DELETE it. Prior behaviour
+  // was to delete when content + hadToolCalls were both empty, which left
+  // the chat history blank on reload for agent-loop runs where the model
+  // streamed all visible reasoning through the leading-text-buffer
+  // (kept-as-thinking by design) and emitted no plain-text assistant
+  // turn before the run completed. Reload now reliably surfaces whatever
+  // the stream produced — text, thinking, or tool actions — instead of
+  // silently dropping the message and showing nothing.
+  try {
+    const toolActionsJson = assistantToolCalls.length > 0
+      ? sql.json(buildToolActionsFromCalls(assistantToolCalls, assistantMessageId) as any)
+      : sql.json([]);
+    // Encryption-aware UPDATE: write the right column for the current
+    // toggle state and NULL the other so the XOR check (migration 072)
+    // is always satisfied. We pass empty string (not null) when there
+    // was no text but tool calls happened — matches the pre-insert
+    // semantics and keeps exactly one side non-null.
+    const plaintext = assistantContent || "";
+    const { column, value } = messageContentColumnAndValue(sql, plaintext);
+    const otherColumn = column === "content" ? "encrypted_content" : "content";
+    await sql`
+      UPDATE ai_messages
+      SET ${sql(column)} = ${value},
+          ${sql(otherColumn)} = ${null},
+          tool_calls = ${assistantToolCalls.length > 0 ? sql.json(assistantToolCalls as any) : sql.json([])},
+          tool_actions = ${toolActionsJson},
+          version_sha = ${versionSha ?? null},
+          had_tool_calls = ${hadToolCalls || assistantToolCalls.length > 0},
+          thinking_content = ${assistantThinking || null}
+      WHERE id = ${assistantMessageId}
+    `;
+  } catch (e) {
+    console.warn("[Chat] Failed to save assistant message:", e);
   }
 }

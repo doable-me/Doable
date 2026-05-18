@@ -209,6 +209,13 @@ function routeSseEvent(
 
   if (sseData.type === "tool_result") {
     state.hadToolCalls = true;
+    // Flip had_tool_calls in the DB as soon as the first tool result lands
+    // (only once, not per result) so /chat/history shows "AI took actions"
+    // even on a server crash before finalSave runs. Skip when app-layer
+    // encryption is on for content/thinking; had_tool_calls is plain.
+    if (state.assistantMessageId && state.lastThinkingFlushLen === 0 && state.lastFlushLen === 0) {
+      sql`UPDATE ai_messages SET had_tool_calls = true WHERE id = ${state.assistantMessageId} AND had_tool_calls = false`.catch(() => {});
+    }
     const resultData = sseData.data as Record<string, unknown>;
     if (!resultData?.name) {
       const tcId = evtData?.toolCallId as string | undefined;
@@ -317,6 +324,19 @@ function routeSseEvent(
       } else if (chunk.type === "thinking") {
         state.assistantThinking += chunk.content;
         state.traceCollector?.onThinkingDelta(chunk.content);
+        // Mirror the content-side incremental flush: agent-loop runs
+        // keep all visible reasoning in assistantThinking, so a crash /
+        // dropped connection before finalSave used to lose the entire
+        // turn (BUG-R18-CHAT-THINKING-NOT-PERSISTED). Skip when app-layer
+        // encryption is on for the same XOR-check reason content uses.
+        if (
+          state.assistantMessageId &&
+          state.assistantThinking.length - state.lastThinkingFlushLen > 500 &&
+          !isMessageEncryptionEnabled()
+        ) {
+          state.lastThinkingFlushLen = state.assistantThinking.length;
+          sql`UPDATE ai_messages SET thinking_content = ${state.assistantThinking} WHERE id = ${state.assistantMessageId}`.catch(() => {});
+        }
         broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: stripServerPaths(chunk.content), messageId, isThinking: true }, userId).catch(() => {});
         stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
         state.lastSseEmitAt = Date.now();
@@ -333,6 +353,15 @@ function routeSseEvent(
     const thinkingDelta = typeof sseData.data === "string" ? sseData.data : "";
     state.assistantThinking += thinkingDelta;
     state.traceCollector?.onThinkingDelta(thinkingDelta);
+    // Same incremental flush as the chunk-routed thinking branch above.
+    if (
+      state.assistantMessageId &&
+      state.assistantThinking.length - state.lastThinkingFlushLen > 500 &&
+      !isMessageEncryptionEnabled()
+    ) {
+      state.lastThinkingFlushLen = state.assistantThinking.length;
+      sql`UPDATE ai_messages SET thinking_content = ${state.assistantThinking} WHERE id = ${state.assistantMessageId}`.catch(() => {});
+    }
     broadcastToRoom(projectId, { type: "ai:stream-chunk", chunk: thinkingDelta, messageId, isThinking: true }, userId).catch(() => {});
     stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(thinkingDelta) }) }).catch(() => {});
     state.lastSseEmitAt = Date.now();
