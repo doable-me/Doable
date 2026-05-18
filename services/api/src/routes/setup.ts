@@ -45,10 +45,10 @@ const aiProviderSchema = z.object({
   apiKey: z.string().min(1).optional(),
   baseUrl: z.string().url().optional(),
   model: z.string().min(1).max(120).optional(),
-  // When true (default), the wizard also writes this provider+model into
-  // platform_ai_defaults so all 4 plans inherit it. Admins who want
-  // per-plan tuning can toggle this off and configure /admin/plan-defaults
-  // manually after wizard completes. See US-003 / R11.
+  // When true (default), the wizard also propagates this provider+model
+  // into platform_ai_defaults so all 4 plans inherit it. Default=true is
+  // wizard-friendly; out-of-band callers (CLI install, OOB seeding, replay
+  // scripts) MUST send `false` to avoid silently overwriting plan defaults.
   setAsPlanDefault: z.boolean().optional().default(true),
 });
 
@@ -244,11 +244,8 @@ setupRoutes.post("/ai-provider", async (c) => {
             updated_by = EXCLUDED.updated_by
         `;
 
-        // Propagate to platform_ai_defaults so /admin/plan-defaults inherits
-        // the wizard choice for every plan tier. Admins who want per-plan
-        // tuning can untick the wizard checkbox or edit /admin/plan-defaults
-        // afterward. Pre-seeded rows for free/pro/business/enterprise mean
-        // we only ever UPDATE — never INSERT.
+        // platform_ai_defaults has 4 pre-seeded rows (free/pro/business/
+        // enterprise) from migration 056 — UPDATE in place, never INSERT.
         if (setAsPlanDefault) {
           await sql`
             UPDATE platform_ai_defaults
