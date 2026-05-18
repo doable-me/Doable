@@ -2178,11 +2178,33 @@ function EditorPageInner() {
       setScaffoldStatus("scaffolding");
       setScaffoldError(null);
 
-      // Progress ticker — shows elapsed time and phase during scaffold
+      // Single progress ticker that runs continuously from useEffect start
+      // until scaffoldStatus flips to "ready" or "error". A `phase` closure
+      // variable picks the message bucket — flipping it to "preview-boot"
+      // after scaffoldProject() resolves swaps the labels in place rather
+      // than tearing down one ticker and standing another one up.
+      //
+      // BUG-R10-RESIDUAL-PREVIEW-FREEZE was caused by the prior two-ticker
+      // pattern: `ticker` was cleared the instant `await scaffoldProject()`
+      // resolved, and `postScaffoldTicker` was started right after — but on
+      // a cold dev-server boot, the API path itself awaited startDevServer
+      // serially (services/api/src/routes/project-files/scaffold.ts → dev-
+      // server-start.ts:446-468), so the await sat for ~25-35 s with the
+      // first ticker still firing "Almost there… (Ns)" but never advancing
+      // its bucket (≥90 s only ever rendered as that string). After the
+      // await resolved, the brief gap before the next 2 s tick combined
+      // with React-batched setState rendering produced the residual freeze.
+      // See `.omc/state/sessions/ralph-2026-05-18-r11-trace-residual-and-
+      // wizard-plans/r11-trace-finding.md`.
       const startTime = Date.now();
+      let phase: "scaffolding" | "preview-boot" = "scaffolding";
       setScaffoldProgressMsg("Creating project files…");
       const ticker = setInterval(() => {
         const elapsed = Math.round((Date.now() - startTime) / 1000);
+        if (phase === "preview-boot") {
+          setScaffoldProgressMsg(`Loading preview… (${elapsed}s)`);
+          return;
+        }
         if (elapsed < 5) setScaffoldProgressMsg("Creating project files…");
         else if (elapsed < 15) setScaffoldProgressMsg(`Downloading packages… (${elapsed}s)`);
         else if (elapsed < 40) setScaffoldProgressMsg(`Installing dependencies… (${elapsed}s)`);
@@ -2190,25 +2212,21 @@ function EditorPageInner() {
         else setScaffoldProgressMsg(`Almost there… (${elapsed}s)`);
       }, 2000);
 
-      let postScaffoldTicker: ReturnType<typeof setInterval> | null = null;
       try {
         const scaffoldUrl = await scaffoldProject(resolvedProjectId);
-        clearInterval(ticker);
-        if (cancelled) return;
+        if (cancelled) { clearInterval(ticker); return; }
 
-        postScaffoldTicker = setInterval(() => {
-          const elapsed = Math.round((Date.now() - startTime) / 1000);
-          setScaffoldProgressMsg(`Loading preview… (${elapsed}s)`);
-        }, 2000);
+        // Immediate text swap so the user sees a label change the moment
+        // the scaffold POST returns, instead of waiting up to 2 s for the
+        // next ticker tick.
+        phase = "preview-boot";
+        setScaffoldProgressMsg(`Loading preview… (${Math.round((Date.now() - startTime) / 1000)}s)`);
 
         if (scaffoldUrl) {
-          // Scaffold returned the preview URL directly
-          clearInterval(postScaffoldTicker);
-          postScaffoldTicker = null;
+          clearInterval(ticker);
           setPreviewUrl(scaffoldUrl);
           setScaffoldStatus("ready");
         } else {
-          // No URL from scaffold — poll for the preview URL
           setScaffoldStatus("starting");
           let url: string | null = null;
           let attempts = 0;
@@ -2217,15 +2235,8 @@ function EditorPageInner() {
           while (!url && attempts < maxAttempts && !cancelled) {
             try {
               url = await fetchPreviewUrl(resolvedProjectId);
-              // Successful 200 with running=false just means "still starting" —
-              // keep polling, but clear any prior error so we don't surface it.
               if (!url) lastError = null;
             } catch (pollErr) {
-              // Capture the actual API error so we can surface it after the
-              // retry budget expires. Previously this was a bare `catch {}`,
-              // which left the user staring at "Loading Live Preview…" forever
-              // when the dev server crashloop'd (e.g. MODULE_NOT_FOUND for
-              // vite/bin/vite.js after a partial node_modules install).
               lastError = pollErr instanceof Error ? pollErr.message : String(pollErr);
             }
             if (!url) {
@@ -2234,10 +2245,9 @@ function EditorPageInner() {
             }
           }
 
-          if (cancelled) return;
+          if (cancelled) { clearInterval(ticker); return; }
 
-          clearInterval(postScaffoldTicker);
-          postScaffoldTicker = null;
+          clearInterval(ticker);
           if (url) {
             setPreviewUrl(url);
             setScaffoldStatus("ready");
@@ -2249,7 +2259,6 @@ function EditorPageInner() {
         }
       } catch (err: unknown) {
         clearInterval(ticker);
-        if (postScaffoldTicker) { clearInterval(postScaffoldTicker); postScaffoldTicker = null; }
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : "Failed to scaffold project";
         setScaffoldError(msg);
@@ -4270,27 +4279,28 @@ function EditorPageInner() {
     const init = async () => {
       setScaffoldStatus("scaffolding");
       const startTime = Date.now();
+      // Single ticker pattern — see the mount useEffect above for the full
+      // rationale (BUG-R10-RESIDUAL-PREVIEW-FREEZE root-cause).
+      let phase: "scaffolding" | "preview-boot" = "scaffolding";
       const ticker = setInterval(() => {
         const elapsed = Math.round((Date.now() - startTime) / 1000);
+        if (phase === "preview-boot") {
+          setScaffoldProgressMsg(`Loading preview… (${elapsed}s)`);
+          return;
+        }
         if (elapsed < 5) setScaffoldProgressMsg("Creating project files…");
         else if (elapsed < 15) setScaffoldProgressMsg(`Downloading packages… (${elapsed}s)`);
         else if (elapsed < 40) setScaffoldProgressMsg(`Installing dependencies… (${elapsed}s)`);
         else if (elapsed < 90) setScaffoldProgressMsg(`Linking packages… (${elapsed}s)`);
         else setScaffoldProgressMsg(`Almost there… (${elapsed}s)`);
       }, 2000);
-      let postScaffoldTicker: ReturnType<typeof setInterval> | null = null;
       try {
         const scaffoldUrl = await scaffoldProject(resolvedProjectId);
-        clearInterval(ticker);
-
-        postScaffoldTicker = setInterval(() => {
-          const elapsed = Math.round((Date.now() - startTime) / 1000);
-          setScaffoldProgressMsg(`Loading preview… (${elapsed}s)`);
-        }, 2000);
+        phase = "preview-boot";
+        setScaffoldProgressMsg(`Loading preview… (${Math.round((Date.now() - startTime) / 1000)}s)`);
 
         if (scaffoldUrl) {
-          clearInterval(postScaffoldTicker);
-          postScaffoldTicker = null;
+          clearInterval(ticker);
           setPreviewUrl(scaffoldUrl);
           setScaffoldStatus("ready");
         } else {
@@ -4308,8 +4318,7 @@ function EditorPageInner() {
               await new Promise((r) => setTimeout(r, 1000));
             }
           }
-          clearInterval(postScaffoldTicker);
-          postScaffoldTicker = null;
+          clearInterval(ticker);
           if (url) {
             setPreviewUrl(url);
             setScaffoldStatus("ready");
@@ -4319,7 +4328,6 @@ function EditorPageInner() {
         }
       } catch (err: unknown) {
         clearInterval(ticker);
-        if (postScaffoldTicker) { clearInterval(postScaffoldTicker); postScaffoldTicker = null; }
         const msg = err instanceof Error ? err.message : "Failed to scaffold project";
         setScaffoldError(msg);
         setScaffoldStatus("error");
