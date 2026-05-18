@@ -165,15 +165,45 @@ async function doStartDevServer(
   // avoid IPv6 resolution issues on Windows where localhost may hit ::1)
   const url = `http://127.0.0.1:${port}`;
 
-  // Per-project sandbox UID (Linux + DOABLE_HARDENING=full). Returns null
-  // on Windows/Mac (no setpriv available) or when the API can neither
-  // chown directly (root) nor via the sudo wrapper (v3 hardened default).
-  // When non-null, chown the project tree so the dropped-priv dev process
-  // can read/write it. We use `sudo -n chown` so this works even when the
-  // API runs unprivileged (the sudoers rule installed by setup-v3 grants
-  // NOPASSWD for the exact `/usr/bin/chown -R <uid>:<uid> /opt/doable/.../<projectId>`
-  // pattern). When running as root, sudo -n is a no-op tax but harmless.
+  // Acquire a per-project sandbox UID (Linux + DOABLE_HARDENING=full). The
+  // matching `chown -R` happens AFTER the API-side preparation steps below
+  // (ensureSourceAnnotationsPlugin, linkDoableSdk) — otherwise those run as
+  // the API uid against a directory already flipped to the sandbox uid and
+  // hit EACCES (BUG-R13-DEV-EACCES-POST-UID-DROP, see session r13 docs).
+  // Returns null on Windows/Mac or when chown isn't available.
   let sandboxUid: number | null = acquireDevUid(projectId);
+
+  console.log(
+    `[DevServer] Starting ${adapter.id} dev server for project ${projectId} on port ${port}`,
+  );
+  console.log(`[DevServer]   Directory: ${projectPath}`);
+
+  // Use a settled flag to prevent race between timeout, close, and ready
+  let settled = false;
+  let resolveReady: () => void;
+  let rejectReady: (err: Error) => void;
+  const readyPromise = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+
+  // Ensure the source annotations Vite plugin is installed for visual editing.
+  // (Idempotent; adapter.scaffold also installs it on project create.)
+  try {
+    ensureSourceAnnotationsPlugin(projectPath);
+  } catch (err) {
+    console.warn("[DevServer] Failed to inject source annotations plugin:", err);
+  }
+
+  // Ensure @doable/sdk is linked (idempotent — skips if already present)
+  try {
+    await linkDoableSdk(projectPath);
+  } catch (err) {
+    console.warn("[DevServer] Failed to link @doable/sdk:", err);
+  }
+
+  // chown -R to the sandbox uid LAST, after all API-side writes complete.
+  // See acquireDevUid call above for the ordering rationale (BUG-R13).
   if (sandboxUid !== null) {
     const useSudo = isSandboxWrapperAvailable();
     const cmd = useSudo ? "sudo" : "chown";
@@ -211,35 +241,6 @@ async function doStartDevServer(
       releaseDevUid(projectId);
       sandboxUid = null;
     }
-  }
-
-  console.log(
-    `[DevServer] Starting ${adapter.id} dev server for project ${projectId} on port ${port}`,
-  );
-  console.log(`[DevServer]   Directory: ${projectPath}`);
-
-  // Use a settled flag to prevent race between timeout, close, and ready
-  let settled = false;
-  let resolveReady: () => void;
-  let rejectReady: (err: Error) => void;
-  const readyPromise = new Promise<void>((resolve, reject) => {
-    resolveReady = resolve;
-    rejectReady = reject;
-  });
-
-  // Ensure the source annotations Vite plugin is installed for visual editing.
-  // (Idempotent; adapter.scaffold also installs it on project create.)
-  try {
-    ensureSourceAnnotationsPlugin(projectPath);
-  } catch (err) {
-    console.warn("[DevServer] Failed to inject source annotations plugin:", err);
-  }
-
-  // Ensure @doable/sdk is linked (idempotent — skips if already present)
-  try {
-    await linkDoableSdk(projectPath);
-  } catch (err) {
-    console.warn("[DevServer] Failed to link @doable/sdk:", err);
   }
 
   // Tell the dev server to use the proxy prefix as its base path so all
