@@ -1047,15 +1047,54 @@ async function runPptxScript(scriptBody) {
   const { fork } = await import("node:child_process");
   const { fileURLToPath } = await import("node:url");
   const { dirname, join } = await import("node:path");
+  const { existsSync } = await import("node:fs");
   const here = dirname(fileURLToPath(import.meta.url));
   const workerPath = join(here, "pptx-worker.mjs");
 
   return new Promise((resolve, reject) => {
+    // Node's --permission flag (stable in 24+) restricts the worker's
+    // filesystem access to ONLY the paths we explicitly allow. Even if a
+    // script escapes the inner vm sandbox via a prototype-chain trick and
+    // grabs `process` via this.constructor.constructor, any
+    // `require("fs").readFileSync("/home/doable/anything")` throws
+    // ERR_ACCESS_DENIED — closing the last filesystem-exfiltration vector.
+    // We allow `here` (the worker's own dir, needed for require to resolve
+    // pptxgenjs from node_modules) and /tmp (Buffer write temp space for
+    // pptxgenjs internals on some platforms). --allow-child-process is
+    // OMITTED so the worker can't fork further to escape the permission
+    // model. --allow-worker is also omitted for the same reason.
+    // pnpm hoists workspace deps to <repo>/node_modules/.pnpm and the
+    // per-package node_modules contains symlinks INTO that hoist dir. The
+    // worker needs read access to the resolved real paths under
+    // <repo>/node_modules/.pnpm — Node's permission system checks the
+    // real path, not the symlink path. Walk up until we find a dir with
+    // pnpm-workspace.yaml (true repo root) so the allowlist covers the
+    // hoist dir regardless of install location.
+    const repoRoot = (() => {
+      let cur = here;
+      while (cur && cur !== "/" && cur !== ".") {
+        if (
+          existsSync(join(cur, "pnpm-workspace.yaml")) ||
+          existsSync(join(cur, "node_modules", ".pnpm"))
+        ) {
+          return cur;
+        }
+        cur = dirname(cur);
+      }
+      return here;
+    })();
     const child = fork(workerPath, [], {
       env: {},                              // strip ALL parent env vars
-      cwd: here,                            // keep cwd predictable; no fs access via sandbox anyway
+      cwd: here,                            // keep cwd predictable
       stdio: ["ignore", "pipe", "pipe", "ipc"],
-      execArgv: ["--max-old-space-size=256"],
+      execArgv: [
+        "--max-old-space-size=256",
+        "--permission",
+        `--allow-fs-read=${repoRoot}/node_modules`,    // hoisted pnpm deps (recursive)
+        `--allow-fs-read=${here}`,                      // worker file
+        "--allow-fs-read=/tmp",
+        "--allow-fs-write=/tmp",
+      ],
     });
 
     const stderr = [];
