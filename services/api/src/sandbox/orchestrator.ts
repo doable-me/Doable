@@ -284,6 +284,9 @@ export async function jailedSpawnLongRunning(
   }
   const bin = plan.argv[0]!;
   const rest = plan.argv.slice(1);
+  if (process.env.DOABLE_SANDBOX_DEBUG === "1") {
+    console.log(`[sandbox.debug] spawn cwd=${plan.projectPath} bin=${bin} argv=${JSON.stringify(plan.argv)}`);
+  }
   const child = cpSpawn(bin, rest, {
     cwd: plan.projectPath,
     env: plan.env,
