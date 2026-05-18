@@ -14,6 +14,7 @@
 
 import { defineTool, type Tool } from "@github/copilot-sdk";
 import { jailedSpawn, type SpawnContext } from "../../sandbox/orchestrator.js";
+import { acquireDevUid } from "../../runtime/dev-uid-allocator.js";
 
 const MAX_OUTPUT_BYTES = 1_000_000; // 1 MB cap per stream, per PRD §6.4 / §8.
 
@@ -63,6 +64,13 @@ export function createBashTool(ctx: BashToolCtx): Tool {
         };
       }
 
+      // R14 BUG-R13-DEV-VITE-UIDNS — share the dev-server's sandbox uid so the
+      // AI bash tool can write into the project dir owned by that uid. acquireDevUid
+      // is idempotent: returns the existing per-project uid if one was already
+      // allocated by dev-server-start (matching path: same project, same uid).
+      // Returns null on non-Linux or when sudo+sandbox-spawn isn't installed.
+      const projectSandboxUid = acquireDevUid(ctx.projectId) ?? undefined;
+
       const spawnCtx: SpawnContext = {
         projectId: ctx.projectId,
         workspaceId: ctx.workspaceId ?? null,
@@ -71,6 +79,7 @@ export function createBashTool(ctx: BashToolCtx): Tool {
         hardening:
           (process.env.DOABLE_HARDENING_LEVEL as SpawnContext["hardening"]) ??
           "dev",
+        hostUid: projectSandboxUid,
       };
 
       try {
