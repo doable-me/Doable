@@ -181,7 +181,14 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
         body.baseUrl = backend.baseUrl;
       }
       if (isByokCustom && customBaseUrl.trim()) body.baseUrl = customBaseUrl.trim();
-      if (model.trim()) body.model = model.trim();
+      // Always send a model: prefer what the user typed/selected, then fall
+      // back to the catalog default for the selected preset. Without a model
+      // the API writes NULL into default_provider_model / suggestion_provider_model
+      // / platform_ai_defaults, causing "No model available" errors at chat time.
+      const resolvedModel =
+        model.trim() ||
+        (selected?.kind === "preset" ? (selected.preset.defaultModels[0]?.id ?? "") : "");
+      if (resolvedModel) body.model = resolvedModel;
       // Copilot OAuth has no apiKey at this point, so platform_ai_defaults
       // can't be propagated yet — admin sets it in /admin after OAuth.
       if (!isCopilot) body.setAsPlanDefault = setAsPlanDefault;
