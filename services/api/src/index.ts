@@ -68,6 +68,7 @@ import { getOAuthRedirectUri } from "./integrations/oauth2.js";
 import { mountRoutes } from "./routes.js";
 import { tracingMiddleware } from "./tracing/middleware.js";
 import { startTracingRetention } from "./tracing/retention.js";
+import { startThumbnailBackfillSweeper } from "./ai/thumbnail.js";
 import { sandboxBootProbe } from "./sandbox/boot-probe.js";
 
 // ─── Visual Edit Bridge Script ───────────────────────────────
@@ -457,6 +458,12 @@ startMarketplaceFeaturedRefresher({ intervalMs: 5 * 60 * 1000 });
 // Daily retention sweep for spans/trace_logs/traces. No-op when no
 // data exists yet (e.g. before migration 053 applied).
 startTracingRetention();
+
+// Backfill thumbnails for projects whose initial capture missed (e.g.
+// Chrome libs not yet installed on the box, or a transient launch
+// failure). Sweeps every 10 minutes; per-project debounce in
+// scheduleThumbnailCapture prevents duplicate work.
+startThumbnailBackfillSweeper();
 
 const server = serve({
   fetch: app.fetch,
