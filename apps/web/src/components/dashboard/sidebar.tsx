@@ -277,8 +277,13 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
                 <div className="h-1.5 w-full rounded-full bg-muted"><div className={`h-1.5 rounded-full transition-all ${creditsUsedPercent >= 80 ? "bg-gradient-to-r from-orange-500 to-red-500" : "bg-gradient-to-r from-brand-600 to-brand-500"}`} style={{ width: `${Math.min(creditsUsedPercent, 100)}%` }} /></div>
               )}
             </div>
-            {maxProjects !== Infinity && (
-              <div className="space-y-1" data-r31-debug={`ovr=${String(override)} plan=${planMaxProjects} max=${maxProjects} ws=${activeWorkspace?.id?.slice(0,8) ?? "null"}`}>
+            {/* Render only AFTER workspaces load — `activeWorkspace` is null
+             * on initial SSR/CSR render (workspaces fetch is async), and
+             * rendering "X / 3 (limit)" with the plan-tier default before
+             * the per-workspace max_projects_override is known leads to the
+             * "Projects 6 / 3 (limit)" flicker/stale display investors flagged. */}
+            {activeWorkspace && maxProjects !== Infinity && (
+              <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px]"><span className="text-muted-foreground">Projects</span><span className={`text-muted-foreground ${projectsAtLimit ? "text-orange-400" : ""}`}>{totalProjects} / {maxProjects}{projectsAtLimit ? " (limit)" : ""}</span></div>
                 <div className="h-1.5 w-full rounded-full bg-muted"><div className={`h-1.5 rounded-full transition-all ${projectsAtLimit ? "bg-gradient-to-r from-orange-500 to-red-500" : "bg-gradient-to-r from-brand-600 to-brand-500"}`} style={{ width: `${Math.min((totalProjects / maxProjects) * 100, 100)}%` }} /></div>
               </div>
