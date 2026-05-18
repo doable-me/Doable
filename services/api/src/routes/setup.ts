@@ -218,16 +218,26 @@ setupRoutes.post("/ai-provider", async (c) => {
         // model outside a hardcoded allowlist (e.g. MiniMax-M2.7 → 400 unknown
         // model 'gpt-4o' from the provider). No SDK session-creation gate
         // actually enforces that allowlist; the field is the upstream model name.
+        //
+        // Migration 042 split the legacy `default_model` column into per-source
+        // slots: `default_copilot_model` and `default_provider_model`. The
+        // engine-resolver (ai/engine-resolver.ts:106-108) only reads
+        // `default_provider_model` for source='custom'. Writing to the legacy
+        // `default_model` column made the wizard appear to succeed but the
+        // chat handler resolved model=null → "No model available" SDK error.
+        // Always write to `default_provider_model` for the BYOK path.
         const storedModel = model ?? null;
         await sql`
           INSERT INTO workspace_ai_settings (
-            workspace_id, default_provider_id, default_model, default_source, updated_by
+            workspace_id, default_provider_id, default_provider_model, default_source, updated_by
           ) VALUES (
             ${adminWorkspace.id}, ${providerId}, ${storedModel}, 'custom', ${userId}
           )
           ON CONFLICT (workspace_id) DO UPDATE SET
             default_provider_id = EXCLUDED.default_provider_id,
-            default_model = EXCLUDED.default_model,
+            default_provider_model = EXCLUDED.default_provider_model,
+            default_copilot_model = NULL,
+            default_copilot_account_id = NULL,
             default_source = 'custom',
             updated_by = EXCLUDED.updated_by
         `;
