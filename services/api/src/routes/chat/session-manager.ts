@@ -57,7 +57,6 @@ export async function checkAndEvictOnProviderChange(
 ): Promise<boolean> {
   const next = computeProviderFingerprint(provider, model);
   const prev = projectSessionProviders.get(sessionKey);
-  // First-time bind: just record. No eviction.
   if (!prev) {
     projectSessionProviders.set(sessionKey, next);
     return false;

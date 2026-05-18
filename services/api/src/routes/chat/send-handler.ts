@@ -533,11 +533,6 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
           const toolProgress = createToolProgressCallbacks(stream, state, state.traceCollector, recordAssistantToolCall, projectId);
           const modeChanged = checkAndEvictOnModeChange(sessionKey, mode, state.traceCollector);
-          // BUG-R9-CHAT-SESSION-STICKY-ON-OLD-PROVIDER — evict the cached
-          // SDK session whenever the workspace BYOK provider/model binding
-          // changes so the next send creates a fresh session against the
-          // newly-configured provider instead of trying to resume against
-          // the orphaned one.
           await checkAndEvictOnProviderChange(projectId, sessionKey, resolvedProvider, resolvedModel, state.traceCollector);
 
           // Materialize DB skills to disk for SDK skillDirectories. Best-effort:

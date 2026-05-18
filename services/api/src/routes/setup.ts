@@ -121,6 +121,9 @@ async function validateAiProvider(
   }
 }
 
+// Models the Copilot SDK accepts in createSession({ model }). Custom-BYOK
+// names outside this set (e.g. "MiniMax-M2.7") get rewritten to "gpt-4o"
+// at workspace_ai_settings bind time so the SDK doesn't reject the session.
 const COPILOT_SDK_KNOWN_MODELS = new Set([
   "gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-4-turbo", "gpt-3.5-turbo",
   "claude-3.5-sonnet", "claude-3.7-sonnet", "claude-3.5-haiku",
