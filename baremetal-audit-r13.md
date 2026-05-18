@@ -33,6 +33,22 @@ This answers the user's headline R13 question: **AI chat is NOT stalling on long
 
 **Net result**: 5 of 5 BLOCKERs identified; 3 fixed in-session (cloudflared, dotted-URL env, sandbox link-sdk on local branch `fix/r13-sandbox-sdk-link`); 2 still open (BLOCKER-4 fresh-admin-no-redirect-to-setup, BLOCKER-5 vite /work EACCES in bwrap). The chat→AI→file-write loop works end-to-end with a configured provider; only the preview rendering inside the per-project sandbox is still broken.
 
+## Update — BLOCKER-5 root cause traced
+
+Per `services/api/src/projects/vite-jail.ts:110-170`, when `DOABLE_SANDBOX_VITE=1` the spawn flows through `jailedSpawnLongRunning("vite-preview")` and the `vitePreviewProfile` correctly sets `user.uid = ctx.hostUid` (== sandboxUid, e.g. 10003). The profile's `rootDir` binds the project dir to `/work` inside the bwrap NS.
+
+The EACCES isn't a profile bug — it's that the `doable` system user (uid 5000) cannot do unprivileged `bwrap --uid 10003 --unshare-user` to map an inside-NS uid to a host uid in the 10001+ range without:
+- `/etc/subuid: doable:10001:55000` (and matching `/etc/subgid`) — **MISSING on fresh dodev**
+- `uidmap` apt package (provides `newuidmap`/`newgidmap`) — **MISSING on fresh dodev**
+
+After adding both manually, bwrap `--uid 10003` still hits EACCES because bubblewrap-v2 backend doesn't invoke the setuid helper at `/opt/doable/bin/sandbox-spawn` to flip the calling-process uid before bwrap. That helper exists for the legacy `setpriv` path (see `vite-jail.ts:209-256`) but the orchestrator's bubblewrap-v2 path bypasses it.
+
+**Two-part fix needed** (NOT applied — out of session scope):
+1. `deployment/server-setup.sh`: append `apt-get install -y uidmap`; write `/etc/subuid` and `/etc/subgid` entries for the `doable` user (range start = lowest per-project uid, length = pool size).
+2. `packages/dovault/src/backends/bubblewrap-v2.ts`: when the calling effective uid is not root AND a `user.uid` from the profile is in the per-project sandbox range, prepend `sudo -n /opt/doable/bin/sandbox-spawn <uid> <projectId>` before bwrap, OR emit explicit `--userns-block-fd` + `newuidmap` args.
+
+Until both land, R13 cannot ship: the AI builds files correctly but the preview never renders, and any AI `bash` call that mkdir's a new subdir under the project hits the same EACCES.
+
 ---
 
 ## [BLOCKER-1] cloudflared `config.yml` ingress uses two-level subdomains
