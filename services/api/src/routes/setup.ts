@@ -121,6 +121,14 @@ async function validateAiProvider(
   }
 }
 
+const COPILOT_SDK_KNOWN_MODELS = new Set([
+  "gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-4-turbo", "gpt-3.5-turbo",
+  "claude-3.5-sonnet", "claude-3.7-sonnet", "claude-3.5-haiku",
+  "claude-3-opus", "claude-sonnet-4", "claude-opus-4",
+  "o1", "o1-mini", "o3-mini",
+  "gemini-1.5-pro", "gemini-2.0-flash",
+]);
+
 // ─── POST /api/setup/ai-provider ──────────────────────────────────────────
 // Saves the wizard's AI-provider choice to platform_config (UI display state)
 // AND — for BYOK providers — creates an `ai_providers` row in the admin's

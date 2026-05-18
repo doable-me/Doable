@@ -1942,6 +1942,9 @@ function EditorPageInner() {
   const [liveStatus, setLiveStatus] = useState<string>("");
   // Elapsed seconds since the current stream started (drives the inline timer + slow hint)
   const [chatElapsedSec, setChatElapsedSec] = useState(0);
+  // Seconds since the last SSE frame was received (null = stream is live)
+  const [streamIdleSeconds, setStreamIdleSeconds] = useState<number | null>(null);
+  const lastFrameAt = useRef<number>(Date.now());
   // Track first generation to show loading overlay instead of default template
   const [isFirstGeneration, setIsFirstGeneration] = useState(false);
   // Track whether tool calls are active (for building overlay on follow-up builds)
@@ -1989,6 +1992,25 @@ function EditorPageInner() {
     setChatElapsedSec(0);
     const id = window.setInterval(() => {
       setChatElapsedSec(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [isStreaming]);
+
+  // ─── Reset lastFrameAt whenever a new status frame arrives ──
+  useEffect(() => {
+    if (liveStatus) lastFrameAt.current = Date.now();
+  }, [liveStatus]);
+
+  // ─── Watchdog: count idle seconds when SSE frames stop arriving ──
+  useEffect(() => {
+    if (!isStreaming) {
+      setStreamIdleSeconds(null);
+      return;
+    }
+    lastFrameAt.current = Date.now();
+    const id = window.setInterval(() => {
+      const elapsed = Math.floor((Date.now() - lastFrameAt.current) / 1000);
+      setStreamIdleSeconds(elapsed > 5 ? elapsed : null);
     }, 1000);
     return () => window.clearInterval(id);
   }, [isStreaming]);
@@ -4885,7 +4907,7 @@ function EditorPageInner() {
             <span className="text-[11px] text-[#9b9a97] leading-tight truncate flex items-center gap-1.5">
               {isStreaming && liveStatus ? (
                 <>
-                  <span className="truncate">{liveStatus}</span>
+                  <span className="truncate">{liveStatus}{streamIdleSeconds != null ? ` · ${streamIdleSeconds}s` : ""}</span>
                   <span className="font-mono tabular-nums text-[#9b9a77]/70 text-[10px] flex-shrink-0">{chatElapsedSec}s</span>
                   {chatElapsedSec >= 60 && (
                     <span className="italic text-[#9b9a77]/60 text-[10px] flex-shrink-0">Taking longer than usual</span>
