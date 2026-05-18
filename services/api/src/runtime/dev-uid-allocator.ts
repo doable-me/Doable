@@ -50,16 +50,24 @@ function detectSudoWrapper(): { available: boolean; reason: string } {
     return { available: false, reason: `wrapper not installed at ${SANDBOX_SPAWN_PATH}` };
   }
   try {
-    const r = spawnSync("sudo", ["-n", "true"], {
+    // Probe `sudo -nl <wrapper>` rather than `sudo -n true`. The NOPASSWD
+    // sudoers rule installed by deployment/server-setup.sh only grants the
+    // sandbox helpers (sandbox-spawn, sandbox-mount, chown patterns), not
+    // `true`, so `sudo -n true` always failed with "a password is required"
+    // even on correctly-provisioned boxes — silently disabling the UID-drop
+    // path and forcing dev-servers to inherit the API user's permissions.
+    // `-nl` returns 0 iff the invoking user can run the wrapper without a
+    // password, which is the precise property we actually need.
+    const r = spawnSync("sudo", ["-nl", SANDBOX_SPAWN_PATH], {
       stdio: "ignore",
       timeout: 2000,
     });
     if (r.status === 0) {
-      return { available: true, reason: "sudo -n true succeeded" };
+      return { available: true, reason: `sudo -nl ${SANDBOX_SPAWN_PATH} succeeded` };
     }
     return {
       available: false,
-      reason: `sudo -n true failed (status=${r.status ?? "null"})`,
+      reason: `sudo -nl ${SANDBOX_SPAWN_PATH} failed (status=${r.status ?? "null"})`,
     };
   } catch (err) {
     return {
