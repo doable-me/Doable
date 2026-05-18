@@ -143,6 +143,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const { accessToken } = getStoredTokens();
+    // R15 BUG-FIX TRACE — remove after verifying the StrictMode bypass works
+    // eslint-disable-next-line no-console
+    console.log("[R15-AUTH] effect mounted, accessToken:", accessToken ? "present" : "absent");
 
     if (!accessToken) {
       setUser(null);
