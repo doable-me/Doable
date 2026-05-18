@@ -738,6 +738,10 @@ WS_PORT=4001
 WS_HOST=${BIND_HOST}
 WS_INTERNAL_URL=http://127.0.0.1:${WS_PORT:-4001}
 API_URL=http://127.0.0.1:${API_PORT:-4000}
+# CSWSH guard — the ws server rejects upgrades from origins not on this list.
+# Without it, the browser-side Yjs collab fails with handshake 403 on every
+# editor load. Source: services/ws/src/index.ts isOriginAllowed().
+WS_ALLOWED_ORIGINS=https://${DOMAIN}
 
 # ─── Next.js Web bind (used by start.sh) ────────────────────
 WEB_HOSTNAME=${BIND_HOST}
