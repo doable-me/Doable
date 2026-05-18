@@ -24,6 +24,8 @@ import {
   getEncryptedConfig,
 } from "../lib/platformConfig.js";
 import { recordAdminAction } from "../admin/audit-log.js";
+import { sql } from "../db/index.js";
+import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
 export const setupRoutes = new Hono<AuthEnv>({ strict: false });
 
@@ -120,6 +122,12 @@ async function validateAiProvider(
 }
 
 // ─── POST /api/setup/ai-provider ──────────────────────────────────────────
+// Saves the wizard's AI-provider choice to platform_config (UI display state)
+// AND — for BYOK providers — creates an `ai_providers` row in the admin's
+// workspace + binds it as the workspace default via `workspace_ai_settings`.
+// Without that binding, the chat handler's engine-resolver finds no provider
+// and the SDK errors with "Session was not created with authentication info
+// or custom provider" even though the wizard "saved" the key.
 setupRoutes.post("/ai-provider", async (c) => {
   const parsed = aiProviderSchema.safeParse(await c.req.json());
   if (!parsed.success) {
@@ -147,6 +155,77 @@ setupRoutes.post("/ai-provider", async (c) => {
   }
   if (model) {
     await setConfig("setup.ai_model", model, { updatedBy: userId });
+  }
+
+  // Bind to the admin's workspace so the chat handler's engine-resolver finds a usable provider.
+  // Skip for "copilot" — that path uses github_copilot_accounts via OAuth.
+  if (apiKey && provider !== "copilot") {
+    try {
+      // ai_provider_type enum is openai|azure|anthropic. Map our "custom"
+      // (OpenAI-compatible BYOK) to "openai" so the column accepts it.
+      const providerType: "openai" | "azure" | "anthropic" =
+        provider === "anthropic" ? "anthropic" : "openai";
+      const resolvedBaseUrl =
+        baseUrl ||
+        (provider === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1");
+      const providerLabel = model ? `${provider} ${model}` : provider;
+
+      const [adminWorkspace] = await sql<{ id: string }[]>`
+        SELECT w.id FROM workspaces w
+        JOIN workspace_members m ON m.workspace_id = w.id
+        WHERE m.user_id = ${userId} AND m.role IN ('owner', 'admin')
+        ORDER BY w.created_at LIMIT 1
+      `;
+      if (adminWorkspace) {
+        const [existing] = await sql<{ id: string }[]>`
+          SELECT id FROM ai_providers
+          WHERE workspace_id = ${adminWorkspace.id} AND label = ${providerLabel} AND scope = 'workspace'
+          LIMIT 1
+        `;
+        let providerId: string;
+        if (existing) {
+          await sql`
+            UPDATE ai_providers
+            SET encrypted_api_key = pgp_sym_encrypt(${apiKey}, ${ENCRYPTION_KEY}),
+                provider_type = ${providerType}::ai_provider_type,
+                base_url = ${resolvedBaseUrl},
+                is_valid = true,
+                updated_at = now()
+            WHERE id = ${existing.id}
+          `;
+          providerId = existing.id;
+        } else {
+          const [created] = await sql<{ id: string }[]>`
+            INSERT INTO ai_providers (
+              workspace_id, label, provider_type, base_url,
+              encrypted_api_key, is_valid, added_by, scope
+            ) VALUES (
+              ${adminWorkspace.id}, ${providerLabel}, ${providerType}::ai_provider_type,
+              ${resolvedBaseUrl}, pgp_sym_encrypt(${apiKey}, ${ENCRYPTION_KEY}),
+              true, ${userId}, 'workspace'::ai_account_scope
+            ) RETURNING id
+          `;
+          if (!created) throw new Error("ai_providers INSERT returned no row");
+          providerId = created.id;
+        }
+        await sql`
+          INSERT INTO workspace_ai_settings (
+            workspace_id, default_provider_id, default_model, default_source, updated_by
+          ) VALUES (
+            ${adminWorkspace.id}, ${providerId}, ${model ?? null}, 'custom', ${userId}
+          )
+          ON CONFLICT (workspace_id) DO UPDATE SET
+            default_provider_id = EXCLUDED.default_provider_id,
+            default_model = EXCLUDED.default_model,
+            default_source = 'custom',
+            updated_by = EXCLUDED.updated_by
+        `;
+      }
+    } catch (err) {
+      // Non-fatal — platform_config still has the values; admin can rebind in /admin
+      // later. Logged for ops follow-up.
+      console.warn("[setup] Failed to bind BYOK provider into workspace_ai_settings:", err);
+    }
   }
 
   recordAdminAction(c, {
