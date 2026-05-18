@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Check, ChevronDown, Eye, EyeOff, Loader2 } from 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
+import { PlanDefaultsInline } from "./PlanDefaultsInline";
 
 interface StepProps {
   onNext: () => void;
@@ -69,9 +70,12 @@ export function Step4Integrations({ onNext, onBack, onSkip, isFinalStep }: StepP
       <div className="flex flex-col gap-2">
         <h2 className="text-2xl font-semibold text-foreground tracking-tight">Plans &amp; billing</h2>
         <p className="text-sm text-muted-foreground">
-          Optional — configure paid plans and signup policy. All defaults are sensible; skip if you just want to try Doable yourself.
+          Pick which AI model each plan tier defaults to, then optionally wire up Stripe + signup policy. Everything here can be changed later in /admin.
         </p>
       </div>
+
+      {/* Plan default AI models (R13 US-003 — was previously only reachable from /admin/plans) */}
+      <PlanDefaultsInline />
 
       {/* Signup policy toggle */}
       <div className="rounded-lg border border-border bg-card p-4">
