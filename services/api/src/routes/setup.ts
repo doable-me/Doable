@@ -216,11 +216,18 @@ setupRoutes.post("/ai-provider", async (c) => {
           if (!created) throw new Error("ai_providers INSERT returned no row");
           providerId = created.id;
         }
+        let sessionModel = model ?? null;
+        if (provider === "custom" && model && !COPILOT_SDK_KNOWN_MODELS.has(model)) {
+          console.log(
+            `[setup] Custom BYOK model "${model}" not in SDK allowlist — using gpt-4o as session model; upstream will receive the user-typed name from setup.ai_model`
+          );
+          sessionModel = "gpt-4o";
+        }
         await sql`
           INSERT INTO workspace_ai_settings (
             workspace_id, default_provider_id, default_model, default_source, updated_by
           ) VALUES (
-            ${adminWorkspace.id}, ${providerId}, ${model ?? null}, 'custom', ${userId}
+            ${adminWorkspace.id}, ${providerId}, ${sessionModel}, 'custom', ${userId}
           )
           ON CONFLICT (workspace_id) DO UPDATE SET
             default_provider_id = EXCLUDED.default_provider_id,
