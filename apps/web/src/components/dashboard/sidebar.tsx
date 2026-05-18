@@ -278,7 +278,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
               )}
             </div>
             {maxProjects !== Infinity && (
-              <div className="space-y-1">
+              <div className="space-y-1" data-r31-debug={`ovr=${String(override)} plan=${planMaxProjects} max=${maxProjects} ws=${activeWorkspace?.id?.slice(0,8) ?? "null"}`}>
                 <div className="flex items-center justify-between text-[11px]"><span className="text-muted-foreground">Projects</span><span className={`text-muted-foreground ${projectsAtLimit ? "text-orange-400" : ""}`}>{totalProjects} / {maxProjects}{projectsAtLimit ? " (limit)" : ""}</span></div>
                 <div className="h-1.5 w-full rounded-full bg-muted"><div className={`h-1.5 rounded-full transition-all ${projectsAtLimit ? "bg-gradient-to-r from-orange-500 to-red-500" : "bg-gradient-to-r from-brand-600 to-brand-500"}`} style={{ width: `${Math.min((totalProjects / maxProjects) * 100, 100)}%` }} /></div>
               </div>
