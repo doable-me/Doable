@@ -139,6 +139,8 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
       // user only has to touch it for template-substituted providers
       // (Azure {resource}, Bedrock {region}, Vertex {region}/{project}).
       setCustomBaseUrl(t.preset.baseUrlEditable ? t.preset.defaultBaseUrl : "");
+      // Seed from catalog default. For providers with an empty defaultModels
+      // list, leave blank — the free-text fallback input renders below.
       setModel(t.preset.defaultModels[0]?.id ?? "");
     } else {
       setCustomBaseUrl("");
@@ -511,7 +513,7 @@ function PresetForm({
         </ul>
       )}
 
-      {preset.defaultModels.length > 0 && (
+      {preset.defaultModels.length > 0 ? (
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-foreground">Default model</label>
           <select
@@ -525,6 +527,20 @@ function PresetForm({
               </option>
             ))}
           </select>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-foreground">
+            Model ID
+            <span className="ml-1 font-normal text-muted-foreground">(from provider's docs)</span>
+          </label>
+          <input
+            type="text"
+            value={model}
+            onChange={(e) => onModelChange(e.target.value)}
+            placeholder="e.g. grok-3, qwen-turbo, llama-3.1-70b"
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
+          />
         </div>
       )}
 
