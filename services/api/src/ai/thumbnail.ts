@@ -64,3 +64,57 @@ export function scheduleThumbnailCapture(projectId: string, delayMs = 3000): voi
       .catch((err) => console.warn(`[Thumbnail] Capture failed for ${projectId}:`, err));
   }, delayMs);
 }
+
+/**
+ * Periodic backfill: find projects whose dev server is currently running
+ * but whose `thumbnail_url` is still NULL (i.e. the original
+ * `scheduleThumbnailCapture` call after chat completion either fired
+ * before the Puppeteer Chrome libs were installed, or hit a transient
+ * Chrome launch error). Re-schedule a capture for each — `scheduleThumbnailCapture`'s
+ * own per-project debounce prevents duplicate work. Caps at 10 projects
+ * per sweep so a backlog can't stall the API event loop.
+ *
+ * Without this, projects that completed during a Chrome outage stayed
+ * blank forever — the only recovery path was a manual admin call to
+ * `POST /api/thumbnails/<projectId>/regenerate`. Now any project with
+ * a live dev server self-heals within one sweep window.
+ */
+export async function backfillMissingThumbnails(maxPerSweep = 10): Promise<number> {
+  try {
+    const rows = await sql<{ id: string }[]>`
+      SELECT id FROM projects
+      WHERE thumbnail_url IS NULL
+        AND deleted_at IS NULL
+      ORDER BY updated_at DESC
+      LIMIT ${maxPerSweep * 4}
+    `;
+    let scheduled = 0;
+    for (const { id } of rows) {
+      if (scheduled >= maxPerSweep) break;
+      if (!getDevServerInternalUrl(id)) continue;
+      scheduleThumbnailCapture(id, 1000);
+      scheduled++;
+    }
+    if (scheduled > 0) {
+      console.log(`[Thumbnail] backfill sweep scheduled ${scheduled} captures`);
+    }
+    return scheduled;
+  } catch (err) {
+    console.warn("[Thumbnail] backfill sweep failed:", err);
+    return 0;
+  }
+}
+
+/**
+ * Start the periodic thumbnail backfill sweeper. Called once from API
+ * init; runs every 10 minutes. The first sweep runs after a 30s warmup
+ * so the API doesn't compete with the rest of startup work.
+ */
+export function startThumbnailBackfillSweeper(): void {
+  const FIRST_SWEEP_DELAY_MS = 30_000;
+  const SWEEP_INTERVAL_MS = 10 * 60_000;
+  setTimeout(() => {
+    void backfillMissingThumbnails();
+    setInterval(() => { void backfillMissingThumbnails(); }, SWEEP_INTERVAL_MS);
+  }, FIRST_SWEEP_DELAY_MS);
+}
