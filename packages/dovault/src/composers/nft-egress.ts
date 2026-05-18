@@ -57,6 +57,7 @@ export const nftEgress: Composer = {
             // through sandbox-spawn so the file lands in the right namespace.
             const e = err as NodeJS.ErrnoException;
             if (e?.code === "EACCES" || e?.code === "EPERM") {
+              console.warn(`[nft-egress] EACCES on .sandbox — skipping nft rules write (R13 known gap)`);
               return;
             }
             throw err;
