@@ -1416,6 +1416,13 @@ PrivateTmp=true
 # apparmor jail, which we just unbroke. MountFlags=shared belt-and-
 # braces the propagation type so nested mount namespaces inherit
 # MS_SHARED instead of MS_SLAVE (the latter blocks /proc remounts).
+#
+# Residual self-DoS surface (operator awareness): with ProtectControlGroups
+# off, the doable user retains writable access to its own cgroup v2
+# delegated knobs (memory.max, pids.max, cgroup.kill) via the unit's
+# scope. That is a self-DoS at worst — the user cannot escape its own
+# cgroup or affect other slices. If a future incident shows OOM-kills or
+# pid exhaustion under load, check the unit's cgroup knobs first.
 ProtectKernelTunables=no
 ProtectKernelModules=no
 ProtectControlGroups=no
