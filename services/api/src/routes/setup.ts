@@ -45,6 +45,11 @@ const aiProviderSchema = z.object({
   apiKey: z.string().min(1).optional(),
   baseUrl: z.string().url().optional(),
   model: z.string().min(1).max(120).optional(),
+  // When true (default), the wizard also writes this provider+model into
+  // platform_ai_defaults so all 4 plans inherit it. Admins who want
+  // per-plan tuning can toggle this off and configure /admin/plan-defaults
+  // manually after wizard completes. See US-003 / R11.
+  setAsPlanDefault: z.boolean().optional().default(true),
 });
 
 const oauthSchema = z.object({
@@ -145,7 +150,7 @@ setupRoutes.post("/ai-provider", async (c) => {
     return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
   }
 
-  const { provider, apiKey, baseUrl, model } = parsed.data;
+  const { provider, apiKey, baseUrl, model, setAsPlanDefault } = parsed.data;
 
   if (apiKey) {
     const check = await validateAiProvider(provider, apiKey, baseUrl);
@@ -238,6 +243,25 @@ setupRoutes.post("/ai-provider", async (c) => {
             default_source = 'custom',
             updated_by = EXCLUDED.updated_by
         `;
+
+        // Propagate to platform_ai_defaults so /admin/plan-defaults inherits
+        // the wizard choice for every plan tier. Admins who want per-plan
+        // tuning can untick the wizard checkbox or edit /admin/plan-defaults
+        // afterward. Pre-seeded rows for free/pro/business/enterprise mean
+        // we only ever UPDATE — never INSERT.
+        if (setAsPlanDefault) {
+          await sql`
+            UPDATE platform_ai_defaults
+            SET source = 'custom',
+                provider_id = ${providerId},
+                provider_model = ${sessionModel},
+                copilot_account_id = NULL,
+                copilot_model = NULL,
+                updated_by = ${userId},
+                updated_at = now()
+            WHERE plan IN ('free', 'pro', 'business', 'enterprise')
+          `;
+        }
       }
     } catch (err) {
       // Non-fatal — platform_config still has the values; admin can rebind in /admin
