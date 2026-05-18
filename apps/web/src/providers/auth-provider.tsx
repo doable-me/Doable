@@ -129,13 +129,22 @@ function toAuthUser(apiUser: {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
-  const [isLoading, setIsLoading] = useState(true);
+  // Optimistic-first auth: if both a stored user AND a stored token already
+  // exist on the client, treat the user as authenticated immediately so
+  // AuthGuard renders children on the first paint. /auth/me revalidates in
+  // the effect below and demotes us to unauthenticated if the token is
+  // actually stale. Without this, isLoading was reaching the AuthGuard
+  // `if (isLoading) return <Loading/>` branch and staying there whenever the
+  // mount effect failed to fire (Next.js 16 + Turbopack dev + streaming
+  // Suspense in the (dashboard) layout was deferring it indefinitely),
+  // leaving the dashboard frozen on the "Loading..." spinner even for users
+  // who had a perfectly valid session.
+  const [isLoading, setIsLoading] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const { accessToken } = getStoredTokens();
+    return !(accessToken && getStoredUser());
+  });
 
-  // Cancellation-flag pattern (vs. a one-shot ref): React 18 StrictMode
-  // double-mounts effects in dev, and a ref guard let the first mount's
-  // pending /auth/me settle against the unmounted instance — `isLoading`
-  // stuck `true` and the dashboard hung. The closure flag + cleanup makes
-  // only the live instance's setState calls land.
   useEffect(() => {
     let cancelled = false;
     const { accessToken } = getStoredTokens();
