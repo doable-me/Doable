@@ -15,6 +15,18 @@ export const projectSessions = new Map<string, string>();
 // See bugs/bug-24 for the full trail.
 export const projectSessionModes = new Map<string, string>();
 
+// Tracks the provider/model fingerprint each cached session was last
+// created with. When an admin re-points the workspace at a different
+// BYOK provider (different base_url, key, or model), the cached SDK
+// session keeps trying to resume against the OLD provider's session
+// id — typically failing with "No model available. Check policy
+// enablement…" or similar. By fingerprinting the
+// provider+model pair and comparing on each send, we evict the cache
+// entry the moment the binding changes. The fingerprint uses a
+// SHA-256-derived 12-char tag so the raw API key never lands in logs
+// or trace events. (BUG-R9-CHAT-SESSION-STICKY-ON-OLD-PROVIDER.)
+export const projectSessionProviders = new Map<string, string>();
+
 // Track active streaming requests per project so /ai-status can report
 // whether the AI is still working (survives page refresh).
 export const activeRequests = new Map<string, { mode: string; startedAt: number }>();
@@ -32,6 +44,7 @@ export function evictProjectSessions(projectId: string): number {
     if (key === projectId || key.startsWith(`${projectId}:`)) {
       projectSessions.delete(key);
       projectSessionModes.delete(key);
+      projectSessionProviders.delete(key);
       count++;
     }
   }

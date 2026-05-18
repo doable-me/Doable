@@ -34,7 +34,7 @@ import { createRecordAssistantToolCall, createToolProgressCallbacks } from "./to
 import { createProcessEvent } from "./event-processor.js";
 import { popArtifacts } from "./artifact-stash.js";
 import { scaffoldAndStartDev, emitConfigTraces, logToolManifest, handleToolEndEvent } from "./send-helpers.js";
-import { checkAndEvictOnModeChange, resolveSession, persistSessionToDb, filterToolsForMode, recreateSession } from "./session-manager.js";
+import { checkAndEvictOnModeChange, checkAndEvictOnProviderChange, resolveSession, persistSessionToDb, filterToolsForMode, recreateSession } from "./session-manager.js";
 import { resolveUserDisplay, saveUserMessage, preInsertAssistantMessage } from "./message-persistence.js";
 import { handleAutoContinue, handleEmptyResponseRetry } from "./stream-recovery.js";
 import { handleAutoFixPreview, handleVersionAndMemory, handleFinalCleanup, handleStreamError } from "./post-processing.js";
@@ -533,6 +533,12 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
 
           const toolProgress = createToolProgressCallbacks(stream, state, state.traceCollector, recordAssistantToolCall, projectId);
           const modeChanged = checkAndEvictOnModeChange(sessionKey, mode, state.traceCollector);
+          // BUG-R9-CHAT-SESSION-STICKY-ON-OLD-PROVIDER — evict the cached
+          // SDK session whenever the workspace BYOK provider/model binding
+          // changes so the next send creates a fresh session against the
+          // newly-configured provider instead of trying to resume against
+          // the orphaned one.
+          await checkAndEvictOnProviderChange(projectId, sessionKey, resolvedProvider, resolvedModel, state.traceCollector);
 
           // Materialize DB skills to disk for SDK skillDirectories. Best-effort:
           // if this fails, we still proceed without skills rather than blocking chat.

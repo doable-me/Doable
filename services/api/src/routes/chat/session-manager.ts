@@ -7,8 +7,84 @@ import { getCopilotManager } from "../../ai/providers/copilot-manager.js";
 import { createAllTools, type ByokProviderConfig } from "../../ai/providers/copilot.js";
 import type { TraceCollector } from "../../ai/trace-collector.js";
 import { createPermissionHandler } from "../../ai/docore-bridge.js";
-import { projectSessions, projectSessionModes } from "./session-state.js";
+import { createHash } from "node:crypto";
+import { projectSessions, projectSessionModes, projectSessionProviders } from "./session-state.js";
 import { modeToolQueries } from "@doable/db";
+
+/**
+ * Stable 12-char fingerprint of (base_url, model, api_key) suitable for
+ * cache-key comparison. We never include the raw key in logs or trace
+ * events — the SHA-256 prefix is the only thing emitted. A null/undefined
+ * provider (Copilot host path) collapses to a fixed "copilot:" prefix
+ * keyed on model so model swaps still evict.
+ */
+export function computeProviderFingerprint(
+  provider: ByokProviderConfig | undefined,
+  model: string | undefined,
+): string {
+  if (!provider) {
+    return `copilot:${model ?? "default"}`;
+  }
+  const baseUrl = provider.baseUrl ?? "";
+  const apiKey = provider.apiKey ?? "";
+  const modelTag = model ?? "default";
+  const raw = `${baseUrl}|${modelTag}|${apiKey}`;
+  return `byok:${createHash("sha256").update(raw).digest("hex").slice(0, 12)}`;
+}
+
+/**
+ * Check if the provider/model fingerprint changed and evict if needed.
+ * Also clears ai_sessions.copilot_session_id so the next resolveSession
+ * starts a fresh SDK session against the new provider. Returns true if
+ * an eviction occurred.
+ *
+ * Why this exists (BUG-R9-CHAT-SESSION-STICKY-ON-OLD-PROVIDER): once an
+ * admin re-points the workspace at a different BYOK provider — different
+ * base_url, key, or model — the cached entry in projectSessions still
+ * points at a Copilot SDK session that was created with the OLD
+ * provider's credentials. Every subsequent send tries to resume that
+ * stale session and fails with "No model available. Check policy
+ * enablement…" until doable.service is restarted manually. Fingerprinting
+ * the binding and evicting on change lets the next send create a fresh
+ * session against whatever provider is now configured.
+ */
+export async function checkAndEvictOnProviderChange(
+  projectId: string,
+  sessionKey: string,
+  provider: ByokProviderConfig | undefined,
+  model: string | undefined,
+  traceCollector: TraceCollector | null,
+): Promise<boolean> {
+  const next = computeProviderFingerprint(provider, model);
+  const prev = projectSessionProviders.get(sessionKey);
+  // First-time bind: just record. No eviction.
+  if (!prev) {
+    projectSessionProviders.set(sessionKey, next);
+    return false;
+  }
+  if (prev === next) return false;
+
+  const evictedSid = projectSessions.get(sessionKey);
+  console.log(`[Chat] provider/model fingerprint changed ${prev} → ${next} for ${sessionKey} — evicting cached session`);
+  projectSessions.delete(sessionKey);
+  projectSessionModes.delete(sessionKey);
+  projectSessionProviders.set(sessionKey, next);
+  if (evictedSid) {
+    traceCollector?.onSessionEvict(evictedSid, `provider_change:${prev}->${next}`);
+  }
+  // Also clear the persisted SDK session id so resolveSession can't
+  // resume against the now-orphaned session.
+  try {
+    await sql`
+      UPDATE ai_sessions
+      SET copilot_session_id = NULL, updated_at = now()
+      WHERE project_id = ${projectId} AND copilot_session_id IS NOT NULL
+    `;
+  } catch (e) {
+    console.warn(`[Chat] Failed to clear stale copilot_session_id on provider change:`, e instanceof Error ? e.message : e);
+  }
+  return true;
+}
 
 const modeTools = modeToolQueries(sql);
 
@@ -128,6 +204,7 @@ export async function resolveSession(
         });
         projectSessions.set(sessionKey, sessionId!);
         projectSessionModes.set(sessionKey, mode);
+        projectSessionProviders.set(sessionKey, computeProviderFingerprint(resolvedProvider, resolvedModel));
         resumed = true;
         console.log(`[Chat] Resumed SDK session ${dbRow.copilot_session_id.slice(0, 8)}… for ${projectId.slice(0, 8)}… (mode=${mode}, tools=${sessionTools.length})`);
       }
@@ -155,6 +232,7 @@ export async function resolveSession(
     });
     projectSessions.set(sessionKey, sessionId!);
     projectSessionModes.set(sessionKey, mode);
+    projectSessionProviders.set(sessionKey, computeProviderFingerprint(resolvedProvider, resolvedModel));
   }
 
   return sessionId!;
@@ -244,6 +322,7 @@ export async function recreateSession(
   });
   projectSessions.set(sessionKey, sessionId);
   projectSessionModes.set(sessionKey, mode);
+  projectSessionProviders.set(sessionKey, computeProviderFingerprint(resolvedProvider, resolvedModel));
   if (mode === "plan" && sessionId) {
     try {
       await currentEngine.setSessionMode(sessionId, "plan");
