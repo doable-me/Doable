@@ -815,7 +815,7 @@ DOABLE_DOMAIN=${DOMAIN}
 PUBLISH_SUBDOMAIN_PREFIX=${PUBLISH_PREFIX}
 
 # ─── Cloudflare DNS (appended by Step 10 after tunnel creation) ────
-# CLOUDFLARED_TUNNEL_ID, CF_API_TOKEN, CF_ZONE_ID are written below.
+# CLOUDFLARED_TUNNEL_ID, CF_API_TOKEN_ENC (KEK-encrypted), CF_ZONE_ID are written below.
 
 # ─── Environment ───────────────────────────────────────────
 NODE_ENV=development
