@@ -5,7 +5,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -131,39 +130,50 @@ function toAuthUser(apiUser: {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [isLoading, setIsLoading] = useState(true);
-  const initialCheckDone = useRef(false);
 
-  // On mount, validate the stored token against /auth/me
+  // On mount, validate the stored token against /auth/me. React 18 StrictMode
+  // double-mounts effects in dev (mount → cleanup → re-mount); the previous
+  // `initialCheckDone` ref guard short-circuited the second mount but its
+  // first-mount Promise.finally() resolved against the unmounted instance,
+  // so the active instance's `isLoading` stayed `true` forever and the
+  // dashboard / editor route hung on the root `app/loading.tsx` spinner.
+  // The cancellation-flag pattern is the React-recommended replacement:
+  // every mount runs its own check, every cleanup nulls out its closure flag,
+  // and only the currently-mounted instance's setState calls land.
   useEffect(() => {
-    if (initialCheckDone.current) return;
-    initialCheckDone.current = true;
-
+    let cancelled = false;
     const { accessToken } = getStoredTokens();
 
     if (!accessToken) {
-      // No token stored — not authenticated
       setUser(null);
       storeUser(null);
       setIsLoading(false);
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
-    // Validate token by calling /auth/me
     apiGetMe()
       .then((res) => {
+        if (cancelled) return;
         const authUser = toAuthUser(res.user);
         setUser(authUser);
         storeUser(authUser);
       })
       .catch(() => {
-        // Token is invalid or expired (refresh also failed)
+        if (cancelled) return;
         setUser(null);
         storeUser(null);
         clearTokens();
       })
       .finally(() => {
+        if (cancelled) return;
         setIsLoading(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Keep localStorage tokens fresh by proactively refreshing ~2min before
