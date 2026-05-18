@@ -70,9 +70,33 @@ RUN pnpm --filter=@doable/web run build
 # --- API service ---
 FROM base AS api
 WORKDIR /app
+
+# Puppeteer Chrome (project-thumbnail capture) — without these shared
+# libs Chrome crashes at first thumbnail attempt with
+# `libnspr4.so: cannot open shared object file`. Same dep list as
+# deployment/server-setup.sh:298-322 so docker + bare-metal stay in
+# lockstep. The bundled Chromium itself downloads in the next layer
+# (PUPPETEER_SKIP_CHROMIUM_DOWNLOAD is intentionally unset for the api
+# stage).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libatk1.0-0 libatk-bridge2.0-0 libcups2 libatspi2.0-0 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+    libgbm1 libcairo2 libpango-1.0-0 \
+    libasound2t64 \
+    libxshmfence1 libnspr4 libnss3 libdrm2 libxkbcommon0 \
+    fonts-liberation \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build --chown=node:node /app .
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
+# Download the puppeteer-bundled Chrome into the image so first-thumbnail
+# capture doesn't need network. Cached layer; runs once per build.
 USER node
+ENV PUPPETEER_CACHE_DIR=/app/.puppeteer-cache
+RUN cd services/api && pnpm exec puppeteer browsers install chrome \
+  && find $PUPPETEER_CACHE_DIR/chrome -name chrome -type f -executable -exec {} --headless=new --no-sandbox --disable-gpu --version \; \
+  || (echo "[api-image] Chrome install/smoke test failed — thumbnails will be unavailable" && true)
+
 EXPOSE 4000
 ENTRYPOINT ["tmux-entrypoint"]
 CMD ["api", "npx", "tsx", "services/api/src/index.ts"]

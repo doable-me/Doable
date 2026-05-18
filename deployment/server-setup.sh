@@ -295,14 +295,28 @@ if ! command -v tmux &>/dev/null; then
   apt-get install -y tmux
 fi
 
-# Puppeteer/Chrome dependencies (for thumbnail capture)
-apt-get install -y \
-  libatk1.0-0 libatk-bridge2.0-0 libcups2 libatspi2.0-0 \
-  libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-  libgbm1 libcairo2 libpango-1.0-0 \
-  libasound2t64 libasound2 \
-  libxshmfence1 libnspr4 libnss3 libdrm2 libxkbcommon0 \
-  fonts-liberation 2>/dev/null || true
+# Puppeteer/Chrome dependencies (for thumbnail capture). Trailing
+# `2>/dev/null || true` was swallowing transient apt failures and
+# leaving boxes with a partially-installed Chrome dep set — Chrome then
+# crashes at thumbnail time with `libnspr4.so: cannot open shared
+# object file` (R20 bug). Install in two passes: first try the full
+# list, then re-try any missing single package. libasound2t64 vs
+# libasound2 is a noble-vs-jammy split — handle both individually so
+# one missing package doesn't abort the rest.
+PUPPETEER_DEPS=(
+  libatk1.0-0 libatk-bridge2.0-0 libcups2 libatspi2.0-0
+  libxcomposite1 libxdamage1 libxfixes3 libxrandr2
+  libgbm1 libcairo2 libpango-1.0-0
+  libxshmfence1 libnspr4 libnss3 libdrm2 libxkbcommon0
+  fonts-liberation
+)
+apt-get install -y "${PUPPETEER_DEPS[@]}" || warn "Bulk puppeteer apt install hit an error — falling back to per-package install (see warnings below)."
+for pkg in "${PUPPETEER_DEPS[@]}"; do
+  dpkg -s "$pkg" >/dev/null 2>&1 || apt-get install -y "$pkg" || warn "Failed to install $pkg — thumbnails may not work until you re-run: apt-get install -y $pkg"
+done
+# libasound2 is the noble->jammy compatibility name. Install whichever
+# is available; missing both leaves Chrome unable to launch.
+apt-get install -y libasound2t64 2>/dev/null || apt-get install -y libasound2 || warn "Could not install libasound2 (or libasound2t64) — thumbnail Chrome will fail to launch."
 
 # Python deps for FastAPI/Django framework deploys. The Wave 17 Python
 # venv setup in services/api/src/deploy/adapters/doable-cloud.ts shells
@@ -1516,8 +1530,25 @@ if [ -d "${INSTALL_DIR}/services/api/node_modules/puppeteer" ]; then
       sh -c "cd ${INSTALL_DIR}/services/api && pnpm exec puppeteer browsers install chrome" \
       >"$PUPP_LOG" 2>&1; then
     # Verify the binary actually landed before declaring success.
-    if find /var/cache/doable/puppeteer/chrome -name chrome -type f -executable 2>/dev/null | grep -q .; then
-      ok "Chrome installed at /var/cache/doable/puppeteer (thumbnails enabled)"
+    CHROME_BIN="$(find /var/cache/doable/puppeteer/chrome -name chrome -type f -executable 2>/dev/null | head -n1)"
+    if [ -n "$CHROME_BIN" ]; then
+      # Smoke-test the binary so we catch missing shared libs at install
+      # time, not at first thumbnail capture (R20: libnspr4 was missing
+      # despite line 299's apt install reporting success, and the
+      # operator only noticed weeks later when dashboard thumbnails
+      # stayed blank). --no-sandbox keeps the test runnable inside
+      # CONTAINER_MODE; the real runtime uses the AppArmor profile.
+      if "$CHROME_BIN" --headless=new --no-sandbox --disable-gpu --version >>"$PUPP_LOG" 2>&1; then
+        ok "Chrome installed at /var/cache/doable/puppeteer (smoke-tested, thumbnails enabled)"
+      else
+        warn "Chrome binary at $CHROME_BIN fails to launch (likely missing shared lib). Re-running puppeteer apt deps..."
+        apt-get install -y "${PUPPETEER_DEPS[@]}" libasound2t64 libasound2 2>&1 | tail -5
+        if "$CHROME_BIN" --headless=new --no-sandbox --disable-gpu --version >>"$PUPP_LOG" 2>&1; then
+          ok "Chrome smoke test passed after dep retry — thumbnails enabled"
+        else
+          warn "Chrome STILL fails to launch — thumbnails will be unavailable. Inspect: $CHROME_BIN --headless=new --version (see $PUPP_LOG)"
+        fi
+      fi
     else
       warn "puppeteer reported success but chrome binary not found under /var/cache/doable/puppeteer/chrome — see $PUPP_LOG"
     fi
