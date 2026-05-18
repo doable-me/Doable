@@ -1021,66 +1021,81 @@ function unifiedDeckCardHtml({ deckHtml, htmlBase64, htmlFileName, htmlSizeBytes
 //
 // Threat model: the `script` arg is AI-generated text, which means a
 // prompt-injection or compromised provider could try to exfiltrate
-// secrets (process.env), read the filesystem, or shell out. The prior
-// implementation used `new Function(...)` which inherits the global
-// scope — that gave the script unrestricted access to require/import,
-// process, Buffer.from over arbitrary paths, etc. This version runs
-// the script inside a `vm.runInNewContext` sandbox seeded with ONLY
-// the four bindings PptxGenJS scripts actually need (PptxGenJS,
-// Buffer, console, helper-typed-arrays). No process, no require, no
-// globalThis, no setTimeout. A 30s wall-clock timeout caps runaway
-// scripts. Known limitation: same-process vm isolation can in theory
-// be bypassed via prototype-chain climbing off any host-supplied
-// object — full process isolation (fork to a separate worker) is
-// tracked as the long-term hardening path. For now this closes the
-// trivial `process.env.JWT_SECRET` / `require("fs").readFileSync`
-// vectors that `new Function` allowed.
+// secrets (process.env), read the filesystem, or shell out. We defend
+// in two layers:
+//
+//   1. Process isolation — `child_process.fork()` a worker subprocess
+//      with `env: {}` so the worker's `process.env` is empty. Even if
+//      the script escapes the inner vm sandbox, it cannot read
+//      JWT_SECRET, ENCRYPTION_KEY, DOABLE_KEK, or any of the parent's
+//      env. The subprocess receives the script via IPC (not argv, so
+//      it never appears in `ps`), and is SIGKILL'd if it exceeds the
+//      40-second outer timeout.
+//
+//   2. In-process vm sandbox (inside the worker) — seeded with only
+//      PptxGenJS + Buffer + console + typed-array constructors. No
+//      process, no require, no globalThis, no setTimeout.
+//
+// Buffer is returned via IPC as base64 (Node IPC supports Buffers
+// directly on 18+ but base64 is the universally-portable encoding).
+// Encoding overhead for a typical 100 KB .pptx is <100 ms.
 // ─────────────────────────────────────────────────────────────────────────
 async function runPptxScript(scriptBody) {
   if (typeof scriptBody !== "string" || !scriptBody.trim()) {
     throw new Error("`script` must be a non-empty string");
   }
-  const { createContext, runInContext } = await import("node:vm");
-  const sandbox = {
-    PptxGenJS,
-    Buffer,
-    console,
-    Uint8Array,
-    Uint16Array,
-    Uint32Array,
-    ArrayBuffer,
-    Promise,
-    __pptx: null,
-    __scriptError: null,
-  };
-  createContext(sandbox);
-  const wrapped = `
-    (async () => {
-      try {
-        ${scriptBody}
-      } catch (e) {
-        __scriptError = e;
+  const { fork } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, join } = await import("node:path");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const workerPath = join(here, "pptx-worker.mjs");
+
+  return new Promise((resolve, reject) => {
+    const child = fork(workerPath, [], {
+      env: {},                              // strip ALL parent env vars
+      cwd: here,                            // keep cwd predictable; no fs access via sandbox anyway
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
+      execArgv: ["--max-old-space-size=256"],
+    });
+
+    const stderr = [];
+    child.stderr?.on("data", (chunk) => stderr.push(chunk.toString()));
+
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("PptxGenJS script timed out after 40s (worker killed)"));
+    }, 40_000);
+
+    child.on("message", (msg) => {
+      clearTimeout(timeout);
+      if (!msg || typeof msg !== "object") {
+        reject(new Error("worker sent malformed message"));
+      } else if (msg.ok) {
+        resolve({
+          buffer: Buffer.from(msg.bufferBase64, "base64"),
+          slideCount: msg.slideCount ?? 0,
+        });
+      } else {
+        reject(new Error(msg.error || "worker reported failure"));
       }
-    })()
-  `;
-  const ranPromise = runInContext(wrapped, sandbox, {
-    timeout: 30000,
-    breakOnSigint: true,
-    displayErrors: true,
+      child.disconnect();
+    });
+
+    child.on("error", (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+
+    child.on("exit", (code, sig) => {
+      clearTimeout(timeout);
+      if (code !== 0 && code !== null) {
+        const tail = stderr.join("").slice(-400);
+        reject(new Error(`worker exited with code ${code}${sig ? ` (signal ${sig})` : ""}${tail ? ` — stderr: ${tail}` : ""}`));
+      }
+    });
+
+    child.send({ script: scriptBody });
   });
-  await ranPromise;
-  if (sandbox.__scriptError) throw sandbox.__scriptError;
-  const pptxInstance = sandbox.__pptx;
-  if (!pptxInstance || typeof pptxInstance.write !== "function") {
-    throw new Error(
-      "Script did not assign `__pptx = pptx;` to a PptxGenJS instance. " +
-      "End your script body with: `__pptx = pptx;`",
-    );
-  }
-  const buffer = await pptxInstance.write({ outputType: "nodebuffer" });
-  let slideCount = 0;
-  try { slideCount = pptxInstance.slides?.length ?? 0; } catch {}
-  return { buffer, slideCount };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
