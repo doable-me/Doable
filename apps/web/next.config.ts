@@ -6,6 +6,29 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   transpilePackages: ["@doable/shared"],
   typescript: { ignoreBuildErrors: true },
+  // Next.js 16 blocks cross-origin requests to dev-only resources
+  // (/_next/webpack-hmr and the dev-asset chunks) unless the request's
+  // Origin matches an entry here. On a tunneled install the web process
+  // binds to 127.0.0.1 but the browser hits https://<env>.doable.me,
+  // which Next.js classifies as cross-origin. Blocked HMR + dev chunks
+  // break hydration on routes with nested Suspense boundaries (dashboard,
+  // editor), leaving the page frozen on the SSR Loading fallback. Derive
+  // the install apex from NEXT_PUBLIC_APP_URL the same way headers() does.
+  allowedDevOrigins: (() => {
+    const fromUrl = (u: string | undefined) => {
+      if (!u) return null;
+      try { return new URL(u).hostname; } catch { return null; }
+    };
+    const apex = (host: string) => {
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return host;
+      const parts = host.split(".").filter(Boolean);
+      return parts.length <= 2 ? host : parts.slice(-2).join(".");
+    };
+    const host = fromUrl(process.env.NEXT_PUBLIC_APP_URL)
+      || fromUrl(process.env.NEXT_PUBLIC_API_URL)
+      || "doable.me";
+    return [host, `*.${apex(host)}`, "doable.me", "*.doable.me", "localhost", "127.0.0.1"];
+  })(),
   experimental: {
     serverActions: {
       bodySizeLimit: "2mb",
