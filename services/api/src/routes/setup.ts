@@ -126,17 +126,6 @@ async function validateAiProvider(
   }
 }
 
-// Models the Copilot SDK accepts in createSession({ model }). Custom-BYOK
-// names outside this set (e.g. "MiniMax-M2.7") get rewritten to "gpt-4o"
-// at workspace_ai_settings bind time so the SDK doesn't reject the session.
-const COPILOT_SDK_KNOWN_MODELS = new Set([
-  "gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-4-turbo", "gpt-3.5-turbo",
-  "claude-3.5-sonnet", "claude-3.7-sonnet", "claude-3.5-haiku",
-  "claude-3-opus", "claude-sonnet-4", "claude-opus-4",
-  "o1", "o1-mini", "o3-mini",
-  "gemini-1.5-pro", "gemini-2.0-flash",
-]);
-
 // ─── POST /api/setup/ai-provider ──────────────────────────────────────────
 // Saves the wizard's AI-provider choice to platform_config (UI display state)
 // AND — for BYOK providers — creates an `ai_providers` row in the admin's
@@ -224,18 +213,17 @@ setupRoutes.post("/ai-provider", async (c) => {
           if (!created) throw new Error("ai_providers INSERT returned no row");
           providerId = created.id;
         }
-        let sessionModel = model ?? null;
-        if (provider === "custom" && model && !COPILOT_SDK_KNOWN_MODELS.has(model)) {
-          console.log(
-            `[setup] Custom BYOK model "${model}" not in SDK allowlist — using gpt-4o as session model; upstream will receive the user-typed name from setup.ai_model`
-          );
-          sessionModel = "gpt-4o";
-        }
+        // Write the user-typed model verbatim. The historic "rewrite to gpt-4o
+        // for SDK compatibility" branch corrupted the upstream call for any BYOK
+        // model outside a hardcoded allowlist (e.g. MiniMax-M2.7 → 400 unknown
+        // model 'gpt-4o' from the provider). No SDK session-creation gate
+        // actually enforces that allowlist; the field is the upstream model name.
+        const storedModel = model ?? null;
         await sql`
           INSERT INTO workspace_ai_settings (
             workspace_id, default_provider_id, default_model, default_source, updated_by
           ) VALUES (
-            ${adminWorkspace.id}, ${providerId}, ${sessionModel}, 'custom', ${userId}
+            ${adminWorkspace.id}, ${providerId}, ${storedModel}, 'custom', ${userId}
           )
           ON CONFLICT (workspace_id) DO UPDATE SET
             default_provider_id = EXCLUDED.default_provider_id,
@@ -251,7 +239,7 @@ setupRoutes.post("/ai-provider", async (c) => {
             UPDATE platform_ai_defaults
             SET source = 'custom',
                 provider_id = ${providerId},
-                provider_model = ${sessionModel},
+                provider_model = ${storedModel},
                 copilot_account_id = NULL,
                 copilot_model = NULL,
                 updated_by = ${userId},
