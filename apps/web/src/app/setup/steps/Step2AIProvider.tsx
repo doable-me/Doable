@@ -88,6 +88,9 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
+  // Default true: a first-time installer overwhelmingly wants their wizard
+  // choice to also apply as the per-plan default. Power-users can untick.
+  const [setAsPlanDefault, setSetAsPlanDefault] = useState(true);
 
   const popularPresets = useMemo(() => PROVIDER_CATALOG.filter(isPopular), []);
 
@@ -167,7 +170,7 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
           ? backendProviderFor(selected.preset)
           : backendProviderFor(selected.tile);
 
-      const body: Record<string, string> = { provider: backend.provider };
+      const body: Record<string, string | boolean> = { provider: backend.provider };
       if (!isCopilot && apiKey.trim()) body.apiKey = apiKey.trim();
       // Editable-URL preset overrides defaultBaseUrl with operator-supplied value.
       if (isEditableUrlPreset && customBaseUrl.trim()) {
@@ -177,6 +180,9 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
       }
       if (isByokCustom && customBaseUrl.trim()) body.baseUrl = customBaseUrl.trim();
       if (model.trim()) body.model = model.trim();
+      // Copilot OAuth path doesn't reach platform_ai_defaults (no apiKey,
+      // no providerId). Skip the flag there so the API doesn't no-op.
+      if (!isCopilot) body.setAsPlanDefault = setAsPlanDefault;
 
       await apiFetch("/setup/ai-provider", { method: "POST", body: JSON.stringify(body) });
       setStatus("success");
@@ -295,6 +301,8 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
                   status={status}
                   errorMsg={errorMsg}
                   onSave={handleSave}
+                  setAsPlanDefault={setAsPlanDefault}
+                  onSetAsPlanDefaultChange={setSetAsPlanDefault}
                 />
               )}
 
@@ -319,6 +327,8 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
                   status={status}
                   errorMsg={errorMsg}
                   onSave={handleSave}
+                  setAsPlanDefault={setAsPlanDefault}
+                  onSetAsPlanDefaultChange={setSetAsPlanDefault}
                 />
               )}
             </div>
@@ -390,6 +400,8 @@ interface PresetFormProps {
   status: "idle" | "saving" | "success" | "error";
   errorMsg: string | null;
   onSave: () => void;
+  setAsPlanDefault: boolean;
+  onSetAsPlanDefaultChange: (v: boolean) => void;
 }
 
 function PresetForm({
@@ -405,6 +417,8 @@ function PresetForm({
   status,
   errorMsg,
   onSave,
+  setAsPlanDefault,
+  onSetAsPlanDefaultChange,
 }: PresetFormProps) {
   return (
     <div className="rounded-b-lg border border-t-0 border-brand-500/40 bg-card px-4 pb-4 pt-3 flex flex-col gap-3">
@@ -524,6 +538,8 @@ function PresetForm({
           (preset.authMethod !== "none" && !apiKey.trim()) ||
           (preset.baseUrlEditable && !baseUrl.trim())
         }
+        setAsPlanDefault={setAsPlanDefault}
+        onSetAsPlanDefaultChange={onSetAsPlanDefaultChange}
       />
     </div>
   );
@@ -560,6 +576,8 @@ interface ByokCustomFormProps {
   status: "idle" | "saving" | "success" | "error";
   errorMsg: string | null;
   onSave: () => void;
+  setAsPlanDefault: boolean;
+  onSetAsPlanDefaultChange: (v: boolean) => void;
 }
 
 function ByokCustomForm({
@@ -574,6 +592,8 @@ function ByokCustomForm({
   status,
   errorMsg,
   onSave,
+  setAsPlanDefault,
+  onSetAsPlanDefaultChange,
 }: ByokCustomFormProps) {
   return (
     <div className="rounded-b-lg border border-t-0 border-brand-500/40 bg-card px-4 pb-4 pt-3 flex flex-col gap-3">
@@ -623,6 +643,8 @@ function ByokCustomForm({
         errorMsg={errorMsg}
         onSave={onSave}
         disabled={!apiKey.trim() || !baseUrl.trim()}
+        setAsPlanDefault={setAsPlanDefault}
+        onSetAsPlanDefaultChange={onSetAsPlanDefaultChange}
       />
     </div>
   );
@@ -633,11 +655,40 @@ interface SaveControlsProps {
   errorMsg: string | null;
   onSave: () => void;
   disabled: boolean;
+  // When provided, renders the "default model for all plans" checkbox above
+  // the Save button. Omit for flows where the choice doesn't apply
+  // (e.g. GitHub Copilot OAuth — that path doesn't reach this control yet).
+  setAsPlanDefault?: boolean;
+  onSetAsPlanDefaultChange?: (value: boolean) => void;
 }
 
-function SaveControls({ status, errorMsg, onSave, disabled }: SaveControlsProps) {
+function SaveControls({
+  status,
+  errorMsg,
+  onSave,
+  disabled,
+  setAsPlanDefault,
+  onSetAsPlanDefaultChange,
+}: SaveControlsProps) {
+  const showPlanDefault =
+    setAsPlanDefault !== undefined && onSetAsPlanDefaultChange !== undefined;
   return (
     <>
+      {showPlanDefault && (
+        <label className="inline-flex items-start gap-2 text-xs text-muted-foreground select-none cursor-pointer">
+          <input
+            type="checkbox"
+            checked={setAsPlanDefault}
+            onChange={(e) => onSetAsPlanDefaultChange!(e.target.checked)}
+            className="mt-0.5 h-3.5 w-3.5 rounded border-input"
+          />
+          <span>
+            Use this model as the default for every plan (Free, Pro, Business,
+            Enterprise). You can fine-tune per-plan models later in{" "}
+            <span className="text-foreground font-medium">/admin/plan-defaults</span>.
+          </span>
+        </label>
+      )}
       {status === "error" && <p className="text-xs text-red-400">{errorMsg}</p>}
       {status === "success" && (
         <p className="text-xs text-green-500 flex items-center gap-1">
