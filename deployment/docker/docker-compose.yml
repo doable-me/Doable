@@ -61,6 +61,12 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:4000:4000"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -76,10 +82,10 @@ services:
       # stored via the setup wizard. Required — api refuses to boot without it.
       DOABLE_KEK: ${DOABLE_KEK:?DOABLE_KEK is required — run ./deployment/docker/setup.sh to generate}
       API_PORT: 4000
-      API_HOST: 0.0.0.0
+      API_HOST: 127.0.0.1
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       WS_PORT: 4001
-      WS_HOST: 0.0.0.0
+      WS_HOST: 127.0.0.1
       INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required — run ./deployment/docker/setup.sh to generate}
       WS_INTERNAL_URL: http://ws:4001
       API_URL: http://api:4000
@@ -119,6 +125,12 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:4001:4001"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:4001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -126,10 +138,11 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-doable}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       WS_PORT: 4001
-      WS_HOST: 0.0.0.0
+      WS_HOST: 127.0.0.1
       INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
       API_URL: http://api:4000
       NODE_ENV: ${NODE_ENV:-production}
+      DOABLE_KEK: ${DOABLE_KEK:?DOABLE_KEK is required — run ./deployment/docker/setup.sh to generate}
     volumes:
       - ws_projects:/app/services/ws/projects
 
@@ -144,8 +157,10 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
-      - api
-      - ws
+      api:
+        condition: service_healthy
+      ws:
+        condition: service_healthy
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:4001}
