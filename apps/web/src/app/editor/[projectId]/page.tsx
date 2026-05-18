@@ -417,7 +417,7 @@ async function streamChat(
   onToolStarted?: (toolName: string, args: Record<string, unknown>) => void,
   signal?: AbortSignal,
   onThinking?: (text: string) => void,
-  onStatusChange?: (status: string) => void,
+  onStatusChange?: (status: string, phase?: string) => void,
   attachments?: { type: string; data: string; name: string }[],
   modelOverride?: string,
   providerIdOverride?: string | null,
@@ -759,11 +759,11 @@ async function streamChat(
             const d = parsed.data as Record<string, unknown> | undefined;
             const phase = d?.phase as string | undefined;
             if (phase === "complete") {
-              onStatusChange("Done");
+              onStatusChange("Done", phase);
             } else {
               const statusMsg = (d?.message as string) ?? "";
               if (statusMsg) {
-                onStatusChange(statusMsg);
+                onStatusChange(statusMsg, phase);
               }
             }
           }
@@ -845,7 +845,7 @@ interface BridgeCallbacks {
   onToolCompleted?: (toolName: string, args: Record<string, unknown>) => void;
   onToolStarted?: (toolName: string, args: Record<string, unknown>) => void;
   onThinking?: (text: string) => void;
-  onStatusChange?: (status: string) => void;
+  onStatusChange?: (status: string, phase?: string) => void;
   onClarification?: (questions: ClarificationQuestion[]) => void;
   onPlan?: (plan: Plan) => void;
   onPlanStepUpdate?: (stepId: string, status: string) => void;
@@ -1001,7 +1001,8 @@ function processOneSSEPayload(
     if (parsed.type === "status" && cb.onStatusChange) {
       const d = parsed.data as Record<string, unknown> | undefined;
       const statusMsg = (d?.message as string) ?? "";
-      if (statusMsg) cb.onStatusChange(statusMsg);
+      const phase = d?.phase as string | undefined;
+      if (statusMsg) cb.onStatusChange(statusMsg, phase);
     }
 
     if (parsed.type === "auto_fix_complete" && cb.onStatusChange) {
@@ -1683,6 +1684,35 @@ function EditorPageInner() {
   const [scaffoldError, setScaffoldError] = useState<string | null>(null);
   const [scaffoldProgressMsg, setScaffoldProgressMsg] = useState<string>("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // R12 long-prompt-stall fix: when SSE status events arrive from the chat
+  // pipeline (services/api/src/routes/chat/send-helpers.ts emits phase=
+  // "scaffolding" → "dev-server"; send-handler.ts emits "thinking"/"building"
+  // /"connecting"), advance the overlay H3 phase too — not just liveStatus.
+  // Without this, the overlay header stayed at "Setting up your workspace..."
+  // for ~47s during dev-server boot, only the subtitle ticker moved, and
+  // users perceived a stall (r11-longprompt-samples.json: 47008ms gap
+  // between distinct H3 transitions).
+  const applyServerPhase = useCallback((phase: string | undefined) => {
+    if (!phase) return;
+    setScaffoldStatus((prev) => {
+      if (prev === "ready" || prev === "error") return prev;
+      if (phase === "scaffolding") return "scaffolding";
+      // Server has moved past install — flip the H3 to "Preparing live
+      // preview..." (scaffoldStatus="starting") so the user sees real
+      // forward motion. The mount-effect ticker still tracks subtitle.
+      if (phase === "dev-server") return "starting";
+      // AI has begun work — by definition the dev server is already up
+      // (send-handler awaits scaffoldAndStartDev before connecting). The
+      // mount-effect's previewUrl poll will independently flip us to
+      // "ready" once it gets a URL; until then keep "starting".
+      if (phase === "thinking" || phase === "connecting" || phase === "building") {
+        return prev === "idle" || prev === "scaffolding" ? "starting" : prev;
+      }
+      return prev;
+    });
+  }, []);
+
   const [previewRoute, setPreviewRoute] = useState("/");
   const [isEditingRoute, setIsEditingRoute] = useState(false);
   const [routeInputValue, setRouteInputValue] = useState("/");
