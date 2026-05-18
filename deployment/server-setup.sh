@@ -1402,9 +1402,24 @@ NoNewPrivileges=false
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
+# ProtectKernelTunables / ProtectKernelModules / ProtectControlGroups are
+# OFF for the doable.service. They were the root cause of
+# BUG-R12-BWRAP-PROC-MOUNT-EPERM: with them enabled, systemd put the unit
+# into a private mount namespace whose propagation made nested bwrap
+# mount(2) calls fail with EPERM when bwrap tried `--proc /proc`, killing
+# every preview / dev-server / AI chat-tool spawn with empty stderr. The
+# trade-off is acceptable because the API runs as the unprivileged
+# `doable` user with empty cap bounding (CapPrm=0) — the kernel itself
+# already denies cgroup modification, module loading, and writes to
+# /proc/sys for non-root processes without CAP_SYS_ADMIN. The true
+# isolation boundary for user-supplied code is the inner bwrap+nft+
+# apparmor jail, which we just unbroke. MountFlags=shared belt-and-
+# braces the propagation type so nested mount namespaces inherit
+# MS_SHARED instead of MS_SLAVE (the latter blocks /proc remounts).
+ProtectKernelTunables=no
+ProtectKernelModules=no
+ProtectControlGroups=no
+MountFlags=shared
 RestrictSUIDSGID=true
 # RestrictNamespaces MUST be false. The sandbox layer uses bubblewrap which
 # calls clone(CLONE_NEWUSER|CLONE_NEWNS|CLONE_NEWPID|CLONE_NEWNET); blocking
