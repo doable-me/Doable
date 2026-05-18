@@ -2178,24 +2178,11 @@ function EditorPageInner() {
       setScaffoldStatus("scaffolding");
       setScaffoldError(null);
 
-      // Single progress ticker that runs continuously from useEffect start
-      // until scaffoldStatus flips to "ready" or "error". A `phase` closure
-      // variable picks the message bucket — flipping it to "preview-boot"
-      // after scaffoldProject() resolves swaps the labels in place rather
-      // than tearing down one ticker and standing another one up.
-      //
-      // BUG-R10-RESIDUAL-PREVIEW-FREEZE was caused by the prior two-ticker
-      // pattern: `ticker` was cleared the instant `await scaffoldProject()`
-      // resolved, and `postScaffoldTicker` was started right after — but on
-      // a cold dev-server boot, the API path itself awaited startDevServer
-      // serially (services/api/src/routes/project-files/scaffold.ts → dev-
-      // server-start.ts:446-468), so the await sat for ~25-35 s with the
-      // first ticker still firing "Almost there… (Ns)" but never advancing
-      // its bucket (≥90 s only ever rendered as that string). After the
-      // await resolved, the brief gap before the next 2 s tick combined
-      // with React-batched setState rendering produced the residual freeze.
-      // See `.omc/state/sessions/ralph-2026-05-18-r11-trace-residual-and-
-      // wizard-plans/r11-trace-finding.md`.
+      // Single ticker runs continuously through scaffold + preview-boot.
+      // `phase` flips to "preview-boot" after scaffoldProject() resolves so
+      // the bucket logic swaps labels in place — the old two-ticker pattern
+      // had a ~36 s freeze window when scaffoldProject's await sat through
+      // a cold dev-server boot. See R11 r11-trace-finding.md.
       const startTime = Date.now();
       let phase: "scaffolding" | "preview-boot" = "scaffolding";
       setScaffoldProgressMsg("Creating project files…");

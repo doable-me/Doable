@@ -180,8 +180,8 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
       }
       if (isByokCustom && customBaseUrl.trim()) body.baseUrl = customBaseUrl.trim();
       if (model.trim()) body.model = model.trim();
-      // Copilot OAuth path doesn't reach platform_ai_defaults (no apiKey,
-      // no providerId). Skip the flag there so the API doesn't no-op.
+      // Copilot OAuth has no apiKey at this point, so platform_ai_defaults
+      // can't be propagated yet — admin sets it in /admin after OAuth.
       if (!isCopilot) body.setAsPlanDefault = setAsPlanDefault;
 
       await apiFetch("/setup/ai-provider", { method: "POST", body: JSON.stringify(body) });
