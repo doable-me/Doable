@@ -10,6 +10,10 @@ export interface ApiWorkspace {
   avatar_url: string | null;
   owner_id: string;
   plan: string;
+  /** Per-workspace admin override set via /admin/plans. When non-null and
+   *  > 0 this takes precedence over the plan-tier default everywhere
+   *  client-side limits are computed. */
+  max_projects_override: number | null;
   created_at: string;
   updated_at: string;
   userRole: "owner" | "admin" | "member" | "viewer";

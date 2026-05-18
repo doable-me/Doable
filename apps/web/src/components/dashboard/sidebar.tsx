@@ -226,7 +226,14 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
   const creditsUsed = dailyTotal - creditsRemaining;
   const isUnlimited = dailyTotal >= 2_000_000_000;
   const creditsUsedPercent = isUnlimited ? 0 : dailyTotal > 0 ? (creditsUsed / dailyTotal) * 100 : 0;
-  const maxProjects = workspacePlan === "free" ? 3 : workspacePlan === "pro" ? 25 : workspacePlan === "business" ? 100 : Infinity;
+  // Per-workspace admin override (set via /admin/plans → max_projects_override)
+  // takes precedence over the plan-tier default. Without this the sidebar
+  // shows a stale "X / 3 (limit)" for any Free workspace that's been bumped
+  // for testing or VIP usage, even though the API correctly allows the
+  // higher count on create.
+  const planMaxProjects = workspacePlan === "free" ? 3 : workspacePlan === "pro" ? 25 : workspacePlan === "business" ? 100 : Infinity;
+  const override = (activeWorkspace as ApiWorkspace)?.max_projects_override;
+  const maxProjects = typeof override === "number" && override > 0 ? override : planMaxProjects;
   const projectsAtLimit = maxProjects !== Infinity && totalProjects >= maxProjects;
   const folderTree = buildFolderTree(folders);
 
