@@ -235,9 +235,6 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
   const override = (activeWorkspace as ApiWorkspace)?.max_projects_override;
   const maxProjects = typeof override === "number" && override > 0 ? override : planMaxProjects;
   const projectsAtLimit = maxProjects !== Infinity && totalProjects >= maxProjects;
-  // R29 debug — log on every render (SSR + CSR both run this, no hydration mismatch)
-  // eslint-disable-next-line no-console
-  console.log("[R29-debug-2]", { override, planMaxProjects, maxProjects, plan: workspacePlan, wsId: activeWorkspace?.id, hasKey: activeWorkspace && Object.prototype.hasOwnProperty.call(activeWorkspace, "max_projects_override"), keys: activeWorkspace ? Object.keys(activeWorkspace).slice(0,15) : null });
   const folderTree = buildFolderTree(folders);
 
   return (
