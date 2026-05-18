@@ -335,7 +335,24 @@ export async function ensureSourceAnnotationsPlugin(
   }
 
   const pluginFilePath = join(doableDir, "vite-plugin-source-annotations.js");
-  await writeFile(pluginFilePath, generateSourceAnnotationsPlugin(), "utf-8");
+  const nextContent = generateSourceAnnotationsPlugin();
+  // Only write when the content differs — an unconditional writeFile bumps
+  // mtime, which Vite's config-file watcher interprets as a config change
+  // and triggers a "server restarted" cycle. dev-server-start calls us on
+  // every Vite spawn, so without this guard the dev server enters an
+  // infinite restart loop and exits with code 1, failing /scaffold.
+  // (BUG-R11-VITE-RESTART-LOOP.)
+  let prevContent: string | null = null;
+  if (existsSync(pluginFilePath)) {
+    try {
+      prevContent = await readFile(pluginFilePath, "utf-8");
+    } catch {
+      prevContent = null;
+    }
+  }
+  if (prevContent !== nextContent) {
+    await writeFile(pluginFilePath, nextContent, "utf-8");
+  }
 
   // Step 2: Patch vite.config.ts if needed
   const viteConfigPath = join(projectPath, "vite.config.ts");
