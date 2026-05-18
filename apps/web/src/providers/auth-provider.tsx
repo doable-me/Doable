@@ -131,15 +131,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [isLoading, setIsLoading] = useState(true);
 
-  // On mount, validate the stored token against /auth/me. React 18 StrictMode
-  // double-mounts effects in dev (mount → cleanup → re-mount); the previous
-  // `initialCheckDone` ref guard short-circuited the second mount but its
-  // first-mount Promise.finally() resolved against the unmounted instance,
-  // so the active instance's `isLoading` stayed `true` forever and the
-  // dashboard / editor route hung on the root `app/loading.tsx` spinner.
-  // The cancellation-flag pattern is the React-recommended replacement:
-  // every mount runs its own check, every cleanup nulls out its closure flag,
-  // and only the currently-mounted instance's setState calls land.
+  // Cancellation-flag pattern (vs. a one-shot ref): React 18 StrictMode
+  // double-mounts effects in dev, and a ref guard let the first mount's
+  // pending /auth/me settle against the unmounted instance — `isLoading`
+  // stuck `true` and the dashboard hung. The closure flag + cleanup makes
+  // only the live instance's setState calls land.
   useEffect(() => {
     let cancelled = false;
     const { accessToken } = getStoredTokens();

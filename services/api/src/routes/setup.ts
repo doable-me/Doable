@@ -227,14 +227,10 @@ setupRoutes.post("/ai-provider", async (c) => {
         // chat handler resolved model=null → "No model available" SDK error.
         // Always write to `default_provider_model` for the BYOK path.
         const storedModel = model ?? null;
-        // Apply the wizard's pick to BOTH primary (default) and suggestions
-        // slots in workspace_ai_settings. A first-time installer overwhelmingly
-        // expects the model they just configured to drive both the main chat
-        // path and the inline suggestions path. If we leave the suggestion_*
-        // columns NULL, suggestions silently fall back to copilot defaults —
-        // which fail with "No model available" on a BYOK-only install (no
-        // GitHub Copilot account ever connected). Power users can rebind
-        // suggestions to a cheaper/faster model later via /admin/ai-settings.
+        // Mirror the wizard pick into the suggestion slot. A BYOK-only install
+        // has no copilot account, so the default suggestion_source='copilot'
+        // would make inline suggestions fail with "No model available".
+        // Admins can rebind separately via /admin/ai-settings.
         await sql`
           INSERT INTO workspace_ai_settings (
             workspace_id,
