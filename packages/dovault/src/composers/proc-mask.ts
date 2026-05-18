@@ -58,6 +58,14 @@ export const procMask: Composer = {
           const overlay = profile.fs.procOverlay;
           if (!overlay) return;
 
+          // Wrapper: dovault composers write into <workDir>/.sandbox/ as the
+          // API uid, but dev-uid-allocator chowns the project tree to a
+          // per-project sandbox uid (R12 + R13 ordering). If the parent
+          // .sandbox dir was chowned away, fall back gracefully — the synthetic
+          // /proc overlay is a hardening layer; the bwrap dev process boots
+          // without it. R14 will route these writes through sandbox-spawn.
+          try {
+
           const cores = overlay.cpuinfo?.cores ?? 1;
           const mhz = overlay.cpuinfo?.mhz ?? 2400;
           const modelName = overlay.cpuinfo?.modelName ?? "Synthetic CPU";
@@ -82,6 +90,14 @@ export const procMask: Composer = {
               // Synthetic file still exists as a debug artifact — swallow.
               console.warn(`[proc-mask] bind-mount ${src} -> ${dst} failed:`, err);
             }
+          }
+          } catch (err) {
+            const e = err as NodeJS.ErrnoException;
+            if (e?.code === "EACCES" || e?.code === "EPERM") {
+              console.warn(`[proc-mask] EACCES on .sandbox — skipping /proc overlay (R13 known gap)`);
+              return;
+            }
+            throw err;
           }
         },
       },

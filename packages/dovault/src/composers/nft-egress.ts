@@ -45,8 +45,22 @@ export const nftEgress: Composer = {
       {
         id: "nft-egress:write-rules",
         async run() {
-          await mkdir(dirname(rulesPath), { recursive: true });
-          await writeFile(rulesPath, rules, "utf8");
+          try {
+            await mkdir(dirname(rulesPath), { recursive: true });
+            await writeFile(rulesPath, rules, "utf8");
+          } catch (err) {
+            // Skip silently when projectDir is owned by a dropped-priv sandbox
+            // uid (e.g. dev-uid-allocator chowned to 10001) and the API process
+            // (uid 5000) can't write into it. The rules file is currently a
+            // stub (TODO L42 — never actually loaded into nftables), so the
+            // dev process can boot without it. R14 will properly route this
+            // through sandbox-spawn so the file lands in the right namespace.
+            const e = err as NodeJS.ErrnoException;
+            if (e?.code === "EACCES" || e?.code === "EPERM") {
+              return;
+            }
+            throw err;
+          }
         },
       },
     ];

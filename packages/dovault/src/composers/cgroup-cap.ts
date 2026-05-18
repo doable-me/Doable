@@ -31,9 +31,23 @@ export const cgroupCap: Composer = {
       {
         id: "cgroup-cap:write-wrap",
         async run() {
-          await mkdir(dirname(wrapPath), { recursive: true });
-          // TODO: orchestrator must read .sandbox/cgroup-wrap.txt and prepend to argv when this composer applies
-          await writeFile(wrapPath, cmd, "utf8");
+          // R13 EACCES wrapper: when dev-uid-allocator chowned <workDir> to
+          // the dropped-priv sandbox uid (uid 10001), the API uid can't write
+          // into <workDir>/.sandbox/. The wrap file isn't consumed yet
+          // (TODO below), so skipping is safe; R14 will move this through
+          // sandbox-spawn.
+          try {
+            await mkdir(dirname(wrapPath), { recursive: true });
+            // TODO: orchestrator must read .sandbox/cgroup-wrap.txt and prepend to argv when this composer applies
+            await writeFile(wrapPath, cmd, "utf8");
+          } catch (err) {
+            const e = err as NodeJS.ErrnoException;
+            if (e?.code === "EACCES" || e?.code === "EPERM") {
+              console.warn(`[cgroup-cap] EACCES on .sandbox — skipping cgroup wrap (R13 known gap)`);
+              return;
+            }
+            throw err;
+          }
         },
       },
     ];

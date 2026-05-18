@@ -51,19 +51,32 @@ export const etcSynth: Composer = {
             return;
           }
 
-          await mkdir(etcDir, { recursive: true });
+          // R13 EACCES wrapper: if <workDir>/.sandbox/ is owned by the
+          // dropped-priv sandbox uid (uid 10001 from dev-uid-allocator) the
+          // API uid can't write into it. Fall back gracefully — the synthetic
+          // /etc is a hardening layer; the bwrap dev process boots without it.
+          // R14 will route this through sandbox-spawn.
+          try {
+            await mkdir(etcDir, { recursive: true });
+            await writeFile(path.join(etcDir, "passwd"), buildPasswd(profile.user.passwd));
+            await writeFile(path.join(etcDir, "group"), buildGroup(profile.user.passwd));
+            mounts.push({ src: path.join(etcDir, "passwd"), dst: "/etc/passwd" });
+            mounts.push({ src: path.join(etcDir, "group"), dst: "/etc/group" });
 
-          await writeFile(path.join(etcDir, "passwd"), buildPasswd(profile.user.passwd));
-          await writeFile(path.join(etcDir, "group"), buildGroup(profile.user.passwd));
-          mounts.push({ src: path.join(etcDir, "passwd"), dst: "/etc/passwd" });
-          mounts.push({ src: path.join(etcDir, "group"), dst: "/etc/group" });
-
-          // profile.fs.etcSynth is Record<jailPath, content> — write each as-is
-          for (const [jailPath, content] of Object.entries(profile.fs.etcSynth)) {
-            const fileName = path.basename(jailPath);
-            const src = path.join(etcDir, fileName);
-            await writeFile(src, content);
-            mounts.push({ src, dst: jailPath });
+            // profile.fs.etcSynth is Record<jailPath, content> — write each as-is
+            for (const [jailPath, content] of Object.entries(profile.fs.etcSynth)) {
+              const fileName = path.basename(jailPath);
+              const src = path.join(etcDir, fileName);
+              await writeFile(src, content);
+              mounts.push({ src, dst: jailPath });
+            }
+          } catch (err) {
+            const e = err as NodeJS.ErrnoException;
+            if (e?.code === "EACCES" || e?.code === "EPERM") {
+              console.warn(`[etc-synth] EACCES on .sandbox — skipping synthetic /etc (R13 known gap)`);
+              return;
+            }
+            throw err;
           }
 
           for (const { src, dst } of mounts) {
