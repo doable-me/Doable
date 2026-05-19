@@ -29,6 +29,18 @@ interface AuthMeResponse {
   user?: { id?: string; email?: string; isPlatformAdmin?: boolean };
 }
 
+interface WorkspaceRow {
+  id: string;
+}
+
+interface WorkspacesResponse {
+  data?: WorkspaceRow[];
+}
+
+interface ProvidersResponse {
+  data?: unknown[];
+}
+
 function loginRedirect(req: NextRequest): NextResponse {
   const url = req.nextUrl.clone();
   const next = req.nextUrl.pathname + req.nextUrl.search;
@@ -45,6 +57,34 @@ function loginRedirect(req: NextRequest): NextResponse {
     sameSite: "lax",
   });
   return res;
+}
+
+async function checkNeedsSetup(token: string): Promise<boolean> {
+  const apiUrl =
+    process.env.API_INTERNAL_URL ??
+    process.env.NEXT_PUBLIC_API_URL ??
+    "http://127.0.0.1:4000";
+  const base = apiUrl.replace(/\/+$/, "");
+  try {
+    const wsResp = await fetch(`${base}/workspaces`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!wsResp.ok) return false;
+    const wsData = (await wsResp.json()) as WorkspacesResponse;
+    const wsId = wsData?.data?.[0]?.id;
+    if (!wsId) return false;
+
+    const pvResp = await fetch(`${base}/workspaces/${wsId}/ai-settings/providers`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!pvResp.ok) return false;
+    const pvData = (await pvResp.json()) as ProvidersResponse;
+    return (pvData?.data?.length ?? 0) === 0;
+  } catch {
+    return false;
+  }
 }
 
 async function verifyPlatformAdmin(req: NextRequest, token: string): Promise<boolean> {
@@ -77,20 +117,48 @@ async function verifyPlatformAdmin(req: NextRequest, token: string): Promise<boo
   }
 }
 
+const ADMIN_PATHS = /^\/admin(\/|$)/;
+const POST_AUTH_PATHS = /^\/(dashboard|editor\/|projects\/)/;
+
 export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
   const token = req.cookies.get(TOKEN_COOKIE)?.value;
-  if (!token) {
-    return loginRedirect(req);
+
+  if (ADMIN_PATHS.test(pathname)) {
+    // Existing gate: must be authenticated platform admin.
+    if (!token) return loginRedirect(req);
+    const isAdmin = await verifyPlatformAdmin(req, token);
+    if (!isAdmin) return loginRedirect(req);
+    return NextResponse.next();
   }
-  const isAdmin = await verifyPlatformAdmin(req, token);
-  if (!isAdmin) {
-    return loginRedirect(req);
+
+  // Post-auth surfaces: dashboard, editor, projects.
+  // Don't redirect /setup itself — would create a redirect loop.
+  if (POST_AUTH_PATHS.test(pathname)) {
+    if (!token) return loginRedirect(req);
+    const isAdmin = await verifyPlatformAdmin(req, token);
+    if (isAdmin) {
+      const needsSetup = await checkNeedsSetup(token);
+      if (needsSetup) {
+        const url = req.nextUrl.clone();
+        url.pathname = "/setup";
+        url.search = "";
+        return NextResponse.redirect(url);
+      }
+    }
+    return NextResponse.next();
   }
+
   return NextResponse.next();
 }
 
 export const config = {
-  // Run on /admin and every /admin/* subpath. Exclude Next.js internals and
-  // static files implicitly — they don't match this pattern.
-  matcher: ["/admin", "/admin/:path*"],
+  matcher: [
+    "/admin",
+    "/admin/:path*",
+    "/dashboard",
+    "/dashboard/:path*",
+    "/editor/:path*",
+    "/projects/:path*",
+  ],
 };
