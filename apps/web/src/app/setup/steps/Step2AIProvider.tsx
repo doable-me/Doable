@@ -707,7 +707,8 @@ function SaveControls({
           />
           <span>
             Use this model as the default for every plan (Free, Pro, Business,
-            Enterprise). You can fine-tune per-plan models later in{" "}
+            Enterprise) and as the suggestions model. You can fine-tune
+            per-plan and suggestions models later in{" "}
             <span className="text-foreground font-medium">/admin/plan-defaults</span>.
           </span>
         </label>
