@@ -109,10 +109,19 @@ export async function seedAiProviderFromEnv(): Promise<void> {
     if (source.model) {
       const providerModel = source.model;
       for (const plan of ["free", "pro", "business", "enterprise"]) {
+        // ON CONFLICT DO UPDATE — migration 056 pre-seeds plan rows with
+        // empty provider_model. DO NOTHING would leave them empty; the WHERE
+        // clause fills only when no operator has set a value (preserves wizard
+        // / admin UI selections).
         await sql`
           INSERT INTO platform_ai_defaults (plan, source, provider_id, provider_model, copilot_account_id, copilot_model, updated_by)
           VALUES (${plan}, 'custom', NULL, ${providerModel}, NULL, NULL, NULL)
-          ON CONFLICT (plan) DO NOTHING
+          ON CONFLICT (plan) DO UPDATE SET
+            source = EXCLUDED.source,
+            provider_model = EXCLUDED.provider_model,
+            updated_by = NULL
+          WHERE platform_ai_defaults.provider_model IS NULL
+             OR platform_ai_defaults.provider_model = ''
         `;
       }
     }
