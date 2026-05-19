@@ -76,13 +76,6 @@ const SOURCES: readonly SeedSource[] = [
 ];
 
 export async function seedAiProviderFromEnv(): Promise<void> {
-  // If a key is already set in platform_config, don't touch it. The admin
-  // already made a choice; env vars are bootstrap, not override.
-  const existing = await getConfig("setup.ai_provider_key");
-  if (existing && existing !== "null") {
-    return;
-  }
-
   const source = SOURCES.find((s) => {
     const v = process.env[s.envVar];
     return typeof v === "string" && v.trim().length > 0;
@@ -92,27 +85,15 @@ export async function seedAiProviderFromEnv(): Promise<void> {
   const key = process.env[source.envVar];
   if (!key) return; // narrowing — find() guarantees non-empty above
 
-  try {
-    await setConfig("setup.ai_provider", source.provider);
-    if (source.baseUrl) {
-      await setConfig("setup.ai_provider_base_url", source.baseUrl);
-    }
-    if (source.model) {
-      await setConfig("setup.ai_model", source.model);
-    }
-    await setEncryptedConfig("setup.ai_provider_key", key.trim());
-
-    // Also upsert platform_ai_defaults for all 4 plans so that
-    // applyPlatformAiDefault (called at first workspace creation) has a row
-    // to work from. provider_id is left null here; platform-ai-bootstrap.ts
-    // will create the ai_providers row in the target workspace on demand.
-    if (source.model) {
+  // ── A: platform_ai_defaults upsert (idempotent, runs every boot) ──
+  // Migration 056 pre-seeds 4 plan rows with empty provider_model. We fill
+  // them on every boot so MINIMAX_API_KEY=... bash setup-server.sh users
+  // get working AI chat OOB. Gate on provider_model being empty so we
+  // never clobber operator selections from the wizard / admin UI.
+  if (source.model) {
+    try {
       const providerModel = source.model;
       for (const plan of ["free", "pro", "business", "enterprise"]) {
-        // ON CONFLICT DO UPDATE — migration 056 pre-seeds plan rows with
-        // empty provider_model. DO NOTHING would leave them empty; the WHERE
-        // clause fills only when no operator has set a value (preserves wizard
-        // / admin UI selections).
         await sql`
           INSERT INTO platform_ai_defaults (plan, source, provider_id, provider_model, copilot_account_id, copilot_model, updated_by)
           VALUES (${plan}, 'custom', NULL, ${providerModel}, NULL, NULL, NULL)
@@ -124,7 +105,29 @@ export async function seedAiProviderFromEnv(): Promise<void> {
              OR platform_ai_defaults.provider_model = ''
         `;
       }
+    } catch (err) {
+      console.warn(
+        `[seed] Could not seed platform_ai_defaults: ${(err as Error).message}`,
+      );
     }
+  }
+
+  // ── B: platform_config setup.* keys (only on first boot) ──
+  // If admin already configured via wizard, don't overwrite the prefill.
+  const existing = await getConfig("setup.ai_provider_key");
+  if (existing && existing !== "null") {
+    return;
+  }
+
+  try {
+    await setConfig("setup.ai_provider", source.provider);
+    if (source.baseUrl) {
+      await setConfig("setup.ai_provider_base_url", source.baseUrl);
+    }
+    if (source.model) {
+      await setConfig("setup.ai_model", source.model);
+    }
+    await setEncryptedConfig("setup.ai_provider_key", key.trim());
 
     console.log(
       `[seed] Pre-configured ${source.label} from $${source.envVar} (wizard Step 2 ready).`,
