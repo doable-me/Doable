@@ -779,6 +779,17 @@ else
   GITHUB_REPO_CALLBACK_HOST="${API_DOMAIN}"
 fi
 
+# NO_TUNNEL=1: api/ws are path-multiplexed on the same host behind Caddy.
+# Caddy routes handle_path /api/* → :4000 (strips prefix) and /ws* → :4001.
+# Tunnel/CF mode uses separate subdomains, so no path suffix is needed there.
+if [ "$NO_TUNNEL" = "1" ]; then
+  _API_URL="https://${HOST}/api"
+  _WS_URL="wss://${HOST}/ws"
+else
+  _API_URL="https://${API_DOMAIN}"
+  _WS_URL="wss://${WS_DOMAIN}"
+fi
+
 cat > "${INSTALL_DIR}/.env" << ENVEOF
 # ─── Database ───────────────────────────────────────────────
 DATABASE_URL=postgres://doable:${DB_PASS}@localhost:5432/doable
@@ -816,8 +827,8 @@ WS_ALLOWED_ORIGINS=https://${DOMAIN}
 WEB_HOSTNAME=${BIND_HOST}
 
 # ─── Next.js Frontend ──────────────────────────────────────
-NEXT_PUBLIC_API_URL=https://${API_DOMAIN}
-NEXT_PUBLIC_WS_URL=wss://${WS_DOMAIN}
+NEXT_PUBLIC_API_URL=${_API_URL}
+NEXT_PUBLIC_WS_URL=${_WS_URL}
 NEXT_PUBLIC_APP_URL=https://${DOMAIN}
 
 # ─── OAuth ──────────────────────────────────────────────────
@@ -997,8 +1008,8 @@ fi
 # pre-staged .env). Must NOT be gated on the .env idempotency check above —
 # next build prerenders with empty NEXT_PUBLIC_* envs otherwise.
 cat > "${INSTALL_DIR}/apps/web/.env.local" << WEBENVEOF
-NEXT_PUBLIC_API_URL=https://${API_DOMAIN}
-NEXT_PUBLIC_WS_URL=wss://${WS_DOMAIN}
+NEXT_PUBLIC_API_URL=${_API_URL}
+NEXT_PUBLIC_WS_URL=${_WS_URL}
 NEXT_PUBLIC_APP_URL=https://${DOMAIN}
 WEBENVEOF
 chown doable:doable "${INSTALL_DIR}/apps/web/.env.local" 2>/dev/null || true
