@@ -25,6 +25,21 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   exit 0
 fi
 
+# R14 BUG-NEXT-CHOWN: self-heal stale root-owned Next.js artifacts before
+# launching the web pane. setup-server.sh's `pnpm build` step can land
+# .next/ as root-owned, then `next dev --turbopack` in the web pane hits
+# EACCES on `mkdir .next/dev` and crashes — dashboard surfaces a 502 from
+# cloudflared. The sudoers entry at /etc/sudoers.d/doable-sandbox permits
+# this exact chown form. Failures here are best-effort (|| true) so a
+# fresh install with no prior .next/ doesn't break.
+for d in "$SCRIPT_DIR/apps/web/.next" "$SCRIPT_DIR/apps/web/.turbo"; do
+  if [ -d "$d" ]; then
+    sudo -n /usr/bin/chown -R doable:doable "$d" 2>/dev/null \
+      || sudo -n /bin/chown -R doable:doable "$d" 2>/dev/null \
+      || echo "[start.sh] WARN: could not chown $d — web pane may EACCES"
+  fi
+done
+
 tmux new-session -d -s "$SESSION" -n api -x 200 -y 50
 tmux send-keys -t "${SESSION}:api" "pnpm --filter @doable/api dev" C-m
 
