@@ -40,29 +40,27 @@ function offloadDataUris(
   html: string,
   projectId?: string,
   resourceUri?: string,
-): { html: string; artifacts: ArtifactRef[] } {
+): {
+  html: string;
+  artifacts: ArtifactRef[];
+  bytesByExt: Map<string, Buffer>;
+  urlByExt: Map<string, string>;
+} {
   const artifacts: ArtifactRef[] = [];
+  // Hoisted above the early-return so callers always get the maps back,
+  // even for empty html. This decouples persistViewerToProject() from any
+  // future tweak to this function's size-guard / SSE-size optimization.
+  const bytesByExt = new Map<string, Buffer>();
+  const urlByExt = new Map<string, string>();
   if (projectId && resourceUri) {
     console.error(`[tool-callbacks] offloadDataUris entry project=${projectId} resourceUri=${resourceUri} htmlLen=${html?.length ?? 0}`);
   }
-  // Always run the scan when there's any html. The per-data-URI regex's
-  // `{500,}` quantifier still gates artifact extraction, so empty or
-  // text-only payloads return early with no work done. The historical
-  // 16KB function-level guard was a CF-tunnel SSE-size optimization,
-  // but it also blocked persistIndex() for small builder outputs (a
-  // 5-row spreadsheet's MCP-UI rawHtml + base64 data URIs frequently
-  // totals ~10-15KB, below the old threshold), leaving the editor's
-  // preview iframe stuck on the default scaffold.
-  if (!html) return { html, artifacts };
+  if (!html) return { html, artifacts, bytesByExt, urlByExt };
   // Dedup identical data URIs (same mime + same base64 body). The
   // unified deck card references the HTML data URI in BOTH the "Open"
   // link and the "Download .html" link; without dedup each match would
   // store a separate artifact and surface as two download rows.
   const byKey = new Map<string, string>(); // key → public url
-  // First-seen bytes per ext, used by the viewer-builder below to
-  // craft a project-preview page that lives at projects/<id>/index.html.
-  const bytesByExt = new Map<string, Buffer>();
-  const urlByExt = new Map<string, string>();
   const out = html.replace(
     /data:([a-zA-Z0-9.+/-]+(?:;[^,;]+)*);base64,([A-Za-z0-9+/=]{500,})/g,
     (_match, mime: string, b64: string) => {
@@ -107,19 +105,43 @@ function offloadDataUris(
     },
   );
 
-  // Persist a project-preview page (`projects/<id>/index.html`) so the
-  // right-side App Preview iframe shows the generated document. Each
-  // built-in builder gets a viewer tuned to its document type. We
-  // record the projectPath on the *first* matching artifact so the
-  // editor's "file changed" refresh picks it up the same way it does
-  // for create_file results.
+  return { html: out, artifacts, bytesByExt, urlByExt };
+}
+
+/**
+ * Persist a viewer page to `projects/<id>/index.html` for built-in builder
+ * MCP tools. Decoupled from `offloadDataUris` so any future change to that
+ * function's SSE-size optimization cannot accidentally block preview
+ * persistence — the regression that hid small spreadsheets in commits
+ * prior to 6f0357e2. Call AFTER `offloadDataUris` with its returned maps.
+ *
+ * Match is by `resourceUri` substring (`presentation-builder`,
+ * `pdf-builder/build`, `markdown-builder/build`, `spreadsheet-builder/build`)
+ * — independent of how many or what size of data URIs the offload pass
+ * extracted. If a future MCP server emits URL-referenced artifacts instead
+ * of inline base64, the dispatch still fires and logs a "no viewer source"
+ * diagnostic instead of silently doing nothing.
+ */
+function persistViewerToProject(
+  projectId: string | undefined,
+  resourceUri: string | undefined,
+  artifacts: ArtifactRef[],
+  bytesByExt: Map<string, Buffer>,
+  urlByExt: Map<string, string>,
+): void {
+  if (!projectId || !resourceUri) return;
+  const matchesBuilder = resourceUri.includes("presentation-builder")
+    || resourceUri.includes("pdf-builder/build")
+    || resourceUri.includes("markdown-builder/build")
+    || resourceUri.includes("spreadsheet-builder/build");
+  if (!matchesBuilder) return;
+
   const setProjectPath = (ext: string, path: string) => {
     const a = artifacts.find((x) => x.fileName.endsWith(`.${ext}`));
     if (a) a.projectPath = path;
   };
-  const persistIndex = (text: string, primaryExt: string) => {
-    if (!projectId) return;
-    console.error(`[tool-callbacks] persistIndex called: project=${projectId} ext=${primaryExt} bytes=${text.length} resourceUri=${resourceUri}`);
+  const writeIndex = (text: string, primaryExt: string) => {
+    console.error(`[tool-callbacks] persistViewerToProject called: project=${projectId} ext=${primaryExt} bytes=${text.length} resourceUri=${resourceUri}`);
     writeProjectFile(projectId, "index.html", text).then(
       () => { console.error(`[tool-callbacks] wrote viewer to projects/${projectId}/index.html (${text.length}B)`); },
       (err) => { console.error(`[tool-callbacks] writeProjectFile index.html failed: ${(err as Error).message}`); },
@@ -127,27 +149,25 @@ function offloadDataUris(
     setProjectPath(primaryExt, "index.html");
   };
 
-  if (projectId && resourceUri) {
-    console.error(`[tool-callbacks] offloadDataUris post-extract project=${projectId} resourceUri=${resourceUri} artifacts=${artifacts.length} extsByBytes=${[...bytesByExt.keys()].join(",")} urlExts=${[...urlByExt.keys()].join(",")}`);
-    if (resourceUri.includes("presentation-builder")) {
-      // Presentation deck: the html download IS the preview.
-      const htmlBytes = bytesByExt.get("html");
-      if (htmlBytes) persistIndex(htmlBytes.toString("utf-8"), "html");
-    } else if (resourceUri.includes("pdf-builder/build")) {
-      const pdfUrl = urlByExt.get("pdf");
-      if (pdfUrl) persistIndex(buildPdfViewerHtml(pdfUrl), "pdf");
-    } else if (resourceUri.includes("markdown-builder/build")) {
-      // Rendered .html download is a standalone styled document — use it directly.
-      const htmlBytes = bytesByExt.get("html");
-      if (htmlBytes) persistIndex(htmlBytes.toString("utf-8"), "md");
-    } else if (resourceUri.includes("spreadsheet-builder/build")) {
-      const xlsxUrl = urlByExt.get("xlsx");
-      const csvUrl = urlByExt.get("csv");
-      if (xlsxUrl) persistIndex(buildSpreadsheetViewerHtml({ xlsxUrl, csvUrl }), "xlsx");
-    }
+  console.error(`[tool-callbacks] persistViewerToProject dispatch project=${projectId} resourceUri=${resourceUri} extsByBytes=${[...bytesByExt.keys()].join(",")} urlExts=${[...urlByExt.keys()].join(",")}`);
+  if (resourceUri.includes("presentation-builder")) {
+    const htmlBytes = bytesByExt.get("html");
+    if (htmlBytes) writeIndex(htmlBytes.toString("utf-8"), "html");
+    else console.error(`[tool-callbacks] persistViewerToProject: presentation-builder missing html bytes — skipped`);
+  } else if (resourceUri.includes("pdf-builder/build")) {
+    const pdfUrl = urlByExt.get("pdf");
+    if (pdfUrl) writeIndex(buildPdfViewerHtml(pdfUrl), "pdf");
+    else console.error(`[tool-callbacks] persistViewerToProject: pdf-builder missing pdf url — skipped`);
+  } else if (resourceUri.includes("markdown-builder/build")) {
+    const htmlBytes = bytesByExt.get("html");
+    if (htmlBytes) writeIndex(htmlBytes.toString("utf-8"), "md");
+    else console.error(`[tool-callbacks] persistViewerToProject: markdown-builder missing html bytes — skipped`);
+  } else if (resourceUri.includes("spreadsheet-builder/build")) {
+    const xlsxUrl = urlByExt.get("xlsx");
+    const csvUrl = urlByExt.get("csv");
+    if (xlsxUrl) writeIndex(buildSpreadsheetViewerHtml({ xlsxUrl, csvUrl }), "xlsx");
+    else console.error(`[tool-callbacks] persistViewerToProject: spreadsheet-builder missing xlsx url — skipped`);
   }
-
-  return { html: out, artifacts };
 }
 
 /** Project-preview HTML for PDFs — renders pages via PDF.js (works inside a sandboxed iframe, unlike <embed>). */
