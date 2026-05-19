@@ -290,6 +290,15 @@ export function PreviewPanel() {
             onLoad={onLoadWithHmrReset}
             onError={handleError}
             className="h-full w-full border-0"
+            // Pin color-scheme: light so the embedded preview's CSS never
+            // sees `prefers-color-scheme: dark` from the editor's dark
+            // theme. Without this, AI-scaffolded apps whose dark-mode CSS
+            // only flips text colors (not backgrounds) render light-on-light
+            // and the page text is invisible inside the editor — while
+            // opening the same preview URL standalone (no parent) renders
+            // correctly. Theme propagation is handled by the visual-edit
+            // bridge's class-based `.dark` mirror, not by inheritance.
+            style={{ colorScheme: "light" }}
             // allow-same-origin: required so user apps that use localStorage
             // don't crash in the iframe (opaque-origin Storage throws and the
             // in-memory polyfill can't redefine the non-configurable getter).
