@@ -16,8 +16,15 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
+
+// Per-project sandbox-uid pool (see dev-uid-allocator). Anything in this
+// range needs the setuid helper because the calling API process runs as the
+// unprivileged `doable` user and bwrap can't elevate to a foreign uid by
+// itself — sandbox-spawn does the setpriv flip with root and exec's bwrap.
+const SANDBOX_UID_POOL_MIN = 10001;
+const SANDBOX_SPAWN_PATH = "/opt/doable/bin/sandbox-spawn";
 
 import type {
   BackendAvailability,
@@ -182,7 +189,7 @@ export class BubblewrapBackend implements SandboxBackend {
       envFlags.push("--setenv", k, v);
     }
 
-    const argv: string[] = [
+    const bwrapArgv: string[] = [
       "bwrap",
       "--die-with-parent",
       ...unshareFlags,
@@ -213,6 +220,31 @@ export class BubblewrapBackend implements SandboxBackend {
       command,
       ...args,
     ];
+
+    // When the API runs unprivileged (euid != 0) but the profile asks for a
+    // per-project sandbox uid (>= SANDBOX_UID_POOL_MIN), bwrap alone can't
+    // make the uid flip — only a privileged setuid helper can. Mirror the
+    // pattern from services/api/src/projects/vite-jail.ts: prepend
+    // `sudo -n /opt/doable/bin/sandbox-spawn <uid> <projectId>` so the helper
+    // does setpriv + exec's our bwrap argv. Project id is the basename of
+    // rootDir (sandbox-spawn validates it against ${PROJECTS_PREFIX}/<uuid>).
+    const profileUid = profile.user?.uid;
+    const euid = typeof process.geteuid === "function" ? process.geteuid() : 0;
+    const needsSandboxSpawn =
+      euid !== 0 &&
+      typeof profileUid === "number" &&
+      profileUid >= SANDBOX_UID_POOL_MIN;
+
+    const argv: string[] = needsSandboxSpawn
+      ? [
+          "sudo",
+          "-n",
+          SANDBOX_SPAWN_PATH,
+          String(profileUid),
+          basename(profile.fs.rootDir),
+          ...bwrapArgv,
+        ]
+      : bwrapArgv;
 
     // The outer env only needs PATH so cpSpawn can find the bwrap binary.
     // All inner env is handled by --clearenv + --setenv above.
