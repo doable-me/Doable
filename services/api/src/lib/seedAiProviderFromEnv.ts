@@ -88,10 +88,7 @@ export async function seedAiProviderFromEnv(): Promise<void> {
   console.log(`[seed] matched source: ${source.label} ($${source.envVar})`);
 
   const key = process.env[source.envVar];
-  if (!key) {
-    console.warn("[seed] WARN: source matched but key empty after re-read — race?");
-    return;
-  }
+  if (!key) return; // narrowing — find() guarantees non-empty above
 
   // ── A: platform_ai_defaults upsert (idempotent, runs every boot) ──
   // Migration 056 pre-seeds 4 plan rows with empty provider_model. We fill
