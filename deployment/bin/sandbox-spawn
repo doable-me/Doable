@@ -36,6 +36,7 @@ die() {
 #     to match INSTALL_DIR/services/api/projects at install time) ───────
 PROJECTS_PREFIX="/opt/doable/services/api/projects"
 NODE_BIN="/usr/bin/node"
+BWRAP_BIN="/usr/bin/bwrap"
 MIN_UID=10001
 MAX_UID=65000
 
@@ -83,12 +84,23 @@ case "${RESOLVED}" in
   *) die "project path escapes prefix (resolved=${RESOLVED})" ;;
 esac
 
-# ─── Validate command — allowed: /usr/bin/node OR
+# ─── Validate command — allowed: /usr/bin/node, /usr/bin/bwrap, OR
 #     <project_path>/node_modules/.bin/* (symlink resolution enforced) ──
+# bwrap is allow-listed because dovault's bubblewrap-v2 backend now wraps its
+# spawn chain with `sandbox-spawn <uid> <pid> bwrap ...` when the API runs
+# unprivileged (euid != 0). The setpriv reuid below drops privileges to a
+# per-project uid (10001-65000) BEFORE exec'ing bwrap, so anything bwrap
+# subsequently does is bounded by that uid — the args after `bwrap` are
+# attacker-controlled if the API itself is compromised, but the effective
+# uid has zero host privileges, matching the security model of the node
+# and node_modules/.bin/* arms below.
 CMD_RESOLVED=""
 case "${CMD}" in
   "${NODE_BIN}")
     CMD_RESOLVED="${NODE_BIN}"
+    ;;
+  "${BWRAP_BIN}")
+    CMD_RESOLVED="${BWRAP_BIN}"
     ;;
   "${PROJECT_PATH}/node_modules/.bin/"*)
     case "${CMD}" in
@@ -107,7 +119,7 @@ case "${CMD}" in
     esac
     ;;
   *)
-    die "command must be ${NODE_BIN} or under ${PROJECT_PATH}/node_modules/.bin/ (got: ${CMD})"
+    die "command must be ${NODE_BIN}, ${BWRAP_BIN}, or under ${PROJECT_PATH}/node_modules/.bin/ (got: ${CMD})"
     ;;
 esac
 
