@@ -319,13 +319,23 @@ export function createToolProgressCallbacks(
       const collectedArtifacts: ArtifactRef[] = [];
       for (const item of pendingUiResources) {
         const r = item.resource as unknown as Record<string, unknown> & { text?: string; uri?: string };
-        if (typeof r?.text === "string" && r.text.length > 16 * 1024) {
-          const { html: rewritten, artifacts: arts } = offloadDataUris(r.text, projectId, typeof r.uri === "string" ? r.uri : undefined);
+        // Always run extraction so persistViewerToProject() below has its
+        // bytesByExt / urlByExt maps populated even for small payloads. The
+        // historical `> 16 * 1024` gate was an SSE-size optimization that
+        // silently broke preview persistence for sub-16KB builder outputs
+        // (the bug behind project 3b698510). The regex inside offloadDataUris
+        // still requires {500,} base64 chars per data URI, so tiny text-only
+        // payloads return quickly with no real work done.
+        if (typeof r?.text === "string") {
+          const resourceUri = typeof r.uri === "string" ? r.uri : undefined;
+          const { html: rewritten, artifacts: arts, bytesByExt, urlByExt } =
+            offloadDataUris(r.text, projectId, resourceUri);
           if (arts.length > 0) {
             collectedArtifacts.push(...arts);
             (item.resource as unknown as Record<string, unknown>).text = rewritten;
             (item as unknown as Record<string, unknown>)._offloaded = true;
           }
+          persistViewerToProject(projectId, resourceUri, arts, bytesByExt, urlByExt);
         }
       }
       // If any artifact was persisted to a project file, surface that path
@@ -442,9 +452,15 @@ export function createToolProgressCallbacks(
           let artifacts: ArtifactRef[] = [];
           const safeResource = (() => {
             const r = item.resource as Record<string, unknown> & { text?: string; uri?: string };
-            if (typeof r?.text === "string" && r.text.length > 16 * 1024) {
-              const { html: rewritten, artifacts: arts } = offloadDataUris(r.text, projectId, typeof r.uri === "string" ? r.uri : undefined);
+            // Always run extraction (no size gate) so persistViewerToProject
+            // fires for small builder outputs. See sibling pre-rewrite loop
+            // above for the rationale (project 3b698510 regression).
+            if (typeof r?.text === "string") {
+              const resourceUri = typeof r.uri === "string" ? r.uri : undefined;
+              const { html: rewritten, artifacts: arts, bytesByExt, urlByExt } =
+                offloadDataUris(r.text, projectId, resourceUri);
               artifacts = arts;
+              persistViewerToProject(projectId, resourceUri, arts, bytesByExt, urlByExt);
               if (rewritten !== r.text) {
                 return { ...r, text: rewritten };
               }
