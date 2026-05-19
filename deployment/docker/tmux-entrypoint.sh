@@ -24,7 +24,9 @@ tmux new-session -d -s "$SESSION" -x 200 -y 50 "$@"
 # on startup (missing env, ESM resolution error, port-in-use, etc.) appears as
 # a silent "Restarting (0)" loop with empty logs — impossible to debug. The
 # pipe-pane runs for the lifetime of the session and adds negligible overhead.
-tmux pipe-pane -t "$SESSION" -o 'cat >&2' 2>/dev/null || true
+# /proc/1/fd/2 is PID-1's stderr inside the container, which docker captures.
+# `>&2` would route to tmux server's stderr, not the container's.
+tmux pipe-pane -t "$SESSION" -o 'cat > /proc/1/fd/2' 2>/dev/null || true
 
 # Wait for the session to end (process exits → pane closes → session closes).
 # Capture the pane exit code via tmux wait-for so a crashed workload propagates
