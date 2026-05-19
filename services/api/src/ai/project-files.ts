@@ -90,6 +90,66 @@ export async function readProjectFile(
   }
 }
 
+// shadcn-style raw-HSL tokens that, when present under `:root`, require a
+// matching `--color-<token>: hsl(var(--<token>))` alias inside `@theme` so
+// Tailwind v4 emits the corresponding utility (`.text-foreground`, etc.).
+const SHADCN_COLOR_TOKENS = [
+  "background",
+  "foreground",
+  "card",
+  "card-foreground",
+  "popover",
+  "popover-foreground",
+  "primary",
+  "primary-foreground",
+  "secondary",
+  "secondary-foreground",
+  "muted",
+  "muted-foreground",
+  "accent",
+  "accent-foreground",
+  "destructive",
+  "destructive-foreground",
+  "border",
+  "input",
+  "ring",
+];
+
+export function repairShadcnTheme(css: string): string {
+  // Only fire on Tailwind v4 stylesheets that declare raw shadcn tokens.
+  // The :root declaration uses raw HSL triplets like `--foreground: 0 0% 9%;`.
+  if (!/@import\s+["']tailwindcss["']/.test(css)) return css;
+  if (!/:root\s*\{[\s\S]*?--foreground\s*:\s*\d/.test(css)) return css;
+
+  // Find the @theme block (if any). Tailwind v4 requires aliases live there.
+  const themeMatch = css.match(/@theme\s*\{([\s\S]*?)\}/);
+  if (!themeMatch) {
+    // No @theme block at all — inject one after @import "tailwindcss";
+    const aliases = SHADCN_COLOR_TOKENS
+      .map((t) => `  --color-${t}: hsl(var(--${t}));`)
+      .join("\n");
+    return css.replace(
+      /(@import\s+["']tailwindcss["'];?\s*)/,
+      `$1\n@theme {\n${aliases}\n}\n\n`,
+    );
+  }
+
+  // @theme exists — check which color aliases are missing and inject them.
+  const themeBody = themeMatch[1] ?? "";
+  const missing = SHADCN_COLOR_TOKENS.filter(
+    (t) => !new RegExp(`--color-${t}\\s*:`).test(themeBody),
+  );
+  if (missing.length === 0) return css;
+
+  const injected = missing
+    .map((t) => `  --color-${t}: hsl(var(--${t}));`)
+    .join("\n");
+  return css.replace(
+    /@theme\s*\{([\s\S]*?)\}/,
+    `@theme {$1${themeBody.endsWith("\n") ? "" : "\n"}${injected}\n}`,
+  );
+}
+
 export async function writeProjectFile(
   projectId: string,
   filePath: string,
@@ -99,6 +159,15 @@ export async function writeProjectFile(
 
   if (Buffer.byteLength(content, "utf-8") > MAX_FILE_SIZE) {
     throw new FileAccessError("Content exceeds max file size");
+  }
+
+  // AI scaffolds with Tailwind v4 + shadcn-style raw-HSL CSS variables need
+  // `--color-*: hsl(var(--*))` aliases inside `@theme` for utility classes
+  // like `text-foreground` / `bg-background` to exist. AI agents routinely
+  // rewrite index.css and drop those aliases, which silently invisibles every
+  // shadcn utility. Auto-repair on write so users never see a half-broken theme.
+  if (/(^|\/)(index|globals|app|tailwind)\.css$/i.test(filePath)) {
+    content = repairShadcnTheme(content);
   }
 
   // Always write to the local filesystem so the Vite dev server sees changes immediately
