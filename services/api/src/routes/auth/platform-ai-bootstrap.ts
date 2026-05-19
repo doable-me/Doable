@@ -163,14 +163,25 @@ export async function applyPlatformAiDefault(
     localProviderId = await cloneProvider(defaults.provider_id, workspaceId);
   }
 
-  // Set as workspace default
+  // Set as workspace default AND mirror to suggestions. Without the suggestion
+  // mirror, the INSERT path in upsertSettings falls through to its `copilot`
+  // default for suggestion_source and leaves suggestion_provider_model NULL,
+  // so auto-suggestions route to the GitHub Copilot path even though the
+  // admin only provisioned a custom provider. The wizard's "use as default
+  // for every plan" checkbox already mirrors these — bootstrap should match.
+  const source = defaults.source as "copilot" | "custom";
   await aiSettings.upsertSettings({
     workspaceId,
-    defaultSource: defaults.source as "copilot" | "custom",
+    defaultSource: source,
     defaultCopilotAccountId: localCopilotId,
     defaultCopilotModel: defaults.copilot_model,
     defaultProviderId: localProviderId,
     defaultProviderModel: defaults.provider_model,
+    suggestionSource: source,
+    suggestionCopilotAccountId: localCopilotId,
+    suggestionCopilotModel: defaults.copilot_model,
+    suggestionProviderId: localProviderId,
+    suggestionProviderModel: defaults.provider_model,
     updatedBy: ownerId,
   });
 
