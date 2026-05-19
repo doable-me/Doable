@@ -136,14 +136,18 @@ const nextConfig: NextConfig = {
       "base-uri 'self'",
     ].join("; ");
 
-    // Strict CSP for everything else — drops `unsafe-eval` IN PRODUCTION.
-    // In development the React runtime uses `eval()` for source-map debug
-    // features and Fast Refresh; without `'unsafe-eval'` React refuses to
-    // hydrate (form.onSubmit ends up undefined and the page is dead). Detect
-    // dev mode and emit the looser policy. Production builds (NODE_ENV =
-    // production) keep the stricter policy.
-    const isDev = process.env.NODE_ENV !== "production";
-    const scriptSrcExtra = isDev ? "'unsafe-eval' " : "";
+    // Strict CSP for everything else. React 19 + Next.js 16 emit code that
+    // relies on `eval()`/`new Function()` for hydration in BOTH development
+    // AND production builds (dev uses it for Fast Refresh + source maps; prod
+    // uses it inside the RSC payload bootstrap and the React server-actions
+    // runtime). Dropping `'unsafe-eval'` in prod leaves `form.onSubmit`
+    // undefined, mount effects unfired, and the page dead at the SSR loading
+    // fallback — symptoms observed on /setup (spinner forever, no /auth/me
+    // request) and /signup (Create-account button posts the form natively to
+    // `/signup?` with no React handler running). Until we move to a
+    // nonce-based CSP we must keep `'unsafe-eval'` for every non-editor
+    // route. `'unsafe-inline'` stays for the same hydration reasons.
+    const scriptSrcExtra = "'unsafe-eval' ";
     // We keep `'unsafe-inline'` on script-src and style-src because Next.js
     // App Router emits inline bootstrap scripts (self.__next_r, self.__next_f
     // RSC payload, theme bootstrap) that React requires for hydration.
