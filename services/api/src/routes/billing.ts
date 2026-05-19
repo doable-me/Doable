@@ -40,22 +40,6 @@ async function isWorkspaceMember(workspaceId: string, userId: string): Promise<b
   return !!row;
 }
 
-/**
- * Verify the caller is a member of the target workspace. Used by every
- * billing route that accepts a `workspaceId` parameter — otherwise any
- * authenticated user could probe/manipulate billing state for any workspace
- * by guessing/enumerating workspaceId. See BUG-BILLING-002 and the wider
- * 2026-05-15 audit that found 6+ other endpoints missing this check.
- */
-async function isWorkspaceMember(workspaceId: string, userId: string): Promise<boolean> {
-  const [row] = await sql<Array<{ id: string }>>`
-    SELECT id FROM workspace_members
-    WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
-    LIMIT 1
-  `;
-  return !!row;
-}
-
 // ─── Public: Plans ─────────────────────────────────────────
 billingRoutes.get("/plans", (c) => {
   return c.json({
