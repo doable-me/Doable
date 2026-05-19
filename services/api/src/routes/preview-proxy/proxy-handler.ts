@@ -19,7 +19,6 @@ import {
   getStorageNamespaceSnippet,
   ERROR_CAPTURE_SNIPPET,
   CONNECTOR_BRIDGE_SNIPPET,
-  THEME_BASELINE_CSS,
 } from "./injected-scripts.js";
 
 const publicApiUrl =
@@ -451,7 +450,7 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       // Connector-bridge SPA helper goes BEFORE error capture so the helper
       // is available when user code first runs. Token arrives via
       // postMessage from the editor host (PRD 10).
-      const headBundle = `${CONNECTOR_BRIDGE_SNIPPET}${ERROR_CAPTURE_SNIPPET}${THEME_BASELINE_CSS}${headSnippet}`;
+      const headBundle = `${CONNECTOR_BRIDGE_SNIPPET}${ERROR_CAPTURE_SNIPPET}${headSnippet}`;
 
       const injectionStream = makeInjectionStream([
         // 1. Storage namespacing — at the START of <head> (right after the

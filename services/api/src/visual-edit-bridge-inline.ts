@@ -65,15 +65,17 @@ export const VISUAL_EDIT_BRIDGE_INLINE = `
     }
   }
 
-  function applyDoableTheme(theme) {
-    var t = theme === "dark" ? "dark" : "light";
-    __doableTheme = t;
+  function applyDoableTheme(/* theme */) {
+    // The preview must render identical to the standalone-window case: no
+    // .dark class, no data-theme, no inline color-scheme. The editor's
+    // chrome theme is separate from the user's app preview, and forcing it
+    // breaks AI-scaffolded apps whose CSS partially handles .dark (text
+    // flipped to white but background unchanged → invisible text).
+    __doableTheme = "light";
     var root = document.documentElement;
-    if (t === "dark") root.classList.add("dark");
-    else root.classList.remove("dark");
-    root.setAttribute("data-theme", t);
-    try { root.style.colorScheme = t; } catch (e) {}
-    ensureDarkShim();
+    root.classList.remove("dark");
+    root.removeAttribute("data-theme");
+    try { root.style.removeProperty("color-scheme"); } catch (e) {}
     fireMatchMediaChanges();
   }
 

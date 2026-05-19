@@ -3,39 +3,6 @@
  * Extracted to keep the proxy handler file under 400 lines.
  */
 
-/**
- * Defensive theme baseline. Injected at END of <head> so user stylesheets
- * with the same selectors win, but selectors the user didn't author cascade
- * from this rescue.
- *
- * Guards against AI-scaffolded apps that emit half-dark CSS: a `.dark`
- * `--foreground: white` rule but no matching `--background` flip. When
- * `<html class="dark">` is applied (by the visual-edit bridge or by the AI
- * app itself), foreground becomes white while the page background stays
- * white → invisible text. This baseline supplies the missing variable.
- */
-export const THEME_BASELINE_CSS = `<style id="__doable-theme-baseline">
-html { color-scheme: light; }
-html.dark { color-scheme: dark; }
-
-/* Half-dark rescue: if user's .dark block only flipped --foreground,
-   provide a readable --background fallback (same shadcn hsl convention). */
-html.dark {
-  --background: var(--background, 222 47% 11%);
-  --foreground: var(--foreground, 0 0% 98%);
-}
-
-html.dark body:not([style*="background"]) {
-  background-color: hsl(var(--background, 222 47% 11%));
-  color: hsl(var(--foreground, 0 0% 98%));
-}
-
-html:not(.dark) body:not([style*="background"]) {
-  background-color: hsl(var(--background, 0 0% 100%));
-  color: hsl(var(--foreground, 0 0% 9%));
-}
-</style>`;
-
 /** Retry page shown when the dev server is not ready yet */
 export const RETRY_HTML = `<!doctype html>
 <html lang="en">
