@@ -47,24 +47,34 @@ export async function signRefreshToken(userId: string): Promise<string> {
 
 /**
  * Verify and decode an access token.
+ *
+ * Pins the accepted JWS algorithm to HS256. Without this, `jose.jwtVerify`
+ * accepts any symmetric HMAC algorithm (HS384/HS512) when handed a symmetric
+ * key — letting an attacker who knows JWT_SECRET present a token under an
+ * algorithm we never signed with. We always sign with HS256 (see
+ * `signAccessToken`), so tightening verify to HS256-only closes the
+ * algorithm-confusion vector surfaced by R14 bulk TC sweep (TC-SEC-JWT-005).
  */
 export async function verifyAccessToken(
   token: string
 ): Promise<AccessTokenPayload> {
   const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
     issuer: JWT_ISSUER,
+    algorithms: ["HS256"],
   });
   return payload as unknown as AccessTokenPayload;
 }
 
 /**
- * Verify and decode a refresh token.
+ * Verify and decode a refresh token. See `verifyAccessToken` for the
+ * algorithm pin rationale.
  */
 export async function verifyRefreshToken(
   token: string
 ): Promise<RefreshTokenPayload> {
   const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
     issuer: JWT_ISSUER,
+    algorithms: ["HS256"],
   });
   return payload as unknown as RefreshTokenPayload;
 }
@@ -103,6 +113,7 @@ export async function verifyMfaChallengeToken(
 ): Promise<MfaChallengeTokenPayload> {
   const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
     issuer: JWT_ISSUER,
+    algorithms: ["HS256"],
   });
   const p = payload as unknown as MfaChallengeTokenPayload;
   if (p.purpose !== "mfa_challenge") {
