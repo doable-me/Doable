@@ -198,16 +198,22 @@ async function doStartDevServer(
   }
 
   // If this project was previously sandboxed, @doable/sdk may be owned by the
-  // sandbox uid. Chown it back to 0 so the API-user write in linkDoableSdk
-  // succeeds. The final chown -R below will re-own it to sandboxUid.
+  // sandbox uid. Reclaim it to the API uid so the API-user write in
+  // linkDoableSdk succeeds. The final chown -R below will re-own to sandboxUid.
+  //
+  // R14 BUG-SDK-EACCES: previously hardcoded to "0:0" assuming API ran as
+  // root. With the v3 hardening the API runs as the doable user (uid 5000),
+  // so root-ownership makes the dir unwritable for it. Use the actual euid.
   if (sandboxUid !== null && process.platform === "linux") {
     const sdkDir = `${projectPath}/node_modules/@doable/sdk`;
+    const apiUid = process.geteuid?.() ?? 0;
+    const apiGid = process.getegid?.() ?? apiUid;
     await new Promise<void>((resolve) => {
       const useSudo = isSandboxWrapperAvailable();
       const cmd = useSudo ? "sudo" : "chown";
       const args = useSudo
-        ? ["-n", "chown", "-R", "0:0", sdkDir]
-        : ["-R", "0:0", sdkDir];
+        ? ["-n", "chown", "-R", `${apiUid}:${apiGid}`, sdkDir]
+        : ["-R", `${apiUid}:${apiGid}`, sdkDir];
       const ch = nodeSpawn(cmd, args, { stdio: "ignore" });
       ch.on("exit", () => resolve());
       ch.on("error", () => resolve());
