@@ -62,11 +62,39 @@ async function getConfigGuard(projectId: string): Promise<ConfigGuard> {
 }
 
 /**
+ * Per-project framework_id cache. The AI's bash tool exposes the project
+ * root as `/app` (the sandbox bind-mount). LLMs sometimes leak that path
+ * into create_file/edit_file calls (e.g. `app/src/Calculator.tsx`), which
+ * lands at `<project>/app/src/Calculator.tsx` and is silently ignored by
+ * the Vite dev server (which serves `<project>/src/`). For vite-react
+ * projects we strip a leading `app/` here. Next.js projects legitimately
+ * use `app/page.tsx` so we don't strip there.
+ */
+const frameworkCache = new Map<string, string>();
+
+async function getProjectFramework(projectId: string): Promise<string> {
+  const cached = frameworkCache.get(projectId);
+  if (cached) return cached;
+  let frameworkId = "vite-react";
+  try {
+    const [row] = await sql<{ framework_id: string | null }[]>`
+      SELECT framework_id FROM projects WHERE id = ${projectId}
+    `;
+    if (row?.framework_id) frameworkId = row.framework_id;
+  } catch {
+    /* DB unreachable — vite-react fallback is safe */
+  }
+  frameworkCache.set(projectId, frameworkId);
+  return frameworkId;
+}
+
+/**
  * Normalize a file path — if the AI passes an absolute path that starts with
  * the project directory, strip the prefix to make it relative. Also strips
- * leading './' for consistency.
+ * leading './' for consistency. For vite-react projects also strips a leading
+ * `app/` segment (see frameworkCache doc above).
  */
-function normalizePath(projectId: string, filePath: string): string {
+function normalizePath(projectId: string, filePath: string, frameworkId?: string): string {
   let p = filePath;
   const projectRoot = getProjectPath(projectId);
   // Strip absolute project prefix (handles both / and \ separators)
@@ -79,6 +107,13 @@ function normalizePath(projectId: string, filePath: string): string {
   }
   // Strip leading ./ or /
   p = p.replace(/^\.\//, "").replace(/^\//, "");
+  // Strip leading `app/` for vite-react projects (sandbox bind-mount leak).
+  // Only strips when followed by another segment so a top-level `app/` file
+  // that's legitimately meant to be at the root stays as-is. Conservative:
+  // we only do this when we know the framework is vite-react.
+  if (frameworkId === "vite-react" && /^app\/[^/]/.test(p)) {
+    p = p.slice(4);
+  }
   return p || filePath;
 }
 
@@ -110,13 +145,14 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
       parameters: {
         type: "object" as const,
         properties: {
-          path: { type: "string" as const, description: "Relative path from the project root (e.g. 'src/components/Button.tsx'). Do NOT use absolute paths." },
+          path: { type: "string" as const, description: "Relative path from the project root (e.g. 'src/components/Button.tsx'). Do NOT use absolute paths and do NOT prefix with 'app/' or '/app/' — `/app` is the sandbox bind-mount path that bash sees, NOT a directory inside the project. For Vite/React projects, components go directly under 'src/' at the project root." },
           content: { type: "string" as const, description: "The full file content to write" },
         },
         required: ["path", "content"] as const,
       },
       handler: async (args: { path: string; content: string }) => {
-        const filePath = normalizePath(projectId, args.path);
+        const frameworkId = await getProjectFramework(projectId);
+        const filePath = normalizePath(projectId, args.path, frameworkId);
         const { content } = args;
         const guard = await getConfigGuard(projectId);
         if (guard.isLocked(filePath)) {
@@ -142,13 +178,14 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
       parameters: {
         type: "object" as const,
         properties: {
-          path: { type: "string" as const, description: "Relative path from the project root. Do NOT use absolute paths." },
+          path: { type: "string" as const, description: "Relative path from the project root. Do NOT use absolute paths and do NOT prefix with 'app/' — `/app` is the sandbox bind-mount path that bash sees, NOT a directory inside the project." },
           content: { type: "string" as const, description: "The complete new file content" },
         },
         required: ["path", "content"] as const,
       },
       handler: async (args: { path: string; content: string }) => {
-        const filePath = normalizePath(projectId, args.path);
+        const frameworkId = await getProjectFramework(projectId);
+        const filePath = normalizePath(projectId, args.path, frameworkId);
         const { content } = args;
         const guard = await getConfigGuard(projectId);
         if (guard.isLocked(filePath)) {
@@ -166,12 +203,13 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
       parameters: {
         type: "object" as const,
         properties: {
-          path: { type: "string" as const, description: "Relative path from the project root. Do NOT use absolute paths." },
+          path: { type: "string" as const, description: "Relative path from the project root. Do NOT use absolute paths and do NOT prefix with 'app/' — `/app` is the sandbox bind-mount path that bash sees, NOT a directory inside the project." },
         },
         required: ["path"] as const,
       },
       handler: async (args: { path: string }) => {
-        const filePath = normalizePath(projectId, args.path);
+        const frameworkId = await getProjectFramework(projectId);
+        const filePath = normalizePath(projectId, args.path, frameworkId);
         emitToolEvent(projectId, "read_file", "start", { path: filePath });
         try {
           const content = await readFile(projectId, filePath);
