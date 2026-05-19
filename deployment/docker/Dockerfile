@@ -82,9 +82,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatk1.0-0 libatk-bridge2.0-0 libcups2 libatspi2.0-0 \
     libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
     libgbm1 libcairo2 libpango-1.0-0 \
-    libasound2t64 \
     libxshmfence1 libnspr4 libnss3 libdrm2 libxkbcommon0 \
     fonts-liberation \
+  && (apt-get install -y --no-install-recommends libasound2t64 \
+      || apt-get install -y --no-install-recommends libasound2) \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build --chown=node:node /app .
