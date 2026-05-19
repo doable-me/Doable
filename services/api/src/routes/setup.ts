@@ -285,9 +285,10 @@ setupRoutes.post("/ai-provider", async (c) => {
         }
       }
     } catch (err) {
-      // Non-fatal — platform_config still has the values; admin can rebind in /admin
-      // later. Logged for ops follow-up.
-      console.warn("[setup] Failed to bind BYOK provider into workspace_ai_settings:", err);
+      // Hard failure — plan defaults missing will break chat for all non-admin users.
+      console.error("[setup] Failed to insert platform_ai_defaults:", err);
+      const detail = err instanceof Error ? err.message : String(err);
+      return c.json({ ok: false, error: "PLAN_DEFAULTS_INSERT_FAILED", detail }, 500);
     }
   }
 
