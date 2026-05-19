@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Doable — Self-hosting setup script
+# Doable — Self-hosting setup script (macOS)
 # ==============================================================================
 # Sets up everything needed to run Doable with Docker Compose + nginx + SSL.
 # nginx ALWAYS sits in front of services. Services NEVER bind to 0.0.0.0.
 #
+# Requirements: macOS 12+ with Homebrew (https://brew.sh) and Docker Desktop.
+#
 # Usage:
 #   # Public domain (Let's Encrypt SSL):
-#   DOMAIN=app.example.com ./deployment/docker/setup.sh
+#   DOMAIN=app.example.com ./deployment/docker/setup-mac.sh
 #
 #   # Private network / LAN (self-signed SSL for an IP address):
-#   HOST=192.168.1.50 ./deployment/docker/setup.sh
+#   HOST=192.168.1.50 ./deployment/docker/setup-mac.sh
 #
 #   # Localhost only (self-signed SSL on 127.0.0.1):
-#   ./deployment/docker/setup.sh
+#   ./deployment/docker/setup-mac.sh
 #
 #   # Skip Let's Encrypt (e.g. behind Cloudflare proxy):
-#   DOMAIN=app.example.com ./deployment/docker/setup.sh --skip-ssl
+#   DOMAIN=app.example.com ./deployment/docker/setup-mac.sh --skip-ssl
 # ==============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+# SCRIPT_DIR = .../deployment/docker
+# PROJECT_DIR = repo root (two levels up from deployment/docker)
+PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ENV_FILE="$SCRIPT_DIR/.env"
 # Pre-built (pulls from ghcr.io) vs source-build (5-10min). Default = source.
 # Set DOABLE_PREBUILT=true (or pass --prebuilt) to use the published images
@@ -31,7 +35,19 @@ if [ "${DOABLE_PREBUILT:-false}" = "true" ]; then
 else
   COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 fi
-SELF_SIGNED_DIR="/etc/ssl/doable"
+
+# macOS: Homebrew nginx paths differ by chip architecture
+# Apple Silicon (M1/M2/M3): /opt/homebrew
+# Intel:                     /usr/local
+if [ -d "/opt/homebrew" ]; then
+  BREW_PREFIX="/opt/homebrew"
+else
+  BREW_PREFIX="/usr/local"
+fi
+NGINX_SITES_AVAILABLE="${BREW_PREFIX}/etc/nginx/sites-available"
+NGINX_SITES_ENABLED="${BREW_PREFIX}/etc/nginx/sites-enabled"
+NGINX_CONF_DIR="${BREW_PREFIX}/etc/nginx"
+SELF_SIGNED_DIR="${HOME}/.doable/ssl"
 
 # Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -71,46 +87,40 @@ done
 # ─── Check prerequisites ─────────────────────────────────────────────────────
 info "Checking prerequisites..."
 
-# Auto-install docker + compose-plugin on debian/ubuntu when missing.
-# Keeps the new-user one-liner truly one-line on a fresh OS — no detour to
-# docs.docker.com/install before being able to run setup.sh.
-if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null; then
-  if [ "${DOABLE_SKIP_DOCKER_INSTALL:-0}" = "1" ]; then
-    error "Docker (or compose plugin) is not installed and DOABLE_SKIP_DOCKER_INSTALL=1 — refusing auto-install."
-    exit 1
-  fi
-  if [ "$(id -u)" -ne 0 ]; then
-    error "Docker is not installed and this script is not running as root — re-run with sudo or install Docker first (https://docs.docker.com/engine/install/)."
-    exit 1
-  fi
-  if ! command -v apt-get &>/dev/null; then
-    error "Docker is not installed and this isn't a debian/ubuntu box (no apt-get). Install Docker manually: https://docs.docker.com/engine/install/"
-    exit 1
-  fi
-  info "Docker missing — installing docker.io + compose v2 via apt (Ubuntu/Debian)..."
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  # Ubuntu ships compose v2 as `docker-compose-v2`; Docker Inc.'s official
-  # repo (which ubuntu may have layered in) calls the same plugin
-  # `docker-compose-plugin`. Try both names — first match wins.
-  apt-get install -y -qq docker.io
-  if ! apt-get install -y -qq docker-compose-v2 2>/dev/null; then
-    apt-get install -y -qq docker-compose-plugin 2>/dev/null || {
-      error "Could not install docker compose v2 (tried docker-compose-v2 + docker-compose-plugin). Install manually: https://docs.docker.com/compose/install/"
-      exit 1
-    }
-  fi
-  systemctl enable --now docker
-  ok "Docker $(docker --version 2>/dev/null || echo '?') + compose $(docker compose version 2>/dev/null | head -1 || echo '?') installed"
+# macOS requires Homebrew for package management
+if ! command -v brew &>/dev/null; then
+  error "Homebrew is not installed. Install it first: https://brew.sh"
+  error "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+  exit 1
+fi
+ok "Homebrew found (${BREW_PREFIX})"
+
+# Docker Desktop must be running on macOS (no docker engine install via brew for prod)
+if ! command -v docker &>/dev/null; then
+  error "Docker is not installed. Install Docker Desktop for Mac: https://docs.docker.com/desktop/install/mac-install/"
+  exit 1
 fi
 
-ok "Docker and Docker Compose found"
+# Ensure Docker daemon is actually running (Docker Desktop may be installed but not started)
+if ! docker info &>/dev/null; then
+  error "Docker daemon is not running. Please start Docker Desktop and try again."
+  exit 1
+fi
+
+# Docker Compose v2 (plugin) check
+if ! docker compose version &>/dev/null; then
+  error "Docker Compose v2 plugin not found. Make sure Docker Desktop is up to date."
+  exit 1
+fi
+
+ok "Docker $(docker --version 2>/dev/null || echo '?') found"
+ok "Docker Compose $(docker compose version 2>/dev/null | head -1 || echo '?') found"
 
 # ─── Determine mode ───────────────────────────────────────────────────────────
 # Three modes:
 #   1. DOMAIN= set        → public domain, Let's Encrypt SSL
-#   2. HOST= set           → private network IP/hostname, self-signed SSL
-#   3. Neither             → localhost, self-signed SSL
+#   2. HOST= set          → private network IP/hostname, self-signed SSL
+#   3. Neither            → localhost, self-signed SSL
 #
 # In ALL modes, nginx sits in front. Services ALWAYS bind to 127.0.0.1.
 
@@ -148,7 +158,7 @@ else
   fi
 fi
 
-# ─── URL variables (used for .env and final output) ─────────────────────────
+# ─── URL variables (used for .env and final output) ──────────────────────────
 API_URL="https://${LISTEN_HOST}/api"
 WS_URL="wss://${LISTEN_HOST}/ws"
 APP_URL="https://${LISTEN_HOST}"
@@ -157,35 +167,22 @@ CORS="https://${LISTEN_HOST}"
 # ─── Generate .env ────────────────────────────────────────────────────────────
 if [ -f "$ENV_FILE" ]; then
   warn ".env already exists at $ENV_FILE"
-  # Non-TTY (piped SSH) or DOABLE_KEEP_ENV=1 → keep existing without prompting
-  if [ ! -t 0 ] || [ "${DOABLE_KEEP_ENV:-0}" = "1" ]; then
-    info "Keeping existing .env (non-interactive or DOABLE_KEEP_ENV=1)"
+  read -rp "Overwrite? [y/N] " overwrite
+  if [[ ! "$overwrite" =~ ^[Yy] ]]; then
+    info "Keeping existing .env"
   else
-    read -rp "Overwrite? [y/N] " overwrite
-    if [[ ! "$overwrite" =~ ^[Yy] ]]; then
-      info "Keeping existing .env"
-    else
-      rm "$ENV_FILE"
-    fi
+    rm "$ENV_FILE"
   fi
 fi
 
 if [ ! -f "$ENV_FILE" ]; then
   # Fresh .env means fresh secrets. If a postgres_data volume already exists
-  # from a previous install, it has the OLD password — Postgres ignores
-  # POSTGRES_PASSWORD on subsequent boots (only honored on first boot of an
-  # empty data dir), so migrate fails with "password authentication failed
-  # for user doable" and the api/ws/web containers never come up. The fresh
-  # JWT_SECRET / ENCRYPTION_KEY / DOABLE_KEK would also invalidate every
-  # encrypted column in the old DB. Bundle the volume-wipe with the secret
-  # rotation so they always cohere.
+  # from a previous install, it has the OLD password — wipe volumes to avoid
+  # password mismatch on next boot.
   if docker volume ls -q 2>/dev/null | grep -qE '_postgres_data$'; then
     warn "Pre-existing postgres_data volume detected — its password won't match the fresh .env we're about to generate."
     warn "Wiping postgres + api + ws + thumbnails volumes to avoid an authentication mismatch."
     docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || true
-    # Belt-and-suspenders: down -v only removes volumes attached to THIS
-    # compose project. Sweep any leftover *_postgres_data volume from a
-    # previous compose-project name (e.g. an earlier `docker/` reorg cycle).
     for v in $(docker volume ls -q | grep -E '_(postgres_data|api_projects|api_thumbnails|ws_projects)$' || true); do
       docker volume rm -f "$v" 2>/dev/null || true
     done
@@ -199,23 +196,13 @@ if [ ! -f "$ENV_FILE" ]; then
   INTERNAL_SECRET=$(openssl rand -hex 32)
   PG_PASSWORD=$(openssl rand -hex 16)
   INSTALL_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
-  # DOABLE_KEK is the envelope-encryption key used by the API for wizard-saved
-  # secrets (AI provider keys, OAuth client secrets, Stripe). docker-compose.yml
-  # marks it required (${DOABLE_KEK:?...}) so the API container refuses to
-  # start without it — generate it here, never roll it (rolling = data loss).
   DOABLE_KEK=$(openssl rand -base64 32)
-  # Bootstrap token TTL: 24h from install. After this, the empty-users-table
-  # gate still works for true greenfield installs, but the token itself stops
-  # being accepted on signup.
-  if date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ >/dev/null 2>&1; then
-    INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT=$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)
-  else
-    # macOS / BSD date fallback
-    INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT=$(date -u -v+24H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
-  fi
+
+  # macOS uses BSD date — -v+24H for relative date
+  INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT=$(date -u -v+24H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
 
   cat > "$ENV_FILE" <<EOF
-# Generated by setup.sh on $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Generated by setup-mac.sh on $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # Host: ${LISTEN_HOST}
 
 # ─── Secrets ───────────────────────────────────────
@@ -225,10 +212,6 @@ INTERNAL_SECRET=${INTERNAL_SECRET}
 DOABLE_KEK=${DOABLE_KEK}
 
 # ─── First-run bootstrap (single-use; auto-closes after first signup) ───
-# When the users table is empty AND the first signup presents this token
-# (or simply signs up — empty table is enough), they become platform owner
-# automatically. After that signup completes, platform_config.bootstrap_completed_at
-# is set and this path is permanently closed (server-side).
 INSTALL_BOOTSTRAP_TOKEN=${INSTALL_BOOTSTRAP_TOKEN}
 INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT=${INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT}
 
@@ -247,25 +230,6 @@ CORS_ORIGINS=${CORS}
 REDIS_URL=
 
 # ─── AI providers (set ANY ONE for first-boot pre-config) ─────────
-# Doable supports 50+ providers via the setup wizard at /setup (see
-# packages/shared/src/ai/provider-catalog.ts for the full list, including
-# Azure/Bedrock/Vertex/Ollama/LM Studio/etc.). The keys below are the ones
-# whose env vars get seeded into the wizard automatically by
-# services/api/src/lib/seedAiProviderFromEnv.ts. Honours pre-export from
-# the host shell — if you exported any of these before running setup.sh,
-# they're already filled in here.
-#
-# Precedence on first boot: SOURCES order in seedAiProviderFromEnv.ts —
-# Anthropic > OpenAI > Gemini > OpenRouter > Together > Fireworks
-# > OpenCode Zen > Groq > Cerebras > DeepSeek > Mistral > Cohere > xAI
-# > Perplexity > DeepInfra > NVIDIA > MiniMax > Moonshot > Zhipu.
-# First non-empty wins.
-#
-# These are ALL bring-your-own-key (BYOK). Doable does NOT bundle, ship,
-# or proxy any third-party API keys — the operator obtains the key from
-# the provider directly. Local providers (Ollama, LM Studio, vLLM,
-# llama.cpp, Jan, LocalAI, etc.) need no API key and are configured via
-# the wizard with their own base URL.
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
 GEMINI_API_KEY=${GEMINI_API_KEY:-}
@@ -297,89 +261,72 @@ STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 EOF
 
-  # deployment/docker/.env holds DB password, JWT secret, encryption key, KEK and any
-  # operator-supplied AI / OAuth / Stripe keys — restrict to owner-only read.
-  # env-perms-check.ts at services/api/src/lib/env-perms-check.ts warns on every
-  # boot if this is group/world-readable; setting 600 here silences the warning
-  # AND protects against unprivileged accounts reading secrets off disk.
   chmod 600 "$ENV_FILE"
   ok "Created deployment/docker/.env with generated secrets (mode 600)"
 fi
 
 # ─── Idempotent back-fill: existing .env from a pre-DOABLE_KEK install ────────
-# If the operator chose to keep an existing .env above, it may pre-date the
-# DOABLE_KEK requirement. Back-fill the line without clobbering anything else,
-# so re-running setup.sh on an older install doesn't break docker compose up.
 if [ -f "$ENV_FILE" ] && ! grep -qE '^DOABLE_KEK=.+' "$ENV_FILE"; then
   NEW_KEK=$(openssl rand -base64 32)
   if grep -qE '^DOABLE_KEK=' "$ENV_FILE"; then
-    # Empty assignment present — replace in place
+    # macOS sed requires the backup extension with -i
     sed -i.bak -E "s|^DOABLE_KEK=.*|DOABLE_KEK=${NEW_KEK}|" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
   else
-    printf '\n# Added by setup.sh back-fill (%s)\nDOABLE_KEK=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$NEW_KEK" >> "$ENV_FILE"
+    printf '\n# Added by setup-mac.sh back-fill (%s)\nDOABLE_KEK=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$NEW_KEK" >> "$ENV_FILE"
   fi
   ok "Back-filled DOABLE_KEK in existing $ENV_FILE"
 fi
 
-# ─── Set up nginx + SSL ──────────────────────────────────────────────────────
-# nginx is ALWAYS set up. Services never face the network directly.
-
+# ─── Install nginx via Homebrew ───────────────────────────────────────────────
 info "Setting up nginx reverse proxy for ${LISTEN_HOST}..."
 
-# Free :80 and :443 before installing nginx. If the box was previously running
-# the bare-metal NO_TUNNEL path, caddy is already bound to both ports and nginx
-# will fail to start with EADDRINUSE. Stop+disable any other web server we know
-# about — purely a no-op on a fresh box.
-for svc in caddy apache2 lighttpd; do
-  if systemctl is-active --quiet "$svc"; then
-    info "Stopping conflicting web server: $svc (was bound to :80/:443)"
-    systemctl stop "$svc" 2>/dev/null || true
-    systemctl disable "$svc" 2>/dev/null || true
-  fi
-done
-
-# Same for doable.service — its tmux session may hold node processes that
-# bind 127.0.0.1:3000/4000/4001 (web/api/ws). Docker compose will rebind the
-# same ports inside the container, so we stop the bare-metal copy first.
-if systemctl is-active --quiet doable; then
-  info "Stopping bare-metal doable.service (was using ports 3000/4000/4001)"
-  systemctl stop doable 2>/dev/null || true
-  systemctl disable doable 2>/dev/null || true
-fi
-
-# Native postgres holds 127.0.0.1:5432 on any box that ran the bare-metal
-# server-setup.sh path. Docker compose maps 127.0.0.1:5432 -> postgres:5432
-# inside the container, so the host bind fails with EADDRINUSE if native
-# postgres is up. The docker postgres container will be the new source of
-# truth; the native one is no longer needed.
-if systemctl is-active --quiet postgresql; then
-  info "Stopping native postgresql (was holding 127.0.0.1:5432 — docker postgres takes over)"
-  systemctl stop postgresql 2>/dev/null || true
-  systemctl disable postgresql 2>/dev/null || true
-fi
-
-# Install nginx if not present
 if ! command -v nginx &>/dev/null; then
-  info "Installing nginx..."
-  apt-get update -qq
-  apt-get install -y -qq nginx
+  info "Installing nginx via Homebrew..."
+  brew install nginx
   ok "Installed nginx"
 fi
 
-# ─── SSL certificates ────────────────────────────────────────────────────────
+# Create sites-available and sites-enabled directories (Homebrew nginx doesn't
+# create them by default — we mirror the Linux layout for consistency)
+mkdir -p "$NGINX_SITES_AVAILABLE" "$NGINX_SITES_ENABLED"
+
+# Ensure the main nginx.conf includes sites-enabled (Homebrew nginx.conf does
+# not include this by default — append an include directive if missing)
+NGINX_MAIN_CONF="${NGINX_CONF_DIR}/nginx.conf"
+if ! grep -q "sites-enabled" "$NGINX_MAIN_CONF" 2>/dev/null; then
+  # Append the include line just before the closing brace of the http block.
+  # We use a Python one-liner (always present on macOS) so we can reliably
+  # target only the LAST closing brace in the file — which belongs to the
+  # http block in the default Homebrew nginx.conf layout — without
+  # accidentally matching inner block braces via sed.
+  python3 - "$NGINX_MAIN_CONF" "$NGINX_SITES_ENABLED" <<'PYEOF'
+import sys, pathlib
+path = pathlib.Path(sys.argv[1])
+sites = sys.argv[2]
+content = path.read_text()
+include_line = f'    include {sites}/*.conf;\n'
+if include_line.strip() not in content:
+    idx = content.rfind('}')
+    content = content[:idx] + include_line + content[idx:]
+    path.write_text(content)
+PYEOF
+  ok "Patched nginx.conf to include sites-enabled"
+fi
+
+# ─── SSL certificates ─────────────────────────────────────────────────────────
 SSL_CERT=""
 SSL_KEY=""
 
 if [ "$MODE" = "domain" ] && [ "$SKIP_SSL" = false ]; then
-  # Let's Encrypt for public domains
+  # Let's Encrypt for public domains via certbot
   if ! command -v certbot &>/dev/null; then
-    info "Installing certbot..."
-    apt-get install -y -qq certbot python3-certbot-nginx
+    info "Installing certbot via Homebrew..."
+    brew install certbot
     ok "Installed certbot"
   fi
 
-  # Temporary HTTP-only config for cert issuance
-  NGINX_CONF="/etc/nginx/sites-available/${LISTEN_HOST}"
+  # Temporary HTTP-only nginx config for ACME challenge
+  NGINX_CONF="${NGINX_SITES_AVAILABLE}/${LISTEN_HOST}"
   cat > "$NGINX_CONF" <<HTTPEOF
 server {
     listen 80;
@@ -388,9 +335,10 @@ server {
     location / { return 301 https://\$host\$request_uri; }
 }
 HTTPEOF
-  ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${LISTEN_HOST}"
-  rm -f /etc/nginx/sites-enabled/default
-  nginx -t && systemctl enable --now nginx && systemctl reload-or-restart nginx
+  ln -sf "$NGINX_CONF" "${NGINX_SITES_ENABLED}/${LISTEN_HOST}.conf"
+  # Use the full path so nginx is found even if PATH hasn't been refreshed
+  # after a fresh brew install in this same shell session.
+  "${BREW_PREFIX}/bin/nginx" -t && brew services restart nginx
 
   EMAIL_FLAG=""
   if [ -n "${EMAIL:-}" ]; then
@@ -399,8 +347,12 @@ HTTPEOF
     EMAIL_FLAG="--register-unsafely-without-email"
   fi
 
+  mkdir -p /var/www/html
   info "Requesting Let's Encrypt certificate for ${LISTEN_HOST}..."
-  certbot certonly --webroot -w /var/www/html -d "$LISTEN_HOST" $EMAIL_FLAG --agree-tos --non-interactive
+  # certbot writes to /etc/letsencrypt which requires root on macOS.
+  # If this script is already running as root (sudo ./setup-mac.sh) the
+  # sudo is a no-op; if not, it will prompt once for a password.
+  sudo certbot certonly --webroot -w /var/www/html -d "$LISTEN_HOST" $EMAIL_FLAG --agree-tos --non-interactive
 
   SSL_CERT="/etc/letsencrypt/live/${LISTEN_HOST}/fullchain.pem"
   SSL_KEY="/etc/letsencrypt/live/${LISTEN_HOST}/privkey.pem"
@@ -440,56 +392,39 @@ else
   fi
 fi
 
-# ─── Generate nginx config ───────────────────────────────────────────────────
-NGINX_CONF="/etc/nginx/sites-available/${LISTEN_HOST}"
+# ─── Generate nginx config ────────────────────────────────────────────────────
+NGINX_CONF="${NGINX_SITES_AVAILABLE}/${LISTEN_HOST}"
 sed -e "s|__HOST__|${LISTEN_HOST}|g" \
     -e "s|__SSL_CERT__|${SSL_CERT}|g" \
     -e "s|__SSL_KEY__|${SSL_KEY}|g" \
     "$SCRIPT_DIR/nginx.conf.template" > "$NGINX_CONF"
 
-ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${LISTEN_HOST}"
-rm -f /etc/nginx/sites-enabled/default
+ln -sf "$NGINX_CONF" "${NGINX_SITES_ENABLED}/${LISTEN_HOST}.conf"
 
-nginx -t && systemctl enable --now nginx && systemctl reload-or-restart nginx
+"${BREW_PREFIX}/bin/nginx" -t && brew services restart nginx
 ok "nginx configured and running for ${LISTEN_HOST}"
 
-# ─── Firewall ────────────────────────────────────────────────────────────────
-if command -v ufw &>/dev/null; then
-  ufw allow 22/tcp >/dev/null 2>&1 || true
-  ufw allow 80/tcp >/dev/null 2>&1 || true
-  ufw allow 443/tcp >/dev/null 2>&1 || true
-  ufw --force enable >/dev/null 2>&1 || true
-  ok "Firewall: ports 22, 80, 443 open"
-fi
+# ─── macOS firewall note ──────────────────────────────────────────────────────
+# macOS Application Firewall (socketfilterfw) does not have a simple CLI
+# equivalent to ufw. If the firewall is on, macOS will prompt to allow nginx
+# automatically on first connection. No manual rule needed.
+info "macOS firewall: if prompted, allow nginx through the Application Firewall."
 
 # ─── Build (or pull) and start ────────────────────────────────────────────────
 echo ""
 cd "$PROJECT_DIR"
 if [[ "$COMPOSE_FILE" == *docker-compose.prod.yml ]]; then
   info "Pulling pre-built images from ghcr.io (tag: ${DOABLE_IMAGE_TAG:-latest})..."
-  if ! docker compose -f "$COMPOSE_FILE" pull 2>&1 | tee /tmp/doable-pull.log; then
-    PULL_LOG=$(cat /tmp/doable-pull.log 2>/dev/null || true)
-    if echo "$PULL_LOG" | grep -qiE 'denied|unauthorized|not found|private'; then
-      warn "ghcr.io images are not publicly accessible yet (registry denied)."
-      warn "Falling back to source build (~5-10 minutes)..."
-      COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
-      info "Building Docker images from source..."
-      docker compose -f "$COMPOSE_FILE" build
-    else
-      error "docker compose pull failed. See output above."
-      exit 1
-    fi
-  fi
+  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull
   info "Starting containers..."
 else
   info "Building Docker images from source (this takes ~5-10 minutes)..."
-  docker compose -f "$COMPOSE_FILE" build
+  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
   info "Starting containers..."
 fi
-docker compose -f "$COMPOSE_FILE" up -d
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 
-# Re-read the bootstrap token from .env in case .env already existed (operator
-# chose "keep" earlier) — we want to show the token that's actually active.
+# Re-read the bootstrap token from .env in case .env already existed
 ACTIVE_BOOTSTRAP_TOKEN=$(grep -E '^INSTALL_BOOTSTRAP_TOKEN=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
 
 echo ""
@@ -505,8 +440,6 @@ echo "       automatically — no SSH, no SQL, no .env editing required."
 echo ""
 echo "    2. You'll be guided through a 4-step setup wizard at /setup:"
 echo "       Welcome → AI provider → Google / GitHub sign-in → Plans & Billing."
-echo "       End-users build apps from the dashboard after this — the wizard"
-echo "       is for the platform admin only."
 echo ""
 echo "       AI provider step covers 50+ providers including OpenAI, Anthropic,"
 echo "       Gemini, OpenRouter, Together, Fireworks, Groq, Cerebras, DeepSeek,"
@@ -514,38 +447,28 @@ echo "       Mistral, Cohere, xAI, Perplexity, MiniMax, Moonshot, Zhipu, plus"
 echo "       Azure/Bedrock/Vertex enterprise endpoints AND local OpenAI-compatible"
 echo "       servers (Ollama, LM Studio, vLLM, llama.cpp, Jan, LocalAI, …)."
 echo ""
-echo "       Tip: pre-export ANY of these before running setup.sh and the"
-echo "       wizard's AI step starts pre-configured (first non-empty wins):"
-echo "         ANTHROPIC_API_KEY  OPENAI_API_KEY    GEMINI_API_KEY"
-echo "         MINIMAX_API_KEY    OPENROUTER_API_KEY  TOGETHER_API_KEY"
-echo "         FIREWORKS_API_KEY  OPENCODE_ZEN_API_KEY  GROQ_API_KEY"
-echo "         CEREBRAS_API_KEY   DEEPSEEK_API_KEY  MISTRAL_API_KEY"
-echo "         COHERE_API_KEY     XAI_API_KEY       PERPLEXITY_API_KEY"
-echo "         DEEPINFRA_API_KEY  NVIDIA_API_KEY    MOONSHOT_API_KEY"
-echo "         ZHIPU_API_KEY"
-echo ""
 if [ "$MODE" != "domain" ]; then
   echo -e "  ${YELLOW}Note: Self-signed SSL — browsers will show a certificate warning.${NC}"
-  echo "        Accept it once, or import ${SSL_CERT} into your trust store."
+  echo "        Accept it once, or add ${SSL_CERT} to your macOS Keychain:"
+  echo "        sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${SSL_CERT}"
   echo ""
 fi
 if [ -n "${ACTIVE_BOOTSTRAP_TOKEN}" ]; then
-  echo "  Bootstrap token (only needed if signup is delayed past 24h or you need"
-  echo "  to force-promote — kept private, single-use, server-side enforced):"
+  echo "  Bootstrap token (only needed if signup is delayed past 24h):"
   echo ""
   echo "      ${ACTIVE_BOOTSTRAP_TOKEN}"
   echo ""
 fi
-echo "  OAuth callback URLs to register in each provider's dashboard (when"
-echo "  you reach Step 3 of the setup wizard):"
+echo "  OAuth callback URLs to register in each provider's dashboard:"
 echo ""
 echo "    Google login:  ${API_URL}/auth/google/callback"
 echo "    GitHub login:  ${API_URL}/auth/github/callback"
 echo "    GitHub repo:   ${API_URL}/auth/github/repo/callback"
 echo ""
 echo "  Useful commands:"
-echo "    View logs:   docker compose -f ${COMPOSE_FILE} logs -f"
-echo "    Stop:        docker compose -f ${COMPOSE_FILE} down"
-echo "    Restart:     docker compose -f ${COMPOSE_FILE} restart"
-echo "    Edit config: deployment/docker/.env  (mode 600 recommended: chmod 600 deployment/docker/.env)"
+echo "    View logs:   docker compose -f ${COMPOSE_FILE} --env-file ${ENV_FILE} logs -f"
+echo "    Stop:        docker compose -f ${COMPOSE_FILE} --env-file ${ENV_FILE} down"
+echo "    Restart:     docker compose -f ${COMPOSE_FILE} --env-file ${ENV_FILE} restart"
+echo "    nginx logs:  tail -f ${BREW_PREFIX}/var/log/nginx/error.log"
+echo "    Edit config: ${ENV_FILE}  (mode 600 — chmod 600 ${ENV_FILE})"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
