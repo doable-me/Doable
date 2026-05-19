@@ -12,7 +12,7 @@ interface StepProps {
   onSkip: () => void;
 }
 
-type OAuthProvider = "google" | "github";
+type OAuthProvider = "google" | "github" | "supabase";
 
 interface ProviderState {
   expanded: boolean;
@@ -51,6 +51,15 @@ const OAUTH_PROVIDERS: {
     consoleUrl: "https://github.com/settings/developers",
     consoleLabel: "Open GitHub Developer Settings",
   },
+  {
+    id: "supabase",
+    label: "Supabase",
+    description:
+      "Lets users authorize Doable to provision Supabase projects on their behalf when the AI builds a backend-enabled app. Without this, users see a sign-in prompt mid-build.",
+    callbackPath: "/integrations/enhanced-auth/callback",
+    consoleUrl: "https://supabase.com/dashboard/account/tokens",
+    consoleLabel: "Open Supabase OAuth Apps",
+  },
 ];
 
 function deriveCallbackUrl(apiUrl: string, path: string): string {
@@ -63,6 +72,7 @@ export function Step3SignInProviders({ onNext, onBack, onSkip }: StepProps) {
   const [states, setStates] = useState<Record<OAuthProvider, ProviderState>>({
     google: { expanded: false, clientId: "", clientSecret: "", showSecret: false, status: "idle", errorMsg: null },
     github: { expanded: false, clientId: "", clientSecret: "", showSecret: false, status: "idle", errorMsg: null },
+    supabase: { expanded: false, clientId: "", clientSecret: "", showSecret: false, status: "idle", errorMsg: null },
   });
   const [copied, setCopied] = useState<Record<string, boolean>>({});
 
