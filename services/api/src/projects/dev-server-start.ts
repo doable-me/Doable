@@ -4,6 +4,7 @@
 
 import type { ChildProcess } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
+import { statSync } from "node:fs";
 import { getProjectPath } from "../ai/project-files.js";
 import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
 import { linkDoableSdk } from "./link-sdk.js";
@@ -33,6 +34,7 @@ import {
   DEV_SERVER_HOST,
   STARTUP_TIMEOUT_MS,
 } from "./dev-server-core.js";
+import { emitPreviewStartFailed } from "./preview-failure-trace.js";
 
 /**
  * Start a Vite dev server for the given project.
@@ -196,16 +198,22 @@ async function doStartDevServer(
   }
 
   // If this project was previously sandboxed, @doable/sdk may be owned by the
-  // sandbox uid. Chown it back to 0 so the API-user write in linkDoableSdk
-  // succeeds. The final chown -R below will re-own it to sandboxUid.
+  // sandbox uid. Reclaim it to the API uid so the API-user write in
+  // linkDoableSdk succeeds. The final chown -R below will re-own to sandboxUid.
+  //
+  // R14 BUG-SDK-EACCES: previously hardcoded to "0:0" assuming API ran as
+  // root. With the v3 hardening the API runs as the doable user (uid 5000),
+  // so root-ownership makes the dir unwritable for it. Use the actual euid.
   if (sandboxUid !== null && process.platform === "linux") {
     const sdkDir = `${projectPath}/node_modules/@doable/sdk`;
+    const apiUid = process.geteuid?.() ?? 0;
+    const apiGid = process.getegid?.() ?? apiUid;
     await new Promise<void>((resolve) => {
       const useSudo = isSandboxWrapperAvailable();
       const cmd = useSudo ? "sudo" : "chown";
       const args = useSudo
-        ? ["-n", "chown", "-R", "0:0", sdkDir]
-        : ["-R", "0:0", sdkDir];
+        ? ["-n", "chown", "-R", `${apiUid}:${apiGid}`, sdkDir]
+        : ["-R", `${apiUid}:${apiGid}`, sdkDir];
       const ch = nodeSpawn(cmd, args, { stdio: "ignore" });
       ch.on("exit", () => resolve());
       ch.on("error", () => resolve());
@@ -221,12 +229,20 @@ async function doStartDevServer(
 
   // chown -R to the sandbox uid LAST, after all API-side writes complete.
   // See acquireDevUid call above for the ordering rationale (BUG-R13).
+  //
+  // R14 BUG-OWNERSHIP-SPLIT: chown the GROUP to the API gid (doable, 5000),
+  // not to the per-project uid. This lets the API process write to the project
+  // tree via group access while the per-project uid still owns it as user
+  // (which is what nft skuid egress filtering keys off of). Without this, the
+  // post-chown tree was owned 10001:10001 and the api uid 5000 had no access —
+  // AI tools (create_file/edit_file/bash) all hit EACCES.
   if (sandboxUid !== null) {
     const useSudo = isSandboxWrapperAvailable();
+    const apiGid = process.getegid?.() ?? 0;
     const cmd = useSudo ? "sudo" : "chown";
     const args = useSudo
-      ? ["-n", "chown", "-R", `${sandboxUid}:${sandboxUid}`, projectPath]
-      : ["-R", `${sandboxUid}:${sandboxUid}`, projectPath];
+      ? ["-n", "chown", "-R", `${sandboxUid}:${apiGid}`, projectPath]
+      : ["-R", `${sandboxUid}:${apiGid}`, projectPath];
     const chownResult = await new Promise<{ ok: boolean; stderr: string; code: number | null }>(
       (resolve) => {
         const ch = nodeSpawn(cmd, args, { stdio: ["ignore", "ignore", "pipe"] });
@@ -243,8 +259,29 @@ async function doStartDevServer(
       },
     );
     if (chownResult.ok) {
+      // R14 BUG-OWNERSHIP-SPLIT: grant the API gid write access via group
+      // perm bits + setgid on dirs so newly-created files inherit the gid.
+      // Mirrors the chown above — both must land together or AI writes fail.
+      await new Promise<void>((resolve) => {
+        const ch = nodeSpawn(
+          "sudo",
+          ["-n", "chmod", "-R", "g+rwX", projectPath],
+          { stdio: "ignore" },
+        );
+        ch.on("exit", () => resolve());
+        ch.on("error", () => resolve());
+      });
+      await new Promise<void>((resolve) => {
+        const ch = nodeSpawn(
+          "sudo",
+          ["-n", "find", projectPath, "-type", "d", "-exec", "chmod", "g+s", "{}", "+"],
+          { stdio: "ignore" },
+        );
+        ch.on("exit", () => resolve());
+        ch.on("error", () => resolve());
+      });
       console.log(
-        `[DevServer] Project ${projectId} sandbox uid=${sandboxUid} (chown applied)`,
+        `[DevServer] Project ${projectId} sandbox uid=${sandboxUid} gid=${process.getegid?.() ?? 0} (chown + chmod g+rwX,g+s applied)`,
       );
     } else {
       // chown failure is fatal for UID-drop: the dropped-priv vite would
@@ -257,6 +294,61 @@ async function doStartDevServer(
       );
       releaseDevUid(projectId);
       sandboxUid = null;
+    }
+  }
+
+  // Pre-spawn defensive uid assertion (BUG-R13 / preview-243). After the
+  // chown above, the project dir MUST be owned by sandboxUid. If a
+  // concurrent operation re-flipped it, we'd spawn a UID-dropped vite
+  // against an unreadable tree and hit EACCES. Verify, attempt one forced
+  // re-chown, and abort the spawn if still mismatched.
+  if (sandboxUid !== null && process.platform === "linux") {
+    let dirUid: number;
+    try {
+      dirUid = statSync(projectPath).uid;
+    } catch (err) {
+      throw new Error(
+        `[DevServer] pre-spawn stat failed for ${projectPath}: ${(err as Error).message}`,
+      );
+    }
+    if (dirUid !== sandboxUid) {
+      console.warn(
+        `[DevServer] WARN: dir uid mismatch (expected=${sandboxUid}, got=${dirUid}) — forcing chown`,
+      );
+      const useSudo = isSandboxWrapperAvailable();
+      const apiGid = process.getegid?.() ?? 0;
+      const cmd = useSudo ? "sudo" : "chown";
+      const args = useSudo
+        ? ["-n", "chown", "-R", `${sandboxUid}:${apiGid}`, projectPath]
+        : ["-R", `${sandboxUid}:${apiGid}`, projectPath];
+      await new Promise<void>((resolve) => {
+        const ch = nodeSpawn(cmd, args, { stdio: "ignore" });
+        ch.on("exit", () => resolve());
+        ch.on("error", () => resolve());
+      });
+      // Re-apply group perms after the forced chown
+      await new Promise<void>((resolve) => {
+        const ch = nodeSpawn(
+          "sudo",
+          ["-n", "chmod", "-R", "g+rwX", projectPath],
+          { stdio: "ignore" },
+        );
+        ch.on("exit", () => resolve());
+        ch.on("error", () => resolve());
+      });
+      let recheckUid: number;
+      try {
+        recheckUid = statSync(projectPath).uid;
+      } catch (err) {
+        throw new Error(
+          `[DevServer] pre-spawn re-stat failed for ${projectPath}: ${(err as Error).message}`,
+        );
+      }
+      if (recheckUid !== sandboxUid) {
+        throw new Error(
+          `Sandbox UID mismatch — aborting spawn to avoid EACCES (expected=${sandboxUid}, got=${recheckUid})`,
+        );
+      }
     }
   }
 
@@ -356,11 +448,14 @@ async function doStartDevServer(
   // Tolerates filter-chain errors silently — never fails the dev-server
   // start because of a logging side-effect.
   const buildId = `dev-${Date.now()}`;
+  const startedAtMs = Date.now();
+  let workspaceIdForTrace: string | null = null;
   let publisher: BuildEventPublisher | null = null;
   try {
     const [proj2] = await sql<{ workspace_id: string }[]>`
       SELECT workspace_id FROM projects WHERE id = ${projectId}
     `;
+    workspaceIdForTrace = proj2?.workspace_id ?? null;
     const wsFilters = await loadWorkspaceFilters(proj2?.workspace_id ?? "");
     const filterChain = new LogFilterChain([
       ...buildDefaultFilters(),
@@ -413,10 +508,24 @@ async function doStartDevServer(
 
   child.on("error", (err) => {
     console.error(`[DevServer] Error for project ${projectId}:`, err.message);
+    emitPreviewStartFailed({
+      projectId,
+      workspaceId: workspaceIdForTrace,
+      userId: opts?.userId ?? null,
+      sandboxUid,
+      workDir: projectPath,
+      exitCode: null,
+      signal: null,
+      durationMs: Date.now() - startedAtMs,
+      npmCmd: `${spec.command} ${spec.args.join(" ")}`,
+      framework: adapter.id,
+      rawOutput: outputBuffer,
+      errorMessage: err.message,
+    });
     markFailed(new Error(`Dev server failed to start: ${err.message}`));
   });
 
-  child.on("close", (code) => {
+  child.on("close", (code, signal) => {
     console.log(
       `[DevServer] Server for project ${projectId} exited with code ${code}`,
     );
@@ -424,6 +533,20 @@ async function doStartDevServer(
     // or a failure — keeping it allocated would leak a slot.
     releaseDevUid(projectId);
     if (!settled) {
+      emitPreviewStartFailed({
+        projectId,
+        workspaceId: workspaceIdForTrace,
+        userId: opts?.userId ?? null,
+        sandboxUid,
+        workDir: projectPath,
+        exitCode: code,
+        signal: signal ?? null,
+        durationMs: Date.now() - startedAtMs,
+        npmCmd: `${spec.command} ${spec.args.join(" ")}`,
+        framework: adapter.id,
+        rawOutput: outputBuffer,
+        errorMessage: `exited with code ${code} before ready`,
+      });
       // Process died before becoming ready — this is a failure
       markFailed(
         new Error(
@@ -448,6 +571,20 @@ async function doStartDevServer(
     .catch(() => {
       if (settled) return;
       if (child.exitCode !== null) {
+        emitPreviewStartFailed({
+          projectId,
+          workspaceId: workspaceIdForTrace,
+          userId: opts?.userId ?? null,
+          sandboxUid,
+          workDir: projectPath,
+          exitCode: child.exitCode,
+          signal: null,
+          durationMs: Date.now() - startedAtMs,
+          npmCmd: `${spec.command} ${spec.args.join(" ")}`,
+          framework: adapter.id,
+          rawOutput: outputBuffer,
+          errorMessage: `process exited (code ${child.exitCode}) without signaling ready`,
+        });
         markFailed(
           new Error(
             `Dev server process exited (code ${child.exitCode}) without signaling ready.\nOutput: ${summarizeOutput(outputBuffer)}`,

@@ -779,6 +779,17 @@ else
   GITHUB_REPO_CALLBACK_HOST="${API_DOMAIN}"
 fi
 
+# NO_TUNNEL=1: api/ws are path-multiplexed on the same host behind Caddy.
+# Caddy routes handle_path /api/* → :4000 (strips prefix) and /ws* → :4001.
+# Tunnel/CF mode uses separate subdomains, so no path suffix is needed there.
+if [ "$NO_TUNNEL" = "1" ]; then
+  _API_URL="https://${HOST}/api"
+  _WS_URL="wss://${HOST}/ws"
+else
+  _API_URL="https://${API_DOMAIN}"
+  _WS_URL="wss://${WS_DOMAIN}"
+fi
+
 cat > "${INSTALL_DIR}/.env" << ENVEOF
 # ─── Database ───────────────────────────────────────────────
 DATABASE_URL=postgres://doable:${DB_PASS}@localhost:5432/doable
@@ -816,8 +827,8 @@ WS_ALLOWED_ORIGINS=https://${DOMAIN}
 WEB_HOSTNAME=${BIND_HOST}
 
 # ─── Next.js Frontend ──────────────────────────────────────
-NEXT_PUBLIC_API_URL=https://${API_DOMAIN}
-NEXT_PUBLIC_WS_URL=wss://${WS_DOMAIN}
+NEXT_PUBLIC_API_URL=${_API_URL}
+NEXT_PUBLIC_WS_URL=${_WS_URL}
 NEXT_PUBLIC_APP_URL=https://${DOMAIN}
 
 # ─── OAuth ──────────────────────────────────────────────────
@@ -997,8 +1008,8 @@ fi
 # pre-staged .env). Must NOT be gated on the .env idempotency check above —
 # next build prerenders with empty NEXT_PUBLIC_* envs otherwise.
 cat > "${INSTALL_DIR}/apps/web/.env.local" << WEBENVEOF
-NEXT_PUBLIC_API_URL=https://${API_DOMAIN}
-NEXT_PUBLIC_WS_URL=wss://${WS_DOMAIN}
+NEXT_PUBLIC_API_URL=${_API_URL}
+NEXT_PUBLIC_WS_URL=${_WS_URL}
 NEXT_PUBLIC_APP_URL=https://${DOMAIN}
 WEBENVEOF
 chown doable:doable "${INSTALL_DIR}/apps/web/.env.local" 2>/dev/null || true
@@ -1359,6 +1370,12 @@ if [ "$NO_TUNNEL" = "1" ]; then
 
     # /api/* → API on 127.0.0.1:4000
     handle_path /api/* {
+        reverse_proxy 127.0.0.1:4000
+    }
+
+    # /preview/* → API on 127.0.0.1:4000 (vite sub-resources use relative paths
+    # that resolve without the /api prefix; must be a separate block without path stripping)
+    handle /preview/* {
         reverse_proxy 127.0.0.1:4000
     }
 
@@ -1910,11 +1927,16 @@ POLKIT
 # Doable sandbox helpers — NOPASSWD for the composer + dev-uid-allocator.
 # Owned by root, mode 0440 (enforced by visudo).
 # - sandbox-mount, sandbox-spawn: setuid helpers for the dovault composer
-# - chown -R <uid>:<uid> projects/*: per-project ownership flip for UID drop
+# - chown -R <uid>:<gid> projects/*: per-project ownership flip for UID drop
+# - chmod -R g+rwX + find -type d -exec chmod g+s: grants the API doable
+#   group write access on chowned project trees so AI tools (create_file,
+#   bash, install_package, link-sdk) keep working after the sandbox uid
+#   flip. R14 BUG-OWNERSHIP-SPLIT — without these the post-chown tree was
+#   owned 10001:10001 (no doable-group access) and every AI tool hit EACCES.
 # - chown -R doable:doable apps/web/.next, .turbo: self-heal stale root-owned
 #   Next.js artifacts at start.sh boot (prevents "rm: Permission denied" silent
 #   build failure that surfaces externally as 502 on /dashboard).
-Cmnd_Alias DOABLE_SANDBOX = /opt/doable/bin/sandbox-mount, /opt/doable/bin/sandbox-spawn, /usr/bin/chown -R [0-9]*\:[0-9]* ${INSTALL_DIR}/services/api/projects/*, /usr/bin/chown -R [0-9]*\:[0-9]* /opt/doable/projects/*, /usr/bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.next, /usr/bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.turbo, /bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.next, /bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.turbo
+Cmnd_Alias DOABLE_SANDBOX = /opt/doable/bin/sandbox-mount, /opt/doable/bin/sandbox-spawn, /usr/bin/chown -R [0-9]*\:[0-9]* ${INSTALL_DIR}/services/api/projects/*, /usr/bin/chown -R [0-9]*\:[0-9]* /opt/doable/projects/*, /usr/bin/chmod -R g+rwX ${INSTALL_DIR}/services/api/projects/*, /usr/bin/chmod -R g+rwX /opt/doable/projects/*, /usr/bin/find ${INSTALL_DIR}/services/api/projects/* -type d -exec chmod g+s {} +, /usr/bin/find /opt/doable/projects/* -type d -exec chmod g+s {} +, /usr/bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.next, /usr/bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.turbo, /bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.next, /bin/chown -R doable\:doable ${INSTALL_DIR}/apps/web/.turbo
 doable ALL=(root) NOPASSWD: DOABLE_SANDBOX
 SUDO
   chmod 0440 /etc/sudoers.d/doable-sandbox

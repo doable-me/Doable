@@ -22,8 +22,9 @@
  * blocks egress for skuid 10001-65000 except loopback.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { getProjectPath } from "../ai/project-files.js";
 
 const UID_BASE = 10000;
 const UID_MAX = 65000;
@@ -135,6 +136,35 @@ export function acquireDevUid(projectId: string): number | null {
   }
   const existing = inUse.get(projectId);
   if (existing !== undefined) return existing;
+  // Hydrate from on-disk owner — survives tsx-watch restarts. The in-memory
+  // `inUse` Map resets on every reload, but the project directory keeps its
+  // chowned uid. If a previous run handed out uid=N for this project, reclaim
+  // N instead of allocating a fresh uid that would mismatch the dir owner
+  // and cause EACCES at install/spawn time (BUG-R13 / preview-243).
+  try {
+    const projectPath = getProjectPath(projectId);
+    const st = statSync(projectPath);
+    const onDiskUid = st.uid;
+    if (onDiskUid > UID_BASE && onDiskUid <= UID_MAX) {
+      let claimed = false;
+      for (const [, uid] of inUse) {
+        if (uid === onDiskUid) {
+          claimed = true;
+          break;
+        }
+      }
+      if (!claimed) {
+        free.delete(onDiskUid);
+        inUse.set(projectId, onDiskUid);
+        console.log(
+          `[dev-uid] reclaimed uid=${onDiskUid} for project=${projectId} from on-disk owner`,
+        );
+        return onDiskUid;
+      }
+    }
+  } catch {
+    // Dir missing or stat failed — fall through to fresh allocation.
+  }
   const next = free.values().next().value as number | undefined;
   if (next === undefined) {
     // 55,000 concurrent dev sessions on one host is implausible — the

@@ -4619,6 +4619,18 @@ function EditorPageInner() {
     if (scaffoldStatus === "ready") return null;
 
     if (scaffoldStatus === "error") {
+      const rawErr = scaffoldError ?? "";
+      const cleanErr = rawErr.replace(/\x1b\[[0-9;]*m/g, "");
+      const exitMatch = cleanErr.match(/exit(?:ed)?\s+(?:with\s+code\s+)?(-?\d+)/i);
+      const summary = exitMatch
+        ? `Preview failed to start (exit code ${exitMatch[1]}).`
+        : "Preview failed to start.";
+      const hasLogs = cleanErr.trim().length > 0;
+      const copyLogs = () => {
+        if (typeof navigator !== "undefined" && navigator.clipboard) {
+          navigator.clipboard.writeText(cleanErr).catch(() => {});
+        }
+      };
       return (
         <div className="flex flex-col items-center justify-center h-full text-center px-8">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600/10 mb-4">
@@ -4628,8 +4640,30 @@ function EditorPageInner() {
             Failed to start project
           </h3>
           <p className="text-[13px] text-muted-foreground max-w-sm mb-4">
-            {scaffoldError}
+            {summary}
           </p>
+          {hasLogs && (
+            <details className="mb-4 w-full max-w-xl text-left">
+              <summary className="cursor-pointer text-[12px] text-muted-foreground hover:text-foreground select-none">
+                View install logs
+              </summary>
+              <div className="mt-2 rounded-lg border border-border bg-muted/40">
+                <div className="flex items-center justify-end border-b border-border px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={copyLogs}
+                    className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    <Copy className="h-3 w-3" />
+                    Copy logs
+                  </button>
+                </div>
+                <pre className="font-mono text-xs overflow-auto max-h-[40vh] p-3 whitespace-pre-wrap break-all">
+                  {cleanErr}
+                </pre>
+              </div>
+            </details>
+          )}
           <button
             onClick={retryScaffold}
             className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 transition-colors"
@@ -5545,7 +5579,19 @@ function EditorPageInner() {
                               {msg.isStreaming && (
                                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-700 dark:bg-brand-400 animate-pulse" />
                               )}
-                              {msg.isStreaming ? "Thinking..." : "Thought process"}
+                              {msg.isStreaming ? (() => {
+                                const actions = msg.toolActions ?? [];
+                                const stepCount = actions.length;
+                                const running = actions.find((a) => a.status === "running");
+                                const latest = running ?? actions[actions.length - 1];
+                                if (stepCount > 0 && latest) {
+                                  const label = latest.filePath
+                                    ? latest.filePath.split("/").pop()
+                                    : latest.description;
+                                  return `Step ${stepCount} — ${label}`;
+                                }
+                                return "Thinking...";
+                              })() : "Thought process"}
                             </summary>
                             <div className="px-3 pb-2 text-muted-foreground max-h-60 overflow-y-auto scroll-smooth">
                               {extractFunctionSteps(msg.thinkingContent).length > 0

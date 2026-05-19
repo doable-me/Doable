@@ -31,6 +31,7 @@
  */
 
 import { getConfig, setConfig, setEncryptedConfig } from "./platformConfig.js";
+import { sql } from "../db/index.js";
 
 interface SeedSource {
   envVar: string;
@@ -100,6 +101,22 @@ export async function seedAiProviderFromEnv(): Promise<void> {
       await setConfig("setup.ai_model", source.model);
     }
     await setEncryptedConfig("setup.ai_provider_key", key.trim());
+
+    // Also upsert platform_ai_defaults for all 4 plans so that
+    // applyPlatformAiDefault (called at first workspace creation) has a row
+    // to work from. provider_id is left null here; platform-ai-bootstrap.ts
+    // will create the ai_providers row in the target workspace on demand.
+    if (source.model) {
+      const providerModel = source.model;
+      for (const plan of ["free", "pro", "business", "enterprise"]) {
+        await sql`
+          INSERT INTO platform_ai_defaults (plan, source, provider_id, provider_model, copilot_account_id, copilot_model, updated_by)
+          VALUES (${plan}, 'custom', NULL, ${providerModel}, NULL, NULL, 'system')
+          ON CONFLICT (plan) DO NOTHING
+        `;
+      }
+    }
+
     console.log(
       `[seed] Pre-configured ${source.label} from $${source.envVar} (wizard Step 2 ready).`,
     );

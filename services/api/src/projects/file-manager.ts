@@ -6,8 +6,9 @@
  * live preview works — files written here are served by the Vite dev server.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { writeFile as fsWriteFile, mkdir as fsMkdir } from "node:fs/promises";
+import { spawn as nodeSpawn } from "node:child_process";
 import path from "node:path";
 import {
   readProjectFile,
@@ -25,6 +26,7 @@ import { initRepo } from "../git/init.js";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { FrameworkAdapterError, type FrameworkContext } from "../frameworks/types.js";
 import { linkDoableSdk } from "./link-sdk.js";
+import { isSandboxWrapperAvailable } from "../runtime/dev-uid-allocator.js";
 
 // Re-export for convenience
 export {
@@ -49,6 +51,76 @@ export interface ScaffoldResult {
 // calls for the same project from colliding (race between frontend
 // scaffold POST and chat API auto-scaffold).
 const scaffoldingInFlight = new Map<string, Promise<ScaffoldResult>>();
+
+// Per-project install failure tracker — circuit-breaker for the
+// preview-url polling loop. After 3 failures within a 30s window we
+// stop attempting npm install; the operator must intervene. Without
+// this the EACCES loop (BUG-R13 / preview-243) hammers the disk and
+// floods logs at every ~3s preview poll.
+const INSTALL_FAILURE_LIMIT = 3;
+const INSTALL_FAILURE_WINDOW_MS = 30_000;
+const installFailureWindow = new Map<string, { count: number; firstFailAt: number }>();
+
+function checkInstallBreaker(projectId: string): void {
+  const w = installFailureWindow.get(projectId);
+  if (!w) return;
+  const now = Date.now();
+  if (now - w.firstFailAt >= INSTALL_FAILURE_WINDOW_MS) {
+    installFailureWindow.delete(projectId);
+    return;
+  }
+  if (w.count >= INSTALL_FAILURE_LIMIT) {
+    throw new Error(
+      "install repeatedly failed for project — circuit breaker open, manual retry needed",
+    );
+  }
+}
+
+function recordInstallFailure(projectId: string): void {
+  const now = Date.now();
+  const w = installFailureWindow.get(projectId);
+  if (!w || now - w.firstFailAt >= INSTALL_FAILURE_WINDOW_MS) {
+    installFailureWindow.set(projectId, { count: 1, firstFailAt: now });
+  } else {
+    w.count += 1;
+  }
+}
+
+function clearInstallFailures(projectId: string): void {
+  installFailureWindow.delete(projectId);
+}
+
+/**
+ * Linux-only pre-install fixup: if the project dir is owned by a sandbox
+ * uid from a prior dev-server run, chown it back to the API user so the
+ * upcoming `npm install` can mkdir node_modules (BUG-R13 EACCES). The
+ * subsequent dev-server-start chown-to-sandbox-uid will re-flip ownership
+ * after install completes.
+ */
+async function chownProjectToApiUser(projectId: string, projectPath: string): Promise<void> {
+  if (process.platform !== "linux") return;
+  if (!isSandboxWrapperAvailable()) return;
+  const apiUid = process.geteuid?.() ?? 0;
+  let currentUid: number;
+  try {
+    currentUid = statSync(projectPath).uid;
+  } catch {
+    return;
+  }
+  if (currentUid === apiUid) return;
+  await new Promise<void>((resolve) => {
+    const ch = nodeSpawn(
+      "sudo",
+      ["-n", "chown", "-R", `${apiUid}:${apiUid}`, projectPath],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+    ch.on("exit", () => resolve());
+    ch.on("error", () => resolve());
+  });
+  console.log(
+    `[FileManager] chowned project ${projectId} to API user uid=${apiUid} before install (was uid=${currentUid})`,
+  );
+}
 
 /**
  * Create a new Vite+React+TypeScript project scaffold.
@@ -167,7 +239,16 @@ async function doCreateProject(
     env: {},
     onProgress,
   };
-  const installResult = await adapter.install(installCtx);
+  checkInstallBreaker(projectId);
+  await chownProjectToApiUser(projectId, projectPath);
+  let installResult;
+  try {
+    installResult = await adapter.install(installCtx);
+  } catch (err) {
+    recordInstallFailure(projectId);
+    throw err;
+  }
+  clearInstallFailures(projectId);
   const installOutput = installResult.log;
 
   // Verify node_modules was actually created AND the framework's required
@@ -292,6 +373,9 @@ export async function ensureDependencies(projectId: string): Promise<void> {
     if (existsSync(projectPath + "/.venv") || existsSync(projectPath + "/__pypackages__")) return;
   }
 
+  checkInstallBreaker(projectId);
+  await chownProjectToApiUser(projectId, projectPath);
+
   const family = hasPkgJson ? "node" : "python";
   console.log(
     `[FileManager] dependencies missing for ${family} project ${projectId} — running install`,
@@ -303,7 +387,13 @@ export async function ensureDependencies(projectId: string): Promise<void> {
     basePath: "/",
     env: {},
   };
-  await adapter.install(ctx);
+  try {
+    await adapter.install(ctx);
+  } catch (err) {
+    recordInstallFailure(projectId);
+    throw err;
+  }
+  clearInstallFailures(projectId);
 
   // Ensure @doable/sdk is available after install
   try {
