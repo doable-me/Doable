@@ -235,6 +235,9 @@ export class BubblewrapBackend implements SandboxBackend {
       typeof profileUid === "number" &&
       profileUid >= SANDBOX_UID_POOL_MIN;
 
+    // sandbox-spawn validates CMD against an exact-match allowlist; the
+    // unwrapped path uses bare "bwrap" (cpSpawn resolves via PATH) but the
+    // helper requires the absolute /usr/bin/bwrap form.
     const argv: string[] = needsSandboxSpawn
       ? [
           "sudo",
@@ -242,7 +245,8 @@ export class BubblewrapBackend implements SandboxBackend {
           SANDBOX_SPAWN_PATH,
           String(profileUid),
           basename(profile.fs.rootDir),
-          ...bwrapArgv,
+          "/usr/bin/bwrap",
+          ...bwrapArgv.slice(1),
         ]
       : bwrapArgv;
 
