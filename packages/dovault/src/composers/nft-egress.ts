@@ -1,5 +1,5 @@
 import { mkdir, writeFile, unlink } from "node:fs/promises";
-import { dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { Composer } from "./types.js";
 import { ComposerError } from "./types.js";
 import type { SandboxProfile } from "../profile.js";
@@ -8,6 +8,19 @@ import type {
   TeardownStep,
   DeclaredLayers,
 } from "../backends/sandbox-backend.js";
+
+// R14: composer markers used to land under <workDir>/.sandbox/, but after
+// dev-uid-allocator chowns <workDir> to the per-project sandbox uid (uid
+// 10001+), the API uid (doable) can no longer write there. We now write to
+// a sibling state dir owned by the doable user (provisioned at install time
+// by deployment/server-setup.sh) and keyed by projectId derived from the
+// workDir basename.
+const SANDBOX_STATE_DIR =
+  process.env.DOABLE_SANDBOX_STATE_DIR ?? "/var/lib/doable/sandbox";
+
+function markerDirFor(workDir: string): string {
+  return join(SANDBOX_STATE_DIR, basename(workDir));
+}
 
 export const nftEgress: Composer = {
   id: "nft-egress",
@@ -22,7 +35,7 @@ export const nftEgress: Composer = {
     preflight: PreflightStep[];
     teardown: TeardownStep[];
   } {
-    const rulesPath = `${workDir}/.sandbox/nft.rules`;
+    const rulesPath = join(markerDirFor(workDir), "nft.rules");
     const policy = profile.network.defaultAction === "deny" ? "drop" : "accept";
     const allowEntries = profile.network.allow
       .map((h) => `# allow ${h}`)
@@ -49,15 +62,15 @@ export const nftEgress: Composer = {
             await mkdir(dirname(rulesPath), { recursive: true });
             await writeFile(rulesPath, rules, "utf8");
           } catch (err) {
-            // Skip silently when projectDir is owned by a dropped-priv sandbox
-            // uid (e.g. dev-uid-allocator chowned to 10001) and the API process
-            // (uid 5000) can't write into it. The rules file is currently a
-            // stub (TODO L42 — never actually loaded into nftables), so the
-            // dev process can boot without it. R14 will properly route this
-            // through sandbox-spawn so the file lands in the right namespace.
+            // R14: marker now lives under DOABLE_SANDBOX_STATE_DIR (doable-owned)
+            // so EACCES is no longer expected on the chowned project tree. But
+            // if the state dir wasn't provisioned (e.g. old server, container
+            // without the install-time mkdir) we still skip rather than crash.
+            // The rules file is currently a stub (TODO L42 — never actually
+            // loaded into nftables), so booting without it is safe.
             const e = err as NodeJS.ErrnoException;
-            if (e?.code === "EACCES" || e?.code === "EPERM") {
-              console.warn(`[nft-egress] EACCES on .sandbox — skipping nft rules write (R13 known gap)`);
+            if (e?.code === "EACCES" || e?.code === "EPERM" || e?.code === "ENOENT") {
+              console.warn(`[nft-egress] ${e.code} on ${rulesPath} — skipping nft rules write (state dir not provisioned?)`);
               return;
             }
             throw err;

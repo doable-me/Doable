@@ -1,5 +1,5 @@
 import { mkdir, writeFile, unlink } from "node:fs/promises";
-import { dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { cpus } from "node:os";
 import type { Composer } from "./types.js";
 import { ComposerError } from "./types.js";
@@ -9,6 +9,19 @@ import type {
   TeardownStep,
   DeclaredLayers,
 } from "../backends/sandbox-backend.js";
+
+// R14: composer markers used to land under <workDir>/.sandbox/, but after
+// dev-uid-allocator chowns <workDir> to the per-project sandbox uid (uid
+// 10001+), the API uid (doable) can no longer write there. We now write to
+// a sibling state dir owned by the doable user (provisioned at install time
+// by deployment/server-setup.sh) and keyed by projectId derived from the
+// workDir basename.
+const SANDBOX_STATE_DIR =
+  process.env.DOABLE_SANDBOX_STATE_DIR ?? "/var/lib/doable/sandbox";
+
+function markerDirFor(workDir: string): string {
+  return join(SANDBOX_STATE_DIR, basename(workDir));
+}
 
 export const cgroupCap: Composer = {
   id: "cgroup-cap",
@@ -22,7 +35,7 @@ export const cgroupCap: Composer = {
     preflight: PreflightStep[];
     teardown: TeardownStep[];
   } {
-    const wrapPath = `${workDir}/.sandbox/cgroup-wrap.txt`;
+    const wrapPath = join(markerDirFor(workDir), "cgroup-wrap.txt");
     const memBytes = profile.limits.memBytes;
     const cpuQuotaPercent = profile.limits.cpuQuotaPercent;
     const nproc = cpus().length * 64;
@@ -31,19 +44,19 @@ export const cgroupCap: Composer = {
       {
         id: "cgroup-cap:write-wrap",
         async run() {
-          // R13 EACCES wrapper: when dev-uid-allocator chowned <workDir> to
-          // the dropped-priv sandbox uid (uid 10001), the API uid can't write
-          // into <workDir>/.sandbox/. The wrap file isn't consumed yet
-          // (TODO below), so skipping is safe; R14 will move this through
-          // sandbox-spawn.
           try {
             await mkdir(dirname(wrapPath), { recursive: true });
-            // TODO: orchestrator must read .sandbox/cgroup-wrap.txt and prepend to argv when this composer applies
+            // TODO: orchestrator must read <stateDir>/cgroup-wrap.txt and prepend to argv when this composer applies
             await writeFile(wrapPath, cmd, "utf8");
           } catch (err) {
+            // R14: marker now lives under DOABLE_SANDBOX_STATE_DIR (doable-owned)
+            // so EACCES is no longer expected on the chowned project tree. If
+            // the state dir wasn't provisioned (old server, container without
+            // the install-time mkdir) skip rather than crash. The wrap file
+            // isn't consumed yet (TODO above), so this is safe.
             const e = err as NodeJS.ErrnoException;
-            if (e?.code === "EACCES" || e?.code === "EPERM") {
-              console.warn(`[cgroup-cap] EACCES on .sandbox — skipping cgroup wrap (R13 known gap)`);
+            if (e?.code === "EACCES" || e?.code === "EPERM" || e?.code === "ENOENT") {
+              console.warn(`[cgroup-cap] ${e.code} on ${wrapPath} — skipping cgroup wrap (state dir not provisioned?)`);
               return;
             }
             throw err;
