@@ -223,12 +223,20 @@ async function doStartDevServer(
 
   // chown -R to the sandbox uid LAST, after all API-side writes complete.
   // See acquireDevUid call above for the ordering rationale (BUG-R13).
+  //
+  // R14 BUG-OWNERSHIP-SPLIT: chown the GROUP to the API gid (doable, 5000),
+  // not to the per-project uid. This lets the API process write to the project
+  // tree via group access while the per-project uid still owns it as user
+  // (which is what nft skuid egress filtering keys off of). Without this, the
+  // post-chown tree was owned 10001:10001 and the api uid 5000 had no access —
+  // AI tools (create_file/edit_file/bash) all hit EACCES.
   if (sandboxUid !== null) {
     const useSudo = isSandboxWrapperAvailable();
+    const apiGid = process.getegid?.() ?? 0;
     const cmd = useSudo ? "sudo" : "chown";
     const args = useSudo
-      ? ["-n", "chown", "-R", `${sandboxUid}:${sandboxUid}`, projectPath]
-      : ["-R", `${sandboxUid}:${sandboxUid}`, projectPath];
+      ? ["-n", "chown", "-R", `${sandboxUid}:${apiGid}`, projectPath]
+      : ["-R", `${sandboxUid}:${apiGid}`, projectPath];
     const chownResult = await new Promise<{ ok: boolean; stderr: string; code: number | null }>(
       (resolve) => {
         const ch = nodeSpawn(cmd, args, { stdio: ["ignore", "ignore", "pipe"] });
@@ -245,8 +253,29 @@ async function doStartDevServer(
       },
     );
     if (chownResult.ok) {
+      // R14 BUG-OWNERSHIP-SPLIT: grant the API gid write access via group
+      // perm bits + setgid on dirs so newly-created files inherit the gid.
+      // Mirrors the chown above — both must land together or AI writes fail.
+      await new Promise<void>((resolve) => {
+        const ch = nodeSpawn(
+          "sudo",
+          ["-n", "chmod", "-R", "g+rwX", projectPath],
+          { stdio: "ignore" },
+        );
+        ch.on("exit", () => resolve());
+        ch.on("error", () => resolve());
+      });
+      await new Promise<void>((resolve) => {
+        const ch = nodeSpawn(
+          "sudo",
+          ["-n", "find", projectPath, "-type", "d", "-exec", "chmod", "g+s", "{}", "+"],
+          { stdio: "ignore" },
+        );
+        ch.on("exit", () => resolve());
+        ch.on("error", () => resolve());
+      });
       console.log(
-        `[DevServer] Project ${projectId} sandbox uid=${sandboxUid} (chown applied)`,
+        `[DevServer] Project ${projectId} sandbox uid=${sandboxUid} gid=${process.getegid?.() ?? 0} (chown + chmod g+rwX,g+s applied)`,
       );
     } else {
       // chown failure is fatal for UID-drop: the dropped-priv vite would
@@ -281,12 +310,23 @@ async function doStartDevServer(
         `[DevServer] WARN: dir uid mismatch (expected=${sandboxUid}, got=${dirUid}) — forcing chown`,
       );
       const useSudo = isSandboxWrapperAvailable();
+      const apiGid = process.getegid?.() ?? 0;
       const cmd = useSudo ? "sudo" : "chown";
       const args = useSudo
-        ? ["-n", "chown", "-R", `${sandboxUid}:${sandboxUid}`, projectPath]
-        : ["-R", `${sandboxUid}:${sandboxUid}`, projectPath];
+        ? ["-n", "chown", "-R", `${sandboxUid}:${apiGid}`, projectPath]
+        : ["-R", `${sandboxUid}:${apiGid}`, projectPath];
       await new Promise<void>((resolve) => {
         const ch = nodeSpawn(cmd, args, { stdio: "ignore" });
+        ch.on("exit", () => resolve());
+        ch.on("error", () => resolve());
+      });
+      // Re-apply group perms after the forced chown
+      await new Promise<void>((resolve) => {
+        const ch = nodeSpawn(
+          "sudo",
+          ["-n", "chmod", "-R", "g+rwX", projectPath],
+          { stdio: "ignore" },
+        );
         ch.on("exit", () => resolve());
         ch.on("error", () => resolve());
       });
