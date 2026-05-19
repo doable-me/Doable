@@ -1,11 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Eye, EyeOff, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiListWorkspaces } from "@/lib/api";
 import { PlanDefaultsInline } from "./PlanDefaultsInline";
+
+type SupabaseConnectionRow = {
+  id: string;
+  integrationId: string;
+  displayName: string | null;
+  status: string;
+};
 
 interface StepProps {
   onNext: () => void;
