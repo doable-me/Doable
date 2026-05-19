@@ -195,6 +195,23 @@ async function doStartDevServer(
     console.warn("[DevServer] Failed to inject source annotations plugin:", err);
   }
 
+  // If this project was previously sandboxed, @doable/sdk may be owned by the
+  // sandbox uid. Chown it back to 0 so the API-user write in linkDoableSdk
+  // succeeds. The final chown -R below will re-own it to sandboxUid.
+  if (sandboxUid !== null && process.platform === "linux") {
+    const sdkDir = `${projectPath}/node_modules/@doable/sdk`;
+    await new Promise<void>((resolve) => {
+      const useSudo = isSandboxWrapperAvailable();
+      const cmd = useSudo ? "sudo" : "chown";
+      const args = useSudo
+        ? ["-n", "chown", "-R", "0:0", sdkDir]
+        : ["-R", "0:0", sdkDir];
+      const ch = nodeSpawn(cmd, args, { stdio: "ignore" });
+      ch.on("exit", () => resolve());
+      ch.on("error", () => resolve());
+    });
+  }
+
   // Ensure @doable/sdk is linked (idempotent — skips if already present)
   try {
     await linkDoableSdk(projectPath);
