@@ -86,6 +86,10 @@ function recordInstallFailure(projectId: string): void {
   }
 }
 
+function clearInstallFailures(projectId: string): void {
+  installFailureWindow.delete(projectId);
+}
+
 /**
  * Linux-only pre-install fixup: if the project dir is owned by a sandbox
  * uid from a prior dev-server run, chown it back to the API user so the
@@ -244,6 +248,7 @@ async function doCreateProject(
     recordInstallFailure(projectId);
     throw err;
   }
+  clearInstallFailures(projectId);
   const installOutput = installResult.log;
 
   // Verify node_modules was actually created AND the framework's required
@@ -388,6 +393,7 @@ export async function ensureDependencies(projectId: string): Promise<void> {
     recordInstallFailure(projectId);
     throw err;
   }
+  clearInstallFailures(projectId);
 
   // Ensure @doable/sdk is available after install
   try {
