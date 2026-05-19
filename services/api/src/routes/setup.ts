@@ -341,6 +341,64 @@ setupRoutes.post("/oauth/github", async (c) => {
   return c.json({ ok: true });
 });
 
+// ─── POST /api/setup/oauth/supabase ──────────────────────────────────────
+// Admin pastes Supabase OAuth APP credentials (client_id + client_secret) so
+// end users get a mid-build "Authorize Doable to provision Supabase" consent
+// prompt. Saves to both platform_config (so /setup/status surfaces it) and
+// oauth_apps with workspace_id=NULL (platform-wide) so the existing
+// integrations-oauth.ts flow at oauthApps.get() picks it up for every
+// workspace without any additional wiring. Env-var fallback in
+// credential-vault stays as the secondary source.
+setupRoutes.post("/oauth/supabase", async (c) => {
+  const parsed = oauthSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
+  }
+
+  const { clientId, clientSecret } = parsed.data;
+  const userId = c.get("userId");
+
+  await setConfig("setup.supabase_oauth_client_id", clientId, { updatedBy: userId });
+  await setEncryptedConfig("setup.supabase_oauth_client_secret", clientSecret, userId);
+
+  // Mirror into oauth_apps (workspace_id=NULL, is_global=true → platform-wide)
+  // under the integration_id the registry uses for Supabase mgmt OAuth so
+  // integrations-oauth.ts oauthApps.get("supabase-mgmt") picks it up for
+  // every workspace. ON CONFLICT swaps in the latest secret without losing
+  // the row id (kept stable across re-saves so any references survive).
+  try {
+    await sql`
+      INSERT INTO oauth_apps (
+        workspace_id, integration_id, client_id, client_secret_encrypted,
+        credentials_format, extra_config, is_global
+      ) VALUES (
+        NULL, 'supabase-mgmt', ${clientId},
+        pgp_sym_encrypt(${clientSecret}, ${ENCRYPTION_KEY}),
+        'pgp_sym', '{}'::jsonb, true
+      )
+      ON CONFLICT (integration_id) WHERE workspace_id IS NULL
+      DO UPDATE SET
+        client_id               = EXCLUDED.client_id,
+        client_secret_encrypted = EXCLUDED.client_secret_encrypted,
+        credentials_format      = EXCLUDED.credentials_format,
+        is_global               = true,
+        updated_at              = now()
+    `;
+  } catch (err) {
+    // Non-fatal: platform_config write already succeeded, and the
+    // integrations-oauth route falls back to env vars when oauth_apps lookup
+    // misses.
+    console.warn("[setup/oauth/supabase] oauth_apps INSERT/UPDATE failed:", err);
+  }
+
+  recordAdminAction(c, {
+    action: "setup_save_supabase_oauth",
+    details: { clientId },
+  }).catch(() => {});
+
+  return c.json({ ok: true });
+});
+
 // ─── POST /api/setup/supabase ─────────────────────────────────────────────
 setupRoutes.post("/supabase", async (c) => {
   const parsed = supabaseSchema.safeParse(await c.req.json());
