@@ -62,7 +62,7 @@ services:
     ports:
       - "127.0.0.1:4000:4000"
     healthcheck:
-      test: ["CMD", "curl", "-fs", "http://127.0.0.1:4000/health"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -82,10 +82,13 @@ services:
       # stored via the setup wizard. Required — api refuses to boot without it.
       DOABLE_KEK: ${DOABLE_KEK:?DOABLE_KEK is required — run ./deployment/docker/setup.sh to generate}
       API_PORT: 4000
-      API_HOST: 127.0.0.1
+      # Inside Docker the service must bind 0.0.0.0 so the container port is
+      # reachable. Host-side isolation is provided by the ports mapping
+      # "127.0.0.1:4000:4000" — equivalent security to bare-metal 127.0.0.1.
+      API_HOST: 0.0.0.0
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       WS_PORT: 4001
-      WS_HOST: 127.0.0.1
+      WS_HOST: 0.0.0.0
       INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required — run ./deployment/docker/setup.sh to generate}
       WS_INTERNAL_URL: http://ws:4001
       API_URL: http://api:4000
@@ -126,7 +129,7 @@ services:
     ports:
       - "127.0.0.1:4001:4001"
     healthcheck:
-      test: ["CMD", "curl", "-fs", "http://127.0.0.1:4001/health"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -138,7 +141,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-doable}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       WS_PORT: 4001
-      WS_HOST: 127.0.0.1
+      WS_HOST: 0.0.0.0
       INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
       API_URL: http://api:4000
       NODE_ENV: ${NODE_ENV:-production}

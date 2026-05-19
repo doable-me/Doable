@@ -111,7 +111,7 @@ export async function seedAiProviderFromEnv(): Promise<void> {
       for (const plan of ["free", "pro", "business", "enterprise"]) {
         await sql`
           INSERT INTO platform_ai_defaults (plan, source, provider_id, provider_model, copilot_account_id, copilot_model, updated_by)
-          VALUES (${plan}, 'custom', NULL, ${providerModel}, NULL, NULL, 'system')
+          VALUES (${plan}, 'custom', NULL, ${providerModel}, NULL, NULL, NULL)
           ON CONFLICT (plan) DO NOTHING
         `;
       }
