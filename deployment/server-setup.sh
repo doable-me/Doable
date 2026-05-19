@@ -1007,6 +1007,13 @@ fi
 # API_DOMAIN/WS_DOMAIN come from the rewrite block at line ~221 or from a
 # pre-staged .env). Must NOT be gated on the .env idempotency check above —
 # next build prerenders with empty NEXT_PUBLIC_* envs otherwise.
+#
+# R14 FIX: _API_URL/_WS_URL are set ONLY in the regen-.env branch
+# (lines 785-790). In the preserve-existing-.env branch we land here with
+# them unbound — `set -u` makes the heredoc fatal. Derive defaults from
+# the already-loaded NEXT_PUBLIC_* or from the dashed *_DOMAIN locals.
+: "${_API_URL:=${NEXT_PUBLIC_API_URL:-https://${API_DOMAIN}}}"
+: "${_WS_URL:=${NEXT_PUBLIC_WS_URL:-wss://${WS_DOMAIN}}}"
 cat > "${INSTALL_DIR}/apps/web/.env.local" << WEBENVEOF
 NEXT_PUBLIC_API_URL=${_API_URL}
 NEXT_PUBLIC_WS_URL=${_WS_URL}
