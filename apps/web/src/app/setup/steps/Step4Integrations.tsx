@@ -38,6 +38,162 @@ export function Step4Integrations({ onNext, onBack, onSkip, isFinalStep }: StepP
   const [requireApproval, setRequireApproval] = useState(false);
   const [policyStatus, setPolicyStatus] = useState<SaveStatus>("idle");
 
+  // Supabase (Backend & Database)
+  const [showSupabase, setShowSupabase] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [supabaseConnected, setSupabaseConnected] = useState<boolean | null>(null);
+  const [supabaseConnectionId, setSupabaseConnectionId] = useState<string | null>(null);
+  const [supabaseOrgName, setSupabaseOrgName] = useState<string | null>(null);
+  const [supabaseStatus, setSupabaseStatus] = useState<SaveStatus>("idle");
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
+  const supabasePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const supabasePopupRef = useRef<Window | null>(null);
+
+  const refreshSupabaseConnection = useCallback(
+    async (wsId: string): Promise<boolean> => {
+      const res = await apiFetch<{ data: SupabaseConnectionRow[] }>(
+        `/integrations/connections?workspaceId=${encodeURIComponent(wsId)}`,
+      );
+      const row = res.data.find(
+        (c) => c.integrationId === "supabase-mgmt" && c.status === "active",
+      );
+      if (row) {
+        setSupabaseConnected(true);
+        setSupabaseConnectionId(row.id);
+        setSupabaseOrgName(row.displayName ?? "Supabase");
+        return true;
+      }
+      setSupabaseConnected(false);
+      setSupabaseConnectionId(null);
+      setSupabaseOrgName(null);
+      return false;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const ws = await apiListWorkspaces();
+        const first = ws.data[0];
+        if (cancelled || !first) {
+          if (!cancelled) setSupabaseConnected(false);
+          return;
+        }
+        setWorkspaceId(first.id);
+        await refreshSupabaseConnection(first.id);
+      } catch {
+        if (!cancelled) setSupabaseConnected(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (supabasePollRef.current) {
+        clearInterval(supabasePollRef.current);
+        supabasePollRef.current = null;
+      }
+    };
+  }, [refreshSupabaseConnection]);
+
+  const connectSupabase = useCallback(() => {
+    if (!workspaceId) return;
+    setSupabaseStatus("saving");
+    setSupabaseError(null);
+
+    const width = 600;
+    const height = 720;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+    const popup = window.open(
+      "about:blank",
+      "supabase-oauth",
+      `width=${width},height=${height},left=${left},top=${top},popup=1`,
+    );
+    if (!popup) {
+      setSupabaseStatus("error");
+      setSupabaseError("Popup was blocked. Allow popups for this site and try again.");
+      return;
+    }
+    supabasePopupRef.current = popup;
+
+    (async () => {
+      try {
+        const params = new URLSearchParams({ workspaceId, scope: "user" });
+        const { authorizationUrl } = await apiFetch<{ authorizationUrl: string }>(
+          `/integrations/enhanced-auth/supabase-mgmt/authorize?${params}`,
+        );
+        popup.location.href = authorizationUrl;
+      } catch (err) {
+        try { popup.close(); } catch { /* ignore */ }
+        setSupabaseStatus("error");
+        setSupabaseError(err instanceof Error ? err.message : "Failed to start Supabase sign-in.");
+        return;
+      }
+
+      const deadline = Date.now() + 150_000;
+      if (supabasePollRef.current) clearInterval(supabasePollRef.current);
+      supabasePollRef.current = setInterval(async () => {
+        if (Date.now() > deadline) {
+          if (supabasePollRef.current) {
+            clearInterval(supabasePollRef.current);
+            supabasePollRef.current = null;
+          }
+          try { popup.close(); } catch { /* ignore */ }
+          setSupabaseStatus("error");
+          setSupabaseError("Timed out waiting for Supabase sign-in. Try again.");
+          return;
+        }
+        try {
+          const ok = await refreshSupabaseConnection(workspaceId);
+          if (ok) {
+            if (supabasePollRef.current) {
+              clearInterval(supabasePollRef.current);
+              supabasePollRef.current = null;
+            }
+            try { popup.close(); } catch { /* ignore */ }
+            setSupabaseStatus("success");
+            setTimeout(() => setSupabaseStatus("idle"), 1500);
+            return;
+          }
+        } catch {
+          // ignore transient errors, keep polling
+        }
+        if (popup.closed) {
+          if (supabasePollRef.current) {
+            clearInterval(supabasePollRef.current);
+            supabasePollRef.current = null;
+          }
+          // One last check — popup closed could mean success arrived just before close.
+          const ok = await refreshSupabaseConnection(workspaceId).catch(() => false);
+          if (!ok) {
+            setSupabaseStatus("error");
+            setSupabaseError("Supabase sign-in window was closed. Try again.");
+          } else {
+            setSupabaseStatus("success");
+            setTimeout(() => setSupabaseStatus("idle"), 1500);
+          }
+        }
+      }, 2000);
+    })();
+  }, [workspaceId, refreshSupabaseConnection]);
+
+  const disconnectSupabase = useCallback(async () => {
+    if (!supabaseConnectionId) return;
+    setSupabaseStatus("saving");
+    setSupabaseError(null);
+    try {
+      await apiFetch(`/integrations/connections/${supabaseConnectionId}`, { method: "DELETE" });
+      setSupabaseConnected(false);
+      setSupabaseConnectionId(null);
+      setSupabaseOrgName(null);
+      setSupabaseStatus("idle");
+    } catch (err) {
+      setSupabaseStatus("error");
+      setSupabaseError(err instanceof Error ? err.message : "Could not disconnect Supabase.");
+    }
+  }, [supabaseConnectionId]);
+
   async function saveBilling() {
     if (!stripeSecret.trim() && !stripeWebhook.trim()) return;
     setBillingStatus("saving");
@@ -214,6 +370,83 @@ export function Step4Integrations({ onNext, onBack, onSkip, isFinalStep }: StepP
                 {billingStatus === "saving" ? "Saving…" : billingStatus === "success" ? "Saved" : "Save Stripe"}
               </Button>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Backend & Database (Supabase) — collapsible */}
+      <div className="rounded-lg border border-border bg-card">
+        <button
+          type="button"
+          onClick={() => setShowSupabase((v) => !v)}
+          className="w-full flex items-center justify-between p-4 text-left"
+        >
+          <div>
+            <p className="text-sm font-medium text-foreground">Backend &amp; Database (optional)</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {showSupabase
+                ? "Pre-authorize Doable to provision Supabase projects on demand."
+                : "Optional — pre-authorize Supabase so users don't get a sign-in prompt mid-build."}
+            </p>
+          </div>
+          <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", showSupabase && "rotate-180")} />
+        </button>
+
+        {showSupabase && (
+          <div className="border-t border-border px-4 pb-4 pt-3 flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              Pre-authorize Doable to provision Supabase projects on demand. Without this, users will be prompted mid-build to sign in with Supabase each time.
+            </p>
+
+            {supabaseConnected === null && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Checking connection…
+              </div>
+            )}
+
+            {supabaseConnected === true && (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-green-500 flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Connected as {supabaseOrgName ?? "Supabase"}
+                </p>
+                <Button
+                  onClick={disconnectSupabase}
+                  disabled={supabaseStatus === "saving"}
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground gap-2"
+                >
+                  {supabaseStatus === "saving" && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Disconnect
+                </Button>
+              </div>
+            )}
+
+            {supabaseConnected === false && (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  Not connected yet.
+                </p>
+                <Button
+                  onClick={connectSupabase}
+                  disabled={!workspaceId || supabaseStatus === "saving"}
+                  size="sm"
+                  className="bg-brand-600 text-white hover:bg-brand-500 gap-2"
+                >
+                  {supabaseStatus === "saving" && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {supabaseStatus === "saving" ? "Waiting for sign-in…" : "Connect Supabase"}
+                </Button>
+              </div>
+            )}
+
+            {supabaseStatus === "error" && supabaseError && (
+              <p className="text-xs text-red-400">{supabaseError}</p>
+            )}
+            {supabaseStatus === "success" && (
+              <p className="text-xs text-green-500 flex items-center gap-1">
+                <Check className="h-3 w-3" /> Connected
+              </p>
+            )}
           </div>
         )}
       </div>
