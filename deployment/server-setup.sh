@@ -754,6 +754,33 @@ if [ -f "${INSTALL_DIR}/.env" ]; then
     } >> "${INSTALL_DIR}/.env"
     warn "DOABLE_KEK was missing from ${INSTALL_DIR}/.env — appended a freshly generated 32-byte base64 key. Restart the API service to pick it up."
   fi
+
+  # R14 BUG-R14-WS-ORIGIN-BLOCK: pre-onboarding-v1 .env files (or any .env
+  # carried over from .env.example before this knob was added) are missing
+  # WS_ALLOWED_ORIGINS. The WS server (services/ws/src/index.ts:259-275)
+  # falls back to a localhost-only allowlist in non-prod, which 403s every
+  # browser WS upgrade from the public hostname. Collab/cursors/chat-stream
+  # all silently break. Same defensive back-fill for CORS_ORIGINS.
+  PUBLIC_APP_ORIGIN=$(grep -oP '(?<=^NEXT_PUBLIC_APP_URL=).+' "${INSTALL_DIR}/.env" 2>/dev/null | head -1)
+  PUBLIC_APP_ORIGIN="${PUBLIC_APP_ORIGIN:-https://${DOMAIN:-localhost}}"
+
+  if ! grep -qE '^WS_ALLOWED_ORIGINS=' "${INSTALL_DIR}/.env"; then
+    {
+      printf '\n# Back-filled by setup-server.sh — required for browser WS upgrades to pass\n'
+      printf '# the CSWSH (BUG-017) origin allowlist. Without this the WS server defaults\n'
+      printf '# to localhost-only in non-prod and 403s every page-initiated y-websocket.\n'
+      printf 'WS_ALLOWED_ORIGINS=%s\n' "${PUBLIC_APP_ORIGIN}"
+    } >> "${INSTALL_DIR}/.env"
+    warn "WS_ALLOWED_ORIGINS was missing from ${INSTALL_DIR}/.env — appended (${PUBLIC_APP_ORIGIN}). Restart the WS service to pick it up."
+  fi
+
+  if ! grep -qE '^CORS_ORIGINS=' "${INSTALL_DIR}/.env"; then
+    {
+      printf '\n# Back-filled by setup-server.sh — required for browser fetch() against the API.\n'
+      printf 'CORS_ORIGINS=%s\n' "${PUBLIC_APP_ORIGIN}"
+    } >> "${INSTALL_DIR}/.env"
+    warn "CORS_ORIGINS was missing from ${INSTALL_DIR}/.env — appended (${PUBLIC_APP_ORIGIN}). Restart the API service to pick it up."
+  fi
 else
 
 # Bind addresses: bare-metal binds to 127.0.0.1 and Cloudflare Tunnel proxies
