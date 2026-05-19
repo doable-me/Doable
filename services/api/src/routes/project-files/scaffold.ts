@@ -25,6 +25,21 @@ const scaffoldLocks = new Map<string, Promise<void>>();
 scaffoldRoutes.post("/projects/:id/scaffold", async (c) => {
   const projectId = c.req.param("id");
 
+  // BUG-R14-COLLAB-REJOIN: refuse to scaffold a project whose DB row does
+  // not exist. Previously the access middleware in routes/project-files.ts
+  // let POST /scaffold fall through for missing projects so the row could
+  // be lazily created — but that auto-creation used the *caller's*
+  // workspace, allowing project-id hijack. Project rows must be created
+  // via explicit POST /projects before scaffold can be invoked.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+    const [row] = await sql<{ id: string }[]>`
+      SELECT id FROM projects WHERE id = ${projectId} AND deleted_at IS NULL
+    `;
+    if (!row) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+  }
+
   // If a scaffold is already in-flight for this project, wait for it to
   // finish and then handle this request normally (which will hit the
   // ProjectExistsError path and just start the dev server).
@@ -222,76 +237,48 @@ function isValidUuid(value: string): boolean {
 }
 
 /**
- * Ensure a project record exists in the database, owned by the
- * authenticated user's workspace. Falls back to first workspace only
- * if no userId is provided (shouldn't happen in normal auth flows).
+ * Verify the project row exists in DB. If it does, no-op. If it does NOT,
+ * log a warning — but DO NOT auto-create. Creating a project row from the
+ * scaffold path is unsafe: it lets any caller who visits /editor/<missingId>
+ * recreate a deleted (or never-existed) project under THEIR workspace,
+ * effectively hijacking the project id (BUG-R14-COLLAB-REJOIN).
  *
- * Only works for UUID project IDs (the projects table has a uuid primary key).
- * Non-UUID IDs (e.g. "proj-1234567890") are skipped since they come from
- * the editor's "new project" flow and will get a proper DB record later.
+ * Project rows must be created via explicit endpoints — `POST /projects`
+ * (`projects.create` in list-routes.ts), template instantiation, or
+ * the chat `createIfMissing` flow that has its own opt-in gate.
  *
- * Uses INSERT ... ON CONFLICT DO NOTHING so it's safe to call multiple times.
+ * Only works for UUID project IDs (the projects table has a uuid primary
+ * key). Non-UUID IDs (e.g. "proj-1234567890") are skipped since they
+ * come from the editor's "new project" flow and will get a proper DB
+ * record via the explicit POST /projects path.
  */
-async function ensureProjectDbRecord(projectId: string, userId?: string): Promise<void> {
+async function ensureProjectDbRecord(projectId: string, _userId?: string): Promise<void> {
   try {
-    // The projects table uses uuid as the primary key type.
-    // Skip non-UUID project IDs — they can't be stored.
     if (!isValidUuid(projectId)) {
-      console.log(`[Scaffold] Skipping DB record for non-UUID projectId: ${projectId}`);
+      console.log(`[Scaffold] Skipping DB record check for non-UUID projectId: ${projectId}`);
       return;
     }
 
-    // Check if a record already exists
     const existing = await sql`SELECT id FROM projects WHERE id = ${projectId}`;
     if (existing.length > 0) return;
 
-    // Use the authenticated user's workspace so projects land in the correct account
-    let workspaceId: string | undefined;
-    if (userId) {
-      const userWorkspaces = await sql`
-        SELECT w.id FROM workspaces w
-        INNER JOIN workspace_members wm ON wm.workspace_id = w.id
-        WHERE wm.user_id = ${userId}
-        ORDER BY w.updated_at DESC
-        LIMIT 1
-      `;
-      workspaceId = userWorkspaces[0]?.id as string | undefined;
-    }
-
-    // Fallback: pick the first workspace (should rarely happen now that auth is required)
-    if (!workspaceId) {
-      const fallback = await sql`SELECT id FROM workspaces ORDER BY created_at ASC LIMIT 1`;
-      if (fallback.length === 0) {
-        console.warn(
-          `[Scaffold] No workspaces in DB — cannot create project record for ${projectId}. ` +
-          `The project will exist on disk but won't appear on the dashboard until a workspace is created.`
-        );
-        return;
-      }
-      workspaceId = fallback[0]!.id as string;
-    }
-
-    // Derive a human-readable name from the projectId
-    const projectName = projectId
-      .replace(/^proj-/, "")
-      .replace(/[-_]/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-      .slice(0, 100) || "Untitled Project";
-
-    // Generate a slug from the projectId, adding a timestamp suffix for uniqueness
-    // (the projects table has a UNIQUE(workspace_id, slug) constraint)
-    const baseSlug = projectId.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40) || "project";
-    const slug = `${baseSlug}-${Date.now().toString(36)}`;
-
-    await sql`
-      INSERT INTO projects (id, workspace_id, name, slug, status)
-      VALUES (${projectId}, ${workspaceId}, ${projectName}, ${slug}, 'draft')
-      ON CONFLICT (id) DO NOTHING
-    `;
-
-    console.log(`[Scaffold] Created DB record for project ${projectId} in workspace ${workspaceId}`);
+    // BUG-R14-COLLAB-REJOIN: never auto-INSERT a project row from the
+    // scaffold path. Doing so allowed any user who hit
+    // POST /projects/<id>/scaffold for a deleted-or-missing project to
+    // recreate it under their OWN workspace with a UUID-as-name placeholder,
+    // hijacking the project id from its original owner.
+    //
+    // If we got here, the access middleware in routes/project-files.ts
+    // already let the scaffold POST through — that branch only fires when
+    // the project row is missing entirely, in which case the *correct*
+    // behavior is to refuse the scaffold (not silently recreate).
+    console.warn(
+      `[Scaffold] Refusing to auto-create DB row for missing project ${projectId} — ` +
+      `project must be created via POST /projects first. ` +
+      `(BUG-R14-COLLAB-REJOIN safeguard)`
+    );
   } catch (err) {
     // Don't let DB errors break the scaffold flow — the project still works on disk
-    console.warn(`[Scaffold] Failed to create DB record for ${projectId}:`, err);
+    console.warn(`[Scaffold] Project existence check failed for ${projectId}:`, err);
   }
 }
