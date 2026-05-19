@@ -394,6 +394,18 @@ fi  # end CONTAINER_MODE != 1 (Step 1 apt block)
 mkdir -p /data/projects /data/sites
 chmod 0755 /data/projects /data/sites
 
+# ─── Sandbox composer state dir (R14: doable-owned marker dir) ──────────
+# Composers (nft-egress, cgroup-cap, etc-synth, proc-mask) used to drop
+# marker files inside <projectDir>/.sandbox/, but dev-uid-allocator chowns
+# <projectDir> to the per-project sandbox uid (10001+) so the API uid
+# can't write there. Move the markers to a sibling dir owned by the doable
+# user, keyed by projectId. Override location via DOABLE_SANDBOX_STATE_DIR.
+mkdir -p /var/lib/doable/sandbox
+if id -u doable >/dev/null 2>&1; then
+  chown doable:doable /var/lib/doable/sandbox
+fi
+chmod 0700 /var/lib/doable/sandbox
+
 # ─── Dev sandbox UID pool (chat preview iframes + builds) ───
 # Production (doable-app@.service) uses DynamicUser=yes for runtime
 # isolation. Dev preview servers AND build/publish jobs run as
@@ -1914,6 +1926,36 @@ SUDO
   fi
 else
   echo "[SKIP-CONTAINER] Step 12.6/13: AppArmor + sandbox helpers (kernel-level, runs on host)"
+fi
+
+# ─── Step 12.9: Defensive source-tree restore (BUG-12 mitigation) ──
+# On fresh dodev installs, files under services/api/src/projects/ and
+# services/api/src/routes/projects/ have been observed deleted from the
+# working tree while still tracked in the git index (baremetal-audit-r13
+# "BUG-12"). Root cause is not yet identified — pattern matches paths
+# containing "projects", suggesting an overly-broad glob somewhere
+# (sandbox spawn helper, runtime cleanup, or a build step). Until the
+# source is found and fixed, restore any tracked source-tree files that
+# went missing during install, BEFORE services start. This is idempotent
+# and a no-op on a healthy tree, and never overwrites a live local edit
+# (git restore only touches the " D " status lines = deleted-from-tree).
+if [ "$CONTAINER_MODE" != "1" ] && [ -d "${INSTALL_DIR}/.git" ]; then
+  info "Step 12.9/13: Verifying tracked source files (BUG-12 guard)..."
+  (
+    cd "${INSTALL_DIR}" || exit 0
+    # `git status --porcelain` lines starting with " D " mean tracked-but-
+    # deleted-from-worktree (index unchanged). Restore just those.
+    MISSING_FILES=$(git status --porcelain 2>/dev/null | awk '$1 == "D" { print $2 }' || true)
+    if [ -n "$MISSING_FILES" ]; then
+      MISSING_COUNT=$(printf '%s\n' "$MISSING_FILES" | wc -l)
+      warn "Detected ${MISSING_COUNT} tracked file(s) missing from working tree — restoring:"
+      printf '%s\n' "$MISSING_FILES" | sed 's/^/    /'
+      printf '%s\n' "$MISSING_FILES" | xargs -r git restore --
+      ok "Restored ${MISSING_COUNT} file(s) from git index"
+    else
+      ok "Source tree intact — no missing tracked files"
+    fi
+  )
 fi
 
 # ─── Step 13: Start everything ────────────────────────────────
