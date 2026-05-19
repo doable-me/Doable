@@ -4,6 +4,7 @@
 
 import type { ChildProcess } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
+import { statSync } from "node:fs";
 import { getProjectPath } from "../ai/project-files.js";
 import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
 import { linkDoableSdk } from "./link-sdk.js";
@@ -258,6 +259,50 @@ async function doStartDevServer(
       );
       releaseDevUid(projectId);
       sandboxUid = null;
+    }
+  }
+
+  // Pre-spawn defensive uid assertion (BUG-R13 / preview-243). After the
+  // chown above, the project dir MUST be owned by sandboxUid. If a
+  // concurrent operation re-flipped it, we'd spawn a UID-dropped vite
+  // against an unreadable tree and hit EACCES. Verify, attempt one forced
+  // re-chown, and abort the spawn if still mismatched.
+  if (sandboxUid !== null && process.platform === "linux") {
+    let dirUid: number;
+    try {
+      dirUid = statSync(projectPath).uid;
+    } catch (err) {
+      throw new Error(
+        `[DevServer] pre-spawn stat failed for ${projectPath}: ${(err as Error).message}`,
+      );
+    }
+    if (dirUid !== sandboxUid) {
+      console.warn(
+        `[DevServer] WARN: dir uid mismatch (expected=${sandboxUid}, got=${dirUid}) — forcing chown`,
+      );
+      const useSudo = isSandboxWrapperAvailable();
+      const cmd = useSudo ? "sudo" : "chown";
+      const args = useSudo
+        ? ["-n", "chown", "-R", `${sandboxUid}:${sandboxUid}`, projectPath]
+        : ["-R", `${sandboxUid}:${sandboxUid}`, projectPath];
+      await new Promise<void>((resolve) => {
+        const ch = nodeSpawn(cmd, args, { stdio: "ignore" });
+        ch.on("exit", () => resolve());
+        ch.on("error", () => resolve());
+      });
+      let recheckUid: number;
+      try {
+        recheckUid = statSync(projectPath).uid;
+      } catch (err) {
+        throw new Error(
+          `[DevServer] pre-spawn re-stat failed for ${projectPath}: ${(err as Error).message}`,
+        );
+      }
+      if (recheckUid !== sandboxUid) {
+        throw new Error(
+          `Sandbox UID mismatch — aborting spawn to avoid EACCES (expected=${sandboxUid}, got=${recheckUid})`,
+        );
+      }
     }
   }
 
