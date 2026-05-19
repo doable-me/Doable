@@ -28,7 +28,14 @@ export const VISUAL_EDIT_BRIDGE_INLINE = `
       var mql = origMatchMedia(query);
       if (typeof query === "string" && /prefers-color-scheme\\s*:\\s*(dark|light)/i.test(query)) {
         var wants = /dark/i.test(query) ? "dark" : "light";
-        var compute = function() { return __doableTheme ? __doableTheme === wants : mql.matches; };
+        // Capture the native getter BEFORE we redefine the property — otherwise
+        // \`compute\` reading \`mql.matches\` recurses into itself and stack-overflows.
+        var nativeMatchesDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(mql), "matches");
+        var nativeMatches = nativeMatchesDesc && nativeMatchesDesc.get;
+        var compute = function() {
+          if (__doableTheme) return __doableTheme === wants;
+          return nativeMatches ? nativeMatches.call(mql) : false;
+        };
         var lastValue = compute();
         Object.defineProperty(mql, "matches", { configurable: true, get: compute });
         var origAdd = mql.addEventListener.bind(mql);

@@ -39,11 +39,14 @@ export function PreviewPanel() {
         lastHmrUpdateRef.current = Date.now();
         hmrConnectedRef.current = true;
       } else if (e.data.type === "doable-theme-ready") {
-        // Iframe just loaded its bridge — push current theme.
-        const t = document.documentElement.classList.contains("dark") ? "dark" : "light";
+        // Iframe just loaded its bridge — pin to light. The editor's dark theme
+        // is for the Doable chrome, not the user's app preview. AI-scaffolded
+        // apps only flip `--foreground` (text) in `.dark` but leave `--background`
+        // light → forcing dark renders text invisibly. The user's preview should
+        // always show their app's intended (light) theme.
         try {
           iframeRef.current?.contentWindow?.postMessage(
-            { type: "doable-theme", theme: t },
+            { type: "doable-theme", theme: "light" },
             "*",
           );
         } catch { /* ignore */ }
@@ -54,22 +57,21 @@ export function PreviewPanel() {
   }, [iframeRef]);
 
   // ─── Sync Doable theme into preview iframe ─────────────────
-  // Watch host <html>.dark and push every change to the iframe so
-  // Tailwind dark: classes inside the user's project re-resolve live.
+  // Always push `light` — the editor's dark theme is Doable chrome, not the
+  // user's app. AI-scaffolded `.dark` rules typically only flip `--foreground`
+  // while leaving `--background` light, so forcing dark on the iframe yields
+  // invisible (white-on-white) text. The user's preview shows their app's
+  // intended (light) theme regardless of editor chrome.
   useEffect(() => {
-    function pushTheme() {
-      const t = document.documentElement.classList.contains("dark") ? "dark" : "light";
+    function pushLight() {
       try {
         iframeRef.current?.contentWindow?.postMessage(
-          { type: "doable-theme", theme: t },
+          { type: "doable-theme", theme: "light" },
           "*",
         );
       } catch { /* ignore */ }
     }
-    pushTheme();
-    const obs = new MutationObserver(pushTheme);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => obs.disconnect();
+    pushLight();
   }, [iframeRef, previewUrl]);
 
   // Reset HMR state when iframe reloads (e.g. new project, manual refresh)
