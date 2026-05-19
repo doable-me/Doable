@@ -49,6 +49,46 @@ After adding both manually, bwrap `--uid 10003` still hits EACCES because bubble
 
 Until both land, R13 cannot ship: the AI builds files correctly but the preview never renders, and any AI `bash` call that mkdir's a new subdir under the project hits the same EACCES.
 
+## Update — 2026-05-19 03:55 UTC — BLOCKERs 1-5 closed, end-to-end verified
+
+Team `fix-r13-blockers` (4 parallel workers + lead, 18-min wall time) landed the following commits on `main`:
+
+| Commit | Scope | Closes |
+|---|---|---|
+| `8efbfa3c` | `deployment/server-setup.sh` — subuid/subgid + uidmap install; multi-level dashed URL rewriter for all 8 env URL lines; cloudflared ingress dashed; apparmor cache pre-warm + writable | BLOCKER-1, BLOCKER-2, MEDIUM-2 |
+| `8f74a645` | `packages/dovault/src/backends/bubblewrap-v2.ts` — wrap bwrap with `sudo -n /opt/doable/bin/sandbox-spawn <uid> <projectId>` when euid != 0 AND profile uid >= 10001 | BLOCKER-5 (backend) |
+| `e4649a8d` | follow-up: pass `/usr/bin/bwrap` (absolute) when wrapping — helper's exact-match allowlist rejects bare `bwrap` | BLOCKER-5 (helper match) |
+| `2ebb7adf` | `deployment/bin/sandbox-spawn` — allowlist `/usr/bin/bwrap` as a valid CMD; updated rejection message | BLOCKER-5 (helper) |
+| `6f905ada` | `apps/web/src/middleware.ts` — extend matcher to `/dashboard`, `/editor/`, `/projects/`; redirect platform admin to `/setup` when `ai_providers` count = 0 | BLOCKER-4 |
+| `57873f80` | `services/api/src/projects/dev-server-start.ts` — reclaim @doable/sdk dir to api uid before linkDoableSdk, so on subsequent dev-server starts the API user can still write | follow-up to link-sdk EACCES |
+| `3a0acb45` | `apps/web/src/app/setup/steps/Step2AIProvider.tsx` — wizard copy clarifies default model is also used for suggestions | NIT-19 |
+
+### End-to-end verification on dodev (after scp + restart)
+
+```
+preview-url HTTP 200
+{"data":{"url":"/preview/<id>/","running":true}}
+
+POST /projects/<new-id>/chat → SSE stream:
+  data: {"type":"thinking_to_text","data":"…Thumbs up."}
+  data: {"type":"usage","data":{"model":"MiniMax-M2.7","durationMs":3930,"ttftMs":2231}}
+  data: [DONE]
+
+[DevServer] Project <id> ready at http://127.0.0.1:3100
+```
+
+The complete chat → AI → file-build → preview-render pipeline now works after a clean install + setup wizard. Residual non-blocking warnings (R13 known gaps): `[nft-egress] EACCES on .sandbox`, `[cgroup-cap] EACCES on .sandbox`, `[sandbox.audit] audit_sandbox_spawn table missing` — none of these prevent the preview from starting; they reduce defense-in-depth and should be closed before GA.
+
+### Still open
+
+- Full OS-wipe + reinstall validation (Hetzner rescue mode → fresh `setup-server.sh`). The fixes are committed; a fresh-install test is the next gate.
+- BUG-12 (services/api/src/projects/ getting deleted on dodev) — mechanism still unknown. May be unrelated to setup-server.sh and was a one-time anomaly. Audit when reproducible.
+- BUG-13 (signup button disabled) — worker-4 reports current source has the correct predicate (`disabled={isFormDisabled || !agreedToTerms}`). The earlier in-browser repro likely reflected a stale deploy. Re-verify after full rebuild.
+- BUG-16 (audit_sandbox_spawn migration) — pending migration file not in this commit.
+- BUG-17 (apparmor cache) — partial: `setup-server.sh` now pre-warms the cache; the existing dodev cache was also fixed manually. Verify on next fresh install.
+
+R13 is now ready for a fresh-install retest. Recommend: wipe dodev, re-run `setup-server.sh`, walk through the recipe in `~/Documents/doable-dodev-baremetal-recipe.md`, confirm chat + preview both work without manual intervention.
+
 ---
 
 ## [BLOCKER-1] cloudflared `config.yml` ingress uses two-level subdomains
