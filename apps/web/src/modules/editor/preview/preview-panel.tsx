@@ -39,11 +39,7 @@ export function PreviewPanel() {
         lastHmrUpdateRef.current = Date.now();
         hmrConnectedRef.current = true;
       } else if (e.data.type === "doable-theme-ready") {
-        // Iframe just loaded its bridge — pin to light. The editor's dark theme
-        // is for the Doable chrome, not the user's app preview. AI-scaffolded
-        // apps only flip `--foreground` (text) in `.dark` but leave `--background`
-        // light → forcing dark renders text invisibly. The user's preview should
-        // always show their app's intended (light) theme.
+        // Bridge announced ready — pin its theme to light (see useEffect below for why).
         try {
           iframeRef.current?.contentWindow?.postMessage(
             { type: "doable-theme", theme: "light" },
