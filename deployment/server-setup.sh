@@ -216,12 +216,33 @@ else
   read -rp "Stripe Webhook Secret: " STRIPE_WEBHOOK_SECRET
 fi
 
-# Honor API_DOMAIN/WS_DOMAIN already derived from NEXT_PUBLIC_* — only fall
-# back to the dot-prefix convention when nothing was pre-staged. Required so
-# multi-level DOMAINs (e.g. dev.doable.me) keep dev-api.doable.me and don't
-# get rewritten to dev-api.dev.doable.me.
-API_DOMAIN="${API_DOMAIN:-${API_SUB}.${DOMAIN}}"
-WS_DOMAIN="${WS_DOMAIN:-${WS_SUB}.${DOMAIN}}"
+# ── Dashed-hostname rewrite for multi-level DOMAINs ──
+# Cloudflare's free Universal SSL covers <zone> + *.<zone> ONE level only.
+# Two-level hostnames like `api.dev.doable.me` fail with
+# ERR_SSL_VERSION_OR_CIPHER_MISMATCH without paid Advanced Cert Manager.
+# So when DOMAIN has >2 labels (e.g. dev.doable.me), collapse API/WS subdomains
+# to a SINGLE label under the zone using dashed form:
+#   dev.doable.me        → DOMAIN_ZONE=doable.me, ENV_PREFIX=dev
+#   api  + dev.doable.me → dev-api.doable.me
+#   ws   + dev.doable.me → dev-ws.doable.me
+#   publish wildcard     → *.doable.me (the zone — shared across envs)
+# Honor pre-staged API_DOMAIN/WS_DOMAIN from .env (PRESEED_ENV_LOADED branch)
+# without rewriting them.
+DOMAIN_LABEL_COUNT=$(echo "$DOMAIN" | tr '.' '\n' | wc -l)
+if [ "$DOMAIN_LABEL_COUNT" -gt 2 ] && [ "$NO_TUNNEL" != "1" ]; then
+  # Multi-level: split into <prefix>.<zone>
+  ENV_PREFIX="${DOMAIN%%.*}"            # dev   from dev.doable.me
+  DOMAIN_ZONE="${DOMAIN#*.}"             # doable.me from dev.doable.me
+  API_DOMAIN="${API_DOMAIN:-${ENV_PREFIX}-${API_SUB}.${DOMAIN_ZONE}}"
+  WS_DOMAIN="${WS_DOMAIN:-${ENV_PREFIX}-${WS_SUB}.${DOMAIN_ZONE}}"
+  PUBLISH_WILDCARD_DOMAIN="${DOMAIN_ZONE}"
+  info "Multi-level DOMAIN detected — dashed hostnames: API=${API_DOMAIN}, WS=${WS_DOMAIN}, publish wildcard *.${PUBLISH_WILDCARD_DOMAIN}"
+else
+  # Zone-apex (e.g. doable.me) or NO_TUNNEL — keep dot-prefix convention.
+  API_DOMAIN="${API_DOMAIN:-${API_SUB}.${DOMAIN}}"
+  WS_DOMAIN="${WS_DOMAIN:-${WS_SUB}.${DOMAIN}}"
+  PUBLISH_WILDCARD_DOMAIN="${DOMAIN}"
+fi
 
 # NO_TUNNEL=1 single-host override: api/ws/web all served behind one
 # IP-facing Caddy on the same machine, distinguished by request path. Force
@@ -395,6 +416,25 @@ chmod 0755 /data/projects /data/sites
 # nftables needs to install rules. The `nft` apt package is installed
 # below (also added to Dockerfile.secure's apt list).
 if true; then
+  # ── subuid / subgid mapping for bwrap user-namespace remap ──
+  # bwrap --uid-map / --gid-map can only remap to host UIDs/GIDs that the
+  # invoking user owns in /etc/subuid + /etc/subgid. Without these entries
+  # the vite preview servers (running as inside-NS uid 10001+) hit EACCES
+  # on /work writes (baremetal-audit-r13 BLOCKER-5). The `newuidmap`/
+  # `newgidmap` helpers from the `uidmap` apt package consult these files,
+  # so install that too. Idempotent: each block re-checks for prior state.
+  if ! dpkg -s uidmap >/dev/null 2>&1; then
+    apt-get install -y uidmap >/dev/null 2>&1 || warn "Failed to install uidmap — bwrap uid-map will fail"
+  fi
+  if ! grep -q '^doable:' /etc/subuid 2>/dev/null; then
+    echo 'doable:10001:55000' >> /etc/subuid
+    ok "Appended doable:10001:55000 to /etc/subuid"
+  fi
+  if ! grep -q '^doable:' /etc/subgid 2>/dev/null; then
+    echo 'doable:10001:55000' >> /etc/subgid
+    ok "Appended doable:10001:55000 to /etc/subgid"
+  fi
+
   info "Provisioning dev sandbox user pool (doable-dev-1..1000 named, UID range 10001..65000)"
   for i in $(seq 1 1000); do
     uid=$((10000 + i))
@@ -721,7 +761,10 @@ if [ "$NO_TUNNEL" = "1" ]; then
   GITHUB_REPO_CALLBACK_HOST="${HOST}"
   warn "NO_TUNNEL=1 — OAuth providers (Google/GitHub) reject raw IPs as redirect URIs. The GOOGLE_REDIRECT_URI/GITHUB_REDIRECT_URI values written below point at https://${HOST}; you'll need to overwrite them with a real registered HTTPS hostname before OAuth login will work."
 else
-  GITHUB_REPO_CALLBACK_HOST="api.${DOMAIN}"
+  # Reuse the dashed API_DOMAIN computed above so multi-level DOMAINs
+  # (dev.doable.me) emit dev-api.doable.me, NOT api.dev.doable.me which
+  # would break under free Universal SSL.
+  GITHUB_REPO_CALLBACK_HOST="${API_DOMAIN}"
 fi
 
 cat > "${INSTALL_DIR}/.env" << ENVEOF
@@ -924,7 +967,10 @@ if [ -z "${DOMAIN:-}" ] || [ -z "${API_DOMAIN:-}" ] || [ -z "${WS_DOMAIN:-}" ]; 
   # shellcheck disable=SC1091
   . "${INSTALL_DIR}/.env" 2>/dev/null || true
   set +a
-  # Recompute API/WS domains from NEXT_PUBLIC_* if still unset
+  # Recompute API/WS domains from NEXT_PUBLIC_* if still unset.
+  # The .env block already wrote dashed hostnames for multi-level DOMAINs,
+  # so NEXT_PUBLIC_API_URL=https://dev-api.doable.me — we just trim the
+  # scheme; no further dashing needed here.
   : "${DOMAIN:=${NEXT_PUBLIC_APP_URL#https://}}"
   DOMAIN="${DOMAIN%/}"
   api_host="${NEXT_PUBLIC_API_URL#https://}"
@@ -934,6 +980,10 @@ if [ -z "${DOMAIN:-}" ] || [ -z "${API_DOMAIN:-}" ] || [ -z "${WS_DOMAIN:-}" ]; 
   ws_host="${ws_host%/}"
   : "${WS_DOMAIN:=${ws_host}}"
 fi
+# Stub apps/web/.env.local with dashed NEXT_PUBLIC_* URLs (already-dashed
+# API_DOMAIN/WS_DOMAIN come from the rewrite block at line ~221 or from a
+# pre-staged .env). Must NOT be gated on the .env idempotency check above —
+# next build prerenders with empty NEXT_PUBLIC_* envs otherwise.
 cat > "${INSTALL_DIR}/apps/web/.env.local" << WEBENVEOF
 NEXT_PUBLIC_API_URL=https://${API_DOMAIN}
 NEXT_PUBLIC_WS_URL=wss://${WS_DOMAIN}
@@ -1128,6 +1178,24 @@ CFEOF
   CREDS_FILE=$(find /root/.cloudflared -name "${TUNNEL_ID}.json" 2>/dev/null | head -1)
   [[ -z "$CREDS_FILE" ]] && err "Tunnel credentials file not found"
 
+  # Defensive: re-derive PUBLISH_WILDCARD_DOMAIN if the .env-reuse branch
+  # bypassed the dashed-rewrite block at the top. Free Universal SSL covers
+  # the zone + one wildcard level only, so multi-level DOMAINs (dev.doable.me)
+  # MUST emit *.doable.me, not *.dev.doable.me, for published-site TLS to work.
+  if [ -z "${PUBLISH_WILDCARD_DOMAIN:-}" ]; then
+    DOMAIN_LABEL_COUNT=$(echo "$DOMAIN" | tr '.' '\n' | wc -l)
+    if [ "$DOMAIN_LABEL_COUNT" -gt 2 ]; then
+      PUBLISH_WILDCARD_DOMAIN="${DOMAIN#*.}"
+    else
+      PUBLISH_WILDCARD_DOMAIN="${DOMAIN}"
+    fi
+  fi
+
+  # Ingress hostnames: API/WS already dashed (dev-api.doable.me) for
+  # multi-level DOMAINs via the dashed-rewrite block above. Publish wildcard
+  # binds to PUBLISH_WILDCARD_DOMAIN (the zone for multi-level, the DOMAIN
+  # for zone-apex). The catchall on :8080 routes published-site traffic
+  # to the Caddy host-matching block.
   cat > /root/.cloudflared/config.yml << CFGEOF
 tunnel: ${TUNNEL_ID}
 credentials-file: ${CREDS_FILE}
@@ -1145,7 +1213,7 @@ ingress:
     service: http://127.0.0.1:3000
     originRequest:
       noTLSVerify: true
-  - hostname: "*.${DOMAIN}"
+  - hostname: "*.${PUBLISH_WILDCARD_DOMAIN}"
     service: http://127.0.0.1:8080
     originRequest:
       noTLSVerify: true
@@ -1675,6 +1743,20 @@ if [ "$CONTAINER_MODE" != "1" ]; then
   if ! command -v apparmor_parser &>/dev/null; then
     apt-get install -y apparmor apparmor-utils 2>&1 | tail -2
   fi
+
+  # /var/cache/apparmor pre-warm + group writability
+  # WHY: the api-bash + doable-bwrap profiles are reloaded at runtime by the
+  # `doable` user (sandbox composer + dev-server jail). apparmor_parser
+  # writes a cached binary to /var/cache/apparmor — owned root:root 0755 by
+  # default — and reload EACCES out as the unprivileged `doable` user.
+  # Pre-warm here (root has write at install time) and chgrp/chmod so the
+  # runtime user can refresh the cache without escalation.
+  mkdir -p /var/cache/apparmor
+  if id doable &>/dev/null; then
+    chgrp doable /var/cache/apparmor 2>/dev/null || true
+    chmod g+w /var/cache/apparmor 2>/dev/null || true
+  fi
+
   if [ -f "${INSTALL_DIR}/deployment/apparmor/doable-ai-bash" ]; then
     install -m 0644 -o root -g root \
       "${INSTALL_DIR}/deployment/apparmor/doable-ai-bash" \
