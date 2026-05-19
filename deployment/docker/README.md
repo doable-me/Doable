@@ -30,6 +30,15 @@ The published images are built with placeholder URLs in the client bundle;
 the web container's runtime entrypoint sed-replaces them with your real
 `NEXT_PUBLIC_*` values on startup. One image works for any deployment URL.
 
+> **Heads-up**: `--prebuilt` requires the ghcr.io images to be **public**.
+> While the GitHub repo is in pre-release / private mode the package
+> visibility may also be private — the pull then returns 401 and `setup.sh`
+> **automatically falls back to a from-source build (5–10 min)** rather
+> than failing. Watch the install log for `[warn] Could not pull pre-built
+> images — falling back to source build` to know which path ran. If you
+> don't want the silent fallback, set `DOABLE_PREBUILT=false` to force
+> source-build from the start.
+
 ## Source Path — build locally
 
 Use when you want to modify the Dockerfile or contribute upstream:
