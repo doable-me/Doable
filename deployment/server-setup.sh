@@ -716,16 +716,14 @@ info "Step 8/13: Writing environment files..."
 if [ -f "${INSTALL_DIR}/.env" ]; then
   ok "Reusing existing .env at ${INSTALL_DIR}/.env (secrets preserved)"
 
-  # R14 BUG-DUP-SECRET-DETECT (architect verdict follow-up #5): refuse to
-  # continue when secret-class keys appear on more than one line. Node's
-  # --env-file is last-wins but operators routinely edit the FIRST hit when
-  # rotating, producing a silent mismatch between "what we think the secret
-  # is" and "what the running process actually uses." Auto-dedupe is too
-  # dangerous (picks the wrong one); force operator to resolve.
+  # Refuse to continue when a secret-class key has duplicate lines. Node
+  # --env-file is last-wins, but operators routinely rotate by editing the
+  # FIRST hit — producing a silent mismatch between the intended secret
+  # and the one the running process actually uses.
   for _dupkey in JWT_SECRET DOABLE_KEK ENCRYPTION_KEY INTERNAL_SECRET INSTALL_BOOTSTRAP_TOKEN COOKIE_SECRET; do
-    _dupcount=$(grep -cE "^${_dupkey}=" "${INSTALL_DIR}/.env" 2>/dev/null || echo 0)
-    if [ "${_dupcount}" -gt 1 ]; then
-      err "Found ${_dupcount} duplicate ${_dupkey}= lines in ${INSTALL_DIR}/.env. Open the file, keep ONE line (the one actually in use — typically the LAST since Node --env-file is last-wins), then re-run setup-server.sh."
+    _dupcount=$(grep -cE "^${_dupkey}=" "${INSTALL_DIR}/.env" || true)
+    if [ "${_dupcount:-0}" -gt 1 ]; then
+      err "Found ${_dupcount} duplicate ${_dupkey}= lines in ${INSTALL_DIR}/.env. Keep ONE (Node --env-file is last-wins) and re-run setup-server.sh."
     fi
   done
 
