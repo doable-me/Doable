@@ -716,6 +716,19 @@ info "Step 8/13: Writing environment files..."
 if [ -f "${INSTALL_DIR}/.env" ]; then
   ok "Reusing existing .env at ${INSTALL_DIR}/.env (secrets preserved)"
 
+  # R14 BUG-DUP-SECRET-DETECT (architect verdict follow-up #5): refuse to
+  # continue when secret-class keys appear on more than one line. Node's
+  # --env-file is last-wins but operators routinely edit the FIRST hit when
+  # rotating, producing a silent mismatch between "what we think the secret
+  # is" and "what the running process actually uses." Auto-dedupe is too
+  # dangerous (picks the wrong one); force operator to resolve.
+  for _dupkey in JWT_SECRET DOABLE_KEK ENCRYPTION_KEY INTERNAL_SECRET INSTALL_BOOTSTRAP_TOKEN COOKIE_SECRET; do
+    _dupcount=$(grep -cE "^${_dupkey}=" "${INSTALL_DIR}/.env" 2>/dev/null || echo 0)
+    if [ "${_dupcount}" -gt 1 ]; then
+      err "Found ${_dupcount} duplicate ${_dupkey}= lines in ${INSTALL_DIR}/.env. Open the file, keep ONE line (the one actually in use — typically the LAST since Node --env-file is last-wins), then re-run setup-server.sh."
+    fi
+  done
+
   # Back-fill DOABLE_KEK on pre-R9 installs. The envelope-crypto master KEK
   # was introduced after the bulk of secret-gen here, so older .env files
   # exist that pre-date the line above. Without it the API throws 500 on
@@ -764,7 +777,18 @@ if [ -f "${INSTALL_DIR}/.env" ]; then
   PUBLIC_APP_ORIGIN=$(grep -oP '(?<=^NEXT_PUBLIC_APP_URL=).+' "${INSTALL_DIR}/.env" 2>/dev/null | head -1)
   PUBLIC_APP_ORIGIN="${PUBLIC_APP_ORIGIN:-https://${DOMAIN:-localhost}}"
 
-  if ! grep -qE '^WS_ALLOWED_ORIGINS=' "${INSTALL_DIR}/.env"; then
+  # R14 architect verdict follow-up #3: promote WS_ALLOWED_ORIGINS +
+  # CORS_ORIGINS to the 3-way pattern used by DOABLE_KEK (lines 742-756):
+  # present-and-nonempty → preserve; present-but-empty → fill in + warn;
+  # missing → append. Without the present-but-empty branch, a .env with
+  # `WS_ALLOWED_ORIGINS=` still 403s every browser WS upgrade because the
+  # grep -qE '^WS_ALLOWED_ORIGINS=' matches and the back-fill is skipped.
+  if grep -qE '^WS_ALLOWED_ORIGINS=.+' "${INSTALL_DIR}/.env"; then
+    ok "WS_ALLOWED_ORIGINS already set in existing .env (preserving)"
+  elif grep -qE '^WS_ALLOWED_ORIGINS=$' "${INSTALL_DIR}/.env"; then
+    sed -i "s|^WS_ALLOWED_ORIGINS=$|WS_ALLOWED_ORIGINS=${PUBLIC_APP_ORIGIN}|" "${INSTALL_DIR}/.env"
+    warn "WS_ALLOWED_ORIGINS was present but empty in ${INSTALL_DIR}/.env — filled with ${PUBLIC_APP_ORIGIN}. Restart the WS service to pick it up."
+  else
     {
       printf '\n# Back-filled by setup-server.sh — required for browser WS upgrades to pass\n'
       printf '# the CSWSH (BUG-017) origin allowlist. Without this the WS server defaults\n'
@@ -774,7 +798,12 @@ if [ -f "${INSTALL_DIR}/.env" ]; then
     warn "WS_ALLOWED_ORIGINS was missing from ${INSTALL_DIR}/.env — appended (${PUBLIC_APP_ORIGIN}). Restart the WS service to pick it up."
   fi
 
-  if ! grep -qE '^CORS_ORIGINS=' "${INSTALL_DIR}/.env"; then
+  if grep -qE '^CORS_ORIGINS=.+' "${INSTALL_DIR}/.env"; then
+    ok "CORS_ORIGINS already set in existing .env (preserving)"
+  elif grep -qE '^CORS_ORIGINS=$' "${INSTALL_DIR}/.env"; then
+    sed -i "s|^CORS_ORIGINS=$|CORS_ORIGINS=${PUBLIC_APP_ORIGIN}|" "${INSTALL_DIR}/.env"
+    warn "CORS_ORIGINS was present but empty in ${INSTALL_DIR}/.env — filled with ${PUBLIC_APP_ORIGIN}. Restart the API service to pick it up."
+  else
     {
       printf '\n# Back-filled by setup-server.sh — required for browser fetch() against the API.\n'
       printf 'CORS_ORIGINS=%s\n' "${PUBLIC_APP_ORIGIN}"

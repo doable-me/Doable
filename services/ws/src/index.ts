@@ -256,7 +256,16 @@ const server = createServer(async (req, res) => {
 // localhost / 127.0.0.1 so local dev still works. Same-origin requests
 // (no Origin header — typical of curl/SDK clients with valid tokens) are
 // allowed because they cannot be initiated by a browser cross-origin.
-const WS_ALLOWED_ORIGINS = (process.env.WS_ALLOWED_ORIGINS ?? "")
+// R14 architect verdict follow-up #5: when WS_ALLOWED_ORIGINS is unset,
+// inherit from CORS_ORIGINS. Operators who configure CORS for the API
+// almost always want the same allowlist on the WS server, but the BUG-017
+// fix introduced WS_ALLOWED_ORIGINS as a separate knob — and pre-onboarding
+// .env files that pre-date this knob silently fail every browser WS
+// upgrade. Inheriting from CORS_ORIGINS gives a safe default that matches
+// the operator's expressed intent without lowering the security bar.
+const WS_ALLOWED_ORIGINS = (
+  process.env.WS_ALLOWED_ORIGINS ?? process.env.CORS_ORIGINS ?? ""
+)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
