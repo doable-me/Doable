@@ -92,9 +92,19 @@ COPY --from=build --chown=node:node /app .
 
 # Download the puppeteer-bundled Chrome into the image so first-thumbnail
 # capture doesn't need network. Cached layer; runs once per build.
+#
+# R14 BUG-DOCKER-PUPPETEER: PUPPETEER_CACHE_DIR was previously /app/.puppeteer-cache
+# but the WORKDIR /app dir itself is owned by root (only the COPY'd contents
+# get chowned to node via --chown=node:node). USER node then hit EACCES on
+# mkdir of the cache dir and the build logged "Chrome install/smoke test
+# failed — thumbnails will be unavailable" on every clean build. Move the
+# cache to node's home (/home/node/.cache/puppeteer), which the node:22-slim
+# base image already creates and owns. Runtime container inherits the same
+# path because the api service also runs as USER node.
 USER node
-ENV PUPPETEER_CACHE_DIR=/app/.puppeteer-cache
-RUN cd services/api && pnpm exec puppeteer browsers install chrome \
+ENV PUPPETEER_CACHE_DIR=/home/node/.cache/puppeteer
+RUN mkdir -p "$PUPPETEER_CACHE_DIR" \
+  && cd services/api && pnpm exec puppeteer browsers install chrome \
   && find $PUPPETEER_CACHE_DIR/chrome -name chrome -type f -executable -exec {} --headless=new --no-sandbox --disable-gpu --version \; \
   || (echo "[api-image] Chrome install/smoke test failed — thumbnails will be unavailable" && true)
 

@@ -488,6 +488,16 @@ else
 fi
 docker compose -f "$COMPOSE_FILE" up -d
 
+# R14 BUG-DOCKER-DEPENDS-ON: Compose 2.40.x sometimes leaves api/ws/web in
+# the 'Created' state after the one-shot migrate exits successfully — the
+# `depends_on: { condition: service_completed_successfully }` trigger
+# doesn't reliably transition them to Running. Defensive idempotent
+# `docker compose start` forces any Created containers to run; no-op for
+# already-Running ones. Without this, nginx returns 502 on /dashboard
+# because the web upstream never started.
+sleep 3
+docker compose -f "$COMPOSE_FILE" start api ws web 2>/dev/null || true
+
 # Re-read the bootstrap token from .env in case .env already existed (operator
 # chose "keep" earlier) — we want to show the token that's actually active.
 ACTIVE_BOOTSTRAP_TOKEN=$(grep -E '^INSTALL_BOOTSTRAP_TOKEN=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
