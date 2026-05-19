@@ -76,14 +76,22 @@ const SOURCES: readonly SeedSource[] = [
 ];
 
 export async function seedAiProviderFromEnv(): Promise<void> {
+  console.log("[seed] seedAiProviderFromEnv() invoked");
   const source = SOURCES.find((s) => {
     const v = process.env[s.envVar];
     return typeof v === "string" && v.trim().length > 0;
   });
-  if (!source) return;
+  if (!source) {
+    console.log("[seed] no matching env var found — skipping (set MINIMAX_API_KEY / OPENAI_API_KEY / etc. to enable)");
+    return;
+  }
+  console.log(`[seed] matched source: ${source.label} ($${source.envVar})`);
 
   const key = process.env[source.envVar];
-  if (!key) return; // narrowing — find() guarantees non-empty above
+  if (!key) {
+    console.warn("[seed] WARN: source matched but key empty after re-read — race?");
+    return;
+  }
 
   // ── A: platform_ai_defaults upsert (idempotent, runs every boot) ──
   // Migration 056 pre-seeds 4 plan rows with empty provider_model. We fill
