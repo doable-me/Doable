@@ -16,35 +16,27 @@ cleanup() {
 }
 trap cleanup TERM INT
 
-# Start a detached tmux session running the service
-tmux new-session -d -s "$SESSION" -x 200 -y 50 "$@"
+# Build the command that runs inside the pane. Wrap the workload so we can
+# capture its exit code and signal completion via tmux's wait-for channel.
+# The exit code lands in a per-session file the entrypoint reads after wake-up.
+EXIT_FILE="/tmp/tmux-exit-${SESSION}"
+rm -f "$EXIT_FILE"
+CMD_LINE="$*; echo \$? > $EXIT_FILE; tmux wait-for -S ${SESSION}-done"
+
+# Start a detached tmux session running the wrapped workload.
+tmux new-session -d -s "$SESSION" -x 200 -y 50 "/bin/sh -c '$CMD_LINE'"
 
 # Forward pane output to the container's stderr so `docker logs` and `docker
-# compose logs` actually see app output. Without this, a service that crashes
-# on startup (missing env, ESM resolution error, port-in-use, etc.) appears as
-# a silent "Restarting (0)" loop with empty logs — impossible to debug. The
-# pipe-pane runs for the lifetime of the session and adds negligible overhead.
+# compose logs` see app output. Without this, a service that crashes on
+# startup appears as a silent "Restarting (0)" loop with empty logs.
 # /proc/1/fd/2 is PID-1's stderr inside the container, which docker captures.
-# `>&2` would route to tmux server's stderr, not the container's.
-tmux pipe-pane -t "$SESSION" -o 'cat > /proc/1/fd/2' 2>/dev/null || true
+tmux pipe-pane -t "$SESSION" -o "cat > /proc/1/fd/2" 2>/dev/null || true
 
-# Wait for the session to end (process exits → pane closes → session closes).
-# Capture the pane exit code via tmux wait-for so a crashed workload propagates
-# non-zero to Docker's restart policy instead of silently exiting 0.
-# Signal the wait-for channel from the tmux hook set below, then block until
-# it fires.
-# Record the pane exit code to a temp file when the pane dies, then signal
-# the wait-for channel so the blocking wait-for call below unblocks.
-EXIT_FILE=$(mktemp /tmp/tmux-exit-XXXXXX)
-tmux set-hook -t "$SESSION" pane-died \
-  "run-shell \"tmux display-message -p '#{pane_dead_status}' > ${EXIT_FILE}; tmux wait-for -S ${SESSION}-done\"" \
-  2>/dev/null || true
-# Also fire the signal on session-closed (covers clean exits where pane-died
-# may not fire before the session is destroyed).
-tmux set-hook -t "$SESSION" session-closed \
-  "run-shell \"tmux wait-for -S ${SESSION}-done\"" \
-  2>/dev/null || true
-tmux wait-for "${SESSION}-done"
+# Block until the workload signals completion. The wait-for is sent by the
+# wrapper above when the command exits (success or failure), so we no longer
+# depend on tmux hooks that fire on transient session events.
+tmux wait-for "${SESSION}-done" 2>/dev/null || true
+
 EXIT_CODE=0
 if [ -s "$EXIT_FILE" ]; then
   EXIT_CODE=$(cat "$EXIT_FILE")
