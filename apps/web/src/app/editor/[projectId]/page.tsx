@@ -5579,7 +5579,19 @@ function EditorPageInner() {
                               {msg.isStreaming && (
                                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-700 dark:bg-brand-400 animate-pulse" />
                               )}
-                              {msg.isStreaming ? "Thinking..." : "Thought process"}
+                              {msg.isStreaming ? (() => {
+                                const actions = msg.toolActions ?? [];
+                                const stepCount = actions.length;
+                                const running = actions.find((a) => a.status === "running");
+                                const latest = running ?? actions[actions.length - 1];
+                                if (stepCount > 0 && latest) {
+                                  const label = latest.filePath
+                                    ? latest.filePath.split("/").pop()
+                                    : latest.description;
+                                  return `Step ${stepCount} — ${label}`;
+                                }
+                                return "Thinking...";
+                              })() : "Thought process"}
                             </summary>
                             <div className="px-3 pb-2 text-muted-foreground max-h-60 overflow-y-auto scroll-smooth">
                               {extractFunctionSteps(msg.thinkingContent).length > 0
