@@ -44,7 +44,19 @@ tmux new-session -d -s "$SESSION" -n api -x 200 -y 50
 tmux send-keys -t "${SESSION}:api" "pnpm --filter @doable/api dev" C-m
 
 tmux new-window -t "$SESSION" -n web
-tmux send-keys -t "${SESSION}:web" "pnpm --filter @doable/web dev" C-m
+# Use the Next.js standalone production server, not `next dev --turbopack`.
+# setup-server.sh:1134 builds the standalone via `env -u NODE_ENV
+# NODE_ENV=production pnpm build`; that artifact is what gets served. dev
+# mode doesn't hydrate React 19 reliably on a tunnelled install — every
+# authed page sits at the SSR AuthGuard "Loading…" fallback because the
+# AuthProvider mount effect never fires, signup submits natively, etc.
+# Validated end-to-end via Playwright: standalone → fiberCount=267, signup →
+# /dashboard with full sidebar + platform-owner workspace.
+[ -f "$SCRIPT_DIR/apps/web/.next/standalone/apps/web/server.js" ] || {
+  echo "[start.sh] ERROR: apps/web/.next/standalone/apps/web/server.js missing — run setup-server.sh first (or 'env -u NODE_ENV NODE_ENV=production pnpm build' in $SCRIPT_DIR)" >&2
+  exit 1
+}
+tmux send-keys -t "${SESSION}:web" "cd apps/web/.next/standalone && HOSTNAME=127.0.0.1 PORT=3000 NODE_ENV=production node apps/web/server.js" C-m
 
 tmux new-window -t "$SESSION" -n ws
 tmux send-keys -t "${SESSION}:ws" "pnpm --filter @doable/ws dev" C-m
