@@ -180,11 +180,30 @@ function processLine(line, filePath, lineNum) {
 
     // Skip certain tags that shouldn't get annotations
     // (fragments, generic type params, etc.)
-    if (tagName === "T" || tagName === "K" || tagName === "V" || tagName === "P") {
-      // Likely a generic type parameter — skip single uppercase letters
-      // unless followed by a space and attributes (heuristic)
+    if (/^[A-Z]$/.test(tagName)) {
+      // Single uppercase letter — almost always a TypeScript generic
+      // parameter (T, K, V, P, U, S, E, R, A, B …). Common patterns we
+      // must NOT annotate:
+      //   Array<T>                                  <K,V>
+      //   <T = string>(arg: T) => ...               <K extends keyof Foo>
+      //   <T extends ...>                            <K, V extends ...>
       const after = line[afterTagName];
+      // Simple cases: <K> or <K, …>
       if (after === ">" || after === ",") {
+        continue;
+      }
+      // <K extends …>, <K keyof Foo>, <K infer X>, <T = string>, <U & V>
+      const restOfLine = line.slice(afterTagName);
+      if (/^\\s+(extends|keyof|infer)\\b/.test(restOfLine)) {
+        continue;
+      }
+      if (/^\\s*=\\s*\\S/.test(restOfLine)) {
+        continue;
+      }
+      // Heuristic for arrow-function generics: <K extends …>(…) => …
+      // — the closing > is followed by an opening paren somewhere on the
+      // same line. Belt-and-braces, in case of unusual whitespace.
+      if (/^[^>]*>\\s*\\(/.test(restOfLine)) {
         continue;
       }
     }
