@@ -53,6 +53,10 @@ r*-longprompt-fix-notes.md
 r*-ui-*.png
 r*-admin-*.png
 e2e-*.png
+
+# Internal QA cycle scripts and infrastructure provisioning
+scripts/r[0-9]*
+scripts/hetzner*
 baremetal-audit-r*.md
 baremetal-fix-r*.md
 docker-audit-r*.md
