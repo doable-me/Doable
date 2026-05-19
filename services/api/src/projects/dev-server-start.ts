@@ -33,6 +33,7 @@ import {
   DEV_SERVER_HOST,
   STARTUP_TIMEOUT_MS,
 } from "./dev-server-core.js";
+import { emitPreviewStartFailed } from "./preview-failure-trace.js";
 
 /**
  * Start a Vite dev server for the given project.
@@ -356,11 +357,14 @@ async function doStartDevServer(
   // Tolerates filter-chain errors silently — never fails the dev-server
   // start because of a logging side-effect.
   const buildId = `dev-${Date.now()}`;
+  const startedAtMs = Date.now();
+  let workspaceIdForTrace: string | null = null;
   let publisher: BuildEventPublisher | null = null;
   try {
     const [proj2] = await sql<{ workspace_id: string }[]>`
       SELECT workspace_id FROM projects WHERE id = ${projectId}
     `;
+    workspaceIdForTrace = proj2?.workspace_id ?? null;
     const wsFilters = await loadWorkspaceFilters(proj2?.workspace_id ?? "");
     const filterChain = new LogFilterChain([
       ...buildDefaultFilters(),
@@ -413,10 +417,24 @@ async function doStartDevServer(
 
   child.on("error", (err) => {
     console.error(`[DevServer] Error for project ${projectId}:`, err.message);
+    emitPreviewStartFailed({
+      projectId,
+      workspaceId: workspaceIdForTrace,
+      userId: opts?.userId ?? null,
+      sandboxUid,
+      workDir: projectPath,
+      exitCode: null,
+      signal: null,
+      durationMs: Date.now() - startedAtMs,
+      npmCmd: `${spec.command} ${spec.args.join(" ")}`,
+      framework: adapter.id,
+      rawOutput: outputBuffer,
+      errorMessage: err.message,
+    });
     markFailed(new Error(`Dev server failed to start: ${err.message}`));
   });
 
-  child.on("close", (code) => {
+  child.on("close", (code, signal) => {
     console.log(
       `[DevServer] Server for project ${projectId} exited with code ${code}`,
     );
@@ -424,6 +442,20 @@ async function doStartDevServer(
     // or a failure — keeping it allocated would leak a slot.
     releaseDevUid(projectId);
     if (!settled) {
+      emitPreviewStartFailed({
+        projectId,
+        workspaceId: workspaceIdForTrace,
+        userId: opts?.userId ?? null,
+        sandboxUid,
+        workDir: projectPath,
+        exitCode: code,
+        signal: signal ?? null,
+        durationMs: Date.now() - startedAtMs,
+        npmCmd: `${spec.command} ${spec.args.join(" ")}`,
+        framework: adapter.id,
+        rawOutput: outputBuffer,
+        errorMessage: `exited with code ${code} before ready`,
+      });
       // Process died before becoming ready — this is a failure
       markFailed(
         new Error(
@@ -448,6 +480,20 @@ async function doStartDevServer(
     .catch(() => {
       if (settled) return;
       if (child.exitCode !== null) {
+        emitPreviewStartFailed({
+          projectId,
+          workspaceId: workspaceIdForTrace,
+          userId: opts?.userId ?? null,
+          sandboxUid,
+          workDir: projectPath,
+          exitCode: child.exitCode,
+          signal: null,
+          durationMs: Date.now() - startedAtMs,
+          npmCmd: `${spec.command} ${spec.args.join(" ")}`,
+          framework: adapter.id,
+          rawOutput: outputBuffer,
+          errorMessage: `process exited (code ${child.exitCode}) without signaling ready`,
+        });
         markFailed(
           new Error(
             `Dev server process exited (code ${child.exitCode}) without signaling ready.\nOutput: ${summarizeOutput(outputBuffer)}`,
