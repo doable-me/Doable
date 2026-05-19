@@ -364,9 +364,14 @@ setupRoutes.post("/oauth/supabase", async (c) => {
   // Mirror into oauth_apps (workspace_id=NULL, is_global=true → platform-wide)
   // under the integration_id the registry uses for Supabase mgmt OAuth so
   // integrations-oauth.ts oauthApps.get("supabase-mgmt") picks it up for
-  // every workspace. ON CONFLICT swaps in the latest secret without losing
-  // the row id (kept stable across re-saves so any references survive).
+  // every workspace. oauth_apps has no partial-unique index on
+  // (integration_id) where workspace_id IS NULL, so we DELETE-then-INSERT
+  // to keep the global row authoritative without requiring a migration.
   try {
+    await sql`
+      DELETE FROM oauth_apps
+      WHERE integration_id = 'supabase-mgmt' AND workspace_id IS NULL
+    `;
     await sql`
       INSERT INTO oauth_apps (
         workspace_id, integration_id, client_id, client_secret_encrypted,
@@ -376,19 +381,12 @@ setupRoutes.post("/oauth/supabase", async (c) => {
         pgp_sym_encrypt(${clientSecret}, ${ENCRYPTION_KEY}),
         'pgp_sym', '{}'::jsonb, true
       )
-      ON CONFLICT (integration_id) WHERE workspace_id IS NULL
-      DO UPDATE SET
-        client_id               = EXCLUDED.client_id,
-        client_secret_encrypted = EXCLUDED.client_secret_encrypted,
-        credentials_format      = EXCLUDED.credentials_format,
-        is_global               = true,
-        updated_at              = now()
     `;
   } catch (err) {
     // Non-fatal: platform_config write already succeeded, and the
     // integrations-oauth route falls back to env vars when oauth_apps lookup
     // misses.
-    console.warn("[setup/oauth/supabase] oauth_apps INSERT/UPDATE failed:", err);
+    console.warn("[setup/oauth/supabase] oauth_apps replace failed:", err);
   }
 
   recordAdminAction(c, {
