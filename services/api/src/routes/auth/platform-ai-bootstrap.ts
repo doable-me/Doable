@@ -14,6 +14,7 @@
 import { sql } from "../../db/index.js";
 import { aiSettingsQueries, platformAiDefaultsQueries } from "@doable/db";
 import { ENCRYPTION_KEY } from "../../lib/secrets.js";
+import { getConfig, getEncryptedConfig } from "../../lib/platformConfig.js";
 
 const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
 const platformDefaults = platformAiDefaultsQueries(sql);
@@ -151,7 +152,51 @@ export async function applyPlatformAiDefault(
   if (!defaults) return false;
 
   // Nothing configured for this tier
-  if (!defaults.copilot_account_id && !defaults.provider_id) return false;
+  if (!defaults.copilot_account_id && !defaults.provider_id) {
+    // Special case: seedAiProviderFromEnv wrote provider_model but couldn't
+    // create an ai_providers row (no workspace existed at boot time). If
+    // platform_config holds a seeded api key, create the provider now in the
+    // target workspace so the first user gets AI access without running /setup.
+    if (defaults.source === "custom" && defaults.provider_model) {
+      try {
+        const apiKey = await getEncryptedConfig("setup.ai_provider_key");
+        const baseUrl = (await getConfig("setup.ai_provider_base_url")) as string | null;
+        const providerType = ((await getConfig("setup.ai_provider")) as string | null) === "anthropic" ? "anthropic" : "openai";
+        if (apiKey) {
+          const resolvedBaseUrl = baseUrl || (providerType === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1");
+          const [created] = await sql<{ id: string }[]>`
+            INSERT INTO ai_providers (workspace_id, label, provider_type, base_url, encrypted_api_key, is_valid, added_by, scope)
+            VALUES (${workspaceId}, ${defaults.provider_model}, ${providerType}::ai_provider_type, ${resolvedBaseUrl},
+                    pgp_sym_encrypt(${apiKey}, ${ENCRYPTION_KEY}), true, ${ownerId}, 'workspace'::ai_account_scope)
+            ON CONFLICT DO NOTHING
+            RETURNING id
+          `;
+          if (created) {
+            // Update platform_ai_defaults to record this provider_id for future workspaces
+            await sql`
+              UPDATE platform_ai_defaults SET provider_id = ${created.id}
+              WHERE plan = ${plan} AND provider_id IS NULL
+            `;
+            await aiSettings.upsertSettings({
+              workspaceId,
+              defaultSource: "custom",
+              defaultProviderId: created.id,
+              defaultProviderModel: defaults.provider_model,
+              suggestionSource: "custom",
+              suggestionProviderId: created.id,
+              suggestionProviderModel: defaults.provider_model,
+              updatedBy: ownerId,
+            });
+            console.log(`[PlatformAI] Seeded BYOK provider for plan=${plan} to workspace ${workspaceId.slice(0, 8)} from platform_config`);
+            return true;
+          }
+        }
+      } catch (err) {
+        console.warn("[PlatformAI] Failed to seed BYOK provider from platform_config:", err);
+      }
+    }
+    return false;
+  }
 
   let localCopilotId: string | null = null;
   let localProviderId: string | null = null;

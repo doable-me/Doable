@@ -1373,6 +1373,12 @@ if [ "$NO_TUNNEL" = "1" ]; then
         reverse_proxy 127.0.0.1:4000
     }
 
+    # /preview/* → API on 127.0.0.1:4000 (vite sub-resources use relative paths
+    # that resolve without the /api prefix; must be a separate block without path stripping)
+    handle /preview/* {
+        reverse_proxy 127.0.0.1:4000
+    }
+
     # /socket* and /ws* → WebSocket on 127.0.0.1:4001
     @ws path /socket* /ws*
     handle @ws {
