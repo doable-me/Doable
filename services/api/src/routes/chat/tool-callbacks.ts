@@ -336,6 +336,9 @@ export function createToolProgressCallbacks(
             (item as unknown as Record<string, unknown>)._offloaded = true;
           }
           persistViewerToProject(projectId, resourceUri, arts, bytesByExt, urlByExt);
+          // Mark as already-persisted so the drain loop below doesn't re-invoke
+          // persistViewerToProject on the (now rewritten, no-data-URI) text.
+          (item as unknown as Record<string, unknown>)._persisted = true;
         }
       }
       // If any artifact was persisted to a project file, surface that path
@@ -460,7 +463,12 @@ export function createToolProgressCallbacks(
               const { html: rewritten, artifacts: arts, bytesByExt, urlByExt } =
                 offloadDataUris(r.text, projectId, resourceUri);
               artifacts = arts;
-              persistViewerToProject(projectId, resourceUri, arts, bytesByExt, urlByExt);
+              // Skip persistence if the pre-rewrite loop already handled this
+              // item (avoids double-invocation log noise on already-rewritten text).
+              const alreadyPersisted = (item as unknown as Record<string, unknown>)._persisted === true;
+              if (!alreadyPersisted) {
+                persistViewerToProject(projectId, resourceUri, arts, bytesByExt, urlByExt);
+              }
               if (rewritten !== r.text) {
                 return { ...r, text: rewritten };
               }
