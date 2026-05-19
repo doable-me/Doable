@@ -157,11 +157,16 @@ CORS="https://${LISTEN_HOST}"
 # ─── Generate .env ────────────────────────────────────────────────────────────
 if [ -f "$ENV_FILE" ]; then
   warn ".env already exists at $ENV_FILE"
-  read -rp "Overwrite? [y/N] " overwrite
-  if [[ ! "$overwrite" =~ ^[Yy] ]]; then
-    info "Keeping existing .env"
+  # Non-TTY (piped SSH) or DOABLE_KEEP_ENV=1 → keep existing without prompting
+  if [ ! -t 0 ] || [ "${DOABLE_KEEP_ENV:-0}" = "1" ]; then
+    info "Keeping existing .env (non-interactive or DOABLE_KEEP_ENV=1)"
   else
-    rm "$ENV_FILE"
+    read -rp "Overwrite? [y/N] " overwrite
+    if [[ ! "$overwrite" =~ ^[Yy] ]]; then
+      info "Keeping existing .env"
+    else
+      rm "$ENV_FILE"
+    fi
   fi
 fi
 
@@ -462,7 +467,19 @@ echo ""
 cd "$PROJECT_DIR"
 if [[ "$COMPOSE_FILE" == *docker-compose.prod.yml ]]; then
   info "Pulling pre-built images from ghcr.io (tag: ${DOABLE_IMAGE_TAG:-latest})..."
-  docker compose -f "$COMPOSE_FILE" pull
+  if ! docker compose -f "$COMPOSE_FILE" pull 2>&1 | tee /tmp/doable-pull.log; then
+    PULL_LOG=$(cat /tmp/doable-pull.log 2>/dev/null || true)
+    if echo "$PULL_LOG" | grep -qiE 'denied|unauthorized|not found|private'; then
+      warn "ghcr.io images are not publicly accessible yet (registry denied)."
+      warn "Falling back to source build (~5-10 minutes)..."
+      COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+      info "Building Docker images from source..."
+      docker compose -f "$COMPOSE_FILE" build
+    else
+      error "docker compose pull failed. See output above."
+      exit 1
+    fi
+  fi
   info "Starting containers..."
 else
   info "Building Docker images from source (this takes ~5-10 minutes)..."
