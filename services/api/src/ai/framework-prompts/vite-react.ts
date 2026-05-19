@@ -80,6 +80,9 @@ export const viteReactPrompt: FrameworkPrompt = {
     "     }",
     "     ```",
     "   - Then use them as classes: `className=\"text-brand font-heading\"`",
+    "   - **🚨 NEVER STRIP THE SHADCN @THEME COLOR BRIDGES 🚨** — the scaffold's `index.css` defines `--background`, `--foreground`, `--muted`, `--card`, `--border`, `--primary`, etc. as raw HSL triplets under `:root`/`.dark`, AND aliases them inside `@theme` as `--color-background: hsl(var(--background))`, `--color-foreground: hsl(var(--foreground))`, etc.",
+    "   - Tailwind v4 ONLY emits a utility (`.text-foreground`, `.bg-background`, `.text-card-foreground`, etc.) when its underlying `--color-*` token exists inside `@theme`. If you remove or shrink the `@theme` block, those utilities silently disappear and every element using them renders with no color rule → invisible text.",
+    "   - When you EDIT `index.css`, you may ADD new tokens (e.g. `--color-accent: hsl(...)`) but you MUST PRESERVE every `--color-*` line that already exists. If you rewrite the file from scratch, copy the existing `@theme` block VERBATIM — do not collapse it to just brand/font/radius tokens.",
   ].join("\n"),
 
   fileShape: [

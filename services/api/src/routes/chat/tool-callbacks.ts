@@ -45,7 +45,15 @@ function offloadDataUris(
   if (projectId && resourceUri) {
     console.error(`[tool-callbacks] offloadDataUris entry project=${projectId} resourceUri=${resourceUri} htmlLen=${html?.length ?? 0}`);
   }
-  if (!html || html.length < 16 * 1024) return { html, artifacts };
+  // Always run the scan when there's any html. The per-data-URI regex's
+  // `{500,}` quantifier still gates artifact extraction, so empty or
+  // text-only payloads return early with no work done. The historical
+  // 16KB function-level guard was a CF-tunnel SSE-size optimization,
+  // but it also blocked persistIndex() for small builder outputs (a
+  // 5-row spreadsheet's MCP-UI rawHtml + base64 data URIs frequently
+  // totals ~10-15KB, below the old threshold), leaving the editor's
+  // preview iframe stuck on the default scaffold.
+  if (!html) return { html, artifacts };
   // Dedup identical data URIs (same mime + same base64 body). The
   // unified deck card references the HTML data URI in BOTH the "Open"
   // link and the "Download .html" link; without dedup each match would
