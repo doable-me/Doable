@@ -495,7 +495,9 @@ docker compose -f "$COMPOSE_FILE" up -d
 # `docker compose start` forces any Created containers to run; no-op for
 # already-Running ones. Without this, nginx returns 502 on /dashboard
 # because the web upstream never started.
-sleep 3
+# 5s sleep gives migrate enough headroom on slow cold-DB runs (architect
+# review feedback — 3s was tight on first-ever deploy with 117+ migrations).
+sleep 5
 docker compose -f "$COMPOSE_FILE" start api ws web 2>/dev/null || true
 
 # Re-read the bootstrap token from .env in case .env already existed (operator
