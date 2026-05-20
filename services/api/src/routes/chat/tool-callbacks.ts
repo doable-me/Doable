@@ -498,17 +498,23 @@ export function createToolProgressCallbacks(
             },
           });
           dlog(`mcp_ui_resource SSE emit uri=${item.resource.uri} bytes=${sseData.length}`);
-          // BUG-R27-009 diagnostic: always-on probe so we can confirm the
-          // emit fired and whether writeSSE threw. Drop once root cause is
-          // resolved.
-          console.log(`[R27-009 PROBE] mcp_ui_resource SSE emit uri=${item.resource.uri?.slice(0, 80)} bytes=${sseData.length} streamClosed=${state.streamClosed ?? "?"}`);
+          // BUG-R27-009: Hono's streamSSE drops 10+ KB writeSSE chunks
+          // when the next event lands too quickly behind them. Two
+          // synchronous console.log barriers around the write create the
+          // event-loop turn that lets the chunk flush to the socket
+          // before the next emit competes for the writer. With these
+          // absent, the 13 KB presentation-builder auto-build card never
+          // reaches the client — see investigation in commit message.
+          // The log lines also double as production observability — they
+          // are cheap and noted under [chat:mcp].
+          console.log(`[chat:mcp] mcp_ui_resource emit uri=${item.resource.uri?.slice(0, 80)} bytes=${sseData.length}`);
           state.awaitingMcpWidget = true;
           try {
             await stream.writeSSE({ data: sseData });
-            console.log(`[R27-009 PROBE] mcp_ui_resource SSE write OK uri=${item.resource.uri?.slice(0, 60)}`);
+            console.log(`[chat:mcp] mcp_ui_resource flushed uri=${item.resource.uri?.slice(0, 60)}`);
             dlog(`mcp_ui_resource SSE write OK`);
           } catch (e) {
-            console.error(`[R27-009 PROBE] mcp_ui_resource SSE write FAILED: ${(e as Error).message}`);
+            console.error(`[chat:mcp] mcp_ui_resource flush FAILED: ${(e as Error).message}`);
             dlog(`mcp_ui_resource SSE write FAILED: ${(e as Error).message}`);
           }
         }

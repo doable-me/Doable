@@ -2,6 +2,8 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
 import { statSync } from "node:fs";
+import { readFile as fsReadFile, readdir as fsReaddir } from "node:fs/promises";
+import { join as pathJoin } from "node:path";
 import { getProjectPath } from "../ai/project-files.js";
 import {
   ensureSourceAnnotationsPlugin,
@@ -127,6 +129,119 @@ export async function startDevServer(
   } finally {
     startingServers.delete(projectId);
   }
+}
+
+/**
+ * Pre-scan the project's source tree for `import …` specifiers that reference
+ * packages NOT present in node_modules. Lets us npm-install those upfront
+ * (one batch, one overlay, one vite spawn) instead of suffering the iterative
+ * "vite up → fail-on-first-error → install → restart → fail-on-next" chain
+ * that creates blank-iframe flashes between each restart.
+ *
+ * The reactive stderr-based install path (tryInstallPeerDep) stays as a
+ * safety net for imports added dynamically during dev.
+ */
+const IMPORT_RE =
+  /(?:^|[\s;])(?:import|export)\s+(?:[^"';]*?\s+from\s+|\(\s*)?["']([^"']+)["']/g;
+const SRC_DIR_NAMES = new Set([
+  "src",
+  "app",
+  "pages",
+  "components",
+  "lib",
+  "hooks",
+  "services",
+  "utils",
+]);
+const SCANNABLE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
+
+async function detectMissingPeerDeps(
+  projectPath: string,
+): Promise<string[]> {
+  let installedDeps: Set<string>;
+  try {
+    const pkgJsonRaw = await fsReadFile(
+      pathJoin(projectPath, "package.json"),
+      "utf-8",
+    );
+    const pkgJson = JSON.parse(pkgJsonRaw) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    installedDeps = new Set([
+      ...Object.keys(pkgJson.dependencies ?? {}),
+      ...Object.keys(pkgJson.devDependencies ?? {}),
+      ...Object.keys(pkgJson.peerDependencies ?? {}),
+      ...Object.keys(pkgJson.optionalDependencies ?? {}),
+    ]);
+  } catch {
+    return [];
+  }
+
+  const specifiers = new Set<string>();
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (depth > 6) return;
+    let entries: Array<{ name: string; isDir: boolean; isFile: boolean }>;
+    try {
+      const raw = await fsReaddir(dir, { withFileTypes: true });
+      entries = raw.map((e) => ({
+        name: e.name,
+        isDir: e.isDirectory(),
+        isFile: e.isFile(),
+      }));
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const full = pathJoin(dir, entry.name);
+      if (entry.isDir) {
+        if (depth > 0 || SRC_DIR_NAMES.has(entry.name)) {
+          await walk(full, depth + 1);
+        }
+        continue;
+      }
+      if (!entry.isFile) continue;
+      const dot = entry.name.lastIndexOf(".");
+      if (dot < 0) continue;
+      const ext = entry.name.slice(dot);
+      if (!SCANNABLE_EXTS.has(ext)) continue;
+      let content: string;
+      try {
+        content = await fsReadFile(full, "utf-8");
+      } catch {
+        continue;
+      }
+      IMPORT_RE.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = IMPORT_RE.exec(content)) !== null) {
+        const spec = m[1];
+        if (!spec) continue;
+        if (spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("@/")) continue;
+        if (spec.startsWith("node:") || spec.startsWith("data:") || spec.startsWith("http")) continue;
+        const pkg = spec.startsWith("@")
+          ? spec.split("/").slice(0, 2).join("/")
+          : spec.split("/")[0];
+        if (pkg && NPM_PKG_NAME_RE.test(pkg)) specifiers.add(pkg);
+      }
+    }
+  }
+
+  await walk(projectPath, 0);
+
+  const missing: string[] = [];
+  for (const pkg of specifiers) {
+    if (installedDeps.has(pkg)) continue;
+    try {
+      statSync(pathJoin(projectPath, "node_modules", pkg));
+    } catch {
+      missing.push(pkg);
+    }
+  }
+  return missing;
 }
 
 // Keeps head+tail so MODULE_NOT_FOUND errors (printed at top of stack) aren't
@@ -429,6 +544,74 @@ async function doStartDevServer(
     userId: opts?.userId,
   });
   const spec = adapter.dev(devCtx);
+
+  // Front-load any imports referenced in src/* but absent from package.json +
+  // node_modules. One pre-spawn install collapses what would otherwise be N
+  // iterative "vite up → fail on first import → install → restart" cycles
+  // into a single overlay + a single vite start. The reactive stderr path
+  // below remains as a safety net for imports added dynamically during dev.
+  try {
+    const upfrontMissing = await detectMissingPeerDeps(projectPath);
+    if (upfrontMissing.length > 0) {
+      const label = upfrontMissing.join(", ");
+      console.log(
+        `[DevServer] pre-spawn install of missing dep${upfrontMissing.length > 1 ? "s" : ""} "${label}" for project ${projectId}`,
+      );
+      installingPeerDep.set(projectId, { pkg: label, startedAt: Date.now() });
+      const attempted = peerDepInstallAttempts.get(projectId) ?? new Set<string>();
+      for (const p of upfrontMissing) attempted.add(p);
+      peerDepInstallAttempts.set(projectId, attempted);
+      await new Promise<void>((resolve) => {
+        const npmChild = nodeSpawn(
+          "npm",
+          ["install", ...upfrontMissing, "--no-audit", "--no-fund"],
+          { cwd: projectPath, stdio: ["ignore", "pipe", "pipe"] },
+        );
+        let npmStderr = "";
+        npmChild.stderr?.on("data", (d: Buffer) => {
+          npmStderr += d.toString();
+        });
+        const npmTimer = setTimeout(() => {
+          try {
+            npmChild.kill("SIGTERM");
+          } catch {
+            // already dead
+          }
+        }, 90_000);
+        npmChild.on("exit", (code) => {
+          clearTimeout(npmTimer);
+          if (code === 0) {
+            console.log(
+              `[DevServer] pre-spawn installed "${label}" for project ${projectId}`,
+            );
+          } else {
+            console.warn(
+              `[DevServer] pre-spawn install "${label}" failed for project ${projectId} (exit ${code}): ${npmStderr.slice(-500)}`,
+            );
+          }
+          // Hand off to the reactive path: any pkgs that failed will surface
+          // again via vite stderr and the per-pkg installer can retry.
+          installingPeerDep.delete(projectId);
+          resolve();
+        });
+        npmChild.on("error", (err) => {
+          clearTimeout(npmTimer);
+          installingPeerDep.delete(projectId);
+          console.warn(
+            `[DevServer] pre-spawn install spawn error for project ${projectId}: ${err.message}`,
+          );
+          resolve();
+        });
+      });
+    }
+  } catch (err) {
+    // Pre-scan is best-effort; never block dev-server start on it.
+    console.warn(
+      `[DevServer] detectMissingPeerDeps failed for ${projectId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
 
   const jailed = await spawnJailedVite({
     execPath: spec.command,
