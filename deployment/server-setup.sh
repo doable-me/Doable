@@ -1701,6 +1701,25 @@ if [ -d "${INSTALL_DIR}/services/api/node_modules/puppeteer" ]; then
           warn "Chrome STILL fails to launch — thumbnails will be unavailable. Inspect: $CHROME_BIN --headless=new --version (see $PUPP_LOG)"
         fi
       fi
+      # ── Setuid chrome-sandbox helper (defense-in-depth) ──────
+      # Puppeteer ships a `chrome-sandbox` helper next to the chrome binary.
+      # When the kernel disables unprivileged user-namespaces (CIS-hardened
+      # boxes, some Linode/DO security profiles, custom seccomp on the host)
+      # Chrome falls back to this setuid helper — but only if it's owned by
+      # root with mode 4755. `pnpm exec puppeteer browsers install chrome`
+      # runs as the doable user, so the helper lands with the wrong owner
+      # and Chrome silently disables the sandbox at runtime. Fix it here.
+      # This is purely defense-in-depth: when unprivileged userns IS enabled
+      # (the default on Ubuntu 22.04+ / Debian 12+) Chrome ignores the
+      # setuid path entirely and the userns sandbox kicks in.
+      CHROME_SANDBOX_BIN="$(find /var/cache/doable/puppeteer/chrome -name chrome-sandbox -type f 2>/dev/null | head -n1)"
+      if [ -n "$CHROME_SANDBOX_BIN" ]; then
+        chown root:root "$CHROME_SANDBOX_BIN" && chmod 4755 "$CHROME_SANDBOX_BIN" \
+          && ok "chrome-sandbox helper setuid root (fallback for kernels with userns disabled)" \
+          || warn "Failed to set setuid bit on $CHROME_SANDBOX_BIN — Chrome sandbox falls back to userns only"
+      else
+        warn "chrome-sandbox helper not found under /var/cache/doable/puppeteer/chrome — Chrome sandbox falls back to userns only"
+      fi
     else
       warn "puppeteer reported success but chrome binary not found under /var/cache/doable/puppeteer/chrome — see $PUPP_LOG"
     fi
