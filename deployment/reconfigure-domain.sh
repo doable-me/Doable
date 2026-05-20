@@ -91,10 +91,15 @@ if [ "$DOMAIN_LABEL_COUNT" -gt 2 ]; then
   DOMAIN_ZONE="${DOMAIN#*.}"
   API_DOMAIN="${API_DOMAIN:-${ENV_PREFIX}-api.${DOMAIN_ZONE}}"
   WS_DOMAIN="${WS_DOMAIN:-${ENV_PREFIX}-ws.${DOMAIN_ZONE}}"
-  info "Multi-level DOMAIN — dashed: API=${API_DOMAIN}, WS=${WS_DOMAIN}"
+  # CSP frame-ancestors needs the APEX so `*.${apex}` covers all subdomains
+  # (CSP wildcards don't cover parent). preview-proxy/proxy-handler.ts reads
+  # DOABLE_DOMAIN and emits frame-ancestors 'self' https://${apex} https://*.${apex}.
+  DOABLE_APEX="${DOMAIN_ZONE}"
+  info "Multi-level DOMAIN — dashed: API=${API_DOMAIN}, WS=${WS_DOMAIN}, apex=${DOABLE_APEX}"
 else
   API_DOMAIN="${API_DOMAIN:-api.${DOMAIN}}"
   WS_DOMAIN="${WS_DOMAIN:-ws.${DOMAIN}}"
+  DOABLE_APEX="${DOMAIN}"
   info "Apex DOMAIN — dotted: API=${API_DOMAIN}, WS=${WS_DOMAIN}"
 fi
 
@@ -105,6 +110,7 @@ declare -A NEW_VALS=(
   [NEXT_PUBLIC_WS_URL]="wss://${WS_DOMAIN}"
   [CORS_ORIGINS]="https://${DOMAIN}"
   [WS_ALLOWED_ORIGINS]="https://${DOMAIN}"
+  [DOABLE_DOMAIN]="${DOABLE_APEX}"
   [GOOGLE_REDIRECT_URI]="https://${API_DOMAIN}/auth/google/callback"
   [GITHUB_REDIRECT_URI]="https://${API_DOMAIN}/auth/github/callback"
   [GITHUB_COPILOT_REDIRECT_URI]="https://${API_DOMAIN}/auth/github/copilot/callback"
