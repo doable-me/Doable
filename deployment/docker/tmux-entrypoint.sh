@@ -26,11 +26,15 @@ CMD_LINE="$*; echo \$? > $EXIT_FILE; tmux wait-for -S ${SESSION}-done"
 # Start a detached tmux session running the wrapped workload.
 tmux new-session -d -s "$SESSION" -x 200 -y 50 "/bin/sh -c '$CMD_LINE'"
 
-# Forward pane output to the container's stderr so `docker logs` and `docker
+# Forward pane output to the container's stdout so `docker logs` and `docker
 # compose logs` see app output. Without this, a service that crashes on
 # startup appears as a silent "Restarting (0)" loop with empty logs.
-# /proc/1/fd/2 is PID-1's stderr inside the container, which docker captures.
-tmux pipe-pane -t "$SESSION" -o "cat > /proc/1/fd/2" 2>/dev/null || true
+# BUG-R26-010: previously piped to /proc/1/fd/2 but in `docker compose up -d`
+# PID-1's fd/2 is symlinked to /dev/null (we verified via
+# `docker exec ... ls -la /proc/1/fd/2 -> /dev/null`). Docker captures fd/1
+# (stdout) into the json-file log driver but not fd/2 in detached mode. Pipe
+# to fd/1 so `docker logs <container>` actually surfaces node startup errors.
+tmux pipe-pane -t "$SESSION" -o "cat > /proc/1/fd/1" 2>/dev/null || true
 
 # Block until the workload signals completion. The wait-for is sent by the
 # wrapper above when the command exits (success or failure), so we no longer
