@@ -101,7 +101,8 @@ COPY --from=build --chown=node:node /app .
 RUN mkdir -p /app/services/api/projects /app/services/api/thumbnails \
   && chown -R node:node /app/services/api/projects /app/services/api/thumbnails \
   && ln -sf services/api/projects /app/projects \
-  && chown -h node:node /app/projects
+  && ln -sf services/api/thumbnails /app/thumbnails \
+  && chown -h node:node /app/projects /app/thumbnails
 
 # Download the puppeteer-bundled Chrome into the image so first-thumbnail
 # capture doesn't need network. Cached layer; runs once per build.
