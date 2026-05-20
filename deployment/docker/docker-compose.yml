@@ -146,7 +146,7 @@ services:
       API_URL: http://api:4000
       NODE_ENV: ${NODE_ENV:-production}
       # WebSocket origin allow-list — Yjs/HMR upgrades from any other origin
-      # are rejected (BUG-R26-009). Falls back to CORS_ORIGINS so an operator
+      # are rejected. Falls back to CORS_ORIGINS so an operator
       # who only sets the public-facing zone in CORS_ORIGINS doesn't end up
       # with a silently-broken collab + AI-trace stream.
       WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-${CORS_ORIGINS:-http://localhost:3000}}

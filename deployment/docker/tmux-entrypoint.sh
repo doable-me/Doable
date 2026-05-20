@@ -29,7 +29,7 @@ tmux new-session -d -s "$SESSION" -x 200 -y 50 "/bin/sh -c '$CMD_LINE'"
 # Forward pane output to the container's stdout so `docker logs` and `docker
 # compose logs` see app output. Without this, a service that crashes on
 # startup appears as a silent "Restarting (0)" loop with empty logs.
-# BUG-R26-010: previously piped to /proc/1/fd/2 but in `docker compose up -d`
+# Previously piped to /proc/1/fd/2 but in `docker compose up -d`
 # PID-1's fd/2 is symlinked to /dev/null (we verified via
 # `docker exec ... ls -la /proc/1/fd/2 -> /dev/null`). Docker captures fd/1
 # (stdout) into the json-file log driver but not fd/2 in detached mode. Pipe

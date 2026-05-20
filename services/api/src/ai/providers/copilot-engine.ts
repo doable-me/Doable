@@ -34,7 +34,7 @@ const PLAN_ALLOWED_TOOLS = new Set([
 // (str_replace_editor, view, write) and Doable's custom file tools
 // (create_file, edit_file, read_file).
 //
-// BUG-R26-011: MiniMax-M2.7 and other smaller models emit a mix of
+// MiniMax-M2.7 and other smaller models emit a mix of
 // `/app/...`, relative paths, and bare filenames. The CLI's built-in
 // permission layer rejects relative paths ("Path not absolute") and
 // docore's sandbox rejects /app/... paths ("outside your project
@@ -100,7 +100,7 @@ function normalizeToolPath(workingDirectory: string, rawPath: string): string {
 }
 
 /**
- * BUG-R26-011: rewrite the `path` field on built-in and custom file
+ * Rewrite the `path` field on built-in and custom file
  * tools so the path is absolute and inside the session working
  * directory BEFORE the SDK's permission check runs. Returns the
  * possibly-modified args, or undefined if no change was needed.
@@ -208,7 +208,7 @@ export class CopilotEngine {
           : {}),
         hooks: {
           onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
-            // BUG-R26-011: rewrite file paths BEFORE the SDK permission
+            // Rewrite file paths BEFORE the SDK permission
             // check fires so /app/* and relative paths both land as
             // absolute paths inside the project directory. Without this,
             // the docore sandbox denies /app/* with "outside your project
@@ -284,7 +284,7 @@ export class CopilotEngine {
         ...(config?.toolProgress ? {
           hooks: {
             onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
-              // BUG-R26-011: see createSession() above for the rationale.
+              // See createSession() above for the rationale.
               const rewritten = maybeRewriteToolArgs(input.toolName, input.toolArgs, config?.workingDirectory);
               const effectiveArgs = rewritten ?? input.toolArgs;
 

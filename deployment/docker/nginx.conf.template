@@ -67,7 +67,7 @@ server {
     # the /preview/ prefix and must preserve all sub-paths (including /preview/{id}/@vite/client,
     # /preview/{id}/src/main.tsx, etc.) since vite emits relative URLs that resolve
     # against the iframe's URL. Long timeouts because SSE/HMR connections can be idle.
-    # (BUG-R26-002 — bare-metal Caddy had this route since W22; docker mode was missing it.)
+    # (Bare-metal Caddy has had this route since W22; docker mode was missing it.)
     location /preview/ {
         proxy_pass http://127.0.0.1:4000;
         proxy_http_version 1.1;

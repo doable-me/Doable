@@ -148,7 +148,7 @@ MODE=""
 LISTEN_HOST=""  # What nginx's server_name will be
 # HOST_EXPLICIT=1 when the operator explicitly chose a host (via DOMAIN/HOST env
 # var or by typing one at the interactive prompt). Used below to gate the
-# auto-rewrite of stale URL lines in a pre-existing .env (BUG-R26-001).
+# auto-rewrite of stale URL lines in a pre-existing .env.
 HOST_EXPLICIT=0
 
 if [ -n "${DOMAIN:-}" ]; then
@@ -208,7 +208,7 @@ if [ -f "$ENV_FILE" ]; then
   fi
 fi
 
-# ─── Auto-rewrite stale URL lines on DOMAIN change (BUG-R26-001) ─────────────
+# ─── Auto-rewrite stale URL lines on DOMAIN change ───────────────────────────
 # If we kept an existing .env above AND the operator explicitly passed a new
 # DOMAIN/HOST that differs from what's baked in, rewrite the 4 URL lines in
 # place so containers come up with correct hostnames. Secrets stay untouched.
@@ -311,8 +311,8 @@ NEXT_PUBLIC_WS_URL=${WS_URL}
 NEXT_PUBLIC_APP_URL=${APP_URL}
 CORS_ORIGINS=${CORS}
 # WS_ALLOWED_ORIGINS guards the Yjs/HMR WebSocket upgrade. Must include every
-# public-facing origin the browser will send (BUG-R26-009 — was missing on
-# docker installs and silently broke collab + ai-trace stream).
+# public-facing origin the browser will send. Was missing on docker installs
+# and silently broke collab + ai-trace stream.
 WS_ALLOWED_ORIGINS=${CORS}
 
 # ─── Redis (optional) ─────────────────────────────
@@ -560,7 +560,7 @@ else
 fi
 docker compose -f "$COMPOSE_FILE" up -d
 
-# ─── BUG-R26-007: detect stale-volume migrate failure ────────────────────────
+# ─── Detect stale-volume migrate failure ─────────────────────────────────────
 # The migrate container is a one-shot (`depends_on: postgres healthy`, then runs
 # pnpm migrate, then exits). If a prior install left a postgres_data volume with
 # a different password than the .env we just generated, postgres skips

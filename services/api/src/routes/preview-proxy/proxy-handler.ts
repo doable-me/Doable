@@ -35,7 +35,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * `fetch()` (RFC 7230 §6.1). nginx's `/preview/` location adds `Connection:
  * upgrade` + `Upgrade: <hop>` unconditionally to enable the HMR WS handshake;
  * undici (node's fetch) refuses those with `UND_ERR_INVALID_ARG` and the
- * iframe sees a "Preview proxy error: fetch failed" 502. (BUG-R26-014.) The
+ * iframe sees a "Preview proxy error: fetch failed" 502. The
  * same set is filtered off the *response* further down — we just need to
  * filter the *request* too.
  */
@@ -326,7 +326,7 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
   try {
     // Build headers — copy everything except Host and hop-by-hop headers.
     //
-    // BUG-R26-014: nginx's `/preview/` location block adds
+    // nginx's `/preview/` location block adds
     // `Connection: upgrade` and `Upgrade: $http_upgrade` unconditionally so
     // that the HMR WebSocket handshake can pass through. For *non*-WS GETs
     // (which is everything routed through this Hono handler — true upgrades
@@ -632,7 +632,7 @@ async function viteDevAssetFallback(c: import("hono").Context) {
   const targetUrl = queryString ? `${devUrl}${originalPath}?${queryString}` : `${devUrl}${originalPath}`;
 
   try {
-    // Same hop-by-hop strip as the main proxy route (BUG-R26-014). Without
+    // Same hop-by-hop strip as the main proxy route. Without
     // this, nginx's `Connection: upgrade` injection makes undici refuse the
     // fetch and the fallback path silently 502s.
     const headers = new Headers();
