@@ -38,9 +38,18 @@ async function getBrowser(): Promise<Browser> {
     // root (where the SUID sandbox helper refuses to start). On non-root
     // accounts (which is how production should run — see the security sprint
     // notes) we MUST keep the sandbox enabled.
+    //
+    // BUG-R27-005: inside a Docker container the runtime already provides
+    // namespace + seccomp isolation, and Chrome's SUID sandbox helper isn't
+    // shipped in the image. So `--no-sandbox` is required INSIDE a container
+    // regardless of UID, or Chrome refuses to start with "Failed to launch
+    // the browser process: Code: null" and every thumbnail capture fails.
+    // Detect via `/.dockerenv` (canonical Docker convention; also present in
+    // most other OCI runtimes) and treat as equivalent to root for sandbox.
     const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+    const inContainer = existsSync("/.dockerenv");
     const launchArgs = ["--disable-gpu"];
-    if (isRoot) {
+    if (isRoot || inContainer) {
       launchArgs.unshift("--no-sandbox", "--disable-setuid-sandbox");
     }
     // Wrap puppeteer.launch() with a timeout so a missing/broken Chrome
