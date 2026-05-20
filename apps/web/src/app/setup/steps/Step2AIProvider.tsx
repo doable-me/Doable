@@ -188,6 +188,16 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
       const resolvedModel =
         model.trim() ||
         (selected?.kind === "preset" ? (selected.preset.defaultModels[0]?.id ?? "") : "");
+      // BUG-R26-004/005: without a model the API writes NULL into
+      // default_provider_model + suggestion_provider_model, and chat then fails
+      // with "No model available" on first use. Block save for every non-copilot
+      // path (PresetForm with empty defaultModels, ByokCustomForm with blank
+      // model field, EditableUrlPresetForm). Copilot OAuth has no model picker.
+      if (!isCopilot && !resolvedModel) {
+        setStatus("error");
+        setErrorMsg("Pick or type a model — chat needs one to know which engine to call.");
+        return;
+      }
       if (resolvedModel) body.model = resolvedModel;
       // Copilot OAuth has no apiKey at this point, so platform_ai_defaults
       // can't be propagated yet — admin sets it in /admin after OAuth.
@@ -665,7 +675,10 @@ function ByokCustomForm({
         status={status}
         errorMsg={errorMsg}
         onSave={onSave}
-        disabled={!apiKey.trim() || !baseUrl.trim()}
+        // BUG-R26-004: require a model for BYOK Custom — the backend writes
+        // NULL into default_provider_model otherwise, and chat fails on first
+        // call with "No model available".
+        disabled={!apiKey.trim() || !baseUrl.trim() || !model.trim()}
         setAsPlanDefault={setAsPlanDefault}
         onSetAsPlanDefaultChange={onSetAsPlanDefaultChange}
       />
