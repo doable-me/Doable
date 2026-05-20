@@ -40,6 +40,25 @@ import {
 import { emitPreviewStartFailed } from "./preview-failure-trace.js";
 
 /**
+ * BUG-R27-015: Tracks which missing peer-dep packages we have already
+ * tried to auto-install for a given projectId. The same `Could not resolve
+ * "<pkg>"` line may appear across multiple stderr chunks (and across restarts
+ * before the new dep is picked up); without dedup we'd kick off duplicate
+ * `npm install` processes that race each other and the dev-server respawn.
+ *
+ * Keyed by projectId → Set<pkgName>. Cleared opportunistically on cleanup()
+ * via the close handler in dev-server-core; staleness is harmless because the
+ * set only grows with valid npm package names.
+ */
+const peerDepInstallAttempts: Map<string, Set<string>> = new Map();
+
+/** npm package name validation per https://github.com/npm/validate-npm-package-name */
+const NPM_PKG_NAME_RE = /^(@[a-z0-9-]+\/)?[a-z0-9][a-z0-9-_.]{0,213}$/;
+
+/** Could not resolve "<pkg>" — esbuild's missing-dep diagnostic from optimizeDeps. */
+const MISSING_DEP_RE = /Could not resolve "([^"]+)"/g;
+
+/**
  * Start a Vite dev server for the given project.
  * If already running, returns the existing server info.
  * If a start is already in-flight, waits for that instead of spawning a duplicate.
@@ -523,7 +542,72 @@ async function doStartDevServer(
   });
 
   child.stderr?.on("data", (data: Buffer) => {
-    outputBuffer += data.toString();
+    const chunk = data.toString();
+    outputBuffer += chunk;
+    // BUG-R27-015: scan for esbuild's `Could not resolve "<pkg>"` from
+    // Vite optimizeDeps. AI-generated code routinely imports libs whose
+    // peer-deps weren't added to package.json (e.g. recharts → react-is),
+    // which crash-loops the dev server and leaves the preview iframe blank.
+    // On first sight of a valid npm name we haven't tried, spawn `npm install`
+    // in projectPath as the api process user (group rwx already granted via
+    // the chmod g+rwX above so dropped-priv Vite can still read the new files),
+    // then SIGTERM the current dev-server so the next preview request respawns
+    // Vite with the missing dep available.
+    let match: RegExpExecArray | null;
+    MISSING_DEP_RE.lastIndex = 0;
+    while ((match = MISSING_DEP_RE.exec(chunk)) !== null) {
+      const pkg = match[1];
+      if (!pkg || !NPM_PKG_NAME_RE.test(pkg)) continue;
+      let attempted = peerDepInstallAttempts.get(projectId);
+      if (!attempted) {
+        attempted = new Set<string>();
+        peerDepInstallAttempts.set(projectId, attempted);
+      }
+      if (attempted.has(pkg)) continue;
+      attempted.add(pkg);
+      console.log(
+        `[DevServer] auto-installing missing peer dep "${pkg}" for project ${projectId}`,
+      );
+      const npmChild = nodeSpawn(
+        "npm",
+        ["install", pkg, "--no-audit", "--no-fund"],
+        { cwd: projectPath, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let npmStderr = "";
+      npmChild.stderr?.on("data", (d: Buffer) => {
+        npmStderr += d.toString();
+      });
+      const npmTimer = setTimeout(() => {
+        try {
+          npmChild.kill("SIGTERM");
+        } catch {
+          // process may have already exited
+        }
+      }, 30_000);
+      npmChild.on("exit", (code) => {
+        clearTimeout(npmTimer);
+        if (code === 0) {
+          console.log(
+            `[DevServer] auto-installed "${pkg}" for project ${projectId} — restarting dev server`,
+          );
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            // already dead
+          }
+        } else {
+          console.warn(
+            `[DevServer] npm install "${pkg}" failed for project ${projectId} (exit ${code}): ${npmStderr.slice(-500)}`,
+          );
+        }
+      });
+      npmChild.on("error", (err) => {
+        clearTimeout(npmTimer);
+        console.warn(
+          `[DevServer] npm install "${pkg}" spawn error for project ${projectId}: ${err.message}`,
+        );
+      });
+    }
   });
 
   child.on("error", (err) => {
