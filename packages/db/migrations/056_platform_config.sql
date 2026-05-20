@@ -15,8 +15,11 @@ EXCEPTION WHEN OTHERS THEN
   NULL;
 END $$;
 
--- Seed default: both frameworks enabled, vite-react is default
+-- Seed default: only vite-react enabled out of the box.
+-- Next.js full-stack remains togglable in /admin → Frameworks but is OFF
+-- by default so a fresh install doesn't expose a feature most operators
+-- don't need until an admin explicitly opts in.
 INSERT INTO platform_config (key, value) VALUES
-  ('enabled_frameworks', '["vite-react", "nextjs-app"]'::jsonb),
+  ('enabled_frameworks', '["vite-react"]'::jsonb),
   ('default_framework', '"vite-react"'::jsonb)
 ON CONFLICT (key) DO NOTHING;
