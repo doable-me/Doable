@@ -5,6 +5,7 @@ import { sql } from "../db/index.js";
 import { teamChatQueries } from "@doable/db/queries/team-chat";
 import { projectQueries } from "@doable/db/queries/projects";
 import { INTERNAL_SECRET } from "../lib/secrets.js";
+import { isProjectIdValid } from "./projects/helpers.js";
 
 const teamChat = teamChatQueries(sql);
 const projects = projectQueries(sql);
@@ -18,6 +19,9 @@ teamChatRoutes.get("/:projectId/internal", async (c) => {
   if (secret !== INTERNAL_SECRET) return c.json({ error: "Forbidden" }, 403);
 
   const projectId = c.req.param("projectId");
+  if (!isProjectIdValid(projectId)) {
+    return c.json({ error: "Invalid project id" }, 400);
+  }
   const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "50", 10) || 50, 1), 200);
   const messages = await teamChat.getHistory(projectId, limit);
   return c.json({ data: messages });
@@ -50,6 +54,12 @@ teamChatRoutes.use("/*", authMiddleware);
 // GET /team-chat/:projectId — load chat history
 teamChatRoutes.get("/:projectId", async (c) => {
   const projectId = c.req.param("projectId");
+  // BUG-R25-API-001: validate UUID before findById — PG's uuid column raises
+  // "invalid input syntax for type uuid" on garbage which surfaces as 500
+  // ISE. Mirrors the projects-list guard. Catalogued in R25 API sweep.
+  if (!isProjectIdValid(projectId)) {
+    return c.json({ error: "Invalid project id" }, 400);
+  }
   const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "50", 10) || 50, 1), 200);
 
   const project = await projects.findById(projectId);
@@ -62,6 +72,9 @@ teamChatRoutes.get("/:projectId", async (c) => {
 // POST /team-chat/:projectId — save + broadcast a message
 teamChatRoutes.post("/:projectId", async (c) => {
   const projectId = c.req.param("projectId");
+  if (!isProjectIdValid(projectId)) {
+    return c.json({ error: "Invalid project id" }, 400);
+  }
   const userId = c.get("userId");
   const body = await c.req.json();
 

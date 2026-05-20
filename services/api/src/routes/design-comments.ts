@@ -6,6 +6,7 @@ import { sql } from "../db/index.js";
 import { designCommentQueries } from "@doable/db/queries/design-comments";
 import { projectQueries } from "@doable/db/queries/projects";
 import { INTERNAL_SECRET } from "../lib/secrets.js";
+import { isProjectIdValid } from "./projects/helpers.js";
 
 const comments = designCommentQueries(sql);
 const projects = projectQueries(sql);
@@ -94,6 +95,11 @@ designCommentRoutes.use("/*", authMiddleware);
 // GET /design-comments/:projectId — list comments for a project
 designCommentRoutes.get("/:projectId", async (c) => {
   const projectId = c.req.param("projectId");
+  // BUG-R25-API-002: same fix as team-chat — guard the uuid before findById
+  // so a non-UUID returns 400, not 500 ISE.
+  if (!isProjectIdValid(projectId)) {
+    return c.json({ error: "Invalid project id" }, 400);
+  }
   const pagePath = c.req.query("page") ?? undefined;
 
   const project = await projects.findById(projectId);
@@ -106,6 +112,9 @@ designCommentRoutes.get("/:projectId", async (c) => {
 // POST /design-comments/:projectId — create a comment
 designCommentRoutes.post("/:projectId", async (c) => {
   const projectId = c.req.param("projectId");
+  if (!isProjectIdValid(projectId)) {
+    return c.json({ error: "Invalid project id" }, 400);
+  }
   const userId = c.get("userId");
 
   // BUG-CORPUS-DC-001: validate body BEFORE the project lookup so a malformed
