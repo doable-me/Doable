@@ -146,14 +146,20 @@ fi
 
 MODE=""
 LISTEN_HOST=""  # What nginx's server_name will be
+# HOST_EXPLICIT=1 when the operator explicitly chose a host (via DOMAIN/HOST env
+# var or by typing one at the interactive prompt). Used below to gate the
+# auto-rewrite of stale URL lines in a pre-existing .env (BUG-R26-001).
+HOST_EXPLICIT=0
 
 if [ -n "${DOMAIN:-}" ]; then
   MODE="domain"
   LISTEN_HOST="$DOMAIN"
+  HOST_EXPLICIT=1
   info "Domain mode — Let's Encrypt SSL for ${DOMAIN}"
 elif [ -n "${HOST:-}" ]; then
   MODE="host"
   LISTEN_HOST="$HOST"
+  HOST_EXPLICIT=1
   info "Private network mode — self-signed SSL for ${HOST}"
 else
   echo ""
@@ -169,11 +175,13 @@ else
   elif echo "$USER_INPUT" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
     MODE="host"
     LISTEN_HOST="$USER_INPUT"
+    HOST_EXPLICIT=1
     info "Private network mode — self-signed SSL for ${LISTEN_HOST}"
   else
     MODE="domain"
     LISTEN_HOST="$USER_INPUT"
     DOMAIN="$USER_INPUT"
+    HOST_EXPLICIT=1
     info "Domain mode — Let's Encrypt SSL for ${LISTEN_HOST}"
   fi
 fi
@@ -197,6 +205,36 @@ if [ -f "$ENV_FILE" ]; then
     else
       rm "$ENV_FILE"
     fi
+  fi
+fi
+
+# ─── Auto-rewrite stale URL lines on DOMAIN change (BUG-R26-001) ─────────────
+# If we kept an existing .env above AND the operator explicitly passed a new
+# DOMAIN/HOST that differs from what's baked in, rewrite the 4 URL lines in
+# place so containers come up with correct hostnames. Secrets stay untouched.
+# DOABLE_KEEP_ENV=1 is the operator's explicit "leave everything alone" override
+# and wins over this auto-rewrite. Uses awk (not sed) to avoid replacement-
+# metachar escaping pitfalls when URLs contain &, /, or other sed-special chars.
+if [ -f "$ENV_FILE" ] \
+   && [ "$HOST_EXPLICIT" = "1" ] \
+   && [ "${DOABLE_KEEP_ENV:-0}" != "1" ]; then
+  EXISTING_APP_URL=$(grep -E '^NEXT_PUBLIC_APP_URL=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+  if [ -n "$EXISTING_APP_URL" ] && [ "$EXISTING_APP_URL" != "$APP_URL" ]; then
+    info "Detected DOMAIN change: ${EXISTING_APP_URL} → ${APP_URL}. Rewriting NEXT_PUBLIC_* + CORS_ORIGINS in place..."
+    BAK_FILE="${ENV_FILE}.bak.$(date -u +%Y%m%d-%H%M%S)"
+    cp -p "$ENV_FILE" "$BAK_FILE"
+    TMP_ENV="${ENV_FILE}.rewrite.$$"
+    awk -v api="$API_URL" -v ws="$WS_URL" -v app="$APP_URL" -v cors="$CORS" '
+      /^NEXT_PUBLIC_API_URL=/  { print "NEXT_PUBLIC_API_URL=" api;  next }
+      /^NEXT_PUBLIC_WS_URL=/   { print "NEXT_PUBLIC_WS_URL="  ws;   next }
+      /^NEXT_PUBLIC_APP_URL=/  { print "NEXT_PUBLIC_APP_URL=" app;  next }
+      /^CORS_ORIGINS=/         { print "CORS_ORIGINS="        cors; next }
+      { print }
+    ' "$ENV_FILE" > "$TMP_ENV"
+    # Preserve mode 600 from the backup we just took.
+    chmod --reference="$BAK_FILE" "$TMP_ENV" 2>/dev/null || chmod 600 "$TMP_ENV"
+    mv "$TMP_ENV" "$ENV_FILE"
+    ok "Rewrote NEXT_PUBLIC_API_URL, NEXT_PUBLIC_WS_URL, NEXT_PUBLIC_APP_URL, CORS_ORIGINS in $ENV_FILE (backup: ${BAK_FILE})"
   fi
 fi
 
@@ -272,6 +310,10 @@ NEXT_PUBLIC_API_URL=${API_URL}
 NEXT_PUBLIC_WS_URL=${WS_URL}
 NEXT_PUBLIC_APP_URL=${APP_URL}
 CORS_ORIGINS=${CORS}
+# WS_ALLOWED_ORIGINS guards the Yjs/HMR WebSocket upgrade. Must include every
+# public-facing origin the browser will send (BUG-R26-009 — was missing on
+# docker installs and silently broke collab + ai-trace stream).
+WS_ALLOWED_ORIGINS=${CORS}
 
 # ─── Redis (optional) ─────────────────────────────
 REDIS_URL=

@@ -145,6 +145,11 @@ services:
       INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
       API_URL: http://api:4000
       NODE_ENV: ${NODE_ENV:-production}
+      # WebSocket origin allow-list — Yjs/HMR upgrades from any other origin
+      # are rejected (BUG-R26-009). Falls back to CORS_ORIGINS so an operator
+      # who only sets the public-facing zone in CORS_ORIGINS doesn't end up
+      # with a silently-broken collab + AI-trace stream.
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-${CORS_ORIGINS:-http://localhost:3000}}
       DOABLE_KEK: ${DOABLE_KEK:?DOABLE_KEK is required — run ./deployment/docker/setup.sh to generate}
     volumes:
       - ws_projects:/app/services/ws/projects
