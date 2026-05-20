@@ -42,6 +42,14 @@ const PLAN_ALLOWED_TOOLS = new Set([
 // the path here — inside onPreToolUse — happens BEFORE the permission
 // check, so all three failure modes converge on a single normalized
 // absolute path under the session's working directory.
+// BUG-R27-001: MiniMax-M2.7 (and other small models) consistently prefer
+// the SDK's built-in `edit` tool over our custom `edit_file`. Without
+// adding the SDK names here, every `edit`/`multi_edit`/`str_replace`
+// call from those models hits "Path not absolute" then ENOENT in a loop
+// until the model gives up and tries bash. Adding the SDK names lets
+// onPreToolUse rewrite their `path` arg the same way it does for the
+// Doable custom names. The set is intentionally permissive — unknown
+// names just fall through unchanged.
 const PATH_REWRITE_TOOLS = new Set([
   "str_replace_editor",
   "view",
@@ -49,6 +57,10 @@ const PATH_REWRITE_TOOLS = new Set([
   "create_file",
   "edit_file",
   "read_file",
+  // SDK built-ins (docore CLI) — same `path` field shape, different names.
+  "edit",
+  "multi_edit",
+  "str_replace",
 ]);
 
 /**

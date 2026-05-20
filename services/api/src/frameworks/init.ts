@@ -33,7 +33,7 @@ import { defaultRegistry } from "./registry.js";
 
 let initialized = false;
 
-const DEFAULT_ENABLED = "vite-react,nextjs-app";
+const DEFAULT_ENABLED = "vite-react";
 
 // ─── In-memory cache (updated by admin-frameworks.ts) ────
 let _cachedEnabled: Set<string> | null = null;
