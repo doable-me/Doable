@@ -245,13 +245,22 @@ function renderInstallingDepHTML(pkg: string): string {
             ? "&quot;"
             : "&#39;",
   );
+  // "Restarting preview…" is the sticky placeholder set by dev-server-start
+  // between an npm-install success and the next vite-ready. It's not a real
+  // package name, so render a different copy that owns that state.
+  const isRestart = pkg === "Restarting preview…";
+  const headerCopy = isRestart ? "Restarting preview" : "Installing dependency";
+  const lineHtml = isRestart
+    ? `<code>dev server</code>`
+    : `<code>npm install ${safePkg}</code>`;
+  const titleCopy = isRestart ? "Restarting preview…" : `Installing ${safePkg}…`;
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="3">
-<title>Installing ${safePkg}…</title>
+<title>${titleCopy}</title>
 <style>
   :root { color-scheme: light dark; }
   html, body { margin: 0; padding: 0; height: 100%; }
@@ -299,8 +308,8 @@ function renderInstallingDepHTML(pkg: string): string {
 <body>
 <div class="card">
   <div class="spinner" aria-hidden="true"></div>
-  <h1>Installing dependency</h1>
-  <code>npm install ${safePkg}</code>
+  <h1>${headerCopy}</h1>
+  ${lineHtml}
   <p>This page will refresh automatically.</p>
 </div>
 </body>
@@ -330,6 +339,19 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
   if (isRootHtmlReq) {
     const installing = getInstallingPeerDep(projectId);
     if (installing) {
+      // When the overlay is the "Restarting preview…" placeholder set by
+      // dev-server-start after an auto-install completes, vite has been
+      // SIGTERM'd and won't respawn until someone calls startDevServer.
+      // The short-circuit below skips the normal startDevServer path, so
+      // we kick it here as fire-and-forget. Once vite is ready, the next
+      // overlay meta-refresh falls through to the real preview (markReady
+      // clears installingPeerDep). If vite hits ANOTHER missing dep, the
+      // new auto-install overwrites the placeholder with a real pkg label.
+      if (installing.pkg === "Restarting preview…" && !isRunning(projectId)) {
+        void startDevServer(projectId).catch(() => {
+          // ignored — markFailed clears the overlay on real failure
+        });
+      }
       return c.html(renderInstallingDepHTML(installing.pkg), 200, {
         "Cache-Control": "no-store",
       });

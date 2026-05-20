@@ -7,6 +7,7 @@ import { sql } from "../db/index.js";
 import { getTemplates, getTemplate, getCategories } from "../templates/registry.js";
 import { scaffolder } from "../templates/scaffolder.js";
 import { buildTemplatePreviewHtml } from "../templates/preview-builder.js";
+import { createProject as materializeProjectOnDisk } from "../projects/file-manager.js";
 
 export const templateRoutes = new Hono<AuthEnv>({ strict: false });
 
@@ -192,7 +193,31 @@ templateRoutes.post(
       return c.json({ error: "Failed to create project" }, 500);
     }
 
-    // Scaffold it
+    // Materialize template files on disk + run `npm install`. The DB-only
+    // path through `scaffold.scaffoldFromTemplate` (below) was leaving fresh
+    // projects with no on-disk artifacts, which broke the dev-server start
+    // path for any caller of `/templates/<id>/use` (R30). createProject in
+    // file-manager.ts is the same on-disk path the AI-chat scaffold flow
+    // takes, so behavior matches what the chat surface produces.
+    try {
+      await materializeProjectOnDisk(
+        project.id,
+        template.codeFiles,
+        template.framework_id,
+      );
+    } catch (err) {
+      // Fall through to DB-only scaffold so the project row still exists;
+      // the dev-server start path will surface the disk gap with a clear
+      // error rather than a silent blank preview.
+      console.warn(
+        `[templates] on-disk materialize failed for ${project.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
+    // DB-side scaffold (project_files rows + .doable/ context files) so the
+    // editor file tree + AI chat surfaces still see the template content.
     const result = await scaffold.scaffoldFromTemplate({
       projectId: project.id,
       templateId: templateId!,

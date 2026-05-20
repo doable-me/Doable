@@ -41,10 +41,24 @@ import { emitPreviewStartFailed } from "./preview-failure-trace.js";
 const peerDepInstallAttempts: Map<string, Set<string>> = new Map();
 
 /**
- * Keyed by projectId → currently-installing pkg + start timestamp. Used by the
- * preview-proxy to render an "Installing dependency…" overlay HTML instead of
- * a blank page while npm install runs (10–30s). Entry is set immediately when
- * we spawn `npm install`, deleted when that child exits (success or failure).
+ * Per-project batch window: when stderr produces several `Could not resolve`/
+ * `Failed to resolve import` lines back-to-back (the common case — App.tsx
+ * fails fast on the first run and dumps every unresolved import at once), we
+ * collect them all into one `npm install pkg1 pkg2 …` invocation instead of
+ * doing N sequential single-pkg installs. The 500 ms debounce window is short
+ * enough that a user-perceptible install never waits on it, and long enough
+ * that the multi-import stderr burst lands in a single batch.
+ */
+const pendingInstallBatch: Map<
+  string,
+  { pkgs: Set<string>; timer: NodeJS.Timeout }
+> = new Map();
+
+/**
+ * Keyed by projectId → currently-installing pkg(s) + start timestamp. Used by
+ * the preview-proxy to render an "Installing dependency…" overlay HTML instead
+ * of a blank page while npm install runs. `pkg` may be a comma-separated list
+ * when multiple deps are batched into one install.
  */
 const installingPeerDep: Map<string, { pkg: string; startedAt: number }> =
   new Map();
@@ -479,6 +493,9 @@ async function doStartDevServer(
     if (settled) return;
     settled = true;
     instance.ready = true;
+    // Clear any sticky "Restarting preview…" overlay set by the previous
+    // npm-install success — vite is back, the proxy should pass through now.
+    installingPeerDep.delete(projectId);
     console.log(`[DevServer] Project ${projectId} ready at ${url}`);
     resolveReady!();
   };
@@ -486,6 +503,7 @@ async function doStartDevServer(
   const markFailed = (err: Error): void => {
     if (settled) return;
     settled = true;
+    installingPeerDep.delete(projectId);
     cleanup(projectId);
     rejectReady!(err);
   };
@@ -494,26 +512,21 @@ async function doStartDevServer(
     outputBuffer += data.toString();
   });
 
-  // Spawn `npm install <pkg>` once per (project, pkg). Sets the
-  // installingPeerDep overlay-state entry on start, clears on exit, and
-  // SIGTERMs Vite on success so the next preview request respawns with the
-  // dep available.
-  const tryInstallPeerDep = (pkg: string): void => {
-    if (!pkg || !NPM_PKG_NAME_RE.test(pkg)) return;
-    let attempted = peerDepInstallAttempts.get(projectId);
-    if (!attempted) {
-      attempted = new Set<string>();
-      peerDepInstallAttempts.set(projectId, attempted);
-    }
-    if (attempted.has(pkg)) return;
-    attempted.add(pkg);
+  // Spawn the actual `npm install <pkg1> <pkg2> …` for a debounced batch.
+  // One install per batch keeps the dev-server restart count low when several
+  // imports fail at once (e.g. App.tsx imports lodash + dayjs + uuid that
+  // none of which are in package.json — pre-batching this caused 3 sequential
+  // installs + 3 restarts + 3 overlay flashes; now it's one of each).
+  const runInstallBatch = (pkgs: string[]): void => {
+    if (pkgs.length === 0) return;
+    const label = pkgs.join(", ");
     console.log(
-      `[DevServer] auto-installing missing peer dep "${pkg}" for project ${projectId}`,
+      `[DevServer] auto-installing missing peer dep${pkgs.length > 1 ? "s" : ""} "${label}" for project ${projectId}`,
     );
-    installingPeerDep.set(projectId, { pkg, startedAt: Date.now() });
+    installingPeerDep.set(projectId, { pkg: label, startedAt: Date.now() });
     const npmChild = nodeSpawn(
       "npm",
-      ["install", pkg, "--no-audit", "--no-fund"],
+      ["install", ...pkgs, "--no-audit", "--no-fund"],
       { cwd: projectPath, stdio: ["ignore", "pipe", "pipe"] },
     );
     let npmStderr = "";
@@ -526,25 +539,31 @@ async function doStartDevServer(
       } catch {
         // process may have already exited
       }
-    }, 30_000);
+    }, 60_000);
     npmChild.on("exit", (code) => {
       clearTimeout(npmTimer);
-      // Clear overlay state regardless of outcome so the proxy stops
-      // short-circuiting and the next refresh hits real Vite (or surfaces
-      // the failure on its own terms).
-      installingPeerDep.delete(projectId);
       if (code === 0) {
         console.log(
-          `[DevServer] auto-installed "${pkg}" for project ${projectId} — restarting dev server`,
+          `[DevServer] auto-installed "${label}" for project ${projectId} — restarting dev server`,
         );
+        // Replace the in-flight overlay with a "Restarting preview…" placeholder
+        // so the iframe doesn't flash blank between SIGTERM + the next vite
+        // ready. markReady() at line ~482 clears this entry. If vite hits
+        // ANOTHER missing-dep on respawn, the new tryInstallPeerDep overwrites
+        // the placeholder with the real install label.
+        installingPeerDep.set(projectId, {
+          pkg: "Restarting preview…",
+          startedAt: Date.now(),
+        });
         try {
           child.kill("SIGTERM");
         } catch {
           // already dead
         }
       } else {
+        installingPeerDep.delete(projectId);
         console.warn(
-          `[DevServer] npm install "${pkg}" failed for project ${projectId} (exit ${code}): ${npmStderr.slice(-500)}`,
+          `[DevServer] npm install "${label}" failed for project ${projectId} (exit ${code}): ${npmStderr.slice(-500)}`,
         );
       }
     });
@@ -552,9 +571,39 @@ async function doStartDevServer(
       clearTimeout(npmTimer);
       installingPeerDep.delete(projectId);
       console.warn(
-        `[DevServer] npm install "${pkg}" spawn error for project ${projectId}: ${err.message}`,
+        `[DevServer] npm install "${label}" spawn error for project ${projectId}: ${err.message}`,
       );
     });
+  };
+
+  // Queue a missing-dep into the per-project 500 ms batch window. The window
+  // resets on every new dep added, so a back-to-back stderr burst collapses
+  // into one install command.
+  const tryInstallPeerDep = (pkg: string): void => {
+    if (!pkg || !NPM_PKG_NAME_RE.test(pkg)) return;
+    let attempted = peerDepInstallAttempts.get(projectId);
+    if (!attempted) {
+      attempted = new Set<string>();
+      peerDepInstallAttempts.set(projectId, attempted);
+    }
+    if (attempted.has(pkg)) return;
+    attempted.add(pkg);
+
+    let batch = pendingInstallBatch.get(projectId);
+    if (!batch) {
+      batch = { pkgs: new Set<string>(), timer: setTimeout(() => {}, 0) };
+      clearTimeout(batch.timer);
+      pendingInstallBatch.set(projectId, batch);
+    } else {
+      clearTimeout(batch.timer);
+    }
+    batch.pkgs.add(pkg);
+    batch.timer = setTimeout(() => {
+      const pending = pendingInstallBatch.get(projectId);
+      if (!pending) return;
+      pendingInstallBatch.delete(projectId);
+      runInstallBatch(Array.from(pending.pkgs));
+    }, 500);
   };
 
   child.stderr?.on("data", (data: Buffer) => {
@@ -603,9 +652,20 @@ async function doStartDevServer(
     // Return the sandbox UID to the pool whether the exit was graceful
     // or a failure — keeping it allocated would leak a slot.
     releaseDevUid(projectId);
-    // Don't carry overlay state across a server restart; the next start will
-    // set it again if the new vite emits the same diagnostic.
-    installingPeerDep.delete(projectId);
+    // Preserve the "Restarting preview…" placeholder set by the npm-install
+    // success path — clearing it here would flash the iframe blank between
+    // SIGTERM + the next vite ready. Any non-placeholder entry (rare: vite
+    // died with a real pending install) is cleared so the proxy stops
+    // short-circuiting on stale state.
+    const overlay = installingPeerDep.get(projectId);
+    if (overlay && overlay.pkg !== "Restarting preview…") {
+      installingPeerDep.delete(projectId);
+    }
+    const pending = pendingInstallBatch.get(projectId);
+    if (pending) {
+      clearTimeout(pending.timer);
+      pendingInstallBatch.delete(projectId);
+    }
     if (!settled) {
       emitPreviewStartFailed({
         projectId,
