@@ -151,6 +151,24 @@ for KEY in "${!NEW_VALS[@]}"; do
 done
 ok "Rewrote ${#NEW_VALS[@]} host-bearing env vars."
 
+# ── Sync apps/web/.env.local (Next.js .env precedence trap) ────
+# Next.js reads apps/web/.env.local in preference to the workspace-root
+# .env when building, so a stale .env.local from a prior NO_TUNNEL=1
+# install will silently outvote the rewrites above and bake the old IP
+# into the client bundle. setup-server.sh emits apps/web/.env.local at
+# lines 1065-1070; we must keep it in sync here on every reconfig.
+WEB_ENV_LOCAL="${INSTALL_DIR}/apps/web/.env.local"
+if [ -f "$WEB_ENV_LOCAL" ] || [ -d "$(dirname "$WEB_ENV_LOCAL")" ]; then
+  WEB_OWNER=$(stat -c '%U' "${INSTALL_DIR}/.env")
+  cat > "$WEB_ENV_LOCAL" <<EOF
+NEXT_PUBLIC_API_URL=${NEW_VALS[NEXT_PUBLIC_API_URL]}
+NEXT_PUBLIC_WS_URL=${NEW_VALS[NEXT_PUBLIC_WS_URL]}
+NEXT_PUBLIC_APP_URL=${NEW_VALS[NEXT_PUBLIC_APP_URL]}
+EOF
+  chown "$WEB_OWNER":"$WEB_OWNER" "$WEB_ENV_LOCAL" 2>/dev/null || true
+  ok "Synced apps/web/.env.local with new NEXT_PUBLIC_* (Next.js .env precedence)."
+fi
+
 # ── Rebuild apps/web (NEXT_PUBLIC_* are baked at build time) ───
 if [ "$SKIP_REBUILD" = "1" ]; then
   warn "--no-rebuild: web standalone NOT rebuilt — running bundle still has OLD NEXT_PUBLIC_* values baked in."
