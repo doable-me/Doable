@@ -84,9 +84,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgbm1 libcairo2 libpango-1.0-0 \
     libxshmfence1 libnspr4 libnss3 libdrm2 libxkbcommon0 \
     fonts-liberation \
+    git \
   && (apt-get install -y --no-install-recommends libasound2t64 \
       || apt-get install -y --no-install-recommends libasound2) \
   && rm -rf /var/lib/apt/lists/*
+# BUG-R27-008: `git` is required by FileManager (per-project init / version
+# history). Without it every project create logs
+# `GitError: git init failed: spawn git ENOENT` and the version-history
+# UX silently degrades.
 
 COPY --from=build --chown=node:node /app .
 
