@@ -1,16 +1,3 @@
-/**
- * Sandbox boot probe (PRD ch 10 — observability).
- *
- * Logs the resolved sandbox matrix at boot:
- *   1. Per-backend availability (one line each).
- *   2. The backend `resolveBackend` would pick for a synthetic context.
- *   3. The list of configured composers.
- *
- * In `prod`/`staging`, if no isolating backend can be resolved, this
- * RE-THROWS with a `[sandbox] FAIL-CLOSED at boot:` prefix so the API
- * process refuses to start. In `dev`/`off`, errors are downgraded to
- * `[sandbox] WARNING:` log lines and the boot continues.
- */
 
 import { getSandboxRegistry } from "../../../../packages/dovault/src/sandbox-registry.js";
 import { allComposers } from "../../../../packages/dovault/src/composers/index.js";
@@ -61,11 +48,7 @@ export async function sandboxBootProbe(): Promise<void> {
   const ctx: SpawnContext = {
     projectId: "_bootprobe",
     workspaceId: null,
-    // Was "_system" — not a UUID and would fail auditSpawn's user_id
-    // insert if this synthetic context ever reached the audit path.
-    // boot-probe doesn't currently call audit, but align with the
-    // contract narrowed in BUG-R27-014.
-    userId: null,
+    userId: null, // synthetic — not a real UUID
     sessionId: "_boot",
     hardening,
   };

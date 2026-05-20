@@ -1,27 +1,3 @@
-/**
- * Sandbox orchestrator.
- *
- * Implements the 8-step jailed-spawn flow specified by
- * SandboxAgnosticSandboxingPRD/06-architecture-sandbox-agnostic.md
- * ("The orchestrator" section).
- *
- *   1. resolve profile   (profile-resolver.ts)
- *   2. resolve backend   (backend-resolver.ts → getSandboxRegistry)
- *   3. pick composers    (packages/dovault/src/composers/index)
- *   4. buildSpawn        (backend turns profile+command into argv/env + steps)
- *   5. preflight         (composer + backend setup steps)
- *   6. spawn + supervise (child_process + timeout)
- *   7. teardown          (reverse-order cleanup)
- *   8. audit             (write SandboxAuditRecord)
- *
- * Two public entrypoints:
- *   - `jailedSpawn`            — one-shot: returns after the child exits.
- *   - `jailedSpawnLongRunning` — returns the ChildProcess for callers that
- *                                supervise the lifetime themselves (vite).
- *
- * Backend-agnostic: this module imports only registry/profile types from
- * dovault, never a concrete backend.
- */
 
 import { spawn as cpSpawn, type ChildProcess } from "node:child_process";
 import type { SandboxBackendRegistry } from "../../../../packages/dovault/src/backends/sandbox-backend.js";
@@ -37,23 +13,11 @@ import { getProjectPath } from "../ai/project-files.js";
 export interface SpawnContext {
   projectId: string;
   workspaceId: string | null;
-  /**
-   * Nullable: spawns triggered without an authenticated user (boot probe,
-   * preview-url polls before login) MUST pass null. Empty string used to
-   * be passed here and got blasted into a UUID column at audit time —
-   * BUG-R27-014.
-   */
+  /** Nullable: system/unauthenticated spawns MUST pass null, not "". */
   userId: string | null;
   sessionId: string;
   hardening: "off" | "dev" | "staging" | "prod";
-  /**
-   * Optional per-project sandbox uid (host-side) that owns the project tree
-   * (chowned by dev-uid-allocator). Profiles use this for `--uid` inside the
-   * bwrap user-namespace so the inside-uid matches the host file owner. If
-   * absent, profiles fall back to their derived per-project uid. R14 fix
-   * for BUG-R13-DEV-VITE-UIDNS where unrelated uid allocators produced
-   * disjoint ranges and EACCES on every write inside the jail.
-   */
+  /** Host-side sandbox uid; profiles use this for bwrap --uid so inside-uid matches the file owner. */
   hostUid?: number;
 }
 
@@ -308,11 +272,7 @@ export async function jailedSpawnLongRunning(
     stdio: "pipe",
   });
 
-  // Audit the start; lifecycle end is logged when shutdown is invoked.
-  // BUG-R27-014: was `void auditSpawn(...)` which let a rejection (e.g.
-  // postgres 22P02 on an empty-string user_id) float as an unhandled
-  // rejection. The fire-and-forget intent is preserved, but rejections
-  // now log instead of crashing the process.
+  // Fire-and-forget audit; rejections log rather than crash the process.
   auditSpawn({
     projectId: ctx.projectId,
     workspaceId: ctx.workspaceId,

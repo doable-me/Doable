@@ -1,33 +1,3 @@
-/**
- * Vite + React framework adapter.
- *
- * Mechanical extraction of the existing hardcoded Vite behavior into the
- * FrameworkAdapter shape. Behavior is verbatim from current call sites — see
- * the per-field provenance in devframeworkPRD/02-framework-abstraction.md §5
- * and §8.1. This adapter is NOT registered anywhere yet; the registry wiring
- * is a separate task.
- *
- * Provenance for each surface:
- *   - requiredFiles / criticalFiles  -> services/api/src/projects/file-manager.ts:91,126
- *   - listIgnore                     -> services/api/src/ai/project-files.ts:17
- *   - lockedConfigFiles              -> services/api/src/projects/vite-jail.ts:4
- *                                       packages/dovault/src/config-guard.ts:14-64
- *   - fallbackTemplateId             -> services/api/src/projects/file-manager.ts:23
- *   - devReadinessTimeoutMs          -> services/api/src/projects/dev-server-core.ts:13
- *   - buildTimeoutMs                 -> services/api/src/deploy/builder.ts:6
- *   - dev() spawn shape              -> services/api/src/projects/dev-server-start.ts:102-134
- *   - build() spawn shape            -> services/api/src/deploy/builder.ts:84
- *   - install()                      -> services/api/src/projects/file-manager.ts:206
- *   - scaffold()                     -> services/api/src/projects/file-manager.ts:117-122
- *                                       + services/api/src/projects/vite-plugin-source-annotations.ts:220
- *   - parseLog()                     -> services/api/src/ai/preview-errors.ts:26 (loose)
- *   - errorOverlay()                 -> services/api/src/ai/preview-errors.ts:26
- *   - shouldReloadOnError()          -> services/api/src/routes/preview-proxy/proxy-handler.ts:165,187
- *   - clearCacheBeforeRestart()      -> services/api/src/projects/dev-server-ops.ts:202
- *   - redactInUI()                   -> services/api/src/ai/tool-messages.ts:25,170,175
- *   - injectIntoHtml                 -> OMITTED for v1; caller applies the
- *                                       standard injection per PRD 02 §4.3.
- */
 
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -186,10 +156,6 @@ export const viteReactAdapter: FrameworkAdapter = {
   id: "vite-react",
   family: "node",
   displayName: "Vite + React",
-  // BUG-PUB-004: the publish builder probes node_modules/vite/package.json
-  // before running install(). A bare `node_modules/` populated with only
-  // production deps (no vite) is otherwise treated as "already installed"
-  // and the build then fails resolving `vite` in vite.config.ts.
   requiredBuildTool: "vite",
   capabilities: new Set([
     "static-spa",
@@ -208,11 +174,8 @@ export const viteReactAdapter: FrameworkAdapter = {
     lockedConfigFiles: [
       "vite.config.ts",
       "vite.config.js",
-      // BUG-R27-011: platform-owned HMR wrapper written by
-      // ensureCanonicalHmrConfig on every dev start. Locking prevents AI
-      // tools from accidentally editing it — even though it's
-      // regenerated every spawn, an edit between spawns would corrupt
-      // HMR for the lifetime of the current Vite process.
+        // Platform-owned HMR wrapper — regenerated on every spawn but an edit
+      // between spawns would corrupt HMR for the lifetime of that process.
       "vite.config.platform.mjs",
       "postcss.config.js",
       "tailwind.config.ts",
@@ -260,16 +223,8 @@ export const viteReactAdapter: FrameworkAdapter = {
       command: process.execPath,
       args: [
         viteEntry,
-        // BUG-R27-011: spawn Vite with the platform-owned config wrapper
-        // (`vite.config.platform.mjs`, written by
-        // `ensureCanonicalHmrConfig` in dev-server-start.ts). The wrapper
-        // re-exports the user's vite.config.ts and forces `server.hmr` so
-        // the browser's HMR client targets
-        // `wss://<DOABLE_DOMAIN>:443/preview/<id>/__hmr` — the exact URL
-        // the API's WebSocket relay routes back to this process. Without
-        // this flag, Vite derives `wss://<DOABLE_DOMAIN>:443/` (no prefix),
-        // which the relay's `/preview/<id>/...` matcher drops, and the
-        // client reconnects on a 5–6s backoff → `location.reload()` loop.
+        // Platform-owned config forces server.hmr to the relay-routable path.
+        // Without this flag, Vite derives the wrong HMR URL and clients reload.
         "--config",
         "vite.config.platform.mjs",
         "--host",

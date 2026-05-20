@@ -4,13 +4,9 @@ import { getDevServerInternalUrl } from "../../projects/dev-server.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PREFIX_RE = /^\/preview\/([0-9a-f-]+)(\/.*)?$/i;
-// BUG-R27-011: the platform-owned HMR config (see
-// vite-plugin-source-annotations.ensureCanonicalHmrConfig) tells Vite's
-// client to connect at `/preview/<id>/__hmr`. Vite's HMR WebSocket endpoint
-// sits at server *root* (NOT under `--base`), so when the browser sends
-// the upgrade we have to rewrite the URL to `/` before replaying it
-// upstream — otherwise the per-project Vite returns 426 / 404 and the
-// client immediately reconnects on its 5s backoff.
+// The platform HMR config tells Vite's client to connect at `/preview/<id>/__hmr`,
+// but Vite's WS handler is at server root (not under `--base`), so we rewrite
+// the upgrade URL to `/` before forwarding — otherwise Vite returns 426/404.
 const HMR_SUFFIX_RE = /^\/preview\/[0-9a-f-]+\/__hmr(\/.*)?$/i;
 
 // Keep-alive heuristics — Vite's HMR server pings every ~30s by default, but
@@ -31,30 +27,9 @@ const WS_PING_INTERVAL_MS = 25_000;
 const WS_PING_FRAME = Buffer.from([0x89, 0x00]);
 
 /**
- * Handle an HTTP upgrade request for a /preview/:projectId/* path.
- * Forwards the WebSocket handshake to the per-project dev-server.
- *
- * Per devframeworkPRD/STATUS-2026-05-02.md gap #1 — Next.js HMR uses
- * /_next/webpack-hmr (WebSocket); without WS forwarding the editor has
- * to manually F5 after every edit.
- *
- * BUG-R27-011: previously the relay only forwarded the upgrade handshake
- * and bidirectionally piped frames, but did NOT enable TCP keepalive or
- * inject ping frames. Through the cloudflared edge the connection was
- * idle-reaped every 5–6s, the Vite client saw the drop as a connection
- * failure, and forced a full `location.reload()` — which restarted the
- * React mount and re-fired any runtime errors in the user's app, in turn
- * triggering the editor's auto-fix loop. Three safeguards land together:
- *   1. `setKeepAlive(true, 25s)` on both sockets so OS TCP keepalive
- *      probes keep the tunnel hot.
- *   2. `setTimeout(0)` to clear any inherited socket idle timeout.
- *   3. A server-initiated WS ping every 25s when no upstream frames have
- *      flowed, covering Vite's silent initial 30s window and any framework
- *      whose HMR ping cadence is disabled.
- *
- * Also accepts custom HMR paths like `/preview/<id>/__hmr` (used when
- * `vite.config.ts` sets `server.hmr.path = '/preview/<id>/__hmr'`) so the
- * canonical HMR block in the project template (BUG-R27-012) round-trips.
+ * Handle an HTTP upgrade for /preview/:projectId/* and forward to the
+ * per-project dev-server. Enables TCP keepalive + server-initiated WS pings
+ * (25s) on both sockets so cloudflared's idle reaper doesn't drop HMR connections.
  */
 export function handleWebSocketUpgrade(
   req: IncomingMessage,
@@ -99,12 +74,8 @@ export function handleWebSocketUpgrade(
   let pingTimer: NodeJS.Timeout | null = null;
   let lastUpstreamFrameAt = Date.now();
 
-  // Rewrite the path for the canonical platform HMR endpoint. The platform
-  // HMR config sets `server.hmr.path = '/preview/<id>/__hmr'`, but Vite's
-  // own WS handler is mounted at server root, not under `--base`. Forwarding
-  // the full prefixed path makes the upstream 426 the handshake. For every
-  // other WS path (e.g. Next.js `/preview/<id>/_next/webpack-hmr`) we keep
-  // the original URL.
+  // Platform HMR path is `/preview/<id>/__hmr` but Vite's WS handler sits at
+  // server root — rewrite to `/` so the handshake succeeds.
   const upstreamUrl = HMR_SUFFIX_RE.test(url) ? "/" : url;
 
   const upstreamSocket = createConnection({ host, port }, () => {

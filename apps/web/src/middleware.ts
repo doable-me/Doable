@@ -1,25 +1,3 @@
-/**
- * BUG-ADMIN-009: server-side gate for /admin/* pages.
- *
- * The original /admin page was a `"use client"` component that fetched
- * /auth/me on mount and conditionally rendered an "Access Denied" stub when
- * the user wasn't a platform admin. That meant the full admin HTML (panel
- * scaffold, role lists, internal links, framework names, plan-defaults UI)
- * was shipped to every visitor — anyone could GET https://dev.doable.me/admin
- * and read the markup directly with `curl`, no token required.
- *
- * This middleware runs on the Next.js edge before any admin page renders.
- * For /admin and /admin/*:
- *   1. Read the `doable_access_token` cookie (mirrored from localStorage at
- *      sign-in time by storeTokens() in lib/api-core.ts).
- *   2. Call the API /auth/me endpoint with that bearer token.
- *   3. Allow the request only when /auth/me returns isPlatformAdmin: true.
- *   4. Otherwise redirect to /login with ?next=<original-path>.
- *
- * We intentionally do not decode the JWT locally — the JWT_SECRET lives in
- * the API process, not the Next.js edge runtime, and the platform-admin bit
- * isn't in the JWT payload anyway (it's a DB column, see /auth/me handler).
- */
 
 import { NextResponse, type NextRequest } from "next/server";
 

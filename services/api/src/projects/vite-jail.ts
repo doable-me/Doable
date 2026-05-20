@@ -6,13 +6,9 @@
  * Layer 3: OS resource limits (systemd cgroups on Linux, V8 heap on Windows)
  */
 
-// Sandbox-migration gap CLOSED behind feature flag DOABLE_SANDBOX_VITE=1.
-// When the flag is set, spawnJailedVite delegates to the orchestrator's
-// jailedSpawnLongRunning under the "vite-preview" profile, which returns
-// { process, pid, shutdown } — giving vite live stdout/stderr streams and
-// a kill handle while flowing through the same profile+backend+composer
-// pipeline as the rest of dovault. When the flag is unset (default), the
-// legacy vault.spawn path remains in place unchanged.
+// Feature flag DOABLE_SANDBOX_VITE=1: route vite spawn through the orchestrator's
+// jailedSpawnLongRunning under the "vite-preview" profile. Default OFF preserves
+// the legacy vault.spawn path.
 
 import type { ChildProcess } from "node:child_process";
 import { createVault, Tracer as VaultTracer } from "dovault";
@@ -78,14 +74,7 @@ export interface SpawnJailedViteOpts {
   env: Record<string, string | undefined>;
   projectId: string;
   stdio?: "pipe" | "ignore" | "inherit";
-  /**
-   * Linux-only: per-project sandbox UID from the dev-uid-allocator pool.
-   * When set on Linux, the spawn is wrapped with `setpriv --reuid <uid>
-   * --regid <uid> --clear-groups --` so the dev process runs as a
-   * pre-created low-privilege user (doable-dev-N). nft rules in
-   * setup-server.sh block all egress for this UID range except loopback.
-   * Ignored on non-Linux (setpriv only exists on Linux).
-   */
+  /** Linux-only: per-project sandbox UID; spawn is wrapped with setpriv uid-drop. */
   uid?: number;
 }
 
@@ -102,11 +91,6 @@ export interface JailedViteResult {
  * Falls back to raw spawn if dovault throws (e.g. Permission Model unsupported).
  */
 export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<JailedViteResult> {
-  // Feature flag: route vite spawn through the sandbox orchestrator's
-  // long-running entrypoint under the "vite-preview" profile. Default OFF
-  // preserves the legacy vault.spawn behavior. When ON, all profile+backend+
-  // composer resolution (incl. UID drop, seccomp, fs jail) flows through the
-  // orchestrator instead of being hand-stitched here.
   if (process.env.DOABLE_SANDBOX_VITE === "1") {
     const hardening = (process.env.DOABLE_HARDENING_LEVEL as
       | "off"
@@ -117,31 +101,14 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
     const spawnCtx = {
       projectId: opts.projectId,
       workspaceId: null,
-      // BUG-R27-014: was `""` which postgres rejects as invalid UUID when
-      // auditSpawn() writes to audit_sandbox_spawn.user_id (UUID column).
-      // The empty string surfaced as an unhandled rejection from the
-      // `void auditSpawn(...)` at orchestrator.ts. There is no
-      // authenticated user context at this layer (vite spawns are
-      // triggered by preview-url polls and the chat path threads userId
-      // through dev-server-start, not through here), so null is correct.
-      userId: null,
+      userId: null, // no authenticated user at this layer
       sessionId: opts.projectId,
       hardening,
-      // R14 fix for BUG-R13-DEV-VITE-UIDNS — pass the host-side sandbox uid
-      // through so vitePreviewProfile.user.uid matches the project dir owner.
-      // Without this, bwrap's inside-NS uid (9000-range) maps to the API's
-      // EUID (5000) and vite EACCES on every write inside /work.
+      // Pass host-side uid so bwrap's inside-NS uid matches the project dir owner.
       hostUid: typeof opts.uid === "number" ? opts.uid : undefined,
     };
 
-    // The vite-preview profile binds the project's host rootDir to `/work`
-    // inside the jail. Framework adapters generate args with HOST absolute
-    // paths (e.g. `/root/doable/services/api/projects/<id>/node_modules/vite/bin/vite.js`)
-    // because they don't know about sandbox-internal paths. Rewrite any
-    // arg that starts with the project's host path so it resolves to the
-    // jail path. This is safe: vite-preview's `--chdir /work` already
-    // gives us a stable bind target, and we don't rewrite args that
-    // don't belong to this project.
+    // Rewrite host absolute paths in args to the jail-internal /work prefix.
     const hostPrefix = opts.cwd;
     const jailPrefix = "/work";
     const rewriteArg = (a: string): string => {

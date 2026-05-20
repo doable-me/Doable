@@ -1,6 +1,3 @@
-/**
- * Dev server start and initialization logic.
- */
 
 import type { ChildProcess } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
@@ -39,17 +36,8 @@ import {
 } from "./dev-server-core.js";
 import { emitPreviewStartFailed } from "./preview-failure-trace.js";
 
-/**
- * BUG-R27-015: Tracks which missing peer-dep packages we have already
- * tried to auto-install for a given projectId. The same `Could not resolve
- * "<pkg>"` line may appear across multiple stderr chunks (and across restarts
- * before the new dep is picked up); without dedup we'd kick off duplicate
- * `npm install` processes that race each other and the dev-server respawn.
- *
- * Keyed by projectId → Set<pkgName>. Cleared opportunistically on cleanup()
- * via the close handler in dev-server-core; staleness is harmless because the
- * set only grows with valid npm package names.
- */
+// Keyed by projectId → Set<pkgName>. Deduplicates auto-install attempts so
+// duplicate `Could not resolve "<pkg>"` stderr chunks don't race-spawn npm.
 const peerDepInstallAttempts: Map<string, Set<string>> = new Map();
 
 /** npm package name validation per https://github.com/npm/validate-npm-package-name */
@@ -99,14 +87,8 @@ export async function startDevServer(
   }
 }
 
-/**
- * Summarize buffered dev-server stdout+stderr for inclusion in error
- * messages. Keeps both the head and the tail because Node's
- * `MODULE_NOT_FOUND` error prints the missing module path at the TOP of the
- * stack — slicing only the tail (the previous behavior) dropped exactly the
- * line operators need to diagnose a partial install. Cap each end so the
- * combined message stays bounded.
- */
+// Keeps head+tail so MODULE_NOT_FOUND errors (printed at top of stack) aren't
+// lost when truncating long output.
 function summarizeOutput(buf: string): string {
   const HEAD = 1500;
   const TAIL = 1500;
@@ -114,14 +96,7 @@ function summarizeOutput(buf: string): string {
   return `${buf.slice(0, HEAD)}\n…[truncated ${buf.length - HEAD - TAIL} chars]…\n${buf.slice(-TAIL)}`;
 }
 
-/**
- * Wait for a spawned dev/serve process to signal readiness.
- *
- * Phase 1 implements `log-substring` only — http-probe and custom kinds throw
- * `not implemented` so they can be wired up later without changing call sites.
- * Rejects on timeout; the caller decides whether to treat that as a fatal
- * error or a benign "process is still alive, assume ready" fallback.
- */
+// http-probe and custom signal kinds throw "not implemented" — wired up later.
 async function awaitReadiness(
   child: ChildProcess,
   signal: ReadinessSignal,
@@ -166,17 +141,10 @@ async function awaitReadiness(
   );
 }
 
-/**
- * Internal: actually spawns the dev server. Called only from startDevServer
- * after the in-flight guard. Framework-agnostic — looks up the project's
- * framework adapter and asks it for the spawn spec.
- */
 async function doStartDevServer(
   projectId: string,
   opts?: StartDevServerOptions,
 ): Promise<{ url: string; port: number }> {
-  // Resolve the project's framework adapter ONCE per startDevServer call.
-  // Defaults to 'vite-react' via the DB column default for legacy rows.
   const [project] = await sql<{ framework_id: string }[]>`
     SELECT framework_id FROM projects WHERE id = ${projectId}
   `;
@@ -189,11 +157,9 @@ async function doStartDevServer(
   // avoid IPv6 resolution issues on Windows where localhost may hit ::1)
   const url = `http://127.0.0.1:${port}`;
 
-  // Acquire a per-project sandbox UID (Linux + DOABLE_HARDENING=full). The
-  // matching `chown -R` happens AFTER the API-side preparation steps below
-  // (ensureSourceAnnotationsPlugin, linkDoableSdk) — otherwise those run as
-  // the API uid against a directory already flipped to the sandbox uid and
-  // hit EACCES (BUG-R13-DEV-EACCES-POST-UID-DROP, see session r13 docs).
+  // Acquire sandbox UID BEFORE API-side writes (ensureSourceAnnotationsPlugin,
+  // linkDoableSdk) — chown -R happens after those writes complete to avoid
+  // EACCES when the API uid hits a directory already owned by the sandbox uid.
   // Returns null on Windows/Mac or when chown isn't available.
   let sandboxUid: number | null = acquireDevUid(projectId);
 
@@ -219,12 +185,8 @@ async function doStartDevServer(
     console.warn("[DevServer] Failed to inject source annotations plugin:", err);
   }
 
-  // BUG-R27-011: write the platform-owned HMR config wrapper. The spawn
-  // below points Vite at `vite.config.platform.mjs` (see vite-react.dev),
-  // which re-exports the user's vite.config.ts with `server.hmr` hard-set
-  // to the transport the WebSocket relay can route. Regenerated on every
-  // start so DOABLE_DOMAIN changes pick up automatically and so any AI
-  // edit to the file is overwritten before the next Vite boot.
+  // Write the platform-owned HMR config wrapper on every start so DOABLE_DOMAIN
+  // changes and any AI edits to the file are overwritten before the next Vite boot.
   if (adapter.id === "vite-react") {
     try {
       await ensureCanonicalHmrConfig(projectPath, projectId);
@@ -236,13 +198,9 @@ async function doStartDevServer(
     }
   }
 
-  // If this project was previously sandboxed, @doable/sdk may be owned by the
-  // sandbox uid. Reclaim it to the API uid so the API-user write in
-  // linkDoableSdk succeeds. The final chown -R below will re-own to sandboxUid.
-  //
-  // R14 BUG-SDK-EACCES: previously hardcoded to "0:0" assuming API ran as
-  // root. With the v3 hardening the API runs as the doable user (uid 5000),
-  // so root-ownership makes the dir unwritable for it. Use the actual euid.
+  // Reclaim @doable/sdk to the API uid before linkDoableSdk writes it.
+  // The final chown -R below re-owns to sandboxUid. Use the actual euid —
+  // the API runs as the doable user (uid 5000), not root.
   if (sandboxUid !== null && process.platform === "linux") {
     const sdkDir = `${projectPath}/node_modules/@doable/sdk`;
     const apiUid = process.geteuid?.() ?? 0;
@@ -266,15 +224,9 @@ async function doStartDevServer(
     console.warn("[DevServer] Failed to link @doable/sdk:", err);
   }
 
-  // chown -R to the sandbox uid LAST, after all API-side writes complete.
-  // See acquireDevUid call above for the ordering rationale (BUG-R13).
-  //
-  // R14 BUG-OWNERSHIP-SPLIT: chown the GROUP to the API gid (doable, 5000),
-  // not to the per-project uid. This lets the API process write to the project
-  // tree via group access while the per-project uid still owns it as user
-  // (which is what nft skuid egress filtering keys off of). Without this, the
-  // post-chown tree was owned 10001:10001 and the api uid 5000 had no access —
-  // AI tools (create_file/edit_file/bash) all hit EACCES.
+  // chown -R LAST, after all API-side writes. Group = API gid so the API
+  // process retains write access via group bits while nft skuid egress
+  // filtering keys off the per-project uid (user owner).
   if (sandboxUid !== null) {
     const useSudo = isSandboxWrapperAvailable();
     const apiGid = process.getegid?.() ?? 0;
@@ -298,9 +250,7 @@ async function doStartDevServer(
       },
     );
     if (chownResult.ok) {
-      // R14 BUG-OWNERSHIP-SPLIT: grant the API gid write access via group
-      // perm bits + setgid on dirs so newly-created files inherit the gid.
-      // Mirrors the chown above — both must land together or AI writes fail.
+      // Grant API gid write access + setgid on dirs so new files inherit the gid.
       await new Promise<void>((resolve) => {
         const ch = nodeSpawn(
           "sudo",
@@ -336,11 +286,9 @@ async function doStartDevServer(
     }
   }
 
-  // Pre-spawn defensive uid assertion (BUG-R13 / preview-243). After the
-  // chown above, the project dir MUST be owned by sandboxUid. If a
-  // concurrent operation re-flipped it, we'd spawn a UID-dropped vite
-  // against an unreadable tree and hit EACCES. Verify, attempt one forced
-  // re-chown, and abort the spawn if still mismatched.
+  // Pre-spawn: verify the project dir is still owned by sandboxUid — a
+  // concurrent operation could have re-flipped it, which would cause EACCES
+  // inside the UID-dropped vite. Attempt one forced re-chown; abort if still mismatched.
   if (sandboxUid !== null && process.platform === "linux") {
     let dirUid: number;
     try {
@@ -391,16 +339,10 @@ async function doStartDevServer(
     }
   }
 
-  // Tell the dev server to use the proxy prefix as its base path so all
-  // generated asset URLs include the prefix. This makes the reverse proxy
-  // transparent — no HTML rewriting needed.
   const base = `/preview/${projectId}/`;
 
-  // Resolve env vars for the dev server. When `opts.userId` is provided, this
-  // also pulls vault-backed integration credentials (Phase 1C of the
-  // integration↔AI chat bridge); user `env_vars` always override the vault.
-  // The workspace is looked up from the project record inside the resolver,
-  // so we only thread `userId` here.
+  // Resolve env vars; when userId is provided, vault-backed integration
+  // credentials are included (user env_vars override the vault).
   let userEnvVars: Record<string, string> = {};
   try {
     const { resolveProjectEnvVars } = await import("../env/resolve.js");
@@ -414,12 +356,9 @@ async function doStartDevServer(
     console.warn("[DevServer] Failed to resolve env vars:", err);
   }
 
-  // Framework-aware env var aliasing: the vault-bridge provides Vite-prefixed
-  // client vars (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY). For Next.js
-  // projects, also expose them under NEXT_PUBLIC_* and bare names (SUPABASE_URL)
-  // so server-side code can access the URL without a client prefix.
+  // For Next.js: alias VITE_* → NEXT_PUBLIC_* and expose bare SUPABASE_URL
+  // so server-side code can reach it without a client prefix.
   if (adapter.id === "nextjs-app") {
-    // VITE_* → NEXT_PUBLIC_* (for client-side bundling)
     for (const [key, value] of Object.entries(userEnvVars)) {
       if (key.startsWith("VITE_") && value) {
         const nextKey = "NEXT_PUBLIC_" + key.slice(5); // VITE_SUPABASE_URL → NEXT_PUBLIC_SUPABASE_URL
@@ -432,9 +371,6 @@ async function doStartDevServer(
     }
   }
 
-  // Ask the framework adapter for the spawn-shape. The adapter is a pure
-  // spec builder — it does NOT spawn. We hand the spec to spawnJailedVite,
-  // which still owns the dovault/jail wiring.
   const devCtx = createDevContext({
     projectId,
     projectPath,
@@ -476,16 +412,10 @@ async function doStartDevServer(
 
   servers.set(projectId, instance);
 
-  // Buffer combined stdout+stderr for diagnostic messages on early exit.
-  // Readiness detection lives in awaitReadiness() against spec.readinessSignal.
   let outputBuffer = "";
 
-  // PRD 03 publisher — fans every dev-server line through the redaction
-  // filter chain (PRD 04) and into the per-project ring buffer that
-  // `GET /projects/:id/build/stream` tails. Adapter.parseLog runs alongside
-  // for structured-event extraction (build_phase_*, build_error, ...).
-  // Tolerates filter-chain errors silently — never fails the dev-server
-  // start because of a logging side-effect.
+  // Fan dev-server output through the redaction filter chain into the
+  // per-project ring buffer. Tolerates filter errors silently.
   const buildId = `dev-${Date.now()}`;
   const startedAtMs = Date.now();
   let workspaceIdForTrace: string | null = null;
@@ -508,11 +438,6 @@ async function doStartDevServer(
         (v): v is string => typeof v === "string" && v.length >= 3,
       ),
     });
-    // The framework package now imports BuildEventInput from the
-    // build-events package, so adapter.parseLog feeds directly into the
-    // publisher's structured-event path. RAW build_log events still flow
-    // for every line; parseLog is an enrichment that adds build_error /
-    // build_warning (and future build_phase / build_route) events.
     publisher.attach(child, buildId, adapter);
   } catch (err) {
     console.warn(
@@ -544,15 +469,9 @@ async function doStartDevServer(
   child.stderr?.on("data", (data: Buffer) => {
     const chunk = data.toString();
     outputBuffer += chunk;
-    // BUG-R27-015: scan for esbuild's `Could not resolve "<pkg>"` from
-    // Vite optimizeDeps. AI-generated code routinely imports libs whose
-    // peer-deps weren't added to package.json (e.g. recharts → react-is),
-    // which crash-loops the dev server and leaves the preview iframe blank.
-    // On first sight of a valid npm name we haven't tried, spawn `npm install`
-    // in projectPath as the api process user (group rwx already granted via
-    // the chmod g+rwX above so dropped-priv Vite can still read the new files),
-    // then SIGTERM the current dev-server so the next preview request respawns
-    // Vite with the missing dep available.
+    // Auto-install missing peer deps reported by esbuild optimizeDeps.
+    // On first occurrence, spawn `npm install`, then SIGTERM so the next
+    // preview request respawns Vite with the dep available.
     let match: RegExpExecArray | null;
     MISSING_DEP_RE.lastIndex = 0;
     while ((match = MISSING_DEP_RE.exec(chunk)) !== null) {

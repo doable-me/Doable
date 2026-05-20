@@ -1,13 +1,3 @@
-/**
- * Vite Plugin: Source Annotations
- *
- * Injects `data-source="filepath:line:col"` attributes into JSX elements
- * at compile time. This allows the visual editor to map DOM elements back
- * to their source code location for click-to-edit functionality.
- *
- * The plugin code is generated as a JS string and written into each
- * project's `.doable/` directory, then referenced from vite.config.ts.
- */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -338,27 +328,9 @@ function transformAstroMarkup(code, filePath) {
 // ─── Platform HMR Config ─────────────────────────────────
 
 /**
- * Build the source of the platform-owned Vite config that wraps each
- * project's user `vite.config.ts` and forces the HMR transport.
- *
- * BUG-R27-011 / BUG-R27-012: Vite spawned with `--base /preview/<id>/` but
- * no HMR overrides will derive `wss://doable.me:443/` as its HMR URL,
- * because Vite reads `location.host`/`location.protocol` and never prefixes
- * `--base`. That upgrade misses our `/preview/<id>/...` proxy matcher,
- * gets `socket.destroy()`'d at `services/api/src/index.ts:517-523`, and
- * Vite reconnects on a 5–6 s backoff → eventually `location.reload()` →
- * the editor's ErrorBoundary auto-fix loop fires. By spawning Vite with
- * `--config vite.config.platform.mjs` we layer a platform-owned override
- * ON TOP of the user's config so the AI's edits to `vite.config.ts`
- * cannot break the transport. The override:
- *   - re-exports the user's config as the base,
- *   - hard-sets `server.hmr` to `{ clientPort: 443, protocol: "wss",
- *     host: <DOABLE_DOMAIN>, path: '/preview/<id>/__hmr' }`,
- *   - keeps `server.host` / `server.allowedHosts` etc. from the user config.
- *
- * Local dev fallback: when `DOABLE_DOMAIN` is unset OR is a localhost
- * value, the override emits `hmr: true` (Vite default) so dev hosts still
- * get HMR through the same-port WS without going through cloudflared.
+ * Build the platform-owned Vite config that wraps the user's vite.config.ts
+ * and hard-sets server.hmr to the relay-routable transport. Falls back to
+ * `hmr: true` (Vite default) when DOABLE_DOMAIN is unset or localhost.
  */
 export function generatePlatformViteConfig(
   projectId: string,
@@ -446,14 +418,9 @@ export default {
 }
 
 /**
- * Write the platform-owned Vite config to `{projectPath}/vite.config.platform.mjs`.
- * Called from dev-server-start.ts on every spawn so the override stays current
- * (e.g. when DOABLE_DOMAIN changes) and any AI edit to the file is
- * overwritten before the next Vite boot.
- *
- * Idempotent — only writes when the generated content differs from disk,
- * matching the watcher-restart-loop guard used by
- * `ensureSourceAnnotationsPlugin` (BUG-R11-VITE-RESTART-LOOP).
+ * Write the platform HMR config to `{projectPath}/vite.config.platform.mjs`.
+ * Idempotent — only writes when content differs, avoiding mtime bumps that
+ * would trigger Vite's config-file watcher and a restart loop.
  */
 export async function ensureCanonicalHmrConfig(
   projectPath: string,
@@ -495,12 +462,8 @@ export async function ensureSourceAnnotationsPlugin(
 
   const pluginFilePath = join(doableDir, "vite-plugin-source-annotations.js");
   const nextContent = generateSourceAnnotationsPlugin();
-  // Only write when the content differs — an unconditional writeFile bumps
-  // mtime, which Vite's config-file watcher interprets as a config change
-  // and triggers a "server restarted" cycle. dev-server-start calls us on
-  // every Vite spawn, so without this guard the dev server enters an
-  // infinite restart loop and exits with code 1, failing /scaffold.
-  // (BUG-R11-VITE-RESTART-LOOP.)
+  // Only write when content differs — an unconditional write bumps mtime and
+  // triggers Vite's config-file watcher, causing an infinite restart loop.
   let prevContent: string | null = null;
   if (existsSync(pluginFilePath)) {
     try {
