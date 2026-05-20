@@ -151,11 +151,10 @@ services:
       # with a silently-broken collab + AI-trace stream.
       WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-${CORS_ORIGINS:-http://localhost:3000}}
       DOABLE_KEK: ${DOABLE_KEK:?DOABLE_KEK is required — run ./deployment/docker/setup.sh to generate}
-      # BUG-R32-WS-001: yjs-document-manager defaults PROJECTS_ROOT to
-      # `process.cwd()/projects` (= /app/projects), which doesn't match the
-      # ws_projects volume mount at /app/services/ws/projects. Set the env
-      # explicitly so writes land in the mounted volume instead of failing
-      # EACCES on the read-only /app dir.
+      # yjs-document-manager defaults PROJECTS_ROOT to process.cwd()/projects
+      # (= /app/projects in the ws container), which doesn't match the named
+      # volume's mount target. Pin it explicitly so writes land in the volume
+      # instead of failing EACCES on the unwritable /app dir.
       DOABLE_PROJECTS_DIR: /app/services/ws/projects
     volumes:
       - ws_projects:/app/services/ws/projects
