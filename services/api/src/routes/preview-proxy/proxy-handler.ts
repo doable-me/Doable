@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import {
   getDevServerInternalUrl,
   getDevServerInternalUrlWhenReady,
+  getInstallingPeerDep,
   startDevServer,
   isRunning,
   touchActivity,
@@ -221,12 +222,118 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
  */
 const WAKE_TIMEOUT_MS = 30_000;
 
+/**
+ * Standalone HTML page rendered while `npm install <pkg>` is in flight so the
+ * iframe shows progress instead of blank-white for 10–30s. Auto-refreshes
+ * every 3s via meta-refresh — when the install finishes, the next refresh
+ * falls through to real Vite. The styling mirrors the "Making improvements…"
+ * ErrorBoundary card in apps/web (purple-gradient button vibe) for visual
+ * consistency with the editor surface.
+ */
+function renderInstallingDepHTML(pkg: string): string {
+  // Defense-in-depth: HTML-encode pkg even though NPM_PKG_NAME_RE already
+  // restricts it to a safe alnum/-/_/./@/ subset. Keeps the overlay
+  // injection-safe if the validator ever loosens.
+  const safePkg = pkg.replace(/[&<>"']/g, (c) =>
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
+  );
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="3">
+<title>Installing ${safePkg}…</title>
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+    color: #1f2937;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 32px 40px;
+    box-shadow: 0 10px 30px rgba(124, 58, 237, 0.15);
+    max-width: 420px;
+    text-align: center;
+  }
+  .spinner {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 20px;
+    border: 4px solid #ede9fe;
+    border-top-color: #7c3aed;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h1 { margin: 0 0 8px; font-size: 18px; font-weight: 600; color: #4c1d95; }
+  code {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: #f5f3ff;
+    color: #5b21b6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+  }
+  p { margin: 12px 0 0; color: #6b7280; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="spinner" aria-hidden="true"></div>
+  <h1>Installing dependency</h1>
+  <code>npm install ${safePkg}</code>
+  <p>This page will refresh automatically.</p>
+</div>
+</body>
+</html>`;
+}
+
 previewRoutes.all("/preview/:projectId/*", async (c) => {
   const projectId = c.req.param("projectId");
 
   // Validate UUID to prevent enumeration/probing (Bug-108)
   if (!UUID_RE.test(projectId)) {
     return c.text("Not found", 404);
+  }
+
+  // While `npm install <pkg>` is auto-running for this project (triggered by
+  // a previous vite stderr line), serve an overlay page instead of blank
+  // white for the iframe's top-level HTML request. Only short-circuit the
+  // document path — Vite asset paths (/.vite/deps, /src/*, /node_modules/*,
+  // /@vite/, /@fs/, /@id/, /@react-refresh) must still proxy upstream so the
+  // current vite (which is mid-restart but still running) doesn't hang the
+  // iframe on its own asset 504s. The meta-refresh in the overlay re-fetches
+  // every 3s, so as soon as the install finishes and Vite reboots with the
+  // dep available, the next refresh falls through to the real preview.
+  const isRootHtmlReq =
+    c.req.method === "GET" &&
+    /^\/preview\/[0-9a-f-]{36}\/?$/i.test(new URL(c.req.url).pathname);
+  if (isRootHtmlReq) {
+    const installing = getInstallingPeerDep(projectId);
+    if (installing) {
+      return c.html(renderInstallingDepHTML(installing.pkg), 200, {
+        "Cache-Control": "no-store",
+      });
+    }
   }
 
   const alreadyRunning = isRunning(projectId);
