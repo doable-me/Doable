@@ -13,7 +13,15 @@ import { sql } from "../db/index.js";
 export interface SandboxAuditRecord {
   projectId: string;
   workspaceId: string | null;
-  userId: string;
+  /**
+   * Nullable to match the `audit_sandbox_spawn.user_id UUID NULL` column.
+   * System / unauthenticated spawns (boot-probe, dev-server-start triggered
+   * by an unauth'd preview-url poll) MUST pass null — passing "" or any
+   * non-UUID literal lands in postgres as 22P02 "invalid input syntax for
+   * type uuid", which the `void auditSpawn(...)` call site surfaces as an
+   * unhandled rejection. See BUG-R27-014.
+   */
+  userId: string | null;
   sessionId: string;
   hardening: "off" | "dev" | "staging" | "prod";
   profileId: string;
@@ -44,6 +52,19 @@ function isMissingTableError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * Coerce an empty / non-UUID string to null before sending to postgres.
+ * The DB columns `project_id`, `workspace_id`, `user_id` are all UUID-typed
+ * and nullable — callers that don't have a real UUID (system probes, the
+ * orchestrator's hardcoded vite-jail context) MUST land as null, not "" or
+ * a sentinel like "_system". See BUG-R27-014.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function asUuidOrNull(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  return UUID_RE.test(value) ? value : null;
+}
+
 export async function auditSpawn(record: SandboxAuditRecord): Promise<void> {
   try {
     await sql`
@@ -63,9 +84,9 @@ export async function auditSpawn(record: SandboxAuditRecord): Promise<void> {
         oom_killed,
         started_at
       ) VALUES (
-        ${record.projectId},
-        ${record.workspaceId},
-        ${record.userId},
+        ${asUuidOrNull(record.projectId)},
+        ${asUuidOrNull(record.workspaceId)},
+        ${asUuidOrNull(record.userId)},
         ${record.sessionId},
         ${record.hardening},
         ${record.profileId},

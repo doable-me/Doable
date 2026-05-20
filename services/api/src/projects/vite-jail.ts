@@ -117,7 +117,14 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
     const spawnCtx = {
       projectId: opts.projectId,
       workspaceId: null,
-      userId: "",
+      // BUG-R27-014: was `""` which postgres rejects as invalid UUID when
+      // auditSpawn() writes to audit_sandbox_spawn.user_id (UUID column).
+      // The empty string surfaced as an unhandled rejection from the
+      // `void auditSpawn(...)` at orchestrator.ts. There is no
+      // authenticated user context at this layer (vite spawns are
+      // triggered by preview-url polls and the chat path threads userId
+      // through dev-server-start, not through here), so null is correct.
+      userId: null,
       sessionId: opts.projectId,
       hardening,
       // R14 fix for BUG-R13-DEV-VITE-UIDNS — pass the host-side sandbox uid

@@ -37,7 +37,13 @@ import { getProjectPath } from "../ai/project-files.js";
 export interface SpawnContext {
   projectId: string;
   workspaceId: string | null;
-  userId: string;
+  /**
+   * Nullable: spawns triggered without an authenticated user (boot probe,
+   * preview-url polls before login) MUST pass null. Empty string used to
+   * be passed here and got blasted into a UUID column at audit time —
+   * BUG-R27-014.
+   */
+  userId: string | null;
   sessionId: string;
   hardening: "off" | "dev" | "staging" | "prod";
   /**
@@ -303,7 +309,11 @@ export async function jailedSpawnLongRunning(
   });
 
   // Audit the start; lifecycle end is logged when shutdown is invoked.
-  void auditSpawn({
+  // BUG-R27-014: was `void auditSpawn(...)` which let a rejection (e.g.
+  // postgres 22P02 on an empty-string user_id) float as an unhandled
+  // rejection. The fire-and-forget intent is preserved, but rejections
+  // now log instead of crashing the process.
+  auditSpawn({
     projectId: ctx.projectId,
     workspaceId: ctx.workspaceId,
     userId: ctx.userId,
@@ -318,6 +328,11 @@ export async function jailedSpawnLongRunning(
     durationMs: 0,
     oomKilled: false,
     startedAt: new Date(startedAt).toISOString(),
+  }).catch((err) => {
+    console.warn(
+      `[sandbox.audit] auditSpawn failed for project=${ctx.projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
   });
 
   let torn = false;

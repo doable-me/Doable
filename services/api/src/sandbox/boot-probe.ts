@@ -61,7 +61,11 @@ export async function sandboxBootProbe(): Promise<void> {
   const ctx: SpawnContext = {
     projectId: "_bootprobe",
     workspaceId: null,
-    userId: "_system",
+    // Was "_system" — not a UUID and would fail auditSpawn's user_id
+    // insert if this synthetic context ever reached the audit path.
+    // boot-probe doesn't currently call audit, but align with the
+    // contract narrowed in BUG-R27-014.
+    userId: null,
     sessionId: "_boot",
     hardening,
   };
