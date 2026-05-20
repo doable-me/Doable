@@ -2485,6 +2485,33 @@ function EditorPageInner() {
   const autoFixInFlightRef = useRef(false);
   const lastAutoFixTimeRef = useRef(0);
 
+  // BUG-R27-010 — defence-in-depth against runaway auto-fix loops.
+  // If the AI's "fix" reintroduces the same error (or fails to fix it) the
+  // iframe will throw again, postMessage again, and we'd retry forever.
+  // We track the last 5 attempts by error signature; hard-kill at 3 same-
+  // signature retries inside 5min, and soft-pause 2min if any attempt
+  // streams without producing a tool call (no file actually edited).
+  type AutoFixAttempt = { signature: string; ts: number; madeToolCall: boolean };
+  const autoFixHistoryRef = useRef<AutoFixAttempt[]>([]);
+  const autoFixPausedUntilRef = useRef<number>(0);
+  const [autoFixPausedReason, setAutoFixPausedReason] = useState<
+    | { kind: "hard"; signature: string; attempts: number }
+    | { kind: "soft"; until: number }
+    | null
+  >(null);
+
+  // Normalize an error message into a stable signature so semantically-
+  // identical errors (line-number drift, whitespace) collapse into one bucket.
+  const errorSignature = useCallback((msg: string) => {
+    return msg.slice(0, 200).toLowerCase().replace(/\s+/g, " ").trim();
+  }, []);
+
+  const resumeAutoFix = useCallback(() => {
+    autoFixHistoryRef.current = [];
+    autoFixPausedUntilRef.current = 0;
+    setAutoFixPausedReason(null);
+  }, []);
+
   // PRD 10 — connector-bridge JWT delivery to opaque-origin preview iframes.
   // The SPA inside the iframe cannot read same-origin cookies (sandbox=
   // "allow-scripts" without "allow-same-origin"), so it postMessages
@@ -2561,12 +2588,35 @@ function EditorPageInner() {
         // Don't auto-fix if already streaming or fix in flight
         if (isStreaming || autoFixInFlightRef.current) return;
 
-        lastAutoFixTimeRef.current = now;
-        autoFixInFlightRef.current = true;
+        // BUG-R27-010 — respect soft pause (last attempt made no tool call)
+        if (autoFixPausedUntilRef.current && now < autoFixPausedUntilRef.current) return;
 
         // Collect unique error messages (max 3)
         const uniqueErrors = [...new Set(errors.map((e) => e.message))].slice(0, 3);
         const errorSummary = uniqueErrors.join("\n");
+
+        // BUG-R27-010 — hard kill-switch: same error signature ≥3 in 5min.
+        const sig = errorSignature(errorSummary);
+        const fiveMinAgo = now - 5 * 60_000;
+        // Prune attempts outside the rolling window (keep last 5 within 5min)
+        autoFixHistoryRef.current = autoFixHistoryRef.current
+          .filter((a) => a.ts > fiveMinAgo)
+          .slice(-5);
+        const sameSigCount = autoFixHistoryRef.current.filter((a) => a.signature === sig).length;
+        if (sameSigCount >= 3) {
+          console.warn(
+            `[Doable] Auto-fix kill-switch: same error fired ${sameSigCount + 1}× in 5min, pausing.`,
+          );
+          setAutoFixPausedReason({ kind: "hard", signature: sig, attempts: sameSigCount + 1 });
+          setLiveStatus("");
+          return;
+        }
+
+        lastAutoFixTimeRef.current = now;
+        autoFixInFlightRef.current = true;
+        // Record attempt up front; we'll flip madeToolCall=true on first tool_call frame.
+        const attempt: AutoFixAttempt = { signature: sig, ts: now, madeToolCall: false };
+        autoFixHistoryRef.current.push(attempt);
 
         console.log("[Doable] Preview error detected, auto-fixing:", errorSummary);
 
@@ -2658,6 +2708,10 @@ function EditorPageInner() {
                       const d = parsed.data as Record<string, unknown>;
                       const friendly = (d?.friendlyMessage as string) ?? "";
                       if (friendly) setLiveStatus(friendly);
+                      // BUG-R27-010 — mark that the AI actually edited something
+                      // this turn. If the stream finishes with this still false,
+                      // we trigger the soft kill-switch (2min pause).
+                      attempt.madeToolCall = true;
                     }
                   } catch {
                     // Skip malformed JSON
@@ -2682,6 +2736,16 @@ function EditorPageInner() {
             setIsStreaming(false);
             setLiveStatus("");
             autoFixInFlightRef.current = false;
+
+            // BUG-R27-010 — soft kill-switch: if the AI streamed without
+            // ever emitting a tool_call (i.e. it just talked about the
+            // error and didn't edit a file), pause auto-fix for 2 minutes.
+            if (!attempt.madeToolCall) {
+              const until = Date.now() + 2 * 60_000;
+              autoFixPausedUntilRef.current = until;
+              setAutoFixPausedReason({ kind: "soft", until });
+              console.warn("[Doable] Auto-fix soft-pause: AI made no tool call this turn.");
+            }
 
             // Refresh preview + file tree after fix
             loadFileTree();
@@ -2718,7 +2782,22 @@ function EditorPageInner() {
 
     window.addEventListener("message", handlePreviewMessage);
     return () => window.removeEventListener("message", handlePreviewMessage);
-  }, [resolvedProjectId, isStreaming, liveStatus, loadFileTree, selectedFile, loadFileContent, previewUrl]);
+  }, [resolvedProjectId, isStreaming, liveStatus, loadFileTree, selectedFile, loadFileContent, previewUrl, errorSignature]);
+
+  // BUG-R27-010 — auto-dismiss soft-pause banner once the 2min cooldown elapses.
+  useEffect(() => {
+    if (autoFixPausedReason?.kind !== "soft") return;
+    const remaining = autoFixPausedReason.until - Date.now();
+    if (remaining <= 0) {
+      setAutoFixPausedReason(null);
+      return;
+    }
+    const id = window.setTimeout(() => {
+      autoFixPausedUntilRef.current = 0;
+      setAutoFixPausedReason(null);
+    }, remaining);
+    return () => window.clearTimeout(id);
+  }, [autoFixPausedReason]);
 
   // Ctrl+W to close current tab
   useEffect(() => {
@@ -6678,6 +6757,34 @@ function EditorPageInner() {
                     // window.localStorage getter in modern Chrome).
                     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
                   />
+                  {/* BUG-R27-010 — auto-fix kill-switch banner. Surfaces when
+                      the same error has retried 3× in 5min (hard) or the AI
+                      streamed without a tool call (soft 2min cooldown). */}
+                  {autoFixPausedReason && (
+                    <div className="pointer-events-auto absolute left-3 right-3 top-3 z-40">
+                      <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-md dark:border-amber-700 dark:bg-amber-950/80 dark:text-amber-100">
+                        <div className="flex-1">
+                          <div className="font-medium">
+                            {autoFixPausedReason.kind === "hard"
+                              ? `Auto-fix paused — the AI couldn't fix this error after ${autoFixPausedReason.attempts} attempts.`
+                              : "Auto-fix paused — the AI didn't edit any files on the last attempt."}
+                          </div>
+                          <div className="mt-0.5 text-xs opacity-90">
+                            {autoFixPausedReason.kind === "hard"
+                              ? "Open the chat to fix it manually, or click Reset Preview."
+                              : "Will retry automatically in 2 minutes, or resume now."}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={resumeAutoFix}
+                          className="shrink-0 rounded-md border border-amber-400 bg-white px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-900/60 dark:text-amber-50 dark:hover:bg-amber-900"
+                        >
+                          Resume auto-fix
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {/* Runtime metrics overlay — bottom-right of preview pane.
                       Reads from /projects/:id/runtime/metrics; degrades to
                       "unavailable" copy on dev hosts (no systemd/cgroup). */}
