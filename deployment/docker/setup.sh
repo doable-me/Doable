@@ -106,6 +106,36 @@ fi
 
 ok "Docker and Docker Compose found"
 
+# ─── Disk-space precheck (BUG-R25-DOCKER-002) ────────────────────────────────
+# Source builds peak around 22 GB of intermediate layers (pnpm install + nx
+# build for web/api/ws). On a stock 30 GB Hetzner box this is enough to fill
+# the disk mid-extract and surface as "no space left on device" while
+# rebuilding the api image. --prebuilt path only needs the pulled images
+# (~3 GB). Refuse to start when we know we'll exhaust the disk rather than
+# leave the operator with a half-baked install.
+if command -v df &>/dev/null; then
+  DOCKER_DATA_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo "/var/lib/docker")
+  # Check the FS that holds the docker root; fall back to / if df can't
+  # resolve the path (e.g. docker daemon not yet up).
+  AVAIL_KB=$(df --output=avail "$DOCKER_DATA_ROOT" 2>/dev/null | tail -1 | tr -d ' ' || \
+             df --output=avail / 2>/dev/null | tail -1 | tr -d ' ')
+  AVAIL_GB=$(( AVAIL_KB / 1024 / 1024 ))
+  case "${COMPOSE_FILE##*/}" in
+    docker-compose.prod.yml) MIN_GB=5  ;; # pulled images only
+    *)                       MIN_GB=25 ;; # source build peak
+  esac
+  if [ "$AVAIL_GB" -lt "$MIN_GB" ]; then
+    error "Only ${AVAIL_GB} GB free on $(df --output=target "$DOCKER_DATA_ROOT" 2>/dev/null | tail -1 || echo /) — Doable needs at least ${MIN_GB} GB."
+    if [ "$MIN_GB" = "25" ]; then
+      error "Source builds peak around 22 GB; either free disk (docker system prune -af) or re-run with DOABLE_PREBUILT=true once ghcr images are public."
+    fi
+    error "Override with DOABLE_SKIP_DISK_CHECK=1 if you know what you're doing."
+    [ "${DOABLE_SKIP_DISK_CHECK:-0}" = "1" ] || exit 1
+  else
+    ok "Disk space: ${AVAIL_GB} GB free on docker root (need >=${MIN_GB} GB)"
+  fi
+fi
+
 # ─── Determine mode ───────────────────────────────────────────────────────────
 # Three modes:
 #   1. DOMAIN= set        → public domain, Let's Encrypt SSL
