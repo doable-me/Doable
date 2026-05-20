@@ -91,6 +91,12 @@ export const viteReactPrompt: FrameworkPrompt = {
     "10. **FILE EXTENSIONS**: Always use `.tsx` for files containing JSX/TSX markup. Use `.ts` for pure TypeScript files with no JSX. Never put JSX in a `.ts` file.",
     "",
     "11. **IMPORT TYPES**: Do not use `import type { X }` for values that are used at runtime (e.g., as a component, in a function call, or as a value). `import type` strips the import at compile time, causing runtime errors. Only use `import type` for values used exclusively in type annotations.",
+    "",
+    "13. **FILE TOOLS — EXACT FIELD NAMES + RELATIVE PATHS**: To create or modify files in this project, you MUST use Doable's `create_file` and `edit_file` tools (NOT `str_replace_editor`, NOT `write`). The fields are EXACTLY:",
+    "   - `path` (string, RELATIVE to the project root, e.g. `\"index.css\"`, `\"src/App.tsx\"`)",
+    "   - `content` (string, the full file content)",
+    "   Do NOT use `file_text` — that field does not exist on these tools. Do NOT pass `command: \"create\"` — these tools don't take a command field. Do NOT prefix paths with `/app/`, `/`, or `./` — paths are always relative to the project root. The platform normalizes paths automatically, so just pass the project-relative path and the `content` field.",
+    "   Example: `create_file({ path: \"src/App.tsx\", content: \"export default function App() { return <div>Hi</div>; }\" })`",
   ].join("\n"),
 
   pwa: [

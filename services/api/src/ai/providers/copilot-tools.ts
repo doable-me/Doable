@@ -140,13 +140,13 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
   const hasSupabase = options?.hasSupabase ?? false;
   return ([
     defineTool("create_file", {
-      description: "Create or overwrite a file in the project with the given content. Creates parent directories as needed. Use relative paths (e.g. 'index.html', 'src/App.tsx').",
+      description: "Create or overwrite a file in the project. Required fields are `path` (RELATIVE, e.g. 'index.html', 'src/App.tsx') and `content` (the full file body as a string). Do NOT use `file_text` — this tool uses `content`. Do NOT pass `command`. Do NOT use absolute paths or `/app/...` prefixes.",
       overridesBuiltInTool: true,
       parameters: {
         type: "object" as const,
         properties: {
           path: { type: "string" as const, description: "Relative path from the project root (e.g. 'src/components/Button.tsx'). Do NOT use absolute paths and do NOT prefix with 'app/' or '/app/' — `/app` is the sandbox bind-mount path that bash sees, NOT a directory inside the project. For Vite/React projects, components go directly under 'src/' at the project root." },
-          content: { type: "string" as const, description: "The full file content to write" },
+          content: { type: "string" as const, description: "The full file content to write. Field name is `content` — NOT `file_text`." },
         },
         required: ["path", "content"] as const,
       },
@@ -174,12 +174,12 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
     }),
 
     defineTool("edit_file", {
-      description: "Replace the entire content of an existing file. Read the file first, then write the complete updated content. Use relative paths (e.g. 'index.html').",
+      description: "Replace the entire content of an existing file. Required fields are `path` (RELATIVE, e.g. 'index.html') and `content` (the full new file body). Do NOT use `file_text` — this tool uses `content`. Do NOT pass `command`. Read the file first, then write the complete updated content.",
       parameters: {
         type: "object" as const,
         properties: {
           path: { type: "string" as const, description: "Relative path from the project root. Do NOT use absolute paths and do NOT prefix with 'app/' — `/app` is the sandbox bind-mount path that bash sees, NOT a directory inside the project." },
-          content: { type: "string" as const, description: "The complete new file content" },
+          content: { type: "string" as const, description: "The complete new file content. Field name is `content` — NOT `file_text`." },
         },
         required: ["path", "content"] as const,
       },

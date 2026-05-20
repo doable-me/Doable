@@ -6,6 +6,7 @@
  * CopilotClient or CopilotSession.
  */
 
+import path from "node:path";
 import { DoCorePool, DoCoreEngine } from "docore";
 import type {
   SessionEvent,
@@ -27,6 +28,98 @@ const PLAN_ALLOWED_TOOLS = new Set([
   // Custom plan-specific tools
   "ask_clarification", "create_plan", "mark_step_complete",
 ]);
+
+// Tools whose first argument is a project file path that may need
+// pre-permission normalization. Covers both the SDK CLI built-ins
+// (str_replace_editor, view, write) and Doable's custom file tools
+// (create_file, edit_file, read_file).
+//
+// BUG-R26-011: MiniMax-M2.7 and other smaller models emit a mix of
+// `/app/...`, relative paths, and bare filenames. The CLI's built-in
+// permission layer rejects relative paths ("Path not absolute") and
+// docore's sandbox rejects /app/... paths ("outside your project
+// directory") BEFORE our tool handlers' normalizePath() runs. Rewriting
+// the path here — inside onPreToolUse — happens BEFORE the permission
+// check, so all three failure modes converge on a single normalized
+// absolute path under the session's working directory.
+const PATH_REWRITE_TOOLS = new Set([
+  "str_replace_editor",
+  "view",
+  "write",
+  "create_file",
+  "edit_file",
+  "read_file",
+]);
+
+/**
+ * Normalize a path argument so it resolves to an absolute path inside
+ * `workingDirectory`. Returns the (possibly rewritten) path. If the
+ * input is already absolute AND inside workingDirectory we leave it
+ * alone so the permission check sees the original. If it's absolute
+ * AND outside workingDirectory we also leave it alone — that's a real
+ * security violation that the sandbox should still deny.
+ *
+ * Handles:
+ *   "/app/index.css"             -> "<wd>/index.css"   (sandbox bind-mount leak)
+ *   "/app"                       -> "<wd>"
+ *   "index.css"                  -> "<wd>/index.css"
+ *   "./src/App.tsx"              -> "<wd>/src/App.tsx"
+ *   "app/src/Calculator.tsx"     -> "<wd>/src/Calculator.tsx" (vite-react app/ leak)
+ *   "<wd>/already/absolute"      -> unchanged
+ *   "/etc/passwd"                -> unchanged (sandbox will deny)
+ */
+function normalizeToolPath(workingDirectory: string, rawPath: string): string {
+  if (typeof rawPath !== "string" || rawPath.length === 0) return rawPath;
+  const wd = workingDirectory.replace(/\\/g, "/").replace(/\/+$/, "");
+  let p = rawPath.replace(/\\/g, "/");
+
+  // Sandbox bind-mount leak: /app and /app/...
+  if (p === "/app" || p === "/app/") return wd;
+  if (p.startsWith("/app/")) {
+    return `${wd}/${p.slice("/app/".length)}`;
+  }
+
+  // Already an absolute path: leave it alone. Either already inside wd,
+  // or it's a real outside-the-sandbox path that the sandbox should deny.
+  if (path.isAbsolute(p)) return rawPath;
+
+  // Strip leading ./
+  p = p.replace(/^\.\//, "");
+
+  // Strip vite-react `app/` leak (only when followed by another segment;
+  // a top-level `app/foo` file legitimately becomes <wd>/foo since /app
+  // doesn't exist as a real project dir under <wd>).
+  if (/^app\/[^/]/.test(p)) {
+    p = p.slice(4);
+  }
+
+  // Strip leading / that survived (e.g. "//foo")
+  p = p.replace(/^\/+/, "");
+
+  return `${wd}/${p}`;
+}
+
+/**
+ * BUG-R26-011: rewrite the `path` field on built-in and custom file
+ * tools so the path is absolute and inside the session working
+ * directory BEFORE the SDK's permission check runs. Returns the
+ * possibly-modified args, or undefined if no change was needed.
+ */
+function maybeRewriteToolArgs(
+  toolName: string,
+  toolArgs: unknown,
+  workingDirectory: string | undefined,
+): Record<string, unknown> | undefined {
+  if (!workingDirectory) return undefined;
+  if (!PATH_REWRITE_TOOLS.has(toolName)) return undefined;
+  if (typeof toolArgs !== "object" || toolArgs === null) return undefined;
+  const args = toolArgs as Record<string, unknown>;
+  const rawPath = args.path;
+  if (typeof rawPath !== "string" || rawPath.length === 0) return undefined;
+  const normalized = normalizeToolPath(workingDirectory, rawPath);
+  if (normalized === rawPath) return undefined;
+  return { ...args, path: normalized };
+}
 
 export class CopilotEngine {
   private pool: DoCorePool | null = null;
@@ -115,10 +208,20 @@ export class CopilotEngine {
           : {}),
         hooks: {
           onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
-            config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs);
+            // BUG-R26-011: rewrite file paths BEFORE the SDK permission
+            // check fires so /app/* and relative paths both land as
+            // absolute paths inside the project directory. Without this,
+            // the docore sandbox denies /app/* with "outside your project
+            // directory" and the CLI rejects relative paths with "Path
+            // not absolute" — both happen *before* tool handlers run, so
+            // tool-handler-side normalization can't recover.
+            const rewritten = maybeRewriteToolArgs(input.toolName, input.toolArgs, config.workingDirectory);
+            const effectiveArgs = rewritten ?? input.toolArgs;
+
+            config.toolProgress?.onToolStart?.(input.toolName, effectiveArgs);
             // Block bash tool from writing files via cat/heredoc — force use of create_file/edit_file
             if (input.toolName === "bash") {
-              const args = input.toolArgs as { command?: string } | undefined;
+              const args = effectiveArgs as { command?: string } | undefined;
               const cmd = args?.command ?? "";
               if (/cat\s*>|<<\s*['"]?EOF|>\s*src\/|>\s*\.\//i.test(cmd)) {
                 console.log(`[CopilotEngine] Denied bash file-write: ${cmd.slice(0, 80)}`);
@@ -138,6 +241,7 @@ export class CopilotEngine {
                 };
               }
             }
+            if (rewritten) return { modifiedArgs: rewritten };
           },
           onPostToolUse: async (input: { toolName: string; toolArgs: unknown; toolResult: unknown }) => {
             config.toolProgress?.onToolEnd?.(input.toolName, input.toolArgs, input.toolResult);
@@ -180,10 +284,14 @@ export class CopilotEngine {
         ...(config?.toolProgress ? {
           hooks: {
             onPreToolUse: async (input: { toolName: string; toolArgs: unknown }) => {
-              config.toolProgress?.onToolStart?.(input.toolName, input.toolArgs);
+              // BUG-R26-011: see createSession() above for the rationale.
+              const rewritten = maybeRewriteToolArgs(input.toolName, input.toolArgs, config?.workingDirectory);
+              const effectiveArgs = rewritten ?? input.toolArgs;
+
+              config.toolProgress?.onToolStart?.(input.toolName, effectiveArgs);
               // Block bash tool from writing files via cat/heredoc
               if (input.toolName === "bash") {
-                const args = input.toolArgs as { command?: string } | undefined;
+                const args = effectiveArgs as { command?: string } | undefined;
                 const cmd = args?.command ?? "";
                 if (/cat\s*>|<<\s*['"]?EOF|>\s*src\/|>\s*\.\//i.test(cmd)) {
                   console.log(`[CopilotEngine] Denied bash file-write: ${cmd.slice(0, 80)}`);
@@ -202,6 +310,7 @@ export class CopilotEngine {
                   };
                 }
               }
+              if (rewritten) return { modifiedArgs: rewritten };
             },
             onPostToolUse: async (input: { toolName: string; toolArgs: unknown; toolResult: unknown }) => { config.toolProgress?.onToolEnd?.(input.toolName, input.toolArgs, input.toolResult); },
             onSessionEnd: async (input: { reason: string; error?: string }) => { config.toolProgress?.onSessionEnd?.(input.reason, input.error); },
