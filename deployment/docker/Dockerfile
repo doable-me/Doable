@@ -90,6 +90,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=build --chown=node:node /app .
 
+# BUG-R26-013: Create the volume mount points + symlink BEFORE the volume mount
+# happens at runtime. Without these explicit mkdirs the directories don't exist
+# in the image (the build stage never creates them), so docker compose creates
+# them on first volume mount with root:root ownership — and USER node then hits
+# EACCES on every mkdir/write under /app/projects (PROJECTS_ROOT=./projects).
+# Pre-creating the dirs with node ownership in the image lets docker preserve
+# that ownership when it copies the (empty) dir contents into the volume on
+# first up.
+RUN mkdir -p /app/services/api/projects /app/services/api/thumbnails \
+  && chown -R node:node /app/services/api/projects /app/services/api/thumbnails \
+  && ln -sf services/api/projects /app/projects \
+  && chown -h node:node /app/projects
+
 # Download the puppeteer-bundled Chrome into the image so first-thumbnail
 # capture doesn't need network. Cached layer; runs once per build.
 #
