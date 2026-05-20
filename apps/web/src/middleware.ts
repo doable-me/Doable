@@ -29,16 +29,9 @@ interface AuthMeResponse {
   user?: { id?: string; email?: string; isPlatformAdmin?: boolean };
 }
 
-interface WorkspaceRow {
-  id: string;
-}
-
-interface WorkspacesResponse {
-  data?: WorkspaceRow[];
-}
-
-interface ProvidersResponse {
-  data?: unknown[];
+interface SetupStatusResponse {
+  setupCompleted?: boolean;
+  isPlatformAdmin?: boolean;
 }
 
 function loginRedirect(req: NextRequest): NextResponse {
@@ -59,6 +52,14 @@ function loginRedirect(req: NextRequest): NextResponse {
   return res;
 }
 
+// Aligns with /setup/page.tsx: the canonical "needs setup" signal is
+// `setup_completed_at IS NULL`. We deliberately do NOT key off "no AI
+// providers" — once an admin has finished the wizard, deleting a provider
+// (e.g. after an ENCRYPTION_KEY rotation) should send them to
+// /admin/ai-providers to re-add it, not bounce them back through the whole
+// wizard. Disagreeing on that predicate (middleware = "no provider",
+// /setup = "setup_completed_at sealed") produced an infinite /setup ↔ /
+// loop in R27 — both checks now share the single source of truth.
 async function checkNeedsSetup(token: string): Promise<boolean> {
   const apiUrl =
     process.env.API_INTERNAL_URL ??
@@ -66,22 +67,14 @@ async function checkNeedsSetup(token: string): Promise<boolean> {
     "http://127.0.0.1:4000";
   const base = apiUrl.replace(/\/+$/, "");
   try {
-    const wsResp = await fetch(`${base}/workspaces`, {
+    const resp = await fetch(`${base}/setup/status`, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       cache: "no-store",
     });
-    if (!wsResp.ok) return false;
-    const wsData = (await wsResp.json()) as WorkspacesResponse;
-    const wsId = wsData?.data?.[0]?.id;
-    if (!wsId) return false;
-
-    const pvResp = await fetch(`${base}/workspaces/${wsId}/ai-settings/providers`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      cache: "no-store",
-    });
-    if (!pvResp.ok) return false;
-    const pvData = (await pvResp.json()) as ProvidersResponse;
-    return (pvData?.data?.length ?? 0) === 0;
+    if (!resp.ok) return false;
+    const data = (await resp.json()) as SetupStatusResponse;
+    if (data?.isPlatformAdmin !== true) return false;
+    return data?.setupCompleted !== true;
   } catch {
     return false;
   }
