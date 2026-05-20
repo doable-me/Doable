@@ -30,6 +30,26 @@ export const previewRoutes = new Hono({ strict: false });
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Hop-by-hop headers that MUST be stripped before forwarding the request via
+ * `fetch()` (RFC 7230 §6.1). nginx's `/preview/` location adds `Connection:
+ * upgrade` + `Upgrade: <hop>` unconditionally to enable the HMR WS handshake;
+ * undici (node's fetch) refuses those with `UND_ERR_INVALID_ARG` and the
+ * iframe sees a "Preview proxy error: fetch failed" 502. (BUG-R26-014.) The
+ * same set is filtered off the *response* further down — we just need to
+ * filter the *request* too.
+ */
+const HOP_BY_HOP_REQUEST_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
 // Per-project adapter cache so the proxy hot path doesn't SQL on every hit.
 // Cached for the process lifetime; stale entries clear when a project's
 // framework_id changes (rare; documented in PRD 02 §6.5 convert-framework).
@@ -304,12 +324,27 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
   const fullUrl = queryString ? `${targetUrl}?${queryString}` : targetUrl;
 
   try {
-    // Build headers — copy everything except Host
+    // Build headers — copy everything except Host and hop-by-hop headers.
+    //
+    // BUG-R26-014: nginx's `/preview/` location block adds
+    // `Connection: upgrade` and `Upgrade: $http_upgrade` unconditionally so
+    // that the HMR WebSocket handshake can pass through. For *non*-WS GETs
+    // (which is everything routed through this Hono handler — true upgrades
+    // are caught earlier by ws-proxy.ts) those headers are still attached to
+    // the inbound request. Forwarding them via undici's `fetch()` triggers
+    // `UND_ERR_INVALID_ARG: invalid connection header` (and similarly for
+    // upgrade / transfer-encoding), which surfaces to the iframe as a
+    // generic "Preview proxy error: fetch failed" 502. Strip the full
+    // hop-by-hop set per RFC 7230 §6.1 — the same set we already filter
+    // off the *response* (see `hopByHop` below). Belongs at request build
+    // time, not response time.
     const headers = new Headers();
     for (const [key, value] of Object.entries(c.req.header())) {
-      if (key.toLowerCase() !== "host" && value) {
-        headers.set(key, value);
+      const k = key.toLowerCase();
+      if (k === "host" || HOP_BY_HOP_REQUEST_HEADERS.has(k) || !value) {
+        continue;
       }
+      headers.set(key, value);
     }
 
     // Vite returns 504 while its dep-optimizer is still rewriting a module.
@@ -597,11 +632,16 @@ async function viteDevAssetFallback(c: import("hono").Context) {
   const targetUrl = queryString ? `${devUrl}${originalPath}?${queryString}` : `${devUrl}${originalPath}`;
 
   try {
+    // Same hop-by-hop strip as the main proxy route (BUG-R26-014). Without
+    // this, nginx's `Connection: upgrade` injection makes undici refuse the
+    // fetch and the fallback path silently 502s.
     const headers = new Headers();
     for (const [key, value] of Object.entries(c.req.header())) {
-      if (key.toLowerCase() !== "host" && value) {
-        headers.set(key, value);
+      const k = key.toLowerCase();
+      if (k === "host" || HOP_BY_HOP_REQUEST_HEADERS.has(k) || !value) {
+        continue;
       }
+      headers.set(key, value);
     }
 
     const resp = await fetch(targetUrl, {
