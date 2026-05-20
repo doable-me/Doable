@@ -750,11 +750,11 @@ if [ -f "${INSTALL_DIR}/.env" ]; then
     warn "INSTALL_BOOTSTRAP_TOKEN was missing from ${INSTALL_DIR}/.env — appended a freshly generated token. Restart the API service to pick it up."
   fi
 
-  if grep -qE '^DOABLE_KEK=.+' "${INSTALL_DIR}/.env"; then
+  if grep -qE '^DOABLE_KEK=[^[:space:]].*$' "${INSTALL_DIR}/.env"; then
     ok "DOABLE_KEK already set in existing .env (preserving)"
-  elif grep -qE '^DOABLE_KEK=$' "${INSTALL_DIR}/.env"; then
+  elif grep -qE '^DOABLE_KEK=[[:space:]]*$' "${INSTALL_DIR}/.env"; then
     NEW_KEK=$(openssl rand -base64 32)
-    sed -i "s|^DOABLE_KEK=$|DOABLE_KEK=${NEW_KEK}|" "${INSTALL_DIR}/.env"
+    sed -i "s|^DOABLE_KEK=[[:space:]]*$|DOABLE_KEK=${NEW_KEK}|" "${INSTALL_DIR}/.env"
     warn "DOABLE_KEK was present but empty in ${INSTALL_DIR}/.env — filled with a freshly generated 32-byte base64 key. If any encrypted rows exist they may be unreadable."
   else
     NEW_KEK=$(openssl rand -base64 32)
@@ -775,16 +775,10 @@ if [ -f "${INSTALL_DIR}/.env" ]; then
   PUBLIC_APP_ORIGIN=$(grep -oP '(?<=^NEXT_PUBLIC_APP_URL=).+' "${INSTALL_DIR}/.env" 2>/dev/null | head -1)
   PUBLIC_APP_ORIGIN="${PUBLIC_APP_ORIGIN:-https://${DOMAIN:-localhost}}"
 
-  # R14 architect verdict follow-up #3: promote WS_ALLOWED_ORIGINS +
-  # CORS_ORIGINS to the 3-way pattern used by DOABLE_KEK (lines 742-756):
-  # present-and-nonempty → preserve; present-but-empty → fill in + warn;
-  # missing → append. Without the present-but-empty branch, a .env with
-  # `WS_ALLOWED_ORIGINS=` still 403s every browser WS upgrade because the
-  # grep -qE '^WS_ALLOWED_ORIGINS=' matches and the back-fill is skipped.
-  if grep -qE '^WS_ALLOWED_ORIGINS=.+' "${INSTALL_DIR}/.env"; then
+  if grep -qE '^WS_ALLOWED_ORIGINS=[^[:space:]].*$' "${INSTALL_DIR}/.env"; then
     ok "WS_ALLOWED_ORIGINS already set in existing .env (preserving)"
-  elif grep -qE '^WS_ALLOWED_ORIGINS=$' "${INSTALL_DIR}/.env"; then
-    sed -i "s|^WS_ALLOWED_ORIGINS=$|WS_ALLOWED_ORIGINS=${PUBLIC_APP_ORIGIN}|" "${INSTALL_DIR}/.env"
+  elif grep -qE '^WS_ALLOWED_ORIGINS=[[:space:]]*$' "${INSTALL_DIR}/.env"; then
+    sed -i "s|^WS_ALLOWED_ORIGINS=[[:space:]]*$|WS_ALLOWED_ORIGINS=${PUBLIC_APP_ORIGIN}|" "${INSTALL_DIR}/.env"
     warn "WS_ALLOWED_ORIGINS was present but empty in ${INSTALL_DIR}/.env — filled with ${PUBLIC_APP_ORIGIN}. Restart the WS service to pick it up."
   else
     {
@@ -796,10 +790,10 @@ if [ -f "${INSTALL_DIR}/.env" ]; then
     warn "WS_ALLOWED_ORIGINS was missing from ${INSTALL_DIR}/.env — appended (${PUBLIC_APP_ORIGIN}). Restart the WS service to pick it up."
   fi
 
-  if grep -qE '^CORS_ORIGINS=.+' "${INSTALL_DIR}/.env"; then
+  if grep -qE '^CORS_ORIGINS=[^[:space:]].*$' "${INSTALL_DIR}/.env"; then
     ok "CORS_ORIGINS already set in existing .env (preserving)"
-  elif grep -qE '^CORS_ORIGINS=$' "${INSTALL_DIR}/.env"; then
-    sed -i "s|^CORS_ORIGINS=$|CORS_ORIGINS=${PUBLIC_APP_ORIGIN}|" "${INSTALL_DIR}/.env"
+  elif grep -qE '^CORS_ORIGINS=[[:space:]]*$' "${INSTALL_DIR}/.env"; then
+    sed -i "s|^CORS_ORIGINS=[[:space:]]*$|CORS_ORIGINS=${PUBLIC_APP_ORIGIN}|" "${INSTALL_DIR}/.env"
     warn "CORS_ORIGINS was present but empty in ${INSTALL_DIR}/.env — filled with ${PUBLIC_APP_ORIGIN}. Restart the API service to pick it up."
   else
     {
@@ -982,10 +976,10 @@ DOABLE_SANDBOX_VITE=1
 # The thumbnails/capture.ts service uses puppeteer.launch() with no
 # explicit executablePath, so it falls back to puppeteer's per-user
 # cache lookup at $HOME/.cache/puppeteer. Our service runs as the
-# `doable` user (HOME=/home/doable), so without this override puppeteer
+# 'doable' user (HOME=/home/doable), so without this override puppeteer
 # looks in /home/doable/.cache/puppeteer and reports "Could not find
 # Chrome (ver ...)". Pin a shared, world-readable cache dir so a single
-# `npx puppeteer browsers install chrome` run during setup-server.sh
+# 'npx puppeteer browsers install chrome' run during setup-server.sh
 # is found by the runtime user.
 PUPPETEER_CACHE_DIR=/var/cache/doable/puppeteer
 
@@ -1578,10 +1572,10 @@ PrivateTmp=true
 # OFF for the doable.service. They were the root cause of
 # BUG-R12-BWRAP-PROC-MOUNT-EPERM: with them enabled, systemd put the unit
 # into a private mount namespace whose propagation made nested bwrap
-# mount(2) calls fail with EPERM when bwrap tried `--proc /proc`, killing
+# mount(2) calls fail with EPERM when bwrap tried '--proc /proc', killing
 # every preview / dev-server / AI chat-tool spawn with empty stderr. The
 # trade-off is acceptable because the API runs as the unprivileged
-# `doable` user with empty cap bounding (CapPrm=0) — the kernel itself
+# 'doable' user with empty cap bounding (CapPrm=0) — the kernel itself
 # already denies cgroup modification, module loading, and writes to
 # /proc/sys for non-root processes without CAP_SYS_ADMIN. The true
 # isolation boundary for user-supplied code is the inner bwrap+nft+
