@@ -496,6 +496,31 @@ if [ "$CONTAINER_MODE" != "1" ]; then
     apt-get install -y ufw
   fi
 
+  # ── Step 2.a: Detect+stop pre-existing public web servers (BUG-R27-005) ──
+  # If nginx/apache survived a previous install (e.g. a Docker-mode box
+  # being switched to bare-metal), they keep binding :80/:443 on 0.0.0.0
+  # — which contradicts the Cloudflare-Tunnel-only design. Stop them so
+  # the only public listener after this script is sshd. Operators that
+  # want nginx in front of Doable can re-enable it manually.
+  for svc in nginx apache2; do
+    if systemctl is-enabled "$svc" >/dev/null 2>&1 || systemctl is-active "$svc" >/dev/null 2>&1; then
+      warn "Pre-existing ${svc} found and active; stopping and disabling to keep only sshd public."
+      systemctl stop "$svc" 2>/dev/null || true
+      systemctl disable "$svc" 2>/dev/null || true
+    fi
+  done
+
+  # ── Step 2.b: Reset UFW to a known-good state (BUG-R27-005) ──
+  # Pre-existing rules from a prior install (e.g. Docker's port-forward
+  # ALLOWs for :80/:443) survive a partial wipe and leave 80/443 open on
+  # a fresh Cloudflare-Tunnel install. Force a reset before re-adding
+  # our minimal rule set. This is destructive ON PURPOSE — we own the
+  # firewall config from here on.
+  if ufw status | grep -q "^Status: active"; then
+    warn "UFW already active with prior rules; resetting to a clean slate before re-adding the SSH rule."
+    ufw --force reset >/dev/null 2>&1 || true
+  fi
+
   # ── SAFETY: Allow SSH FIRST, before touching anything else ──
   ufw allow 22/tcp comment "SSH - NEVER REMOVE"
 
