@@ -560,6 +560,49 @@ else
 fi
 docker compose -f "$COMPOSE_FILE" up -d
 
+# ─── BUG-R26-007: detect stale-volume migrate failure ────────────────────────
+# The migrate container is a one-shot (`depends_on: postgres healthy`, then runs
+# pnpm migrate, then exits). If a prior install left a postgres_data volume with
+# a different password than the .env we just generated, postgres skips
+# initialization on its next boot (volume isn't empty), and migrate fails with
+# `password authentication failed for user "doable"`. `docker compose up -d`
+# exits 0 anyway because the one-shot completion is independent of the long-
+# running services. Without this guard the operator sees an apparently
+# successful install but every subsequent request to api/ws hangs forever
+# (their `depends_on: migrate condition: service_completed_successfully` is
+# unmet so they never start).
+#
+# Wait up to 60s for the migrate container to terminate, then check its exit
+# code. On failure, surface a clear recovery command rather than letting the
+# operator hit silent 502s in the browser.
+info "Waiting for migrate container to complete..."
+MIGRATE_EXIT="?"
+for i in $(seq 1 30); do
+  MSTATE=$(docker inspect doable-migrate --format '{{.State.Status}}' 2>/dev/null || echo "missing")
+  if [ "$MSTATE" = "exited" ]; then
+    MIGRATE_EXIT=$(docker inspect doable-migrate --format '{{.State.ExitCode}}' 2>/dev/null || echo "?")
+    break
+  fi
+  sleep 2
+done
+
+if [ "$MIGRATE_EXIT" != "0" ] && [ "$MIGRATE_EXIT" != "?" ]; then
+  echo ""
+  error "Migration container exited with code $MIGRATE_EXIT — install is broken."
+  error "The most common cause is a stale postgres_data volume from a prior install"
+  error "with a different .env (POSTGRES_PASSWORD mismatch). Postgres skipped"
+  error "re-initialization because the data directory wasn't empty."
+  error ""
+  error "Recover with:"
+  error "  docker compose -f $COMPOSE_FILE --env-file $ENV_FILE down -v"
+  error "  docker compose -f $COMPOSE_FILE --env-file $ENV_FILE up -d"
+  error ""
+  error "Migrate logs (last 15 lines):"
+  docker logs doable-migrate 2>&1 | tail -15 | sed 's/^/  /'
+  exit 1
+fi
+ok "Migrations applied"
+
 # Re-read the bootstrap token from .env in case .env already existed (operator
 # chose "keep" earlier) — we want to show the token that's actually active.
 ACTIVE_BOOTSTRAP_TOKEN=$(grep -E '^INSTALL_BOOTSTRAP_TOKEN=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
