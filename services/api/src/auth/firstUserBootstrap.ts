@@ -149,6 +149,22 @@ export async function firstUserBootstrap(
     WHERE user_id = ${newUserId}::uuid
   `;
 
+  // BUG-R27-004: the project-cap check at routes/projects/list-routes.ts:292
+  // reads workspaces.plan (default 'free' = 3-project cap) — NOT
+  // credit_balances.plan_type. Without this bump, the freshly-promoted owner
+  // hits a Free Plan banner and 403s out at the 4th project, even though
+  // their credit balance is enterprise-tier. Promote every workspace the
+  // user owns so the limits, dashboard chip, and plan-defaults all agree.
+  await sql`
+    UPDATE workspaces w
+    SET plan       = 'enterprise',
+        updated_at = now()
+    FROM workspace_members wm
+    WHERE wm.workspace_id = w.id
+      AND wm.user_id      = ${newUserId}::uuid
+      AND wm.role         = 'owner'
+  `;
+
   // Audit BEFORE sealing so a crash between the two doesn't leave a sealed
   // promotion with no audit row. The audit helper swallows its own errors
   // (audit failure must not break signup), but the await guarantees ordering.
