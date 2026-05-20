@@ -208,6 +208,12 @@ export const viteReactAdapter: FrameworkAdapter = {
     lockedConfigFiles: [
       "vite.config.ts",
       "vite.config.js",
+      // BUG-R27-011: platform-owned HMR wrapper written by
+      // ensureCanonicalHmrConfig on every dev start. Locking prevents AI
+      // tools from accidentally editing it — even though it's
+      // regenerated every spawn, an edit between spawns would corrupt
+      // HMR for the lifetime of the current Vite process.
+      "vite.config.platform.mjs",
       "postcss.config.js",
       "tailwind.config.ts",
     ],
@@ -254,6 +260,18 @@ export const viteReactAdapter: FrameworkAdapter = {
       command: process.execPath,
       args: [
         viteEntry,
+        // BUG-R27-011: spawn Vite with the platform-owned config wrapper
+        // (`vite.config.platform.mjs`, written by
+        // `ensureCanonicalHmrConfig` in dev-server-start.ts). The wrapper
+        // re-exports the user's vite.config.ts and forces `server.hmr` so
+        // the browser's HMR client targets
+        // `wss://<DOABLE_DOMAIN>:443/preview/<id>/__hmr` — the exact URL
+        // the API's WebSocket relay routes back to this process. Without
+        // this flag, Vite derives `wss://<DOABLE_DOMAIN>:443/` (no prefix),
+        // which the relay's `/preview/<id>/...` matcher drops, and the
+        // client reconnects on a 5–6s backoff → `location.reload()` loop.
+        "--config",
+        "vite.config.platform.mjs",
         "--host",
         ctx.host,
         "--port",

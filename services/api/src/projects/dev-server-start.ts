@@ -6,7 +6,10 @@ import type { ChildProcess } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { getProjectPath } from "../ai/project-files.js";
-import { ensureSourceAnnotationsPlugin } from "./vite-plugin-source-annotations.js";
+import {
+  ensureSourceAnnotationsPlugin,
+  ensureCanonicalHmrConfig,
+} from "./vite-plugin-source-annotations.js";
 import { linkDoableSdk } from "./link-sdk.js";
 import { spawnJailedVite } from "./vite-jail.js";
 import {
@@ -195,6 +198,23 @@ async function doStartDevServer(
     ensureSourceAnnotationsPlugin(projectPath);
   } catch (err) {
     console.warn("[DevServer] Failed to inject source annotations plugin:", err);
+  }
+
+  // BUG-R27-011: write the platform-owned HMR config wrapper. The spawn
+  // below points Vite at `vite.config.platform.mjs` (see vite-react.dev),
+  // which re-exports the user's vite.config.ts with `server.hmr` hard-set
+  // to the transport the WebSocket relay can route. Regenerated on every
+  // start so DOABLE_DOMAIN changes pick up automatically and so any AI
+  // edit to the file is overwritten before the next Vite boot.
+  if (adapter.id === "vite-react") {
+    try {
+      await ensureCanonicalHmrConfig(projectPath, projectId);
+    } catch (err) {
+      console.warn(
+        "[DevServer] Failed to write platform HMR config:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   // If this project was previously sandboxed, @doable/sdk may be owned by the

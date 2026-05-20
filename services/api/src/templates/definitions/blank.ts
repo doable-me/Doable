@@ -52,6 +52,11 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
+// HMR is configured by the Doable platform — do not set server.hmr here.
+// The platform spawns Vite with --config vite.config.platform.mjs, which
+// wraps this file and forces the correct HMR transport for the editor's
+// reverse proxy. Adding/modifying \`server.hmr\` here will be silently
+// overridden (BUG-R27-012).
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
