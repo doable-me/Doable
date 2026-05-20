@@ -412,7 +412,7 @@ export default function SignupPage() {
         <Button
           type="submit"
           className="w-full rounded-xl bg-brand-700 text-white hover:bg-brand-800"
-          disabled={isFormDisabled || !agreedToTerms}
+          disabled={isFormDisabled}
         >
           {isLoading ? (
             <>
