@@ -135,6 +135,14 @@ CMD ["api", "npx", "tsx", "services/api/src/index.ts"]
 FROM base AS ws
 WORKDIR /app
 COPY --from=build --chown=node:node /app .
+# BUG-R32-WS-001: pre-create + chown the volume mount target so the runtime
+# `USER node` can write yjs persistence files. Without this, docker bind-mounts
+# `ws_projects` over an unowned dir, the dir gets created root:root on first
+# `docker compose up`, and every yjs persistAll mkdir fails with EACCES —
+# silently dropping collaborative edits even though the WS healthcheck stays
+# "healthy" because it only probes the listener.
+RUN mkdir -p /app/services/ws/projects \
+  && chown -R node:node /app/services/ws/projects
 USER node
 EXPOSE 4001
 ENTRYPOINT ["tmux-entrypoint"]
