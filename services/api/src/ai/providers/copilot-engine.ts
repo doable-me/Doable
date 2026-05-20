@@ -58,9 +58,12 @@ const PATH_REWRITE_TOOLS = new Set([
   "edit_file",
   "read_file",
   // SDK built-ins (docore CLI) — same `path` field shape, different names.
+  // MiniMax was observed picking each of these over Doable's custom names
+  // during R27 testing. Adding all known SDK file tools defensively.
   "edit",
   "multi_edit",
   "str_replace",
+  "create",
 ]);
 
 /**
