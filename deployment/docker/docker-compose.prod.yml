@@ -217,8 +217,42 @@ services:
     cap_drop:
       - ALL
 
+  # --- Caddy TLS terminator + reverse proxy ---
+  # See docker-compose.yml for full notes — identical service shape, just
+  # uses the same `caddy:2-alpine` image (no ghcr-prebuilt variant needed).
+  caddy:
+    image: caddy:2-alpine
+    container_name: doable-caddy
+    restart: unless-stopped
+    ports:
+      - "${DOABLE_BIND_ADDR:-127.0.0.1}:80:80"
+      - "${DOABLE_BIND_ADDR:-127.0.0.1}:443:443"
+    environment:
+      DOABLE_SITE: ${DOABLE_SITE:-localhost}
+      DOABLE_TLS: ${DOABLE_TLS:-/certs/cert.pem /certs/key.pem}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      ws:
+        condition: service_healthy
+      web:
+        condition: service_started
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
 volumes:
   postgres_data:
   api_projects:
   api_thumbnails:
   ws_projects:
+  caddy_data:
+  caddy_config:

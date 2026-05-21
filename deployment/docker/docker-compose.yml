@@ -258,8 +258,58 @@ services:
     cap_drop:
       - ALL
 
+  # --- Caddy TLS terminator + reverse proxy ---
+  # Cross-platform replacement for host-side nginx. Same image works on
+  # Linux / macOS / Windows (Docker Desktop or WSL2). Operator runs ONE
+  # script — setup.sh — which generates the cert via mkcert (host-side
+  # install of local CA) and the Caddyfile, then Caddy in the container
+  # terminates TLS and proxies to api/ws/web on the docker network.
+  caddy:
+    image: caddy:2-alpine
+    container_name: doable-caddy
+    restart: unless-stopped
+    ports:
+      # DOABLE_BIND_ADDR defaults to 127.0.0.1 for local installs (no
+      # public exposure) and is set to 0.0.0.0 by setup.sh in DOMAIN
+      # mode so Let's Encrypt's HTTP-01 challenge can reach :80 from
+      # the internet. setup.sh writes this into .env.
+      - "${DOABLE_BIND_ADDR:-127.0.0.1}:80:80"
+      - "${DOABLE_BIND_ADDR:-127.0.0.1}:443:443"
+    environment:
+      # Site address Caddy listens on — defaults to "localhost" for
+      # zero-config local installs. setup.sh sets this to the public
+      # hostname for DOMAIN mode, or a LAN IP for HOST mode.
+      DOABLE_SITE: ${DOABLE_SITE:-localhost}
+      # TLS source: "internal" = Caddy's self-signed (not browser-trusted),
+      # "/certs/cert.pem /certs/key.pem" = mkcert-issued (browser-trusted),
+      # or an email = automatic Let's Encrypt for DOMAIN mode.
+      DOABLE_TLS: ${DOABLE_TLS:-/certs/cert.pem /certs/key.pem}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      # Persistent ACME state for Let's Encrypt (cert renewals, account key)
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      ws:
+        condition: service_healthy
+      web:
+        condition: service_started
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Caddy needs CAP_NET_BIND_SERVICE to bind ports 80/443 inside the
+    # container. Net effect under cap_drop ALL: just the one capability.
+    cap_add:
+      - NET_BIND_SERVICE
+
 volumes:
   postgres_data:
   api_projects:
   api_thumbnails:
   ws_projects:
+  caddy_data:
+  caddy_config:

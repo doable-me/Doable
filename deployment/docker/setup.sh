@@ -52,7 +52,9 @@ for arg in "$@"; do
       echo "Usage: [DOMAIN=app.example.com | HOST=192.168.1.50] $0 [--skip-ssl] [--prebuilt] [--install-trust]"
       echo ""
       echo "Options:"
-      echo "  --skip-ssl       Set up nginx but skip Let's Encrypt (e.g. behind Cloudflare)"
+      echo "  --skip-ssl       Behind Cloudflare Tunnel / reverse proxy: Caddy uses internal"
+      echo "                   self-signed (no LE) AND binds 127.0.0.1 only so the tunnel is"
+      echo "                   the only public ingress. Same effect as DOABLE_BEHIND_PROXY=1."
       echo "  --prebuilt       Pull pre-built images from ghcr.io instead of building from"
       echo "                   source (~30s install vs ~5-10min build). Equivalent to"
       echo "                   setting DOABLE_PREBUILT=true."
@@ -71,6 +73,10 @@ for arg in "$@"; do
       echo "  DOABLE_IMAGE_TAG        Image tag to pull (default: latest; use v1.2.3 to pin)"
       echo "  DOABLE_INSTALL_TRUST    Set to '1' to force-install host-mode trust (same as"
       echo "                          --install-trust)"
+      echo "  DOABLE_BEHIND_PROXY     Set to '1' if you're putting Cloudflare Tunnel / ngrok /"
+      echo "                          a reverse proxy in front of this install. Caddy binds"
+      echo "                          127.0.0.1 (not 0.0.0.0) so the tunnel is the only ingress."
+      echo "                          Same effect as --skip-ssl."
       echo ""
       echo "If neither DOMAIN nor HOST is set, defaults to localhost with self-signed SSL."
       echo "Localhost mode ALWAYS auto-installs the cert into your OS+browser trust stores;"
@@ -294,24 +300,14 @@ else
 fi
 
 # ─── URL variables (used for .env and final output) ─────────────────────────
-# Two URL shapes depending on whether we'll front the stack with nginx:
-#   - USE_NGINX (Linux):  https://${host}/api  +  wss://${host}/ws  + https://${host}
-#     (nginx terminates TLS + path-routes /api/* /ws /preview/* to docker ports)
-#   - !USE_NGINX (Mac, native Windows): http://${host}:4000  +  ws://${host}:4001
-#     + http://${host}:3000 — direct docker port binds, no nginx, no cert.
-#     HTTP on localhost is a secure context in every modern browser so
-#     service workers / crypto.subtle / getUserMedia all still work.
-if [ "$USE_NGINX" = "true" ]; then
-  API_URL="https://${LISTEN_HOST}/api"
-  WS_URL="wss://${LISTEN_HOST}/ws"
-  APP_URL="https://${LISTEN_HOST}"
-  CORS="https://${LISTEN_HOST}"
-else
-  API_URL="http://${LISTEN_HOST}:4000"
-  WS_URL="ws://${LISTEN_HOST}:4001"
-  APP_URL="http://${LISTEN_HOST}:3000"
-  CORS="http://${LISTEN_HOST}:3000"
-fi
+# Single URL shape on every OS — Caddy runs as a docker service and
+# terminates TLS on 127.0.0.1:443. The Caddyfile path-routes /api/* to the
+# api container, /ws to the ws container, /preview/* to the api preview
+# proxy, and / to the web container. Browser always opens https://${HOST}.
+API_URL="https://${LISTEN_HOST}/api"
+WS_URL="wss://${LISTEN_HOST}/ws"
+APP_URL="https://${LISTEN_HOST}"
+CORS="https://${LISTEN_HOST}"
 
 # ─── Generate .env ────────────────────────────────────────────────────────────
 if [ -f "$ENV_FILE" ]; then
@@ -592,152 +588,88 @@ PSQL
   fi
 fi
 
-# ─── Set up nginx + SSL ──────────────────────────────────────────────────────
-# On Linux (incl. WSL) nginx fronts the docker stack on :443 with TLS. On
-# Mac and native Windows we skip the entire nginx/cert/ufw layer — Docker
-# Desktop provides the daemon, the docker stack binds 127.0.0.1:{3000,
-# 4000,4001} directly, and the browser opens http://localhost:3000 (a
-# secure context per the WHATWG spec — service workers, crypto.subtle,
-# getUserMedia all still work).
-if [ "$USE_NGINX" != "true" ]; then
-  info "Skipping nginx + cert setup (${OS_FAMILY}) — docker stack will bind ports directly on 127.0.0.1."
-  info "  Browser entry point will be ${APP_URL}."
-else
+# ─── Set up TLS via Caddy (in docker, cross-platform) ───────────────────────
+# Caddy runs as a docker service (see docker-compose.yml's `caddy` service),
+# terminates TLS, and reverse-proxies to api/ws/web on the docker network.
+# No host-side nginx, certbot, brew, systemctl, ufw — works identically on
+# Linux (incl. WSL2), macOS, and Windows (Docker Desktop or WSL2).
+#
+# Cert sourcing + port binding depend on MODE + proxy state:
+#   - domain (direct)        : Caddy auto-fetches Let's Encrypt cert (port 80
+#                              must be open to the internet for the HTTP-01
+#                              challenge). DOABLE_BIND_ADDR=0.0.0.0 so docker
+#                              exposes :80 publicly.
+#   - domain (behind tunnel) : --skip-ssl OR DOABLE_BEHIND_PROXY=1. Caddy
+#                              binds 127.0.0.1 only — the tunnel (Cloudflare
+#                              Tunnel, ngrok, etc.) is the sole public ingress.
+#                              Caddy uses tls=internal (self-signed) for the
+#                              origin↔tunnel hop; tunnel doesn't verify origin
+#                              cert. 0.0.0.0 binding would defeat the tunnel.
+#   - host / localhost       : setup.sh runs mkcert on the host to generate a
+#                              cert signed by a local CA that's installed into
+#                              the host's OS+browser trust stores (Mac keychain,
+#                              Linux ca-certs, Windows root via WSL interop).
+#                              Cert lands at deployment/docker/certs/ and is
+#                              mounted into the Caddy container read-only.
+#                              Bind: 127.0.0.1 only (loopback).
+# ────────────────────────────────────────────────────────────────────────────
 
-info "Setting up nginx reverse proxy for ${LISTEN_HOST}..."
+info "Setting up TLS for ${LISTEN_HOST} (Caddy in docker)..."
 
-# Free :80 and :443 before installing nginx. If the box was previously running
-# the bare-metal NO_TUNNEL path, caddy is already bound to both ports and nginx
-# will fail to start with EADDRINUSE. Stop+disable any other web server we know
-# about — purely a no-op on a fresh box.
-for svc in caddy apache2 lighttpd; do
-  if systemctl is-active --quiet "$svc"; then
-    info "Stopping conflicting web server: $svc (was bound to :80/:443)"
+# Stop any legacy host-side proxy from older setup.sh installs — Caddy in
+# docker now owns 127.0.0.1:{80,443}. Idempotent: no-op on fresh boxes.
+for svc in nginx caddy apache2 lighttpd; do
+  if command -v systemctl &>/dev/null && systemctl is-active --quiet "$svc"; then
+    info "Stopping host-side ${svc} (Caddy in docker takes over ports 80/443)"
     systemctl stop "$svc" 2>/dev/null || true
     systemctl disable "$svc" 2>/dev/null || true
   fi
 done
 
-# Same for doable.service — its tmux session may hold node processes that
-# bind 127.0.0.1:3000/4000/4001 (web/api/ws). Docker compose will rebind the
-# same ports inside the container, so we stop the bare-metal copy first.
-if systemctl is-active --quiet doable; then
-  info "Stopping bare-metal doable.service (was using ports 3000/4000/4001)"
-  systemctl stop doable 2>/dev/null || true
-  systemctl disable doable 2>/dev/null || true
-fi
+mkdir -p "$SCRIPT_DIR/certs"
 
-# Native postgres holds 127.0.0.1:5432 on any box that ran the bare-metal
-# server-setup.sh path. Docker compose maps 127.0.0.1:5432 -> postgres:5432
-# inside the container, so the host bind fails with EADDRINUSE if native
-# postgres is up. The docker postgres container will be the new source of
-# truth; the native one is no longer needed.
-if systemctl is-active --quiet postgresql; then
-  info "Stopping native postgresql (was holding 127.0.0.1:5432 — docker postgres takes over)"
-  systemctl stop postgresql 2>/dev/null || true
-  systemctl disable postgresql 2>/dev/null || true
-fi
-
-# Install nginx if not present (Linux only — non-Linux paths skipped above
-# inside the USE_NGINX guard).
-if ! command -v nginx &>/dev/null; then
-  info "Installing nginx..."
-  pkg_update
-  pkg_install nginx
-  ok "Installed nginx"
-fi
-
-# ─── SSL certificates ────────────────────────────────────────────────────────
-SSL_CERT=""
-SSL_KEY=""
-
-if [ "$MODE" = "domain" ] && [ "$SKIP_SSL" = false ]; then
-  # Let's Encrypt for public domains
-  if ! command -v certbot &>/dev/null; then
-    info "Installing certbot..."
-    pkg_install certbot python3-certbot-nginx
-    ok "Installed certbot"
-  fi
-
-  # Temporary HTTP-only config for cert issuance
-  NGINX_CONF="/etc/nginx/sites-available/${LISTEN_HOST}"
-  cat > "$NGINX_CONF" <<HTTPEOF
-server {
-    listen 80;
-    server_name ${LISTEN_HOST};
-    location /.well-known/acme-challenge/ { root /var/www/html; }
-    location / { return 301 https://\$host\$request_uri; }
-}
-HTTPEOF
-  ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${LISTEN_HOST}"
-  rm -f /etc/nginx/sites-enabled/default
-  nginx -t && systemctl enable --now nginx && systemctl reload-or-restart nginx
-
-  EMAIL_FLAG=""
-  if [ -n "${EMAIL:-}" ]; then
-    EMAIL_FLAG="-m $EMAIL"
-  elif [ -t 0 ]; then
-    # Interactive — give the operator one chance to supply an address so the
-    # account gets expiry-warning emails. Let's Encrypt is also moving away
-    # from supporting email-less accounts entirely, so encourage entry.
-    echo ""
-    echo "Let's Encrypt strongly recommends registering with an email address —"
-    echo "you'll get warning emails ~20 days before the cert expires, and LE may"
-    echo "stop accepting email-less registrations in future."
-    read -rp "Email for Let's Encrypt notices (blank to skip): " USER_EMAIL
-    if [ -n "$USER_EMAIL" ]; then
-      EMAIL_FLAG="-m $USER_EMAIL"
+case "$MODE" in
+  domain)
+    DOABLE_SITE="$LISTEN_HOST"
+    # Bind-address policy:
+    #   - Direct public ingress (need :80 reachable for Let's Encrypt HTTP-01)
+    #     → 0.0.0.0
+    #   - Behind Cloudflare Tunnel / reverse proxy / CDN (--skip-ssl or
+    #     DOABLE_BEHIND_PROXY=1) → 127.0.0.1. The tunnel is the only ingress;
+    #     binding 0.0.0.0 here would bypass the tunnel and expose origin ports
+    #     directly to the internet (defeats the tunnel's whole point).
+    if [ "$SKIP_SSL" = true ] || [ "${DOABLE_BEHIND_PROXY:-0}" = "1" ]; then
+      info "DOMAIN mode + behind-proxy: Caddy binds 127.0.0.1 (tunnel/CDN owns public ingress)"
+      DOABLE_BIND_ADDR="127.0.0.1"
+      DOABLE_TLS="internal"
     else
-      EMAIL_FLAG="--register-unsafely-without-email"
-      warn "No email — you will not receive expiry notices for ${LISTEN_HOST}."
+      info "DOMAIN mode: Caddy binds 0.0.0.0 + auto-fetches Let's Encrypt cert for ${LISTEN_HOST}"
+      DOABLE_BIND_ADDR="0.0.0.0"
+      DOABLE_TLS="${EMAIL:-internal}"
+      if [ -z "${EMAIL:-}" ]; then
+        warn "EMAIL not set — Caddy ACME will register without a contact address."
+        warn "  Re-run with EMAIL=you@example.com for renewal notifications."
+      fi
     fi
-  else
-    EMAIL_FLAG="--register-unsafely-without-email"
-    warn "EMAIL env not set and stdin is non-interactive — registering Let's Encrypt account WITHOUT recovery address."
-    warn "  Re-run with EMAIL=you@example.com ./deployment/docker/setup.sh to register properly."
-  fi
+    ;;
+  host|localhost)
+    DOABLE_SITE="$LISTEN_HOST"
+    DOABLE_BIND_ADDR="127.0.0.1"
+    DOABLE_TLS="/certs/cert.pem /certs/key.pem"
 
-  info "Requesting Let's Encrypt certificate for ${LISTEN_HOST}..."
-  certbot certonly --webroot -w /var/www/html -d "$LISTEN_HOST" $EMAIL_FLAG --agree-tos --non-interactive
+    # localhost mode always installs trust (server == browser by definition).
+    # host mode only installs if the operator opts in via --install-trust /
+    # DOABLE_INSTALL_TRUST=1 — server is usually a different machine than
+    # the browser, so installing on the server doesn't help.
+    WANT_TRUST=false
+    case "$MODE" in
+      localhost) WANT_TRUST=true ;;
+      host)
+        [ "${DOABLE_INSTALL_TRUST:-0}" = "1" ] && WANT_TRUST=true
+        [ "$INSTALL_TRUST" = "true" ] && WANT_TRUST=true
+        ;;
+    esac
 
-  SSL_CERT="/etc/letsencrypt/live/${LISTEN_HOST}/fullchain.pem"
-  SSL_KEY="/etc/letsencrypt/live/${LISTEN_HOST}/privkey.pem"
-  ok "SSL certificate obtained via Let's Encrypt"
-
-else
-  # Self-signed for private network / localhost / --skip-ssl
-  if [ "$MODE" = "domain" ] && [ "$SKIP_SSL" = true ]; then
-    info "Skipping Let's Encrypt (--skip-ssl). Generating self-signed certificate..."
-  else
-    info "Generating self-signed SSL certificate for ${LISTEN_HOST}..."
-  fi
-
-  mkdir -p "$SELF_SIGNED_DIR"
-  SSL_CERT="${SELF_SIGNED_DIR}/cert.pem"
-  SSL_KEY="${SELF_SIGNED_DIR}/key.pem"
-
-  # ─── Try mkcert first (browser-trusted certs via local CA) ──────────────
-  # mkcert generates a single local CA and installs it into every OS+browser
-  # trust store on the box. The CA is permanent — every future Doable
-  # install on this machine (re-running setup.sh, fresh DBs, etc.) gets
-  # browser-trusted certs without re-running the trust install.
-  # Trade-off vs raw openssl: one ~5MB binary download from upstream GH,
-  # but mkcert handles WSL→Windows interop + Firefox NSS more robustly
-  # than our ad-hoc install_localhost_trust below. We try mkcert first
-  # and fall back to openssl + install_localhost_trust on failure.
-  MKCERT_OK=false
-  # Skip mkcert in HOST mode unless operator opted in (same gate as
-  # install_localhost_trust below — server ≠ browser by default)
-  WANT_TRUST=false
-  case "$MODE" in
-    localhost) WANT_TRUST=true ;;
-    host)
-      [ "${DOABLE_INSTALL_TRUST:-0}" = "1" ] && WANT_TRUST=true
-      [ "$INSTALL_TRUST" = "true" ] && WANT_TRUST=true
-      ;;
-  esac
-
-  if [ "$WANT_TRUST" = "true" ] && [ ! -f "$SSL_CERT" ]; then
     ensure_mkcert() {
       command -v mkcert &>/dev/null && return 0
       local os arch
@@ -749,227 +681,65 @@ else
       esac
       local url="https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v1.4.4-${os}-${arch}"
       info "Downloading mkcert (one-time, ${url##*/})..."
-      if curl -fsSL -o /usr/local/bin/mkcert "$url" 2>/dev/null && chmod +x /usr/local/bin/mkcert; then
+      local dest=/usr/local/bin/mkcert
+      [ -w /usr/local/bin ] || dest="$HOME/.local/bin/mkcert"
+      mkdir -p "$(dirname "$dest")"
+      if curl -fsSL -o "$dest" "$url" && chmod +x "$dest"; then
+        export PATH="$(dirname "$dest"):$PATH"
         command -v mkcert &>/dev/null
       else
-        rm -f /usr/local/bin/mkcert
-        return 1
+        rm -f "$dest"; return 1
       fi
     }
 
-    if ensure_mkcert; then
-      info "Installing mkcert local CA (one-time, all browsers + OS stores)..."
-      if mkcert -install >/dev/null 2>&1; then
-        info "Issuing browser-trusted cert via mkcert for ${LISTEN_HOST}..."
-        if mkcert -cert-file "$SSL_CERT" -key-file "$SSL_KEY" "$LISTEN_HOST" localhost 127.0.0.1 ::1 >/dev/null 2>&1; then
-          chmod 644 "$SSL_CERT"; chmod 600 "$SSL_KEY"
-          MKCERT_OK=true
-          ok "mkcert cert installed (https://${LISTEN_HOST} will be trusted by all browsers on this machine)"
-        else
-          warn "mkcert leaf-cert issuance failed — falling back to openssl + install_localhost_trust"
-        fi
+    if [ "$WANT_TRUST" = "true" ] && ensure_mkcert; then
+      info "Installing mkcert local CA into host trust stores..."
+      mkcert -install 2>&1 | grep -E 'installed|CA' || true
+      info "Issuing browser-trusted cert for ${LISTEN_HOST}..."
+      if mkcert -cert-file "$SCRIPT_DIR/certs/cert.pem" -key-file "$SCRIPT_DIR/certs/key.pem" \
+          "$LISTEN_HOST" localhost 127.0.0.1 ::1 >/dev/null 2>&1; then
+        chmod 644 "$SCRIPT_DIR/certs/cert.pem"
+        chmod 600 "$SCRIPT_DIR/certs/key.pem"
+        ok "Browser-trusted cert ready at deployment/docker/certs/cert.pem"
       else
-        warn "mkcert -install failed (CA install) — falling back to openssl"
+        warn "mkcert leaf-cert generation failed — Caddy will use internal self-signed"
+        DOABLE_TLS="internal"
       fi
+    elif [ "$WANT_TRUST" = "true" ]; then
+      info "mkcert unavailable — using openssl self-signed (browser warning expected once)"
+      openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout "$SCRIPT_DIR/certs/key.pem" -out "$SCRIPT_DIR/certs/cert.pem" \
+        -days 365 -subj "/CN=${LISTEN_HOST}" \
+        -addext "subjectAltName=DNS:${LISTEN_HOST},DNS:localhost,IP:127.0.0.1" 2>/dev/null || true
+      [ -f "$SCRIPT_DIR/certs/cert.pem" ] && {
+        chmod 644 "$SCRIPT_DIR/certs/cert.pem"
+        chmod 600 "$SCRIPT_DIR/certs/key.pem"
+      }
     else
-      info "mkcert not available — using openssl + install_localhost_trust fallback"
+      info "HOST mode without --install-trust: Caddy will use internal self-signed."
+      info "  Browser will show a one-time warning. Re-run with --install-trust to issue a"
+      info "  trusted cert when the server is also the browser machine."
+      DOABLE_TLS="internal"
     fi
-  fi
+    ;;
+esac
 
-  if [ "$MKCERT_OK" = "true" ]; then
-    : # cert + key already in place via mkcert; trust already wired
-  elif [ -f "$SSL_CERT" ] && [ -f "$SSL_KEY" ]; then
-    warn "Self-signed certificate already exists at ${SELF_SIGNED_DIR}. Keeping it."
+# Persist Caddy env vars into .env (idempotent — update in place if present).
+persist_env() {
+  local var="$1" value="$2"
+  if grep -qE "^${var}=" "$ENV_FILE"; then
+    awk -v v="$var" -v val="$value" 'BEGIN{p=0} $0 ~ "^"v"="{print v"="val; p=1; next} {print} END{if(!p) print v"="val}' "$ENV_FILE" > "${ENV_FILE}.tmp"
+    mv "${ENV_FILE}.tmp" "$ENV_FILE"
   else
-    # Build SAN extension based on whether it's an IP or hostname
-    SAN_EXT=""
-    if echo "$LISTEN_HOST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
-      SAN_EXT="subjectAltName=IP:${LISTEN_HOST}"
-    else
-      SAN_EXT="subjectAltName=DNS:${LISTEN_HOST}"
-    fi
-
-    openssl req -x509 -newkey rsa:2048 -nodes \
-      -keyout "$SSL_KEY" -out "$SSL_CERT" \
-      -days 365 -subj "/CN=${LISTEN_HOST}" \
-      -addext "$SAN_EXT"
-
-    chmod 600 "$SSL_KEY"
-    chmod 644 "$SSL_CERT"
-    ok "Self-signed certificate created at ${SELF_SIGNED_DIR}/"
+    printf '%s=%s\n' "$var" "$value" >> "$ENV_FILE"
   fi
+}
+persist_env DOABLE_SITE       "$DOABLE_SITE"
+persist_env DOABLE_TLS        "$DOABLE_TLS"
+persist_env DOABLE_BIND_ADDR  "$DOABLE_BIND_ADDR"
+chmod 600 "$ENV_FILE"
 
-  # ─── Auto-trust the cert on the host OS (localhost mode only) ────────────
-  # Goal: zero manual cert install. After this block the browser opens
-  # https://${LISTEN_HOST} without a warning.
-  # Strategy:
-  #   - Linux (Debian/Ubuntu): copy to /usr/local/share/ca-certificates/ +
-  #     update-ca-certificates; NSS-import for Chrome/Firefox if present.
-  #   - Linux (Fedora/RHEL): copy to /etc/pki/ca-trust/source/anchors/ +
-  #     update-ca-trust; NSS-import too.
-  #   - macOS: security add-trusted-cert into System keychain.
-  #   - WSL (setup.sh inside WSL but browser is Windows): use powershell.exe
-  #     interop to import into Windows CurrentUser\Root AND set the Chrome
-  #     policy that makes Chrome 105+ consult Windows root store.
-  # Idempotent — re-running setup.sh after the cert is already trusted is
-  # a no-op except for a single "already trusted" log line.
-  install_localhost_trust() {
-    local cert="$1"
-    if [ ! -f "$cert" ]; then return 0; fi
-    # localhost mode: server == browser by definition, always auto-trust.
-    # host mode (LAN IP / remote server): operator usually browses from a
-    # different laptop, so installing into the SERVER's trust store doesn't
-    # help. Skip by default; opt in via DOABLE_INSTALL_TRUST=1 or --install-trust
-    # for the rare same-machine HOST case.
-    case "$MODE" in
-      localhost) : ;;  # always run
-      host)
-        if [ "${DOABLE_INSTALL_TRUST:-0}" != "1" ] && [ "${INSTALL_TRUST:-false}" != "true" ]; then
-          info "HOST mode: skipping auto-trust install (server ≠ browser by default)."
-          info "  → Copy ${cert} to your browser machine and follow"
-          info "    ${SELF_SIGNED_DIR}/cert-install-instructions.md, OR re-run with"
-          info "    DOABLE_INSTALL_TRUST=1 if the browser IS on this same box."
-          return 0
-        fi
-        ;;
-      *) return 0 ;;  # domain mode never needs auto-trust (LE cert)
-    esac
-
-    # WSL detection — when setup.sh runs inside WSL2 (Windows users' docker
-    # path) the browser is on the Windows side and needs the cert in
-    # Windows trust store, not the WSL Linux store.
-    local is_wsl=0
-    if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
-       || [ -n "${WSL_DISTRO_NAME:-}" ] \
-       || [ -f /proc/sys/fs/binfmt_misc/WSLInterop ]; then
-      is_wsl=1
-    fi
-
-    if [ "$is_wsl" = "1" ] && command -v powershell.exe &>/dev/null; then
-      info "WSL detected — installing trust into Windows CurrentUser\\Root + setting Chrome policy..."
-      local win_cert
-      win_cert="$(wslpath -w "$cert" 2>/dev/null || echo "$cert")"
-      # Same .NET pattern that bypasses Windows' UI prompt for CurrentUser
-      # store, plus the ChromeRootStoreEnabled=0 policy so Chrome 105+
-      # consults the Windows root store.
-      powershell.exe -NoProfile -Command "
-        \$b64 = (Get-Content -Raw -LiteralPath '$win_cert') -replace '-----[A-Z ]+-----','' -replace '\\s','';
-        \$bytes = [Convert]::FromBase64String(\$b64);
-        \$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(,\$bytes);
-        \$store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root','CurrentUser');
-        \$store.Open('ReadWrite'); \$store.Add(\$cert); \$store.Close();
-        \$path = 'HKCU:\\Software\\Policies\\Google\\Chrome';
-        if (-not (Test-Path \$path)) { New-Item -Path \$path -Force | Out-Null };
-        Set-ItemProperty -Path \$path -Name 'ChromeRootStoreEnabled' -Value 0 -Type DWord -Force;
-        Write-Output 'WIN_TRUST_OK'
-      " 2>&1 | grep -q WIN_TRUST_OK \
-        && ok "Windows trust + Chrome policy installed (restart Chrome to pick up policy)" \
-        || warn "Windows trust install failed — see deployment/docker/.cert-install-instructions.md for manual steps"
-    fi
-
-    # macOS: System keychain via /usr/bin/security
-    if [ "$(uname -s)" = "Darwin" ]; then
-      info "macOS detected — installing trust into System keychain (sudo prompt expected)..."
-      if sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$cert" 2>/dev/null; then
-        ok "macOS trust installed (Safari, Chrome via OS keychain)"
-      else
-        warn "macOS trust install failed — see deployment/docker/.cert-install-instructions.md for manual steps"
-      fi
-    fi
-
-    # Linux: OS-wide CA store + NSS for Chrome/Firefox
-    if [ "$(uname -s)" = "Linux" ] && [ "$is_wsl" = "0" ]; then
-      info "Linux detected — installing trust into OS CA store..."
-      if [ -d /etc/pki/ca-trust/source/anchors ]; then
-        cp "$cert" /etc/pki/ca-trust/source/anchors/doable-localhost.crt
-        update-ca-trust 2>/dev/null && ok "Linux RHEL/Fedora CA trust installed"
-      elif [ -d /usr/local/share/ca-certificates ]; then
-        cp "$cert" /usr/local/share/ca-certificates/doable-localhost.crt
-        update-ca-certificates 2>/dev/null >/dev/null && ok "Linux Debian/Ubuntu CA trust installed"
-      else
-        warn "Unknown Linux CA layout — see deployment/docker/.cert-install-instructions.md"
-      fi
-      # NSS (Chrome/Firefox each maintain own cert DBs)
-      if command -v certutil &>/dev/null; then
-        local nssdb
-        for nssdb in "${HOME}/.pki/nssdb" "${SUDO_USER:+/home/${SUDO_USER}/.pki/nssdb}"; do
-          [ -d "$nssdb" ] || continue
-          certutil -A -d "sql:${nssdb}" -t "C,," -n "doable-localhost" -i "$cert" 2>/dev/null \
-            && ok "NSS trust installed at ${nssdb} (Chrome/Chromium)"
-        done
-      fi
-    fi
-  }
-
-  # Drop a fallback instructions file next to the cert so an operator who
-  # hits the rare auto-install failure path has a copy-paste ready guide.
-  cat > "${SELF_SIGNED_DIR}/cert-install-instructions.md" <<'CERTDOC'
-# Manual cert install (fallback)
-
-setup.sh tries to auto-install this cert into your OS + browser trust
-stores. If that failed, run one of these depending on your OS:
-
-## Windows (PowerShell, no admin)
-```powershell
-$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('C:\path\to\cert.pem')
-$store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root','CurrentUser')
-$store.Open('ReadWrite'); $store.Add($cert); $store.Close()
-New-Item -Path 'HKCU:\Software\Policies\Google\Chrome' -Force | Out-Null
-Set-ItemProperty -Path 'HKCU:\Software\Policies\Google\Chrome' -Name 'ChromeRootStoreEnabled' -Value 0 -Type DWord
-# Restart Chrome
-```
-
-## macOS
-```bash
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain cert.pem
-```
-
-## Linux (Debian/Ubuntu)
-```bash
-sudo cp cert.pem /usr/local/share/ca-certificates/doable-localhost.crt
-sudo update-ca-certificates
-# For Chrome: NSS db
-sudo apt install libnss3-tools
-certutil -A -d sql:$HOME/.pki/nssdb -t "C,," -n "doable-localhost" -i cert.pem
-```
-
-## Linux (Fedora/RHEL)
-```bash
-sudo cp cert.pem /etc/pki/ca-trust/source/anchors/doable-localhost.crt
-sudo update-ca-trust
-```
-CERTDOC
-
-  if [ "$MKCERT_OK" = "true" ]; then
-    info "mkcert already installed local CA — skipping per-cert trust install"
-  else
-    install_localhost_trust "$SSL_CERT"
-  fi
-fi
-
-# ─── Generate nginx config ───────────────────────────────────────────────────
-NGINX_CONF="/etc/nginx/sites-available/${LISTEN_HOST}"
-sed -e "s|__HOST__|${LISTEN_HOST}|g" \
-    -e "s|__SSL_CERT__|${SSL_CERT}|g" \
-    -e "s|__SSL_KEY__|${SSL_KEY}|g" \
-    "$SCRIPT_DIR/nginx.conf.template" > "$NGINX_CONF"
-
-ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${LISTEN_HOST}"
-rm -f /etc/nginx/sites-enabled/default
-
-nginx -t && systemctl enable --now nginx && systemctl reload-or-restart nginx
-ok "nginx configured and running for ${LISTEN_HOST}"
-
-# ─── Firewall ────────────────────────────────────────────────────────────────
-if command -v ufw &>/dev/null; then
-  ufw allow 22/tcp >/dev/null 2>&1 || true
-  ufw allow 80/tcp >/dev/null 2>&1 || true
-  ufw allow 443/tcp >/dev/null 2>&1 || true
-  ufw --force enable >/dev/null 2>&1 || true
-  ok "Firewall: ports 22, 80, 443 open"
-fi
-
-fi  # end USE_NGINX block (nginx + cert + ufw skipped on Mac / native Windows)
+ok "Caddy TLS config persisted to .env (DOABLE_SITE=${DOABLE_SITE}, BIND=${DOABLE_BIND_ADDR})"
 
 # ─── Build (or pull) and start ────────────────────────────────────────────────
 echo ""
