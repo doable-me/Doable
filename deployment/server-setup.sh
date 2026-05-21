@@ -1440,6 +1440,50 @@ if [ "$NO_TUNNEL" = "1" ]; then
   # install_localhost_trust(). Zero manual cert install: after this block
   # https://${HOST} loads in the browser on the same machine without the
   # "your connection is not private" warning.
+  # Drop a manual-install fallback doc next to the cert (mirror of the one
+  # docker/setup.sh writes). Operator who hits the rare auto-install
+  # failure path has a copy-paste ready guide.
+  cat > "${INSTALL_DIR}/cert-install-instructions.md" <<'CERTDOC'
+# Manual cert install (fallback)
+
+server-setup.sh tries to auto-install the self-signed cert at
+/etc/caddy/selfsigned.crt into your OS + browser trust stores when
+HOST is set on the SAME machine you browse from. If that was skipped
+(server ≠ browser by default), copy the cert to your browser machine
+and run one of these:
+
+## Windows (PowerShell, no admin)
+```powershell
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('C:\path\to\selfsigned.crt')
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root','CurrentUser')
+$store.Open('ReadWrite'); $store.Add($cert); $store.Close()
+New-Item -Path 'HKCU:\Software\Policies\Google\Chrome' -Force | Out-Null
+Set-ItemProperty -Path 'HKCU:\Software\Policies\Google\Chrome' -Name 'ChromeRootStoreEnabled' -Value 0 -Type DWord
+# Restart Chrome
+```
+
+## macOS
+```bash
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain selfsigned.crt
+```
+
+## Linux (Debian/Ubuntu)
+```bash
+sudo cp selfsigned.crt /usr/local/share/ca-certificates/doable-localhost.crt
+sudo update-ca-certificates
+# For Chrome (uses NSS):
+sudo apt install libnss3-tools
+certutil -A -d sql:$HOME/.pki/nssdb -t "C,," -n "doable-localhost" -i selfsigned.crt
+```
+
+## Linux (Fedora/RHEL)
+```bash
+sudo cp selfsigned.crt /etc/pki/ca-trust/source/anchors/doable-localhost.crt
+sudo update-ca-trust
+```
+CERTDOC
+  chown doable:doable "${INSTALL_DIR}/cert-install-instructions.md" 2>/dev/null || true
+
   install_localhost_trust_baremetal() {
     local cert="/etc/caddy/selfsigned.crt"
     [ -f "$cert" ] || return 0

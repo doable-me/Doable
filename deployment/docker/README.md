@@ -82,6 +82,30 @@ Replace `192.168.1.50` with your server's LAN IP. Browsers will show a certifica
 
 When prompted, press Enter to default to `localhost`.
 
+**Auto-trust:** in `localhost` mode setup.sh **automatically installs the
+self-signed cert into your OS + browser trust stores**, so when you open
+`https://localhost` in Chrome / Safari / Firefox you get **zero** "your
+connection is not private" warnings. No manual `certutil` / Keychain /
+PowerShell commands needed. The install is platform-aware:
+
+| Platform | Where the cert lands |
+|---|---|
+| **macOS** | System keychain via `security add-trusted-cert` (Safari + Chrome) |
+| **Linux Debian/Ubuntu** | `/usr/local/share/ca-certificates/` + `update-ca-certificates`; Chrome/Firefox via NSS `certutil` (auto-installed if missing) |
+| **Linux Fedora/RHEL** | `/etc/pki/ca-trust/source/anchors/` + `update-ca-trust`; same NSS path |
+| **Windows via WSL2** | `powershell.exe` interop installs the cert into Windows `CurrentUser\Root` AND sets `HKCU\Software\Policies\Google\Chrome\ChromeRootStoreEnabled=0` so Chrome 105+ consults Windows root store (one Chrome restart after setup). |
+
+**Note for remote/LAN installs (`HOST=`):** by default the auto-trust is
+**skipped** in HOST mode because the server is usually a different machine
+than where you'll browse from. Either copy the cert to your browser
+machine and follow the manual instructions in
+`/etc/ssl/doable/cert-install-instructions.md`, OR — if you really do
+browse on the same box that runs setup.sh — re-run with `--install-trust`
+or `DOABLE_INSTALL_TRUST=1`.
+
+For domain installs (`DOMAIN=…`) auto-trust is N/A — the Let's Encrypt
+cert is already publicly trusted by every browser.
+
 ### Behind Cloudflare or another proxy
 
 ```bash
