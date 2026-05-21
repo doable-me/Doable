@@ -696,7 +696,37 @@ case "$MODE" in
     esac
 
     ensure_mkcert() {
-      command -v mkcert &>/dev/null && return 0
+      # command -v finds non-executable files in PATH on macOS bash (3.2 and 5.x
+      # alike), so trust requires both "found" AND "-x" AND "-version exits 0".
+      # The last check catches macOS 14+ Gatekeeper kills: a curl-downloaded
+      # arm64 binary gets the SIP-protected com.apple.provenance xattr stamped
+      # on it, and Gatekeeper SIGKILL's any attempt to exec it. The file looks
+      # fine (`ls -l` shows mode 755) but exits 137 silently — every downstream
+      # `mkcert -install` and `mkcert -cert-file` then "fails" with no error
+      # message, and the script falls back to Caddy internal self-signed.
+      mkcert_works() {
+        local bin="$1"
+        [ -n "$bin" ] && [ -x "$bin" ] && "$bin" -version >/dev/null 2>&1
+      }
+      local existing
+      existing="$(command -v mkcert 2>/dev/null || true)"
+      mkcert_works "$existing" && return 0
+      # Found but not executable → try to repair before pulling fresh.
+      [ -n "$existing" ] && chmod +x "$existing" 2>/dev/null && mkcert_works "$existing" && return 0
+      # On macOS, prefer Homebrew's notarized bottle over raw GitHub download —
+      # the bottle isn't quarantined and won't trip Gatekeeper. Same idea on
+      # Linux Homebrew installs (uncommon but supported).
+      if [ "$OS_FAMILY" = "macos" ] && command -v brew &>/dev/null; then
+        info "Installing mkcert via Homebrew (notarized; bypasses macOS Gatekeeper)..."
+        if brew list mkcert &>/dev/null || brew install mkcert >/dev/null 2>&1; then
+          # Brew's bin dir might not yet be in PATH for this shell — add it.
+          local brew_bin
+          brew_bin="$(brew --prefix 2>/dev/null)/bin"
+          [ -d "$brew_bin" ] && export PATH="$brew_bin:$PATH"
+          mkcert_works "$(command -v mkcert 2>/dev/null)" && return 0
+        fi
+        warn "brew install mkcert failed — falling back to raw GitHub download"
+      fi
       local os arch
       os="$(uname -s | tr '[:upper:]' '[:lower:]')"
       case "$(uname -m)" in
@@ -710,8 +740,21 @@ case "$MODE" in
       [ -w /usr/local/bin ] || dest="$HOME/.local/bin/mkcert"
       mkdir -p "$(dirname "$dest")"
       if curl -fsSL -o "$dest" "$url" && chmod +x "$dest"; then
+        # Best-effort: strip quarantine if present (provenance is SIP-protected
+        # on macOS 14+ and can't be removed by user processes — `xattr -c` will
+        # appear to succeed but the xattr stays. The -version smoke test below
+        # is what actually catches the Gatekeeper-kill case.
+        command -v xattr &>/dev/null && xattr -c "$dest" 2>/dev/null || true
         export PATH="$(dirname "$dest"):$PATH"
-        command -v mkcert &>/dev/null
+        if mkcert_works "$dest"; then
+          return 0
+        fi
+        if [ "$OS_FAMILY" = "macos" ]; then
+          warn "Downloaded mkcert was killed by macOS Gatekeeper (com.apple.provenance xattr is SIP-protected)."
+          warn "  Install the notarized bottle instead: brew install mkcert"
+        fi
+        rm -f "$dest"
+        return 1
       else
         rm -f "$dest"; return 1
       fi
@@ -873,10 +916,10 @@ echo "         ZHIPU_API_KEY"
 echo ""
 if [ "$MODE" != "domain" ]; then
   echo -e "  ${YELLOW}Note: Self-signed SSL — browsers will show a certificate warning.${NC}"
-  echo "        Accept it once, or import ${SSL_CERT} into your trust store."
+  echo "        Accept it once, or import ${SCRIPT_DIR}/certs/cert.pem into your trust store."
   echo ""
 fi
-if [ -n "${ACTIVE_BOOTSTRAP_TOKEN}" ]; then
+if [ -n "${ACTIVE_BOOTSTRAP_TOKEN:-}" ]; then
   echo "  Bootstrap token (only needed if signup is delayed past 24h or you need"
   echo "  to force-promote — kept private, single-use, server-side enforced):"
   echo ""

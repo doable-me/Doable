@@ -206,6 +206,12 @@ services:
       # the container's runtime entrypoint sed-replaces them on startup with
       # these values. So unlike docker-compose.yml (build path), here the
       # NEXT_PUBLIC_* vars matter at RUN time, not BUILD time.
+      # API_INTERNAL_URL is server-side only — used by Next.js middleware to
+      # reach api over the docker network. Without it middleware falls back
+      # to NEXT_PUBLIC_API_URL (https://localhost/api) which is unreachable
+      # from inside the container and silently breaks the post-signup
+      # /setup redirect for the first platform admin (BUG-R34-I).
+      API_INTERNAL_URL: http://api:4000
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:4001}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
