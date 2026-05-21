@@ -68,8 +68,7 @@ the box with this layout.
 ### What you need to host doable publicly
 
 1. **A VPS** — Ubuntu 22.04 / 24.04 or Debian 12, root SSH access, at
-   least 4 GB RAM and 20 GB disk. Any provider works (DigitalOcean,
-   Vultr, Linode, AWS Lightsail, Scaleway, OVH, Hetzner, etc.).
+   least 4 GB RAM and 20 GB disk. Any cloud or bare-metal host works.
 2. **A domain you own** registered at any registrar (Namecheap,
    Porkbun, Cloudflare Registrar, etc.). For Shape B (Cloudflare
    Tunnel) the domain's nameservers must point at Cloudflare.
