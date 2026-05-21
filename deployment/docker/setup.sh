@@ -270,6 +270,11 @@ if [ ! -f "$ENV_FILE" ]; then
   ENCRYPTION_KEY=$(openssl rand -hex 32)
   INTERNAL_SECRET=$(openssl rand -hex 32)
   PG_PASSWORD=$(openssl rand -hex 16)
+  # Separate password for the runtime-only `doable_app` postgres role.
+  # 02-roles.sh creates the role at first volume init using this value;
+  # docker-compose.yml api+ws connect as doable_app (non-superuser, no DDL)
+  # while migrate keeps the superuser `doable` role for schema changes.
+  DOABLE_APP_PASSWORD=$(openssl rand -hex 16)
   INSTALL_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
   # DOABLE_KEK is the envelope-encryption key used by the API for wizard-saved
   # secrets (AI provider keys, OAuth client secrets, Stripe). docker-compose.yml
@@ -308,6 +313,11 @@ INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT=${INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT}
 POSTGRES_USER=doable
 POSTGRES_PASSWORD=${PG_PASSWORD}
 POSTGRES_DB=doable
+# Runtime-only role for api+ws. Cannot CREATE/DROP/ALTER (no DDL). On a
+# compromise of the api container, the attacker is bounded to CRUD on
+# rows the app already owns — no schema escalation, no extension install,
+# no role grants. Migrate keeps using POSTGRES_USER above (owner).
+DOABLE_APP_PASSWORD=${DOABLE_APP_PASSWORD}
 
 # ─── URLs ──────────────────────────────────────────
 NEXT_PUBLIC_API_URL=${API_URL}
@@ -398,6 +408,71 @@ if [ -f "$ENV_FILE" ] && ! grep -qE '^DOABLE_KEK=.+' "$ENV_FILE"; then
   # broader perms from an older install where chmod 600 was never set.
   chmod 600 "$ENV_FILE"
   ok "Back-filled DOABLE_KEK in existing $ENV_FILE (mode 600)"
+fi
+
+# ─── Idempotent back-fill: DOABLE_APP_PASSWORD on pre-R34-followup installs ───
+# Existing installs from before this branch have a postgres data volume with
+# only the `doable` role. Back-filling the password lets `setup.sh` write a
+# value into .env, but the role itself doesn't exist yet — 02-roles.sh only
+# runs on a FRESH volume init. So on an upgrade we ALSO need to create the
+# role inside the running postgres container. The `docker exec` block below
+# is a no-op if postgres isn't running yet (fresh install path took the
+# branch above and 02-roles.sh will pick up the value).
+if [ -f "$ENV_FILE" ] && ! grep -qE '^DOABLE_APP_PASSWORD=.+' "$ENV_FILE"; then
+  NEW_APP_PWD=$(openssl rand -hex 16)
+  if grep -qE '^DOABLE_APP_PASSWORD=' "$ENV_FILE"; then
+    sed -i.bak -E "s|^DOABLE_APP_PASSWORD=.*|DOABLE_APP_PASSWORD=${NEW_APP_PWD}|" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
+  else
+    printf '\n# Added by setup.sh back-fill (%s) — runtime-only postgres role for api+ws\nDOABLE_APP_PASSWORD=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$NEW_APP_PWD" >> "$ENV_FILE"
+  fi
+  chmod 600 "$ENV_FILE"
+  ok "Back-filled DOABLE_APP_PASSWORD in existing $ENV_FILE (mode 600)"
+
+  # If postgres is already running with an old data volume, manually CREATE the
+  # role using the just-back-filled password. 02-roles.sh won't fire again
+  # because postgres init only runs on a virgin data dir.
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^doable-postgres$'; then
+    info "Existing postgres container detected — applying doable_app role to live DB..."
+    PG_USER=$(grep -E '^POSTGRES_USER=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo doable)
+    PG_DB=$(grep -E '^POSTGRES_DB=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo doable)
+    # Mirrors 02-roles.sh: psql doesn't substitute :'app_pwd' inside DO $$ ... $$
+    # blocks, so we SET a server-side GUC first and read it back via
+    # current_setting inside the DO body.
+    if docker exec -i doable-postgres \
+        psql -U "$PG_USER" -d "$PG_DB" \
+          -v ON_ERROR_STOP=1 \
+          --set "app_pwd=$NEW_APP_PWD" >/dev/null 2>&1 <<PSQL
+SET doable.app_pwd = :'app_pwd';
+DO \$\$
+DECLARE
+  v_pwd text := current_setting('doable.app_pwd', true);
+BEGIN
+  IF v_pwd IS NULL OR length(v_pwd) = 0 THEN
+    RAISE EXCEPTION 'doable.app_pwd GUC is empty';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'doable_app') THEN
+    EXECUTE format('CREATE ROLE doable_app LOGIN PASSWORD %L', v_pwd);
+  ELSE
+    EXECUTE format('ALTER ROLE doable_app WITH PASSWORD %L', v_pwd);
+  END IF;
+END\$\$;
+RESET doable.app_pwd;
+GRANT CONNECT ON DATABASE doable TO doable_app;
+GRANT USAGE ON SCHEMA public TO doable_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES    IN SCHEMA public TO doable_app;
+GRANT USAGE, SELECT                  ON ALL SEQUENCES IN SCHEMA public TO doable_app;
+GRANT EXECUTE                        ON ALL FUNCTIONS IN SCHEMA public TO doable_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE doable IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES    TO doable_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE doable IN SCHEMA public GRANT USAGE, SELECT                  ON SEQUENCES TO doable_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE doable IN SCHEMA public GRANT EXECUTE                        ON FUNCTIONS TO doable_app;
+PSQL
+    then
+      ok "Created/updated doable_app role on live postgres (api+ws will use it on next restart)"
+    else
+      warn "Could not auto-apply doable_app role to live postgres — run 02-roles.sh by hand or"
+      warn "  docker compose down -v && setup.sh (will wipe DB and recreate from scratch)."
+    fi
+  fi
 fi
 
 # ─── Set up nginx + SSL ──────────────────────────────────────────────────────

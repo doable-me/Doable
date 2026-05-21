@@ -1448,6 +1448,16 @@ if [ "$NO_TUNNEL" = "1" ]; then
 :443 {
     tls /etc/caddy/selfsigned.crt /etc/caddy/selfsigned.key
 
+    # /api/otlp/* → Next.js OTLP proxy on web (127.0.0.1:3000). MUST come
+    # before the generic /api/* block so Caddy's first-match-wins rule
+    # picks this. Without it, /api/otlp/v1/traces would strip to /otlp/v1/traces
+    # and hit the api server (no such route) → 500/404 in browser console.
+    # Path is preserved (handle, not handle_path) so Next.js sees the full
+    # /api/otlp/v1/traces and matches apps/web/src/app/api/otlp/[...path]/route.ts.
+    handle /api/otlp/* {
+        reverse_proxy 127.0.0.1:3000
+    }
+
     # /api/* → API on 127.0.0.1:4000
     handle_path /api/* {
         reverse_proxy 127.0.0.1:4000

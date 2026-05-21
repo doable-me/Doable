@@ -126,6 +126,17 @@ process.on("unhandledRejection", (reason) => {
 const app = new Hono({ strict: false });
 
 async function ensureProjectFilesTableExists(): Promise<void> {
+  // Probe first so we don't issue CREATE under the runtime role
+  // (doable_app — see deployment/docker/02-roles.sh) which would 42501.
+  // The table itself is owned by the migrate role via migration 075.
+  const probe = await sql<{ exists: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'project_files'
+    ) AS exists
+  `;
+  if (probe[0]?.exists) return;
+
   await sql`
     CREATE TABLE IF NOT EXISTS project_files (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -142,12 +153,6 @@ async function ensureProjectFilesTableExists(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_project_files_project_id
     ON project_files(project_id)
   `;
-
-  try {
-    await sql`GRANT ALL PRIVILEGES ON TABLE project_files TO doable`;
-  } catch {
-    // In local/dev setups, the `doable` role may not exist.
-  }
 }
 
 // Pre-create middleware instances (avoid re-instantiating on every request)

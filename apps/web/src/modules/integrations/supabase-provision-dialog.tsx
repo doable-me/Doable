@@ -84,7 +84,7 @@ export function SupabaseProvisionDialog({
     try {
       const accessToken = await getAccessToken();
       const res = await fetch(
-        `${API_BASE}/api/integrations/supabase/orgs?workspaceId=${encodeURIComponent(workspaceId)}`,
+        `${API_BASE}/integrations/supabase/orgs?workspaceId=${encodeURIComponent(workspaceId)}`,
         { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} },
       );
       if (res.status === 412) { setOauthRequired(true); return false; }
@@ -110,7 +110,7 @@ export function SupabaseProvisionDialog({
     try {
       const accessToken = await getAccessToken();
       const res = await fetch(
-        `${API_BASE}/api/integrations/supabase/projects?workspaceId=${encodeURIComponent(workspaceId)}`,
+        `${API_BASE}/integrations/supabase/projects?workspaceId=${encodeURIComponent(workspaceId)}`,
         { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} },
       );
       if (res.status === 412) return;
@@ -167,7 +167,7 @@ export function SupabaseProvisionDialog({
       setConnectExistingError(null);
       try {
         const accessToken = await getAccessToken();
-        const res = await fetch(`${API_BASE}/api/integrations/supabase/use-existing`, {
+        const res = await fetch(`${API_BASE}/integrations/supabase/use-existing`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -196,7 +196,7 @@ export function SupabaseProvisionDialog({
     setProgress([]);
     try {
       const accessToken = await getAccessToken();
-      const res = await fetch(`${API_BASE}/api/integrations/supabase/provision`, {
+      const res = await fetch(`${API_BASE}/integrations/supabase/provision`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

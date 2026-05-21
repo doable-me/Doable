@@ -56,6 +56,27 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # OTLP browser tracing proxy — handled by the Next.js web container's
+    # /api/otlp/[...path] route (apps/web/src/app/api/otlp/[...path]/route.ts)
+    # which forwards to the api container's /internal/otlp/* receiver with
+    # the shared INTERNAL_SECRET attached server-side. Must come BEFORE the
+    # generic /api/ location so nginx's longest-prefix match picks this one.
+    # Without this, /api/otlp/v1/traces would 500 because nginx strips the
+    # /api/ prefix and hits the api container's /otlp/v1/traces (which
+    # doesn't exist there — only /internal/otlp does, gated by the secret).
+    # Preserve the full path (no trailing slash on proxy_pass) so Next.js
+    # sees /api/otlp/v1/traces verbatim.
+    location /api/otlp/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+        proxy_buffering off;
+    }
+
     # API (Hono) — strips /api prefix
     location /api/ {
         proxy_pass http://127.0.0.1:4000/;

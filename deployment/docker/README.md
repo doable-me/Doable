@@ -211,8 +211,72 @@ All application services bind to `127.0.0.1` only. Only nginx accepts external c
 - **No ports exposed publicly** — all Docker services bind to `127.0.0.1`
 - **nginx always in front** — in all deployment modes (domain, LAN, localhost)
 - **Non-root containers** — API, WS, Web run as unprivileged `node` user
+- **Capability stripping** — every service runs with `cap_drop: [ALL]` and `no-new-privileges:true` (postgres re-adds only the 5 caps gosu needs for first-volume init)
+- **Database role separation** — the runtime API + WS connect as `doable_app` (CRUD-only, no DDL). The owner `doable` role is used only by the one-shot `migrate` service. A compromise of the api container therefore can't DROP TABLE, CREATE EXTENSION, or escalate via ROLE grants — see `02-roles.sh` and the `DOABLE_APP_PASSWORD` block in `setup.sh`.
+- **Read-only init scripts** — `init.sql` and `02-roles.sh` mount `:ro` so a compromised postgres container can't rewrite them ahead of the next reinitialization.
 - **Firewall** — `setup.sh` configures UFW to allow only ports 22, 80, 443
-- **Secrets** — never committed; `docker/.env` is gitignored
+- **Secrets** — never committed; `docker/.env` is gitignored and `chmod 600`'d by `setup.sh`
+
+### Multi-tenant AI sandbox (opt-in) — added 2026-05-21 (R34 follow-up)
+
+The default stack assumes a single-tenant deployment — one trusted operator
+or team where every user is allowed to weaponize the AI dev-server only
+against their own projects. For **multi-tenant** installs (hosting Doable
+for arbitrary signups), layer the sandbox overlay to confine each
+AI-spawned subprocess inside a per-project bubblewrap jail:
+
+```bash
+docker compose \
+  -f deployment/docker/docker-compose.yml \
+  -f deployment/docker/docker-compose.sandbox.yml \
+  up -d --force-recreate api
+```
+
+What the overlay changes (api service only — postgres/ws/web/migrate stay
+locked down):
+
+- Flips `DOABLE_HARDENING=full` + `DOABLE_HARDENING_LEVEL=prod` + `DOABLE_SANDBOX_INSTALL=1` (the three env vars that gate the bwrap-backed jail layers — they must move in lockstep, see commit `a2d8a112` for the regression they fix).
+- Re-adds `cap_add: [SYS_ADMIN]` (everything else stays dropped) so bwrap's `unshare(CLONE_NEWUSER)` + `mount()` calls succeed.
+- Applies a custom seccomp profile (`deployment/docker/seccomp-bwrap.json`) that extends Docker's default with just `mount`, `umount2`, `pivot_root`, and `keyctl` — explicitly NOT `seccomp=unconfined` (which would open ~70 additional syscalls including `ptrace`, `kexec_load`, `bpf`, `perf_event_open`).
+
+After applying, healthy startup logs look like:
+
+```bash
+docker logs doable-api | grep -E "backend=bubblewrap|bwrap: Failed"
+# → "[vault] backend=bubblewrap fullIsolation=true"  ← good
+# → 0 occurrences of "bwrap: Failed to make / slave: Permission denied"
+```
+
+The trade-off is a slightly wider syscall surface on the api container in
+exchange for kernel-enforced isolation between every AI subprocess. Don't
+flip this on if you're the only operator using the box — the default is
+already tighter on syscall surface.
+
+### Verifying role separation
+
+After `docker compose up -d`, confirm the api+ws connections are coming
+from the limited role and DDL is gated behind the owner role:
+
+```bash
+# Show who's connected and as which role
+docker compose -f deployment/docker/docker-compose.yml exec -T postgres \
+  psql -U doable -At -c \
+  "SELECT application_name, usename, COUNT(*) FROM pg_stat_activity WHERE datname='doable' GROUP BY 1,2 ORDER BY 1"
+# Expect: api connections show usename=doable_app, migrate is already exited
+#         (only the live api/ws pools are visible)
+
+# Prove doable_app cannot DROP a table
+docker compose -f deployment/docker/docker-compose.yml exec -T postgres \
+  psql -U doable_app -d doable -At -c "DROP TABLE users CASCADE" 2>&1 \
+  | grep -iE "permission denied|must be owner"
+# Expect: "permission denied for table users"
+
+# Prove doable_app CAN do normal CRUD
+docker compose -f deployment/docker/docker-compose.yml exec -T postgres \
+  psql -U doable_app -d doable -At -c \
+  "SELECT 1 FROM ai_sessions LIMIT 1; SELECT current_user"
+# Expect: clean SELECT + "doable_app"
+```
 
 ## Troubleshooting
 

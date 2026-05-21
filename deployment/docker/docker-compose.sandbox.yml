@@ -1,0 +1,83 @@
+# ==============================================================================
+# Doable — multi-tenant AI-sandbox overlay (OPT-IN)
+# ==============================================================================
+# Single-tenant operators (one trusted user / one team) do NOT need this. The
+# default docker-compose.yml stack already provides:
+#   - cap_drop: [ALL]
+#   - security_opt: [no-new-privileges:true]
+#   - non-superuser runtime DB role (doable_app)
+#   - read-only init scripts
+#   - per-service 127.0.0.1 port bindings + nginx-fronted TLS
+# which is enough threat model for any install where every user is trusted not
+# to weaponize the AI dev-server against their own data.
+#
+# Multi-tenant operators (hosting Doable for arbitrary signups, e.g. a public
+# beta) want stronger isolation between AI-spawned subprocesses and the api
+# container itself. This overlay flips on the bubblewrap-backed jail
+# (services/api/src/sandbox/orchestrator.ts + packages/dovault) which:
+#   - mounts the per-project src tree read-write but everything else read-only
+#   - runs each spawn under a fresh user namespace (uid 9052+)
+#   - applies syscall + capability filtering at the jail layer
+# so a malicious AI-generated package install_package / postinstall script
+# cannot read other projects' files or reach the api container's secrets.
+#
+# How to apply:
+#   docker compose \
+#     -f deployment/docker/docker-compose.yml \
+#     -f deployment/docker/docker-compose.sandbox.yml \
+#     up -d --force-recreate api
+#
+# To revert:
+#   docker compose -f deployment/docker/docker-compose.yml up -d --force-recreate api
+#
+# Trade-off in plain terms:
+#   - WIDER syscall surface on the api container: mount/umount2/pivot_root/
+#     keyctl get whitelisted via seccomp-bwrap.json (vs Docker default which
+#     errno's them). Net delta is ~4 syscalls — not seccomp=unconfined.
+#   - api container gains CAP_SYS_ADMIN (still drops everything else).
+#   - bwrap's user-ns + mount work imposes ~50-100ms extra per AI subprocess
+#     spawn — invisible against the 1-10s pnpm install / vite cold-start times.
+#
+# Verification after applying:
+#   docker inspect doable-api --format \
+#     'caps_add={{.HostConfig.CapAdd}} secopt={{.HostConfig.SecurityOpt}}'
+#   # → caps_add=[CAP_SYS_ADMIN], secopt includes seccomp=<path>/seccomp-bwrap.json
+#
+#   docker logs doable-api | grep -E "backend=bubblewrap|bwrap: Failed"
+#   # → "backend=bubblewrap fullIsolation=true" present, zero "bwrap: Failed" lines
+#
+# Re-run any AI-build smoke test after applying — preview iframe must still come
+# up at HTTP 200 (proves sandbox didn't break the happy path).
+# ==============================================================================
+
+services:
+  api:
+    environment:
+      # Both env vars must flip together — they gate DIFFERENT layers in code:
+      #   DOABLE_HARDENING        → services/api/src/projects/builder.ts +
+      #                             services/api/src/projects/vite-jail.ts
+      #                             (full | relaxed | off)
+      #   DOABLE_HARDENING_LEVEL  → services/api/src/sandbox/orchestrator.ts
+      #                             (off | dev | staging | prod)
+      # Setting only one of them is the regression vector R34-F closed.
+      DOABLE_HARDENING: full
+      DOABLE_HARDENING_LEVEL: prod
+      # Also route the `pnpm install` / install_package / npm spawns through
+      # the jail. Without this, a malicious postinstall script can still
+      # write outside the project tree (within the api container's FS).
+      DOABLE_SANDBOX_INSTALL: "1"
+    # bwrap needs CAP_SYS_ADMIN to call unshare(CLONE_NEWUSER) + mount(). The
+    # base file's cap_drop: [ALL] still drops every other capability — net
+    # effect is "ALL dropped, then SYS_ADMIN re-added" which docker resolves
+    # to a per-container CapBnd of just CAP_SYS_ADMIN.
+    cap_add:
+      - SYS_ADMIN
+    # Compose merges security_opt arrays additively and refuses duplicates,
+    # so DO NOT restate no-new-privileges:true here (the base file already
+    # has it; restating triggers "items at 0 and 1 are equal" at validation).
+    # The seccomp profile path is resolved relative to this compose file.
+    security_opt:
+      # Custom seccomp profile — extends the Docker default with just the
+      # syscalls bwrap needs (mount/umount2/pivot_root/keyctl). See the
+      # file's header comment for the exact delta vs default.
+      - seccomp=./seccomp-bwrap.json

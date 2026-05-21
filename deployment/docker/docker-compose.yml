@@ -28,11 +28,19 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-doable}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — run ./deployment/docker/setup.sh to generate}
       POSTGRES_DB: ${POSTGRES_DB:-doable}
+      # Password for the runtime-only doable_app role. 02-roles.sh reads this
+      # at first volume init to CREATE the role; api+ws then connect as it.
+      # Required so an operator who bypasses setup.sh can't silently end up
+      # with api still using the superuser role.
+      DOABLE_APP_PASSWORD: ${DOABLE_APP_PASSWORD:?DOABLE_APP_PASSWORD is required — run ./deployment/docker/setup.sh to generate}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # :ro so a compromised container can't rewrite init.sql ahead of the
-      # next `docker compose down/up` cycle.
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # :ro so a compromised container can't rewrite the init scripts ahead
+      # of the next `docker compose down/up` cycle. Renamed to 01-/02- so the
+      # postgres entrypoint runs them in deterministic order: extensions
+      # first, role grants second (grants assume CREATE EXTENSION already ran).
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./02-roles.sh:/docker-entrypoint-initdb.d/02-roles.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-doable}"]
       interval: 5s
@@ -64,6 +72,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      # Migrate uses the OWNER role (POSTGRES_USER=doable). DDL — CREATE TABLE,
+      # ALTER, CREATE EXTENSION, ALTER DEFAULT PRIVILEGES — only runs here.
+      # Runtime api+ws use doable_app (CRUD only). See 02-roles.sh.
       DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-doable}
     restart: "no"
     security_opt:
@@ -91,7 +102,10 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-doable}
+      # Runtime connections use the non-superuser doable_app role created by
+      # 02-roles.sh. The migrate service above keeps the owner role for DDL,
+      # so api compromise → no DROP/ALTER/CREATE EXTENSION/ROLE escalation.
+      DATABASE_URL: postgres://doable_app:${DOABLE_APP_PASSWORD:?DOABLE_APP_PASSWORD is required — run ./deployment/docker/setup.sh to generate}@postgres:5432/${POSTGRES_DB:-doable}
       DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-20}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — run ./deployment/docker/setup.sh to generate}
       JWT_ISSUER: ${JWT_ISSUER:-doable}
@@ -191,7 +205,8 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-doable}
+      # Same runtime role as api — CRUD only, no DDL. See 02-roles.sh.
+      DATABASE_URL: postgres://doable_app:${DOABLE_APP_PASSWORD:?DOABLE_APP_PASSWORD is required — run ./deployment/docker/setup.sh to generate}@postgres:5432/${POSTGRES_DB:-doable}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       WS_PORT: 4001
       WS_HOST: 0.0.0.0
