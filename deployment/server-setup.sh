@@ -1443,6 +1443,18 @@ if [ "$NO_TUNNEL" = "1" ]; then
   install_localhost_trust_baremetal() {
     local cert="/etc/caddy/selfsigned.crt"
     [ -f "$cert" ] || return 0
+    # Bare-metal NO_TUNNEL is HOST mode by definition — typically a LAN IP /
+    # private server the operator SSH'd into, where the browser is on a
+    # DIFFERENT laptop. Installing trust into the server's stores doesn't
+    # help that browser. Skip by default; opt in via DOABLE_INSTALL_TRUST=1
+    # for the rare case where the same machine serves AND browses.
+    if [ "${HOST}" != "localhost" ] && [ "${DOABLE_INSTALL_TRUST:-0}" != "1" ]; then
+      info "NO_TUNNEL host mode: skipping auto-trust install (server ≠ browser by default)."
+      info "  → Copy ${cert} to your browser machine and follow"
+      info "    ${INSTALL_DIR}/cert-install-instructions.md, OR re-run with"
+      info "    DOABLE_INSTALL_TRUST=1 if the browser IS on this same box."
+      return 0
+    fi
     local is_wsl=0
     if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
        || [ -n "${WSL_DISTRO_NAME:-}" ] \

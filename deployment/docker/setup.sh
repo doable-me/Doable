@@ -42,27 +42,39 @@ error() { echo -e "${RED}[error]${NC} $*" >&2; }
 
 # ─── Parse args ───────────────────────────────────────────────────────────────
 SKIP_SSL=false
+INSTALL_TRUST=false
 for arg in "$@"; do
   case "$arg" in
-    --skip-ssl)  SKIP_SSL=true ;;
-    --prebuilt)  COMPOSE_FILE="$SCRIPT_DIR/docker-compose.prod.yml" ;;
+    --skip-ssl)       SKIP_SSL=true ;;
+    --prebuilt)       COMPOSE_FILE="$SCRIPT_DIR/docker-compose.prod.yml" ;;
+    --install-trust)  INSTALL_TRUST=true ;;
     --help|-h)
-      echo "Usage: [DOMAIN=app.example.com | HOST=192.168.1.50] $0 [--skip-ssl] [--prebuilt]"
+      echo "Usage: [DOMAIN=app.example.com | HOST=192.168.1.50] $0 [--skip-ssl] [--prebuilt] [--install-trust]"
       echo ""
       echo "Options:"
-      echo "  --skip-ssl   Set up nginx but skip Let's Encrypt (e.g. behind Cloudflare)"
-      echo "  --prebuilt   Pull pre-built images from ghcr.io instead of building"
-      echo "               from source (~30s install vs ~5-10min build)."
-      echo "               Equivalent to setting DOABLE_PREBUILT=true."
+      echo "  --skip-ssl       Set up nginx but skip Let's Encrypt (e.g. behind Cloudflare)"
+      echo "  --prebuilt       Pull pre-built images from ghcr.io instead of building from"
+      echo "                   source (~30s install vs ~5-10min build). Equivalent to"
+      echo "                   setting DOABLE_PREBUILT=true."
+      echo "  --install-trust  In HOST mode, force-install the self-signed cert into this"
+      echo "                   machine's OS+browser trust stores. Default in HOST mode is to"
+      echo "                   skip because the browser is usually on a DIFFERENT laptop."
+      echo "                   Equivalent to DOABLE_INSTALL_TRUST=1. (localhost mode always"
+      echo "                   installs trust; domain mode never does — LE cert is already"
+      echo "                   publicly trusted.)"
       echo ""
       echo "Environment variables:"
-      echo "  DOMAIN              Your domain name — uses Let's Encrypt for SSL"
-      echo "  HOST                IP or hostname for private network — self-signed SSL"
-      echo "  EMAIL               Email for Let's Encrypt notifications (optional)"
-      echo "  DOABLE_PREBUILT     Set to 'true' to pull from ghcr.io (same as --prebuilt)"
-      echo "  DOABLE_IMAGE_TAG    Image tag to pull (default: latest; use v1.2.3 to pin)"
+      echo "  DOMAIN                  Your domain name — uses Let's Encrypt for SSL"
+      echo "  HOST                    IP or hostname for private network — self-signed SSL"
+      echo "  EMAIL                   Email for Let's Encrypt notifications (optional)"
+      echo "  DOABLE_PREBUILT         Set to 'true' to pull from ghcr.io (same as --prebuilt)"
+      echo "  DOABLE_IMAGE_TAG        Image tag to pull (default: latest; use v1.2.3 to pin)"
+      echo "  DOABLE_INSTALL_TRUST    Set to '1' to force-install host-mode trust (same as"
+      echo "                          --install-trust)"
       echo ""
       echo "If neither DOMAIN nor HOST is set, defaults to localhost with self-signed SSL."
+      echo "Localhost mode ALWAYS auto-installs the cert into your OS+browser trust stores;"
+      echo "the browser opens https://localhost without any \"connection not private\" warning."
       exit 0
       ;;
   esac
@@ -626,8 +638,25 @@ else
   # a no-op except for a single "already trusted" log line.
   install_localhost_trust() {
     local cert="$1"
-    if [ "$MODE" != "localhost" ] && [ "$MODE" != "host" ]; then return 0; fi
     if [ ! -f "$cert" ]; then return 0; fi
+    # localhost mode: server == browser by definition, always auto-trust.
+    # host mode (LAN IP / remote server): operator usually browses from a
+    # different laptop, so installing into the SERVER's trust store doesn't
+    # help. Skip by default; opt in via DOABLE_INSTALL_TRUST=1 or --install-trust
+    # for the rare same-machine HOST case.
+    case "$MODE" in
+      localhost) : ;;  # always run
+      host)
+        if [ "${DOABLE_INSTALL_TRUST:-0}" != "1" ] && [ "${INSTALL_TRUST:-false}" != "true" ]; then
+          info "HOST mode: skipping auto-trust install (server ≠ browser by default)."
+          info "  → Copy ${cert} to your browser machine and follow"
+          info "    ${SELF_SIGNED_DIR}/cert-install-instructions.md, OR re-run with"
+          info "    DOABLE_INSTALL_TRUST=1 if the browser IS on this same box."
+          return 0
+        fi
+        ;;
+      *) return 0 ;;  # domain mode never needs auto-trust (LE cert)
+    esac
 
     # WSL detection — when setup.sh runs inside WSL2 (Windows users' docker
     # path) the browser is on the Windows side and needs the cert in
