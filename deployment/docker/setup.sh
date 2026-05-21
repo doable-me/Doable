@@ -609,6 +609,132 @@ else
     chmod 644 "$SSL_CERT"
     ok "Self-signed certificate created at ${SELF_SIGNED_DIR}/"
   fi
+
+  # ─── Auto-trust the cert on the host OS (localhost mode only) ────────────
+  # Goal: zero manual cert install. After this block the browser opens
+  # https://${LISTEN_HOST} without a warning.
+  # Strategy:
+  #   - Linux (Debian/Ubuntu): copy to /usr/local/share/ca-certificates/ +
+  #     update-ca-certificates; NSS-import for Chrome/Firefox if present.
+  #   - Linux (Fedora/RHEL): copy to /etc/pki/ca-trust/source/anchors/ +
+  #     update-ca-trust; NSS-import too.
+  #   - macOS: security add-trusted-cert into System keychain.
+  #   - WSL (setup.sh inside WSL but browser is Windows): use powershell.exe
+  #     interop to import into Windows CurrentUser\Root AND set the Chrome
+  #     policy that makes Chrome 105+ consult Windows root store.
+  # Idempotent — re-running setup.sh after the cert is already trusted is
+  # a no-op except for a single "already trusted" log line.
+  install_localhost_trust() {
+    local cert="$1"
+    if [ "$MODE" != "localhost" ] && [ "$MODE" != "host" ]; then return 0; fi
+    if [ ! -f "$cert" ]; then return 0; fi
+
+    # WSL detection — when setup.sh runs inside WSL2 (Windows users' docker
+    # path) the browser is on the Windows side and needs the cert in
+    # Windows trust store, not the WSL Linux store.
+    local is_wsl=0
+    if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
+       || [ -n "${WSL_DISTRO_NAME:-}" ] \
+       || [ -f /proc/sys/fs/binfmt_misc/WSLInterop ]; then
+      is_wsl=1
+    fi
+
+    if [ "$is_wsl" = "1" ] && command -v powershell.exe &>/dev/null; then
+      info "WSL detected — installing trust into Windows CurrentUser\\Root + setting Chrome policy..."
+      local win_cert
+      win_cert="$(wslpath -w "$cert" 2>/dev/null || echo "$cert")"
+      # Same .NET pattern that bypasses Windows' UI prompt for CurrentUser
+      # store, plus the ChromeRootStoreEnabled=0 policy so Chrome 105+
+      # consults the Windows root store.
+      powershell.exe -NoProfile -Command "
+        \$b64 = (Get-Content -Raw -LiteralPath '$win_cert') -replace '-----[A-Z ]+-----','' -replace '\\s','';
+        \$bytes = [Convert]::FromBase64String(\$b64);
+        \$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(,\$bytes);
+        \$store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root','CurrentUser');
+        \$store.Open('ReadWrite'); \$store.Add(\$cert); \$store.Close();
+        \$path = 'HKCU:\\Software\\Policies\\Google\\Chrome';
+        if (-not (Test-Path \$path)) { New-Item -Path \$path -Force | Out-Null };
+        Set-ItemProperty -Path \$path -Name 'ChromeRootStoreEnabled' -Value 0 -Type DWord -Force;
+        Write-Output 'WIN_TRUST_OK'
+      " 2>&1 | grep -q WIN_TRUST_OK \
+        && ok "Windows trust + Chrome policy installed (restart Chrome to pick up policy)" \
+        || warn "Windows trust install failed — see deployment/docker/.cert-install-instructions.md for manual steps"
+    fi
+
+    # macOS: System keychain via /usr/bin/security
+    if [ "$(uname -s)" = "Darwin" ]; then
+      info "macOS detected — installing trust into System keychain (sudo prompt expected)..."
+      if sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$cert" 2>/dev/null; then
+        ok "macOS trust installed (Safari, Chrome via OS keychain)"
+      else
+        warn "macOS trust install failed — see deployment/docker/.cert-install-instructions.md for manual steps"
+      fi
+    fi
+
+    # Linux: OS-wide CA store + NSS for Chrome/Firefox
+    if [ "$(uname -s)" = "Linux" ] && [ "$is_wsl" = "0" ]; then
+      info "Linux detected — installing trust into OS CA store..."
+      if [ -d /etc/pki/ca-trust/source/anchors ]; then
+        cp "$cert" /etc/pki/ca-trust/source/anchors/doable-localhost.crt
+        update-ca-trust 2>/dev/null && ok "Linux RHEL/Fedora CA trust installed"
+      elif [ -d /usr/local/share/ca-certificates ]; then
+        cp "$cert" /usr/local/share/ca-certificates/doable-localhost.crt
+        update-ca-certificates 2>/dev/null >/dev/null && ok "Linux Debian/Ubuntu CA trust installed"
+      else
+        warn "Unknown Linux CA layout — see deployment/docker/.cert-install-instructions.md"
+      fi
+      # NSS (Chrome/Firefox each maintain own cert DBs)
+      if command -v certutil &>/dev/null; then
+        local nssdb
+        for nssdb in "${HOME}/.pki/nssdb" "${SUDO_USER:+/home/${SUDO_USER}/.pki/nssdb}"; do
+          [ -d "$nssdb" ] || continue
+          certutil -A -d "sql:${nssdb}" -t "C,," -n "doable-localhost" -i "$cert" 2>/dev/null \
+            && ok "NSS trust installed at ${nssdb} (Chrome/Chromium)"
+        done
+      fi
+    fi
+  }
+
+  # Drop a fallback instructions file next to the cert so an operator who
+  # hits the rare auto-install failure path has a copy-paste ready guide.
+  cat > "${SELF_SIGNED_DIR}/cert-install-instructions.md" <<'CERTDOC'
+# Manual cert install (fallback)
+
+setup.sh tries to auto-install this cert into your OS + browser trust
+stores. If that failed, run one of these depending on your OS:
+
+## Windows (PowerShell, no admin)
+```powershell
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('C:\path\to\cert.pem')
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root','CurrentUser')
+$store.Open('ReadWrite'); $store.Add($cert); $store.Close()
+New-Item -Path 'HKCU:\Software\Policies\Google\Chrome' -Force | Out-Null
+Set-ItemProperty -Path 'HKCU:\Software\Policies\Google\Chrome' -Name 'ChromeRootStoreEnabled' -Value 0 -Type DWord
+# Restart Chrome
+```
+
+## macOS
+```bash
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain cert.pem
+```
+
+## Linux (Debian/Ubuntu)
+```bash
+sudo cp cert.pem /usr/local/share/ca-certificates/doable-localhost.crt
+sudo update-ca-certificates
+# For Chrome: NSS db
+sudo apt install libnss3-tools
+certutil -A -d sql:$HOME/.pki/nssdb -t "C,," -n "doable-localhost" -i cert.pem
+```
+
+## Linux (Fedora/RHEL)
+```bash
+sudo cp cert.pem /etc/pki/ca-trust/source/anchors/doable-localhost.crt
+sudo update-ca-trust
+```
+CERTDOC
+
+  install_localhost_trust "$SSL_CERT"
 fi
 
 # ─── Generate nginx config ───────────────────────────────────────────────────
