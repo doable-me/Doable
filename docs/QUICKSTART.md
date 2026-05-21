@@ -8,39 +8,58 @@ cd doable
 ./deployment/docker/setup.sh
 ```
 
-Open http://localhost:3000 in your browser. Sign up — the first account becomes platform owner automatically. The setup wizard walks you through AI keys and integrations. No SSH, no SQL, no .env editing.
+Open `https://localhost` in your browser. Sign up — the first account
+becomes platform owner automatically. The setup wizard walks you
+through AI keys and integrations. No SSH, no SQL, no .env editing.
 
-To use AI features locally: drop your Anthropic or OpenAI key into the wizard (Step 2). Or connect GitHub Copilot if you have a subscription.
+The cert at `https://localhost` is auto-trusted on Linux / macOS /
+Windows (via WSL2) — `setup.sh` uses [mkcert](https://github.com/FiloSottile/mkcert)
+to install a local CA into your OS+browser trust stores. See the
+docker [README](../deployment/docker/README.md) for the full
+cross-platform cert-trust matrix.
+
+To use AI features locally: drop your Anthropic or OpenAI key into the
+wizard (Step 2). Or connect GitHub Copilot if you have a subscription.
 
 ---
 
-## Full VPS Setup (24 minutes from zero to deployed)
+## Full VPS Setup
 
-This guide takes you from an empty Hetzner box to a working Doable instance with HTTPS, AI features, sandboxed previews, and per-tenant DNS. Real timings, real values, real failure modes.
+This guide takes you from a fresh Linux VPS to a working public
+Doable instance with HTTPS, AI features, sandboxed previews, and
+per-tenant DNS for published sites.
 
-> Tested end-to-end on **2026-05-15** by reinstalling `testingserver.<your-bare-dns>` (Hetzner dedicated, 2x 477GB NVMe, 64GB RAM).
-> Wall-clock breakdown of one verified run: installimage ~5 min, reboot ~30 s, setup-server.sh ~15 min (first pass) + ~3 min re-run after the Step-10 grep bug, smoke tests ~30 s. Total ≈ 24 min.
-> All 13 setup steps completed, 113 DB migrations applied, web/api/ws all 200/200/101 via Cloudflare Tunnel.
+There are **two supported deployment shapes** for VPS installs:
+
+| Shape | When to pick | Public ingress |
+|---|---|---|
+| **A. Docker stack with Caddy + Let's Encrypt** | Easiest path. Single command, one container per service, Caddy auto-fetches the LE cert. | Port :80 + :443 must be reachable from the internet for the ACME HTTP-01 challenge. |
+| **B. Docker stack behind Cloudflare Tunnel** | Recommended for production. Zero public ports on the box, all ingress flows through Cloudflare's edge with its own DDoS + WAF. | Only outbound :443 to Cloudflare needed. Cleanest setup, but requires a Cloudflare account + a domain on their DNS. |
+
+Both shapes use the same `./deployment/docker/setup.sh`. The only
+difference is which env vars / flags you pass.
 
 ---
 
 ## What you'll get
 
-> **OSS note:** Doable is not hardcoded to any domain. The examples below use `doable.me` because that is the maintainer's zone; substitute your own domain (e.g. `example.com`) everywhere you see `doable.me`. `setup-server.sh` defaults to `localhost` when no domain is provided and prompts for the value otherwise — nothing in the script touches the maintainer's Cloudflare account.
+> Doable is not hardcoded to any domain. Substitute `<your-domain>`
+> with your actual zone (e.g. `example.com`) everywhere below.
+> `setup.sh` defaults to `localhost` when no domain is provided.
 
 After this guide:
 
 | URL | Purpose |
 |---|---|
-| `https://<env>.<your-domain>` | Web app (Next.js) |
-| `https://<env>-api.<your-domain>` | API (Hono) |
-| `wss://<env>-ws.<your-domain>` | WebSocket (Yjs CRDT) |
-| `https://<env>-<slug>.<your-domain>` | Per-user published sites |
-| `ssh root@<env>.<your-bare-dns>` | Admin shell |
+| `https://app.<your-domain>` | Web app (Next.js) |
+| `https://app.<your-domain>/api/*` | API (Hono) — same origin, behind Caddy |
+| `wss://app.<your-domain>/ws` | WebSocket (Yjs CRDT) — same origin |
+| `https://*.<your-domain>` | Per-user published sites (one wildcard subdomain pattern) |
 
-`<env>` is the short name you pick (e.g. `testingserver`, `dev`, `staging`). For prod, web sits on `<your-domain>` itself and the prefix becomes empty (`api.<your-domain>`, `ws.<your-domain>`).
-
-The naming convention is **single-level under the zone** — `<env>-api.doable.me`, NOT `api.<env>.doable.me`. Free Cloudflare Universal SSL only covers `<zone>` + `*.<zone>`; two-level subdomains fail with `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` unless you pay for Advanced Certificate Manager.
+Use any subdomain you like instead of `app.` — the convention is just
+"one hostname for the platform, one wildcard pattern for published
+sites underneath it". TLS, routing, OAuth callbacks all work out of
+the box with this layout.
 
 ---
 
@@ -48,282 +67,233 @@ The naming convention is **single-level under the zone** — `<env>-api.doable.m
 
 ### What you need to host doable publicly
 
-**A domain you own, routed through Cloudflare** is required for any public deployment. This is not negotiable — the security model (every service bound to 127.0.0.1, Cloudflare Tunnel as the only public ingress, Caddy serving wildcard published sites) depends on having a zone you control. The good news: a domain costs ~$9/yr from Cloudflare Registrar, the Cloudflare account itself is free, and once it's done the script handles the OAuth flow automatically.
+1. **A VPS** — Ubuntu 22.04 / 24.04 or Debian 12, root SSH access, at
+   least 4 GB RAM and 20 GB disk. Any provider works (DigitalOcean,
+   Vultr, Linode, AWS Lightsail, Scaleway, OVH, Hetzner, etc.).
+2. **A domain you own** registered at any registrar (Namecheap,
+   Porkbun, Cloudflare Registrar, etc.). For Shape B (Cloudflare
+   Tunnel) the domain's nameservers must point at Cloudflare.
+3. **DNS pointing at the server** — an A record for the hostname you
+   picked (e.g. `app.example.com → <server-ip>`). For Shape B the
+   record is created automatically by `cloudflared` during setup.
+4. **(Shape B only) A browser logged into Cloudflare** — used once
+   during setup for the OAuth approval that authorizes `cloudflared`
+   to manage your zone. Doesn't need to be on the server; your laptop
+   is fine.
+5. **(Optional) Provider credentials** for features you want — the
+   stack works without these:
+   - **Anthropic / OpenAI / any of 60+ supported providers** — AI
+     features (the in-app wizard handles BYOK)
+   - **Google OAuth** — "Sign in with Google" + Gmail / Drive / Calendar
+   - **GitHub OAuth** — "Sign in with GitHub" + repo import
+   - **Stripe** — paid billing tiers
 
-Concretely, you need:
-
-1. **A server** — Ubuntu 22.04 or 24.04 (Debian 12 also works), root SSH access, public IPv4, at least 4 GB RAM and 20 GB disk. Hetzner, Vultr, DigitalOcean, Linode, Scaleway all work; bare-metal or VM.
-2. **A domain registered anywhere** (Namecheap, Cloudflare Registrar, etc.) — anything with a TLD you can point nameservers from.
-3. **The domain added to Cloudflare as a zone** — free plan is fine. Free Universal SSL covers `<zone>` + `*.<zone>` (one level only). Two-level wildcards like `*.staging.example.com` need Cloudflare Advanced Certificate Manager (paid) — for that reason doable uses dashed single-level hostnames (`<env>-api.example.com`) for non-prod environments. See [Naming convention](#naming-convention-cloudflare-compatible) below.
-4. **A browser logged into that Cloudflare account** — used once during setup for the OAuth approval that authorizes `cloudflared` to manage your zone. Doesn't need to be on the server; your laptop is fine.
-5. **(Optional) Provider credentials for the features you want.** The base stack works without these; they each unlock a specific surface:
-   - Google OAuth — "Sign in with Google" + Gmail / Drive / Calendar integrations
-   - GitHub OAuth — "Sign in with GitHub" + repo import
-   - Anthropic API key — Claude AI features
-   - OpenAI API key — GPT AI features
-   - Stripe — paid billing tiers
-
-The script prints exactly which keys are missing and where to register each app at the end of the run, so you don't need them upfront.
+The setup wizard surfaces missing keys + the OAuth callback URLs you
+need to register, so you don't need them upfront.
 
 ### No domain yet?
 
-If you don't want to buy a domain today, your only supported option is **`DOMAIN=localhost` mode**: `setup-server.sh` runs with no public access at all, everything stays on 127.0.0.1, and you reach the app at `http://localhost:3000` on the server itself (or via an SSH tunnel from your laptop). Caveats: Google/GitHub OAuth login won't work (their callback validators reject localhost-with-path), no published-site subdomains, no WebSocket-over-TLS — it's a local-experimentation mode, not a deployment. Useful for kicking the tires on a laptop before committing to a domain.
-
-The following won't work as substitutes for a real domain:
-
-- `*.pages.dev` — Cloudflare Pages is for static hosting; you don't own the zone, can't create CNAMEs, can't route a Tunnel there.
-- `*.trycloudflare.com` (Quick Tunnels) — random hostname on every restart, one URL per tunnel, no subdomain control. Doable needs three stable hostnames (web/api/ws) with fixed URLs in `NEXT_PUBLIC_*` and OAuth callbacks.
-- `<uuid>.cfargotunnel.com` (named tunnel without DNS) — only gives one hostname, and doable's CORS/auth design assumes web ≠ api ≠ ws origins.
-
-### On the box you're driving from
-
-- An SSH private key authorized on the target server
-- `git` (and optionally `gh` CLI if cloning a private fork)
-- A browser for the Cloudflare OAuth approval
-
-### Naming convention (Cloudflare-compatible)
-
-By convention doable separates two DNS purposes per environment:
-
-- `<env>.<your-bare-dns>` — bare A record, **not** Cloudflare-proxied, used only for SSH. Can be a separate cheap domain or just the server IP.
-- `<env>.<your-domain>` — Cloudflare-proxied, what users see.
-
-Never SSH to the Cloudflare-proxied name — port 22 doesn't traverse the orange-cloud.
+If you don't want to buy a domain today, use **localhost mode**:
+`./deployment/docker/setup.sh` with no `DOMAIN=`. Everything stays on
+127.0.0.1, mkcert installs a trusted cert into your browser, and you
+reach the app at `https://localhost` on the server itself (or via SSH
+tunnel from your laptop). Caveats: provider OAuth login won't work
+(callback validators reject localhost-with-path), no published-site
+subdomains. Useful for kicking the tires before committing to a
+domain.
 
 ---
 
-## Step 1 — Boot Hetzner rescue + verify SSH (~2 min)
+## Shape A — Docker + Let's Encrypt (direct public ingress)
 
-In the Hetzner Robot console, activate the **Rescue** system for the server with your SSH key authorized, then trigger a reset. The box reboots into a Debian-based ramdisk image.
+On a fresh VPS with Docker installed (or any Linux box where you can
+sudo):
 
 ```bash
-# Clear any stale host key from previous incarnations of this IP
-ssh-keygen -R <env>.<your-bare-dns>
-ssh-keygen -R <server-ip>
+git clone https://github.com/doable-me/doable.git
+cd doable
 
-# Confirm rescue is up
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "hostname; uname -a; lsblk -d -o NAME,SIZE,MODEL,TYPE"
-# Expected: hostname=rescue, two NVMe disks visible
+DOMAIN=app.example.com \
+EMAIL=you@example.com \
+./deployment/docker/setup.sh
 ```
 
-If `hostname` is anything other than `rescue`, you're not in rescue mode yet — wait 30s and retry.
+What happens (~10 min on a 2-vCPU VPS):
 
----
+1. `setup.sh` detects Linux + docker, writes `deployment/docker/.env`
+   with random secrets
+2. Caddy env vars set: `DOABLE_SITE=app.example.com`, `DOABLE_TLS=you@example.com`,
+   `DOABLE_BIND_ADDR=0.0.0.0`
+3. `docker compose build` (5–10 min on first install) + `up -d`
+4. The Caddy container binds 0.0.0.0:80 + 0.0.0.0:443 and **auto-fetches
+   a Let's Encrypt cert via the HTTP-01 challenge** — no certbot, no
+   cert manager, no DNS plugin. It also renews automatically.
+5. Migrate container runs once + exits clean
+6. All 5 services healthy
 
-## Step 2 — Install Ubuntu 24.04 with RAID1 (~5 min)
+DNS: point `app.example.com` (A record) at the server's public IPv4
+before running setup, so Caddy's ACME challenge succeeds on first
+boot. If you skip this, Caddy keeps retrying every few minutes until
+DNS catches up.
 
-Hetzner's `installimage` writes a fresh OS to disk. Software RAID1 across both NVMes gives you a live mirror — one disk can die without downtime.
-
-```bash
-# Push the autosetup config (drives, RAID level, hostname, partitions, image)
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "cat > /root/autosetup <<'EOF'
-DRIVE1 /dev/nvme0n1
-DRIVE2 /dev/nvme1n1
-SWRAID 1
-SWRAIDLEVEL 1
-BOOTLOADER grub
-HOSTNAME <env>
-PART /boot ext3 1024M
-PART swap swap 8G
-PART / ext4 all
-IMAGE /root/images/Ubuntu-2404-noble-amd64-base.tar.gz
-EOF"
-
-# Run installimage in detached background so SSH disconnect doesn't kill it
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> \
-  "nohup /root/.oldroot/nfs/install/installimage -a -c /root/autosetup > /root/installimage.log 2>&1 &"
-
-# Poll until you see "INSTALLATION COMPLETE" (5-10 min)
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "tail /root/installimage.log"
-```
-
-Verify the log ends with `INSTALLATION COMPLETE`. Then reboot:
+Verify:
 
 ```bash
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "nohup reboot &" || true
-ssh-keygen -R <env>.<your-bare-dns>   # rescue host key won't match the new install
-```
+curl -sS -o /dev/null -w "%{http_code}\n" https://app.example.com/
+# Expect: 200
 
-Wait ~60s, then poll for the new Ubuntu to come up:
+curl -sS https://app.example.com/api/health
+# Expect: {"status":"healthy",...}
 
-```bash
-until ssh -i <your-ssh-key> -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 \
-  -o BatchMode=yes root@<env>.<your-bare-dns> "cat /etc/os-release | head -1"; do
-  sleep 5
-done
-# Expected: PRETTY_NAME="Ubuntu 24.04.3 LTS"
+echo | openssl s_client -connect app.example.com:443 -servername app.example.com 2>/dev/null \
+  | openssl x509 -noout -subject -issuer
+# Expect: Issuer: C = US, O = Let's Encrypt, CN = E*
 ```
 
 ---
 
-## Step 3 — Pre-stage Cloudflare cert + clone repo (~1 min)
+## Shape B — Docker + Cloudflare Tunnel (recommended for production)
 
-Two things need to land on the new box before `setup-server.sh` runs:
+In this mode the server has **zero public ports** — Cloudflare's
+network is the only ingress. The tunnel daemon (`cloudflared`)
+maintains an outbound connection to Cloudflare's edge and forwards
+matching requests back to Caddy on `127.0.0.1`.
 
-**(a) Cloudflare account cert** — `/root/.cloudflared/cert.pem` is what authorizes `cloudflared` on this box to create tunnels and DNS records under *your* CF account. It is a per-account OAuth credential issued by `cloudflared tunnel login` — anyone holding it can manage tunnels and the granted zone.
+### Prerequisites for Shape B
 
-**For first-time users, the default flow is the interactive browser login.** Skip this step entirely — `setup-server.sh` at Step 10 will run `cloudflared tunnel login`, print a URL, and you paste it into a browser logged into *your* Cloudflare account, then pick *your* zone. CF then writes a `cert.pem` scoped to your account only.
+- Domain added to Cloudflare as a zone (free plan works). Free
+  Universal SSL covers `<zone>` + `*.<zone>` (one level only).
+  Two-level wildcards like `*.staging.example.com` need Cloudflare
+  Advanced Certificate Manager (paid).
+- Cloudflare account with permission to create tunnels + DNS records
+  in that zone.
 
-**For maintainers running a second/third server under the same CF account** (the only legitimate reuse case), you can pre-stage the cert from a sibling box to skip the browser step:
-
-```bash
-# ⚠️  ONLY if both servers belong to the same CF account and zone you control.
-#     Never copy someone else's cert.pem — it gives full control of their tunnels + DNS.
-scp -i <your-ssh-key> <path-to-sibling-cert.pem> \
-  root@<env>.<your-bare-dns>:/tmp/cf-cert.pem
-
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> \
-  "mkdir -p /root/.cloudflared && mv /tmp/cf-cert.pem /root/.cloudflared/cert.pem && chmod 600 /root/.cloudflared/cert.pem"
-```
-
-If you go the interactive route, `cloudflared tunnel login` writes the cert to `/root/.cloudflared/cert.pem` automatically — nothing else for you to copy.
-
-**(b) Repo at `/root/doable`** — clone with a GitHub token so the script can skip `gh auth login`:
+### Steps
 
 ```bash
-TOKEN=$(gh auth token)   # local gh CLI, must have repo scope
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> \
-  "git clone https://x-access-token:$TOKEN@github.com/doable-me/doable.git /root/doable && \
-   cd /root/doable && git log -1 --oneline"
-```
+# 1. Install cloudflared on the server (Debian/Ubuntu):
+curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+sudo dpkg -i cloudflared.deb
 
----
+# 2. Authenticate cloudflared against your CF account (opens a browser):
+cloudflared tunnel login
+# Pick your zone in the browser, click "Authorize"
 
-## Step 4 — Run setup-server.sh (~15-20 min)
+# 3. Create a named tunnel:
+cloudflared tunnel create doable
+# Note the UUID printed — you'll need it in step 5
 
-This is the heavy lift: 13 numbered steps that install Node 22, pnpm 9, PostgreSQL 16 (with pgvector + pg_trgm + pgcrypto), Caddy, cloudflared, bubblewrap, fail2ban, AppArmor profiles, the `doable` system user, systemd services, the Cloudflare Tunnel, and a built Next.js production bundle.
+# 4. Run setup.sh in behind-proxy mode:
+git clone https://github.com/doable-me/doable.git
+cd doable
+DOMAIN=app.example.com ./deployment/docker/setup.sh --skip-ssl
+# --skip-ssl (or DOABLE_BEHIND_PROXY=1) tells Caddy:
+#   - Bind 127.0.0.1 only (no public 0.0.0.0 — the tunnel is the only ingress)
+#   - Use internal self-signed for the origin↔tunnel hop
+#     (Cloudflare Tunnel doesn't verify the origin cert)
 
-Pre-set the hostnames and DB password as env vars so the script runs without prompts:
+# 5. Configure cloudflared to forward to Caddy:
+sudo tee /etc/cloudflared/config.yml > /dev/null <<EOF
+tunnel: <tunnel-uuid-from-step-3>
+credentials-file: /root/.cloudflared/<tunnel-uuid-from-step-3>.json
 
-```bash
-DB_PASS=$(openssl rand -hex 16)
-echo "Save this somewhere safe: DB_PASS=$DB_PASS"
-
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "cat > /root/run-setup.sh <<EOF
-#!/bin/bash
-export DOMAIN=<env>.doable.me
-export API_DOMAIN=<env>-api.doable.me
-export WS_DOMAIN=<env>-ws.doable.me
-export API_SUB=<env>-api
-export WS_SUB=<env>-ws
-export PUBLISH_PREFIX=<env>-
-export REPO=doable-me/doable
-export DB_PASS='$DB_PASS'
-export NON_INTERACTIVE=1
-export DOABLE_NO_TMUX=1
-export INSTALL_DIR=/root/doable
-cd /root/doable
-exec bash /root/doable/setup-server.sh
+ingress:
+  - hostname: app.example.com
+    service: https://localhost:443
+    originRequest:
+      noTLSVerify: true     # Caddy's internal self-signed isn't a real CA
+      httpHostHeader: app.example.com
+  - hostname: "*.example.com"
+    service: https://localhost:443
+    originRequest:
+      noTLSVerify: true
+      httpHostHeader: app.example.com
+  - service: http_status:404
 EOF
-chmod +x /root/run-setup.sh
-setsid bash -c 'nohup /root/run-setup.sh > /root/setup.log 2>&1' < /dev/null &
-disown"
+
+# 6. Route DNS for each public hostname:
+cloudflared tunnel route dns doable app.example.com
+cloudflared tunnel route dns doable "*.example.com"    # wildcard for published sites
+
+# 7. Install cloudflared as a systemd service so it survives reboots:
+sudo cloudflared service install
+sudo systemctl enable --now cloudflared
 ```
 
-Poll progress (the script prints 13 numbered steps):
+Verify (from your laptop, after Cloudflare DNS propagates — 10-60s):
 
 ```bash
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "tail -30 /root/setup.log"
+curl -sI https://app.example.com/         # 200 OK
+curl -sI https://app.example.com/api/health  # 200 OK
 ```
 
-Wait for the closing banner:
-
-```
-╔══════════════════════════════════════════════════════════╗
-║                  Setup Complete!                         ║
-╚══════════════════════════════════════════════════════════╝
-```
-
-### Known issue: `[ERROR] Tunnel credentials file not found`
-
-On a **first** run, Step 10 may exit with this error. Root cause: `cloudflared tunnel create` prints the new tunnel UUID on two output lines (once in "Tunnel credentials written to ..." and once in "Created tunnel ... with id ..."), and the script's `grep -oP` captures both — `TUNNEL_ID` ends up with an embedded newline that breaks the subsequent `find` for the JSON credentials file.
-
-The tunnel itself **is created successfully** (you can confirm with `cloudflared tunnel list` — `doable-<env>-doable-me` will be there). Just re-run the launcher:
-
-```bash
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "
-  mv /root/setup.log /root/setup.log.first-run
-  setsid bash -c 'nohup /root/run-setup.sh > /root/setup.log 2>&1' < /dev/null &
-  disown
-"
-```
-
-The re-run hits the `EXISTING_TUNNEL` branch (which uses `python3 -c` to parse JSON cleanly), so `TUNNEL_ID` is a single UUID and the rest of the script proceeds through Steps 11-13.
-
-### What the script does, in order
-
-| Step | What |
-|---|---|
-| 1 | apt: Node 22, pnpm, PostgreSQL 16, pgvector, Caddy, cloudflared, bubblewrap, fail2ban, tmux, Puppeteer/Chrome deps, Squid, nftables |
-| 2 | UFW firewall: deny incoming except SSH (no app ports exposed — Cloudflare Tunnel handles ingress) |
-| 3 | PostgreSQL listens on `localhost` only; fail2ban sshd jail with systemd backend |
-| 4 | 1-2GB swapfile |
-| 5 | Postgres `doable` user/DB (CREATEDB) |
-| 6 | GitHub CLI auth (skipped — repo pre-staged at Step 3) |
-| 7 | Repo clone (skipped — already cloned) |
-| 8 | Writes `.env` with generated `JWT_SECRET`, `ENCRYPTION_KEY`, `INTERNAL_SECRET`, `DOABLE_KEK`; per-app `apps/web/.env.local` |
-| 9 | `pnpm install`, runs all SQL migrations from `services/api/src/db/migrations/` and `packages/db/migrations/`, `next build` for production |
-| 10 | Cloudflare Tunnel: creates `doable-<env>-doable-me` tunnel, routes DNS for `<env>.doable.me`, `<env>-api.doable.me`, `<env>-ws.doable.me` |
-| 11 | Caddy on `127.0.0.1:8080` for `*.doable.me` published sites; sites dir at `/root/doable/sites/` |
-| 11.5 | `doable` system user (uid 5000); chown install dir |
-| 12 | systemd: `doable.service` (tmux-wrapped), `doable-watchdog.timer` (every 2 min), `cloudflared.service`, `doable-app@.service` template |
-| 12.5 | Squid build-time HTTP proxy (egress firewall for builds) |
-| 12.6 | AppArmor profiles, sandbox-spawn + sandbox-mount helpers, polkit rule, sudoers grant |
-| 13 | Start everything, smoke test |
+If you see `Error 1033` from Cloudflare, the tunnel isn't connected
+yet — `systemctl status cloudflared` on the server, then
+`journalctl -u cloudflared -n 50`.
 
 ---
 
-## Step 5 — Verify (~2 min)
+## After setup (both shapes)
 
-```bash
-ssh -i <your-ssh-key> root@<env>.<your-bare-dns> "
-  systemctl is-active doable.service cloudflared
-  ss -tlnp | grep -E ':(3000|4000|4001|5432|8080)'
-  curl -sI http://127.0.0.1:3000/ | head -1
-"
-# Expected:
-#   active / active
-#   all listeners on 127.0.0.1 (never 0.0.0.0)
-#   HTTP/1.1 200 OK
+### First user = platform owner
+
+Visit `https://app.<your-domain>/signup` (or `https://localhost/signup`
+for localhost installs). The first account to sign up is automatically
+promoted to platform owner. No SSH, no SQL.
+
+### Setup wizard
+
+After signup you're redirected to `/setup`. Five short steps:
+
+1. **Welcome** — set your workspace name
+2. **AI provider** — pick from 60+ providers (OpenAI, Anthropic,
+   Google AI Studio, OpenRouter, Together, Groq, MiniMax, Ollama for
+   local models, etc.), paste your API key
+3. **Sign-in providers** — optional Google / GitHub OAuth setup with
+   copy-paste callback URLs
+4. **Cloudflare** — optional, for per-project custom domain features
+5. **Plans & billing** — optional Stripe wiring
+
+Each step is skippable from the wizard and revisitable from `/admin`.
+
+### Where the bits live
+
+```
+<repo>/deployment/docker/.env          # All secrets, chmod 600
+<repo>/deployment/docker/certs/        # mkcert-issued cert (local installs only)
+<repo>/deployment/docker/docker-compose.yml
+<repo>/deployment/docker/Caddyfile     # TLS terminator + reverse proxy config
 ```
 
-From your laptop, after Cloudflare DNS propagates (10-60s):
+For the Cloudflare Tunnel shape, additionally:
 
-```bash
-curl -sI https://<env>.doable.me/ | head -1            # 200 OK
-curl -sI https://<env>-api.doable.me/health | head -1  # 200 OK
+```
+/etc/cloudflared/config.yml            # Tunnel ingress map
+/root/.cloudflared/cert.pem            # CF account auth
+/root/.cloudflared/<tunnel-uuid>.json  # Per-tunnel credentials
 ```
 
-If you see `Error 1033` from Cloudflare, the tunnel isn't connected — `systemctl status cloudflared` on the server, then `journalctl -u cloudflared -n 50`.
+### Useful commands
 
-If you see `SSL_VERSION_OR_CIPHER_MISMATCH` for `<env>-something.doable.me`, the DNS record is missing or proxied incorrectly. Re-run `cloudflared tunnel route dns doable-<env>-doable-me <hostname>` for each one.
+```bash
+# View all logs
+docker compose -f deployment/docker/docker-compose.yml logs -f
 
----
+# Specific service
+docker compose -f deployment/docker/docker-compose.yml logs -f api
+docker compose -f deployment/docker/docker-compose.yml logs -f caddy
 
-## Step 6 — Create your first admin user
+# Restart the app
+docker compose -f deployment/docker/docker-compose.yml restart api ws web
 
-**This step is no longer required.** As of 2026-05, the first user to sign up on a fresh install is automatically promoted to platform owner. Just visit `https://<env>.<your-domain>/signup` after install completes.
+# Full nuke + rebuild (drops postgres data)
+docker compose -f deployment/docker/docker-compose.yml down -v
+./deployment/docker/setup.sh
 
----
-
-## Step 7 — Configure integrations (optional)
-
-The in-app setup wizard at `https://<env>.<your-domain>/setup` is the easiest way to configure integrations and AI providers. The wizard guides you through each step and surfaces copy-paste OAuth callback URLs for each provider.
-
-Alternatively, edit `/root/doable/.env` to add:
-
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (Google login + Drive/Calendar/Gmail integrations)
-- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` (GitHub login + repo import)
-- `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` (AI features — Claude / GPT)
-- `STRIPE_SECRET_KEY` (paid tiers)
-
-After editing, `systemctl restart doable.service`.
-
-OAuth callbacks must be set in each provider's dashboard:
-
-- Google: `https://<env>-api.<your-domain>/auth/google/callback`
-- GitHub login: `https://<env>-api.<your-domain>/auth/github/callback`
-- GitHub repo: `https://<env>-api.<your-domain>/auth/github/repo/callback`
+# Cloudflare Tunnel
+sudo systemctl restart cloudflared
+sudo journalctl -u cloudflared -f
+```
 
 ---
 
@@ -331,43 +301,40 @@ OAuth callbacks must be set in each provider's dashboard:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `Connection refused` on SSH right after `installimage` | Server still booting | Wait 60s and retry |
-| `Connection refused` from rescue → installed Ubuntu | Stale host key in `~/.ssh/known_hosts` | `ssh-keygen -R <env>.<your-bare-dns>` |
-| `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` in browser | Two-level subdomain on free Universal SSL | Use `<env>-api.doable.me`, not `api.<env>.doable.me` |
-| `Error 1033` from Cloudflare | Tunnel not running | `systemctl status cloudflared` |
-| Setup hangs at "Cloudflare authentication" | No pre-staged cert.pem and no TTY | scp cert.pem from a sibling server (see Step 3a) |
-| `next build` crashes with `Cannot read properties of null (reading 'useContext')` | Stale `.next` from a prior failed build | `rm -rf /root/doable/apps/web/{.next,.turbo}` and rerun |
-| Migrations leave columns missing | One of two migration dirs skipped | Run both: `services/api/src/db/migrations/` and `packages/db/migrations/` |
-| Web returns 502 after restart | tmux session orphaned by `User=` flip | `systemctl restart doable` — watchdog re-creates the session |
+| `curl: (35) error reading server hello` on `https://app.example.com` | DNS hasn't propagated to the cert issuer yet | Wait 60s + retry. Caddy's ACME has its own retry loop. |
+| Caddy keeps logging `obtaining certificate ... error` | Port :80 not reachable from the internet (Shape A) | Open port 80 in your VPS firewall + verify `curl http://app.example.com` returns 200 from outside |
+| `Error 1033` from Cloudflare (Shape B) | Tunnel daemon not running or not authorized | `systemctl status cloudflared` + `journalctl -u cloudflared -n 50` |
+| Browser shows "your connection is not private" on `https://localhost` | mkcert CA not trusted by the browser yet | Restart Chrome (Windows policy applies on next launch). For Firefox, re-run `mkcert -install` after Firefox is installed. |
+| Migrate container exited non-zero | Stale postgres data volume from a prior install with different `.env` | `docker compose down -v && ./setup.sh` (drops + rebuilds postgres) |
+| `next build` crashes with `Cannot read properties of null (reading 'useContext')` | Stale `.next` from a prior failed build | `rm -rf apps/web/{.next,.turbo}` + `docker compose build --no-cache web` |
+| Web returns 502 right after restart | Caddy started before api/ws were healthy | `docker compose restart caddy` — Caddy has `depends_on: service_healthy` but bursty cold starts can still race |
 
 ---
 
-## Useful commands on the server
+## OAuth callback URLs to register
 
-```bash
-tmux attach -t doable            # See live API/web/ws logs
-systemctl restart doable         # Restart the app
-systemctl restart cloudflared    # Restart the tunnel
-tail -f /var/log/doable/watchdog.log
-ufw status                       # Firewall rules
-ss -tlnp                         # Verify all binds are 127.0.0.1
-sudo -u postgres psql -d doable  # Direct DB access
-```
+When you reach the setup wizard's Sign-in providers step, the wizard
+shows the exact URLs to paste into each provider's dashboard. For
+reference, the pattern is:
+
+| Provider | Callback URL |
+|---|---|
+| Google | `https://app.<your-domain>/api/auth/google/callback` |
+| GitHub (login) | `https://app.<your-domain>/api/auth/github/callback` |
+| GitHub (repo access) | `https://app.<your-domain>/api/auth/github/repo/callback` |
+| Stripe webhooks | `https://app.<your-domain>/api/billing/stripe/webhook` |
+
+All API routes live under `/api/*` on the same hostname as the web
+app — Caddy in the docker stack handles the routing.
 
 ---
 
-## Where the bits live
+## Where to go next
 
-```
-/root/doable/                   # Repo (cloned by Step 3)
-/root/doable/.env               # All secrets, mode 600, owned by doable:doable
-/root/doable/apps/web/.env.local
-/root/doable/sites/<slug>/      # Published static sites (served by Caddy)
-/root/.cloudflared/cert.pem     # CF account auth (per-account, reusable)
-/root/.cloudflared/<tunnel-id>.json    # Per-tunnel credentials
-/root/.cloudflared/config.yml   # Ingress map: hostnames → 127.0.0.1:ports
-/etc/systemd/system/doable.service
-/etc/caddy/Caddyfile            # Wildcard *.doable.me serving
-/var/log/doable/                # Watchdog + app logs
-/data/projects/<id>/            # Per-app sandbox roots (DynamicUser=yes)
-```
+- [Docker README](../deployment/docker/README.md) — deep dive on the
+  docker stack, security model, multi-tenant sandbox overlay,
+  troubleshooting
+- [Provider docs](./PROVIDERS.md) — full list of supported AI
+  providers + per-provider configuration notes
+- The in-app wizard at `/setup` — keeps you in the UI for everything
+  the docs above describe
