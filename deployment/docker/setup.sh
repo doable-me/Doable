@@ -234,7 +234,7 @@ if command -v df &>/dev/null; then
   # spaces and shift the column count. Anchor on the Capacity column instead:
   # it's always `<digits>%`, and Available is the field immediately before it.
   df_avail_for() {
-    df -Pk "$1" 2>/dev/null | awk 'NR==2 {
+    { df -Pk "$1" 2>/dev/null || true; } | awk 'NR==2 {
       for (i=NF; i>=2; i--) if ($i ~ /^[0-9]+%$/) { print $(i-1); exit }
     }'
   }
