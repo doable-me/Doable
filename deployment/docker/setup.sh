@@ -601,7 +601,69 @@ else
   SSL_CERT="${SELF_SIGNED_DIR}/cert.pem"
   SSL_KEY="${SELF_SIGNED_DIR}/key.pem"
 
-  if [ -f "$SSL_CERT" ] && [ -f "$SSL_KEY" ]; then
+  # ─── Try mkcert first (browser-trusted certs via local CA) ──────────────
+  # mkcert generates a single local CA and installs it into every OS+browser
+  # trust store on the box. The CA is permanent — every future Doable
+  # install on this machine (re-running setup.sh, fresh DBs, etc.) gets
+  # browser-trusted certs without re-running the trust install.
+  # Trade-off vs raw openssl: one ~5MB binary download from upstream GH,
+  # but mkcert handles WSL→Windows interop + Firefox NSS more robustly
+  # than our ad-hoc install_localhost_trust below. We try mkcert first
+  # and fall back to openssl + install_localhost_trust on failure.
+  MKCERT_OK=false
+  # Skip mkcert in HOST mode unless operator opted in (same gate as
+  # install_localhost_trust below — server ≠ browser by default)
+  WANT_TRUST=false
+  case "$MODE" in
+    localhost) WANT_TRUST=true ;;
+    host)
+      [ "${DOABLE_INSTALL_TRUST:-0}" = "1" ] && WANT_TRUST=true
+      [ "$INSTALL_TRUST" = "true" ] && WANT_TRUST=true
+      ;;
+  esac
+
+  if [ "$WANT_TRUST" = "true" ] && [ ! -f "$SSL_CERT" ]; then
+    ensure_mkcert() {
+      command -v mkcert &>/dev/null && return 0
+      local os arch
+      os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+      case "$(uname -m)" in
+        x86_64|amd64)   arch=amd64 ;;
+        aarch64|arm64)  arch=arm64 ;;
+        *)              return 1 ;;
+      esac
+      local url="https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v1.4.4-${os}-${arch}"
+      info "Downloading mkcert (one-time, ${url##*/})..."
+      if curl -fsSL -o /usr/local/bin/mkcert "$url" 2>/dev/null && chmod +x /usr/local/bin/mkcert; then
+        command -v mkcert &>/dev/null
+      else
+        rm -f /usr/local/bin/mkcert
+        return 1
+      fi
+    }
+
+    if ensure_mkcert; then
+      info "Installing mkcert local CA (one-time, all browsers + OS stores)..."
+      if mkcert -install >/dev/null 2>&1; then
+        info "Issuing browser-trusted cert via mkcert for ${LISTEN_HOST}..."
+        if mkcert -cert-file "$SSL_CERT" -key-file "$SSL_KEY" "$LISTEN_HOST" localhost 127.0.0.1 ::1 >/dev/null 2>&1; then
+          chmod 644 "$SSL_CERT"; chmod 600 "$SSL_KEY"
+          MKCERT_OK=true
+          ok "mkcert cert installed (https://${LISTEN_HOST} will be trusted by all browsers on this machine)"
+        else
+          warn "mkcert leaf-cert issuance failed — falling back to openssl + install_localhost_trust"
+        fi
+      else
+        warn "mkcert -install failed (CA install) — falling back to openssl"
+      fi
+    else
+      info "mkcert not available — using openssl + install_localhost_trust fallback"
+    fi
+  fi
+
+  if [ "$MKCERT_OK" = "true" ]; then
+    : # cert + key already in place via mkcert; trust already wired
+  elif [ -f "$SSL_CERT" ] && [ -f "$SSL_KEY" ]; then
     warn "Self-signed certificate already exists at ${SELF_SIGNED_DIR}. Keeping it."
   else
     # Build SAN extension based on whether it's an IP or hostname
@@ -763,7 +825,11 @@ sudo update-ca-trust
 ```
 CERTDOC
 
-  install_localhost_trust "$SSL_CERT"
+  if [ "$MKCERT_OK" = "true" ]; then
+    info "mkcert already installed local CA — skipping per-cert trust install"
+  else
+    install_localhost_trust "$SSL_CERT"
+  fi
 fi
 
 # ─── Generate nginx config ───────────────────────────────────────────────────

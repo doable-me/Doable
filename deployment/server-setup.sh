@@ -1412,7 +1412,53 @@ if [ "$NO_TUNNEL" = "1" ]; then
   # Generate self-signed cert keyed on HOST (IP or hostname). SAN extension
   # picks IP: for raw IPv4, DNS: otherwise — same logic as docker/setup.sh.
   mkdir -p /etc/caddy
-  if [ ! -f /etc/caddy/selfsigned.crt ] || [ ! -f /etc/caddy/selfsigned.key ]; then
+
+  # ─── Try mkcert first (browser-trusted certs via local CA) ──────────────
+  # Mirrors the docker/setup.sh path: download mkcert if missing, install
+  # local CA into every OS+browser store, issue a trusted leaf cert.
+  # Only attempts when HOST == localhost OR operator opted in via
+  # DOABLE_INSTALL_TRUST=1, because for remote SSH'd HOST mode the CA
+  # ends up on the server (no help to the laptop's browser).
+  MKCERT_OK=false
+  if [ "${HOST}" = "localhost" ] || [ "${DOABLE_INSTALL_TRUST:-0}" = "1" ]; then
+    if [ ! -f /etc/caddy/selfsigned.crt ]; then
+      ensure_mkcert_baremetal() {
+        command -v mkcert &>/dev/null && return 0
+        local os arch
+        os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        case "$(uname -m)" in
+          x86_64|amd64)  arch=amd64 ;;
+          aarch64|arm64) arch=arm64 ;;
+          *)             return 1 ;;
+        esac
+        local url="https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v1.4.4-${os}-${arch}"
+        info "Downloading mkcert (one-time, ${url##*/})..."
+        if curl -fsSL -o /usr/local/bin/mkcert "$url" 2>/dev/null && chmod +x /usr/local/bin/mkcert; then
+          command -v mkcert &>/dev/null
+        else
+          rm -f /usr/local/bin/mkcert; return 1
+        fi
+      }
+      if ensure_mkcert_baremetal; then
+        info "Installing mkcert local CA (one-time, all browsers + OS stores)..."
+        if mkcert -install >/dev/null 2>&1; then
+          info "Issuing browser-trusted cert via mkcert for ${HOST}..."
+          if mkcert -cert-file /etc/caddy/selfsigned.crt -key-file /etc/caddy/selfsigned.key \
+              "$HOST" localhost 127.0.0.1 ::1 >/dev/null 2>&1; then
+            chown caddy:caddy /etc/caddy/selfsigned.crt /etc/caddy/selfsigned.key
+            chmod 640 /etc/caddy/selfsigned.key
+            chmod 644 /etc/caddy/selfsigned.crt
+            MKCERT_OK=true
+            ok "mkcert cert installed (https://${HOST} trusted by all browsers on this machine)"
+          fi
+        fi
+      fi
+    fi
+  fi
+
+  if [ "$MKCERT_OK" = "true" ]; then
+    : # mkcert handled it
+  elif [ ! -f /etc/caddy/selfsigned.crt ] || [ ! -f /etc/caddy/selfsigned.key ]; then
     if echo "$HOST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
       SAN_EXT="subjectAltName=IP:${HOST}"
     else
@@ -1551,7 +1597,11 @@ CERTDOC
       fi
     fi
   }
-  install_localhost_trust_baremetal
+  if [ "$MKCERT_OK" = "true" ]; then
+    info "mkcert already installed local CA — skipping per-cert trust install"
+  else
+    install_localhost_trust_baremetal
+  fi
 
   cat > /etc/caddy/Caddyfile << CADDYEOF
 {
