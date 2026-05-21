@@ -209,7 +209,12 @@ export const installPackageTool: Tool = {
 function buildArgs(pm: PackageManager, packages: string[], isDev: boolean): string[] {
   switch (pm) {
     case "npm":
-      return ["install", "--ignore-scripts", ...(isDev ? ["--save-dev"] : []), ...packages];
+      // --include=dev guards against NODE_ENV=production (the api container
+      // default) making npm install run in --omit=dev mode and pruning the
+      // scaffold's vite/plugin-react/typescript devDeps as "extraneous".
+      // The restart that install-package triggers right after would then
+      // die with Cannot find module .../vite/bin/vite.js.
+      return ["install", "--ignore-scripts", "--include=dev", ...(isDev ? ["--save-dev"] : []), ...packages];
     case "pnpm":
       return ["add", "--ignore-scripts", ...(isDev ? ["-D"] : []), ...packages];
     case "yarn":
@@ -291,7 +296,10 @@ async function runInstall(
       cwd,
       shell: true,
       stdio: "pipe",
-      env: buildSafeEnv(undefined, { FORCE_COLOR: "0" }),
+      // NODE_ENV=development to keep devDeps in place; the api container
+      // runs NODE_ENV=production by default, which makes `npm install`
+      // prune the scaffold's vite/plugin-react/typescript as "extraneous".
+      env: buildSafeEnv(undefined, { FORCE_COLOR: "0", NODE_ENV: "development" }),
     });
 
     let stdout = "";

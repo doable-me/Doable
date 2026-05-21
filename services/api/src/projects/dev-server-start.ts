@@ -583,10 +583,25 @@ async function doStartDevServer(
       for (const p of upfrontMissing) attempted.add(p);
       peerDepInstallAttempts.set(projectId, attempted);
       await new Promise<void>((resolve) => {
+        // Match the env override the scaffold installer uses (vite-react.ts
+        // adapter line 52-60 / BUG-PUB-004). The api container runs with
+        // NODE_ENV=production by default, so a vanilla `npm install <pkg>` runs
+        // in --omit=dev mode and prunes every devDependency it sees as
+        // "extraneous" — vite, @vitejs/plugin-react, typescript, etc. — even
+        // though they were just installed by the scaffold's
+        // --include=dev pass. The very next `node ... vite/bin/vite.js`
+        // spawn then dies with Cannot find module before the lazy
+        // preview-proxy ensureDependencies fires the recovery install.
+        // Forcing NODE_ENV=development + --include=dev keeps devDeps in
+        // place and makes the install purely additive.
         const npmChild = nodeSpawn(
           "npm",
-          ["install", ...upfrontMissing, "--no-audit", "--no-fund"],
-          { cwd: projectPath, stdio: ["ignore", "pipe", "pipe"] },
+          ["install", ...upfrontMissing, "--no-audit", "--no-fund", "--include=dev"],
+          {
+            cwd: projectPath,
+            stdio: ["ignore", "pipe", "pipe"],
+            env: { ...process.env, NODE_ENV: "development" },
+          },
         );
         let npmStderr = "";
         npmChild.stderr?.on("data", (d: Buffer) => {
@@ -728,10 +743,18 @@ async function doStartDevServer(
       `[DevServer] auto-installing missing peer dep${pkgs.length > 1 ? "s" : ""} "${label}" for project ${projectId}`,
     );
     installingPeerDep.set(projectId, { pkg: label, startedAt: Date.now() });
+    // Same NODE_ENV=development + --include=dev guard as the pre-spawn batch
+    // installer above — without it the api container's NODE_ENV=production
+    // makes `npm install` prune the scaffold's devDeps (vite, plugin-react,
+    // typescript) and the restart spawn dies with Cannot find module.
     const npmChild = nodeSpawn(
       "npm",
-      ["install", ...pkgs, "--no-audit", "--no-fund"],
-      { cwd: projectPath, stdio: ["ignore", "pipe", "pipe"] },
+      ["install", ...pkgs, "--no-audit", "--no-fund", "--include=dev"],
+      {
+        cwd: projectPath,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, NODE_ENV: "development" },
+      },
     );
     let npmStderr = "";
     npmChild.stderr?.on("data", (d: Buffer) => {
