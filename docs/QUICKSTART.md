@@ -2,21 +2,39 @@
 
 ## Just want to play with it? (60 seconds, no domain required)
 
+### Linux / macOS / Windows-via-WSL2 / Git Bash
+
 ```bash
 git clone https://github.com/doable-me/doable.git
 cd doable
 ./deployment/docker/setup.sh
 ```
 
+### Native Windows (PowerShell, no WSL, no Git Bash)
+
+```powershell
+git clone https://github.com/doable-me/doable.git
+cd doable
+./deployment/docker/setup.ps1
+```
+
+Pure PowerShell — uses .NET RNG instead of openssl, `Get-PSDrive` instead
+of `df`, and downloads `mkcert.exe` automatically to install a local CA
+into the Windows root store. Requires Docker Desktop for Windows.
+PowerShell 5.1 (built into Windows 10/11) is enough; no pwsh 7+ needed.
+
+---
+
 Open `https://localhost` in your browser. Sign up — the first account
 becomes platform owner automatically. The setup wizard walks you
 through AI keys and integrations. No SSH, no SQL, no .env editing.
 
-The cert at `https://localhost` is auto-trusted on Linux / macOS /
-Windows (via WSL2) — `setup.sh` uses [mkcert](https://github.com/FiloSottile/mkcert)
-to install a local CA into your OS+browser trust stores. See the
-docker [README](../deployment/docker/README.md) for the full
-cross-platform cert-trust matrix.
+The cert at `https://localhost` is auto-trusted on Linux, macOS,
+Windows-via-WSL2, and native Windows — both `setup.sh` and `setup.ps1`
+use [mkcert](https://github.com/FiloSottile/mkcert) to install a local
+CA into your OS+browser trust stores. See the docker
+[README](../deployment/docker/README.md) for the full cross-platform
+cert-trust matrix.
 
 To use AI features locally: drop your Anthropic or OpenAI key into the
 wizard (Step 2). Or connect GitHub Copilot if you have a subscription.
