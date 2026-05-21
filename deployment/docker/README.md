@@ -1,253 +1,231 @@
 # Docker Deployment
 
-Everything you need to self-host Doable with Docker. Two install paths:
+Self-host Doable with a single command — **same script on every OS**
+(Linux, macOS, Windows via WSL2). TLS, cert trust, and reverse proxy
+all happen inside the docker stack; nothing host-side except docker
+itself.
 
-| Path | Time | When to pick |
-|------|------|--------------|
-| **Pre-built (recommended)** | ~30s pull | Production, repeated installs, no Node toolchain on the box |
-| **From source** | 5–10 min build | Local dev, working on a fork, customizing the Dockerfile |
+## TL;DR per scenario
 
-## Fast Path — pre-built images (recommended)
+| Scenario | Command | What happens |
+|---|---|---|
+| **Local self-host** (laptop/desktop, any OS) | `./deployment/docker/setup.sh` (press Enter at prompt) | mkcert issues a trusted cert and installs the local CA into your OS+browser trust stores. Browser opens `https://localhost` with no warning. |
+| **Public VPS, direct ingress** | `DOMAIN=app.example.com EMAIL=you@example.com ./deployment/docker/setup.sh` | Caddy auto-fetches a Let's Encrypt cert. Public 0.0.0.0 bind on :80/:443. |
+| **VPS behind Cloudflare Tunnel / ngrok / reverse proxy** | `DOMAIN=app.example.com ./deployment/docker/setup.sh --skip-ssl` | Caddy binds **127.0.0.1 only** (tunnel is the sole ingress) and uses internal self-signed for the origin↔tunnel hop. |
+| **Pre-built ghcr.io images** (≈30s install) | Add `--prebuilt` to any of the above | Pulls `ghcr.io/doable-me/doable-{api,ws,web,migrate}:latest`. Falls back to source build if pull denied. |
+
+## Architecture — in-stack TLS via Caddy
+
+All TLS termination + reverse proxying happens inside the docker stack
+in a `caddy:2-alpine` container, declared in `docker-compose.yml`. No
+host-side `nginx`, `certbot`, `systemctl`, `apt-get install`, or
+`brew install` — `docker compose up` is everything.
+
+```
+Browser
+  │
+  ▼
+Caddy container (127.0.0.1:443 or 0.0.0.0:443)
+  │  TLS terminated. Cert from mkcert (local CA) or Let's Encrypt.
+  ├── /                → web container (Next.js)
+  ├── /api/otlp/*      → web container (Next.js OTLP proxy route)
+  ├── /api/*           → api container (Hono, strips /api/ prefix)
+  ├── /auth/*          → api container
+  ├── /preview/*       → api container (vite preview proxy for AI-built apps)
+  └── /ws              → ws container (Yjs CRDT)
+                              │
+                              ▼
+                         PostgreSQL container
+                         (postgres + pgvector + pg_trgm + pgcrypto)
+```
+
+Caddy's TLS source is controlled by three env vars that `setup.sh`
+writes into `deployment/docker/.env`:
+
+| Env var | Set by setup.sh to | Meaning |
+|---|---|---|
+| `DOABLE_SITE` | The host the browser will hit (e.g. `localhost`, `192.168.1.50`, `app.example.com`) | Caddy's site address |
+| `DOABLE_TLS` | `/certs/cert.pem /certs/key.pem` (local), `you@example.com` (LE), or `internal` (self-signed) | Caddy's `tls` directive |
+| `DOABLE_BIND_ADDR` | `127.0.0.1` (local + behind-proxy) or `0.0.0.0` (direct public) | Which host interface Caddy's ports bind to |
+
+The committed `Caddyfile` reads these via env-var substitution, so a
+single static config covers every install scenario.
+
+## Cross-platform cert trust (local installs)
+
+For `localhost` / `HOST=` modes, `setup.sh` uses
+[**mkcert**](https://github.com/FiloSottile/mkcert) to issue a cert
+signed by a local CA, then installs that CA into the host's trust
+stores. **One-time per machine** — every future Doable install on
+the same box reuses the same trusted CA.
+
+| Platform | What mkcert installs into | Result |
+|---|---|---|
+| **macOS** | System keychain via `security add-trusted-cert` | Safari + Chrome trust the cert (OS keychain) |
+| **Linux Debian/Ubuntu** | `/usr/local/share/ca-certificates/` + `update-ca-certificates` + NSS `certutil` | Chrome/Firefox via NSS, system-wide trust |
+| **Linux Fedora/RHEL** | `/etc/pki/ca-trust/source/anchors/` + `update-ca-trust` + NSS | Same path |
+| **Windows via WSL2** | `powershell.exe` interop installs CA into Windows `CurrentUser\Root` + sets the Chrome policy that makes Chrome 105+ consult Windows root store | Chrome/Edge/Firefox on Windows trust the cert after one Chrome restart |
+
+If `mkcert` can't run (sandbox, no network, unsupported arch),
+`setup.sh` falls back to an openssl self-signed cert — browser shows
+the standard one-time warning, but everything still works.
+
+### Remote installs (`HOST=IP`, server ≠ browser)
+
+In `HOST=` mode the auto-trust install is **skipped by default**
+because the server you're SSH'd into is usually a different machine
+than the laptop you'll browse from. Installing the cert on the server
+doesn't help the laptop.
+
+Two options:
+
+1. **Copy + install on the browser laptop manually.** `setup.sh`
+   writes `cert-install-instructions.md` next to the cert with
+   per-OS copy-paste commands.
+2. **Re-run with `--install-trust`** (or `DOABLE_INSTALL_TRUST=1`)
+   for the rare case where the server IS the browser machine.
+
+## One-liner installs
+
+### Source path (from a git clone)
+
+```bash
+git clone https://github.com/doable-me/doable.git
+cd doable
+
+# Local desktop self-host
+./deployment/docker/setup.sh   # press Enter at prompt
+
+# Public VPS with Let's Encrypt
+DOMAIN=app.example.com EMAIL=you@example.com ./deployment/docker/setup.sh
+
+# VPS behind Cloudflare Tunnel (binds 127.0.0.1 only)
+DOMAIN=app.example.com ./deployment/docker/setup.sh --skip-ssl
+
+# Private LAN with self-signed (browser warning unless --install-trust)
+HOST=192.168.1.50 ./deployment/docker/setup.sh
+```
+
+### Pre-built path (≈30s pull instead of 5–10min build)
 
 ```bash
 mkdir doable && cd doable
 curl -O https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker/docker-compose.prod.yml
 curl -O https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker/setup.sh
 curl -O https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker/init.sql
-curl -O https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker/nginx.conf.template
+curl -O https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker/02-roles.sh
+curl -O https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker/Caddyfile
 chmod +x setup.sh
 
-# Pick one — DOMAIN for Let's Encrypt, HOST for self-signed on a LAN IP, or
-# omit both for localhost:
-DOMAIN=app.example.com ./setup.sh --prebuilt
+DOMAIN=app.example.com EMAIL=you@example.com ./setup.sh --prebuilt
 ```
 
-`--prebuilt` (or `DOABLE_PREBUILT=true ./setup.sh`) tells setup.sh to pull
-`ghcr.io/doable-me/doable-{api,ws,web,migrate}:latest` instead of building
-from source. Pin a specific release with `DOABLE_IMAGE_TAG=v1.2.3`.
+`--prebuilt` (or `DOABLE_PREBUILT=true ./setup.sh`) pulls
+`ghcr.io/doable-me/doable-{api,ws,web,migrate}:latest`. Pin a specific
+release with `DOABLE_IMAGE_TAG=v1.2.3`. If the ghcr.io images are not
+publicly accessible, the script falls back to source build with a
+warning in the log.
 
-The published images are built with placeholder URLs in the client bundle;
-the web container's runtime entrypoint sed-replaces them with your real
-`NEXT_PUBLIC_*` values on startup. One image works for any deployment URL.
+## What `setup.sh` does
 
-> **Heads-up**: `--prebuilt` requires the ghcr.io images to be **public**.
-> While the GitHub repo is in pre-release / private mode the package
-> visibility may also be private — the pull then returns 401 and `setup.sh`
-> **automatically falls back to a from-source build (5–10 min)** rather
-> than failing. Watch the install log for `[warn] Could not pull pre-built
-> images — falling back to source build` to know which path ran. If you
-> don't want the silent fallback, set `DOABLE_PREBUILT=false` to force
-> source-build from the start.
-
-## Source Path — build locally
-
-Use when you want to modify the Dockerfile or contribute upstream:
-
-```bash
-git clone https://github.com/doable-me/doable.git
-cd doable
-DOMAIN=app.example.com ./deployment/docker/setup.sh
-```
-
-setup.sh runs `docker compose build` (the 5–10min step) then `up -d`. The
-final command is identical between the two paths — only the source of the
-images differs.
-
-## One-liner Setup
-
-The `setup.sh` script handles everything: secret generation, nginx, SSL,
-image build OR pull, and firewall.
-
-### Public domain (Let's Encrypt)
-
-```bash
-DOMAIN=app.example.com ./deployment/docker/setup.sh
-```
-
-Optionally add `EMAIL=you@example.com` for certificate expiry notifications.
-
-### Private network / LAN (self-signed SSL)
-
-```bash
-HOST=192.168.1.50 ./deployment/docker/setup.sh
-```
-
-Replace `192.168.1.50` with your server's LAN IP. Browsers will show a certificate warning — accept it, or import `/etc/ssl/doable/cert.pem` into your trust store.
-
-### Localhost only (self-signed SSL)
-
-```bash
-./deployment/docker/setup.sh
-```
-
-When prompted, press Enter to default to `localhost`.
-
-**Auto-trust:** in `localhost` mode setup.sh **automatically installs the
-self-signed cert into your OS + browser trust stores**, so when you open
-`https://localhost` in Chrome / Safari / Firefox you get **zero** "your
-connection is not private" warnings. No manual `certutil` / Keychain /
-PowerShell commands needed. The install is platform-aware:
-
-| Platform | Where the cert lands |
-|---|---|
-| **macOS** | System keychain via `security add-trusted-cert` (Safari + Chrome) |
-| **Linux Debian/Ubuntu** | `/usr/local/share/ca-certificates/` + `update-ca-certificates`; Chrome/Firefox via NSS `certutil` (auto-installed if missing) |
-| **Linux Fedora/RHEL** | `/etc/pki/ca-trust/source/anchors/` + `update-ca-trust`; same NSS path |
-| **Windows via WSL2** | `powershell.exe` interop installs the cert into Windows `CurrentUser\Root` AND sets `HKCU\Software\Policies\Google\Chrome\ChromeRootStoreEnabled=0` so Chrome 105+ consults Windows root store (one Chrome restart after setup). |
-
-**Note for remote/LAN installs (`HOST=`):** by default the auto-trust is
-**skipped** in HOST mode because the server is usually a different machine
-than where you'll browse from. Either copy the cert to your browser
-machine and follow the manual instructions in
-`/etc/ssl/doable/cert-install-instructions.md`, OR — if you really do
-browse on the same box that runs setup.sh — re-run with `--install-trust`
-or `DOABLE_INSTALL_TRUST=1`.
-
-For domain installs (`DOMAIN=…`) auto-trust is N/A — the Let's Encrypt
-cert is already publicly trusted by every browser.
-
-### Behind Cloudflare or another proxy
-
-```bash
-DOMAIN=app.example.com ./deployment/docker/setup.sh --skip-ssl
-```
-
-Uses a self-signed certificate between your proxy and nginx.
-
-## What `setup.sh` Does
-
-1. Checks that Docker and Docker Compose v2 are installed
-2. Generates `docker/.env` with random secrets and correct URLs
-3. Installs nginx (if not present)
-4. Obtains SSL certificate (Let's Encrypt for domains, self-signed for IPs/localhost)
-5. Generates nginx reverse proxy config from `nginx.conf.template`
-6. Configures UFW firewall (ports 22, 80, 443 only)
-7. Builds and starts all Docker containers
+1. Detects OS family (linux-debian / linux-rhel / linux-wsl / macos / windows-bash) and points Mac/Windows users to Docker Desktop if docker is missing
+2. Generates `deployment/docker/.env` with random secrets (JWT, encryption keys, postgres password, etc.)
+3. For local/HOST modes: downloads mkcert if missing, installs the local CA into host trust stores, issues a cert into `deployment/docker/certs/`
+4. For DOMAIN+LE mode: configures Caddy env vars so the container auto-fetches Let's Encrypt
+5. For DOMAIN+--skip-ssl mode: configures Caddy for internal self-signed + 127.0.0.1 bind (tunnel-safe)
+6. Stops any legacy host-side `nginx`/`caddy`/`apache2`/`lighttpd` from older installs (frees :80/:443 for the in-stack Caddy)
+7. `docker compose up -d` (or `pull` + `up` with `--prebuilt`)
+8. Waits for the migrate container to exit 0 (surfaces password-mismatch / stale-volume issues with a clear recovery command)
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | All services: PostgreSQL, API, WS, Web, Migrate, Redis (optional) |
-| `Dockerfile` | Multi-stage build (base → deps → build → service targets) |
-| `setup.sh` | Automated setup script (secrets, nginx, SSL, build, firewall) |
-| `.env.example` | Template environment file — copy to `.env` and edit |
-| `nginx.conf.template` | nginx reverse proxy template (used by `setup.sh`) |
-| `init.sql` | PostgreSQL extensions setup (pgvector, pgcrypto, pg_trgm) |
+| `docker-compose.yml` | Services: postgres, migrate, api, ws, web, caddy. Source-build path. |
+| `docker-compose.prod.yml` | Same services with `image:` instead of `build:` — pulls from ghcr.io |
+| `docker-compose.sandbox.yml` | Opt-in overlay enabling the bubblewrap AI sandbox (multi-tenant operators) |
+| `Dockerfile` | Multi-stage source build (base → deps → build → api/ws/web/migrate targets) |
+| `setup.sh` | Universal setup (every OS) — secrets, certs, Caddy env, build/pull, up |
+| `Caddyfile` | Caddy TLS terminator + reverse-proxy config (env-var driven) |
+| `init.sql` | Postgres extensions (pgvector, pgcrypto, pg_trgm) |
+| `02-roles.sh` | Postgres init script — creates non-superuser `doable_app` role for api+ws runtime |
+| `seccomp-bwrap.json` | Custom seccomp profile for the multi-tenant AI sandbox overlay |
+| `certs/` | mkcert-issued certs (gitignored — never committed) |
 | `tmux-entrypoint.sh` | Container entrypoint for tmux session management |
 
 ## Configuration
 
 ### Required secrets
 
-These must be set in `docker/.env` — Docker will refuse to start without them:
+These are generated by `setup.sh`. If you bypass it, you must set them
+yourself in `deployment/docker/.env` — docker compose refuses to start
+without them:
 
-| Variable | How to generate |
-|----------|----------------|
-| `JWT_SECRET` | `openssl rand -hex 32` |
-| `ENCRYPTION_KEY` | `openssl rand -hex 32` |
-| `INTERNAL_SECRET` | `openssl rand -hex 32` |
-| `DOABLE_KEK` | `openssl rand -hex 32` (key-encryption-key for stored secrets; Docker refuses to start without it) |
+| Variable | How to generate | Used by |
+|---|---|---|
+| `JWT_SECRET` | `openssl rand -hex 32` | api signs/verifies access + refresh tokens |
+| `ENCRYPTION_KEY` | `openssl rand -hex 32` | api row-level encryption |
+| `INTERNAL_SECRET` | `openssl rand -hex 32` | api↔ws shared-secret auth + OTLP forwarding |
+| `DOABLE_KEK` | `openssl rand -base64 32` | envelope key for BYOK provider keys + OAuth client secrets at rest |
+| `POSTGRES_PASSWORD` | `openssl rand -hex 16` | postgres owner (used only by `migrate` for DDL) |
+| `DOABLE_APP_PASSWORD` | `openssl rand -hex 16` | postgres runtime role (api+ws — CRUD only, no DDL) |
+| `CORS_ORIGINS` | The public origin of the install (e.g. `https://app.example.com`) | api allow-list |
 
-> **Note:** `setup.sh` generates these automatically. You only need to set them manually if using `docker compose` directly.
+### CLI flags / env vars
 
-### URLs
+| Flag | Env var equivalent | Effect |
+|---|---|---|
+| `--prebuilt` | `DOABLE_PREBUILT=true` | Pull from ghcr.io instead of source build |
+| `--skip-ssl` | `DOABLE_BEHIND_PROXY=1` | Behind CF Tunnel / reverse proxy. Caddy uses internal self-signed AND binds 127.0.0.1 |
+| `--install-trust` | `DOABLE_INSTALL_TRUST=1` | In HOST mode, force the cert auto-trust install (default: skipped because server ≠ browser) |
+| n/a | `DOMAIN=app.example.com` | Public domain mode. Let's Encrypt cert via Caddy. Requires :80 publicly reachable. |
+| n/a | `EMAIL=you@example.com` | Contact email for the Let's Encrypt ACME account (renewal notifications) |
+| n/a | `HOST=192.168.1.50` | Private LAN IP. Self-signed cert. |
+| n/a | `DOABLE_IMAGE_TAG=v1.2.3` | Pin a specific tag instead of `latest` (`--prebuilt` mode) |
+| n/a | `DOABLE_SKIP_DISK_CHECK=1` | Skip the pre-build disk-space check (source builds peak ~22GB) |
 
-When using `setup.sh`, URLs are set automatically based on your domain/IP.  
-For manual setup, edit these in `docker/.env`:
-
-| Variable | Default | With nginx |
-|----------|---------|------------|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | `https://yourdomain.com/api` |
-| `NEXT_PUBLIC_WS_URL` | `ws://localhost:4001` | `wss://yourdomain.com/ws` |
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | `https://yourdomain.com` |
-
-### Optional features
-
-| Variable | Purpose |
-|----------|---------|
-| `ANTHROPIC_API_KEY` | AI features (Claude) |
-| `OPENAI_API_KEY` | AI features (OpenAI) |
-| `REDIS_URL` | Shared rate limiting & sessions (multi-instance) |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth login |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth login |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Billing |
-
-### Redis
-
-Redis is optional. Without it, Doable uses an in-memory KV store (works fine for ~100 users).
-
-To enable Redis:
-```bash
-# Set in docker/.env:
-REDIS_URL=redis://redis:6379
-
-# Start with Redis profile:
-docker compose -f docker/docker-compose.yml --profile redis up --build
-```
-
-## Common Operations
+## Common operations
 
 ```bash
-# View logs
-docker compose -f docker/docker-compose.yml logs -f
+# View logs (all services)
+docker compose -f deployment/docker/docker-compose.yml logs -f
 
-# View specific service logs
-docker compose -f docker/docker-compose.yml logs -f api
+# Specific service
+docker compose -f deployment/docker/docker-compose.yml logs -f api
+docker compose -f deployment/docker/docker-compose.yml logs -f caddy
 
-# Restart a service
-docker compose -f docker/docker-compose.yml restart api
+# Restart one service
+docker compose -f deployment/docker/docker-compose.yml restart api
 
-# Stop everything
-docker compose -f docker/docker-compose.yml down
+# Stop everything (keeps volumes)
+docker compose -f deployment/docker/docker-compose.yml down
 
-# Stop and remove all data (database, volumes)
-docker compose -f docker/docker-compose.yml down -v
+# Nuke everything (drops postgres data, project files, thumbnails)
+docker compose -f deployment/docker/docker-compose.yml down -v
 
-# Rebuild after code changes
-docker compose -f docker/docker-compose.yml up --build -d
+# Re-run migrations
+docker compose -f deployment/docker/docker-compose.yml run --rm migrate
 
-# Run database migrations manually
-docker compose -f docker/docker-compose.yml run --rm migrate
+# Rebuild api+web after a source change
+docker compose -f deployment/docker/docker-compose.yml up -d --build api web
 ```
-
-## Architecture
-
-```
-Internet
-  │
-  ▼
-nginx (ports 80/443) ─── SSL termination
-  │
-  ├── /        → web    (127.0.0.1:3000)  Next.js frontend
-  ├── /api/    → api    (127.0.0.1:4000)  Hono REST API
-  ├── /auth/   → api    (127.0.0.1:4000)  OAuth routes
-  └── /ws      → ws     (127.0.0.1:4001)  WebSocket (Yjs CRDT)
-                   │
-                   ▼
-              PostgreSQL (127.0.0.1:5432)
-```
-
-All application services bind to `127.0.0.1` only. Only nginx accepts external connections.
 
 ## Security
 
-- **No ports exposed publicly** — all Docker services bind to `127.0.0.1`
-- **nginx always in front** — in all deployment modes (domain, LAN, localhost)
-- **Non-root containers** — API, WS, Web run as unprivileged `node` user
-- **Capability stripping** — every service runs with `cap_drop: [ALL]` and `no-new-privileges:true` (postgres re-adds only the 5 caps gosu needs for first-volume init)
-- **Database role separation** — the runtime API + WS connect as `doable_app` (CRUD-only, no DDL). The owner `doable` role is used only by the one-shot `migrate` service. A compromise of the api container therefore can't DROP TABLE, CREATE EXTENSION, or escalate via ROLE grants — see `02-roles.sh` and the `DOABLE_APP_PASSWORD` block in `setup.sh`.
-- **Read-only init scripts** — `init.sql` and `02-roles.sh` mount `:ro` so a compromised postgres container can't rewrite them ahead of the next reinitialization.
-- **Firewall** — `setup.sh` configures UFW to allow only ports 22, 80, 443
-- **Secrets** — never committed; `docker/.env` is gitignored and `chmod 600`'d by `setup.sh`
+- **In-stack TLS** — Caddy terminates TLS; no plaintext on the wire between browser and the docker stack
+- **Loopback-only by default** — `DOABLE_BIND_ADDR=127.0.0.1` for local installs; only DOMAIN mode with direct public ingress sets `0.0.0.0`
+- **Capability stripping** — every service runs with `cap_drop: [ALL]` and `no-new-privileges:true`. Postgres re-adds only the 5 caps gosu needs for first-volume init; Caddy re-adds only `NET_BIND_SERVICE` for port 80/443
+- **Database role separation** — runtime api+ws connect as `doable_app` (CRUD-only, no DDL); the owner `doable` role is used only by the one-shot `migrate` service
+- **Read-only init scripts** — `init.sql` and `02-roles.sh` mount `:ro`
+- **Secrets file** — `deployment/docker/.env` chmod 600
+- **Firewall** — handled by the operator (UFW on Linux, OS firewall on Mac/Win). With CF Tunnel mode (`--skip-ssl`) the host doesn't need any public ports open at all.
 
-### Multi-tenant AI sandbox (opt-in) — added 2026-05-21 (R34 follow-up)
+### Multi-tenant AI sandbox (opt-in)
 
-The default stack assumes a single-tenant deployment — one trusted operator
-or team where every user is allowed to weaponize the AI dev-server only
-against their own projects. For **multi-tenant** installs (hosting Doable
-for arbitrary signups), layer the sandbox overlay to confine each
-AI-spawned subprocess inside a per-project bubblewrap jail:
+The default stack assumes one trusted operator. For multi-tenant
+installs (hosting Doable for arbitrary signups) layer the sandbox
+overlay to confine AI-spawned subprocesses inside a per-project
+bubblewrap jail:
 
 ```bash
 docker compose \
@@ -256,80 +234,104 @@ docker compose \
   up -d --force-recreate api
 ```
 
-What the overlay changes (api service only — postgres/ws/web/migrate stay
-locked down):
-
-- Flips `DOABLE_HARDENING=full` + `DOABLE_HARDENING_LEVEL=prod` + `DOABLE_SANDBOX_INSTALL=1` (the three env vars that gate the bwrap-backed jail layers — they must move in lockstep, see commit `a2d8a112` for the regression they fix).
-- Re-adds `cap_add: [SYS_ADMIN]` (everything else stays dropped) so bwrap's `unshare(CLONE_NEWUSER)` + `mount()` calls succeed.
-- Applies a custom seccomp profile (`deployment/docker/seccomp-bwrap.json`) that extends Docker's default with just `mount`, `umount2`, `pivot_root`, and `keyctl` — explicitly NOT `seccomp=unconfined` (which would open ~70 additional syscalls including `ptrace`, `kexec_load`, `bpf`, `perf_event_open`).
-
-After applying, healthy startup logs look like:
-
-```bash
-docker logs doable-api | grep -E "backend=bubblewrap|bwrap: Failed"
-# → "[vault] backend=bubblewrap fullIsolation=true"  ← good
-# → 0 occurrences of "bwrap: Failed to make / slave: Permission denied"
-```
-
-The trade-off is a slightly wider syscall surface on the api container in
-exchange for kernel-enforced isolation between every AI subprocess. Don't
-flip this on if you're the only operator using the box — the default is
-already tighter on syscall surface.
+What it changes:
+- `DOABLE_HARDENING=full` + `DOABLE_HARDENING_LEVEL=prod` + `DOABLE_SANDBOX_INSTALL=1`
+- `cap_add: [SYS_ADMIN]` on the api container (everything else still dropped)
+- Custom seccomp profile `seccomp-bwrap.json` that adds exactly 4 syscalls to Docker's default (`mount`, `umount2`, `pivot_root`, `keyctl`) — NOT `seccomp=unconfined`
 
 ### Verifying role separation
 
-After `docker compose up -d`, confirm the api+ws connections are coming
-from the limited role and DDL is gated behind the owner role:
+After `docker compose up -d`, confirm api+ws connect as the limited
+role and DDL is gated behind the owner:
 
 ```bash
-# Show who's connected and as which role
+# Who's connected as which role
 docker compose -f deployment/docker/docker-compose.yml exec -T postgres \
-  psql -U doable -At -c \
-  "SELECT application_name, usename, COUNT(*) FROM pg_stat_activity WHERE datname='doable' GROUP BY 1,2 ORDER BY 1"
-# Expect: api connections show usename=doable_app, migrate is already exited
-#         (only the live api/ws pools are visible)
+  psql -U doable -At -c "SELECT usename, COUNT(*) FROM pg_stat_activity WHERE datname='doable' GROUP BY 1"
+# Expect: doable_app | 5  (postgres.js api+ws pools)
 
-# Prove doable_app cannot DROP a table
+# doable_app cannot DROP a table
 docker compose -f deployment/docker/docker-compose.yml exec -T postgres \
   psql -U doable_app -d doable -At -c "DROP TABLE users CASCADE" 2>&1 \
   | grep -iE "permission denied|must be owner"
-# Expect: "permission denied for table users"
 
-# Prove doable_app CAN do normal CRUD
+# doable_app CAN do normal CRUD
 docker compose -f deployment/docker/docker-compose.yml exec -T postgres \
-  psql -U doable_app -d doable -At -c \
-  "SELECT 1 FROM ai_sessions LIMIT 1; SELECT current_user"
-# Expect: clean SELECT + "doable_app"
+  psql -U doable_app -d doable -At -c "SELECT current_user, count(*) FROM users"
 ```
 
 ## Troubleshooting
 
-### API returns 502 Bad Gateway
-The API container may still be starting. Check logs:
+### Migrate container exited non-zero
+
+The most common cause is a stale postgres data volume from a previous
+install with a different `.env`. Postgres skipped reinitialization
+because the data dir wasn't empty, so the new `POSTGRES_PASSWORD`
+never reached pg_authid. `setup.sh` surfaces this with a clear
+recovery command — copy-paste:
+
 ```bash
-docker compose -f docker/docker-compose.yml logs api
+docker compose -f deployment/docker/docker-compose.yml --env-file deployment/docker/.env down -v
+docker compose -f deployment/docker/docker-compose.yml --env-file deployment/docker/.env up -d
 ```
 
-### Database connection error
-Ensure PostgreSQL is healthy:
+### Browser shows "your connection is not private" on https://localhost
+
+mkcert's CA isn't trusted by the browser yet. Common causes:
+
+- **Chrome 105+ on Windows + WSL2 install**: restart Chrome once. setup.sh sets the `ChromeRootStoreEnabled=0` policy that takes effect on the next launch.
+- **Firefox after a fresh install**: Firefox has its own NSS DB. Re-run `mkcert -install` once (after Firefox is installed), or `Settings → Privacy & Security → View Certificates → Authorities → Import` and pick `deployment/docker/certs/cert.pem`.
+- **Cert was rotated**: re-run `./deployment/docker/setup.sh` to regenerate + re-install.
+
+### Cloudflare Tunnel can't reach the origin
+
+Check that `DOABLE_BIND_ADDR=127.0.0.1` is set in `.env` (it should
+be, automatically, when you used `--skip-ssl`). The tunnel daemon
+runs on the host and connects to `127.0.0.1:443` — your tunnel's
+ingress rule should point at `https://localhost:443` (HTTPS with
+"No TLS Verify" enabled, because Caddy serves internal self-signed
+on the origin side).
+
+### Caddy can't fetch Let's Encrypt cert
+
+LE needs port 80 reachable from the internet for the HTTP-01
+challenge. Confirm:
+
 ```bash
-docker compose -f docker/docker-compose.yml ps postgres
+curl -sS -o /dev/null -w "%{http_code}\n" http://app.example.com/.well-known/acme-challenge/test
+# Expect: 200 (Caddy responds with a placeholder for unknown challenges)
 ```
 
-### Self-signed certificate warning
-Expected behavior for `HOST=` and localhost modes. Either:
-- Accept the browser warning, or
-- Import `/etc/ssl/doable/cert.pem` into your OS/browser trust store
+If you can't open port 80 publicly (corporate firewall, ISP block),
+either use a DNS-01 challenge (requires API credentials for your DNS
+provider — not configured by default) or run behind Cloudflare Tunnel
+with `--skip-ssl`.
 
-### Port already in use
-Stop any existing services on ports 3000, 4000, 4001, or 5432:
+### Port 80 or 443 already in use
+
+A leftover process is bound to one of Caddy's ports. Most commonly an
+old host-side nginx from an earlier setup.sh version. setup.sh's
+`stop legacy host-side $svc` block handles this on Linux, but you
+may need to manually stop it on Mac/Windows:
+
 ```bash
-docker compose -f docker/docker-compose.yml down
+# Linux
+sudo systemctl stop nginx caddy apache2 lighttpd 2>/dev/null
+
+# macOS (homebrew)
+brew services stop nginx 2>/dev/null
+sudo lsof -nP -iTCP:443 | grep LISTEN   # what else is on :443?
+
+# Windows
+netstat -ano | findstr ":443"            # find the PID
 ```
 
-### Rebuild from scratch
+### Rebuild from absolute scratch
+
 ```bash
-docker compose -f docker/docker-compose.yml down -v
+docker compose -f deployment/docker/docker-compose.yml down -v
 docker system prune -af
-docker compose -f docker/docker-compose.yml up --build
+rm -f deployment/docker/.env
+rm -rf deployment/docker/certs/*.pem
+./deployment/docker/setup.sh
 ```
