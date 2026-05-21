@@ -5,7 +5,7 @@ import type { SSEStreamingApi } from "hono/streaming";
 import { sql } from "../../db/index.js";
 import type { TraceCollector } from "../../ai/trace-collector.js";
 import type { ByokProviderConfig } from "../../ai/providers/copilot.js";
-import { isProjectScaffolded, createProject } from "../../projects/file-manager.js";
+import { isProjectScaffolded, createProject, ensureDependencies } from "../../projects/file-manager.js";
 import { startDevServer, isRunning as isDevServerRunning } from "../../projects/dev-server.js";
 import { servers as devServersRegistry } from "../../projects/dev-server-core.js";
 
@@ -75,6 +75,24 @@ export async function scaffoldAndStartDev(projectId: string, stream: SSEStreamin
     await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "dev-server", message: "Starting dev server..." } }) });
     await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: " Starting dev server..." }) });
     console.log(`[Chat] Auto-starting dev server for project ${projectId}`);
+
+    // Re-verify the framework's build tool (vite for vite-react) is actually
+    // resolvable inside node_modules before spawning. The scaffold install
+    // above can leave a populated-looking node_modules/ that's missing vite
+    // when it was killed mid-install, ran with NODE_ENV=production, or the
+    // AI's install_package tool re-wrote the dir. Without this, the very
+    // first spawn dies with `Cannot find module .../vite/bin/vite.js` and
+    // the user sees a red "Dev server exited with code 1" before the lazy
+    // recovery path eventually re-installs. ensureDependencies is a no-op
+    // when the build tool is already present, so this is cheap.
+    try {
+      await ensureDependencies(projectId);
+    } catch (err) {
+      console.warn(`[Chat] ensureDependencies failed for ${projectId}:`, err);
+      // Continue to startDevServer — it has its own error surfacing path
+      // and the user may still get a usable preview from the reactive
+      // install loop in dev-server-start.ts.
+    }
 
     // BUG-AI-PREVIEW-001: tick from REAL registry state, not setInterval-only.
     // Previously a setInterval emitted "Compiling project… (Xs)" forever
