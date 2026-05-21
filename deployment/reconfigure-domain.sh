@@ -28,6 +28,13 @@
 #   --api-domain <h>    Override computed API_DOMAIN (single-level dashed
 #                       form derived from DOMAIN by default).
 #   --ws-domain <h>     Override computed WS_DOMAIN.
+#   --layout <l>        Publish layout: 'prefix' (free Universal SSL) or
+#                       'infix' (requires Cloudflare ACM). Default: keep
+#                       whatever PUBLISH_LAYOUT is in the existing .env,
+#                       or 'prefix' if unset.
+#   --wildcard-hostname <h>
+#                       For --layout infix: the wildcard CNAME hostname
+#                       (e.g. '*.dev.doable.me'). Defaults to '*.<domain>'.
 #   --no-rebuild        Skip apps/web rebuild (only env rewrite + service
 #                       restart). USE WITH CAUTION — the running web
 #                       bundle still has the OLD NEXT_PUBLIC_* baked in.
@@ -56,20 +63,24 @@ INSTALL_DIR="${INSTALL_DIR:-/root/doable}"
 DOMAIN="${DOMAIN:-}"
 API_DOMAIN="${API_DOMAIN:-}"
 WS_DOMAIN="${WS_DOMAIN:-}"
+PUBLISH_LAYOUT="${PUBLISH_LAYOUT:-}"
+WILDCARD_HOSTNAME="${WILDCARD_HOSTNAME:-}"
 SKIP_REBUILD=0
 SKIP_RESTART=0
 DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --domain)       DOMAIN="$2"; shift 2 ;;
-    --api-domain)   API_DOMAIN="$2"; shift 2 ;;
-    --ws-domain)    WS_DOMAIN="$2"; shift 2 ;;
-    --install-dir)  INSTALL_DIR="$2"; shift 2 ;;
-    --no-rebuild)   SKIP_REBUILD=1; shift ;;
-    --no-restart)   SKIP_RESTART=1; shift ;;
-    --dry-run)      DRY_RUN=1; shift ;;
+    --domain)             DOMAIN="$2"; shift 2 ;;
+    --api-domain)         API_DOMAIN="$2"; shift 2 ;;
+    --ws-domain)          WS_DOMAIN="$2"; shift 2 ;;
+    --install-dir)        INSTALL_DIR="$2"; shift 2 ;;
+    --layout)             PUBLISH_LAYOUT="$2"; shift 2 ;;
+    --wildcard-hostname)  WILDCARD_HOSTNAME="$2"; shift 2 ;;
+    --no-rebuild)         SKIP_REBUILD=1; shift ;;
+    --no-restart)         SKIP_RESTART=1; shift ;;
+    --dry-run)            DRY_RUN=1; shift ;;
     -h|--help)
-      sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) err "Unknown arg: $1" ;;
@@ -91,16 +102,48 @@ if [ "$DOMAIN_LABEL_COUNT" -gt 2 ]; then
   DOMAIN_ZONE="${DOMAIN#*.}"
   API_DOMAIN="${API_DOMAIN:-${ENV_PREFIX}-api.${DOMAIN_ZONE}}"
   WS_DOMAIN="${WS_DOMAIN:-${ENV_PREFIX}-ws.${DOMAIN_ZONE}}"
-  # CSP frame-ancestors needs the APEX so `*.${apex}` covers all subdomains
-  # (CSP wildcards don't cover parent). preview-proxy/proxy-handler.ts reads
-  # DOABLE_DOMAIN and emits frame-ancestors 'self' https://${apex} https://*.${apex}.
-  DOABLE_APEX="${DOMAIN_ZONE}"
-  info "Multi-level DOMAIN — dashed: API=${API_DOMAIN}, WS=${WS_DOMAIN}, apex=${DOABLE_APEX}"
+  ZONE_APEX="${DOMAIN_ZONE}"
+  info "Multi-level DOMAIN — dashed: API=${API_DOMAIN}, WS=${WS_DOMAIN}, zone=${ZONE_APEX}"
 else
   API_DOMAIN="${API_DOMAIN:-api.${DOMAIN}}"
   WS_DOMAIN="${WS_DOMAIN:-ws.${DOMAIN}}"
-  DOABLE_APEX="${DOMAIN}"
+  ZONE_APEX="${DOMAIN}"
   info "Apex DOMAIN — dotted: API=${API_DOMAIN}, WS=${WS_DOMAIN}"
+fi
+
+# ── Derive publish layout (default: keep existing, else prefix) ──
+# PUBLISH_LAYOUT='infix' means the operator has Cloudflare ACM and wants
+# multi-level wildcard URLs (slug.dev.doable.me). 'prefix' is the default
+# (works with free Universal SSL): <prefix><slug>.<zone>.
+if [ -z "$PUBLISH_LAYOUT" ]; then
+  EXISTING_LAYOUT=$(grep -oP "(?<=^PUBLISH_LAYOUT=).+" "${INSTALL_DIR}/.env" 2>/dev/null | head -1 || true)
+  PUBLISH_LAYOUT="${EXISTING_LAYOUT:-prefix}"
+fi
+case "$PUBLISH_LAYOUT" in
+  prefix|infix) ;;
+  *) err "--layout must be 'prefix' or 'infix' (got '${PUBLISH_LAYOUT}')" ;;
+esac
+
+if [[ "$PUBLISH_LAYOUT" == "infix" ]]; then
+  WILDCARD_HOSTNAME="${WILDCARD_HOSTNAME:-*.${DOMAIN}}"
+  [[ "$WILDCARD_HOSTNAME" == \*.* ]] || err "--wildcard-hostname must start with '*.' (got '${WILDCARD_HOSTNAME}')"
+  WILDCARD_BARE="${WILDCARD_HOSTNAME#\*.}"
+  if [[ "$WILDCARD_BARE" != "$DOMAIN" && "$WILDCARD_BARE" != "$ZONE_APEX" && "$WILDCARD_BARE" != *".${ZONE_APEX}" ]]; then
+    err "--wildcard-hostname '${WILDCARD_HOSTNAME}' must be inside zone '${ZONE_APEX}'"
+  fi
+  # DOABLE_DOMAIN is what publish URLs are built from. For infix it's the
+  # wildcard's bare suffix (e.g. dev.doable.me), and PUBLISH_SUBDOMAIN_PREFIX
+  # is empty so the URL comes out as <slug>.dev.doable.me.
+  DOABLE_APEX="${WILDCARD_BARE}"
+  NEW_PUBLISH_PREFIX=""
+  info "Publish layout: infix → https://<slug>.${WILDCARD_BARE} (requires Cloudflare ACM)"
+else
+  # Prefix mode: DOABLE_DOMAIN is the zone, so <prefix><slug>.<zone> resolves
+  # under the single-level Universal SSL wildcard.
+  DOABLE_APEX="${ZONE_APEX}"
+  # Preserve any existing PUBLISH_SUBDOMAIN_PREFIX in .env on re-runs.
+  NEW_PUBLISH_PREFIX=$(grep -oP "(?<=^PUBLISH_SUBDOMAIN_PREFIX=).+" "${INSTALL_DIR}/.env" 2>/dev/null | head -1 || true)
+  info "Publish layout: prefix '${NEW_PUBLISH_PREFIX}' → https://${NEW_PUBLISH_PREFIX}<slug>.${ZONE_APEX}"
 fi
 
 # ── Build the rewrite map ───────────────────────────────────────
@@ -111,6 +154,8 @@ declare -A NEW_VALS=(
   [CORS_ORIGINS]="https://${DOMAIN}"
   [WS_ALLOWED_ORIGINS]="https://${DOMAIN}"
   [DOABLE_DOMAIN]="${DOABLE_APEX}"
+  [PUBLISH_LAYOUT]="${PUBLISH_LAYOUT}"
+  [PUBLISH_SUBDOMAIN_PREFIX]="${NEW_PUBLISH_PREFIX}"
   [GOOGLE_REDIRECT_URI]="https://${API_DOMAIN}/auth/google/callback"
   [GITHUB_REDIRECT_URI]="https://${API_DOMAIN}/auth/github/callback"
   [GITHUB_COPILOT_REDIRECT_URI]="https://${API_DOMAIN}/auth/github/copilot/callback"

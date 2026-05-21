@@ -232,6 +232,69 @@ yet — `systemctl status cloudflared` on the server, then
 
 ---
 
+## Publish layout: prefix vs infix
+
+When users publish their AI-built sites, the platform mints a hostname like
+`portfolio-x7k2m.<somewhere>`. `setup-server.sh` asks which **layout** to use,
+and the choice maps to Cloudflare's TLS coverage:
+
+| Layout   | URL shape                          | Cloudflare TLS                     | When to pick |
+|----------|------------------------------------|-------------------------------------|--------------|
+| `prefix` | `<env-prefix><slug>.<zone>`        | Free Universal SSL (`*.<zone>`)     | Default. One zone shared across envs (e.g. `dev-foo.example.com` + `prod-foo.example.com` both ride `*.example.com`). |
+| `infix`  | `<slug>.<env>.<zone>`              | Cloudflare ACM (`*.<env>.<zone>`)   | You have ACM and want clean per-env wildcards (e.g. `foo.dev.example.com` under `*.dev.example.com`). |
+
+### Prefix layout (default — free Universal SSL)
+
+```bash
+DOMAIN=dev.example.com \
+PUBLISH_LAYOUT=prefix \
+PUBLISH_PREFIX=dev- \
+./deployment/server-setup.sh
+```
+
+Published-site URLs: `https://dev-portfolio-x7k2m.example.com`
+(rides the zone's free `*.example.com` wildcard cert).
+
+### Infix layout (requires Cloudflare ACM)
+
+```bash
+DOMAIN=dev.example.com \
+PUBLISH_LAYOUT=infix \
+WILDCARD_HOSTNAME='*.dev.example.com' \
+./deployment/server-setup.sh
+```
+
+Published-site URLs: `https://portfolio-x7k2m.dev.example.com`
+(needs ACM on the zone — free Universal SSL only covers one wildcard level).
+
+The setup script auto-creates the `*.dev.example.com` CNAME via the Cloudflare
+API token extracted from `cloudflared tunnel login` (so the OAuth login you
+already did is enough — no separate CF API token needed). It also persists
+`dns_mode=wildcard` + `dns_wildcard_hostname=*.dev.example.com` in
+`platform_settings` so the `/admin` DNS panel reflects the choice.
+
+If `cloudflared tunnel login` hasn't been run or the token can't be extracted,
+the wildcard step is skipped with a warning — you can finish it post-install
+at `https://<your-domain>/admin` → DNS settings → "Auto-configure wildcard".
+
+### Switching layouts on an existing install
+
+```bash
+# Move dev.example.com from prefix → infix:
+./deployment/reconfigure-domain.sh \
+  --domain dev.example.com \
+  --layout infix \
+  --wildcard-hostname '*.dev.example.com'
+
+# Or the reverse:
+./deployment/reconfigure-domain.sh --domain dev.example.com --layout prefix
+```
+
+`reconfigure-domain.sh` rewrites `.env`, rebuilds `apps/web` (NEXT_PUBLIC_*
+are baked at build time), and restarts the doable service.
+
+---
+
 ## After setup (both shapes)
 
 ### First user = platform owner

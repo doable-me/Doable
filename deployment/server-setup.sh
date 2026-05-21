@@ -174,7 +174,9 @@ if [ "$CONTAINER_MODE" = "1" ] || [ "$NON_INTERACTIVE" = "1" ] || ! [ -t 0 ]; th
   ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
   OPENAI_API_KEY="${OPENAI_API_KEY:-}"
   MINIMAX_API_KEY="${MINIMAX_API_KEY:-}"
+  PUBLISH_LAYOUT="${PUBLISH_LAYOUT:-prefix}"
   PUBLISH_PREFIX="${PUBLISH_PREFIX:-do-}"
+  WILDCARD_HOSTNAME="${WILDCARD_HOSTNAME:-}"
   STRIPE_SECRET_KEY="${STRIPE_SECRET_KEY:-}"
   STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-}"
   CONFIRM="y"
@@ -188,8 +190,44 @@ else
   read -rp "WebSocket subdomain [ws]: " WS_SUB
   WS_SUB="${WS_SUB:-ws}"
 
-  read -rp "Publish subdomain prefix (e.g., do- for prod, dev- for dev) [do-]: " PUBLISH_PREFIX
-  PUBLISH_PREFIX="${PUBLISH_PREFIX:-do-}"
+  # ── Publish layout: prefix (free Universal SSL) vs infix (requires ACM) ──
+  echo ""
+  echo "── Publish layout for AI-built sites ──"
+  echo "  prefix : <prefix><slug>.<zone>           (works on free Cloudflare Universal SSL)"
+  echo "           e.g. dev-portfolio-x7k2m.doable.me — uses the single-level zone wildcard"
+  echo "  infix  : <slug>.<env>.<zone>             (requires Cloudflare Advanced Certificate Manager)"
+  echo "           e.g. portfolio-x7k2m.dev.doable.me — multi-level wildcard, cleaner URLs"
+  read -rp "Publish layout [prefix]: " PUBLISH_LAYOUT
+  PUBLISH_LAYOUT="${PUBLISH_LAYOUT:-prefix}"
+  case "$PUBLISH_LAYOUT" in
+    prefix|infix) ;;
+    *) err "PUBLISH_LAYOUT must be 'prefix' or 'infix' (got '${PUBLISH_LAYOUT}')" ;;
+  esac
+
+  if [[ "$PUBLISH_LAYOUT" == "infix" ]]; then
+    DEFAULT_WILDCARD="*.${DOMAIN}"
+    read -rp "Wildcard hostname for published sites (must be inside zone) [${DEFAULT_WILDCARD}]: " WILDCARD_HOSTNAME
+    WILDCARD_HOSTNAME="${WILDCARD_HOSTNAME:-$DEFAULT_WILDCARD}"
+    [[ "$WILDCARD_HOSTNAME" == \*.* ]] || err "WILDCARD_HOSTNAME must start with '*.' (got '${WILDCARD_HOSTNAME}')"
+    WILDCARD_BARE="${WILDCARD_HOSTNAME#\*.}"
+    # Suffix-match against either DOMAIN or its zone so '*.doable.me' is valid
+    # for DOMAIN=dev.doable.me too (operator may want zone-wide wildcard).
+    DOMAIN_LBL_CHECK=$(echo "$DOMAIN" | tr '.' '\n' | wc -l)
+    if [ "$DOMAIN_LBL_CHECK" -gt 2 ]; then
+      DOMAIN_ZONE_CHECK="${DOMAIN#*.}"
+    else
+      DOMAIN_ZONE_CHECK="${DOMAIN}"
+    fi
+    if [[ "$WILDCARD_BARE" != "$DOMAIN" && "$WILDCARD_BARE" != "$DOMAIN_ZONE_CHECK" && "$WILDCARD_BARE" != *".${DOMAIN_ZONE_CHECK}" ]]; then
+      err "WILDCARD_HOSTNAME '${WILDCARD_HOSTNAME}' must be inside zone '${DOMAIN_ZONE_CHECK}'"
+    fi
+    PUBLISH_PREFIX=""
+    info "infix layout — published sites at https://<slug>.${WILDCARD_BARE} (requires Cloudflare ACM on zone)"
+  else
+    read -rp "Publish subdomain prefix (e.g., do- for prod, dev- for dev) [do-]: " PUBLISH_PREFIX
+    PUBLISH_PREFIX="${PUBLISH_PREFIX:-do-}"
+    WILDCARD_HOSTNAME=""
+  fi
 
   read -rp "GitHub repo (owner/repo) [doable-me/doable]: " REPO
   REPO="${REPO:-doable-me/doable}"
@@ -235,13 +273,25 @@ if [ "$DOMAIN_LABEL_COUNT" -gt 2 ] && [ "$NO_TUNNEL" != "1" ]; then
   DOMAIN_ZONE="${DOMAIN#*.}"             # doable.me from dev.doable.me
   API_DOMAIN="${API_DOMAIN:-${ENV_PREFIX}-${API_SUB}.${DOMAIN_ZONE}}"
   WS_DOMAIN="${WS_DOMAIN:-${ENV_PREFIX}-${WS_SUB}.${DOMAIN_ZONE}}"
-  PUBLISH_WILDCARD_DOMAIN="${DOMAIN_ZONE}"
+  if [[ "${PUBLISH_LAYOUT:-prefix}" == "infix" ]]; then
+    # infix: operator has ACM and picked a multi-level wildcard.
+    # Derive PUBLISH_WILDCARD_DOMAIN from their chosen WILDCARD_HOSTNAME so
+    # cloudflared ingress + CF CNAME target the same multi-level zone.
+    PUBLISH_WILDCARD_DOMAIN="${WILDCARD_HOSTNAME#\*.}"
+  else
+    # prefix: free Universal SSL covers <zone> + *.<zone> only.
+    PUBLISH_WILDCARD_DOMAIN="${DOMAIN_ZONE}"
+  fi
   info "Multi-level DOMAIN detected — dashed hostnames: API=${API_DOMAIN}, WS=${WS_DOMAIN}, publish wildcard *.${PUBLISH_WILDCARD_DOMAIN}"
 else
   # Zone-apex (e.g. doable.me) or NO_TUNNEL — keep dot-prefix convention.
   API_DOMAIN="${API_DOMAIN:-${API_SUB}.${DOMAIN}}"
   WS_DOMAIN="${WS_DOMAIN:-${WS_SUB}.${DOMAIN}}"
-  PUBLISH_WILDCARD_DOMAIN="${DOMAIN}"
+  if [[ "${PUBLISH_LAYOUT:-prefix}" == "infix" ]]; then
+    PUBLISH_WILDCARD_DOMAIN="${WILDCARD_HOSTNAME#\*.}"
+  else
+    PUBLISH_WILDCARD_DOMAIN="${DOMAIN}"
+  fi
 fi
 
 # NO_TUNNEL=1 single-host override: api/ws/web all served behind one
@@ -268,7 +318,11 @@ info "Configuration:"
 echo "  Domain:     https://${DOMAIN}"
 echo "  API:        https://${API_DOMAIN}"
 echo "  WebSocket:  wss://${WS_DOMAIN}"
-echo "  Prefix:     ${PUBLISH_PREFIX}"
+if [[ "${PUBLISH_LAYOUT:-prefix}" == "infix" ]]; then
+  echo "  Publish:    infix → https://<slug>.${PUBLISH_WILDCARD_DOMAIN} (requires Cloudflare ACM)"
+else
+  echo "  Publish:    prefix '${PUBLISH_PREFIX}' → https://${PUBLISH_PREFIX}<slug>.${PUBLISH_WILDCARD_DOMAIN}"
+fi
 echo "  Repo:       ${REPO}"
 echo ""
 if [ "$CONTAINER_MODE" != "1" ] && [ "${NON_INTERACTIVE:-0}" != "1" ] && [ -t 0 ]; then
@@ -950,8 +1004,10 @@ STRIPE_BUSINESS_YEARLY_PRICE_ID=
 PROJECTS_ROOT=${INSTALL_DIR}/services/api/projects
 DOABLE_PROJECTS_DIR=${INSTALL_DIR}/services/api/projects
 SITES_DIR=${INSTALL_DIR}/sites
-DOABLE_DOMAIN=${DOMAIN}
+DOABLE_DOMAIN=${PUBLISH_WILDCARD_DOMAIN}
 PUBLISH_SUBDOMAIN_PREFIX=${PUBLISH_PREFIX}
+PUBLISH_LAYOUT=${PUBLISH_LAYOUT}
+WILDCARD_HOSTNAME=${WILDCARD_HOSTNAME}
 
 # ─── Cloudflare DNS (appended by Step 10 after tunnel creation) ────
 # CLOUDFLARED_TUNNEL_ID, CF_API_TOKEN_ENC (KEK-encrypted), CF_ZONE_ID are written below.
@@ -1332,24 +1388,42 @@ CFGEOF
   # pipeline skips per-publish CF API calls, and warns when the chosen
   # publish domain is multi-level (Universal SSL only covers one level
   # deep — multi-level needs Advanced Certificate Manager).
+  # PUBLISH_LAYOUT=infix implies the operator opted into ACM and wants a
+  # wildcard CNAME created up-front. Default DNS_MODE to wildcard so the
+  # block below runs — but only when DNS_MODE wasn't explicitly set by the
+  # operator (an infix+per_publish combo is legitimate: ACM-covered
+  # hostnames + one CNAME per publish for fine-grained rotation).
+  if [[ "${PUBLISH_LAYOUT:-prefix}" == "infix" && -z "${DNS_MODE:-}" ]]; then
+    DNS_MODE="wildcard"
+  fi
   DNS_MODE="${DNS_MODE:-per_publish}"
   if [[ "$DNS_MODE" == "wildcard" ]]; then
     if [[ -z "$CF_API_TOKEN" || -z "$CF_ZONE_ID" || -z "$TUNNEL_ID" ]]; then
       warn "DNS_MODE=wildcard requested but CF_API_TOKEN / CF_ZONE_ID / TUNNEL_ID not all set — skipping wildcard auto-setup."
+      warn "Sign in at https://${DOMAIN}/admin after install → DNS settings → Auto-configure wildcard to finish the setup."
     else
-      # Warn but don't abort on multi-level publish domain. Universal SSL
-      # covers <zone> + *.<zone>; *.staging.doable.me needs ACM.
-      DOMAIN_LABEL_COUNT=$(echo "$DOMAIN" | tr '.' '\n' | wc -l)
-      if [[ "$DOMAIN_LABEL_COUNT" -gt 2 ]]; then
-        warn "DOMAIN=${DOMAIN} is multi-level. *.${DOMAIN} is NOT covered by free Universal SSL — enable Cloudflare Advanced Certificate Manager on the zone, or browsers will fail with SSL_VERSION_OR_CIPHER_MISMATCH on published sites."
+      # Pick the wildcard name: infix layout uses the operator-chosen one,
+      # otherwise default to *.${DOMAIN} (legacy DNS_MODE=wildcard behavior).
+      if [[ "${PUBLISH_LAYOUT:-prefix}" == "infix" && -n "${WILDCARD_HOSTNAME:-}" ]]; then
+        WILDCARD_NAME="${WILDCARD_HOSTNAME}"
+      else
+        WILDCARD_NAME="*.${DOMAIN}"
+        # prefix-mode warning: free Universal SSL only covers <zone> + *.<zone>.
+        # infix-mode skips the warning — the operator opted into ACM explicitly.
+        DOMAIN_LABEL_COUNT=$(echo "$DOMAIN" | tr '.' '\n' | wc -l)
+        if [[ "$DOMAIN_LABEL_COUNT" -gt 2 ]]; then
+          warn "DOMAIN=${DOMAIN} is multi-level. *.${DOMAIN} is NOT covered by free Universal SSL — enable Cloudflare Advanced Certificate Manager on the zone, or browsers will fail with SSL_VERSION_OR_CIPHER_MISMATCH on published sites."
+        fi
       fi
-
-      WILDCARD_NAME="*.${DOMAIN}"
       WILDCARD_TARGET="${TUNNEL_ID}.cfargotunnel.com"
       CF_API="https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records"
-      # Look up existing CNAME (idempotent re-run safety). asterisk URL-encoded.
+      # URL-encode the asterisk for the CF API query. Dots are not reserved
+      # in query values, so bash substitution suffices (no python3 dep needed
+      # in CONTAINER_MODE where Step 1 is skipped).
+      WILDCARD_NAME_ENC="${WILDCARD_NAME//\*/%2A}"
+      # Look up existing CNAME (idempotent re-run safety).
       EXISTING_ID=$(curl -fsS -H "Authorization: Bearer ${CF_API_TOKEN}" \
-        "${CF_API}?type=CNAME&name=%2A.${DOMAIN}" 2>/dev/null \
+        "${CF_API}?type=CNAME&name=${WILDCARD_NAME_ENC}" 2>/dev/null \
         | python3 -c "import sys,json; r=json.load(sys.stdin).get('result',[]); print(r[0]['id'] if r else '')" 2>/dev/null || true)
       if [[ -n "$EXISTING_ID" ]]; then
         EXISTING_TARGET=$(curl -fsS -H "Authorization: Bearer ${CF_API_TOKEN}" \
@@ -1374,13 +1448,15 @@ CFGEOF
           || warn "Failed to create wildcard CNAME via CF API"
       fi
 
-      # Persist dns_mode='wildcard' in platform_settings so the deploy
-      # pipeline skips per-publish CF API calls. Migration 081 already
-      # ran in Step 9. ON CONFLICT makes this idempotent.
+      # Persist dns_mode + dns_wildcard_hostname in platform_settings so the
+      # deploy pipeline skips per-publish CF API calls AND the /admin DNS
+      # panel reflects the operator's actual hostname choice (not the
+      # convention-based default). Migration 081 ran in Step 9; ON CONFLICT
+      # makes both upserts idempotent for re-runs.
       PGPASSWORD="${DB_PASS}" psql -h localhost -U doable -d doable -c \
-        "INSERT INTO platform_settings (key, value) VALUES ('dns_mode', 'wildcard') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();" \
+        "INSERT INTO platform_settings (key, value) VALUES ('dns_mode', 'wildcard'), ('dns_wildcard_hostname', '${WILDCARD_NAME}') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();" \
         >/dev/null 2>&1 \
-        && ok "Persisted dns_mode='wildcard' in platform_settings" \
+        && ok "Persisted dns_mode='wildcard' and dns_wildcard_hostname='${WILDCARD_NAME}' in platform_settings" \
         || warn "Failed to persist dns_mode='wildcard' — admin UI can still toggle it later"
     fi
   fi
