@@ -30,20 +30,17 @@ server {
     ssl_stapling_verify on;
 
     # ─── Security headers ───────────────────────────────────────────────────
-    # X-XSS-Protection is deprecated / actively harmful in modern Chromium —
-    # CSP covers what it used to. X-Frame-Options replaced by CSP frame-ancestors.
+    # Most app-level headers (Content-Security-Policy, Strict-Transport-Security,
+    # Permissions-Policy, X-Frame-Options, Referrer-Policy) are emitted by the
+    # Next.js middleware at apps/web/src/middleware.ts and the api Hono server.
+    # Layering nginx-side duplicates here would either be ignored (HSTS keeps
+    # the first value) or, worse for CSP, INTERSECTED with the app's value
+    # producing a stricter policy that blocks Monaco's `'unsafe-eval'`,
+    # external CDNs the user's AI-built apps may load from, and OAuth avatar
+    # image hosts. We keep nginx narrow to defense-in-depth on the one header
+    # the app cannot reliably set (MIME-sniffing on static asset 404s served
+    # directly by nginx before they reach the app).
     add_header X-Content-Type-Options nosniff always;
-    add_header Referrer-Policy strict-origin-when-cross-origin always;
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
-    add_header Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()" always;
-    # CSP — tuned for Monaco editor + Yjs + same-origin preview iframes.
-    #   wasm-unsafe-eval: Monaco's WebAssembly TextMate grammars
-    #   blob: in worker-src/img-src: Monaco workers, AI-generated screenshots
-    #   wss: and https: in connect-src: WS for Yjs + outbound AI provider proxies
-    #   frame-ancestors 'self': preview iframes are same-origin under /preview/
-    # Operators using a different web origin than the API can override via
-    # __CSP_OVERRIDE__ in setup.sh.
-    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; font-src 'self' data:; connect-src 'self' wss: https:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'" always;
 
     # Body-size policy: 50m for general routes (vite imports, AI uploads),
     # 1m on /auth/* to blunt slow-loris-style POST floods against signup/login.
