@@ -6,7 +6,7 @@
 .DESCRIPTION
     Pure-PowerShell parallel to deployment/docker/setup.sh. Sets up the
     Doable docker stack on Windows using Docker Desktop as the docker
-    daemon. Caddy runs in-stack and terminates TLS — no host-side nginx,
+    daemon. Caddy runs in-stack and terminates TLS -- no host-side nginx,
     certbot, or systemd needed.
 
     Three deployment modes (same as setup.sh):
@@ -19,10 +19,10 @@
     the self-signed cert with no warning.
 
 .PARAMETER Domain
-    Public domain — uses Let's Encrypt for SSL via Caddy ACME.
+    Public domain -- uses Let's Encrypt for SSL via Caddy ACME.
 
 .PARAMETER DoableHost
-    IP or hostname for private-network install — self-signed SSL.
+    IP or hostname for private-network install -- self-signed SSL.
     (Named DoableHost to avoid colliding with PowerShell's $Host
     automatic variable.)
 
@@ -46,11 +46,11 @@
 
 .EXAMPLE
     .\deployment\docker\setup.ps1
-    # Localhost install — Caddy uses mkcert, opens https://localhost
+    # Localhost install -- Caddy uses mkcert, opens https://localhost
 
 .EXAMPLE
     .\deployment\docker\setup.ps1 -Domain app.example.com
-    # Public domain install — Caddy auto-fetches Let's Encrypt cert
+    # Public domain install -- Caddy auto-fetches Let's Encrypt cert
 
 .EXAMPLE
     .\deployment\docker\setup.ps1 -DoableHost 192.168.1.50 -InstallTrust
@@ -63,7 +63,7 @@
 
 .NOTES
     Requires Docker Desktop for Windows. PowerShell 5.1 (built into
-    Windows 10/11) is sufficient — no pwsh 7+ needed.
+    Windows 10/11) is sufficient -- no pwsh 7+ needed.
 #>
 [CmdletBinding()]
 param(
@@ -77,13 +77,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# ─── Logging helpers ───────────────────────────────────────────────────────
+# --- Logging helpers -------------------------------------------------------
 function Write-Info { param([string]$Msg) Write-Host "[info]  " -NoNewline -ForegroundColor Blue;  Write-Host $Msg }
 function Write-Ok   { param([string]$Msg) Write-Host "[ok]    " -NoNewline -ForegroundColor Green; Write-Host $Msg }
 function Write-WarnMsg { param([string]$Msg) Write-Host "[warn]  " -NoNewline -ForegroundColor Yellow; Write-Host $Msg }
 function Write-ErrMsg  { param([string]$Msg) Write-Host "[error] " -NoNewline -ForegroundColor Red; Write-Host $Msg }
 
-# ─── Paths ─────────────────────────────────────────────────────────────────
+# --- Paths -----------------------------------------------------------------
 $ScriptDir  = $PSScriptRoot
 $ProjectDir = Split-Path $ScriptDir -Parent
 $EnvFile    = Join-Path $ScriptDir '.env'
@@ -101,7 +101,7 @@ $EnvFileFwd     = $EnvFile     -replace '\\', '/'
 
 Write-Info "Detected OS family: windows-native (PowerShell $($PSVersionTable.PSVersion))"
 
-# ─── Docker check ──────────────────────────────────────────────────────────
+# --- Docker check ----------------------------------------------------------
 Write-Info "Checking prerequisites..."
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-ErrMsg "Docker is not installed. Install Docker Desktop for Windows: https://docs.docker.com/desktop/install/windows-install/"
@@ -116,7 +116,7 @@ try {
 }
 Write-Ok "Docker and Docker Compose found"
 
-# ─── Disk-space precheck ───────────────────────────────────────────────────
+# --- Disk-space precheck ---------------------------------------------------
 # Same intent as setup.sh: 25 GB minimum for source build, 5 GB for prebuilt
 # (image pull only). On Windows, Get-PSDrive gives free space natively
 # without needing df.
@@ -125,7 +125,7 @@ try {
     $availGB = [int]([math]::Floor($drive.Free / 1GB))
     $minGB = if ($ComposeFile -match 'docker-compose\.prod\.yml') { 5 } else { 25 }
     if ($availGB -lt $minGB) {
-        Write-ErrMsg "Only $availGB GB free on $($drive.Root) — Doable needs at least $minGB GB."
+        Write-ErrMsg "Only $availGB GB free on $($drive.Root) -- Doable needs at least $minGB GB."
         if ($minGB -eq 25) {
             Write-ErrMsg "Source builds peak around 22 GB; free disk (docker system prune -a) or re-run with -Prebuilt once ghcr images are public."
         }
@@ -135,24 +135,24 @@ try {
         Write-Ok "Disk space: $availGB GB free on $($drive.Root) (need >= $minGB GB)"
     }
 } catch {
-    Write-WarnMsg "Could not determine free disk space ($($_.Exception.Message)) — skipping disk-space precheck."
+    Write-WarnMsg "Could not determine free disk space ($($_.Exception.Message)) -- skipping disk-space precheck."
 }
 
-# ─── Mode determination ────────────────────────────────────────────────────
+# --- Mode determination ----------------------------------------------------
 $Mode = ''
 $ListenHost = ''
 $HostExplicit = $false
 
 if ($Domain) {
     $Mode = 'domain'; $ListenHost = $Domain; $HostExplicit = $true
-    Write-Info "Domain mode — Let's Encrypt SSL for $Domain"
+    Write-Info "Domain mode -- Let's Encrypt SSL for $Domain"
 } elseif ($DoableHost) {
     $Mode = 'host'; $ListenHost = $DoableHost; $HostExplicit = $true
-    Write-Info "Private network mode — self-signed SSL for $DoableHost"
+    Write-Info "Private network mode -- self-signed SSL for $DoableHost"
 } elseif ([System.Console]::IsInputRedirected -or $env:DOABLE_AUTO_LOCALHOST -eq '1') {
-    # Non-interactive stdin (piped install, CI) — default to localhost.
+    # Non-interactive stdin (piped install, CI) -- default to localhost.
     $Mode = 'localhost'; $ListenHost = 'localhost'
-    Write-Info "Non-interactive stdin (or DOABLE_AUTO_LOCALHOST=1) — defaulting to localhost mode"
+    Write-Info "Non-interactive stdin (or DOABLE_AUTO_LOCALHOST=1) -- defaulting to localhost mode"
 } else {
     Write-Host ""
     Write-Host "No -Domain or -DoableHost specified."
@@ -162,23 +162,23 @@ if ($Domain) {
     $userInput = Read-Host "Enter domain, IP, or press Enter for localhost"
     if (-not $userInput) {
         $Mode = 'localhost'; $ListenHost = 'localhost'
-        Write-Info "Localhost mode — self-signed SSL on localhost"
+        Write-Info "Localhost mode -- self-signed SSL on localhost"
     } elseif ($userInput -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
         $Mode = 'host'; $ListenHost = $userInput; $HostExplicit = $true
-        Write-Info "Private network mode — self-signed SSL for $ListenHost"
+        Write-Info "Private network mode -- self-signed SSL for $ListenHost"
     } else {
         $Mode = 'domain'; $ListenHost = $userInput; $Domain = $userInput; $HostExplicit = $true
-        Write-Info "Domain mode — Let's Encrypt SSL for $ListenHost"
+        Write-Info "Domain mode -- Let's Encrypt SSL for $ListenHost"
     }
 }
 
-# ─── URLs ──────────────────────────────────────────────────────────────────
+# --- URLs ------------------------------------------------------------------
 $ApiUrl = "https://${ListenHost}/api"
 $WsUrl  = "wss://${ListenHost}/ws"
 $AppUrl = "https://${ListenHost}"
 $Cors   = "https://${ListenHost}"
 
-# ─── Secret generators (Windows .NET RNG; no openssl needed) ──────────────
+# --- Secret generators (Windows .NET RNG; no openssl needed) --------------
 function New-RandomHex {
     param([int]$Bytes)
     $buf = New-Object byte[] $Bytes
@@ -192,7 +192,7 @@ function New-RandomBase64 {
     [Convert]::ToBase64String($buf)
 }
 
-# ─── ACL helper (chmod 600 equivalent on Windows) ─────────────────────────
+# --- ACL helper (chmod 600 equivalent on Windows) -------------------------
 function Set-OwnerOnlyAcl {
     param([string]$Path)
     try {
@@ -210,7 +210,7 @@ function Set-OwnerOnlyAcl {
     }
 }
 
-# ─── Generate .env ─────────────────────────────────────────────────────────
+# --- Generate .env ---------------------------------------------------------
 if (Test-Path $EnvFile) {
     Write-WarnMsg ".env already exists at $EnvFile"
     if ([System.Console]::IsInputRedirected -or $env:DOABLE_KEEP_ENV -eq '1') {
@@ -256,7 +256,7 @@ if (-not (Test-Path $EnvFile)) {
     # auth-mismatch trap setup.sh closes by wiping the volume.
     $stale = (docker volume ls -q 2>$null) -split "`n" | Where-Object { $_ -match '_postgres_data$' }
     if ($stale) {
-        Write-WarnMsg "Pre-existing postgres_data volume detected — wiping to avoid auth mismatch."
+        Write-WarnMsg "Pre-existing postgres_data volume detected -- wiping to avoid auth mismatch."
         docker compose -f $ComposeFileFwd down -v *> $null
         foreach ($v in ((docker volume ls -q 2>$null) -split "`n" |
                 Where-Object { $_ -match '_(postgres_data|api_projects|api_thumbnails|ws_projects)$' })) {
@@ -294,42 +294,42 @@ if (-not (Test-Path $EnvFile)) {
 # Generated by setup.ps1 on $genStamp
 # Host: $ListenHost
 
-# ─── Secrets ─────────────────
+# --- Secrets -----------------
 JWT_SECRET=$jwt
 ENCRYPTION_KEY=$encKey
 INTERNAL_SECRET=$intSecret
 DOABLE_KEK=$kek
 
-# ─── First-run bootstrap (single-use; auto-closes after first signup) ───
+# --- First-run bootstrap (single-use; auto-closes after first signup) ---
 INSTALL_BOOTSTRAP_TOKEN=$bootToken
 INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT=$bootExp
 
-# ─── Database ────────────────
+# --- Database ----------------
 POSTGRES_USER=doable
 POSTGRES_PASSWORD=$pgPass
 POSTGRES_DB=doable
 DOABLE_APP_PASSWORD=$appPass
 
-# ─── URLs ────────────────────
+# --- URLs --------------------
 NEXT_PUBLIC_API_URL=$ApiUrl
 NEXT_PUBLIC_WS_URL=$WsUrl
 NEXT_PUBLIC_APP_URL=$AppUrl
 CORS_ORIGINS=$Cors
 WS_ALLOWED_ORIGINS=$Cors
 
-# ─── Redis (optional) ────────
+# --- Redis (optional) --------
 REDIS_URL=
 
-# ─── AI providers (BYOK) ─────
+# --- AI providers (BYOK) -----
 $($aiKeyLines -join "`n")
 
-# ─── OAuth (optional) ────────
+# --- OAuth (optional) --------
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 
-# ─── Stripe (optional) ───────
+# --- Stripe (optional) -------
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 "@
@@ -339,7 +339,7 @@ STRIPE_WEBHOOK_SECRET=
     Write-Ok "Created $EnvFile with generated secrets (owner-only ACL)"
 }
 
-# ─── Back-fill DOABLE_KEK + DOABLE_APP_PASSWORD on older .env (idempotent) ─
+# --- Back-fill DOABLE_KEK + DOABLE_APP_PASSWORD on older .env (idempotent) -
 function Test-EnvHasValue {
     param([string]$Var)
     $line = Get-Content $EnvFile -ErrorAction SilentlyContinue |
@@ -369,11 +369,11 @@ if ((Test-Path $EnvFile) -and -not (Test-EnvHasValue 'DOABLE_APP_PASSWORD')) {
     Set-OwnerOnlyAcl -Path $EnvFile
     Write-Ok "Back-filled DOABLE_APP_PASSWORD in existing $EnvFile"
     # Note: setup.sh also tries to ALTER ROLE on a live postgres container.
-    # On Windows we skip that — operator can run `docker compose down -v && setup.ps1`
+    # On Windows we skip that -- operator can run `docker compose down -v && setup.ps1`
     # if they hit auth mismatch on an upgrade.
 }
 
-# ─── TLS / Caddy wiring ────────────────────────────────────────────────────
+# --- TLS / Caddy wiring ----------------------------------------------------
 Write-Info "Setting up TLS for $ListenHost (Caddy in docker)..."
 if (-not (Test-Path $CertsDir)) { New-Item -ItemType Directory -Path $CertsDir | Out-Null }
 
@@ -392,7 +392,7 @@ switch ($Mode) {
             $DoableBindAddr = '0.0.0.0'
             $DoableTls = if ($Email) { $Email } else { 'internal' }
             if (-not $Email) {
-                Write-WarnMsg "Email not set — Caddy ACME will register without a contact address."
+                Write-WarnMsg "Email not set -- Caddy ACME will register without a contact address."
                 Write-WarnMsg "  Re-run with -Email you@example.com for renewal notifications."
             }
         }
@@ -422,7 +422,7 @@ switch ($Mode) {
             Write-Info "Downloading mkcert (one-time, $(Split-Path -Leaf $mkcertUrl))..."
             try {
                 # ProgressPreference SilentlyContinue makes Invoke-WebRequest 20x faster
-                # on large downloads — the default progress bar is unreasonably slow.
+                # on large downloads -- the default progress bar is unreasonably slow.
                 $prevProgress = $ProgressPreference
                 $ProgressPreference = 'SilentlyContinue'
                 Invoke-WebRequest -Uri $mkcertUrl -OutFile $mkcertExe -UseBasicParsing
@@ -437,7 +437,7 @@ switch ($Mode) {
         if ($wantTrust -and $mkcertExe -and (Test-Path $mkcertExe)) {
             Write-Info "Installing mkcert local CA into Windows trust store..."
             # mkcert -install writes the CA into HKCU\...\Root for the current
-            # user — no admin required for the user store. Chrome 105+ needs
+            # user -- no admin required for the user store. Chrome 105+ needs
             # the ChromeRootStoreEnabled policy too; mkcert handles the
             # Firefox/NSS dance automatically if Firefox is installed.
             & $mkcertExe -install 2>&1 | Where-Object { $_ -match 'installed|CA|local' } | ForEach-Object { Write-Host "  $_" }
@@ -449,11 +449,11 @@ switch ($Mode) {
             if ((Test-Path $certFile) -and (Test-Path $keyFile)) {
                 Write-Ok "Browser-trusted cert ready at $certFile"
             } else {
-                Write-WarnMsg "mkcert leaf-cert generation failed — Caddy will use internal self-signed"
+                Write-WarnMsg "mkcert leaf-cert generation failed -- Caddy will use internal self-signed"
                 $DoableTls = 'internal'
             }
         } elseif ($wantTrust) {
-            Write-Info "mkcert unavailable — Caddy will use internal self-signed (browser warning expected once)"
+            Write-Info "mkcert unavailable -- Caddy will use internal self-signed (browser warning expected once)"
             $DoableTls = 'internal'
         } else {
             Write-Info "HOST mode without -InstallTrust: Caddy will use internal self-signed."
@@ -471,7 +471,7 @@ Set-OwnerOnlyAcl -Path $EnvFile
 
 Write-Ok "Caddy TLS config persisted to .env (DOABLE_SITE=$DoableSite, BIND=$DoableBindAddr)"
 
-# ─── Build / pull and start ────────────────────────────────────────────────
+# --- Build / pull and start ------------------------------------------------
 Push-Location $ProjectDir
 try {
     if ($ComposeFile -match 'docker-compose\.prod\.yml') {
@@ -506,7 +506,7 @@ try {
     Pop-Location
 }
 
-# ─── Migrate completion watchdog ───────────────────────────────────────────
+# --- Migrate completion watchdog -------------------------------------------
 # One-shot migrate container exits before api/ws/web become ready. If it
 # fails (typically stale postgres_data volume with mismatched password),
 # api/ws never start. Wait up to 60s and surface a clear recovery command.
@@ -523,7 +523,7 @@ for ($i = 1; $i -le 30; $i++) {
 
 if ($migrateExit -ne '0' -and $migrateExit -ne '?') {
     Write-Host ""
-    Write-ErrMsg "Migration container exited with code $migrateExit — install is broken."
+    Write-ErrMsg "Migration container exited with code $migrateExit -- install is broken."
     Write-ErrMsg "Most common cause: stale postgres_data volume from a prior install with a"
     Write-ErrMsg "different .env (POSTGRES_PASSWORD mismatch). Postgres skipped re-init because"
     Write-ErrMsg "the data directory wasn't empty."
@@ -538,22 +538,22 @@ if ($migrateExit -ne '0' -and $migrateExit -ne '?') {
 }
 Write-Ok "Migrations applied"
 
-# ─── Success banner ────────────────────────────────────────────────────────
+# --- Success banner --------------------------------------------------------
 # Re-read the active bootstrap token in case the operator kept an existing .env.
 $activeBootToken = ''
 $bootLine = Get-Content $EnvFile | Where-Object { $_ -match '^INSTALL_BOOTSTRAP_TOKEN=.' } | Select-Object -First 1
 if ($bootLine) { $activeBootToken = $bootLine -replace '^INSTALL_BOOTSTRAP_TOKEN=', '' }
 
 Write-Host ""
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "=========================================================================="
 Write-Host "Doable is running at $AppUrl" -ForegroundColor Green
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "=========================================================================="
 Write-Host ""
 Write-Host "  What to do next:"
 Write-Host ""
 Write-Host "    1. Open $AppUrl/signup in your browser."
 Write-Host "       The FIRST account to sign up becomes the platform owner"
-Write-Host "       automatically — no SSH, no SQL, no .env editing required."
+Write-Host "       automatically -- no SSH, no SQL, no .env editing required."
 Write-Host ""
 Write-Host "    2. You'll be guided through a 4-step setup wizard at /setup:"
 Write-Host "       Welcome -> AI provider -> Google/GitHub sign-in -> Plans & Billing."
@@ -574,14 +574,14 @@ Write-Host "         PERPLEXITY_API_KEY DEEPINFRA_API_KEY NVIDIA_API_KEY"
 Write-Host "         MOONSHOT_API_KEY   ZHIPU_API_KEY     OPENCODE_ZEN_API_KEY"
 Write-Host ""
 if ($Mode -ne 'domain') {
-    Write-Host "  Note: Self-signed SSL — Chrome 105+ on Windows reads the OS root store" -ForegroundColor Yellow
+    Write-Host "  Note: Self-signed SSL -- Chrome 105+ on Windows reads the OS root store" -ForegroundColor Yellow
     Write-Host "        only if ChromeRootStoreEnabled=0 is set. If mkcert ran the trust" -ForegroundColor Yellow
     Write-Host "        install above, restart Chrome once and the cert is trusted." -ForegroundColor Yellow
     Write-Host ""
 }
 if ($activeBootToken) {
     Write-Host "  Bootstrap token (only needed if signup is delayed past 24h or you need"
-    Write-Host "  to force-promote — kept private, single-use, server-side enforced):"
+    Write-Host "  to force-promote -- kept private, single-use, server-side enforced):"
     Write-Host ""
     Write-Host "      $activeBootToken"
     Write-Host ""
@@ -598,4 +598,4 @@ Write-Host "    View logs:   docker compose -f $ComposeFileFwd logs -f"
 Write-Host "    Stop:        docker compose -f $ComposeFileFwd down"
 Write-Host "    Restart:     docker compose -f $ComposeFileFwd restart"
 Write-Host "    Edit config: notepad $EnvFile  (or your editor of choice)"
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "=========================================================================="
