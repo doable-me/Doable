@@ -228,24 +228,42 @@ ok "Docker and Docker Compose found"
 # leave the operator with a half-baked install.
 if command -v df &>/dev/null; then
   DOCKER_DATA_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo "/var/lib/docker")
-  # Check the FS that holds the docker root; fall back to / if df can't
-  # resolve the path (e.g. docker daemon not yet up).
-  AVAIL_KB=$(df --output=avail "$DOCKER_DATA_ROOT" 2>/dev/null | tail -1 | tr -d ' ' || \
-             df --output=avail / 2>/dev/null | tail -1 | tr -d ' ')
-  AVAIL_GB=$(( AVAIL_KB / 1024 / 1024 ))
-  case "${COMPOSE_FILE##*/}" in
-    docker-compose.prod.yml) MIN_GB=5  ;; # pulled images only
-    *)                       MIN_GB=25 ;; # source build peak
-  esac
-  if [ "$AVAIL_GB" -lt "$MIN_GB" ]; then
-    error "Only ${AVAIL_GB} GB free on $(df --output=target "$DOCKER_DATA_ROOT" 2>/dev/null | tail -1 || echo /) — Doable needs at least ${MIN_GB} GB."
-    if [ "$MIN_GB" = "25" ]; then
-      error "Source builds peak around 22 GB; either free disk (docker system prune -af) or re-run with DOABLE_PREBUILT=true once ghcr images are public."
-    fi
-    error "Override with DOABLE_SKIP_DISK_CHECK=1 if you know what you're doing."
-    [ "${DOABLE_SKIP_DISK_CHECK:-0}" = "1" ] || exit 1
+  # POSIX df -P columns: Filesystem 1024-blocks Used Available Capacity Mounted-on.
+  # Can't index by column number — Filesystem (NFS/SMB: `host:/path`, Git Bash:
+  # `C:/Program Files/Git`) or Mounted-on (`/Volumes/My Drive`) may contain
+  # spaces and shift the column count. Anchor on the Capacity column instead:
+  # it's always `<digits>%`, and Available is the field immediately before it.
+  df_avail_for() {
+    df -Pk "$1" 2>/dev/null | awk 'NR==2 {
+      for (i=NF; i>=2; i--) if ($i ~ /^[0-9]+%$/) { print $(i-1); exit }
+    }'
+  }
+  AVAIL_KB=$(df_avail_for "$DOCKER_DATA_ROOT")
+  AVAIL_MOUNT="$DOCKER_DATA_ROOT"
+  if [ -z "$AVAIL_KB" ]; then
+    AVAIL_KB=$(df_avail_for /)
+    AVAIL_MOUNT="/"
+  fi
+  # Unparseable df → warn and skip the guard. Refusing every exotic-df install
+  # is worse than letting the build try and surface ENOSPC if it really happens.
+  if [ -z "$AVAIL_KB" ] || ! [ "$AVAIL_KB" -eq "$AVAIL_KB" ] 2>/dev/null; then
+    warn "Could not determine free disk space (df produced no usable output) — skipping disk-space precheck."
   else
-    ok "Disk space: ${AVAIL_GB} GB free on docker root (need >=${MIN_GB} GB)"
+    AVAIL_GB=$(( AVAIL_KB / 1024 / 1024 ))
+    case "${COMPOSE_FILE##*/}" in
+      docker-compose.prod.yml) MIN_GB=5  ;; # pulled images only
+      *)                       MIN_GB=25 ;; # source build peak
+    esac
+    if [ "$AVAIL_GB" -lt "$MIN_GB" ]; then
+      error "Only ${AVAIL_GB} GB free on ${AVAIL_MOUNT:-/} — Doable needs at least ${MIN_GB} GB."
+      if [ "$MIN_GB" = "25" ]; then
+        error "Source builds peak around 22 GB; either free disk (docker system prune -af) or re-run with DOABLE_PREBUILT=true once ghcr images are public."
+      fi
+      error "Override with DOABLE_SKIP_DISK_CHECK=1 if you know what you're doing."
+      [ "${DOABLE_SKIP_DISK_CHECK:-0}" = "1" ] || exit 1
+    else
+      ok "Disk space: ${AVAIL_GB} GB free on ${AVAIL_MOUNT:-docker root} (need >=${MIN_GB} GB)"
+    fi
   fi
 fi
 
@@ -274,6 +292,13 @@ elif [ -n "${HOST:-}" ]; then
   LISTEN_HOST="$HOST"
   HOST_EXPLICIT=1
   info "Private network mode — self-signed SSL for ${HOST}"
+elif [ ! -t 0 ] || [ "${DOABLE_AUTO_LOCALHOST:-0}" = "1" ]; then
+  # Non-interactive stdin (curl|bash, piped install, CI) — never block on read.
+  # Default to localhost mode so automated installs complete unattended.
+  # Operators who want a domain/IP install in CI pass DOMAIN= or HOST= explicitly.
+  MODE="localhost"
+  LISTEN_HOST="localhost"
+  info "Non-interactive stdin (or DOABLE_AUTO_LOCALHOST=1) — defaulting to localhost mode"
 else
   echo ""
   echo "No DOMAIN or HOST specified."
