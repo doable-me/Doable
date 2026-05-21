@@ -32,12 +32,22 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-doable}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-doable}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
 
   # --- Run database migrations ---
   migrate:
@@ -49,6 +59,10 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-doable}
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   # --- API server (Hono) ---
   api:
@@ -76,7 +90,7 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in deployment/docker/.env}
       API_PORT: 4000
       API_HOST: 127.0.0.1
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required — run ./deployment/docker/setup.sh, or set it to the public origin(s) e.g. "https://app.example.com"}
       WS_PORT: 4001
       WS_HOST: 127.0.0.1
       INTERNAL_SECRET: ${INTERNAL_SECRET:?Set INTERNAL_SECRET in deployment/docker/.env}
@@ -118,9 +132,18 @@ services:
       INSTALL_BOOTSTRAP_TOKEN: ${INSTALL_BOOTSTRAP_TOKEN:-}
       INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT: ${INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT:-}
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
+      # AI subprocess sandbox — see docker-compose.yml for the full rationale.
+      DOABLE_HARDENING_LEVEL: ${DOABLE_HARDENING_LEVEL:-dev}
+      DOABLE_SANDBOX_INSTALL: ${DOABLE_SANDBOX_INSTALL:-1}
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN
 
   # --- WebSocket server (Yjs CRDT) ---
   ws:
@@ -148,8 +171,14 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       REDIS_URL: ${REDIS_URL:-}
       DOABLE_KEK: ${DOABLE_KEK:?Set DOABLE_KEK in deployment/docker/.env — openssl rand -base64 32}
+      # See docker-compose.yml for why this env is needed.
+      DOABLE_PROJECTS_DIR: /app/services/ws/projects
     volumes:
       - ws_projects:/app/services/ws/projects
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   # --- Web frontend (Next.js) ---
   web:
@@ -174,6 +203,10 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: 3000
       NODE_ENV: ${NODE_ENV:-production}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
 volumes:
   postgres_data:

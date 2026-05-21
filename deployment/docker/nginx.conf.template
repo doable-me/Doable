@@ -15,18 +15,38 @@ server {
 
     ssl_certificate __SSL_CERT__;
     ssl_certificate_key __SSL_KEY__;
+
+    # Mozilla "intermediate" 2024 — AEAD-only ECDHE suites, no CBC/3DES/SHA1.
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
     ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    # Long-lived session tickets without rotation reduce forward secrecy; off.
+    ssl_session_tickets off;
+    # OCSP stapling — clients verify cert revocation without contacting LE.
+    # Self-signed certs (HOST/localhost mode) silently no-op stapling.
+    ssl_stapling on;
+    ssl_stapling_verify on;
 
-    # Security headers
-    add_header X-Frame-Options SAMEORIGIN always;
+    # ─── Security headers ───────────────────────────────────────────────────
+    # X-XSS-Protection is deprecated / actively harmful in modern Chromium —
+    # CSP covers what it used to. X-Frame-Options replaced by CSP frame-ancestors.
     add_header X-Content-Type-Options nosniff always;
-    add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()" always;
+    # CSP — tuned for Monaco editor + Yjs + same-origin preview iframes.
+    #   wasm-unsafe-eval: Monaco's WebAssembly TextMate grammars
+    #   blob: in worker-src/img-src: Monaco workers, AI-generated screenshots
+    #   wss: and https: in connect-src: WS for Yjs + outbound AI provider proxies
+    #   frame-ancestors 'self': preview iframes are same-origin under /preview/
+    # Operators using a different web origin than the API can override via
+    # __CSP_OVERRIDE__ in setup.sh.
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; font-src 'self' data:; connect-src 'self' wss: https:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'" always;
 
+    # Body-size policy: 50m for general routes (vite imports, AI uploads),
+    # 1m on /auth/* to blunt slow-loris-style POST floods against signup/login.
     client_max_body_size 50m;
 
     # Frontend (Next.js)
@@ -51,8 +71,10 @@ server {
         proxy_buffering off;
     }
 
-    # Auth routes (direct pass-through)
+    # Auth routes (direct pass-through). Tight body-size cap blunts slow-loris
+    # POST floods against signup/login that exhaust worker connections.
     location /auth/ {
+        client_max_body_size 1m;
         proxy_pass http://127.0.0.1:4000/auth/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;

@@ -85,13 +85,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxshmfence1 libnspr4 libnss3 libdrm2 libxkbcommon0 \
     fonts-liberation \
     git \
+    bubblewrap \
   && (apt-get install -y --no-install-recommends libasound2t64 \
       || apt-get install -y --no-install-recommends libasound2) \
   && rm -rf /var/lib/apt/lists/*
-# BUG-R27-008: `git` is required by FileManager (per-project init / version
-# history). Without it every project create logs
-# `GitError: git init failed: spawn git ENOENT` and the version-history
-# UX silently degrades.
+# `git` is required by FileManager (per-project init / version history).
+# `bubblewrap` is the user-namespace jail used by services/api/src/sandbox/
+# orchestrator.ts (jailedSpawn) to confine AI-spawned subprocesses
+# (install_package, vite, node) to the per-project directory tree. Without
+# it the orchestrator falls back to a plain spawn that runs with the full
+# api container privileges — DOABLE_HARDENING_LEVEL is effectively ignored.
 
 COPY --from=build --chown=node:node /app .
 

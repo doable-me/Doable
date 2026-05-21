@@ -88,6 +88,10 @@ if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null; then
     exit 1
   fi
   info "Docker missing — installing docker.io + compose v2 via apt (Ubuntu/Debian)..."
+  warn "Ubuntu's docker.io package typically lags upstream Docker CE by several minor versions."
+  warn "  For a production self-host, install Docker CE from https://get.docker.com first, then re-run this script."
+  warn "  Continuing with apt docker.io in 5s — Ctrl-C to abort."
+  sleep 5
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   # Ubuntu ships compose v2 as `docker-compose-v2`; Docker Inc.'s official
@@ -390,7 +394,10 @@ if [ -f "$ENV_FILE" ] && ! grep -qE '^DOABLE_KEK=.+' "$ENV_FILE"; then
   else
     printf '\n# Added by setup.sh back-fill (%s)\nDOABLE_KEK=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$NEW_KEK" >> "$ENV_FILE"
   fi
-  ok "Back-filled DOABLE_KEK in existing $ENV_FILE"
+  # Re-assert 0600 — the editing path above (sed/append) may have inherited
+  # broader perms from an older install where chmod 600 was never set.
+  chmod 600 "$ENV_FILE"
+  ok "Back-filled DOABLE_KEK in existing $ENV_FILE (mode 600)"
 fi
 
 # ─── Set up nginx + SSL ──────────────────────────────────────────────────────
@@ -467,8 +474,25 @@ HTTPEOF
   EMAIL_FLAG=""
   if [ -n "${EMAIL:-}" ]; then
     EMAIL_FLAG="-m $EMAIL"
+  elif [ -t 0 ]; then
+    # Interactive — give the operator one chance to supply an address so the
+    # account gets expiry-warning emails. Let's Encrypt is also moving away
+    # from supporting email-less accounts entirely, so encourage entry.
+    echo ""
+    echo "Let's Encrypt strongly recommends registering with an email address —"
+    echo "you'll get warning emails ~20 days before the cert expires, and LE may"
+    echo "stop accepting email-less registrations in future."
+    read -rp "Email for Let's Encrypt notices (blank to skip): " USER_EMAIL
+    if [ -n "$USER_EMAIL" ]; then
+      EMAIL_FLAG="-m $USER_EMAIL"
+    else
+      EMAIL_FLAG="--register-unsafely-without-email"
+      warn "No email — you will not receive expiry notices for ${LISTEN_HOST}."
+    fi
   else
     EMAIL_FLAG="--register-unsafely-without-email"
+    warn "EMAIL env not set and stdin is non-interactive — registering Let's Encrypt account WITHOUT recovery address."
+    warn "  Re-run with EMAIL=you@example.com ./deployment/docker/setup.sh to register properly."
   fi
 
   info "Requesting Let's Encrypt certificate for ${LISTEN_HOST}..."

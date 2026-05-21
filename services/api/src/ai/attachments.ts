@@ -14,7 +14,10 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 import mammoth from "mammoth";
-import * as XLSX from "xlsx";
+// Maintained SheetJS fork — the canonical `xlsx` package was de-listed from
+// npm and the last published version (0.18.5) is below the CVE-2023-30533
+// (prototype pollution) patch line. The @e965/xlsx API is identical.
+import * as XLSX from "@e965/xlsx";
 import { PDFParse } from "pdf-parse";
 
 // ─── Types ──────────────────────────────────────────────

@@ -574,7 +574,7 @@
     "puppeteer": "^24.39.1",
     "stripe": "^20.4.1",
     "ts-morph": "^27.0.2",
-    "xlsx": "^0.18.5",
+    "@e965/xlsx": "^0.20.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {

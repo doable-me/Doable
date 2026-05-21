@@ -25,7 +25,6 @@
     "typescript": "^5.7.3"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^0.1.32",
     "yjs": "^13.6.30"
   },
   "pnpm": {
@@ -36,6 +35,19 @@
       "undici@>=7.17.0 <7.24.0": ">=7.24.0",
       "fast-xml-parser@>=4.0.0-beta.3 <=5.5.5": ">=5.5.6",
       "fast-xml-parser@>=4.0.0-beta.3 <=5.5.6": ">=5.5.7"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "@swc/core",
+      "argon2",
+      "better-sqlite3",
+      "bufferutil",
+      "canvas",
+      "esbuild",
+      "puppeteer",
+      "secp256k1",
+      "sharp",
+      "utf-8-validate"
+    ]
   }
 }

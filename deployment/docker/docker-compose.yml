@@ -30,12 +30,28 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-doable}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      # :ro so a compromised container can't rewrite init.sql ahead of the
+      # next `docker compose down/up` cycle.
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-doable}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    # Postgres entrypoint uses gosu to drop from root to the postgres user
+    # on startup, which needs SETUID/SETGID; CHOWN/FOWNER/DAC_OVERRIDE are
+    # used to fix permissions on the data volume on first run. Everything
+    # else (NET_RAW, NET_ADMIN, SYS_*) is dropped.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
 
   # --- Run database migrations ---
   migrate:
@@ -50,6 +66,10 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-doable}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-doable}
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   # --- API server (Hono) ---
   api:
@@ -86,7 +106,12 @@ services:
       # reachable. Host-side isolation is provided by the ports mapping
       # "127.0.0.1:4000:4000" — equivalent security to bare-metal 127.0.0.1.
       API_HOST: 0.0.0.0
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      # Required — the API refuses to start without an explicit origin allowlist.
+      # setup.sh writes this. An operator who bypasses setup.sh and `docker compose
+      # up`s with a stale .env would otherwise inherit a localhost fallback that
+      # opens the API to any process on the operator's workstation listening on
+      # :3000.
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required — run ./deployment/docker/setup.sh, or set it to the public origin(s) e.g. "https://app.example.com"}
       WS_PORT: 4001
       WS_HOST: 0.0.0.0
       INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required — run ./deployment/docker/setup.sh to generate}
@@ -114,9 +139,28 @@ services:
       # so QA boxes must ALSO set NODE_ENV=development (or staging) in the
       # .env. The passthrough is here so admins don't have to edit compose.
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
+      # AI subprocess sandbox. `dev` enables seccomp+bwrap jailing of every
+      # spawn invoked from the AI build pipeline (install_package, npm/pnpm,
+      # vite dev-server) while keeping the dev-friendly resource limits.
+      # Operators on multi-tenant boxes should bump this to `staging` or
+      # `prod`. Set DOABLE_HARDENING=off to disable jailing entirely (not
+      # recommended for any internet-facing install).
+      DOABLE_HARDENING_LEVEL: ${DOABLE_HARDENING_LEVEL:-dev}
+      # Route install_package and the per-project npm spawns through
+      # jailedSpawn instead of the legacy raw-spawn path. Defaults on.
+      DOABLE_SANDBOX_INSTALL: ${DOABLE_SANDBOX_INSTALL:-1}
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails
+    # bwrap (installed in the api image) needs CAP_SYS_ADMIN inside its own
+    # user-ns to set up the project sandbox mount tree; allow it explicitly
+    # while dropping everything else.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN
 
   # --- WebSocket server (Yjs CRDT) ---
   ws:
@@ -158,6 +202,10 @@ services:
       DOABLE_PROJECTS_DIR: /app/services/ws/projects
     volumes:
       - ws_projects:/app/services/ws/projects
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   # --- Web frontend (Next.js) ---
   web:
@@ -181,6 +229,10 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: 3000
       NODE_ENV: ${NODE_ENV:-production}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
 volumes:
   postgres_data:
