@@ -80,17 +80,108 @@ for arg in "$@"; do
   esac
 done
 
+# ─── OS detection ─────────────────────────────────────────────────────────────
+# We support three deployment shapes:
+#   - linux-debian / linux-rhel: full nginx-fronted https://${host} install
+#     with apt/dnf + systemctl + ufw + mkcert-issued trusted cert. This is
+#     the original path; production VPS installs are always Linux.
+#   - macos / windows-bash (Git Bash, MSYS): Docker Desktop is the docker
+#     daemon, and we DO NOT install host-side nginx (no apt/brew nginx
+#     dance, no certbot, no systemctl, no ufw — none of which exist on
+#     Mac or native Windows in a reliable cross-OS way). Instead the docker
+#     stack binds 127.0.0.1:{3000,4000,4001} and the browser opens
+#     http://localhost:3000 directly. HTTP on localhost is treated as a
+#     secure context by every modern browser so service workers,
+#     crypto.subtle, getUserMedia etc. all still work. Zero cert dance.
+#   - WSL2 on Windows: treated as linux-debian. The browser is on the
+#     Windows side though, so cert trust still routes through
+#     powershell.exe interop (handled inside install_localhost_trust).
+case "$(uname -s)" in
+  Linux)
+    if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null || [ -n "${WSL_DISTRO_NAME:-}" ]; then
+      OS_FAMILY="linux-wsl"
+    elif [ -f /etc/debian_version ]; then
+      OS_FAMILY="linux-debian"
+    elif [ -f /etc/redhat-release ] || [ -f /etc/fedora-release ] || [ -f /etc/SuSE-release ]; then
+      OS_FAMILY="linux-rhel"
+    else
+      OS_FAMILY="linux-unknown"
+    fi
+    ;;
+  Darwin)
+    OS_FAMILY="macos"
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    OS_FAMILY="windows-bash"
+    ;;
+  *)
+    OS_FAMILY="unknown"
+    ;;
+esac
+info "Detected OS family: ${OS_FAMILY}"
+
+# nginx mode: only on Linux (where apt/dnf + systemctl + ufw exist). On
+# Mac and native Windows we run a no-nginx flow with direct docker port
+# binding + HTTP localhost (browser-secure context, no cert needed).
+case "$OS_FAMILY" in
+  linux-debian|linux-rhel|linux-wsl|linux-unknown) USE_NGINX=true ;;
+  *)                                               USE_NGINX=false ;;
+esac
+
+# Package-manager + service-manager shims — kept thin and only invoked
+# from the USE_NGINX=true paths, so the no-nginx branch never has to
+# care which command exists.
+pkg_install() {
+  case "$OS_FAMILY" in
+    linux-debian|linux-wsl) DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" ;;
+    linux-rhel)             dnf install -y -q "$@" ;;
+    linux-unknown)          error "pkg_install: unknown Linux distro, install '$*' manually"; return 1 ;;
+    *)                      error "pkg_install: not supported on $OS_FAMILY"; return 1 ;;
+  esac
+}
+pkg_update() {
+  case "$OS_FAMILY" in
+    linux-debian|linux-wsl) DEBIAN_FRONTEND=noninteractive apt-get update -qq ;;
+    linux-rhel)             dnf check-update -y -q || true ;;
+    *)                      : ;;
+  esac
+}
+service_enable_start() {
+  command -v systemctl &>/dev/null && systemctl enable --now "$1" 2>/dev/null
+}
+service_stop_disable() {
+  if command -v systemctl &>/dev/null && systemctl is-active --quiet "$1"; then
+    systemctl stop "$1" 2>/dev/null || true
+    systemctl disable "$1" 2>/dev/null || true
+  fi
+}
+service_reload_nginx() {
+  command -v systemctl &>/dev/null && systemctl reload-or-restart nginx
+}
+
 # ─── Check prerequisites ─────────────────────────────────────────────────────
 info "Checking prerequisites..."
 
 # Auto-install docker + compose-plugin on debian/ubuntu when missing.
 # Keeps the new-user one-liner truly one-line on a fresh OS — no detour to
 # docs.docker.com/install before being able to run setup.sh.
+# On macos / windows-bash docker is provided by Docker Desktop and is
+# expected to be already installed.
 if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null; then
   if [ "${DOABLE_SKIP_DOCKER_INSTALL:-0}" = "1" ]; then
     error "Docker (or compose plugin) is not installed and DOABLE_SKIP_DOCKER_INSTALL=1 — refusing auto-install."
     exit 1
   fi
+  case "$OS_FAMILY" in
+    macos)
+      error "Docker is not installed. Install Docker Desktop for Mac: https://docs.docker.com/desktop/install/mac-install/"
+      exit 1
+      ;;
+    windows-bash)
+      error "Docker is not installed. Install Docker Desktop for Windows: https://docs.docker.com/desktop/install/windows-install/"
+      exit 1
+      ;;
+  esac
   if [ "$(id -u)" -ne 0 ]; then
     error "Docker is not installed and this script is not running as root — re-run with sudo or install Docker first (https://docs.docker.com/engine/install/)."
     exit 1
@@ -203,10 +294,24 @@ else
 fi
 
 # ─── URL variables (used for .env and final output) ─────────────────────────
-API_URL="https://${LISTEN_HOST}/api"
-WS_URL="wss://${LISTEN_HOST}/ws"
-APP_URL="https://${LISTEN_HOST}"
-CORS="https://${LISTEN_HOST}"
+# Two URL shapes depending on whether we'll front the stack with nginx:
+#   - USE_NGINX (Linux):  https://${host}/api  +  wss://${host}/ws  + https://${host}
+#     (nginx terminates TLS + path-routes /api/* /ws /preview/* to docker ports)
+#   - !USE_NGINX (Mac, native Windows): http://${host}:4000  +  ws://${host}:4001
+#     + http://${host}:3000 — direct docker port binds, no nginx, no cert.
+#     HTTP on localhost is a secure context in every modern browser so
+#     service workers / crypto.subtle / getUserMedia all still work.
+if [ "$USE_NGINX" = "true" ]; then
+  API_URL="https://${LISTEN_HOST}/api"
+  WS_URL="wss://${LISTEN_HOST}/ws"
+  APP_URL="https://${LISTEN_HOST}"
+  CORS="https://${LISTEN_HOST}"
+else
+  API_URL="http://${LISTEN_HOST}:4000"
+  WS_URL="ws://${LISTEN_HOST}:4001"
+  APP_URL="http://${LISTEN_HOST}:3000"
+  CORS="http://${LISTEN_HOST}:3000"
+fi
 
 # ─── Generate .env ────────────────────────────────────────────────────────────
 if [ -f "$ENV_FILE" ]; then
@@ -488,7 +593,16 @@ PSQL
 fi
 
 # ─── Set up nginx + SSL ──────────────────────────────────────────────────────
-# nginx is ALWAYS set up. Services never face the network directly.
+# On Linux (incl. WSL) nginx fronts the docker stack on :443 with TLS. On
+# Mac and native Windows we skip the entire nginx/cert/ufw layer — Docker
+# Desktop provides the daemon, the docker stack binds 127.0.0.1:{3000,
+# 4000,4001} directly, and the browser opens http://localhost:3000 (a
+# secure context per the WHATWG spec — service workers, crypto.subtle,
+# getUserMedia all still work).
+if [ "$USE_NGINX" != "true" ]; then
+  info "Skipping nginx + cert setup (${OS_FAMILY}) — docker stack will bind ports directly on 127.0.0.1."
+  info "  Browser entry point will be ${APP_URL}."
+else
 
 info "Setting up nginx reverse proxy for ${LISTEN_HOST}..."
 
@@ -524,11 +638,12 @@ if systemctl is-active --quiet postgresql; then
   systemctl disable postgresql 2>/dev/null || true
 fi
 
-# Install nginx if not present
+# Install nginx if not present (Linux only — non-Linux paths skipped above
+# inside the USE_NGINX guard).
 if ! command -v nginx &>/dev/null; then
   info "Installing nginx..."
-  apt-get update -qq
-  apt-get install -y -qq nginx
+  pkg_update
+  pkg_install nginx
   ok "Installed nginx"
 fi
 
@@ -540,7 +655,7 @@ if [ "$MODE" = "domain" ] && [ "$SKIP_SSL" = false ]; then
   # Let's Encrypt for public domains
   if ! command -v certbot &>/dev/null; then
     info "Installing certbot..."
-    apt-get install -y -qq certbot python3-certbot-nginx
+    pkg_install certbot python3-certbot-nginx
     ok "Installed certbot"
   fi
 
@@ -853,6 +968,8 @@ if command -v ufw &>/dev/null; then
   ufw --force enable >/dev/null 2>&1 || true
   ok "Firewall: ports 22, 80, 443 open"
 fi
+
+fi  # end USE_NGINX block (nginx + cert + ufw skipped on Mac / native Windows)
 
 # ─── Build (or pull) and start ────────────────────────────────────────────────
 echo ""
