@@ -35,6 +35,11 @@
 #   --wildcard-hostname <h>
 #                       For --layout infix: the wildcard CNAME hostname
 #                       (e.g. '*.dev.doable.me'). Defaults to '*.<domain>'.
+#   --publish-prefix <s>
+#                       For --layout prefix: the published-site subdomain
+#                       prefix (e.g. 'dev-'). Defaults to whatever the
+#                       existing .env has, or '<env>-' derived from a
+#                       multi-level DOMAIN, or empty for an apex DOMAIN.
 #   --no-rebuild        Skip apps/web rebuild (only env rewrite + service
 #                       restart). USE WITH CAUTION — the running web
 #                       bundle still has the OLD NEXT_PUBLIC_* baked in.
@@ -65,6 +70,7 @@ API_DOMAIN="${API_DOMAIN:-}"
 WS_DOMAIN="${WS_DOMAIN:-}"
 PUBLISH_LAYOUT="${PUBLISH_LAYOUT:-}"
 WILDCARD_HOSTNAME="${WILDCARD_HOSTNAME:-}"
+PUBLISH_PREFIX_OVERRIDE="${PUBLISH_PREFIX:-}"
 SKIP_REBUILD=0
 SKIP_RESTART=0
 DRY_RUN=0
@@ -76,11 +82,12 @@ while [ $# -gt 0 ]; do
     --install-dir)        INSTALL_DIR="$2"; shift 2 ;;
     --layout)             PUBLISH_LAYOUT="$2"; shift 2 ;;
     --wildcard-hostname)  WILDCARD_HOSTNAME="$2"; shift 2 ;;
+    --publish-prefix)     PUBLISH_PREFIX_OVERRIDE="$2"; shift 2 ;;
     --no-rebuild)         SKIP_REBUILD=1; shift ;;
     --no-restart)         SKIP_RESTART=1; shift ;;
     --dry-run)            DRY_RUN=1; shift ;;
     -h|--help)
-      sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,58p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) err "Unknown arg: $1" ;;
@@ -127,6 +134,10 @@ esac
 if [[ "$PUBLISH_LAYOUT" == "infix" ]]; then
   WILDCARD_HOSTNAME="${WILDCARD_HOSTNAME:-*.${DOMAIN}}"
   [[ "$WILDCARD_HOSTNAME" == \*.* ]] || err "--wildcard-hostname must start with '*.' (got '${WILDCARD_HOSTNAME}')"
+  # Whitelist hostname chars (defense-in-depth before SQL/cloudflared writes).
+  if [[ ! "$WILDCARD_HOSTNAME" =~ ^\*\.[a-z0-9.-]+$ ]]; then
+    err "--wildcard-hostname must be '*.' + lowercase letters/digits/dots/hyphens only (got '${WILDCARD_HOSTNAME}')"
+  fi
   WILDCARD_BARE="${WILDCARD_HOSTNAME#\*.}"
   if [[ "$WILDCARD_BARE" != "$DOMAIN" && "$WILDCARD_BARE" != "$ZONE_APEX" && "$WILDCARD_BARE" != *".${ZONE_APEX}" ]]; then
     err "--wildcard-hostname '${WILDCARD_HOSTNAME}' must be inside zone '${ZONE_APEX}'"
@@ -141,8 +152,22 @@ else
   # Prefix mode: DOABLE_DOMAIN is the zone, so <prefix><slug>.<zone> resolves
   # under the single-level Universal SSL wildcard.
   DOABLE_APEX="${ZONE_APEX}"
-  # Preserve any existing PUBLISH_SUBDOMAIN_PREFIX in .env on re-runs.
-  NEW_PUBLISH_PREFIX=$(grep -oP "(?<=^PUBLISH_SUBDOMAIN_PREFIX=).+" "${INSTALL_DIR}/.env" 2>/dev/null | head -1 || true)
+  # Precedence: --publish-prefix > PUBLISH_PREFIX env > existing .env value
+  # > derived default. Derived default is '<env>-' for multi-level DOMAINs
+  # (so dev.doable.me → dev-) and empty for apex DOMAINs.
+  if [ -n "$PUBLISH_PREFIX_OVERRIDE" ]; then
+    NEW_PUBLISH_PREFIX="$PUBLISH_PREFIX_OVERRIDE"
+  else
+    EXISTING_PREFIX=$(grep -oP "(?<=^PUBLISH_SUBDOMAIN_PREFIX=).+" "${INSTALL_DIR}/.env" 2>/dev/null | head -1 || true)
+    if [ -n "$EXISTING_PREFIX" ]; then
+      NEW_PUBLISH_PREFIX="$EXISTING_PREFIX"
+    elif [ "$DOMAIN_LABEL_COUNT" -gt 2 ]; then
+      NEW_PUBLISH_PREFIX="${ENV_PREFIX}-"
+      info "No PUBLISH_SUBDOMAIN_PREFIX in .env — defaulting to '${NEW_PUBLISH_PREFIX}' from multi-level DOMAIN. Override with --publish-prefix if you want a different value."
+    else
+      NEW_PUBLISH_PREFIX=""
+    fi
+  fi
   info "Publish layout: prefix '${NEW_PUBLISH_PREFIX}' → https://${NEW_PUBLISH_PREFIX}<slug>.${ZONE_APEX}"
 fi
 
@@ -156,6 +181,7 @@ declare -A NEW_VALS=(
   [DOABLE_DOMAIN]="${DOABLE_APEX}"
   [PUBLISH_LAYOUT]="${PUBLISH_LAYOUT}"
   [PUBLISH_SUBDOMAIN_PREFIX]="${NEW_PUBLISH_PREFIX}"
+  [WILDCARD_HOSTNAME]="${WILDCARD_HOSTNAME}"
   [GOOGLE_REDIRECT_URI]="https://${API_DOMAIN}/auth/google/callback"
   [GITHUB_REDIRECT_URI]="https://${API_DOMAIN}/auth/github/callback"
   [GITHUB_COPILOT_REDIRECT_URI]="https://${API_DOMAIN}/auth/github/copilot/callback"

@@ -208,21 +208,7 @@ else
     DEFAULT_WILDCARD="*.${DOMAIN}"
     read -rp "Wildcard hostname for published sites (must be inside zone) [${DEFAULT_WILDCARD}]: " WILDCARD_HOSTNAME
     WILDCARD_HOSTNAME="${WILDCARD_HOSTNAME:-$DEFAULT_WILDCARD}"
-    [[ "$WILDCARD_HOSTNAME" == \*.* ]] || err "WILDCARD_HOSTNAME must start with '*.' (got '${WILDCARD_HOSTNAME}')"
-    WILDCARD_BARE="${WILDCARD_HOSTNAME#\*.}"
-    # Suffix-match against either DOMAIN or its zone so '*.doable.me' is valid
-    # for DOMAIN=dev.doable.me too (operator may want zone-wide wildcard).
-    DOMAIN_LBL_CHECK=$(echo "$DOMAIN" | tr '.' '\n' | wc -l)
-    if [ "$DOMAIN_LBL_CHECK" -gt 2 ]; then
-      DOMAIN_ZONE_CHECK="${DOMAIN#*.}"
-    else
-      DOMAIN_ZONE_CHECK="${DOMAIN}"
-    fi
-    if [[ "$WILDCARD_BARE" != "$DOMAIN" && "$WILDCARD_BARE" != "$DOMAIN_ZONE_CHECK" && "$WILDCARD_BARE" != *".${DOMAIN_ZONE_CHECK}" ]]; then
-      err "WILDCARD_HOSTNAME '${WILDCARD_HOSTNAME}' must be inside zone '${DOMAIN_ZONE_CHECK}'"
-    fi
     PUBLISH_PREFIX=""
-    info "infix layout — published sites at https://<slug>.${WILDCARD_BARE} (requires Cloudflare ACM on zone)"
   else
     read -rp "Publish subdomain prefix (e.g., do- for prod, dev- for dev) [do-]: " PUBLISH_PREFIX
     PUBLISH_PREFIX="${PUBLISH_PREFIX:-do-}"
@@ -252,6 +238,42 @@ else
   echo "── Optional: Stripe (press Enter to skip) ──"
   read -rp "Stripe Secret Key: " STRIPE_SECRET_KEY
   read -rp "Stripe Webhook Secret: " STRIPE_WEBHOOK_SECRET
+fi
+
+# ── Validate PUBLISH_LAYOUT + WILDCARD_HOSTNAME (both paths converge here) ──
+# Runs for interactive, preseed, and non-interactive env-only callers so a
+# malformed value can't reach the SQL UPSERT or cloudflared config below.
+PUBLISH_LAYOUT="${PUBLISH_LAYOUT:-prefix}"
+case "$PUBLISH_LAYOUT" in
+  prefix|infix) ;;
+  *) err "PUBLISH_LAYOUT must be 'prefix' or 'infix' (got '${PUBLISH_LAYOUT}')" ;;
+esac
+if [[ "$PUBLISH_LAYOUT" == "infix" ]]; then
+  # Non-interactive callers that set PUBLISH_LAYOUT=infix without WILDCARD_HOSTNAME
+  # get *.${DOMAIN} as a sensible default — matches what the interactive prompt offers.
+  WILDCARD_HOSTNAME="${WILDCARD_HOSTNAME:-*.${DOMAIN}}"
+  [[ "$WILDCARD_HOSTNAME" == \*.* ]] || err "WILDCARD_HOSTNAME must start with '*.' (got '${WILDCARD_HOSTNAME}')"
+  # Whitelist: hostnames are lowercase a-z, 0-9, hyphens, dots, plus the
+  # leading '*.'. Anything else (quotes, semicolons, $, backticks, slashes,
+  # spaces) is rejected — defense-in-depth before the value reaches the SQL
+  # UPSERT, cloudflared config, or shell interpolation downstream.
+  if [[ ! "$WILDCARD_HOSTNAME" =~ ^\*\.[a-z0-9.-]+$ ]]; then
+    err "WILDCARD_HOSTNAME must be '*.' + lowercase letters/digits/dots/hyphens only (got '${WILDCARD_HOSTNAME}')"
+  fi
+  WILDCARD_BARE="${WILDCARD_HOSTNAME#\*.}"
+  # Suffix-match against either DOMAIN or its zone so '*.doable.me' is valid
+  # for DOMAIN=dev.doable.me too (operator may want zone-wide wildcard).
+  DOMAIN_LABEL_COUNT=$(echo "$DOMAIN" | tr '.' '\n' | wc -l)
+  if [ "$DOMAIN_LABEL_COUNT" -gt 2 ]; then
+    DOMAIN_ZONE_CHECK="${DOMAIN#*.}"
+  else
+    DOMAIN_ZONE_CHECK="${DOMAIN}"
+  fi
+  if [[ "$WILDCARD_BARE" != "$DOMAIN" && "$WILDCARD_BARE" != "$DOMAIN_ZONE_CHECK" && "$WILDCARD_BARE" != *".${DOMAIN_ZONE_CHECK}" ]]; then
+    err "WILDCARD_HOSTNAME '${WILDCARD_HOSTNAME}' must be inside zone '${DOMAIN_ZONE_CHECK}'"
+  fi
+  PUBLISH_PREFIX=""
+  info "infix layout — published sites at https://<slug>.${WILDCARD_BARE} (requires Cloudflare ACM on zone)"
 fi
 
 # ── Dashed-hostname rewrite for multi-level DOMAINs ──
