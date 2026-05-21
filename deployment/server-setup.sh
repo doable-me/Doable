@@ -1435,6 +1435,68 @@ if [ "$NO_TUNNEL" = "1" ]; then
     info "Self-signed cert already present at /etc/caddy/selfsigned.{crt,key} — reusing"
   fi
 
+  # ─── Auto-trust the cert on the host OS (NO_TUNNEL single-host modes) ────
+  # Same cross-platform auto-trust as deployment/docker/setup.sh's
+  # install_localhost_trust(). Zero manual cert install: after this block
+  # https://${HOST} loads in the browser on the same machine without the
+  # "your connection is not private" warning.
+  install_localhost_trust_baremetal() {
+    local cert="/etc/caddy/selfsigned.crt"
+    [ -f "$cert" ] || return 0
+    local is_wsl=0
+    if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
+       || [ -n "${WSL_DISTRO_NAME:-}" ] \
+       || [ -f /proc/sys/fs/binfmt_misc/WSLInterop ]; then
+      is_wsl=1
+    fi
+
+    if [ "$is_wsl" = "1" ] && command -v powershell.exe &>/dev/null; then
+      info "WSL detected — installing trust into Windows CurrentUser\\Root + Chrome policy..."
+      local win_cert
+      win_cert="$(wslpath -w "$cert" 2>/dev/null || echo "$cert")"
+      powershell.exe -NoProfile -Command "
+        \$b64 = (Get-Content -Raw -LiteralPath '$win_cert') -replace '-----[A-Z ]+-----','' -replace '\\s','';
+        \$bytes = [Convert]::FromBase64String(\$b64);
+        \$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(,\$bytes);
+        \$store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root','CurrentUser');
+        \$store.Open('ReadWrite'); \$store.Add(\$cert); \$store.Close();
+        \$path = 'HKCU:\\Software\\Policies\\Google\\Chrome';
+        if (-not (Test-Path \$path)) { New-Item -Path \$path -Force | Out-Null };
+        Set-ItemProperty -Path \$path -Name 'ChromeRootStoreEnabled' -Value 0 -Type DWord -Force;
+        Write-Output 'WIN_TRUST_OK'
+      " 2>&1 | grep -q WIN_TRUST_OK \
+        && ok "Windows trust + Chrome policy installed (restart Chrome to pick up policy)" \
+        || warn "Windows trust install failed — see ${INSTALL_DIR}/cert-install-instructions.md for manual steps"
+    fi
+
+    if [ "$(uname -s)" = "Darwin" ]; then
+      info "macOS detected — installing trust into System keychain (sudo prompt expected)..."
+      sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$cert" 2>/dev/null \
+        && ok "macOS trust installed" \
+        || warn "macOS trust install failed — see ${INSTALL_DIR}/cert-install-instructions.md"
+    fi
+
+    if [ "$(uname -s)" = "Linux" ] && [ "$is_wsl" = "0" ]; then
+      info "Linux detected — installing trust into OS CA store..."
+      if [ -d /etc/pki/ca-trust/source/anchors ]; then
+        cp "$cert" /etc/pki/ca-trust/source/anchors/doable-localhost.crt
+        update-ca-trust 2>/dev/null && ok "Linux RHEL/Fedora CA trust installed"
+      elif [ -d /usr/local/share/ca-certificates ]; then
+        cp "$cert" /usr/local/share/ca-certificates/doable-localhost.crt
+        update-ca-certificates 2>/dev/null >/dev/null && ok "Linux Debian/Ubuntu CA trust installed"
+      fi
+      if command -v certutil &>/dev/null; then
+        local nssdb
+        for nssdb in "${HOME}/.pki/nssdb" "${SUDO_USER:+/home/${SUDO_USER}/.pki/nssdb}"; do
+          [ -d "$nssdb" ] || continue
+          certutil -A -d "sql:${nssdb}" -t "C,," -n "doable-localhost" -i "$cert" 2>/dev/null \
+            && ok "NSS trust installed at ${nssdb} (Chrome/Chromium)"
+        done
+      fi
+    fi
+  }
+  install_localhost_trust_baremetal
+
   cat > /etc/caddy/Caddyfile << CADDYEOF
 {
     auto_https off
