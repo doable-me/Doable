@@ -37,6 +37,7 @@ import {
   STARTUP_TIMEOUT_MS,
 } from "./dev-server-core.js";
 import { emitPreviewStartFailed } from "./preview-failure-trace.js";
+import { ensureDependencies } from "./file-manager.js";
 
 // Keyed by projectId → Set<pkgName>. Deduplicates auto-install attempts so
 // duplicate `Could not resolve "<pkg>"` stderr chunks don't race-spawn npm.
@@ -302,6 +303,26 @@ async function doStartDevServer(
   projectId: string,
   opts?: StartDevServerOptions,
 ): Promise<{ url: string; port: number }> {
+  // Pre-spawn build-tool re-check. Every other caller that gets here
+  // (chat auto-start, web POST /scaffold, dev-server-routes, restartDevServer,
+  // preview-proxy fallback) has its own ensureDependencies call upstream, but
+  // they don't help when two of those paths race against the same project's
+  // first scaffold — e.g. the chat's createProject and the web's POST /scaffold
+  // both push into the install pipeline, the first install finishes mid-stream
+  // while the second is still extracting, and whoever calls startDevServer
+  // first hits a `node_modules/vite/` dir that has a package.json but no
+  // bin/vite.js yet. Doing the check here makes startDevServer the single
+  // chokepoint that every spawn must pass through, and ensureDependencies
+  // is cheap (just stat()s) when vite is already resolvable.
+  try {
+    await ensureDependencies(projectId);
+  } catch (err) {
+    console.warn(
+      `[DevServer] pre-spawn ensureDependencies failed for ${projectId}:`,
+      err,
+    );
+  }
+
   const [project] = await sql<{ framework_id: string }[]>`
     SELECT framework_id FROM projects WHERE id = ${projectId}
   `;
