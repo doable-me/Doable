@@ -139,28 +139,37 @@ services:
       # so QA boxes must ALSO set NODE_ENV=development (or staging) in the
       # .env. The passthrough is here so admins don't have to edit compose.
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
-      # AI subprocess sandbox. `dev` enables seccomp+bwrap jailing of every
-      # spawn invoked from the AI build pipeline (install_package, npm/pnpm,
-      # vite dev-server) while keeping the dev-friendly resource limits.
-      # Operators on multi-tenant boxes should bump this to `staging` or
-      # `prod`. Set DOABLE_HARDENING=off to disable jailing entirely (not
-      # recommended for any internet-facing install).
-      DOABLE_HARDENING_LEVEL: ${DOABLE_HARDENING_LEVEL:-dev}
-      # Route install_package and the per-project npm spawns through
-      # jailedSpawn instead of the legacy raw-spawn path. Defaults on.
-      DOABLE_SANDBOX_INSTALL: ${DOABLE_SANDBOX_INSTALL:-1}
+      # AI subprocess sandbox (bubblewrap-backed jailedSpawn + vault.spawn).
+      # The bwrap binary is installed in the api image, but enabling jailing
+      # under Docker requires the container to also have `seccomp=unconfined`
+      # because bwrap's `mount()` syscalls are blocked by Docker's default
+      # seccomp profile even with CAP_SYS_ADMIN — failures look like
+      #   bwrap: Failed to make / slave: Permission denied
+      # and vault.spawn-wrapped vite hangs silently until the 90s readiness
+      # timeout.
+      #
+      # OOB default = `off` everywhere so the api container can stay locked
+      # down (cap_drop ALL + no-new-privileges + default seccomp). Two env
+      # vars unfortunately control different layers and BOTH must be set:
+      #   DOABLE_HARDENING        = builder.ts + vite-jail.ts (full|relaxed|off)
+      #   DOABLE_HARDENING_LEVEL  = sandbox/orchestrator.ts  (off|dev|staging|prod)
+      # Multi-tenant operators who want AI-process isolation should layer a
+      # docker-compose.sandbox.yml override that flips both to on AND adds
+      # `cap_add: [SYS_ADMIN]` + `security_opt: [seccomp=unconfined]`.
+      DOABLE_HARDENING: ${DOABLE_HARDENING:-off}
+      DOABLE_HARDENING_LEVEL: ${DOABLE_HARDENING_LEVEL:-off}
+      DOABLE_SANDBOX_INSTALL: ${DOABLE_SANDBOX_INSTALL:-0}
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails
-    # bwrap (installed in the api image) needs CAP_SYS_ADMIN inside its own
-    # user-ns to set up the project sandbox mount tree; allow it explicitly
-    # while dropping everything else.
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    cap_add:
-      - SYS_ADMIN
+    # NOTE: to enable the bwrap-backed AI sandbox above, the operator must
+    # add: cap_add: [SYS_ADMIN] AND security_opt: [seccomp=unconfined].
+    # Doing that opens the api container's syscall surface; only do it on
+    # boxes that actually need multi-tenant AI subprocess isolation.
 
   # --- WebSocket server (Yjs CRDT) ---
   ws:

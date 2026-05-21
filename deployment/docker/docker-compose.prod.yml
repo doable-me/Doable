@@ -132,9 +132,12 @@ services:
       INSTALL_BOOTSTRAP_TOKEN: ${INSTALL_BOOTSTRAP_TOKEN:-}
       INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT: ${INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT:-}
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
-      # AI subprocess sandbox — see docker-compose.yml for the full rationale.
-      DOABLE_HARDENING_LEVEL: ${DOABLE_HARDENING_LEVEL:-dev}
-      DOABLE_SANDBOX_INSTALL: ${DOABLE_SANDBOX_INSTALL:-1}
+      # AI subprocess sandbox — see docker-compose.yml for the full rationale
+      # on why both env vars must be set in lockstep and why the OOB default
+      # is `off` (bwrap's mount() is blocked by Docker's default seccomp).
+      DOABLE_HARDENING: ${DOABLE_HARDENING:-off}
+      DOABLE_HARDENING_LEVEL: ${DOABLE_HARDENING_LEVEL:-off}
+      DOABLE_SANDBOX_INSTALL: ${DOABLE_SANDBOX_INSTALL:-0}
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails
@@ -142,8 +145,6 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    cap_add:
-      - SYS_ADMIN
 
   # --- WebSocket server (Yjs CRDT) ---
   ws:
