@@ -57,6 +57,15 @@
                 reverse_proxy api:4000
         }
 
+        # ─── Consolidated GitHub OAuth callbacks ────────────────────────────
+        # api server registers /oauth/github/{login,copilot,repo}/callback so
+        # a single GitHub OAuth App with parent callback URL
+        # https://${DOABLE_SITE}/oauth/github/ covers every flow. Without
+        # this route the catch-all below would forward to web (404).
+        handle /oauth/* {
+                reverse_proxy api:4000
+        }
+
         # ─── Preview iframes for AI-built apps ──────────────────────────────
         # api spawns per-project vite dev servers and proxies /preview/<id>/
         # to them, preserving paths so vite's relative URLs resolve.

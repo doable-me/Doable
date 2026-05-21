@@ -400,8 +400,7 @@ reference, the pattern is:
 | Provider | Callback URL |
 |---|---|
 | Google | `https://app.<your-domain>/api/auth/google/callback` |
-| GitHub (login) | `https://app.<your-domain>/api/auth/github/callback` |
-| GitHub (repo access) | `https://app.<your-domain>/api/auth/github/repo/callback` |
+| GitHub (one OAuth App) | `https://app.<your-domain>/api/oauth/github/` ← register the parent; GitHub's subdir-match covers `login`, `copilot`, and `repo` sub-paths |
 | Stripe webhooks | `https://app.<your-domain>/api/billing/stripe/webhook` |
 
 All API routes live under `/api/*` on the same hostname as the web

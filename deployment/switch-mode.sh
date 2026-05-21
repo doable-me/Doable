@@ -82,9 +82,9 @@ if [ "$MODE" = "tunnel" ]; then
   WS_URL="wss://${WS_HOST_PUB}"
   APP_URL="https://${WEB_HOST}"
   G_REDIR="https://${API_HOST}/auth/google/callback"
-  GH_REDIR="https://${API_HOST}/auth/github/callback"
-  GH_COP_REDIR="https://${API_HOST}/auth/github/copilot/callback"
-  GH_REPO_REDIR="https://${API_HOST}/auth/github/repo/callback"
+  GH_REDIR="https://${API_HOST}/oauth/github/login/callback"
+  GH_COP_REDIR="https://${API_HOST}/oauth/github/copilot/callback"
+  GH_REPO_REDIR="https://${API_HOST}/oauth/github/repo/callback"
 elif [ "$MODE" = "no-tunnel" ]; then
   HOST="${HOST:-}"
   [ -n "$HOST" ] || { echo "no-tunnel mode requires HOST env" >&2; exit 1; }
@@ -92,9 +92,9 @@ elif [ "$MODE" = "no-tunnel" ]; then
   WS_URL="wss://${HOST}"
   APP_URL="https://${HOST}"
   G_REDIR="https://${HOST}/auth/google/callback"
-  GH_REDIR="https://${HOST}/auth/github/callback"
-  GH_COP_REDIR="https://${HOST}/auth/github/copilot/callback"
-  GH_REPO_REDIR="https://${HOST}/auth/github/repo/callback"
+  GH_REDIR="https://${HOST}/oauth/github/login/callback"
+  GH_COP_REDIR="https://${HOST}/oauth/github/copilot/callback"
+  GH_REPO_REDIR="https://${HOST}/oauth/github/repo/callback"
 else  # localhost
   API_PORT="${API_PORT:-4000}"
   WS_PORT="${WS_PORT:-4001}"
@@ -103,9 +103,9 @@ else  # localhost
   WS_URL="ws://localhost:${WS_PORT}"
   APP_URL="http://localhost:${WEB_PORT}"
   G_REDIR="${API_URL}/auth/google/callback"
-  GH_REDIR="${API_URL}/auth/github/callback"
-  GH_COP_REDIR="${API_URL}/auth/github/copilot/callback"
-  GH_REPO_REDIR="${API_URL}/auth/github/repo/callback"
+  GH_REDIR="${API_URL}/oauth/github/login/callback"
+  GH_COP_REDIR="${API_URL}/oauth/github/copilot/callback"
+  GH_REPO_REDIR="${API_URL}/oauth/github/repo/callback"
 fi
 
 # Patch root .env

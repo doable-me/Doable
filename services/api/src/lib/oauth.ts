@@ -1,10 +1,38 @@
 // ─── GitHub OAuth ──────────────────────────────────────────
+//
+// All three first-party GitHub flows (sign-in, Copilot, repo) live under one
+// parent path `/oauth/github/{login,copilot,repo}/callback` so a single GitHub
+// OAuth App registered with callback `https://${host}/oauth/github/` covers
+// every flow via GitHub's subdirectory-match rule. The integrations layer at
+// `services/api/src/integrations/oauth2.ts` is intentionally separate — it has
+// its own per-integration oauth_apps table + OAUTH_REDIRECT_URI and remains
+// untouched by this refactor.
+//
+// Credentials resolve at call time, not module load:
+//   process.env.GITHUB_CLIENT_ID  →  platform_config "setup.github_client_id"
+// This lets the setup wizard's Step 3 save take effect immediately without an
+// api container restart (previously: wizard saved to platform_config but
+// lib/oauth.ts read only from env, so saves had no runtime effect).
 
-const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID ?? "";
-const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET ?? "";
+import { getConfig, getEncryptedConfig } from "./platformConfig";
+
+async function getGitHubClientId(): Promise<string> {
+  const fromEnv = process.env.GITHUB_CLIENT_ID;
+  if (fromEnv) return fromEnv;
+  const fromDb = await getConfig("setup.github_client_id");
+  return typeof fromDb === "string" ? fromDb : "";
+}
+
+async function getGitHubClientSecret(): Promise<string> {
+  const fromEnv = process.env.GITHUB_CLIENT_SECRET;
+  if (fromEnv) return fromEnv;
+  const fromDb = await getEncryptedConfig("setup.github_client_secret");
+  return fromDb ?? "";
+}
+
 const GITHUB_REDIRECT_URI =
   process.env.GITHUB_REDIRECT_URI ??
-  "http://localhost:4000/auth/github/callback";
+  "http://localhost:4000/oauth/github/login/callback";
 
 export interface GitHubUser {
   id: number;
@@ -14,9 +42,9 @@ export interface GitHubUser {
   avatar_url: string;
 }
 
-export function getGitHubAuthUrl(state?: string): string {
+export async function getGitHubAuthUrl(state?: string): Promise<string> {
   const params = new URLSearchParams({
-    client_id: GITHUB_CLIENT_ID,
+    client_id: await getGitHubClientId(),
     redirect_uri: GITHUB_REDIRECT_URI,
     scope: "read:user user:email",
     ...(state ? { state } : {}),
@@ -38,8 +66,8 @@ export async function exchangeGitHubCode(
         Accept: "application/json",
       },
       body: JSON.stringify({
-        client_id: GITHUB_CLIENT_ID,
-        client_secret: GITHUB_CLIENT_SECRET,
+        client_id: await getGitHubClientId(),
+        client_secret: await getGitHubClientSecret(),
         code,
         redirect_uri: redirectUri ?? GITHUB_REDIRECT_URI,
       }),
@@ -93,11 +121,11 @@ export async function exchangeGitHubCode(
 // ─── GitHub OAuth for Copilot Account Connection ──────────
 export const GITHUB_COPILOT_REDIRECT_URI =
   process.env.GITHUB_COPILOT_REDIRECT_URI ??
-  "http://localhost:4000/auth/github/copilot/callback";
+  "http://localhost:4000/oauth/github/copilot/callback";
 
-export function getGitHubCopilotAuthUrl(state?: string): string {
+export async function getGitHubCopilotAuthUrl(state?: string): Promise<string> {
   const params = new URLSearchParams({
-    client_id: GITHUB_CLIENT_ID,
+    client_id: await getGitHubClientId(),
     redirect_uri: GITHUB_COPILOT_REDIRECT_URI,
     scope: "read:user user:email",
     ...(state ? { state } : {}),
@@ -109,11 +137,11 @@ export function getGitHubCopilotAuthUrl(state?: string): string {
 
 export const GITHUB_REPO_REDIRECT_URI =
   process.env.GITHUB_REPO_REDIRECT_URI ??
-  "http://localhost:4000/github/repo/callback";
+  "http://localhost:4000/oauth/github/repo/callback";
 
-export function getGitHubRepoAuthUrl(state?: string): string {
+export async function getGitHubRepoAuthUrl(state?: string): Promise<string> {
   const params = new URLSearchParams({
-    client_id: GITHUB_CLIENT_ID,
+    client_id: await getGitHubClientId(),
     redirect_uri: GITHUB_REPO_REDIRECT_URI,
     scope: "repo read:user",
     ...(state ? { state } : {}),

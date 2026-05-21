@@ -99,7 +99,7 @@ function safeReturnTo(value: string | null | undefined): string | null {
 }
 
 // ─── GET /auth/github ──────────────────────────────────────
-oauthRoutes.get("/github", (c) => {
+oauthRoutes.get("/github", async (c) => {
   const returnTo = safeReturnTo(c.req.query("returnTo"));
   const state = JSON.stringify({
     type: "github",
@@ -107,7 +107,7 @@ oauthRoutes.get("/github", (c) => {
     ...(returnTo ? { returnTo } : {}),
   });
   const encodedState = Buffer.from(state).toString("base64url");
-  return c.redirect(getGitHubAuthUrl(encodedState));
+  return c.redirect(await getGitHubAuthUrl(encodedState));
 });
 
 // ─── GET /auth/github/callback ─────────────────────────────
@@ -267,17 +267,17 @@ oauthRoutes.get("/github/repo/start", async (c) => {
     nonce: crypto.randomUUID(),
   });
   const encodedState = Buffer.from(state).toString("base64url");
-  return c.redirect(getGitHubRepoAuthUrl(encodedState));
+  return c.redirect(await getGitHubRepoAuthUrl(encodedState));
 });
 
 // ─── GET /auth/github/copilot ─ Initiate Copilot account connection ─
 // No authMiddleware — this is a browser redirect, not an API call.
-oauthRoutes.get("/github/copilot", (c) => {
+oauthRoutes.get("/github/copilot", async (c) => {
   // Pass workspace info via state parameter
   const workspaceId = c.req.query("workspaceId");
   const state = JSON.stringify({ type: "copilot", workspaceId, nonce: crypto.randomUUID() });
   const encodedState = Buffer.from(state).toString("base64url");
-  return c.redirect(getGitHubCopilotAuthUrl(encodedState));
+  return c.redirect(await getGitHubCopilotAuthUrl(encodedState));
 });
 
 // ─── GET /auth/github/copilot/callback ─ Handle Copilot account OAuth ─

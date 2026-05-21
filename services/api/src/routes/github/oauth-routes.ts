@@ -15,7 +15,7 @@ export const githubOAuthRoutes = new Hono({ strict: false });
 // ─── OAuth: Initiate GitHub repo connection ─────────────────
 // Browser redirect -- no auth middleware (user clicks a link).
 // The userId is passed as a query param and embedded in the state.
-githubOAuthRoutes.get("/github/connect", (c) => {
+githubOAuthRoutes.get("/github/connect", async (c) => {
   const userId = c.req.query("userId") ?? "";
   const projectId = c.req.query("projectId") ?? "";
   const returnUrl = c.req.query("returnUrl") ?? "";
@@ -29,7 +29,7 @@ githubOAuthRoutes.get("/github/connect", (c) => {
   });
   const encodedState = Buffer.from(state).toString("base64url");
 
-  return c.redirect(getGitHubRepoAuthUrl(encodedState));
+  return c.redirect(await getGitHubRepoAuthUrl(encodedState));
 });
 
 // ─── OAuth: GitHub repo callback ────────────────────────────

@@ -46,8 +46,13 @@ const OAUTH_PROVIDERS: {
   {
     id: "github",
     label: "GitHub",
-    description: "Sign in with GitHub accounts",
-    callbackPath: "/auth/github/callback",
+    // Same OAuth App enables sign-in, GitHub Copilot as an AI provider, and
+    // repo push/pull from the editor — all three flows live under
+    // /oauth/github/{login,copilot,repo}/callback, so the parent path shown
+    // here covers every GitHub OAuth use case via GitHub's subdirectory-
+    // match rule.
+    description: "Sign-in with GitHub (also enables Copilot AI + repo push/pull)",
+    callbackPath: "/oauth/github/login/callback",
     consoleUrl: "https://github.com/settings/developers",
     consoleLabel: "Open GitHub Developer Settings",
   },

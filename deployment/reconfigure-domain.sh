@@ -183,9 +183,9 @@ declare -A NEW_VALS=(
   [PUBLISH_SUBDOMAIN_PREFIX]="${NEW_PUBLISH_PREFIX}"
   [WILDCARD_HOSTNAME]="${WILDCARD_HOSTNAME}"
   [GOOGLE_REDIRECT_URI]="https://${API_DOMAIN}/auth/google/callback"
-  [GITHUB_REDIRECT_URI]="https://${API_DOMAIN}/auth/github/callback"
-  [GITHUB_COPILOT_REDIRECT_URI]="https://${API_DOMAIN}/auth/github/copilot/callback"
-  [GITHUB_REPO_REDIRECT_URI]="https://${API_DOMAIN}/auth/github/repo/callback"
+  [GITHUB_REDIRECT_URI]="https://${API_DOMAIN}/oauth/github/login/callback"
+  [GITHUB_COPILOT_REDIRECT_URI]="https://${API_DOMAIN}/oauth/github/copilot/callback"
+  [GITHUB_REPO_REDIRECT_URI]="https://${API_DOMAIN}/oauth/github/repo/callback"
   [INTEGRATIONS_OAUTH_REDIRECT_URI]="https://${API_DOMAIN}/integrations/oauth/callback"
   [INTEGRATIONS_ENHANCED_AUTH_REDIRECT_URI]="https://${API_DOMAIN}/integrations/enhanced-auth/callback"
 )

@@ -986,9 +986,9 @@ GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
 GOOGLE_REDIRECT_URI=https://${API_DOMAIN}/auth/google/callback
 GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
 GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-GITHUB_REDIRECT_URI=https://${API_DOMAIN}/auth/github/callback
-GITHUB_COPILOT_REDIRECT_URI=https://${API_DOMAIN}/auth/github/copilot/callback
-GITHUB_REPO_REDIRECT_URI=https://${GITHUB_REPO_CALLBACK_HOST}/auth/github/repo/callback
+GITHUB_REDIRECT_URI=https://${API_DOMAIN}/oauth/github/login/callback
+GITHUB_COPILOT_REDIRECT_URI=https://${API_DOMAIN}/oauth/github/copilot/callback
+GITHUB_REPO_REDIRECT_URI=https://${GITHUB_REPO_CALLBACK_HOST}/oauth/github/repo/callback
 
 # Integration OAuth callbacks — must be HTTPS (Supabase, Google reject http://
 # non-localhost). Reusing the public API hostname avoids edge-layer mismatches.
@@ -2433,9 +2433,11 @@ cat << BANNER
       ${INSTALL_BOOTSTRAP_TOKEN}
 
   OAuth callback URLs to register in each provider's dashboard:
-      Google:        https://${API_DOMAIN}/auth/google/callback
-      GitHub login:  https://${API_DOMAIN}/auth/github/callback
-      GitHub repo:   https://${API_DOMAIN}/auth/github/repo/callback
+      Google:           https://${API_DOMAIN}/auth/google/callback
+      GitHub (one app): https://${API_DOMAIN}/oauth/github/  ← register parent only
+        (sign-in:  /oauth/github/login/callback,
+         Copilot:  /oauth/github/copilot/callback,
+         repo:     /oauth/github/repo/callback — covered by parent match)
 
   All secrets are in:  ${INSTALL_DIR}/.env  (mode 600)
 ═══════════════════════════════════════════════════════════════════
@@ -2487,10 +2489,9 @@ echo "  ── Don't forget ──"
 echo "  1. Update Google OAuth redirect URI in GCP Console to:"
 echo "     https://${API_DOMAIN}/auth/google/callback"
 echo "  2. Add https://${DOMAIN} as an authorized JavaScript origin"
-echo "  3. If using GitHub OAuth, update the callback URL to:"
-echo "     https://${API_DOMAIN}/auth/github/callback"
-echo "     and the repo-scope callback to:"
-echo "     https://${API_DOMAIN}/auth/github/repo/callback"
+echo "  3. If using GitHub OAuth, register a single OAuth App with parent"
+echo "     callback URL (GitHub subdir-match covers all flows):"
+echo "     https://${API_DOMAIN}/oauth/github/"
 echo ""
 
 # ─── OAuth credential validation ──────────────────────────────
@@ -2511,7 +2512,7 @@ check_creds() {
   fi
 }
 check_creds "Google login + integrations" "GOOGLE_CLIENT_ID" "${GOOGLE_CLIENT_ID:-}" "https://console.cloud.google.com/apis/credentials"
-check_creds "GitHub login + repo import"  "GITHUB_CLIENT_ID" "${GITHUB_CLIENT_ID:-}" "https://github.com/settings/applications/new (callback: https://${API_DOMAIN}/auth/github/callback)"
+check_creds "GitHub login + repo import + Copilot"  "GITHUB_CLIENT_ID" "${GITHUB_CLIENT_ID:-}" "https://github.com/settings/applications/new (callback: https://${API_DOMAIN}/oauth/github/)"
 check_creds "Anthropic AI"                "ANTHROPIC_API_KEY" "${ANTHROPIC_API_KEY:-}" "https://console.anthropic.com/settings/keys"
 check_creds "OpenAI AI"                   "OPENAI_API_KEY" "${OPENAI_API_KEY:-}" "https://platform.openai.com/api-keys"
 check_creds "MiniMax AI"                  "MINIMAX_API_KEY" "${MINIMAX_API_KEY:-}" "https://platform.minimax.io/user-center/payment/token-plan"

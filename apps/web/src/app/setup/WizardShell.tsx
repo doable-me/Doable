@@ -14,10 +14,16 @@ import { Step4Integrations } from "./steps/Step4Integrations";
 const TOTAL_STEPS = 5;
 
 // Admin-installer wizard — no "create first app" step (that belongs in the dashboard, not setup).
+// Sign-in MUST come before AI Provider so the operator's GitHub OAuth App is
+// registered before they have the option to pick GitHub Copilot as the AI
+// provider (the Copilot tile triggers an OAuth handshake that uses the
+// GITHUB_CLIENT_ID/SECRET saved in this step). Re-ordering the other way
+// produced a dead-end where Copilot's authorize redirect went to GitHub with
+// an empty client_id and bounced with "Application not found".
 const STEP_LABELS = [
   "Welcome",
-  "AI Provider",
   "Sign-in",
+  "AI Provider",
   "Cloudflare",
   "Plans & Billing",
 ];
@@ -157,8 +163,8 @@ export function WizardShell() {
               onNext={handleNext}
             />
           )}
-          {step === 2 && <Step2AIProvider {...stepProps} />}
-          {step === 3 && <Step3SignInProviders {...stepProps} />}
+          {step === 2 && <Step3SignInProviders {...stepProps} />}
+          {step === 3 && <Step2AIProvider {...stepProps} />}
           {step === 4 && <StepCloudflare {...stepProps} />}
           {step === 5 && (
             <Step4Integrations

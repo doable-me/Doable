@@ -99,6 +99,28 @@ app.route("/projects", versionRoutes);
 // `/:id/github/*` prefix. Keep the legacy mount for backwards compatibility
 // AND mount the project sub-router under `/projects` so both shapes work.
 // OAuth + user-account routes (no :projectId) stay on the root mount only.
+// Consolidated GitHub OAuth callback paths under /oauth/github/{login,copilot,repo}/callback.
+// Registered directly on app (not via app.route("/", subRouter)) so they
+// short-circuit the request chain before publicFrameworkRoutes' wildcard
+// authMiddleware (mounted at "/" at the bottom of this file) can intercept.
+// 308 redirects forward to the existing per-flow handlers in authRoutes /
+// githubRoutes so handler logic stays in one place.
+// Path-only redirects (no scheme/host) so the browser stays on the original
+// origin's HTTPS. Using `new URL(c.req.url)` would emit `http://...` because
+// Caddy terminates TLS and forwards plain HTTP to the api container.
+function preserveQuery(c: { req: { url: string } }): string {
+  const i = c.req.url.indexOf("?");
+  return i >= 0 ? c.req.url.slice(i) : "";
+}
+app.get("/oauth/github/login/callback", (c) => {
+  return c.redirect(`/auth/github/callback${preserveQuery(c)}`, 308);
+});
+app.get("/oauth/github/copilot/callback", (c) => {
+  return c.redirect(`/auth/github/copilot/callback${preserveQuery(c)}`, 308);
+});
+app.get("/oauth/github/repo/callback", (c) => {
+  return c.redirect(`/github/repo/callback${preserveQuery(c)}`, 308);
+});
 app.route("/", githubRoutes);
 app.route("/projects", githubProjectRoutes);
 app.route("/thumbnails", thumbnailRoutes);
