@@ -12,6 +12,7 @@ import {
   cleanup,
 } from "./dev-server-core.js";
 import { startDevServer } from "./dev-server-start.js";
+import { ensureDependencies } from "./file-manager.js";
 
 // ─── Public API ──────────────────────────────────────────
 
@@ -205,6 +206,18 @@ export async function restartDevServer(
     console.log(`[DevServer] Cleared Vite cache at ${viteCacheDir}`);
   } catch {
     // Cache dir may not exist yet — that's fine
+  }
+
+  // Re-verify the framework's build tool is still resolvable. install_package
+  // calls `npm install <pkg>` which can prune the pnpm-installed devDeps
+  // (including vite itself) when there's no package-lock.json. Without this
+  // re-check, every install_package → restart cycle dies once with
+  // `Cannot find module .../vite/bin/vite.js` before the lazy preview-proxy
+  // re-install path eventually re-populates node_modules.
+  try {
+    await ensureDependencies(projectId);
+  } catch (err) {
+    console.warn(`[DevServer] ensureDependencies failed during restart for ${projectId}:`, err);
   }
 
   return startDevServer(projectId, opts);
