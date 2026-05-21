@@ -351,21 +351,34 @@ export async function ensureDependencies(projectId: string): Promise<void> {
 
   if (hasPkgJson) {
     // Node project — skip only when node_modules exists AND the framework's
-    // required build tool is resolvable inside it. BUG-PUB-004 / preview-empty
-    // mode: a prior install ran with NODE_ENV=production, OR the AI's
-    // `install_package` tool ran `npm install <pkg>` after a failed initial
-    // install — both leave a populated-looking node_modules/ that lacks vite.
-    // Mirrors the probe at services/api/src/deploy/builder.ts:207-216.
+    // required build tool is fully resolvable inside it. BUG-PUB-004 /
+    // preview-empty mode: a prior install ran with NODE_ENV=production, OR
+    // the AI's `install_package` tool ran `npm install <pkg>` after a failed
+    // initial install — both leave a populated-looking node_modules/ that
+    // lacks vite. Mirrors the probe at services/api/src/deploy/builder.ts:207-216.
+    //
+    // Both probes must hit: node_modules/<tool>/package.json (manifest) AND
+    // node_modules/.bin/<tool> (the executable symlink). Manifest-only races
+    // happen during a concurrent install — pnpm/npm write the package.json
+    // early while extracting the tarball, before .bin/ is linked. The dev
+    // server spawns `node .../<tool>/bin/<tool>.js` which fails until the
+    // extract finishes; checking the .bin symlink avoids that window.
     const nodeModulesPresent = hasNodeModules(projectId);
     const requiredBuildTool = (adapter as { requiredBuildTool?: string }).requiredBuildTool;
-    const buildToolPath = requiredBuildTool
+    const manifestPath = requiredBuildTool
       ? path.join(projectPath, "node_modules", requiredBuildTool, "package.json")
       : null;
-    const buildToolMissing = buildToolPath !== null && !existsSync(buildToolPath);
+    const binPath = requiredBuildTool
+      ? path.join(projectPath, "node_modules", ".bin", requiredBuildTool)
+      : null;
+    const manifestMissing = manifestPath !== null && !existsSync(manifestPath);
+    const binMissing = binPath !== null && !existsSync(binPath);
+    const buildToolMissing = manifestMissing || binMissing;
     if (nodeModulesPresent && !buildToolMissing) return;
     if (nodeModulesPresent && buildToolMissing) {
+      const reason = manifestMissing ? "manifest missing" : ".bin symlink missing";
       console.log(
-        `[FileManager] node_modules exists but ${requiredBuildTool} is missing for project ${projectId} — re-running install`,
+        `[FileManager] node_modules exists but ${requiredBuildTool} is incomplete (${reason}) for project ${projectId} — re-running install`,
       );
     }
   } else if (hasReqTxt) {
