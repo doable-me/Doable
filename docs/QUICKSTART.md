@@ -123,8 +123,10 @@ domain.
 
 ## Shape A — Docker + Let's Encrypt (direct public ingress)
 
-On a fresh VPS with Docker installed (or any Linux box where you can
-sudo):
+On a fresh VPS with Docker installed (or any Linux / macOS / Windows
+box where Docker Desktop is running):
+
+**Linux / macOS / WSL2:**
 
 ```bash
 git clone https://github.com/doable-me/doable.git
@@ -134,6 +136,20 @@ DOMAIN=app.example.com \
 EMAIL=you@example.com \
 ./deployment/docker/setup.sh
 ```
+
+**Native Windows (PowerShell — self-hosting on a Windows machine):**
+
+```powershell
+git clone https://github.com/doable-me/doable.git
+cd doable
+
+.\deployment\docker\setup.ps1 -Domain app.example.com -Email you@example.com
+```
+
+> **Note:** Shape B (Cloudflare Tunnel) below assumes a Linux host
+> because `cloudflared` integrates with `systemd`. For a Windows host
+> behind Cloudflare, install `cloudflared.exe` as a Windows service per
+> Cloudflare's docs and run `setup.ps1 -Domain ... -SkipSsl`.
 
 What happens (~10 min on a 2-vCPU VPS):
 

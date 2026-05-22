@@ -75,7 +75,13 @@ param(
     [switch]$InstallTrust
 )
 
-$ErrorActionPreference = 'Stop'
+# Native commands (docker, mkcert) write progress + success notices to
+# stderr, which PowerShell promotes to terminating errors under
+# `Stop` whenever a `2>&1` pipeline is in play. Keep the global at
+# Continue and rely on the explicit `$LASTEXITCODE` / try-catch
+# patterns below for failure handling (mirrors the `set -e` discipline
+# in setup.sh — failures are caught at their call site, not globally).
+$ErrorActionPreference = 'Continue'
 
 # --- Logging helpers -------------------------------------------------------
 function Write-Info { param([string]$Msg) Write-Host "[info]  " -NoNewline -ForegroundColor Blue;  Write-Host $Msg }
@@ -440,16 +446,47 @@ switch ($Mode) {
             # user -- no admin required for the user store. Chrome 105+ needs
             # the ChromeRootStoreEnabled policy too; mkcert handles the
             # Firefox/NSS dance automatically if Firefox is installed.
-            & $mkcertExe -install 2>&1 | Where-Object { $_ -match 'installed|CA|local' } | ForEach-Object { Write-Host "  $_" }
+            #
+            # IMPORTANT: do NOT pipe mkcert's `2>&1` into a Where-Object filter.
+            # PowerShell 5.1 buffers stderr from native exes and the pipeline
+            # can hang indefinitely waiting for the next stderr line. Capture
+            # to a log file instead and let the operator open it on failure.
+            $mkcertLog = Join-Path $env:TEMP 'doable-mkcert-install.log'
+            $mkcertProc = Start-Process -FilePath $mkcertExe -ArgumentList '-install' `
+                -NoNewWindow -Wait -PassThru `
+                -RedirectStandardOutput $mkcertLog -RedirectStandardError "$mkcertLog.err"
+            if ($mkcertProc.ExitCode -ne 0) {
+                Write-WarnMsg "mkcert -install exited with code $($mkcertProc.ExitCode). See $mkcertLog / $mkcertLog.err"
+            } else {
+                Get-Content $mkcertLog,"$mkcertLog.err" -ErrorAction SilentlyContinue |
+                    Where-Object { $_ -match 'installed|CA|local' } |
+                    ForEach-Object { Write-Host "  $_" }
+            }
 
             Write-Info "Issuing browser-trusted cert for $ListenHost..."
             $certFile = Join-Path $CertsDir 'cert.pem'
             $keyFile  = Join-Path $CertsDir 'key.pem'
-            & $mkcertExe -cert-file $certFile -key-file $keyFile $ListenHost localhost 127.0.0.1 ::1 *> $null
-            if ((Test-Path $certFile) -and (Test-Path $keyFile)) {
+            # Build dedup'd SAN list -- always include the listen host plus the
+            # localhost loopback names so the same cert keeps working when the
+            # operator hits the box on 127.0.0.1 / ::1 directly.
+            $sanList = New-Object System.Collections.Generic.List[string]
+            foreach ($san in @($ListenHost, 'localhost', '127.0.0.1', '::1')) {
+                if ($san -and -not $sanList.Contains($san)) { [void]$sanList.Add($san) }
+            }
+            # Same Start-Process pattern as -install above -- PowerShell 5.1's
+            # 2>&1 pipeline buffering bites here too if we leave stderr on the
+            # PS pipeline. Log to a file the operator can `cat` on failure.
+            $leafLog = Join-Path $env:TEMP 'doable-mkcert-leaf.log'
+            $leafArgs = @('-cert-file', $certFile, '-key-file', $keyFile) + $sanList.ToArray()
+            $leafProc = Start-Process -FilePath $mkcertExe -ArgumentList $leafArgs `
+                -NoNewWindow -Wait -PassThru `
+                -RedirectStandardOutput $leafLog -RedirectStandardError "$leafLog.err"
+            if ((Test-Path $certFile) -and (Test-Path $keyFile) -and $leafProc.ExitCode -eq 0) {
                 Write-Ok "Browser-trusted cert ready at $certFile"
             } else {
-                Write-WarnMsg "mkcert leaf-cert generation failed -- Caddy will use internal self-signed"
+                Write-WarnMsg "mkcert leaf-cert generation failed (exit=$($leafProc.ExitCode)) -- Caddy will use internal self-signed"
+                Get-Content $leafLog,"$leafLog.err" -ErrorAction SilentlyContinue |
+                    ForEach-Object { Write-Host "  $_" }
                 $DoableTls = 'internal'
             }
         } elseif ($wantTrust) {

@@ -25,6 +25,8 @@
 
 Choose your path:
 
+**Linux / macOS / Windows-via-WSL2 (bash):**
+
 ```bash
 # Try it locally in 60 seconds (Docker, no domain, no API keys required to boot)
 git clone https://github.com/doable-me/doable.git && cd doable && ./deployment/docker/setup.sh
@@ -35,6 +37,18 @@ pnpm install && cp .env.example .env && pnpm db:migrate && pnpm dev
 # Production VPS (Ubuntu 22.04/24.04 with a Cloudflare managed domain)
 ./deployment/server-setup.sh
 ```
+
+**Native Windows (PowerShell — no WSL, no Git Bash):**
+
+```powershell
+# Try it locally in 60 seconds (Docker Desktop required)
+git clone https://github.com/doable-me/doable.git ; cd doable ; .\deployment\docker\setup.ps1
+
+# Local dev (Node 22, pnpm, Postgres 16)
+pnpm install ; Copy-Item .env.example .env ; pnpm db:migrate ; pnpm dev
+```
+
+`setup.ps1` is the native-Windows sibling of `setup.sh` — same flags, same Caddy-in-docker TLS, same mkcert auto-trust, no WSL or Git Bash required. PowerShell 5.1 (built into Windows 10/11) is enough.
 
 Self-hosting on a VPS? See the [**full quickstart guide**](docs/QUICKSTART.md) — a 24-minute, end-to-end walkthrough from a blank Ubuntu box to a production deployment with HTTPS, sandboxed previews, and per-tenant DNS.
 
@@ -110,8 +124,13 @@ Multiple users can work together in real time on the same project. Chat together
 Doable itself (minus third party integrations) can be deployed and used completely air gapped. Run it locally with local models within your intranet where security and data residency require it.
 
 ```bash
-# Private network / air gapped
+# Linux / macOS — private network / air gapped
 HOST=192.168.1.50 ./deployment/docker/setup.sh
+```
+
+```powershell
+# Windows — same idea (-DoableHost because $Host is reserved in PowerShell)
+.\deployment\docker\setup.ps1 -DoableHost 192.168.1.50 -InstallTrust
 ```
 
 Uses self signed SSL. All services stay on `127.0.0.1`. Point it at Ollama, LM Studio, vLLM, or any local model server and you have a fully private AI app builder with zero internet dependency.

@@ -1,18 +1,40 @@
 # Docker Deployment
 
-Self-host Doable with a single command — **same script on every OS**
-(Linux, macOS, Windows via WSL2). TLS, cert trust, and reverse proxy
-all happen inside the docker stack; nothing host-side except docker
-itself.
+Self-host Doable with a single command — **two installers, same Caddy-in-docker
+stack on every OS**:
+
+- `deployment/docker/setup.sh` — Linux, macOS, Windows via WSL2 / Git Bash
+- `deployment/docker/setup.ps1` — native Windows (PowerShell 5.1+, no WSL)
+
+Both scripts generate the same `.env`, drive the same docker-compose, and
+install the same mkcert-issued local CA. Pick whichever matches your shell.
+TLS, cert trust, and reverse proxy all happen inside the docker stack;
+nothing host-side except docker itself.
 
 ## TL;DR per scenario
 
-| Scenario | Command | What happens |
+| Scenario | bash (Linux / macOS / WSL) | PowerShell (native Windows) | What happens |
+|---|---|---|---|
+| **Local self-host** | `./deployment/docker/setup.sh` (press Enter at prompt) | `.\deployment\docker\setup.ps1` | mkcert issues a trusted cert and installs the local CA into your OS+browser trust stores. Browser opens `https://localhost` with no warning. |
+| **Public VPS, direct ingress** | `DOMAIN=app.example.com EMAIL=you@example.com ./deployment/docker/setup.sh` | `.\deployment\docker\setup.ps1 -Domain app.example.com -Email you@example.com` | Caddy auto-fetches a Let's Encrypt cert. Public 0.0.0.0 bind on :80/:443. |
+| **Behind Cloudflare Tunnel / ngrok / reverse proxy** | `DOMAIN=app.example.com ./deployment/docker/setup.sh --skip-ssl` | `.\deployment\docker\setup.ps1 -Domain app.example.com -SkipSsl` | Caddy binds **127.0.0.1 only** (tunnel is the sole ingress) and uses internal self-signed for the origin↔tunnel hop. |
+| **Private LAN / IP-only install** | `HOST=192.168.1.50 ./deployment/docker/setup.sh` | `.\deployment\docker\setup.ps1 -DoableHost 192.168.1.50 -InstallTrust` | Self-signed cert for the LAN IP. Add `--install-trust` / `-InstallTrust` only when the server is also the browser machine. (`-DoableHost` instead of `-Host` because `$Host` is a reserved PowerShell variable.) |
+| **Pre-built ghcr.io images** (≈30s install) | Add `--prebuilt` to any of the above | Add `-Prebuilt` to any of the above | Pulls `ghcr.io/doable-me/doable-{api,ws,web,migrate}:latest`. Falls back to source build if the pull is denied. |
+
+### Flag / env-var translation
+
+| bash | PowerShell | Behaviour |
 |---|---|---|
-| **Local self-host** (laptop/desktop, any OS) | `./deployment/docker/setup.sh` (press Enter at prompt) | mkcert issues a trusted cert and installs the local CA into your OS+browser trust stores. Browser opens `https://localhost` with no warning. |
-| **Public VPS, direct ingress** | `DOMAIN=app.example.com EMAIL=you@example.com ./deployment/docker/setup.sh` | Caddy auto-fetches a Let's Encrypt cert. Public 0.0.0.0 bind on :80/:443. |
-| **VPS behind Cloudflare Tunnel / ngrok / reverse proxy** | `DOMAIN=app.example.com ./deployment/docker/setup.sh --skip-ssl` | Caddy binds **127.0.0.1 only** (tunnel is the sole ingress) and uses internal self-signed for the origin↔tunnel hop. |
-| **Pre-built ghcr.io images** (≈30s install) | Add `--prebuilt` to any of the above | Pulls `ghcr.io/doable-me/doable-{api,ws,web,migrate}:latest`. Falls back to source build if pull denied. |
+| `DOMAIN=foo` | `-Domain foo` or `$env:DOMAIN='foo'` | Public-domain mode, Let's Encrypt via Caddy ACME |
+| `HOST=192.168.1.50` | `-DoableHost 192.168.1.50` or `$env:HOST='192.168.1.50'` | Private-network / LAN-IP mode |
+| `EMAIL=you@example.com` | `-Email you@example.com` | LE ACME registration address |
+| `--skip-ssl` | `-SkipSsl` | Bind 127.0.0.1 only + internal self-signed (behind tunnel/proxy) |
+| `--prebuilt` | `-Prebuilt` | Pull from ghcr.io instead of building from source |
+| `--install-trust` | `-InstallTrust` | HOST mode only — force-install mkcert CA into the host trust store |
+| `DOABLE_PREBUILT=true` | `$env:DOABLE_PREBUILT='true'` | Same as `--prebuilt` / `-Prebuilt` |
+| `DOABLE_BEHIND_PROXY=1` | `$env:DOABLE_BEHIND_PROXY='1'` | Same as `--skip-ssl` / `-SkipSsl` |
+| `DOABLE_IMAGE_TAG=v1.2.3` | `$env:DOABLE_IMAGE_TAG='v1.2.3'` | Pin a specific ghcr.io image tag |
+| `DOABLE_SKIP_DISK_CHECK=1` | `$env:DOABLE_SKIP_DISK_CHECK='1'` | Skip the pre-build disk-space check |
 
 ## Architecture — in-stack TLS via Caddy
 
@@ -89,6 +111,8 @@ Two options:
 
 ### Source path (from a git clone)
 
+**Linux / macOS / WSL2 / Git Bash:**
+
 ```bash
 git clone https://github.com/doable-me/doable.git
 cd doable
@@ -106,7 +130,28 @@ DOMAIN=app.example.com ./deployment/docker/setup.sh --skip-ssl
 HOST=192.168.1.50 ./deployment/docker/setup.sh
 ```
 
+**Native Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/doable-me/doable.git
+cd doable
+
+# Local desktop self-host
+.\deployment\docker\setup.ps1            # press Enter at prompt
+
+# Public VPS with Let's Encrypt
+.\deployment\docker\setup.ps1 -Domain app.example.com -Email you@example.com
+
+# VPS behind Cloudflare Tunnel (binds 127.0.0.1 only)
+.\deployment\docker\setup.ps1 -Domain app.example.com -SkipSsl
+
+# Private LAN with self-signed (browser warning unless -InstallTrust)
+.\deployment\docker\setup.ps1 -DoableHost 192.168.1.50 -InstallTrust
+```
+
 ### Pre-built path (≈30s pull instead of 5–10min build)
+
+**Linux / macOS:**
 
 ```bash
 mkdir doable && cd doable
@@ -120,21 +165,33 @@ chmod +x setup.sh
 DOMAIN=app.example.com EMAIL=you@example.com ./setup.sh --prebuilt
 ```
 
-`--prebuilt` (or `DOABLE_PREBUILT=true ./setup.sh`) pulls
+**Native Windows (PowerShell):**
+
+```powershell
+mkdir doable ; cd doable
+$base = 'https://raw.githubusercontent.com/doable-me/doable/main/deployment/docker'
+foreach ($f in 'docker-compose.prod.yml','setup.ps1','init.sql','02-roles.sh','Caddyfile') {
+    Invoke-WebRequest -Uri "$base/$f" -OutFile $f -UseBasicParsing
+}
+
+.\setup.ps1 -Domain app.example.com -Email you@example.com -Prebuilt
+```
+
+`--prebuilt` (or `DOABLE_PREBUILT=true ./setup.sh` / `$env:DOABLE_PREBUILT='true'`) pulls
 `ghcr.io/doable-me/doable-{api,ws,web,migrate}:latest`. Pin a specific
 release with `DOABLE_IMAGE_TAG=v1.2.3`. If the ghcr.io images are not
-publicly accessible, the script falls back to source build with a
+publicly accessible, both scripts fall back to source build with a
 warning in the log.
 
-## What `setup.sh` does
+## What `setup.sh` / `setup.ps1` do
 
-1. Detects OS family (linux-debian / linux-rhel / linux-wsl / macos / windows-bash) and points Mac/Windows users to Docker Desktop if docker is missing
+1. Detects OS family — bash version covers linux-debian / linux-rhel / linux-wsl / macos / windows-bash; PowerShell version covers native Windows. Both point users to Docker Desktop if docker is missing.
 2. Generates `deployment/docker/.env` with random secrets (JWT, encryption keys, postgres password, etc.)
-3. For local/HOST modes: downloads mkcert if missing, installs the local CA into host trust stores, issues a cert into `deployment/docker/certs/`
+3. For local/HOST modes: downloads mkcert if missing, installs the local CA into host trust stores (Linux ca-certs + NSS / macOS keychain / Windows root via `mkcert -install`), issues a cert into `deployment/docker/certs/`
 4. For DOMAIN+LE mode: configures Caddy env vars so the container auto-fetches Let's Encrypt
-5. For DOMAIN+--skip-ssl mode: configures Caddy for internal self-signed + 127.0.0.1 bind (tunnel-safe)
-6. Stops any legacy host-side `nginx`/`caddy`/`apache2`/`lighttpd` from older installs (frees :80/:443 for the in-stack Caddy)
-7. `docker compose up -d` (or `pull` + `up` with `--prebuilt`)
+5. For DOMAIN+--skip-ssl/-SkipSsl mode: configures Caddy for internal self-signed + 127.0.0.1 bind (tunnel-safe)
+6. (`setup.sh` only) Stops any legacy host-side `nginx`/`caddy`/`apache2`/`lighttpd` from older installs (frees :80/:443 for the in-stack Caddy). On Windows, no host-side proxy exists in the old install path so this is a no-op.
+7. `docker compose up -d` (or `pull` + `up` with `--prebuilt`/`-Prebuilt`)
 8. Waits for the migrate container to exit 0 (surfaces password-mismatch / stale-volume issues with a clear recovery command)
 
 ## Files
@@ -145,7 +202,8 @@ warning in the log.
 | `docker-compose.prod.yml` | Same services with `image:` instead of `build:` — pulls from ghcr.io |
 | `docker-compose.sandbox.yml` | Opt-in overlay enabling the bubblewrap AI sandbox (multi-tenant operators) |
 | `Dockerfile` | Multi-stage source build (base → deps → build → api/ws/web/migrate targets) |
-| `setup.sh` | Universal setup (every OS) — secrets, certs, Caddy env, build/pull, up |
+| `setup.sh` | Universal setup for bash hosts (Linux / macOS / WSL / Git Bash) — secrets, certs, Caddy env, build/pull, up |
+| `setup.ps1` | Native-Windows sibling of `setup.sh` (PowerShell 5.1+, no WSL needed) — same flags, same stack |
 | `Caddyfile` | Caddy TLS terminator + reverse-proxy config (env-var driven) |
 | `init.sql` | Postgres extensions (pgvector, pgcrypto, pg_trgm) |
 | `02-roles.sh` | Postgres init script — creates non-superuser `doable_app` role for api+ws runtime |
@@ -185,6 +243,10 @@ without them:
 | n/a | `DOABLE_SKIP_DISK_CHECK=1` | Skip the pre-build disk-space check (source builds peak ~22GB) |
 
 ## Common operations
+
+> Cross-platform: every `docker compose` command below works verbatim in
+> bash, zsh, and PowerShell — `docker compose` itself takes forward-slash
+> paths on Windows Docker Desktop, so no quoting changes are needed.
 
 ```bash
 # View logs (all services)
