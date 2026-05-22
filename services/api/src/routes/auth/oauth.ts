@@ -272,10 +272,18 @@ oauthRoutes.get("/github/repo/start", async (c) => {
 
 // ─── GET /auth/github/copilot ─ Initiate Copilot account connection ─
 // No authMiddleware — this is a browser redirect, not an API call.
+// `scope` query param ("user" personal override | "workspace" shared with the
+// workspace) is captured into the OAuth state so the callback can plumb it
+// through to the apiAddCopilotAccount POST. Default = "user" preserves the
+// pre-wizard /ai-settings behavior; the setup wizard passes scope=workspace
+// because the platform admin's "Set Copilot for all users" save MUST land as
+// a workspace-shared account, not a personal override hidden under their
+// user id (which would invisibly disappear if they ever rotated their admin
+// account).
 oauthRoutes.get("/github/copilot", async (c) => {
-  // Pass workspace info via state parameter
   const workspaceId = c.req.query("workspaceId");
-  const state = JSON.stringify({ type: "copilot", workspaceId, nonce: crypto.randomUUID() });
+  const scope = c.req.query("scope") === "workspace" ? "workspace" : "user";
+  const state = JSON.stringify({ type: "copilot", workspaceId, scope, nonce: crypto.randomUUID() });
   const encodedState = Buffer.from(state).toString("base64url");
   return c.redirect(await getGitHubCopilotAuthUrl(encodedState));
 });
@@ -288,9 +296,11 @@ oauthRoutes.get("/github/copilot/callback", async (c) => {
   if (!code) return c.redirect(`${FRONTEND_URL}/ai-settings?error=missing_code`);
 
   let workspaceId: string | undefined;
+  let scope: "user" | "workspace" = "user";
   try {
     const decoded = JSON.parse(Buffer.from(stateParam ?? "", "base64url").toString());
     workspaceId = decoded.workspaceId;
+    if (decoded.scope === "workspace") scope = "workspace";
   } catch {
     return c.redirect(`${FRONTEND_URL}/ai-settings?error=invalid_state`);
   }
@@ -298,12 +308,16 @@ oauthRoutes.get("/github/copilot/callback", async (c) => {
   try {
     const { accessToken: githubToken, user: ghUser } = await exchangeGitHubCode(code, GITHUB_COPILOT_REDIRECT_URI);
 
-    // Redirect back to frontend with the token info — the frontend will call
-    // the API to store it (we can't call the DB here without the user's JWT).
+    // Redirect back to frontend with the token info + the captured scope
+    // (the frontend calls apiAddCopilotAccount; we can't call the DB here
+    // without the user's JWT). Without forwarding scope, the callback page
+    // would always default to "user" and the wizard's "set for all users"
+    // intent would silently land as a personal override.
     const params = new URLSearchParams({
       githubToken,
       githubLogin: ghUser.login,
       githubId: String(ghUser.id),
+      scope,
       ...(workspaceId ? { workspaceId } : {}),
     });
     return c.redirect(`${FRONTEND_URL}/ai-settings/callback?${params.toString()}`);

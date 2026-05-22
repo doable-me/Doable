@@ -228,7 +228,13 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
     }
     setCopilotError(null);
     setCopilotConnecting(true);
-    const url = `${API_URL}/auth/github/copilot?workspaceId=${encodeURIComponent(copilotWorkspaceId)}`;
+    // scope=workspace so the account is workspace-shared rather than a
+    // personal override owned by the admin's user id. Without this, the
+    // wizard's "Set Copilot for every plan" save still works at chat time
+    // (engine-resolver looks up by account_id, no scope check), but the
+    // /admin/ai-settings UI lists the account as personal-only and it's
+    // tied to the admin's user — deleting the admin would orphan it.
+    const url = `${API_URL}/auth/github/copilot?workspaceId=${encodeURIComponent(copilotWorkspaceId)}&scope=workspace`;
     const popup = window.open(url, "doable-copilot-oauth", "width=600,height=720,popup=yes");
     if (!popup) {
       setCopilotConnecting(false);

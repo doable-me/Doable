@@ -39,6 +39,14 @@ function CopilotOAuthCallbackInner() {
     const githubToken = searchParams.get("githubToken");
     const githubLogin = searchParams.get("githubLogin");
     const workspaceId = searchParams.get("workspaceId");
+    // scope is plumbed through from the OAuth state by the api callback.
+    // wizard popup → state.scope=workspace → here. Personal-override flows
+    // from /ai-settings → state.scope=user (or undefined). Anything other
+    // than the literal string "workspace" falls back to "user" so a
+    // malformed query can't accidentally elevate a personal account into a
+    // workspace-shared one.
+    const scope: "user" | "workspace" =
+      searchParams.get("scope") === "workspace" ? "workspace" : "user";
 
     if (!githubToken || !githubLogin || !workspaceId) {
       const msg = "Missing OAuth parameters. Please try connecting again.";
@@ -54,6 +62,7 @@ function CopilotOAuthCallbackInner() {
     apiAddCopilotAccount(workspaceId, {
       label: `${githubLogin}'s GitHub`,
       githubToken,
+      scope,
     })
       .then((res) => {
         setStatus("success");
