@@ -28,7 +28,7 @@ Any OpenAI-compatible endpoint works: set a base URL and key and you're done.
 
 The frontend includes:
 
-- **Provider setup wizard** — 4-step admin onboarding on first launch (Welcome → AI provider → Sign-in → Plans & billing)
+- **Provider setup wizard**: 5-step admin onboarding on first launch (Welcome, Sign-in, AI Provider, Cloudflare, Plans & Billing)
 - **In-editor model picker** — switch models per conversation
 - **Admin model configuration panel** at `apps/web/src/modules/ai-settings/`
 

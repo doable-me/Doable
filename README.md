@@ -59,7 +59,7 @@ Self-hosting on a VPS? See the [**full quickstart guide**](docs/QUICKSTART.md), 
 
 ### After first launch
 
-Open http://localhost:3000, sign up. The first account becomes the platform owner automatically. You'll be guided through a 4 step setup wizard, Welcome, AI provider, Sign-in, Plans & billing. No SSH, no SQL, no editing .env files. (Building the first app belongs in the dashboard for end-users, not in the install flow.)
+Open http://localhost:3000, sign up. The first account becomes the platform owner automatically. You'll be guided through a 5 step setup wizard, Welcome, Sign-in, AI provider, Cloudflare, Plans & billing. No SSH, no SQL, no editing .env files. (Building the first app belongs in the dashboard for end-users, not in the install flow.)
 
 ---
 
