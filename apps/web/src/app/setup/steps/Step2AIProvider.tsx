@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Check,
   Loader2,
@@ -10,6 +10,8 @@ import {
   EyeOff,
   Search,
   ExternalLink,
+  Github,
+  CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -78,6 +80,37 @@ type SelectedTile =
   | { kind: "preset"; preset: ProviderPreset }
   | { kind: "special"; tile: SpecialTile };
 
+// Stable list of Copilot-accessible models. GitHub Copilot rotates its
+// model catalog faster than we can ship releases, so the picker hardcodes a
+// reasonable common-denominator set and lets the admin change it later via
+// /admin/ai-settings (where the list comes back live from the user's
+// validate-token response). Default sits at `gpt-4o` — universally
+// available on every Copilot subscription tier as of 2026.
+const COPILOT_MODEL_OPTIONS: Array<{ id: string; label: string }> = [
+  { id: "gpt-4o", label: "gpt-4o (OpenAI)" },
+  { id: "gpt-4o-mini", label: "gpt-4o-mini (OpenAI, cheaper)" },
+  { id: "o3-mini", label: "o3-mini (OpenAI reasoning)" },
+  { id: "claude-3.7-sonnet", label: "claude-3.7-sonnet (Anthropic)" },
+  { id: "claude-sonnet-4", label: "claude-sonnet-4 (Anthropic, latest)" },
+  { id: "gemini-2.0-flash-001", label: "gemini-2.0-flash (Google)" },
+];
+
+interface CopilotConnectedMessage {
+  type: "doable:copilot-connected";
+  ok: true;
+  accountId?: string;
+  githubLogin: string;
+}
+interface CopilotErrorMessage {
+  type: "doable:copilot-error";
+  ok: false;
+  error: string;
+}
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (typeof window !== "undefined" ? `${window.location.origin}/api` : "");
+
 export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
   const [selected, setSelected] = useState<SelectedTile | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -91,6 +124,73 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
   // Default true: a first-time installer overwhelmingly wants their wizard
   // choice to also apply as the per-plan default. Power-users can untick.
   const [setAsPlanDefault, setSetAsPlanDefault] = useState(true);
+
+  // Copilot OAuth state — populated when the admin completes the GitHub
+  // popup OAuth handshake. Without these, the Copilot tile only records the
+  // platform_config preference; with them, /setup/ai-provider also binds
+  // workspace_ai_settings + platform_ai_defaults to use the chosen account
+  // and model, so chat works the moment the wizard finishes.
+  const [copilotWorkspaceId, setCopilotWorkspaceId] = useState<string | null>(null);
+  const [copilotAccountId, setCopilotAccountId] = useState<string | null>(null);
+  const [copilotGithubLogin, setCopilotGithubLogin] = useState<string | null>(null);
+  const [copilotConnecting, setCopilotConnecting] = useState(false);
+  const [copilotError, setCopilotError] = useState<string | null>(null);
+  const [copilotModel, setCopilotModel] = useState<string>(COPILOT_MODEL_OPTIONS[0]!.id);
+
+  // Fetch the admin's primary workspace once — we need its ID to scope the
+  // copilot-account POST after OAuth. /workspaces returns the caller's
+  // workspaces (auto-created on signup); the first is the admin's own.
+  useEffect(() => {
+    apiFetch<Array<{ id: string }> | { data: Array<{ id: string }> }>("/workspaces")
+      .then((res) => {
+        const list = Array.isArray(res) ? res : res?.data ?? [];
+        if (list.length > 0) setCopilotWorkspaceId(list[0]!.id);
+      })
+      .catch(() => {
+        // Non-fatal — Copilot tile will surface a clear "no workspace" error
+        // if the user tries to connect before this resolves.
+      });
+  }, []);
+
+  // Listen for postMessage from the popup OAuth flow. The callback page
+  // (/ai-settings/callback) detects window.opener and emits one of:
+  //   {type:"doable:copilot-connected", ok:true, accountId, githubLogin}
+  //   {type:"doable:copilot-error", ok:false, error}
+  // We accept only same-origin messages to avoid a hostile tab spoofing the
+  // event.
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data as CopilotConnectedMessage | CopilotErrorMessage | undefined;
+      if (!data || typeof data !== "object" || !("type" in data)) return;
+      if (data.type === "doable:copilot-connected" && data.ok) {
+        setCopilotAccountId(data.accountId ?? null);
+        setCopilotGithubLogin(data.githubLogin);
+        setCopilotConnecting(false);
+        setCopilotError(null);
+      } else if (data.type === "doable:copilot-error" && !data.ok) {
+        setCopilotConnecting(false);
+        setCopilotError(data.error);
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  function openCopilotPopup() {
+    if (!copilotWorkspaceId) {
+      setCopilotError("No workspace yet. Reload the page and try again.");
+      return;
+    }
+    setCopilotError(null);
+    setCopilotConnecting(true);
+    const url = `${API_URL}/auth/github/copilot?workspaceId=${encodeURIComponent(copilotWorkspaceId)}`;
+    const popup = window.open(url, "doable-copilot-oauth", "width=600,height=720,popup=yes");
+    if (!popup) {
+      setCopilotConnecting(false);
+      setCopilotError("Popup blocked — allow popups for this site and try again.");
+    }
+  }
 
   const popularPresets = useMemo(() => PROVIDER_CATALOG.filter(isPopular), []);
 
@@ -199,9 +299,24 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
         return;
       }
       if (resolvedModel) body.model = resolvedModel;
-      // Copilot OAuth has no apiKey at this point, so platform_ai_defaults
-      // can't be propagated yet — admin sets it in /admin after OAuth.
-      if (!isCopilot) body.setAsPlanDefault = setAsPlanDefault;
+      if (isCopilot) {
+        // Inline Copilot OAuth completed in the popup — send the resulting
+        // account id and the chosen model so /setup/ai-provider also writes
+        // workspace_ai_settings + platform_ai_defaults. Without these,
+        // the wizard would only flip platform_config and chat would still
+        // fail with "No model available" until the admin manually bound a
+        // model under /admin/ai-settings.
+        if (!copilotAccountId) {
+          setStatus("error");
+          setErrorMsg("Click \"Connect with GitHub\" first — Copilot needs a connected account before saving.");
+          return;
+        }
+        body.copilotAccountId = copilotAccountId;
+        body.copilotModel = copilotModel;
+        body.setAsPlanDefault = setAsPlanDefault;
+      } else {
+        body.setAsPlanDefault = setAsPlanDefault;
+      }
 
       await apiFetch("/setup/ai-provider", { method: "POST", body: JSON.stringify(body) });
       setStatus("success");
@@ -326,7 +441,21 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
               )}
 
               {isSelected && t.kind === "special" && t.tile.id === "github_copilot" && (
-                <CopilotForm status={status} errorMsg={errorMsg} onSave={handleSave} />
+                <CopilotForm
+                  status={status}
+                  errorMsg={errorMsg}
+                  onSave={handleSave}
+                  copilotAccountId={copilotAccountId}
+                  copilotGithubLogin={copilotGithubLogin}
+                  copilotConnecting={copilotConnecting}
+                  copilotError={copilotError}
+                  copilotModel={copilotModel}
+                  onCopilotModelChange={setCopilotModel}
+                  onConnect={openCopilotPopup}
+                  workspaceReady={!!copilotWorkspaceId}
+                  setAsPlanDefault={setAsPlanDefault}
+                  onSetAsPlanDefaultChange={setSetAsPlanDefault}
+                />
               )}
 
               {isSelected && t.kind === "special" && t.tile.id === "byok-custom" && (
@@ -582,17 +711,104 @@ interface CopilotFormProps {
   status: "idle" | "saving" | "success" | "error";
   errorMsg: string | null;
   onSave: () => void;
+  copilotAccountId: string | null;
+  copilotGithubLogin: string | null;
+  copilotConnecting: boolean;
+  copilotError: string | null;
+  copilotModel: string;
+  onCopilotModelChange: (id: string) => void;
+  onConnect: () => void;
+  workspaceReady: boolean;
+  setAsPlanDefault: boolean;
+  onSetAsPlanDefaultChange: (v: boolean) => void;
 }
 
-function CopilotForm({ status, errorMsg, onSave }: CopilotFormProps) {
+function CopilotForm({
+  status,
+  errorMsg,
+  onSave,
+  copilotAccountId,
+  copilotGithubLogin,
+  copilotConnecting,
+  copilotError,
+  copilotModel,
+  onCopilotModelChange,
+  onConnect,
+  workspaceReady,
+  setAsPlanDefault,
+  onSetAsPlanDefaultChange,
+}: CopilotFormProps) {
+  const connected = !!copilotAccountId && !!copilotGithubLogin;
   return (
     <div className="rounded-b-lg border border-t-0 border-brand-500/40 bg-card px-4 pb-4 pt-3 flex flex-col gap-3">
-      <p className="text-xs text-muted-foreground">
-        GitHub Copilot uses OAuth — no API key is needed here. Continue to register
-        your Copilot OAuth app under <code className="text-foreground">/admin/integrations</code>,
-        or click below to mark this step done and configure it later.
-      </p>
-      <SaveControls status={status} errorMsg={errorMsg} onSave={onSave} disabled={false} />
+      {!connected && (
+        <>
+          <p className="text-xs text-muted-foreground">
+            GitHub Copilot uses OAuth — no API key is needed. Click below to
+            authorize Doable against your existing Copilot subscription.
+            A popup window opens; once you authorize on github.com, it closes
+            automatically and we return here to pick the default model.
+          </p>
+          <Button
+            onClick={onConnect}
+            disabled={copilotConnecting || !workspaceReady}
+            size="sm"
+            className="bg-brand-600 text-white hover:bg-brand-500 self-start gap-2"
+          >
+            {copilotConnecting ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Github className="h-3.5 w-3.5" />
+            )}
+            {copilotConnecting ? "Waiting for GitHub…" : "Connect with GitHub"}
+          </Button>
+          {copilotError && (
+            <p className="text-xs text-red-400">{copilotError}</p>
+          )}
+        </>
+      )}
+      {connected && (
+        <>
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+            Connected as{" "}
+            <span className="text-foreground font-medium">@{copilotGithubLogin}</span>.
+            Pick the default model below — you can change it any time in{" "}
+            <code className="text-foreground">/admin/ai-settings</code>.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="copilot-model" className="text-xs font-medium text-foreground">
+              Default Copilot model
+            </label>
+            <select
+              id="copilot-model"
+              value={copilotModel}
+              onChange={(e) => onCopilotModelChange(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
+            >
+              {COPILOT_MODEL_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              The list shows commonly available Copilot models. If your subscription
+              tier doesn&apos;t include the chosen one, change it in{" "}
+              <code className="text-foreground">/admin/ai-settings</code> later — your
+              full live list of accessible models lives there.
+            </p>
+          </div>
+          <SaveControls
+            status={status}
+            errorMsg={errorMsg}
+            onSave={onSave}
+            disabled={false}
+            setAsPlanDefault={setAsPlanDefault}
+            onSetAsPlanDefaultChange={onSetAsPlanDefaultChange}
+          />
+        </>
+      )}
     </div>
   );
 }

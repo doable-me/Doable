@@ -50,6 +50,14 @@ const aiProviderSchema = z.object({
   // wizard-friendly; out-of-band callers (CLI install, OOB seeding, replay
   // scripts) MUST send `false` to avoid silently overwriting plan defaults.
   setAsPlanDefault: z.boolean().optional().default(true),
+  // Set when the wizard completes the inline Copilot OAuth popup. Without
+  // these, the copilot branch only flips setup.ai_provider in platform_config
+  // and chat still fails with "No model available" until the admin manually
+  // binds an account via /admin/ai-settings. With them, the handler also
+  // writes workspace_ai_settings + platform_ai_defaults so chat works the
+  // moment the wizard finishes.
+  copilotAccountId: z.string().uuid().optional(),
+  copilotModel: z.string().min(1).max(120).optional(),
 });
 
 const oauthSchema = z.object({
@@ -139,7 +147,7 @@ setupRoutes.post("/ai-provider", async (c) => {
     return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
   }
 
-  const { provider, apiKey, baseUrl, model, setAsPlanDefault } = parsed.data;
+  const { provider, apiKey, baseUrl, model, setAsPlanDefault, copilotAccountId, copilotModel } = parsed.data;
 
   if (apiKey) {
     const check = await validateAiProvider(provider, apiKey, baseUrl);
@@ -292,9 +300,81 @@ setupRoutes.post("/ai-provider", async (c) => {
     }
   }
 
+  // ─── Copilot path: inline OAuth handshake completed in the wizard ────
+  // The frontend has already POSTed to /workspaces/:wid/ai-settings/copilot-accounts
+  // (via the popup callback) so the account row + encrypted token exist.
+  // Here we bind that account + a default copilot_model into
+  // workspace_ai_settings, and (if setAsPlanDefault) into platform_ai_defaults
+  // for all 4 plans. Without this binding the chat handler's engine-resolver
+  // would still resolve source='custom'/null and fail with "No model available"
+  // even after the OAuth handshake "succeeded".
+  if (provider === "copilot" && copilotAccountId && copilotModel) {
+    try {
+      const [adminWorkspace] = await sql<{ id: string }[]>`
+        SELECT w.id FROM workspaces w
+        JOIN workspace_members m ON m.workspace_id = w.id
+        WHERE m.user_id = ${userId} AND m.role IN ('owner', 'admin')
+        ORDER BY w.created_at LIMIT 1
+      `;
+      if (adminWorkspace) {
+        await sql`
+          INSERT INTO workspace_ai_settings (
+            workspace_id,
+            default_copilot_account_id, default_copilot_model, default_source,
+            suggestion_copilot_account_id, suggestion_copilot_model, suggestion_source,
+            updated_by
+          ) VALUES (
+            ${adminWorkspace.id},
+            ${copilotAccountId}::uuid, ${copilotModel}, 'copilot',
+            ${copilotAccountId}::uuid, ${copilotModel}, 'copilot',
+            ${userId}
+          )
+          ON CONFLICT (workspace_id) DO UPDATE SET
+            default_copilot_account_id = EXCLUDED.default_copilot_account_id,
+            default_copilot_model = EXCLUDED.default_copilot_model,
+            default_provider_id = NULL,
+            default_provider_model = NULL,
+            default_source = 'copilot',
+            suggestion_copilot_account_id = EXCLUDED.suggestion_copilot_account_id,
+            suggestion_copilot_model = EXCLUDED.suggestion_copilot_model,
+            suggestion_provider_id = NULL,
+            suggestion_provider_model = NULL,
+            suggestion_source = 'copilot',
+            updated_by = EXCLUDED.updated_by
+        `;
+
+        if (setAsPlanDefault) {
+          for (const plan of ["free", "pro", "business", "enterprise"]) {
+            await sql`
+              INSERT INTO platform_ai_defaults (
+                plan, source, provider_id, provider_model,
+                copilot_account_id, copilot_model, updated_by
+              ) VALUES (
+                ${plan}, 'copilot', NULL, NULL,
+                ${copilotAccountId}::uuid, ${copilotModel}, ${userId}
+              )
+              ON CONFLICT (plan) DO UPDATE SET
+                source = 'copilot',
+                provider_id = NULL,
+                provider_model = NULL,
+                copilot_account_id = EXCLUDED.copilot_account_id,
+                copilot_model = EXCLUDED.copilot_model,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = now()
+            `;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[setup] Failed to bind copilot account to workspace:", err);
+      const detail = err instanceof Error ? err.message : String(err);
+      return c.json({ ok: false, error: "COPILOT_BINDING_FAILED", detail }, 500);
+    }
+  }
+
   recordAdminAction(c, {
     action: "setup_save_ai_provider",
-    details: { provider, model: model ?? null },
+    details: { provider, model: model ?? null, copilotModel: copilotModel ?? null },
   }).catch(() => {});
 
   return c.json({ ok: true });
