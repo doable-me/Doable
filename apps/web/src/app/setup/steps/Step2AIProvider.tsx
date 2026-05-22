@@ -136,6 +136,14 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
   const [copilotConnecting, setCopilotConnecting] = useState(false);
   const [copilotError, setCopilotError] = useState<string | null>(null);
   const [copilotModel, setCopilotModel] = useState<string>(COPILOT_MODEL_OPTIONS[0]!.id);
+  // Live model list for the connected Copilot account. Populated post-OAuth
+  // via /ai/models?copilotAccountId=…, which calls CopilotEngine.listModels()
+  // on the server (5-min cached). Falls back to COPILOT_MODEL_OPTIONS if the
+  // fetch fails so the wizard never strands the admin on an empty dropdown.
+  const [copilotModels, setCopilotModels] = useState<Array<{ id: string; label: string }>>(
+    COPILOT_MODEL_OPTIONS,
+  );
+  const [copilotModelsLoading, setCopilotModelsLoading] = useState(false);
 
   // Fetch the admin's primary workspace once — we need its ID to scope the
   // copilot-account POST after OAuth. /workspaces returns the caller's
@@ -176,6 +184,42 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, []);
+
+  // Fetch the live model list once OAuth has populated copilotAccountId.
+  // /ai/models is the same endpoint /admin/ai-settings uses; the server
+  // calls CopilotEngine.listModels() under the hood with a 5-min cache so
+  // walking back from the success state and tweaking the dropdown is cheap.
+  // We seed copilotModel with the first returned id so the default reflects
+  // what the account actually supports, not the hardcoded gpt-4o fallback.
+  useEffect(() => {
+    if (!copilotAccountId) return;
+    let cancelled = false;
+    setCopilotModelsLoading(true);
+    apiFetch<{ data: Array<{ id: string; name?: string }> }>(
+      `/ai/models?copilotAccountId=${encodeURIComponent(copilotAccountId)}`,
+    )
+      .then((res) => {
+        if (cancelled) return;
+        const live = (res.data ?? [])
+          .filter((m) => typeof m.id === "string" && m.id.length > 0)
+          .map((m) => ({ id: m.id, label: m.name ?? m.id }));
+        if (live.length > 0) {
+          setCopilotModels(live);
+          // Prefer an OpenAI flagship if present, else the first listed.
+          const preferred = live.find((m) => m.id === "gpt-4o") ?? live[0]!;
+          setCopilotModel(preferred.id);
+        }
+      })
+      .catch(() => {
+        // Keep hardcoded fallback; admin can refine later via /admin/ai-settings.
+      })
+      .finally(() => {
+        if (!cancelled) setCopilotModelsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [copilotAccountId]);
 
   function openCopilotPopup() {
     if (!copilotWorkspaceId) {
@@ -451,6 +495,8 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
                   copilotError={copilotError}
                   copilotModel={copilotModel}
                   onCopilotModelChange={setCopilotModel}
+                  copilotModels={copilotModels}
+                  copilotModelsLoading={copilotModelsLoading}
                   onConnect={openCopilotPopup}
                   workspaceReady={!!copilotWorkspaceId}
                   setAsPlanDefault={setAsPlanDefault}
@@ -717,6 +763,8 @@ interface CopilotFormProps {
   copilotError: string | null;
   copilotModel: string;
   onCopilotModelChange: (id: string) => void;
+  copilotModels: Array<{ id: string; label: string }>;
+  copilotModelsLoading: boolean;
   onConnect: () => void;
   workspaceReady: boolean;
   setAsPlanDefault: boolean;
@@ -733,6 +781,8 @@ function CopilotForm({
   copilotError,
   copilotModel,
   onCopilotModelChange,
+  copilotModels,
+  copilotModelsLoading,
   onConnect,
   workspaceReady,
   setAsPlanDefault,
@@ -777,26 +827,29 @@ function CopilotForm({
             <code className="text-foreground">/admin/ai-settings</code>.
           </p>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="copilot-model" className="text-xs font-medium text-foreground">
+            <label htmlFor="copilot-model" className="text-xs font-medium text-foreground flex items-center gap-2">
               Default Copilot model
+              {copilotModelsLoading && (
+                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+              )}
             </label>
             <select
               id="copilot-model"
               value={copilotModel}
               onChange={(e) => onCopilotModelChange(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
+              disabled={copilotModelsLoading}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:opacity-60"
             >
-              {COPILOT_MODEL_OPTIONS.map((opt) => (
+              {copilotModels.map((opt) => (
                 <option key={opt.id} value={opt.id}>
                   {opt.label}
                 </option>
               ))}
             </select>
             <p className="text-[11px] text-muted-foreground leading-snug">
-              The list shows commonly available Copilot models. If your subscription
-              tier doesn&apos;t include the chosen one, change it in{" "}
-              <code className="text-foreground">/admin/ai-settings</code> later — your
-              full live list of accessible models lives there.
+              {copilotModelsLoading
+                ? "Fetching the live list of models your Copilot subscription includes…"
+                : `${copilotModels.length} models available on your Copilot subscription. Tune further from /admin/ai-settings any time.`}
             </p>
           </div>
           <SaveControls
