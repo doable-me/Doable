@@ -22,8 +22,11 @@ services:
     image: pgvector/pgvector:pg16
     container_name: doable-postgres
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:5432:5432"
+    # No host port published — postgres is reached only over the docker
+    # internal network as `postgres:5432` by api / ws / migrate. If you need
+    # local psql / DBeaver access for debugging, use
+    # `docker compose exec postgres psql -U doable` or layer
+    # `docker-compose.dev.yml` which republishes 127.0.0.1:5432.
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-doable}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — run ./deployment/docker/setup.sh to generate}
@@ -90,8 +93,11 @@ services:
       target: api
     container_name: doable-api
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:4000:4000"
+    # No host port published — api is reached only through Caddy's reverse
+    # proxy at /api/* and by ws/migrate/web over the docker internal
+    # network as `api:4000`. Healthcheck below uses the container's own
+    # 127.0.0.1:4000 (different from the host's 127.0.0.1) so it works
+    # regardless of host port publishing.
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -116,9 +122,12 @@ services:
       # stored via the setup wizard. Required — api refuses to boot without it.
       DOABLE_KEK: ${DOABLE_KEK:?DOABLE_KEK is required — run ./deployment/docker/setup.sh to generate}
       API_PORT: 4000
-      # Inside Docker the service must bind 0.0.0.0 so the container port is
-      # reachable. Host-side isolation is provided by the ports mapping
-      # "127.0.0.1:4000:4000" — equivalent security to bare-metal 127.0.0.1.
+      # Inside Docker the service must bind 0.0.0.0 so other containers on
+      # the docker network (caddy, ws, migrate, web) can reach it. There is
+      # no host port published, so 0.0.0.0 here exposes the api only to
+      # other containers on the user-defined `docker_default` network — not
+      # to the host or external network. Caddy fronts every browser-facing
+      # request via internal DNS (`reverse_proxy api:4000`).
       API_HOST: 0.0.0.0
       # Required — the API refuses to start without an explicit origin allowlist.
       # setup.sh writes this. An operator who bypasses setup.sh and `docker compose
@@ -145,6 +154,24 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      # OAuth — must reach the api container so lib/oauth.ts builds the
+      # auth URL with the Caddy-fronted browser-visible redirect_uri. Without
+      # this passthrough the api falls back to the http://localhost:4000
+      # default in lib/oauth.ts, GitHub rejects with "redirect_uri is not
+      # associated with this application", and the setup wizard's Copilot
+      # Connect button dead-ends on the GitHub authorize page.
+      # GITHUB_CLIENT_ID/SECRET stay optional (the wizard's Step 3 can save
+      # them to platform_config at runtime and lib/oauth.ts reads from DB
+      # first); the *_REDIRECT_URI vars are write-once at install time so
+      # they must come from .env.
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-}
+      GITHUB_COPILOT_REDIRECT_URI: ${GITHUB_COPILOT_REDIRECT_URI:-}
+      GITHUB_REPO_REDIRECT_URI: ${GITHUB_REPO_REDIRECT_URI:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
       # QA-only rate-limit kill switch — defaults unset.
       # When operators set RATE_LIMIT_DISABLED=true (QA test boxes only),
       # services/api/src/middleware/rate-limit.ts no-ops every rateLimiter()
@@ -193,8 +220,10 @@ services:
       target: ws
     container_name: doable-ws
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:4001:4001"
+    # No host port published — ws is reached only through Caddy at /ws
+    # (browser → caddy → ws:4001 via docker internal network) and from
+    # api over the docker network as `ws:4001`. Healthcheck below uses
+    # the container's own 127.0.0.1:4001.
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -239,8 +268,10 @@ services:
       target: web
     container_name: doable-web
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
+    # No host port published — web is reached only through Caddy
+    # (browser → caddy → web:3000 via docker internal network for the
+    # catch-all and /api/otlp/* routes). The browser never talks to
+    # :3000 directly in the production-style stack.
     depends_on:
       api:
         condition: service_healthy

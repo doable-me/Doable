@@ -24,8 +24,9 @@ services:
     image: pgvector/pgvector:pg16
     container_name: doable-postgres
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:5432:5432"
+    # No host port — postgres is reached only over docker internal DNS
+    # (`postgres:5432`). Use `docker compose exec postgres psql -U doable`
+    # for local debugging.
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-doable}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deployment/docker/.env — run ./deployment/docker/setup.sh to generate}
@@ -74,8 +75,9 @@ services:
     image: ghcr.io/doable-me/doable-api:${DOABLE_IMAGE_TAG:-latest}
     container_name: doable-api
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:4000:4000"
+    # No host port — api is reached only via Caddy's /api/* reverse proxy
+    # and by ws/migrate/web over docker internal DNS (`api:4000`).
+    # Healthcheck uses the container's own 127.0.0.1:4000.
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://127.0.0.1:4000/health"]
       interval: 10s
@@ -128,8 +130,18 @@ services:
       ZHIPU_API_KEY: ${ZHIPU_API_KEY:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      # *_REDIRECT_URI vars must reach the api container so lib/oauth.ts
+      # builds the auth URL with the Caddy-fronted redirect_uri. Without
+      # this passthrough the api falls back to the http://localhost:4000
+      # default in lib/oauth.ts, GitHub rejects with "redirect_uri is not
+      # associated with this application", and the setup wizard's Copilot
+      # Connect button dead-ends on the GitHub authorize page.
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-}
+      GITHUB_COPILOT_REDIRECT_URI: ${GITHUB_COPILOT_REDIRECT_URI:-}
+      GITHUB_REPO_REDIRECT_URI: ${GITHUB_REPO_REDIRECT_URI:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       NODE_ENV: ${NODE_ENV:-production}
@@ -158,8 +170,9 @@ services:
     image: ghcr.io/doable-me/doable-ws:${DOABLE_IMAGE_TAG:-latest}
     container_name: doable-ws
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:4001:4001"
+    # No host port — ws is reached only via Caddy at /ws (browser → caddy
+    # → ws:4001) and by api over docker internal DNS. Healthcheck uses
+    # the container's own 127.0.0.1:4001.
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://127.0.0.1:4001/health"]
       interval: 10s
@@ -194,8 +207,8 @@ services:
     image: ghcr.io/doable-me/doable-web:${DOABLE_IMAGE_TAG:-latest}
     container_name: doable-web
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
+    # No host port — web is reached only through Caddy (browser → caddy
+    # catch-all → web:3000 via docker internal DNS).
     depends_on:
       api:
         condition: service_healthy

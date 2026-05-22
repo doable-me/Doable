@@ -46,13 +46,18 @@ const OAUTH_PROVIDERS: {
   {
     id: "github",
     label: "GitHub",
-    // Same OAuth App enables sign-in, GitHub Copilot as an AI provider, and
-    // repo push/pull from the editor — all three flows live under
-    // /oauth/github/{login,copilot,repo}/callback, so the parent path shown
-    // here covers every GitHub OAuth use case via GitHub's subdirectory-
-    // match rule.
-    description: "Sign-in with GitHub (also enables Copilot AI + repo push/pull)",
-    callbackPath: "/oauth/github/login/callback",
+    // Register the PARENT path (with trailing slash) in the GitHub OAuth App's
+    // "Authorization callback URL" field. GitHub validates the actual
+    // redirect_uri at OAuth time using a subdirectory-match rule, so the
+    // single registration covers all three first-party flows:
+    //   /oauth/github/login/callback   — sign-in
+    //   /oauth/github/copilot/callback — Copilot AI provider
+    //   /oauth/github/repo/callback    — repo push/pull from the editor
+    // Registering a leaf callback (e.g. `/oauth/github/login/callback` only)
+    // makes GitHub reject the sibling Copilot + repo redirect URIs with
+    // "redirect_uri is not associated with this application".
+    description: "Sign-in + Copilot AI + repo push/pull — ONE OAuth App, register the parent URL below",
+    callbackPath: "/oauth/github/",
     consoleUrl: "https://github.com/settings/developers",
     consoleLabel: "Open GitHub Developer Settings",
   },

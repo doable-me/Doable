@@ -467,6 +467,19 @@ CORS_ORIGINS=${CORS}
 # and silently broke collab + ai-trace stream.
 WS_ALLOWED_ORIGINS=${CORS}
 
+# ─── OAuth redirect URIs (browser-visible, Caddy-fronted) ───────────────
+# These MUST be the exact URLs your browser will be redirected to after
+# GitHub OAuth. lib/oauth.ts uses these when building the auth URL it
+# sends to GitHub; GitHub then validates the redirect_uri against the
+# Authorization callback URL registered in your OAuth App. Registering
+# the PARENT path `${API_URL}/oauth/github/` in GitHub covers all three
+# sub-paths below via GitHub's subdirectory-match rule, so you only
+# create ONE OAuth App.
+GITHUB_REDIRECT_URI=${API_URL}/oauth/github/login/callback
+GITHUB_COPILOT_REDIRECT_URI=${API_URL}/oauth/github/copilot/callback
+GITHUB_REPO_REDIRECT_URI=${API_URL}/oauth/github/repo/callback
+GOOGLE_REDIRECT_URI=${API_URL}/auth/google/callback
+
 # ─── Redis (optional) ─────────────────────────────
 REDIS_URL=
 
