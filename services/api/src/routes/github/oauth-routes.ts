@@ -49,6 +49,13 @@ githubOAuthRoutes.get("/github/repo/callback", async (c) => {
     const decoded = JSON.parse(
       Buffer.from(stateParam ?? "", "base64url").toString()
     );
+    // CSRF defense: state must be one we minted with type="repo" + a
+    // server-side nonce. Without these checks an attacker who can craft an
+    // arbitrary base64-encoded JSON could pin a victim's browser-derived
+    // OAuth token onto an attacker-controlled userId/projectId.
+    if (decoded.type !== "repo" || !decoded.nonce) {
+      return c.redirect(`${FRONTEND_URL}?error=github_invalid_state`);
+    }
     projectId = decoded.projectId ?? "";
     returnUrl = decoded.returnUrl ?? "";
     userId = decoded.userId ?? "";

@@ -299,6 +299,16 @@ oauthRoutes.get("/github/copilot/callback", async (c) => {
   let scope: "user" | "workspace" = "user";
   try {
     const decoded = JSON.parse(Buffer.from(stateParam ?? "", "base64url").toString());
+    // CSRF defense: state was minted by our /github/copilot initiate above
+    // with type="copilot" and a server-side nonce. Without these checks an
+    // attacker who can craft an arbitrary base64-encoded JSON could feed in
+    // a chosen workspaceId + scope=workspace and have the victim's browser
+    // POST the OAuth token to /workspaces/<attackerWs>/ai-settings/copilot-
+    // accounts. requireAdmin on the POST blunts the impact, but missing the
+    // type/nonce check still drops one defense layer — see PR #50 review.
+    if (decoded.type !== "copilot" || !decoded.nonce) {
+      return c.redirect(`${FRONTEND_URL}/ai-settings?error=invalid_state`);
+    }
     workspaceId = decoded.workspaceId;
     if (decoded.scope === "workspace") scope = "workspace";
   } catch {
@@ -345,6 +355,12 @@ oauthRoutes.get("/github/repo/callback", async (c) => {
     const decoded = JSON.parse(
       Buffer.from(stateParam ?? "", "base64url").toString()
     );
+    // CSRF defense: see copilot callback above. State must be one we minted
+    // with type="repo" + a server-side nonce, not an attacker-controlled
+    // base64-encoded JSON pinning a chosen userId/projectId.
+    if (decoded.type !== "repo" || !decoded.nonce) {
+      return c.redirect(`${FRONTEND_URL}?error=github_invalid_state`);
+    }
     projectId = decoded.projectId ?? "";
     returnUrl = decoded.returnUrl ?? "";
     userId = decoded.userId ?? "";

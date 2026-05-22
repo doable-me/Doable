@@ -126,7 +126,14 @@ adminFrameworkRoutes.put("/frameworks", async (c) => {
 // ─── Public Route (for project creation dialog) ─────────
 
 export const publicFrameworkRoutes = new Hono<AuthEnv>({ strict: false });
-publicFrameworkRoutes.use("*", authMiddleware);
+// Scope authMiddleware to the only path this sub-router actually handles.
+// `use("*", …)` on a router mounted at "/" in routes.ts fired as a
+// wildcard for every path that didn't match a more-specific earlier
+// handler — including the /oauth/github/* paths added in PR #50, which
+// 401'd before their inline app.get handlers ran. Pinning the middleware
+// to /frameworks closes that whole class of accidental interception
+// without changing the public behavior of /frameworks.
+publicFrameworkRoutes.use("/frameworks", authMiddleware);
 
 publicFrameworkRoutes.get("/frameworks", async (c) => {
   const enabled = await getEnabledFrameworksFromDb();
